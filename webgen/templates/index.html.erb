@@ -53,6 +53,10 @@
 	<a href="index.zh-CN.html">
 	  简体中文
 	</a>
+	/
+	<a href="index.ko.html">
+	  한국어
+	</a>
       </div>
       <p><%= t[:description] %></p>
       <p class="margin1 link-box">
@@ -157,6 +161,7 @@
 	    </label>
 	  </div>
 	</div>
+	<% if false # comment out %>
 	<div class="option-box">
 	  <div class="option-left">
 	    <%= t[:tta] %>:
@@ -168,7 +173,6 @@
 		1 pass
 	      </span>
 	    </label>
-	    <!--
 	    <label><input type="radio" name="tta_level" class="radio" value="2" checked>
 	      <span class="r-text">
 		2 pass
@@ -184,7 +188,6 @@
 		8 pass
 	      </span>
 	    </label>
-	    -->
 	    <label><input type="radio" name="tta_level" class="radio" value="0" checked>
 	      <span class="r-text">
 		<%= t[:tta_best_effort] %>
@@ -234,6 +237,7 @@
 	    </div>
 	  </div>
 	</div>
+	<% end %>
 	<% if t[:button_convert] && !t[:button_convert].empty? %>
 	  <input type="submit" class="button" value="<%= t[:button_convert] %>">
 	<% else %>
