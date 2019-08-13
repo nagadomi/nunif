@@ -1,3 +1,5 @@
 *~
 *.swp
 *.log
+*.pyc
+*.pyc
