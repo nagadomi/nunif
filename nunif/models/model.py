@@ -2,12 +2,12 @@ import torch.nn as nn
 
 
 class Model(nn.Module):
-    def __init__(self, name, in_channels, out_channels=None, inner_scale=None, offset=None, input_size=None):
+    def __init__(self, name, in_channels, out_channels=None, scale=None, offset=None, input_size=None):
         super(Model, self).__init__()
         self.name = name
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.inner_scale = inner_scale
+        self.scale = scale
         self.offset = offset
         self.input_size = input_size
         self._kwargs = {}
@@ -20,7 +20,7 @@ class Model(nn.Module):
         s = f"""name: {self.name}
 in_channels: {self.in_channels}
 out_channels: {self.out_channels}
-inner_scale: {self.inner_scale}
+scale: {self.scale}
 offset: {self.offset}
 input_size: {self.input_size}\n"""
         return s + super(Model, self).__repr__()

@@ -2,4 +2,7 @@
 *.swp
 *.log
 *.pyc
-*.pyc
+tmp
+*.png
+*.jpg
+

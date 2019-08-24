@@ -7,7 +7,7 @@ class VGG7(Model):
     name = "waifu2x.vgg_7"
 
     def __init__(self, in_channels=3, out_channels=3, **kwargs):
-        super(VGG7, self).__init__(VGG7.name, in_channels=in_channels, inner_scale=1, offset=7)
+        super(VGG7, self).__init__(VGG7.name, in_channels=in_channels, scale=1, offset=7)
         self.register_kwargs({"in_channels": in_channels, "out_channels": out_channels})
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 32, 3, 1, 0),
@@ -40,4 +40,4 @@ if __name__ == "__main__":
     with torch.no_grad():
         z = model(x)
         print(z.shape)
-        print(model.name, model.offset, model.inner_scale)
+        print(model.name, model.offset, model.scale)
