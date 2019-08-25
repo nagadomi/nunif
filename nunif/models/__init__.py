@@ -2,7 +2,7 @@ import sys
 import inspect
 from . model import Model
 from . import waifu2x
-
+from .. utils.logger import logger
 
 _models = {}
 
@@ -20,9 +20,8 @@ def create_model(name, **kwargs):
 
 def _register_models(module):
     for name, obj in inspect.getmembers(module, inspect.isclass):
-        print(name, obj)
         if issubclass(obj, Model) and obj is not Model:
-            print("register", obj.name, obj)
+            logger.debug("register %s -> %s", obj.name, repr(obj))
             register_model(obj.name, obj)
 
 

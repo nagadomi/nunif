@@ -95,3 +95,20 @@ def tiled_render(x, model, device, tile_size=256, batch_size=8):
             new_x[output_indexes[k]] = z[k]
 
     return new_x[:, :p["z_h"], :p["z_w"]]
+
+
+def simple_render(x, model, device):
+    minibatch = True
+    if x.dim() == 3:
+        x = x.view(1, x.shape[0], x.shape[1], x.shape[2])
+        minibatch = False
+    x = x.to(device)
+    if model.offset > 0:
+        input_offset = math.ceil(model.offset / model.scale)
+        x = F.pad(x, (input_offset,) * 4, mode='replicate')
+    z = model(x)
+    if minibatch:
+        z = z.to("cpu")
+    else:
+        z = z[0].to("cpu")
+    return z

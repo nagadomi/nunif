@@ -1,5 +1,6 @@
 import json
 import torch
+from datetime import datetime, timezone
 import torch.nn as nn
 from .. models import create_model, Model
 
@@ -25,6 +26,7 @@ def save_model(model, model_path):
     assert(isinstance(model, Model))
     torch.save({"nunif_model": 1,
                 "name": model.name,
+                "updated_at": str(datetime.now(timezone.utc)),
                 "kwargs": model._kwargs,
                 "state_dict": model.state_dict()}, model_path)
 
@@ -34,4 +36,6 @@ def load_model(model_path):
     assert("nunif_model" in info)
     model = create_model(info["name"], **info["kwargs"])
     model.load_state_dict(info["state_dict"])
+    if "updated_at" in info:
+        model.updated_at = info["updated_at"]
     return model

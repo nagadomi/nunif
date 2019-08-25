@@ -11,6 +11,7 @@ class Model(nn.Module):
         self.offset = offset
         self.input_size = input_size
         self._kwargs = {}
+        self.updated_at = None
 
     def register_kwargs(self, kwargs):
         for name, value in kwargs.items():
