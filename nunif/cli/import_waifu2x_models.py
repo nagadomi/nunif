@@ -12,9 +12,10 @@ def convert_vgg_7(waifu2x_model_dir, output_dir):
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
             model = create_model("waifu2x.vgg_7", in_channels=3, out_channels=3)
-            model = load_state_from_waifu2x_json(model, os.path.join(in_dir, f"noise{noise_level}_model.json"))
+            json_path = os.path.join(in_dir, f"noise{noise_level}_model.json")
+            model = load_state_from_waifu2x_json(model, json_path)
             save_path = os.path.join(out_dir, f"noise{noise_level}.pth")
-            save_model(model, save_path)
+            save_model(model, save_path, updated_at=os.path.getmtime(json_path))
 
 
 def convert_upconv_7(waifu2x_model_dir, output_dir):
@@ -24,14 +25,16 @@ def convert_upconv_7(waifu2x_model_dir, output_dir):
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
             model = create_model("waifu2x.upconv_7", in_channels=3, out_channels=3)
-            model = load_state_from_waifu2x_json(model, os.path.join(in_dir, f"noise{noise_level}_scale2.0x_model.json"))
+            json_path = os.path.join(in_dir, f"noise{noise_level}_scale2.0x_model.json")
+            model = load_state_from_waifu2x_json(model, json_path)
             save_path = os.path.join(out_dir, f"noise{noise_level}_scale2x.pth")
-            save_model(model, save_path)
+            save_model(model, save_path, updated_at=os.path.getmtime(json_path))
 
         model = create_model("waifu2x.upconv_7", in_channels=3, out_channels=3)
-        model = load_state_from_waifu2x_json(model, os.path.join(in_dir, "scale2.0x_model.json"))
+        json_path = os.path.join(in_dir, "scale2.0x_model.json")
+        model = load_state_from_waifu2x_json(model, json_path)
         save_path = os.path.join(out_dir, "scale2x.pth")
-        save_model(model, save_path)
+        save_model(model, save_path, updated_at=os.path.getmtime(json_path))
 
 
 def _test():

@@ -20,13 +20,14 @@ def load_state_from_waifu2x_json(model, json_file):
     return model
 
 
-def save_model(model, model_path):
+def save_model(model, model_path, updated_at=None):
     if isinstance(model, nn.DataParallel):
         model = model.model
     assert(isinstance(model, Model))
+    updated_at = str(updated_at or datetime.now(timezone.utc))
     torch.save({"nunif_model": 1,
                 "name": model.name,
-                "updated_at": str(datetime.now(timezone.utc)),
+                "updated_at": updated_at,
                 "kwargs": model._kwargs,
                 "state_dict": model.state_dict()}, model_path)
 
