@@ -1,0 +1,6 @@
+# install from https://pytorch.org/get-started/locally/
+# torch
+# torchvision
+numpy
+pillow
+tqdm
