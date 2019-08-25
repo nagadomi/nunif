@@ -3,6 +3,8 @@ from nunif.utils import load_state_from_waifu2x_json
 from nunif.utils import save_model, load_model
 from nunif.models import create_model
 import os
+from .. logger import logger
+
 
 
 def convert_vgg_7(waifu2x_model_dir, output_dir):
@@ -37,6 +39,39 @@ def convert_upconv_7(waifu2x_model_dir, output_dir):
         save_model(model, save_path, updated_at=os.path.getmtime(json_path))
 
 
+
+def convert_cunet(waifu2x_model_dir, output_dir):
+    for domain in ("art",):
+        in_dir = os.path.join(waifu2x_model_dir, "cunet", domain)
+        out_dir = os.path.join(output_dir, "cunet", domain)
+        os.makedirs(out_dir, exist_ok=True)
+        for noise_level in (0, 1, 2, 3):
+            model = create_model("waifu2x.cunet", in_channels=3, out_channels=3)
+            json_path = os.path.join(in_dir, f"noise{noise_level}_model.json")
+            model = load_state_from_waifu2x_json(model, json_path)
+            save_path = os.path.join(out_dir, f"noise{noise_level}.pth")
+            save_model(model, save_path, updated_at=os.path.getmtime(json_path))
+
+
+def convert_upcunet(waifu2x_model_dir, output_dir):
+    for domain in ("art",):
+        in_dir = os.path.join(waifu2x_model_dir, "cunet", domain)
+        out_dir = os.path.join(output_dir, "cunet", domain)
+        os.makedirs(out_dir, exist_ok=True)
+        for noise_level in (0, 1, 2, 3):
+            model = create_model("waifu2x.upcunet", in_channels=3, out_channels=3)
+            json_path = os.path.join(in_dir, f"noise{noise_level}_scale2.0x_model.json")
+            model = load_state_from_waifu2x_json(model, json_path)
+            save_path = os.path.join(out_dir, f"noise{noise_level}_scale2x.pth")
+            save_model(model, save_path, updated_at=os.path.getmtime(json_path))
+
+        model = create_model("waifu2x.upcunet", in_channels=3, out_channels=3)
+        json_path = os.path.join(in_dir, "scale2.0x_model.json")
+        model = load_state_from_waifu2x_json(model, json_path)
+        save_path = os.path.join(out_dir, "scale2x.pth")
+        save_model(model, save_path, updated_at=os.path.getmtime(json_path))
+
+
 def _test():
     import PIL
     import torchvision.transforms.functional as TF
@@ -57,5 +92,9 @@ def _test():
 
 if __name__ == "__main__":
     # _test()
-    convert_vgg_7("waifu2x_models", "pretrained_models/waifu2x")
-    convert_upconv_7("waifu2x_models", "pretrained_models/waifu2x")
+    #convert_vgg_7("waifu2x_models", "pretrained_models/waifu2x")
+    #convert_upconv_7("waifu2x_models", "pretrained_models/waifu2x")
+    print("cunet")
+    convert_cunet("waifu2x_models", "pretrained_models/waifu2x")
+    print("upcunet")
+    convert_upcunet("waifu2x_models", "pretrained_models/waifu2x")

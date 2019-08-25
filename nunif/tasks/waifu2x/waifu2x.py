@@ -56,10 +56,9 @@ class Waifu2x():
                                    for noise_level in range(4)]
         self._setup()
 
-    def convert_(self, x, method, noise_level, tile_size, batch_size):
+    def convert_(self, x, method, noise_level, tile_size=256, batch_size=4):
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
-
         if method == "scale":
             z = tiled_render(x, self.scale_model, self.device,
                              tile_size=tile_size, batch_size=batch_size)
@@ -79,7 +78,7 @@ class Waifu2x():
         elif method == "noise_scale":
             return self.noise_scale_models[noise_level].offset
 
-    def convert(self, im, meta, method, noise_level, tile_size, batch_size):
+    def convert(self, im, meta, method, noise_level, tile_size=256, batch_size=4, tta=False):
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
 
@@ -89,14 +88,18 @@ class Waifu2x():
             alpha = TF.to_tensor(meta["alpha"])
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
 
-        rgb = self.convert_(x, method, noise_level, tile_size, batch_size)
-        rgb = TF.to_pil_image(NF.quantize256(rgb))
+        if tta:
+            rgb = NF.tta_merge([self.convert_(x_, method, noise_level, tile_size, batch_size) for x_ in NF.tta_split(x)])
+        else:
+            rgb = self.convert_(x, method, noise_level, tile_size, batch_size)
+        rgb = TF.to_pil_image(NF.quantize256(rgb).to("cpu"))
+
         if alpha is not None and method in ("scale", "noise_scale"):
             alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
             alpha = tiled_render(alpha, self.scale_model, self.device,
                                  tile_size=tile_size, batch_size=batch_size).mean(0)
         if alpha is not None:
-            alpha = TF.to_pil_image(NF.quantize256(alpha))
+            alpha = TF.to_pil_image(NF.quantize256(alpha).to("cpu"))
             rgb.putalpha(alpha)
 
         return rgb

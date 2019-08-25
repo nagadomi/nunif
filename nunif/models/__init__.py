@@ -2,7 +2,7 @@ import sys
 import inspect
 from . model import Model
 from . import waifu2x
-from .. utils.logger import logger
+from .. logger import logger
 
 _models = {}
 

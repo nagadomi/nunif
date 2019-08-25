@@ -7,7 +7,8 @@ class UpConv7(Model):
     name = "waifu2x.upconv_7"
 
     def __init__(self, in_channels=3, out_channels=3, **kwargs):
-        super(UpConv7, self).__init__(UpConv7.name, in_channels=in_channels, scale=2, offset=14)
+        super(UpConv7, self).__init__(UpConv7.name, in_channels=in_channels,
+                                      out_channels=out_channels, scale=2, offset=14)
         self.register_kwargs({"in_channels": in_channels, "out_channels": out_channels})
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 16, 3, 1, 0),

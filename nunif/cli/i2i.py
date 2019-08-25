@@ -4,7 +4,8 @@ from os import path
 import torch
 import torchvision.transforms.functional as TF
 import argparse
-from nunif.utils import tiled_render, simple_render, load_model, load_image, ImageLoader, logger
+from .. utils import tiled_render, simple_render, load_model, load_image, ImageLoader
+from .. logger import logger
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 
@@ -22,7 +23,7 @@ def convert(x, model, device, args):
             if not (h == x.height and w == x.width):
                 x = TF.resize(x, (h, w))
         z = simple_render(TF.to_tensor(x), model, device)
-    return z
+    return z.to("cpu")
 
 
 def save_image(im, output):

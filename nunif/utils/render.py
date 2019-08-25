@@ -27,12 +27,9 @@ def _calc_param(model, x, tile_size):
 
 def sum2d(x, kernel):
     if x.dim() == 2:
-        x = F.conv2d(x.reshape(1, 1, x.shape[0], x.shape[1]), weight=kernel, stride=1, padding=1)
-        x = x.reshape(x.shape[2], x.shape[3])
+        return F.conv2d(x.unsqueeze(0).unsqueeze(0), weight=kernel, stride=1, padding=1).squeeze(0).squeeze(0)
     else:
-        x = F.conv2d(x.reshape(1, x.shape[0], x.shape[1], x.shape[2]), weight=kernel, stride=1, padding=1)
-        x = x.reshape(x.shape[1], x.shape[2], x.shape[3])
-    return x
+        return F.conv2d(x.unsqueeze(0), weight=kernel, stride=1, padding=1).squeeze(0)
 
 
 def make_alpha_border(rgb, alpha, offset):
@@ -63,11 +60,11 @@ def make_alpha_border(rgb, alpha, offset):
     return rgb.clamp_(0, 1)
 
 
-def tiled_render(x, model, device, tile_size=256, batch_size=8):
+def tiled_render(x, model, device, tile_size=256, batch_size=4):
     p = _calc_param(model, x, tile_size)
-    x = F.pad(x.view(1, x.shape[0], x.shape[1], x.shape[2]), p["pad"], mode='replicate')[0]
+    x = F.pad(x.unsqueeze(0), p["pad"], mode='replicate')[0]
     ch, h, w = x.shape
-    new_x = torch.zeros((ch, h * model.scale, w * model.scale))
+    new_x = torch.zeros((ch, h * model.scale, w * model.scale)).to(device)
 
     output_size = tile_size * model.scale - model.offset * 2
     output_size_in_input = tile_size - math.ceil(model.offset / model.scale) * 2
@@ -94,21 +91,19 @@ def tiled_render(x, model, device, tile_size=256, batch_size=8):
         for k in range(minibatch_index):
             new_x[output_indexes[k]] = z[k]
 
-    return new_x[:, :p["z_h"], :p["z_w"]]
+    return new_x[:, :p["z_h"], :p["z_w"]].contiguous()
 
 
 def simple_render(x, model, device):
     minibatch = True
     if x.dim() == 3:
-        x = x.view(1, x.shape[0], x.shape[1], x.shape[2])
+        x = x.unsqueeze(0)
         minibatch = False
     x = x.to(device)
     if model.offset > 0:
         input_offset = math.ceil(model.offset / model.scale)
         x = F.pad(x, (input_offset,) * 4, mode='replicate')
     z = model(x)
-    if minibatch:
-        z = z.to("cpu")
-    else:
-        z = z[0].to("cpu")
+    if not minibatch:
+        z = z.squeeze(0)
     return z
