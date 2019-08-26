@@ -5,18 +5,15 @@ from ... modules import InplaceClip, SEBlock
 from ... modules import functional as NF
 
 
-INPLACE=True
-
-
 
 class UNetConv(nn.Module):
     def __init__(self, in_channels, mid_channels, out_channels, se):
         super(UNetConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, mid_channels, 3, 1, 0),
-            nn.LeakyReLU(0.1, inplace=INPLACE),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.Conv2d(mid_channels, out_channels, 3, 1, 0),
-            nn.LeakyReLU(0.1, inplace=INPLACE),
+            nn.LeakyReLU(0.1, inplace=True),
         )
         if se:
             self.seblock = SEBlock(out_channels, reduction=8, bias=True)
@@ -55,14 +52,14 @@ class UNet1(nn.Module):
     def forward(self, x):
         x1 = self.conv1(x)
         x2 = self.conv1_down(x1)
-        x2 = F.leaky_relu(x2, 0.1, inplace=INPLACE)
+        x2 = F.leaky_relu(x2, 0.1, inplace=True)
         x2 = self.conv2(x2)
         x2 = self.conv2_up(x2)
-        x2 = F.leaky_relu(x2, 0.1, inplace=INPLACE)
+        x2 = F.leaky_relu(x2, 0.1, inplace=True)
 
         x1 = F.pad(x1, (-4, -4, -4, -4), mode='constant')
         x3 = self.conv3(x1 + x2)
-        x3 = F.leaky_relu(x3, 0.1, inplace=INPLACE)
+        x3 = F.leaky_relu(x3, 0.1, inplace=True)
         z = self.conv_bottom(x3)
         return z
 
@@ -97,23 +94,23 @@ class UNet2(nn.Module):
     def forward(self, x):
         x1 = self.conv1(x)
         x2 = self.conv1_down(x1)
-        x2 = F.leaky_relu(x2, 0.1, inplace=INPLACE)
+        x2 = F.leaky_relu(x2, 0.1, inplace=True)
         x2 = self.conv2(x2)
 
         x3 = self.conv2_down(x2)
-        x3 = F.leaky_relu(x3, 0.1, inplace=INPLACE)
+        x3 = F.leaky_relu(x3, 0.1, inplace=True)
         x3 = self.conv3(x3)
         x3 = self.conv3_up(x3)
-        x3 = F.leaky_relu(x3, 0.1, inplace=INPLACE)
+        x3 = F.leaky_relu(x3, 0.1, inplace=True)
 
         x2 = F.pad(x2, (-4, -4, -4, -4), mode='constant')
         x4 = self.conv4(x2 + x3)
         x4 = self.conv4_up(x4)
-        x4 = F.leaky_relu(x4, 0.1, inplace=INPLACE)
+        x4 = F.leaky_relu(x4, 0.1, inplace=True)
 
         x1 = F.pad(x1, (-16, -16, -16, -16), mode='constant')
         x5 = self.conv5(x1 + x4)
-        x5 = F.leaky_relu(x5, 0.1, inplace=INPLACE)
+        x5 = F.leaky_relu(x5, 0.1, inplace=True)
 
         z = self.conv_bottom(x5)
         return z
@@ -138,7 +135,7 @@ class UpCUNet(Model):
         if self.training:
             return (z, z1)
         else:
-            return z1
+            return z
 
 
 class CUNet(Model):
@@ -162,7 +159,7 @@ class CUNet(Model):
         if self.training:
             return (z, z1)
         else:
-            return z1
+            return z
 
 
 if __name__ == "__main__":
