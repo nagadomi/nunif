@@ -3,7 +3,6 @@ import os
 from time import sleep
 from threading import Thread
 from queue import Queue
-import numpy as np
 from PIL import Image, ImageCms, PngImagePlugin
 import io
 import struct
@@ -80,12 +79,16 @@ def image_load_task(q, files, max_queue_size):
 
 
 class ImageLoader():
+    @classmethod
+    def listdir(cls, directory):
+        return [f for f in glob.glob(os.path.join(directory, "*")) if os.path.splitext(f)[-1] in IMG_EXTENSIONS]
+        
     def __init__(self, directory=None, files=None, max_queue_size=256):
         assert(directory is not None or files is not None)
         if files is not None:
             self.files = files
         else:
-            self.files = np.array([f for f in glob.glob(os.path.join(directory, "*")) if os.path.splitext(f)[-1] in IMG_EXTENSIONS])
+            self.files = ImageLoader.listdir(directory)
         self.max_queue_size = max_queue_size
         self.proc = None
         self.queue = Queue()
