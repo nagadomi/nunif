@@ -11,17 +11,12 @@ import struct
 sRGB_profile = ImageCms.createProfile("sRGB")
 
 
-def load_image_rgb(filename):
-    with open(filename, "rb") as f:
-        im = Image.open(f)
-        if im.mode != "RGB":
-            im = im.convert("RGB")
-    return Image.open(f).convert("RGB")
-
-
 def _load_image(im, filename):
     meta = {}
     im.load()
+    if im.mode in ("L", "RGB", "P"):
+        if isinstance(im.info.get('transparency'), bytes):
+            im = im.convert("RGBA")
     if im.mode in ("RGBA", "LA"):
         meta["alpha"] = im.getchannel("A")
     meta["filename"] = filename
@@ -43,6 +38,11 @@ def load_image(filename):
     with open(filename, "rb") as f:
         im = Image.open(f)
         return _load_image(im, filename)
+
+
+def load_image_rgb(filename):
+    im, meta = load_image(filename)
+    return im
 
 
 def save_image(im, meta, filename):
@@ -82,7 +82,7 @@ class ImageLoader():
     @classmethod
     def listdir(cls, directory):
         return [f for f in glob.glob(os.path.join(directory, "*")) if os.path.splitext(f)[-1] in IMG_EXTENSIONS]
-        
+
     def __init__(self, directory=None, files=None, max_queue_size=256):
         assert(directory is not None or files is not None)
         if files is not None:

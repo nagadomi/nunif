@@ -2,7 +2,8 @@ from os import path
 import torch
 import torchvision.transforms.functional as TF
 from ... transforms import functional as NF
-from ... utils import tiled_render, make_alpha_border, load_model
+from ... utils import tiled_render, make_alpha_border
+from ... models import load_model
 
 
 class Waifu2x():

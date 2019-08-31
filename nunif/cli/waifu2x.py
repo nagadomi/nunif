@@ -11,9 +11,12 @@ from .. tasks.waifu2x import Waifu2x
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 
-
-DEFAULT_MODEL_DIR = path.abspath(path.join(path.dirname(path.abspath(__file__)),
-                                 "..", "..", "pretrained_models", "waifu2x", "cunet", "art"))
+if os.getenv("NUNIF_MODEL_DIR") is not None:
+    MODEL_DIR = os.getenv("NUNIF_MODEL_DIR")
+else:
+    MODEL_DIR = path.abspath(path.join(path.dirname(path.abspath(__file__)),
+                             "..", "..", "pretrained_models"))
+DEFAULT_MODEL_DIR = path.join(MODEL_DIR, "waifu2x", "cunet", "art")
 
 
 def convert_files(ctx, files, args):
@@ -42,10 +45,10 @@ def load_files(txt):
     return files
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=str, default=DEFAULT_MODEL_DIR, help="model dir")
-    parser.add_argument("--noise-level", "-n", type=int, default=1, choices=[0, 1, 2, 3], help="noise level")
+    parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
     parser.add_argument("--method", "-m", type=str, choices=["scale", "noise", "noise_scale"], default="noise_scale", help="method")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch_size")
@@ -66,3 +69,5 @@ if __name__ == "__main__":
             convert_files(ctx, load_files(args.input), args)
         else:
             convert_file(ctx, args)
+
+    return 0

@@ -1,29 +1,13 @@
 import sys
-import inspect
 from . model import Model
 from . import waifu2x
-from .. logger import logger
-
-_models = {}
-
-
-def register_model(name, klass):
-    global _models
-    _models[name] = klass
+from . load_save import load_model, save_model, load_state_from_waifu2x_json
+from . register import register_model, create_model, register_models
 
 
-def create_model(name, **kwargs):
-    global _models
-    assert(name in _models)
-    return _models[name](**kwargs)
+register_models(sys.modules[__name__])
+register_models(waifu2x)
 
-
-def _register_models(module):
-    for name, obj in inspect.getmembers(module, inspect.isclass):
-        if issubclass(obj, Model) and obj is not Model:
-            logger.debug("register %s -> %s", obj.name, repr(obj))
-            register_model(obj.name, obj)
-
-
-_register_models(sys.modules[__name__])
-_register_models(waifu2x)
+__all__ = ["Model", "waifu2x",
+           "load_model", "save_model", "load_state_from_waifu2x_json",
+           "register_model", "create_model"]

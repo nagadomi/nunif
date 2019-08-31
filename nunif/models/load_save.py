@@ -1,11 +1,14 @@
-import json
 import torch
+import json
 from datetime import datetime, timezone
 import torch.nn as nn
-from .. models import create_model, Model
+from . register import create_model
+from . model import Model
 from .. logger import logger
 
+
 def load_state_from_waifu2x_json(model, json_file):
+    logger.debug(f"load_state_from_waifu2x_json: {json_file}")
     with open(json_file, "r") as f:
         params = json.load(f)
     param_index = 0
@@ -21,7 +24,7 @@ def load_state_from_waifu2x_json(model, json_file):
                 w = torch.FloatTensor(param["bias"])
                 logger.debug(f"b: {param['class_name']}{m.weight.shape} <- {w.shape}")
                 m.bias.data.copy_(w.view(m.bias.shape))
-    logger.debug(f"end: {len(params)}, {param_index}")
+    logger.debug(f"read parameters: {len(params)}, write parameters: {param_index}")
     return model
 
 

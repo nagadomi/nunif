@@ -1,10 +1,7 @@
 # python3 -m misc.waifu2x_model_convert
-from nunif.utils import load_state_from_waifu2x_json
-from nunif.utils import save_model, load_model
-from nunif.models import create_model
+from nunif.models import save_model, load_model, create_model, load_state_from_waifu2x_json
 import os
 from .. logger import logger
-
 
 
 def convert_vgg_7(waifu2x_model_dir, output_dir):

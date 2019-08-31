@@ -1,13 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env python3
 
-if command -v pyenv > /dev/null; then
-    python -m nunif.cli.waifu2x $*
-elif command -v python3 > /dev/null; then
-    python3 -m nunif.cli.waifu2x $*
-elif command -v python > /dev/null; then
-    python -m nunif.cli.waifu2x $*
-else
-    echo "error: Could not find python3/python command"
-    exit -1
-fi
+import sys
+import nunif.cli.waifu2x as waifu2x
 
+if __name__ == "__main__":
+   sys.exit(waifu2x.main())

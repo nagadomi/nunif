@@ -4,7 +4,8 @@ from os import path
 import torch
 import torchvision.transforms.functional as TF
 import argparse
-from .. utils import tiled_render, simple_render, load_model, load_image, ImageLoader
+from .. utils import tiled_render, simple_render, load_image, ImageLoader
+from .. models import load_model
 from .. logger import logger
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
@@ -79,7 +80,7 @@ def convert_file(model, device, args):
         TF.to_pil_image(z).save(args.output)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-file", type=str, required=True, help="model file")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="gpu ids")
@@ -107,3 +108,5 @@ if __name__ == "__main__":
             convert_dir_batch(model, device, args)
     else:
         convert_file(model, device, args)
+
+    return 0
