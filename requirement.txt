@@ -4,3 +4,4 @@
 numpy
 pillow
 tqdm
+wand
