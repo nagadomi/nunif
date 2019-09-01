@@ -162,8 +162,8 @@ def benchmark_waifu2x(raw_argv):
         print(f"* {args.model_dir}")
         print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(time_sum, 4)} ({fps} FPS)")
         if args.baseline:
-            mpsnr = round(baseline_psnr_sum/count, 4)
-            rmse = round(math.sqrt(baseline_mse_sum/count), 4)
+            mpsnr = round(baseline_psnr_sum / count, 4)
+            rmse = round(math.sqrt(baseline_mse_sum / count), 4)
             fps = round(count / baseline_time_sum, 4)
             if args.method == "scale":
                 print(f"* {args.baseline_filter}")

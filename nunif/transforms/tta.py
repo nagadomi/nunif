@@ -10,11 +10,11 @@ def _vflip(x):
 
 
 def _tr_f(x):
-    return torch.rot90(x, 1, [1,2])
+    return torch.rot90(x, 1, (1, 2))
 
 
 def _itr_f(x):
-    return torch.rot90(x, -1, [1,2])
+    return torch.rot90(x, -1, (1, 2))
 
 
 def tta_split(x):
@@ -33,7 +33,7 @@ def tta_split(x):
 
 def tta_merge(xs):
     (x, x_hflip, x_vflip, x_vflip_hflip,
-    x_tr, x_tr_hflip, x_tr_vflip, x_tr_vflip_hflip) = xs
+     x_tr, x_tr_hflip, x_tr_vflip, x_tr_vflip_hflip) = xs
 
     avg = x.clone()
     avg += _hflip(x_hflip)

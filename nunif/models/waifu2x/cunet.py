@@ -1,9 +1,8 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from .. model import Model
-from ... modules import InplaceClip, SEBlock
+from ... modules import SEBlock
 from ... modules import functional as NF
-
 
 
 class UNetConv(nn.Module):
@@ -118,6 +117,7 @@ class UNet2(nn.Module):
 
 class UpCUNet(Model):
     name = "waifu2x.upcunet"
+
     def __init__(self, in_channels, out_channels):
         super(UpCUNet, self).__init__(UpCUNet.name, in_channels=in_channels,
                                       out_channels=out_channels, scale=2, offset=36)

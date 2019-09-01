@@ -3,13 +3,12 @@ import os
 from os import path
 import torch
 import argparse
-import glob
 import csv
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from .. logger import logger
 from .. utils import load_image, save_image, ImageLoader
 from .. tasks.waifu2x import Waifu2x
-from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 
 if os.getenv("NUNIF_MODEL_DIR") is not None:
     MODEL_DIR = os.getenv("NUNIF_MODEL_DIR")

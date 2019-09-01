@@ -36,7 +36,6 @@ def convert_upconv_7(waifu2x_model_dir, output_dir):
         save_model(model, save_path, updated_at=os.path.getmtime(json_path))
 
 
-
 def convert_cunet(waifu2x_model_dir, output_dir):
     for domain in ("art",):
         in_dir = os.path.join(waifu2x_model_dir, "cunet", domain)
@@ -89,9 +88,11 @@ def _test():
 
 if __name__ == "__main__":
     # _test()
-    #convert_vgg_7("waifu2x_models", "pretrained_models/waifu2x")
-    #convert_upconv_7("waifu2x_models", "pretrained_models/waifu2x")
-    print("cunet")
+    logger.debug("vgg_7")
+    convert_vgg_7("waifu2x_models", "pretrained_models/waifu2x")
+    logger.debug("upconv_7")
+    convert_upconv_7("waifu2x_models", "pretrained_models/waifu2x")
+    logger.debug("cunet")
     convert_cunet("waifu2x_models", "pretrained_models/waifu2x")
-    print("upcunet")
+    logger.debug("upcunet")
     convert_upcunet("waifu2x_models", "pretrained_models/waifu2x")

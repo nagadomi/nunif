@@ -1,5 +1,5 @@
 import os
-os.environ['MAGICK_THREAD_LIMIT'] = '1' # Disable OpenMP
+os.environ['MAGICK_THREAD_LIMIT'] = '1'  # Disable OpenMP
 from wand.image import Image as WandImage
 from torchvision.transforms import functional as TF
 from PIL import Image as PILImage
@@ -77,4 +77,3 @@ def random_jpeg_noise(x, sampling_factors, quality_min, quality_max, rng=None):
     quality = rng.randint(quality_min, quality_max)
     sampling_factor = sampling_factors[rng.randint(0, len(sampling_factors))]
     return jpeg_noise(x, sampling_factor=sampling_factor, quality=quality)
-

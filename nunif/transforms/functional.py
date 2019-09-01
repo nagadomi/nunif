@@ -1,5 +1,4 @@
 import torch
-from torchvision.transforms import functional as TF
 from . tta import tta_split, tta_merge
 from . import image_magick
 
@@ -18,8 +17,8 @@ def quantize256_f(ft):
 def _rgb2y(rgb):
     y = rgb.new_full((1, rgb.shape[1], rgb.shape[2]), fill_value=0)
     return (y.add_(rgb[0], alpha=0.299).
-              add_(rgb[1], alpha=0.587).
-              add_(rgb[2], alpha=0.114).clamp_(0, 1))
+            add_(rgb[1], alpha=0.587).
+            add_(rgb[2], alpha=0.114).clamp_(0, 1))
 
 
 def rgb2y(rgb):
@@ -37,9 +36,9 @@ def rgb2y_matlab(rgb):
     assert(isinstance(rgb, (torch.FloatTensor, torch.cuda.FloatTensor)))
     y = rgb.new_full((1, rgb.shape[1], rgb.shape[2]), fill_value=0)
     (y.add_(rgb[0], alpha=65.481).
-       add_(rgb[1], alpha=128.553).
-       add_(rgb[2], alpha=24.966).
-       add_(16.0).clamp_(0, 255))
+     add_(rgb[1], alpha=128.553).
+     add_(rgb[2], alpha=24.966).
+     add_(16.0).clamp_(0, 255))
     return y.byte().float()
 
 
@@ -53,7 +52,8 @@ def negate(x):
 
 
 def crop(x, i, j, h, w):
-    return x[:, i:(i+h), i:(i+w)].clone()
+    return x[:, i:(i + h), i:(i + w)].clone()
+
 
 def crop_mod(x, mod):
     h, w = x.shape[1], x.shape[2]
