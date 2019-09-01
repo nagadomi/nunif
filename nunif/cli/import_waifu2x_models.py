@@ -1,4 +1,4 @@
-# python3 -m misc.waifu2x_model_convert
+# DEBUG=1 python3 -m nunif.cli.import_waifu2x_models
 from nunif.models import save_model, load_model, create_model, load_state_from_waifu2x_json
 import os
 from .. logger import logger
