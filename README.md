@@ -12,6 +12,8 @@ For the time being, I will make incompatible changes.
 
 ## waifu2x
 
+The repository contains waifu2x pytorch implementation and pretrained models. Currently only convert command is supported.
+
 ```
 ./waifu2x -h
 ```
