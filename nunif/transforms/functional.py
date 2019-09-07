@@ -1,6 +1,7 @@
 import torch
 from . tta import tta_split, tta_merge
 from . import image_magick
+from torch.nn import functional as F
 
 
 _clip_eps8 = (1.0 / 255.0) * 0.5 - (1.0e-7 * (1.0 / 255.0) * 0.5)
@@ -28,6 +29,15 @@ def rgb2y(rgb):
         return _rgb2y(rgb)
 
 
+def to_grayscale(x):
+    if x.shape[0] == 1:
+        return x
+    elif x.shape[0] == 3:
+        return rgb2y(x)
+    else:
+        ValueError("Unknown channel format f{x.shape[0]}")
+
+
 def rgb2y_matlab(rgb):
     """
     rgb2y for compatibility with SISR benchmarks
@@ -51,8 +61,17 @@ def negate(x):
         return (-x).add_(1.0)
 
 
+def pad(x, pad, mode='constant', value=0):
+    x = x.unsqueeze(0)
+    return F.pad(x, pad, mode, value).squeeze(0)
+
+
 def crop(x, i, j, h, w):
-    return x[:, i:(i + h), i:(i + w)].clone()
+    return x[:, i:(i + h), j:(j + w)].clone()
+
+
+def crop_ref(x, i, j, h, w):
+    return x[:, i:(i + h), j:(j + w)]
 
 
 def crop_mod(x, mod):

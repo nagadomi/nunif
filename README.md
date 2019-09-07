@@ -10,7 +10,7 @@ For the time being, I will make incompatible changes.
 - See requirement.txt
 
 ```
-apt-get install python3 python3-pip libmagickwand-dev git git-lfs 
+apt-get install python3 python3-pip git git-lfs libmagickwand-dev libsnappy-dev
 pip3 install torch torchvision
 git clone https://github.com/nagadomi/nunif.git
 cd nunif

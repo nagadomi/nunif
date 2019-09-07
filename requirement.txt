@@ -5,3 +5,4 @@ numpy
 pillow
 tqdm
 wand
+python-snappy
