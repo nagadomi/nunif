@@ -1,7 +1,7 @@
 import glob
 import os
 from time import sleep
-from threading import Thread
+from threading import Thread, Event
 from queue import Queue
 from PIL import Image, ImageCms, PngImagePlugin
 import torch
@@ -139,10 +139,13 @@ IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tif
 MAX_IMAGE_QUEUE = 256
 
 
-def image_load_task(q, files, max_queue_size):
+def image_load_task(q, stop_flag, files, max_queue_size):
     for f in files:
         while q.qsize() >= max_queue_size:
-            sleep(0.01)
+            if stop_flag.is_set():
+                q.put(None)
+                return
+            sleep(0.001)
         try:
             im, meta = load_image(f)
         except:
@@ -165,6 +168,32 @@ class ImageLoader():
         self.max_queue_size = max_queue_size
         self.proc = None
         self.queue = Queue()
+        self.stop_flag = Event()
+
+    def terminate(self):
+        if self.proc:
+            self.stop_flag.set()
+            self.proc.join()
+            self.proc = None
+            self.stop_flag.clear()
+            self.queue = Queue()
+
+    def start(self):
+        if self.proc is None:
+            self.stop_flag.clear()
+            self.proc = Thread(target=image_load_task,
+                               args=(self.queue, self.stop_flag, self.files, self.max_queue_size))
+            self.proc.start()
+
+    def __del__(self):
+        self.terminate()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.terminate()
 
     def __iter__(self):
         return self
@@ -174,15 +203,50 @@ class ImageLoader():
 
     def __next__(self):
         if self.proc is None:
-            self.proc = Thread(target=image_load_task, args=(self.queue, self.files, self.max_queue_size))
-            self.proc.start()
+            self.start()
         ret = self.queue.get()
         if ret is None:
             self.proc.join()
             self.proc = None
+            self.stop_flag.clear()
             raise StopIteration()
         else:
             return ret
+
+
+class DummyImageLoader():
+    def __init__(self, n):
+        self.n = n
+        self.i = 0
+
+    def terminate(self):
+        self.i = 0
+
+    def start(self):
+        pass
+
+    def __del__(self):
+        self.terminate()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.terminate()
+
+    def __iter__(self):
+        return self
+
+    def __len__(self):
+        return len(self.n)
+
+    def __next__(self):
+        if self.i < self.n:
+            return (None, None)
+        else:
+            self.i = 0
+            raise StopIteration()
 
 
 def basename_without_ext(filename):

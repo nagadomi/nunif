@@ -11,7 +11,7 @@ import torch
 from torchvision.transforms import functional as TF
 from .. transforms import functional as NF
 from .. logger import logger
-from .. utils import save_image_snappy, save_image, ImageLoader, filename2key
+from .. utils import save_image_snappy, save_image, ImageLoader, DummyImageLoader, filename2key
 
 
 def load_files_from_csv(txt):
@@ -154,6 +154,13 @@ def make_output_name(filename, no=-1):
         return f"{basename}.{ext}"
 
 
+def image_stdv(im):
+    stdv = 0.0
+    for ch in range(im.shape[0]):
+        stdv += im[ch].std().item()
+    return stdv / im.shape[0]
+
+
 def convert_data(data, has_x, args):
     input_dir = path.join(args.data_dir, INPUT_DIR)
     target_dir = path.join(args.data_dir, TARGET_DIR)
@@ -172,14 +179,13 @@ def convert_data(data, has_x, args):
         x_files = [data[k]["x"]["src"] for k in sorted(data.keys())]
         x_loader = ImageLoader(files=x_files, max_queue_size=32)
     else:
-        x_loader = [(None, None)] * len(y_files)
+        x_loader = DummyImageLoader(n=len(y_files))
 
-    with torch.no_grad(), PoolExecutor() as pool:
-        # TODO: deadlock
+    with torch.no_grad(), x_loader, y_loader, PoolExecutor() as pool:
         for (x_im, x_meta), (y_im, y_meta) in tqdm(zip(x_loader, y_loader), ncols=60):
             y = TF.to_tensor(y_im)
             if "alpha" in y_meta:
-                sys.stdout.write(f"\nskip transparent png {y_meta['filename']}\n")
+                logger.debug(f"skip transparent png {y_meta['filename']}")
                 continue
             x = None
             if x_im is not None:
@@ -187,7 +193,7 @@ def convert_data(data, has_x, args):
 
                 x = TF.to_tensor(x_im)
                 if "alpha" in x_meta:
-                    sys.stdout.write(f"\nskip transparent png {x_meta['filename']}\n")
+                    logger.debug(f"skip transparent png {x_meta['filename']}")
                     continue
                 if args.pad_x > 0:
                     pad_mode = 'reflect'
@@ -208,6 +214,10 @@ def convert_data(data, has_x, args):
                     if args.split_image:
                         no = 0
                         for x, y in zip(*pair_split_image(x, y, args.max_size, args.split_step)):
+                            if args.drop_empty:
+                                stdv = image_stdv(y)
+                                if stdv < args.drop_th:
+                                    continue
                             pool.submit(save_image_task, x,
                                         path.join(input_dir, make_output_name(x_meta["filename"], no)))
                             pool.submit(save_image_task, y,
@@ -215,11 +225,19 @@ def convert_data(data, has_x, args):
                             no += 1
                     else:
                         x, y = pair_crop_max(x, y, args.max_size)
+                        if args.drop_empty:
+                            stdv = image_stdv(y)
+                            if stdv < args.drop_th:
+                                continue
                         pool.submit(save_image_task, x,
                                     path.join(input_dir, make_output_name(x_meta["filename"])))
                         pool.submit(save_image_task, y,
                                     path.join(target_dir, make_output_name(y_meta["filename"])))
                 else:
+                    if args.drop_empty:
+                        stdv = image_stdv(y)
+                        if stdv < args.drop_th:
+                            continue
                     pool.submit(save_image_task, x,
                                 path.join(input_dir, make_output_name(x_meta["filename"])))
                     pool.submit(save_image_task, y,
@@ -237,22 +255,34 @@ def convert_data(data, has_x, args):
                     if args.split_image:
                         no = 0
                         for y in split_image(y, args.max_size, args.split_step):
+                            if args.drop_empty:
+                                stdv = image_stdv(y)
+                                if stdv < args.drop_th:
+                                    continue
                             pool.submit(save_image_task, y,
                                         path.join(target_dir, make_output_name(y_meta["filename"], no)))
                             no += 1
                     else:
                         y = crop_max(y, args.max_size)
+                        if args.drop_empty:
+                            stdv = image_stdv(y)
+                            if stdv < args.drop_th:
+                                continue
                         pool.submit(save_image_task, y,
                                     path.join(target_dir, make_output_name(y_meta["filename"])))
                 else:
+                    if args.drop_empty:
+                        stdv = image_stdv(y)
+                        if stdv < args.drop_th:
+                            continue
                     pool.submit(save_image_task, y,
                                 path.join(target_dir, make_output_name(y_meta["filename"])))
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input", "-x", type=str, help="input file or directory. optional.")
-    parser.add_argument("--target", "-y", type=str, required=True, help="target file or directory")
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--target", "-y", type=str, required=True, help="(y) target file or directory")
+    parser.add_argument("--input", "-x", type=str, help="(x) input file or directory. optional")
     parser.add_argument("--data-dir", "-o", type=str, required=True, help="output directory")
     parser.add_argument("--max-size", type=int, default=0, help="max image size")
     parser.add_argument("--split-image", action="store_true", help="split image with --max-size")
@@ -261,11 +291,16 @@ def main():
     parser.add_argument("--pad-y", type=int, default=0, help="padding size")
     parser.add_argument("--zero-pad-x", action="store_true", help="use zero padding")
     parser.add_argument("--zero-pad-y", action="store_true", help="use zero padding")
-    parser.add_argument("--grayscale-x", action="store_true", default=False, help="convert to grayscale image")
-    parser.add_argument("--grayscale-y", action="store_true", default=False, help="convert to grayscale image")
+    parser.add_argument("--grayscale-x", action="store_true", help="convert to grayscale image")
+    parser.add_argument("--grayscale-y", action="store_true", help="convert to grayscale image")
+    parser.add_argument("--drop-empty", action="store_true", help="drop image/area with pixel stddev")
+    parser.add_argument("--drop-th", type=float, default=0.05, help="threshold of stddev")
+    parser.add_argument("--format", type=str, choices=["png", "snappy"], default="snappy", help="output image format (for devel)")
 
     args = parser.parse_args()
     logger.debug(str(args))
+    global USE_SNAPPY_IMAGE
+    USE_SNAPPY_IMAGE = args.format == "snappy"
 
     if args.split_image and not args.max_size > 0:
         raise ValueError("--max-size is required for --split_image")
