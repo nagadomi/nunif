@@ -1,5 +1,4 @@
 import os
-os.environ['MAGICK_THREAD_LIMIT'] = '1'  # Disable OpenMP
 from wand.image import Image as WandImage
 from torchvision.transforms import functional as TF
 from PIL import Image as PILImage
