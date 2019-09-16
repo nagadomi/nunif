@@ -5,4 +5,5 @@
 tmp
 *.png
 *.jpg
-
+data/*
+!data/.keep
