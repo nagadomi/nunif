@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
-from .. import initialize
+import nunif.initialize
 import nunif.cli.waifu2x as waifu2x
 
 if __name__ == "__main__":
