@@ -15,7 +15,8 @@ def _load_image(im, filename):
     meta = {}
     im.load()
     if im.mode in ("L", "RGB", "P"):
-        if isinstance(im.info.get('transparency'), bytes):
+        transparency = im.info.get('transparency')
+        if isinstance(transparency, bytes) or isinstance(transparency, int):
             im = im.convert("RGBA")
     if im.mode in ("RGBA", "LA"):
         meta["alpha"] = im.getchannel("A")
