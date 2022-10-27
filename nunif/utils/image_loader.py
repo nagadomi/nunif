@@ -10,7 +10,7 @@ import io
 import struct
 import snappy
 import numpy as np
-
+from .. logger import logger
 sRGB_profile = ImageCms.createProfile("sRGB")
 
 
@@ -18,7 +18,7 @@ def _load_image(im, filename):
     meta = {}
     im.load()
     if im.mode in ("L", "RGB", "P"):
-        if isinstance(im.info.get('transparency'), bytes):
+        if isinstance(im.info.get('transparency'), (bytes, int)):
             im = im.convert("RGBA")
     if im.mode in ("RGBA", "LA"):
         meta["alpha"] = im.getchannel("A")
@@ -149,6 +149,7 @@ def image_load_task(q, stop_flag, files, max_queue_size):
         try:
             im, meta = load_image(f)
         except:
+            logger.error(f"Failed to load image: {f}")
             im, meta = None, None
         q.put((im, meta))
     q.put(None)
@@ -204,14 +205,17 @@ class ImageLoader():
     def __next__(self):
         if self.proc is None:
             self.start()
-        ret = self.queue.get()
-        if ret is None:
-            self.proc.join()
-            self.proc = None
-            self.stop_flag.clear()
-            raise StopIteration()
-        else:
-            return ret
+        while True:
+            ret = self.queue.get()
+            if ret is None:
+                self.proc.join()
+                self.proc = None
+                self.stop_flag.clear()
+                raise StopIteration()
+            elif ret[0] is None:
+                continue
+            else:
+                return ret
 
 
 class DummyImageLoader():
@@ -256,11 +260,15 @@ def basename_without_ext(filename):
 SEP = "."
 
 
-def filename2key(filename, use_subdir=False):
-    if use_subdir:
-        subdir = os.path.basename(os.path.dirname(filename))
+def filename2key(filename, subdir_level=0):
+    filename = os.path.abspath(filename)
+    if subdir_level > 0:
+        subdirs = []
         basename = basename_without_ext(filename)
-        return subdir + SEP + basename
+        for _ in range(subdir_level):
+            filename = os.path.dirname(filename)
+            subdirs.insert(0, os.path.basename(filename))
+        return SEP.join(subdirs + [basename])
     else:
         return basename_without_ext(filename)
 

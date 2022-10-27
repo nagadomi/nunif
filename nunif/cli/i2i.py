@@ -63,12 +63,12 @@ def convert_dir_batch(model, device, args):
             output_paths[minibatch_index] = path.join(args.output, output_filename)
             minibatch_index += 1
             if minibatch_index == minibatch.shape[0]:
-                z = simple_render(minibatch, model, device)
+                z = simple_render(minibatch, model, device).to('cpu')
                 for i in range(minibatch_index):
                     pool.submit(save_image, TF.to_pil_image(z[i]), output_paths[i])
                 minibatch_index = 0
         if minibatch_index > 0:
-            z = simple_render(minibatch[0:minibatch_index], model, device)
+            z = simple_render(minibatch[0:minibatch_index], model, device).to('cpu')
             for i in range(minibatch_index):
                 pool.submit(save_image, TF.to_pil_image(z[i]), output_paths[i])
 
@@ -87,6 +87,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch_size")
     parser.add_argument("--tiled-render", "-t", action='store_true', help="use tiled render")
     parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")
+    parser.add_argument("--tta", action='store_true', help="use TTA")
     parser.add_argument("--output", "-o", type=str, required=True, help="output")
     parser.add_argument("--input", "-i", type=str, required=True, help="input")
     args = parser.parse_args()

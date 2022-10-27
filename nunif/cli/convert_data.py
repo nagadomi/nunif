@@ -11,26 +11,39 @@ import torch
 from torchvision.transforms import functional as TF
 from .. transforms import functional as NF
 from .. logger import logger
-from .. utils import save_image_snappy, save_image, ImageLoader, DummyImageLoader, filename2key
+from .. utils import save_image_snappy, save_image, ImageLoader, DummyImageLoader, filename2key, fill_alpha
 
 
-def load_files_from_csv(txt):
+def load_files_from_csv(txt, subdir_level=0):
     data = defaultdict(lambda: {})
     with open(txt, "r") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            cols = list(row.values)
-            src = cols.shift()
-            key = filename2key(src, use_subdir=False)
-            data[key] = {"src": src, "options": cols}
+        sniffer = csv.Sniffer()
+        sample = f.read(1024)
+        f.seek(0)
+        if sniffer.has_header(sample):
+            reader = csv.DictReader(f)
+            src_key = reader.fieldnames[0]
+            for row in reader:
+                src = row[src_key]
+                options = {k:v for k, v in row.items() if k != src_key}
+                key = filename2key(src, subdir_level=subdir_level)
+                data[key] = {"src": src, "options": options}
+        else:
+            reader = csv.reader(f)
+            for row in reader:
+                cols = list(row)
+                src = cols.pop(0).strip()
+                options = [c.strip() for c in cols if c.strip()]
+                key = filename2key(src, subdir_level=subdir_level)
+                data[key] = {"src": src, "options": options}
     return data
 
 
-def load_files_from_dir(directory):
+def load_files_from_dir(directory, subdir_level=0):
     files = ImageLoader.listdir(directory)
     data = defaultdict(lambda: {})
     for src in files:
-        key = filename2key(src, use_subdir=False)
+        key = filename2key(src, subdir_level=subdir_level)
         data[key] = {"src": src, "options": []}
     return data
 
@@ -145,9 +158,9 @@ def save_image_task(im, output_path):
         save_image(TF.to_pil_image(im), None, output_path)
 
 
-def make_output_name(filename, no=-1):
-    basename = filename2key(filename)
-    ext = "sz" if USE_SNAPPY_IMAGE else "png"
+def make_output_name(filename, subdir_level, no=-1):
+    basename = filename2key(filename, subdir_level=subdir_level)
+    ext = "szi" if USE_SNAPPY_IMAGE else "png"
     if no >= 0:
         return f"{basename}.{no:03d}.{ext}"
     else:
@@ -159,6 +172,17 @@ def image_stdv(im):
     for ch in range(im.shape[0]):
         stdv += im[ch].std().item()
     return stdv / im.shape[0]
+
+
+def get_bg_color(mode):
+    if mode == "black":
+        return 0.0
+    elif mode == "white":
+        return 1.0
+    elif mode == "gray":
+        return 0.5
+    elif mode == "random":
+        return torch.rand(1).item()
 
 
 def convert_data(data, has_x, args):
@@ -173,6 +197,7 @@ def convert_data(data, has_x, args):
     if has_x:
         os.makedirs(input_dir, exist_ok=True)
 
+    y_options, x_options = {}, {}
     y_files = [data[k]["y"]["src"] for k in sorted(data.keys())]
     y_loader = ImageLoader(files=y_files, max_queue_size=32)
     if has_x:
@@ -182,19 +207,20 @@ def convert_data(data, has_x, args):
         x_loader = DummyImageLoader(n=len(y_files))
 
     with torch.no_grad(), x_loader, y_loader, PoolExecutor() as pool:
-        for (x_im, x_meta), (y_im, y_meta) in tqdm(zip(x_loader, y_loader), ncols=60):
+        for (x_im, x_meta), (y_im, y_meta) in tqdm(zip(x_loader, y_loader), ncols=60, total=len(y_loader)):
+            y_key = filename2key(y_meta["filename"], subdir_level=args.subdir_level)
             y = TF.to_tensor(y_im)
             if "alpha" in y_meta:
-                logger.debug(f"skip transparent png {y_meta['filename']}")
-                continue
+                bg_color = get_bg_color(args.bg_color)
+                y = fill_alpha(y, TF.to_tensor(y_meta["alpha"]), bg_color)
             x = None
             if x_im is not None:
-                assert(filename2key(x_meta["filename"]) == filename2key(y_meta["filename"]))
-
+                x_key = filename2key(x_meta["filename"], subdir_level=args.subdir_level)
                 x = TF.to_tensor(x_im)
+                assert(y_key == x_key)
                 if "alpha" in x_meta:
-                    logger.debug(f"skip transparent png {x_meta['filename']}")
-                    continue
+                    bg_color = get_bg_color(args.bg_color)
+                    x = fill_alpha(x, TF.to_tensor(x_meta["alpha"]), bg_color)
                 if args.pad_x > 0:
                     pad_mode = 'reflect'
                     if args.zero_pad_x:
@@ -210,38 +236,38 @@ def convert_data(data, has_x, args):
                 if args.grayscale_y:
                     y = NF.to_grayscale(y)
 
+                xs, ys = [], []
+                use_no = False
                 if args.max_size > 0:
                     if args.split_image:
-                        no = 0
+                        use_no = True
                         for x, y in zip(*pair_split_image(x, y, args.max_size, args.split_step)):
-                            if args.drop_empty:
-                                stdv = image_stdv(y)
-                                if stdv < args.drop_th:
-                                    continue
-                            pool.submit(save_image_task, x,
-                                        path.join(input_dir, make_output_name(x_meta["filename"], no)))
-                            pool.submit(save_image_task, y,
-                                        path.join(target_dir, make_output_name(y_meta["filename"], no)))
-                            no += 1
+                            xs.append(x)
+                            ys.append(y)
                     else:
                         x, y = pair_crop_max(x, y, args.max_size)
-                        if args.drop_empty:
-                            stdv = image_stdv(y)
-                            if stdv < args.drop_th:
-                                continue
-                        pool.submit(save_image_task, x,
-                                    path.join(input_dir, make_output_name(x_meta["filename"])))
-                        pool.submit(save_image_task, y,
-                                    path.join(target_dir, make_output_name(y_meta["filename"])))
+                        xs.append(x)
+                        ys.append(y)
                 else:
+                    xs.append(x)
+                    ys.append(y)
+                no = 0
+                for x, y in zip(xs, ys):
                     if args.drop_empty:
                         stdv = image_stdv(y)
                         if stdv < args.drop_th:
                             continue
-                    pool.submit(save_image_task, x,
-                                path.join(input_dir, make_output_name(x_meta["filename"])))
-                    pool.submit(save_image_task, y,
-                                path.join(target_dir, make_output_name(y_meta["filename"])))
+                    if use_no:
+                        im_no = no
+                    else:
+                        im_no = -1
+                    x_new_key = make_output_name(x_meta["filename"], args.subdir_level, im_no)
+                    y_new_key = make_output_name(y_meta["filename"], args.subdir_level, im_no)
+                    y_options[y_new_key] = data[y_key]["y"]["options"]
+                    x_options[x_new_key] = data[y_key]["x"]["options"]
+                    pool.submit(save_image_task, x, path.join(input_dir, x_new_key))
+                    pool.submit(save_image_task, y, path.join(target_dir, y_new_key))
+                    no += 1
             else:
                 if args.pad_y > 0:
                     pad_mode = 'reflect'
@@ -251,38 +277,45 @@ def convert_data(data, has_x, args):
                 if args.grayscale_y:
                     y = NF.to_grayscale(y)
 
+                ys = []
+                use_no = False
                 if args.max_size > 0:
                     if args.split_image:
-                        no = 0
+                        use_no = True
                         for y in split_image(y, args.max_size, args.split_step):
-                            if args.drop_empty:
-                                stdv = image_stdv(y)
-                                if stdv < args.drop_th:
-                                    continue
-                            pool.submit(save_image_task, y,
-                                        path.join(target_dir, make_output_name(y_meta["filename"], no)))
-                            no += 1
+                            ys.append(y)
                     else:
                         y = crop_max(y, args.max_size)
-                        if args.drop_empty:
-                            stdv = image_stdv(y)
-                            if stdv < args.drop_th:
-                                continue
-                        pool.submit(save_image_task, y,
-                                    path.join(target_dir, make_output_name(y_meta["filename"])))
+                        ys.append(y)
                 else:
+                    ys.append(y)
+
+                no = 0
+                for y in ys:
                     if args.drop_empty:
                         stdv = image_stdv(y)
                         if stdv < args.drop_th:
                             continue
-                    pool.submit(save_image_task, y,
-                                path.join(target_dir, make_output_name(y_meta["filename"])))
+                    if use_no:
+                        im_no = no
+                    else:
+                        im_no = -1
+                    y_new_key = make_output_name(y_meta["filename"], args.subdir_level, im_no)
+                    y_options[y_new_key] = data[y_key]["y"]["options"]
+                    pool.submit(save_image_task, y, path.join(target_dir, y_new_key))
+                    no += 1
+    
+    if y_options:
+        torch.save(y_options, path.join(target_dir, "options.pth"))
+    if x_options:
+        torch.save(x_options, path.join(input_dir, "options.pth"))
 
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--target", "-y", type=str, required=True, help="(y) target file or directory")
     parser.add_argument("--input", "-x", type=str, help="(x) input file or directory. optional")
+    parser.add_argument("--subdir-level", type=int, default=0, help="number of subdirs to identify the file")
     parser.add_argument("--data-dir", "-o", type=str, required=True, help="output directory")
     parser.add_argument("--max-size", type=int, default=0, help="max image size")
     parser.add_argument("--split-image", action="store_true", help="split image with --max-size")
@@ -293,9 +326,13 @@ def main():
     parser.add_argument("--zero-pad-y", action="store_true", help="use zero padding")
     parser.add_argument("--grayscale-x", action="store_true", help="convert to grayscale image")
     parser.add_argument("--grayscale-y", action="store_true", help="convert to grayscale image")
-    parser.add_argument("--drop-empty", action="store_true", help="drop image/area with pixel stddev")
+    parser.add_argument("--drop-empty", action="store_true", help="drop empty image/area with pixel stddev")
     parser.add_argument("--drop-th", type=float, default=0.05, help="threshold of stddev")
-    parser.add_argument("--format", type=str, choices=["png", "snappy"], default="snappy", help="output image format (for devel)")
+    parser.add_argument("--format", type=str, choices=["png", "snappy"], default="snappy",
+                        help="output image format (for devel)")
+    parser.add_argument("--bg-color", type=str, choices=["black", "white","gray","random"],
+                        default="random", help="background color for transparent png")
+
 
     args = parser.parse_args()
     logger.debug(str(args))
@@ -311,14 +348,18 @@ def main():
 
     has_x = False
     if path.isdir(args.target):
-        y_data = load_files_from_dir(args.target)
+        y_data = load_files_from_dir(args.target, subdir_level=args.subdir_level)
     elif path.splitext(args.target)[-1] in (".txt", ".csv"):
-        y_data = load_files_from_csv(args.target)
+        y_data = load_files_from_csv(args.target, subdir_level=args.subdir_level)
+    else:
+        raise ValueError(f"Unknown input format: {args.target}")
     if args.input is not None:
         if path.isdir(args.input):
-            x_data = load_files_from_dir(args.input)
+            x_data = load_files_from_dir(args.input, subdir_level=args.subdir_level)
         elif path.splitext(args.input)[-1] in (".txt", ".csv"):
-            x_data = load_files_from_csv(args.input)
+            x_data = load_files_from_csv(args.input, subdir_level=args.subdir_level)
+        else:
+            raise ValueError(f"Unknown input format: {args.input}")
 
         # validate
         data = {}

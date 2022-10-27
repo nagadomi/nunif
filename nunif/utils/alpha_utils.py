@@ -36,7 +36,6 @@ def make_alpha_border(rgb, alpha, offset):
         mask.copy_(mask_weight)
         mask[mask_weight > 0] = 1
         mask_nega = (mask - 1).abs_().byte()
-
     return rgb.clamp_(0, 1)
 
 
@@ -47,11 +46,12 @@ def fill_alpha(fg, alpha, val=0):
     assert(isinstance(fg, (torch.FloatTensor, torch.cuda.FloatTensor)) and
            isinstance(alpha, (torch.FloatTensor, torch.cuda.FloatTensor)))
 
+    alpha = alpha.squeeze(0)
     fg = fg.clone()
     bg = torch.full(fg.shape, fill_value=val)
-    alpha_inv = 1 - alpha
+    alpha_inv = 1.0 - alpha
     for ch in range(fg.shape[0]):
-        bg[ch].cmul_(alpha_inv)
-        fg[ch].cmul(alpha)
-    fg.add_(bg)
+        bg[ch].mul_(alpha_inv)
+        fg[ch].mul_(alpha)
+    fg.add_(bg).clamp_(0, 1)
     return fg

@@ -88,7 +88,7 @@ class Waifu2x():
         if "alpha" in meta:
             alpha = TF.to_tensor(meta["alpha"])
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
-
+            im = TF.to_pil_image(x)
         if tta:
             rgb = NF.tta_merge([self.convert_(x_, method, noise_level, tile_size, batch_size) for x_ in NF.tta_split(x)])
         else:
