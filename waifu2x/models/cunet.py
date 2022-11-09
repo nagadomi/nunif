@@ -1,8 +1,8 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from .. model import Model
-from ... modules import SEBlock
-from ... modules import functional as NF
+from nunif.models import Model, register_model
+from nunif.modules import SEBlock
+from nunif.modules import functional as NF
 
 
 class UNetConv(nn.Module):
@@ -160,6 +160,10 @@ class CUNet(Model):
             return (z, z1)
         else:
             return z
+
+
+register_model(CUNet.name, CUNet)
+register_model(UpCUNet.name, UpCUNet)
 
 
 if __name__ == "__main__":

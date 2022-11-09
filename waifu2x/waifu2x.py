@@ -1,9 +1,9 @@
 from os import path
 import torch
 import torchvision.transforms.functional as TF
-from ... transforms import functional as NF
-from ... utils import tiled_render, make_alpha_border
-from ... models import load_model
+from nunif.transforms import functional as NF
+from nunif.utils import tiled_render, make_alpha_border
+from nunif.models import load_model
 
 
 class Waifu2x():
@@ -41,19 +41,19 @@ class Waifu2x():
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
         if method == "scale":
-            self.scale_model = load_model(path.join(self.model_dir, "scale2x.pth"))
+            self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))
         elif method == "noise":
-            self.noise_models[noise_level] = load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))
+            self.noise_models[noise_level], _ = load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))
         elif method == "noise_scale":
-            self.scale_model = load_model(path.join(self.model_dir, "scale2x.pth"))  # for alpha channel
-            self.noise_scale_models[noise_level] = load_model(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"))
+            self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))  # for alpha channel
+            self.noise_scale_models[noise_level], _ = load_model(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"))
         self._setup()
 
     def load_model_all(self):
-        self.scale_model = load_model(path.join(self.model_dir, "scale2x.pth"))
-        self.noise_models = [load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))
+        self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))
+        self.noise_models, _ = [load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))
                              for noise_level in range(4)]
-        self.noise_scale_models = [load_model(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"))
+        self.noise_scale_models = [load_model(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"))[0]
                                    for noise_level in range(4)]
         self._setup()
 

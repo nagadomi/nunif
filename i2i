@@ -1,8 +1,0 @@
-#!/usr/bin/env python3
-
-import sys
-import nunif.initialize
-import nunif.cli.i2i as i2i
-
-if __name__ == "__main__":
-   sys.exit(i2i.main())

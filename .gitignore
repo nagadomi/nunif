@@ -4,8 +4,11 @@
 tmp
 *.png
 *.jpg
+*.tar.gz
+*.tar
 data
 !data/.keep
+waifu2x/pretrained_models
 
 # ----- Python.gitignore
 # Byte-compiled / optimized / DLL files

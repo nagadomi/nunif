@@ -6,16 +6,15 @@ import argparse
 import csv
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-from .. logger import logger
-from .. utils import load_image, save_image, ImageLoader
-from .. tasks.waifu2x import Waifu2x
+from nunif.logger import logger
+from nunif.utils import load_image, save_image, ImageLoader
+from .waifu2x import Waifu2x
+from .models import CUNet, VGG7, UpConv7
 
-if os.getenv("NUNIF_MODEL_DIR") is not None:
-    MODEL_DIR = os.getenv("NUNIF_MODEL_DIR")
-else:
-    MODEL_DIR = path.abspath(path.join(path.dirname(path.abspath(__file__)),
-                             "..", "..", "pretrained_models"))
-DEFAULT_MODEL_DIR = path.join(MODEL_DIR, "waifu2x", "cunet", "art")
+
+DEFAULT_MODEL_DIR = path.abspath(path.join(
+    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
+    "cunet", "art"))
 
 
 def convert_files(ctx, files, args):
@@ -56,7 +55,7 @@ def main():
     parser.add_argument("--input", "-i", type=str, required=True, help="input file or directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true", help="TTA mode")
     args = parser.parse_args()
-    logger.debug(str(args))
+    logger.debug(f"waifu2x.cli.main: {str(args)}")
 
     ctx = Waifu2x(model_dir=args.model_dir, gpus=args.gpu)
     ctx.load_model(args.method, args.noise_level)
@@ -69,4 +68,6 @@ def main():
         else:
             convert_file(ctx, args)
 
-    return 0
+
+if __name__ == "__main__":
+    main()

@@ -5,4 +5,5 @@ numpy
 pillow
 tqdm
 wand
-python-snappy
+python-snappy # TODO: migrate to zstd
+zstandard

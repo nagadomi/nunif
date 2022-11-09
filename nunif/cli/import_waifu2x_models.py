@@ -67,17 +67,6 @@ def convert_upcunet(waifu2x_model_dir, output_dir):
         save_path = os.path.join(out_dir, "scale2x.pth")
         save_model(model, save_path, updated_at=os.path.getmtime(json_path))
 
-def convert_panel_segmentation(model_dir, output_dir):
-    in_dir = model_dir
-    out_dir = output_dir
-    os.makedirs(out_dir, exist_ok=True)
-    for noise_level in (1,):
-        model = create_model("waifu2x.panel_segmentation")
-        json_path = os.path.join(in_dir, f"noise{noise_level}_model.json")
-        model = load_state_from_waifu2x_json(model, json_path, skip_upsample_weight=True)
-        save_path = os.path.join(out_dir, f"noise{noise_level}.pth")
-        save_model(model, save_path, updated_at=os.path.getmtime(json_path))
-
 
 def _test():
     import PIL
@@ -99,7 +88,6 @@ def _test():
 
 if __name__ == "__main__":
     # _test()
-    """
     logger.debug("vgg_7")
     convert_vgg_7("waifu2x_models", "pretrained_models/waifu2x")
     logger.debug("upconv_7")
@@ -108,5 +96,3 @@ if __name__ == "__main__":
     convert_cunet("waifu2x_models", "pretrained_models/waifu2x")
     logger.debug("upcunet")
     convert_upcunet("waifu2x_models", "pretrained_models/waifu2x")
-    """
-    convert_panel_segmentation("panel_segmentation", "panel_segmentation")
