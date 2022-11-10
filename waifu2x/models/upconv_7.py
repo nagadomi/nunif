@@ -1,15 +1,13 @@
 import torch.nn as nn
-from nunif.models import Model, register_model
+from nunif.models import I2IBaseModel, register_model
 from nunif.modules.inplace_clip import InplaceClip
 
 
-class UpConv7(Model):
+class UpConv7(I2IBaseModel):
     name = "waifu2x.upconv_7"
 
-    def __init__(self, in_channels=3, out_channels=3, **kwargs):
-        super(UpConv7, self).__init__(UpConv7.name, in_channels=in_channels,
-                                      out_channels=out_channels, scale=2, offset=14)
-        self.register_kwargs({"in_channels": in_channels, "out_channels": out_channels})
+    def __init__(self, in_channels=3, out_channels=3):
+        super(UpConv7, self).__init__(locals(), scale=2, offset=14)
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 16, 3, 1, 0),
             nn.LeakyReLU(0.1, inplace=True),

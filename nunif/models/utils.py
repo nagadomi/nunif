@@ -16,7 +16,7 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None):
     torch.save({"nunif_model": 1,
                 "name": model.name,
                 "updated_at": updated_at,
-                "kwargs": model.kwargs,
+                "kwargs": model.get_kwargs(),
                 "train_kwargs": train_kwargs,
                 "state_dict": model.state_dict()}, model_path)
 
@@ -31,3 +31,30 @@ def load_model(model_path, strict=True, map_location="cpu"):
         model.updated_at = data["updated_at"]
     data.pop("state_dict")
     return model, data
+
+
+def get_model_config(model, key=None):
+    if isinstance(model, nn.DataParallel):
+        model = model.model
+    config = model.get_config()
+    if key is None:
+        return config
+    else:
+        return config[key]
+
+
+def get_model_kwargs(model, key=None):
+    if isinstance(model, nn.DataParallel):
+        model = model.model
+    kwargs = model.get_kwargs()
+    if key is None:
+        return kwargs
+    else:
+        return kwargs[key]
+
+
+def get_model_device(model):
+    if isinstance(model, nn.DataParallel):
+        model = model.model
+    return model.get_device()
+

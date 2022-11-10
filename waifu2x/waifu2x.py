@@ -3,7 +3,7 @@ import torch
 import torchvision.transforms.functional as TF
 from nunif.transforms import functional as NF
 from nunif.utils import tiled_render, make_alpha_border
-from nunif.models import load_model
+from nunif.models import load_model, get_model_config
 
 
 class Waifu2x():
@@ -61,23 +61,23 @@ class Waifu2x():
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
         if method == "scale":
-            z = tiled_render(x, self.scale_model, self.device,
+            z = tiled_render(x, self.scale_model,
                              tile_size=tile_size, batch_size=batch_size)
         elif method == "noise":
-            z = tiled_render(x, self.noise_models[noise_level], self.device,
+            z = tiled_render(x, self.noise_models[noise_level],
                              tile_size=tile_size, batch_size=batch_size)
         elif method == "noise_scale":
             z = tiled_render(x, self.noise_scale_models[noise_level],
-                             self.device, tile_size=tile_size, batch_size=batch_size)
+                             tile_size=tile_size, batch_size=batch_size)
         return z
 
     def _model_offset(self, method, noise_level):
         if method == "scale":
-            return self.scale_model.offset
+            return get_model_config(self.scale_model, "i2i_offset")
         elif method == "noise":
-            return self.noise_models[noise_level].offset
+            return get_model_config(self.noise_models[noise_level], "i2i_offset")
         elif method == "noise_scale":
-            return self.noise_scale_models[noise_level].offset
+            return get_model_config(self.noise_scale_models[noise_level], "i2i_offset")
 
     def convert(self, im, meta, method, noise_level, tile_size=256, batch_size=4, tta=False):
         assert(method in ("scale", "noise_scale", "noise"))
@@ -97,7 +97,7 @@ class Waifu2x():
 
         if alpha is not None and method in ("scale", "noise_scale"):
             alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
-            alpha = tiled_render(alpha, self.scale_model, self.device,
+            alpha = tiled_render(alpha, self.scale_model,
                                  tile_size=tile_size, batch_size=batch_size).mean(0)
         if alpha is not None:
             alpha = TF.to_pil_image(NF.quantize256(alpha).to("cpu"))
