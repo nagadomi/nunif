@@ -21,7 +21,7 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None):
                 "state_dict": model.state_dict()}, model_path)
 
 
-def load_model(model_path, strict=True, map_location="cpu"):
+def load_model(model_path, device_ids=None, strict=True, map_location="cpu"):
     data = torch.load(model_path, map_location=map_location)
     assert("nunif_model" in data)
     model = create_model(data["name"], **data["kwargs"])
@@ -30,6 +30,17 @@ def load_model(model_path, strict=True, map_location="cpu"):
     if "updated_at" in data:
         model.updated_at = data["updated_at"]
     data.pop("state_dict")
+
+    if device_ids is not None:
+        if len(device_ids) > 1:
+            model = torch.nn.DataParallel(model, device_ids=device_ids)
+        else:
+            if device_ids[0] < 0:
+                device = 'cpu'
+            else:
+                device = 'cuda:{}'.format(device_ids[0])
+            model = model.to(device)
+
     return model, data
 
 

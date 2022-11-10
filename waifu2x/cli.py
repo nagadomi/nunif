@@ -17,20 +17,25 @@ DEFAULT_MODEL_DIR = path.abspath(path.join(
     "cunet", "art"))
 
 
-def convert_files(ctx, files, args):
+def convert_files(ctx, files, args, enable_amp):
     loader = ImageLoader(files=files, max_queue_size=128)
     os.makedirs(args.output, exist_ok=True)
     with torch.no_grad(), PoolExecutor() as pool:
         for im, meta in tqdm(loader, ncols=60):
-            z = ctx.convert(im, meta, args.method, args.noise_level, args.tile_size, args.batch_size, args.tta)
+            z = ctx.convert(
+                im, meta, args.method, args.noise_level,
+                args.tile_size, args.batch_size,
+                args.tta, enable_amp=enable_amp)
             output_filename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
             pool.submit(save_image, z, meta, path.join(args.output, output_filename))
 
 
-def convert_file(ctx, args):
+def convert_file(ctx, args, enable_amp):
     with torch.no_grad():
         im, meta = load_image(args.input)
-        z = ctx.convert(im, meta, args.method, args.noise_level, args.tile_size, args.batch_size, args.tta)
+        z = ctx.convert(im, meta, args.method, args.noise_level,
+                        args.tile_size, args.batch_size,
+                        args.tta, enable_amp=enable_amp)
         save_image(z, meta, args.output)
 
 
@@ -53,7 +58,8 @@ def main():
     parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")
     parser.add_argument("--output", "-o", type=str, required=True, help="output file or directory")
     parser.add_argument("--input", "-i", type=str, required=True, help="input file or directory. (*.txt, *.csv) for image list")
-    parser.add_argument("--tta", action="store_true", help="TTA mode")
+    parser.add_argument("--tta", action="store_true", help="use TTA mode")
+    parser.add_argument("--amp", action="store_true", help="with half float")
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
 
@@ -61,12 +67,12 @@ def main():
     ctx.load_model(args.method, args.noise_level)
 
     if path.isdir(args.input):
-        convert_files(ctx, ImageLoader.listdir(args.input), args)
+        convert_files(ctx, ImageLoader.listdir(args.input), args, enable_amp=args.amp)
     else:
         if path.splitext(args.input)[-1] in (".txt", ".csv"):
-            convert_files(ctx, load_files(args.input), args)
+            convert_files(ctx, load_files(args.input), args, enable_amp=args.amp)
         else:
-            convert_file(ctx, args)
+            convert_file(ctx, args, enable_amp=args.amp)
 
 
 if __name__ == "__main__":

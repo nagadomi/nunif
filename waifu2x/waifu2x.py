@@ -57,18 +57,21 @@ class Waifu2x():
                                    for noise_level in range(4)]
         self._setup()
 
-    def convert_(self, x, method, noise_level, tile_size=256, batch_size=4):
+    def convert_(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
         if method == "scale":
             z = tiled_render(x, self.scale_model,
-                             tile_size=tile_size, batch_size=batch_size)
+                             tile_size=tile_size, batch_size=batch_size,
+                             enable_amp=enable_amp)
         elif method == "noise":
             z = tiled_render(x, self.noise_models[noise_level],
-                             tile_size=tile_size, batch_size=batch_size)
+                             tile_size=tile_size, batch_size=batch_size,
+                             enable_amp=enable_amp)
         elif method == "noise_scale":
             z = tiled_render(x, self.noise_scale_models[noise_level],
-                             tile_size=tile_size, batch_size=batch_size)
+                             tile_size=tile_size, batch_size=batch_size,
+                             enable_amp=enable_amp)
         return z
 
     def _model_offset(self, method, noise_level):
@@ -79,7 +82,8 @@ class Waifu2x():
         elif method == "noise_scale":
             return get_model_config(self.noise_scale_models[noise_level], "i2i_offset")
 
-    def convert(self, im, meta, method, noise_level, tile_size=256, batch_size=4, tta=False):
+    def convert(self, im, meta, method, noise_level, tile_size=256, batch_size=4,
+                tta=False, enable_amp=False):
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
 
@@ -90,9 +94,11 @@ class Waifu2x():
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
             im = TF.to_pil_image(x)
         if tta:
-            rgb = NF.tta_merge([self.convert_(x_, method, noise_level, tile_size, batch_size) for x_ in NF.tta_split(x)])
+            rgb = NF.tta_merge([
+                self.convert_(x_, method, noise_level, tile_size, batch_size, enable_amp)
+                for x_ in NF.tta_split(x)])
         else:
-            rgb = self.convert_(x, method, noise_level, tile_size, batch_size)
+            rgb = self.convert_(x, method, noise_level, tile_size, batch_size, enable_amp)
         rgb = TF.to_pil_image(NF.quantize256(rgb).to("cpu"))
 
         if alpha is not None and method in ("scale", "noise_scale"):

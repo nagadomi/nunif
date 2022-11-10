@@ -21,7 +21,7 @@ def _calc_param(x, scale, offset, tile_size):
     return p
 
 
-def tiled_render(x, model, tile_size=256, batch_size=4):
+def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=False):
     scale = get_model_config(model, "i2i_scale")
     offset = get_model_config(model, "i2i_offset")
     device = get_model_device(model)
@@ -46,28 +46,34 @@ def tiled_render(x, model, tile_size=256, batch_size=4):
                 output_indexes[minibatch_index] = (slice(None, None), slice(ii, ii + output_size), slice(jj, jj + output_size))
                 minibatch_index += 1
                 if minibatch_index == batch_size:
-                    z = model(minibatch.to(device))
+                    with torch.autocast(device_type=device.type, enabled=enable_amp):
+                        z = model(minibatch.to(device))
                     for k in range(minibatch_index):
                         new_x[output_indexes[k]] = z[k]
                     minibatch_index = 0
     if minibatch_index > 0:
-        z = model(minibatch[0:minibatch_index].to(device))
+        with torch.autocast(device_type=device.type, enabled=enable_amp):
+            z = model(minibatch[0:minibatch_index].to(device))
         for k in range(minibatch_index):
             new_x[output_indexes[k]] = z[k]
 
     return new_x[:, :p["z_h"], :p["z_w"]].contiguous()
 
 
-def simple_render(x, model, device):
+def simple_render(x, model, enable_amp=False):
+    scale = get_model_config(model, "i2i_scale")
+    offset = get_model_config(model, "i2i_offset")
+    device = get_model_device(model)
     minibatch = True
     if x.dim() == 3:
         x = x.unsqueeze(0)
         minibatch = False
     x = x.to(device)
-    if model.offset > 0:
-        input_offset = math.ceil(model.offset / model.scale)
+    if offset > 0:
+        input_offset = math.ceil(offset / scale)
         x = F.pad(x, (input_offset,) * 4, mode='replicate')
-    z = model(x)
+    with torch.autocast(device_type=device.type, enabled=enable_amp):
+        z = model(x)
     if not minibatch:
         z = z.squeeze(0)
     return z

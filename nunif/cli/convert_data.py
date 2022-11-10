@@ -1,3 +1,4 @@
+# TODO: remake
 import sys
 import os
 from os import path
@@ -377,3 +378,7 @@ def main():
     convert_data(data, has_x, args)
 
     return 0
+
+if __name__ == "__main__":
+    main()
+

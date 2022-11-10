@@ -29,14 +29,21 @@ class Model(nn.Module):
 
 
 class I2IBaseModel(Model):
-    name = "nunif.i2i_base"
+    name = "nunif.i2i_base_model"
 
-    def __init__(self, kwargs, scale, offset):
+    def __init__(self, kwargs, scale, offset, in_channels=None, in_size=None):
         super(I2IBaseModel, self).__init__(kwargs)
         self.i2i_scale = scale
         self.i2i_offset = offset
+        self.i2i_in_channels = in_channels
+        self.i2i_in_size = in_size
 
     def get_config(self):
         config = dict(super().get_config())
-        config.update({"i2i_scale": self.i2i_scale, "i2i_offset": self.i2i_offset})
+        config.update({
+            "i2i_scale": self.i2i_scale,
+            "i2i_offset": self.i2i_offset,
+            "i2i_in_channels": self.i2i_in_channels,
+            "i2i_in_size": self.i2i_in_size
+        })
         return config
