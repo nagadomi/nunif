@@ -1,6 +1,7 @@
 import os
 import logging
 
+# TODO: fix duplicate line when using multi threading
 
 logger = logging.getLogger("nunif")
 handler = logging.StreamHandler()

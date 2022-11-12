@@ -17,24 +17,26 @@ sRGB_profile = ImageCms.createProfile("sRGB")
 def _load_image(im, filename):
     meta = {}
     im.load()
-    if im.mode in ("L", "RGB", "P"):
+    if im.mode in ("L", "I", "RGB", "P"):
         transparency = im.info.get('transparency')
         if isinstance(transparency, bytes) or isinstance(transparency, int):
             im = im.convert("RGBA")
-    if im.mode in ("RGBA", "LA"):
+    if im.mode in ("RGBA", "LA", "IA"):
         meta["alpha"] = im.getchannel("A")
     meta["filename"] = filename
     meta["mode"] = im.mode
     meta["gamma"] = im.info.get("gamma")
     meta["icc_profile"] = im.info.get("icc_profile")
     if meta['icc_profile'] is not None:
-        io_handle = io.BytesIO(meta['icc_profile'])
-        src_profile = ImageCms.ImageCmsProfile(io_handle)
-        dst_profile = sRGB_profile
-        im = ImageCms.profileToProfile(im, src_profile, dst_profile)
+        with io.BytesIO(meta['icc_profile']) as io_handle:
+            src_profile = ImageCms.ImageCmsProfile(io_handle)
+            dst_profile = sRGB_profile
+            im = ImageCms.profileToProfile(im, src_profile, dst_profile)
 
     if im.mode != "RGB":
+        # FIXME: `I to RGB` is broken
         im = im.convert("RGB")
+
     return im, meta
 
 
@@ -46,6 +48,12 @@ def load_image(filename):
         with open(filename, "rb") as f:
             im = Image.open(f)
             return _load_image(im, filename)
+
+
+def decode_image(buff, filename=None):
+    with io.BytesIO(buff) as data:
+        im = Image.open(data)
+        return _load_image(im, filename)
 
 
 def load_image_rgb(filename):
@@ -118,22 +126,22 @@ def decode_image_snappy(buf, dtype=torch.FloatTensor):
             raise ValueError("Unknown dtype")
 
 
-def save_image(im, meta, filename, compress_level=6):
+def save_image(im, meta, filename, format="png", compress_level=6):
+    # TODO: support non PNG format
     meta = meta if meta is not None else {"gamma": None, "icc_profile": None}
     if meta["icc_profile"] is not None:
-        io_handle = io.BytesIO(meta['icc_profile'])
-        src_profile = sRGB_profile
-        dst_profile = ImageCms.ImageCmsProfile(io_handle)
-        im = ImageCms.profileToProfile(im, src_profile, dst_profile)
+        with io.BytesIO(meta['icc_profile']) as io_handle:
+            src_profile = sRGB_profile
+            dst_profile = ImageCms.ImageCmsProfile(io_handle)
+            im = ImageCms.profileToProfile(im, src_profile, dst_profile)
 
     pnginfo = PngImagePlugin.PngInfo()
     if meta["gamma"] is not None:
         pnginfo.add(b"gAMA", struct.pack(">I", int(meta["gamma"] * 100000)))
-    im.save(filename, icc_profile=meta["icc_profile"], pnginfo=pnginfo, compress_level=compress_level)
 
-
-def decode_image(buff):
-    pass
+    im.save(filename, format=format,
+            icc_profile=meta["icc_profile"], pnginfo=pnginfo,
+            compress_level=compress_level)
 
 
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp', '.sz')

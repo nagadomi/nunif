@@ -9,7 +9,7 @@ tmp
 data
 !data/.keep
 waifu2x/pretrained_models
-waifu2x/public_html
+
 
 # ----- Python.gitignore
 # Byte-compiled / optimized / DLL files

@@ -11,7 +11,20 @@ Run CLI command from nunif root directory.
 python -m waifu2x.cli -h
 ```
 
-## Examples
+Run Web Service from nunif root directory (Experimental).
+```
+python -m waifu2x.web -h
+```
+
+# Current limitations
+
+16bit RGB/RGBA is not suupported due to Pillow does not support for some 16-bit modes.
+
+Some special PNG formats are broken.
+
+All output images are converted to 8-bit RGB/RGBA.
+
+## CLI Examples
 
 Denoise level 0 (-n noise_level)
 ```

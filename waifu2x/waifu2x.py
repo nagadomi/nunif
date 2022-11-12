@@ -23,19 +23,22 @@ class Waifu2x():
             self.scale_model = self.scale_model.to(self.device)
             self.scale_model.eval()
             if len(self.gpus) > 1:
-                self.scale_model = torch.nn.DataParallel(self.scale_model, device_ids=self.gpus)
+                self.scale_model = torch.nn.DataParallel(self.scale_model,
+                                                         device_ids=self.gpus)
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
                 self.noise_models[i] = self.noise_models[i].to(self.device)
                 self.noise_models[i].eval()
                 if len(self.gpus) > 1:
-                    self.noise_models[i] = torch.nn.DataParallel(self.noise_models[i], device_ids=self.gpus)
+                    self.noise_models[i] = torch.nn.DataParallel(self.noise_models[i],
+                                                                 device_ids=self.gpus)
 
             if self.noise_scale_models[i] is not None:
                 self.noise_scale_models[i] = self.noise_scale_models[i].to(self.device)
                 self.noise_scale_models[i].eval()
                 if len(self.gpus) > 1:
-                    self.noise_scale_models[i] = torch.nn.DataParallel(self.noise_scale_models[i], device_ids=self.gpus)
+                    self.noise_scale_models[i] = torch.nn.DataParallel(self.noise_scale_models[i],
+                                                                       device_ids=self.gpus)
 
     def load_model(self, method, noise_level):
         assert(method in ("scale", "noise_scale", "noise"))
@@ -50,14 +53,14 @@ class Waifu2x():
         self._setup()
 
     def load_model_all(self):
-        self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))
-        self.noise_models, _ = [load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))
+        self.scale_model = load_model(path.join(self.model_dir, "scale2x.pth"))[0]
+        self.noise_models = [load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))[0]
                              for noise_level in range(4)]
         self.noise_scale_models = [load_model(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"))[0]
                                    for noise_level in range(4)]
         self._setup()
 
-    def convert_(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
+    def render(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
         if method == "scale":
@@ -82,31 +85,41 @@ class Waifu2x():
         elif method == "noise_scale":
             return get_model_config(self.noise_scale_models[noise_level], "i2i_offset")
 
-    def convert(self, im, meta, method, noise_level, tile_size=256, batch_size=4,
-                tta=False, enable_amp=False):
+    def convert_raw(self, im, meta, method, noise_level,
+                    tile_size=256, batch_size=4,
+                    tta=False, enable_amp=False):
         assert(method in ("scale", "noise_scale", "noise"))
         assert(0 <= noise_level and noise_level < 4)
 
         x = TF.to_tensor(im)
         alpha = None
-        if "alpha" in meta:
+        if meta is not None and "alpha" in meta:
             alpha = TF.to_tensor(meta["alpha"])
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
-            im = TF.to_pil_image(x)
         if tta:
             rgb = NF.tta_merge([
-                self.convert_(x_, method, noise_level, tile_size, batch_size, enable_amp)
-                for x_ in NF.tta_split(x)])
+                self.render(xx, method, noise_level, tile_size, batch_size, enable_amp)
+                for xx in NF.tta_split(x)])
         else:
-            rgb = self.convert_(x, method, noise_level, tile_size, batch_size, enable_amp)
-        rgb = TF.to_pil_image(NF.quantize256(rgb).to("cpu"))
+            rgb = self.render(x, method, noise_level, tile_size, batch_size, enable_amp)
 
         if alpha is not None and method in ("scale", "noise_scale"):
             alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
             alpha = tiled_render(alpha, self.scale_model,
                                  tile_size=tile_size, batch_size=batch_size).mean(0)
+
+        return rgb, alpha
+
+    @staticmethod
+    def to_pil(rgb, alpha):
+        rgb = TF.to_pil_image(NF.quantize256(rgb).to("cpu"))
         if alpha is not None:
             alpha = TF.to_pil_image(NF.quantize256(alpha).to("cpu"))
             rgb.putalpha(alpha)
-
         return rgb
+
+    def convert(self, im, meta, method, noise_level,
+                tile_size=256, batch_size=4,
+                tta=False, enable_amp=False):
+        rgb, alpha = self.convert_raw(im, meta, method, noise_level, tile_size, batch_size, tta, enable_amp)
+        return self.to_pil(rgb, alpha)

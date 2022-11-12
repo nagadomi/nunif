@@ -7,3 +7,7 @@ tqdm
 wand
 python-snappy # TODO: migrate to zstd
 zstandard
+# waifu2x-web
+#gunicorn
+waitress
+bottle

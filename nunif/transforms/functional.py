@@ -5,10 +5,15 @@ from torch.nn import functional as F
 
 
 _clip_eps8 = (1.0 / 255.0) * 0.5 - (1.0e-7 * (1.0 / 255.0) * 0.5)
+_clip_eps16 = (1.0 / 65535.0) * 0.5 - (1.0e-7 * (1.0 / 65535.0) * 0.5)
 
 
 def quantize256(ft):
-    return (ft + _clip_eps8).mul_(255.0).clamp_(0, 255).byte()
+    return (ft + _clip_eps8).mul_(255.0).clamp_(0, 255).to(torch.uint8)
+
+
+def quantize65535(ft):
+    return (ft + _clip_eps16).mul_(65535.0).clamp_(0, 65535).to(torch.uint16)
 
 
 def quantize256_f(ft):

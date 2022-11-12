@@ -1,5 +1,9 @@
 # webgen
 
+From [waifu2x/webgen](https://github.com/nagadomi/waifu2x/tree/master/webgen)
+
+TODO: Rewrite in Python
+
 ## Generating web pages
 
 ```
