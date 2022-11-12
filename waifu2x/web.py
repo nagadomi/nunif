@@ -9,7 +9,11 @@ from bottle import request, response, HTTPResponse
 import threading
 import requests
 import io
-from nunif.logger import logger
+import time
+import uuid
+import hashlib
+from diskcache import Cache
+from nunif.logger import logger, set_log_level
 from nunif.utils import load_image, decode_image, save_image, ImageLoader
 from .waifu2x import Waifu2x
 from .models import CUNet, VGG7, UpConv7
@@ -21,6 +25,20 @@ DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
     "upconv_7", "photo"))
+
+
+class CacheGC():
+    def __init__(self, cache, interval=60):
+        self.cache = cache
+        self.interval = interval
+        self.last_expired_at = 0
+
+    def gc(self):
+        now = time.time()
+        if self.last_expired_at + self.interval < now:
+            self.cache.expire(now)
+            self.cache.cull()
+            self.last_expired_at = time.time()
 
 
 def setup():
@@ -45,6 +63,10 @@ def setup():
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--amp", action="store_true", help="with half float")
 
+    parser.add_argument("--cache-ttl", type=int, default=120, help="cache TTL(min)")
+    parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
+    parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
+
     args = parser.parse_args()
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
     photo_ctx = Waifu2x(model_dir=args.photo_model_dir, gpus=args.gpu)
@@ -52,11 +74,14 @@ def setup():
     art_ctx.load_model_all()
     photo_ctx.load_model_all()
 
-    return args, art_ctx, photo_ctx
+    cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
+    cache_gc = CacheGC(cache, args.cache_ttl * 60)
+
+    return args, art_ctx, photo_ctx, cache, cache_gc
 
 
 global_lock = threading.RLock()
-command_args, art_ctx, photo_ctx = setup()
+command_args, art_ctx, photo_ctx, cache, cache_gc = setup()
 # HACK: Avoid unintended argparse in the backend(gunicorn).
 sys.argv = [sys.argv[0]]
 
@@ -67,17 +92,27 @@ def get_image(request):
     im, meta = None, None
 
     attached_filename = file_data.filename
-    attached_data = file_data.file.read()
-    if attached_data:
-        im, meta = decode_image(attached_data, attached_filename)
+    image_data = file_data.file.read()
+    if image_data:
+        im, meta = decode_image(image_data, attached_filename)
     else:
         url = request.forms.get("url", "")
         if url.startswith("http://") or url.startswith("https://"):
-            logger.debug(f"request: {url}")
-            res = requests.get(url)
-            logger.debug(f"request: {res.status_code} {len(res.content)} {url}")
-            if res.status_code == 200:
-                im, meta = decode_image(res.content, posixpath.basename(url))
+            key = "url_" + url
+            image_data = cache.get(key, None)
+            if image_data is not None:
+                logger.debug(f"load url cache: {url}")
+                im, meta = decode_image(image_data, posixpath.basename(url))
+            else:
+                res = requests.get(url)
+                logger.debug(f"get url: {res.status_code} {len(res.content)} {url}")
+                if res.status_code == 200:
+                    image_data = res.content
+                    im, meta = decode_image(image_data, posixpath.basename(url))
+                    cache.set(key, image_data, expire=command_args.cache_ttl * 60)
+    if image_data is not None and meta is not None:
+        # sha1 for cache key
+        meta["sha1"] = hashlib.sha1(image_data).hexdigest()
     return im, meta
 
 
@@ -107,7 +142,7 @@ def parse_request(request):
 
 
 def make_output_filename(style, method, noise_level, meta):
-    base = meta["filename"] if meta["filename"] else uuid.uuid4() + ".png"
+    base = meta["filename"] if meta["filename"] else meta["sha1"] + ".png"
     base = path.splitext(base)[0]
     if method == "noise":
         mode = f"{style}_noise{noise_level}"
@@ -120,9 +155,10 @@ def make_output_filename(style, method, noise_level, meta):
 
 @bottle.route("/api", method=["POST"])
 def api():
-    print(dict(request.forms))
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
     #  'style': 'photo', 'noise': '1', 'scale': '2'}
+
+    cache_gc.gc()
     im, meta = get_image(request)
     style, method, noise_level = parse_request(request)
 
@@ -135,24 +171,31 @@ def api():
         "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
         "tta": command_args.tta, "enable_amp": command_args.amp
     }
-    with torch.no_grad():
-        with global_lock:
-            logger.debug(f"process: pid={os.getpid()}, tid={threading.get_ident()}")
-            if style == "art":
-                rgb, alpha = art_ctx.convert_raw(**ctx_kwargs)
-            else:
-                rgb, alpha = photo_ctx.convert_raw(**ctx_kwargs)
-        z = Waifu2x.to_pil(rgb, alpha)
-
     output_filename = make_output_filename(style, method, noise_level, meta)
-    with io.BytesIO() as image_data:
-        save_image(z, meta, image_data)
+    key = meta["sha1"] + output_filename
+    image_data = cache.get(key, None)
+    if image_data is None:
+        logger.debug(f"process: pid={os.getpid()}, tid={threading.get_ident()}, {output_filename}")
+        with torch.no_grad():
+            with global_lock:
+                if style == "art":
+                    rgb, alpha = art_ctx.convert_raw(**ctx_kwargs)
+                else:
+                    rgb, alpha = photo_ctx.convert_raw(**ctx_kwargs)
+            z = Waifu2x.to_pil(rgb, alpha)
 
-        res = HTTPResponse(status=200, body=image_data.getvalue())
-        res.set_header("Content-Type", "image/png")
-        res.set_header("Content-Disposition", f'inline; filename="{output_filename}"')
+        with io.BytesIO() as buff:
+            save_image(z, meta, buff)
+            image_data = buff.getvalue()
+            cache.set(key, image_data, expire=command_args.cache_ttl * 60)
+    else:
+        logger.debug(f"load cache: {output_filename}")
 
-        return res
+    res = HTTPResponse(status=200, body=image_data)
+    res.set_header("Content-Type", "image/png")
+    res.set_header("Content-Disposition", f'inline; filename="{output_filename}"')
+
+    return res
 
 
 def get_lang(accept_language):
@@ -203,6 +246,11 @@ def static_file(url):
 
 if __name__ == "__main__":
     # NOTE: This code expect the server to run with single-process multi-threading.
+    import logging
+
+    if command_args.debug:
+        set_log_level(logging.DEBUG)
+
     bottle.run(host=command_args.bind_addr, port=command_args.port, debug=command_args.debug,
                server=command_args.backend, 
                threads=command_args.threads, workers=command_args.workers, preload_app=True,

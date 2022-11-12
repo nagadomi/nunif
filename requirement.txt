@@ -11,3 +11,4 @@ zstandard
 #gunicorn
 waitress
 bottle
+diskcache
