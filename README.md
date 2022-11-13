@@ -4,11 +4,11 @@ For the time being, I will make incompatible changes.
 
 ## Dependencies
 
-- Python 3.6 or later
-- Pytorch
-- git-lfs (for ./pretrained_models)
+- Python 3 (Probably works with Python 3.6 or later)
 - [PyTorch](https://pytorch.org/get-started/locally/)
 - See requirement.txt
+
+We usually support the latest version. If there are bugs or compatibility issues, we will specify the version.
 
 1. Install [Pytorch](https://pytorch.org/get-started/locally/)
 
@@ -28,6 +28,7 @@ pip3 install -r requirement.txt
 
 ## waifu2x
 
-The repository includes waifu2x pytorch implementation and pretrained models. Currently only convert command is supported.
-See [waifu2x/README.md](waifu2x/README.md)
+The repository contains waifu2x pytorch implementation and pretrained models.
+CLI and Web API is supported. Training is currently not implemented.
 
+See [waifu2x/README.md](waifu2x/README.md)
