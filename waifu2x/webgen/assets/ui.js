@@ -114,7 +114,6 @@ $(function (){
 	    if (data.enabled) {
 		// setup recaptcha
 		console.log("recaptcha is enabled");
-		// <div class="g-recaptcha" data-sitekey="6LfcWBYUAAAAAC7IdcoiUPmiILomcSJ8Bg7jPlxn" data-callback="on_recap_checked"></div>
 		$("<div>").attr({
 		    "class": "g-recaptcha",
                     "data-sitekey": data.site_key,
