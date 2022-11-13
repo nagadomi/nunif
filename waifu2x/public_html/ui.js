@@ -1,7 +1,10 @@
+function on_recap_checked(e) {
+    $("#submit-button").prop("disabled", false);
+    $("#download-button").prop("disabled", false);
+}
 $(function (){
     var g_expires = 365;
-    var g_max_noise_image = 2560 * 2560;
-    var g_max_scale_image = 1280 * 1280;
+    var recaptcha_js = "https://www.recaptcha.net/recaptcha/api.js";
 
     function clear_file() {
 	var new_file = $("#file").clone();
@@ -20,37 +23,6 @@ $(function (){
 	}
 	$.cookie("style", checked.val(), {expires: g_expires});
     }
-    function on_click_tta_rule(e) {
-	e.preventDefault();
-	e.stopPropagation();
-	$(".tta_rule_text").toggle();
-    }
-    function on_change_tta_level(e) {
-	var checked = $("input[name=tta_level]:checked");
-	$.cookie("tta_level", checked.val(), {expires: g_expires});
-	var level = checked.val();
-	if (level == 0) {
-	    level = 1;
-	}
-	var max_noise_w = Math.floor(Math.pow(g_max_noise_image / level, 0.5));
-	var max_scale_w = Math.floor(Math.pow(g_max_scale_image / level, 0.5));
-	var limit_text = $(".file_limits").text();
-	var hits = 0;
-	limit_text = limit_text.replace(/\d+x\d+/g, function() {
-	    hits += 1;
-	    if (hits == 1) {
-		return "" + max_noise_w + "x" + max_noise_w;
-	    } else {
-		return "" + max_scale_w + "x" + max_scale_w;
-	    }
-	});
-	$(".file_limits").text(limit_text);
-	if (level == 1) {
-	    $(".file_limits").css("color", "");
-	} else {
-	    $(".file_limits").css("color", "blue");
-	}
-    }
     function on_change_noise_level(e)
     {
 	var checked = $("input[name=noise]:checked");
@@ -60,6 +32,18 @@ $(function (){
     {
 	var checked = $("input[name=scale]:checked");
 	$.cookie("scale", checked.val(), {expires: g_expires});
+    }
+    function commit_recap_response()
+    {
+	if (typeof grecaptcha != "undefined") {
+	    console.log("recaptcha: enabled")
+	    $("#recap_response").val(grecaptcha.getResponse());
+	    grecaptcha.reset();
+	    $("#submit-button").prop("disabled", true);
+	    $("#download-button").prop("disabled", true);
+	} else {
+	    console.log("recaptcha: disabled")
+	}
     }
     function restore_from_cookie()
     {
@@ -115,7 +99,39 @@ $(function (){
 		$("input[name=download]").removeAttr("disabled");
 	    }
 	};
+	commit_recap_response();
 	xhr.send(new FormData($("form").get(0)));
+    }
+    function load_recaptcha()
+    {
+        $("#submit-button").prop("disabled", true);
+        $("#download-button").prop("disabled", true);
+	$.ajax({
+	    url: "/recaptcha_state.json",
+	    type: "GET",
+	    dataType: "json",
+	}).done(function (data) {
+	    if (data.enabled) {
+		// setup recaptcha
+		console.log("recaptcha is enabled");
+		// <div class="g-recaptcha" data-sitekey="6LfcWBYUAAAAAC7IdcoiUPmiILomcSJ8Bg7jPlxn" data-callback="on_recap_checked"></div>
+		$("<div>").attr({
+		    "class": "g-recaptcha",
+                    "data-sitekey": data.site_key,
+                    "data-callback": "on_recap_checked"
+		}).appendTo("#recap_container");
+		$("<script>").attr({
+		    type: "text/javascript",
+		    src: recaptcha_js
+		}).appendTo(document.head);
+	    } else {
+		console.log("recaptcha is disabled");
+	    }
+            $("#submit-button").prop("disabled", false);
+            $("#download-button").prop("disabled", false);
+	}).fail(function (e) {
+	    console.log(e)
+	});
     }
     function set_param()
     {
@@ -137,22 +153,21 @@ $(function (){
 	    $("input[name=scale]").filter("[value=" + scale + "]").prop("checked", true);
 	}
     }
-
     $("#url").change(clear_file);
     $("#file").change(clear_url);
     $("input[name=style]").change(on_change_style);
     $("input[name=noise]").change(on_change_noise_level);
     $("input[name=scale]").change(on_change_scale_factor);
-    $("input[name=tta_level]").change(on_change_tta_level);
     $("input[name=download]").click(download_with_xhr);
-    $("a.tta_rule").click(on_click_tta_rule);
-
+    $("form").submit(function(e) {
+	e.preventDefault();
+	commit_recap_response();
+	this.submit();
+    });
     restore_from_cookie();
     on_change_style();
     on_change_scale_factor();
     on_change_noise_level();
-    if ($("input[name=tta_level]").length > 0) {
-	on_change_tta_level();
-    }
     set_param();
+    load_recaptcha();
 })
