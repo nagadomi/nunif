@@ -126,9 +126,17 @@ def decode_image_snappy(buf, dtype=torch.FloatTensor):
             raise ValueError("Unknown dtype")
 
 
-def save_image(im, meta, filename, format="png", compress_level=6):
+def save_image(im, meta, filename, format="png", compress_level=6, revert_grayscale=False):
     # TODO: support non PNG format
-    meta = meta if meta is not None else {"gamma": None, "icc_profile": None}
+    meta = meta if meta is not None else {"gamma": None, "icc_profile": None, "mode": im.mode}
+
+    # revert to grayscale
+    if revert_grayscale:
+        if meta["mode"] == "L" and im.mode != "L":
+            im = im.convert("L")
+        if meta["mode"] == "LA" and im.mode != "LA":
+            im = im.convert("LA")
+
     if meta["icc_profile"] is not None:
         with io.BytesIO(meta['icc_profile']) as io_handle:
             src_profile = sRGB_profile

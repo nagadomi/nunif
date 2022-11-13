@@ -22,7 +22,7 @@ python -m waifu2x.web -h
 
 Some special PNG formats are broken.
 
-All output images are converted to 8-bit RGB/RGBA.
+The output image is converted to 8-bit RGB/RGBA/Grayscale/GrayscaleAlpha.
 
 ## CLI Examples
 

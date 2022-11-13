@@ -26,7 +26,7 @@ def convert_files(ctx, files, args, enable_amp):
                 args.tile_size, args.batch_size,
                 args.tta, enable_amp=enable_amp)
             output_filename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
-            pool.submit(save_image, z, meta, path.join(args.output, output_filename))
+            pool.submit(save_image, z, meta, path.join(args.output, output_filename), revert_grayscale=True)
 
 
 def convert_file(ctx, args, enable_amp):
@@ -35,7 +35,7 @@ def convert_file(ctx, args, enable_amp):
         z = ctx.convert(im, meta, args.method, args.noise_level,
                         args.tile_size, args.batch_size,
                         args.tta, enable_amp=enable_amp)
-        save_image(z, meta, args.output)
+        save_image(z, meta, args.output, revert_grayscale=True)
 
 
 def load_files(txt):

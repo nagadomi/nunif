@@ -229,7 +229,7 @@ def api():
                      f"pid={os.getpid()}-{threading.get_ident()}")
         t = time()
         with io.BytesIO() as buff:
-            save_image(z, meta, buff)
+            save_image(z, meta, buff, revert_grayscale=True)
             image_data = buff.getvalue()
             cache.set(key, image_data, expire=command_args.cache_ttl * 60)
             logger.debug(f"api: encode: {round(time()-t, 2)}s")
