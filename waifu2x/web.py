@@ -9,7 +9,7 @@ from bottle import request, HTTPResponse
 import threading
 import requests
 import io
-import time
+from time import time
 import hashlib
 from diskcache import Cache
 from nunif.logger import logger, set_log_level
@@ -23,6 +23,8 @@ DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
     "upconv_7", "photo"))
+BUFF_SIZE = 8192  # buffer block size for io access
+SIZE_MB = 1024 * 1024
 
 
 class CacheGC():
@@ -32,11 +34,11 @@ class CacheGC():
         self.last_expired_at = 0
 
     def gc(self):
-        now = time.time()
+        now = time()
         if self.last_expired_at + self.interval < now:
             self.cache.expire(now)
             self.cache.cull()
-            self.last_expired_at = time.time()
+            self.last_expired_at = time()
 
 
 def setup():
@@ -52,6 +54,7 @@ def setup():
     parser.add_argument("--threads", type=int, default=32, help="The number of threads")
     parser.add_argument("--debug", action="store_true", help="debug=True for bottle")
     parser.add_argument("--max-body-size", type=int, default=5, help="maximum allowed size(MB) for uploaded files")
+    parser.add_argument("--url-timeout", type=int, default=10, help="request_timeout for url")
 
     parser.add_argument("--art-model-dir", type=str, default=DEFAULT_ART_MODEL_DIR, help="art model dir")
     parser.add_argument("--photo-model-dir", type=str, default=DEFAULT_PHOTO_MODEL_DIR, help="photo model dir")
@@ -84,30 +87,71 @@ command_args, art_ctx, photo_ctx, cache, cache_gc = setup()
 sys.argv = [sys.argv[0]]
 
 
+def fetch_uploaded_file(upload_file):
+    max_body_size = command_args.max_body_size * SIZE_MB
+    with io.BytesIO() as upload_buff:
+        file_size = 0
+        buff = upload_file.file.read(BUFF_SIZE)
+        while buff:
+            file_size += len(buff)
+            upload_buff.write(buff)
+            if file_size > max_body_size:
+                logger.debug(f"fetch_uploaded_file: error: too lage")
+                bottle.abort(413, f"Request entity too large (max: {command_args.max_body_size}MB)")
+            buff = upload_file.file.read(BUFF_SIZE)
+
+        image_data = upload_buff.getvalue()
+        if image_data:
+            logger.debug(f"fetch_uploaded_file: {round(len(image_data)/(SIZE_MB), 3)}MB")
+        return image_data
+
+
+def fetch_url_file(url):
+    max_body_size = command_args.max_body_size * SIZE_MB
+    timeout = command_args.url_timeout
+    image_data = None
+    try:
+        headers = {"Referer": url, "User-Agent": "waifu2x/web.py"}
+        with requests.get(url, headers=headers, stream=True, timeout=timeout) as res, io.BytesIO() as buff:
+            if res.status_code != 200:
+                logger.debug(f"fetch_url_file: error: status={res.status_code}, {url}")
+                bottle.abort(400, "URL error")
+            file_size = 0
+            for chunk in res.iter_content(chunk_size=BUFF_SIZE):
+                buff.write(chunk)
+                file_size += len(chunk)
+                if file_size > max_body_size:
+                    logger.debug(f"fetch_url_file: error: too large, {url}")
+                    bottle.abort(413, f"Request entity too large (max: {command_args.max_body_size}MB)")
+            logger.debug(f"fetch_url_file: {round(file_size/(SIZE_MB), 3)}MB, {url}")
+            return buff.getvalue()
+    except requests.exceptions.Timeout:
+        logger.debug(f"fetch_url_file: error: timeout, {url}")
+        bottle.abort(400, "URL timeout")
+
+
 def get_image(request):
-    # TODO: stream read and reject large file
-    file_data = request.files.get("file", "")
+    upload_file = request.files.get("file", "")
     im, meta = None, None
 
-    attached_filename = file_data.filename
-    image_data = file_data.file.read()
+    image_data = None
+    if upload_file:
+        image_data = fetch_uploaded_file(upload_file)
     if image_data:
-        im, meta = decode_image(image_data, attached_filename)
+        im, meta = decode_image(image_data, upload_file.filename)
     else:
         url = request.forms.get("url", "")
         if url.startswith("http://") or url.startswith("https://"):
             key = "url_" + url
             image_data = cache.get(key, None)
             if image_data is not None:
-                logger.debug(f"load url cache: {url}")
+                logger.debug(f"get_image: load cache: {url}")
                 im, meta = decode_image(image_data, posixpath.basename(url))
             else:
-                res = requests.get(url)
-                logger.debug(f"get url: {res.status_code} {len(res.content)} {url}")
-                if res.status_code == 200:
-                    image_data = res.content
-                    im, meta = decode_image(image_data, posixpath.basename(url))
-                    cache.set(key, image_data, expire=command_args.cache_ttl * 60)
+                image_data = fetch_url_file(url)
+                im, meta = decode_image(image_data, posixpath.basename(url))
+                cache.set(key, image_data, expire=command_args.cache_ttl * 60)
+
     if image_data is not None and meta is not None:
         # sha1 for cache key
         meta["sha1"] = hashlib.sha1(image_data).hexdigest()
@@ -161,8 +205,8 @@ def api():
     style, method, noise_level = parse_request(request)
 
     if im is None:
-        bottle.abort(400, "ERROR: An error occurred. (unsupported image format/connection timeout/file is too large)")
-
+        bottle.abort(400, "Image Load Error")
+    logger.debug(f"api: image: {meta}")
     ctx_kwargs = {
         "im": im, "meta": meta,
         "method": method, "noise_level": noise_level,
@@ -173,7 +217,7 @@ def api():
     key = meta["sha1"] + output_filename
     image_data = cache.get(key, None)
     if image_data is None:
-        logger.debug(f"process: pid={os.getpid()}, tid={threading.get_ident()}, {output_filename}")
+        t = time()
         with torch.no_grad():
             with global_lock:
                 if style == "art":
@@ -181,13 +225,16 @@ def api():
                 else:
                     rgb, alpha = photo_ctx.convert_raw(**ctx_kwargs)
             z = Waifu2x.to_pil(rgb, alpha)
-
+        logger.debug(f"api: forward: {style}-{method}, {round(time()-t, 2)}s, "
+                     f"pid={os.getpid()}-{threading.get_ident()}")
+        t = time()
         with io.BytesIO() as buff:
             save_image(z, meta, buff)
             image_data = buff.getvalue()
             cache.set(key, image_data, expire=command_args.cache_ttl * 60)
+            logger.debug(f"api: encode: {round(time()-t, 2)}s")
     else:
-        logger.debug(f"load cache: {output_filename}")
+        logger.debug(f"api: load cache: {style}-{method}")
 
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", "image/png")
@@ -252,4 +299,4 @@ if __name__ == "__main__":
     bottle.run(host=command_args.bind_addr, port=command_args.port, debug=command_args.debug,
                server=command_args.backend,
                threads=command_args.threads, workers=command_args.workers, preload_app=True,
-               max_request_body_size=command_args.max_body_size * 1024 * 1024)
+               max_request_body_size=command_args.max_body_size * SIZE_MB)
