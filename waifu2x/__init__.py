@@ -1,4 +1,5 @@
-from .waifu2x import Waifu2x
+from .utils import Waifu2x
+from . import models
 
-__all__ = ["Waifu2x"]
 
+__all__ = ["Waifu2x", "models"]

@@ -8,8 +8,7 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from nunif.logger import logger
 from nunif.utils import load_image, save_image, ImageLoader
-from .waifu2x import Waifu2x
-from .models import CUNet, VGG7, UpConv7
+from .utils import Waifu2x
 
 
 DEFAULT_MODEL_DIR = path.abspath(path.join(

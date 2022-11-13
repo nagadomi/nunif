@@ -4,8 +4,9 @@ from os import path
 from tqdm import tqdm
 from io import BytesIO
 
+
 if __name__ == "__main__":
-    MODEL_URL="https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20221109.tar.gz"
+    MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20221109.tar.gz"
     BLOCK_SIZE = 2 * 1024 * 1024
 
     output_path = path.dirname(__file__)

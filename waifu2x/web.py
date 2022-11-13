@@ -5,18 +5,16 @@ import posixpath
 import torch
 import argparse
 import bottle
-from bottle import request, response, HTTPResponse
+from bottle import request, HTTPResponse
 import threading
 import requests
 import io
 import time
-import uuid
 import hashlib
 from diskcache import Cache
 from nunif.logger import logger, set_log_level
-from nunif.utils import load_image, decode_image, save_image, ImageLoader
-from .waifu2x import Waifu2x
-from .models import CUNet, VGG7, UpConv7
+from nunif.utils import decode_image, save_image
+from .utils import Waifu2x
 
 
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
@@ -166,7 +164,7 @@ def api():
         bottle.abort(400, "ERROR: An error occurred. (unsupported image format/connection timeout/file is too large)")
 
     ctx_kwargs = {
-        "im": im, "meta": meta, 
+        "im": im, "meta": meta,
         "method": method, "noise_level": noise_level,
         "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
         "tta": command_args.tta, "enable_amp": command_args.amp
@@ -209,7 +207,7 @@ def get_lang(accept_language):
 def resolve_index_file(root_dir, accept_language):
     lang = get_lang(accept_language)
     if lang:
-        lang = lang.translate(str.maketrans("", "", "./\\")) # sanitize
+        lang = lang.translate(str.maketrans("", "", "./\\"))  # sanitize
 
     if lang == "pt-BR":
         index_file = "index.pt.html"
@@ -228,7 +226,7 @@ def resolve_index_file(root_dir, accept_language):
 
 @bottle.route("/<url:re:.*>", method=["GET"])
 def static_file(url):
-    """ 
+    """
     This assumes that `root` directory is flat.
     In production environment, this method is not used, instead it is directly sent from nginx.
     """
@@ -252,6 +250,6 @@ if __name__ == "__main__":
         set_log_level(logging.DEBUG)
 
     bottle.run(host=command_args.bind_addr, port=command_args.port, debug=command_args.debug,
-               server=command_args.backend, 
+               server=command_args.backend,
                threads=command_args.threads, workers=command_args.workers, preload_app=True,
                max_request_body_size=command_args.max_body_size * 1024 * 1024)
