@@ -18,7 +18,7 @@ def _itr_f(x):
 
 
 def tta_split(x):
-    assert(isinstance(x, torch.Tensor) and x.dim() == 3)
+    assert (isinstance(x, torch.Tensor) and x.dim() == 3)
     x_hflip = _hflip(x)
     x_vflip = _vflip(x)
     x_vflip_hflip = _hflip(x_vflip)

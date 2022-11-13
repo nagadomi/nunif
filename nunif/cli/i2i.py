@@ -6,7 +6,7 @@ import torchvision.transforms.functional as TF
 import argparse
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-from .. utils import tiled_render, simple_render, load_image, ImageLoader
+from .. utils import tiled_render, simple_render, ImageLoader
 from .. models import load_model, get_model_config, I2IBaseModel
 from .. logger import logger
 from .. addon import load_addons
@@ -48,9 +48,7 @@ def convert_with_tiled_render(model, args):
 
 def convert_with_simple_render_single(model, args):
     loader, is_dir = make_loader(args.input)
-    in_size = get_model_config(model, "i2i_in_size")
     in_grayscale = get_model_config(model, "i2i_in_channels") == 1
-    tile_size = in_size if in_size is not None else args.tile_size
 
     if is_dir:
         os.makedirs(args.output, exist_ok=True)
@@ -135,6 +133,6 @@ def main():
         else:
             convert_with_simple_render_batch(model, args)
 
+
 if __name__ == "__main__":
     main()
-

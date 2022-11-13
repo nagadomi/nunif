@@ -3,6 +3,7 @@ import torch.nn as nn
 
 class Model(nn.Module):
     name = "nunif.Model"
+
     def __init__(self, kwargs):
         super(Model, self).__init__()
         self.kwargs = {}

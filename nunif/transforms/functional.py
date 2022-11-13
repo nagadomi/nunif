@@ -1,6 +1,4 @@
 import torch
-from . tta import tta_split, tta_merge
-from . import image_magick
 from torch.nn import functional as F
 
 
@@ -48,7 +46,7 @@ def rgb2y_matlab(rgb):
     rgb2y for compatibility with SISR benchmarks
     y: 16-235
     """
-    assert(isinstance(rgb, (torch.FloatTensor, torch.cuda.FloatTensor)))
+    assert (isinstance(rgb, (torch.FloatTensor, torch.cuda.FloatTensor)))
     y = rgb.new_full((1, rgb.shape[1], rgb.shape[2]), fill_value=0)
     (y.add_(rgb[0], alpha=65.481).
      add_(rgb[1], alpha=128.553).

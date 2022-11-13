@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from . functional import weighted_huber_loss
 
 
@@ -15,7 +14,7 @@ class WeightedHuberLoss(nn.Module):
     def forward(self, input, target):
         ch = input.shape[1]
         if self.weight is None:
-            assert(self.channel_weight.shape[0] == ch)
+            assert (self.channel_weight.shape[0] == ch)
             self.weight = channel_weight.view(ch, 1, 1).expand_as(input)
 
         return weighted_huber_loss(input, target, self.weight, gamma=self.gamma, reduction=self.reduction)
@@ -32,7 +31,7 @@ if __name__ == "__main__":
     criterion = WeightedHuberLoss(channel_weight, gamma=GAMMA, reduction='none')
     loss = criterion.forward(y, t)
     loss_t = smooth_l1_loss(y, t, reduction='none')
-    
+
     plt.plot(loss[0][0].numpy(), label="my huber loss")
     plt.plot(loss_t[0][0].numpy(), label="torch huber loss")
     plt.plot(((t - y) ** 2).view(100).numpy(), label="square loss")

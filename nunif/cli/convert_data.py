@@ -1,5 +1,4 @@
 # TODO: remake
-import sys
 import os
 from os import path
 import shutil
@@ -26,7 +25,7 @@ def load_files_from_csv(txt, subdir_level=0):
             src_key = reader.fieldnames[0]
             for row in reader:
                 src = row[src_key]
-                options = {k:v for k, v in row.items() if k != src_key}
+                options = {k: v for k, v in row.items() if k != src_key}
                 key = filename2key(src, subdir_level=subdir_level)
                 data[key] = {"src": src, "options": options}
         else:
@@ -66,7 +65,7 @@ def _pair_crop_max(x, y, max_size):
     scale_w = xw / yw
     if abs(scale_w - scale_h) > 0.00001:
         raise ValueError(f"Unpredictable scale: x({xh},{xw}), y({yh},{yw})\n")
-    assert(xh <= yh)
+    assert (xh <= yh)
     lr_max_size = int(max_size * scale_h)
     lxh = min(xh, lr_max_size)
     lxw = min(xw, lr_max_size)
@@ -75,7 +74,7 @@ def _pair_crop_max(x, y, max_size):
         lyh = int(lxh / scale_h)
         lyw = int(lxw / scale_w)
         y = NF.crop_ref(y, 0, 0, lyh, lyw)
-        assert(lxh == int(lyh * scale_h) and lxw == int(lyw * scale_w))
+        assert (lxh == int(lyh * scale_h) and lxw == int(lyw * scale_w))
 
     return x, y
 
@@ -113,7 +112,7 @@ def _pair_split_image(x, y, max_size, split_step):
         raise ValueError(f"Unpredictable scale: x({xh},{xw}), y({yh},{yw})\n")
     x_images = []
     y_images = []
-    assert(xh <= yh)
+    assert (xh <= yh)
 
     lr_max_size = int(max_size * scale_h)
     lxh = min(xh, lr_max_size)
@@ -125,7 +124,7 @@ def _pair_split_image(x, y, max_size, split_step):
         step_w = int(crop_w * split_step)
         for i in range(0, xh - crop_h + 1, step_h):
             for j in range(0, xw - crop_w + 1, step_w):
-                assert(
+                assert (
                     i == int(int(i / scale_h) * scale_h) and
                     j == int(int(j / scale_w) * scale_w) and
                     crop_h == int(int(crop_h / scale_h) * scale_h) and
@@ -147,7 +146,7 @@ def pair_split_image(x, y, max_size, split_step):
     return x_images, y_images
 
 
-USE_SNAPPY_IMAGE = True #  False for debug
+USE_SNAPPY_IMAGE = True  # False for debug
 INPUT_DIR = "x"
 TARGET_DIR = "y"
 
@@ -218,7 +217,7 @@ def convert_data(data, has_x, args):
             if x_im is not None:
                 x_key = filename2key(x_meta["filename"], subdir_level=args.subdir_level)
                 x = TF.to_tensor(x_im)
-                assert(y_key == x_key)
+                assert (y_key == x_key)
                 if "alpha" in x_meta:
                     bg_color = get_bg_color(args.bg_color)
                     x = fill_alpha(x, TF.to_tensor(x_meta["alpha"]), bg_color)
@@ -305,7 +304,7 @@ def convert_data(data, has_x, args):
                     y_options[y_new_key] = data[y_key]["y"]["options"]
                     pool.submit(save_image_task, y, path.join(target_dir, y_new_key))
                     no += 1
-    
+
     if y_options:
         torch.save(y_options, path.join(target_dir, "options.pth"))
     if x_options:
@@ -331,9 +330,8 @@ def main():
     parser.add_argument("--drop-th", type=float, default=0.05, help="threshold of stddev")
     parser.add_argument("--format", type=str, choices=["png", "snappy"], default="snappy",
                         help="output image format (for devel)")
-    parser.add_argument("--bg-color", type=str, choices=["black", "white","gray","random"],
+    parser.add_argument("--bg-color", type=str, choices=["black", "white", "gray", "random"],
                         default="random", help="background color for transparent png")
-
 
     args = parser.parse_args()
     logger.debug(str(args))
@@ -379,6 +377,6 @@ def main():
 
     return 0
 
+
 if __name__ == "__main__":
     main()
-

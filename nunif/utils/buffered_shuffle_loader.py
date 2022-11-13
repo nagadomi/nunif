@@ -3,10 +3,11 @@ import torch
 # TODO: refactor
 #
 
+
 class BufferedShuffleLoader():
     def __init__(self, data_loader, batch_size, buffer_size):
-        assert(data_loader.drop_last == True)
-        assert(data_loader.batch_size >= batch_size and data_loader.batch_size % batch_size == 0)
+        assert (data_loader.drop_last)
+        assert (data_loader.batch_size >= batch_size and data_loader.batch_size % batch_size == 0)
         self.data_loader = data_loader
         self.iter = None
         self.batch_size = batch_size
@@ -36,16 +37,16 @@ class BufferedShuffleLoader():
         return len(self.data_loader.dataset) // self.batch_size
 
     def _init(self):
-        assert(self.buffer is None)
+        assert (self.buffer is None)
         self.iter = iter(data_loader)
         batch = next(self.iter)
-        assert(isinstance(batch, (tuple, list)))
+        assert (isinstance(batch, (tuple, list)))
         bs = batch[0].shape[0]
         self.dim = len(batch)
         self.buffer = [None] * self.dim
         for i in range(self.dim):
-            assert(isinstance(batch[i], torch.Tensor))
-            assert(batch[i].shape[0] == self.dl_batch_size)
+            assert (isinstance(batch[i], torch.Tensor))
+            assert (batch[i].shape[0] == self.dl_batch_size)
             size = list(batch[i].shape)
             size[0] = self.buffer_size * batch[i].shape[0]
             self.buffer[i] = batch[i].new_empty(size)
@@ -64,7 +65,7 @@ class BufferedShuffleLoader():
         sample = []
         for i in range(self.dim):
             sample.append(self.buffer[i][perm].contiguous())
-        self.perm[self.index * self.batch_size:(self.index+1)*self.batch_size].copy_(perm)
+        self.perm[self.index * self.batch_size:(self.index + 1) * self.batch_size].copy_(perm)
         self.index += 1
         if self.index >= self.iter_per_batch:
             batch = next(self.iter)
@@ -78,7 +79,7 @@ class BufferedShuffleLoader():
             raise StopIteration()
         sample = []
         for i in range(self.dim):
-            sample.append(self.buffer[i][self.index * self.batch_size:(self.index + 1)*self.batch_size].contiguous())
+            sample.append(self.buffer[i][self.index * self.batch_size:(self.index + 1) * self.batch_size].contiguous())
         self.index += 1
         return sample
 
@@ -112,6 +113,7 @@ class BufferedShuffleLoader():
             raise StopIteration()
         self.count += 1
         return self._next()
+
 
 if __name__ == "__main__":
     INTERNAL_BATCH_SIZE = 20

@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from .. models import get_model_config, get_model_device
 
+
 def _calc_param(x, scale, offset, tile_size):
     p = {}
     p["x_h"] = x.shape[1]

@@ -57,8 +57,8 @@ def remove_border(x, border):
 
 
 def psnr256(x1, x2, color):
-    assert(color in ("rgb", "y", "y_matlab"))
-    assert(x1.shape == x2.shape)
+    assert (color in ("rgb", "y", "y_matlab"))
+    assert (x1.shape == x2.shape)
     if color == "rgb":
         mse = MSE(NF.quantize256_f(x1), NF.quantize256_f(x2))
         psnr = MSE2PSNR(mse)
@@ -85,9 +85,11 @@ def benchmark_waifu2x(raw_argv):
     parser.add_argument("--jpeg-times", type=int, default=1, help="number of repetitions of jpeg compression")
     parser.add_argument("--jpeg-quality-down", type=int, default=5, help="value of jpeg quality that decreases every times")
     parser.add_argument("--jpeg-yuv420", action="store_true", help="use yuv420 jpeg")
-    parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos", "sinc", "triangle"], default="lanczos", help="downscaling filter")
+    parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos",
+                        "sinc", "triangle"], default="lanczos", help="downscaling filter")
     parser.add_argument("--baseline", action="store_true", help="use baseline")
-    parser.add_argument("--baseline-filter", type=str, default="catrom", choices=["catrom", "box", "lanczos", "sinc", "triangle"], help="baseline filter for 2x")
+    parser.add_argument("--baseline-filter", type=str, default="catrom",
+                        choices=["catrom", "box", "lanczos", "sinc", "triangle"], help="baseline filter for 2x")
     parser.add_argument("--border", type=int, default=0, help="border px removed from the result image")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch_size")
@@ -170,7 +172,7 @@ def benchmark_waifu2x(raw_argv):
             elif args.method == "noise_scale":
                 print(f"* {args.baseline_filter}, jpeg")
             elif args.method == "noise":
-                print(f"* jpeg")
+                print("* jpeg")
             print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(baseline_time_sum, 4)} ({fps} FPS)")
 
 

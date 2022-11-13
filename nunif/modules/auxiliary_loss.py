@@ -8,7 +8,7 @@ class AuxiliaryLoss(nn.Module):
         super(AuxiliaryLoss, self).__init__()
         if loss_weights is not None:
             loss_weights = torch.ones(len(loss_modules)).float()
-        assert(len(loss_modules) == len(loss_modules))
+        assert (len(loss_modules) == len(loss_modules))
         self.loss_modules = nn.ModuleList(loss_modules)
         self.loss_weights = loss_weights
 

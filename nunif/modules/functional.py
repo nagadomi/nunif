@@ -7,7 +7,7 @@ def inplace_clip(x, min_value, max_value):
 
 def weighted_huber_loss(input, target, weight, gamma=1.0, reduction='mean'):
     t = torch.abs(input - target).mul_(weight)
-    loss = torch.where(t < gamma, 0.5 * t **2, (t - 0.5 * gamma) * gamma)
+    loss = torch.where(t < gamma, 0.5 * t ** 2, (t - 0.5 * gamma) * gamma)
     if reduction == 'mean':
         loss = torch.mean(loss)
     elif reduction == 'sum':
@@ -21,8 +21,9 @@ def weighted_huber_loss(input, target, weight, gamma=1.0, reduction='mean'):
         raise ValueError(f"undefined reduction: {reduction}")
     return loss
 
+
 def auxiliary_loss(inputs, targets, modules, weights):
-    assert(len(inputs) == len(targets) == len(modules) == len(weights))
+    assert (len(inputs) == len(targets) == len(modules) == len(weights))
     n = len(inputs)
     loss = None
     for i in range(n):

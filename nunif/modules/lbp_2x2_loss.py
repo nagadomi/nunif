@@ -3,31 +3,31 @@ import torch.nn as nn
 from . weighted_huber_loss import WeightedHuberLoss
 
 
-LBP =[
-# identify
-[[  1,  0],
- [  0,  0]],
-# diff    
-[[ -1,  1],
- [  1, -1]],
-[[ -1,  1],
- [ -1,  1]],
-[[ -1, -1],
- [  1,  1]],
-[[ -1,  0],
- [  0,  1]],
-[[  0, -1],
- [  1,  0]],
-[[ -1,  1],
- [  0,  0]],
-[[ -1,  0],
- [  1,  0]]
+LBP = [
+    # identify
+    [[1, 0],
+     [0, 0]],
+    # diff
+    [[-1, 1],
+     [1, -1]],
+    [[-1, 1],
+     [-1, 1]],
+    [[-1, -1],
+     [1, 1]],
+    [[-1, 0],
+     [0, 1]],
+    [[0, -1],
+     [1, 0]],
+    [[-1, 1],
+     [0, 0]],
+    [[-1, 0],
+     [1, 0]]
 ]
 
 
 class LBP2x2Loss(nn.Module):
     def __init__(self, ch, gamma=0.1):
-        assert(ch == 1 or ch == 3)
+        assert (ch == 1 or ch == 3)
         super(LBP2x2Loss, self).__init__()
         lbp_kernel = torch.FloatTensor(LBP).view(len(LBP), 1, 2, 2)
         for i in range(len(LBP)):
@@ -57,8 +57,9 @@ class LBP2x2Loss(nn.Module):
     def _debug_forward(self, x):
         return self.lbp(x)
 
-    def forward(input, target):
+    def forward(self, input, target):
         return self.loss_module(self.lbp(input), self.lbp(target))
+
 
 if __name__ == "__main__":
     from PIL import Image
@@ -78,4 +79,3 @@ if __name__ == "__main__":
     z = loss._debug_forward(x).squeeze(0)
     z = z.view(z.shape[0], 1, z.shape[1], z.shape[2])
     save_image(z, "tmp/lbp_rgb.png", nrow=8)
-

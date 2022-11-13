@@ -3,6 +3,7 @@ import torch
 import random
 import numpy as np
 
+
 def global_initialize():
     # Disable OpenMP
     os.environ['OMP_NUM_THREADS'] = '1'
@@ -16,7 +17,7 @@ def global_initialize():
         import cv2
         cv2.setNumThreads(0)
         cv2.ocl.setUseOpenCL(False)
-    except:
+    except ModuleNotFoundError:
         pass
 
 
@@ -29,4 +30,3 @@ def set_seed(seed):
 
 
 global_initialize()
-

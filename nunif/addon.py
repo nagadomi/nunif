@@ -1,8 +1,8 @@
-import sys
 import os
 from os import path
 
 # TODO: train
+
 
 class Addon():
     def __init__(self, name, **kwargs):

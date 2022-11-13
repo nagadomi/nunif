@@ -1,5 +1,4 @@
 import inspect
-import sys
 from . model import Model
 from .. logger import logger
 

@@ -1,5 +1,5 @@
 from . image_loader import (
-    ImageLoader, DummyImageLoader, 
+    ImageLoader, DummyImageLoader,
     load_image, save_image, save_image_snappy, load_image_snappy,
     decode_image, decode_image_snappy, encode_image_snappy,
     basename_without_ext, filename2key

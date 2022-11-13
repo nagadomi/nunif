@@ -42,9 +42,9 @@ def make_alpha_border(rgb, alpha, offset):
 def fill_alpha(fg, alpha, val=0):
     if alpha is None:
         return fg
-    assert(alpha.shape[1] == fg.shape[1] and alpha.shape[2] == fg.shape[2])
-    assert(isinstance(fg, (torch.FloatTensor, torch.cuda.FloatTensor)) and
-           isinstance(alpha, (torch.FloatTensor, torch.cuda.FloatTensor)))
+    assert (alpha.shape[1] == fg.shape[1] and alpha.shape[2] == fg.shape[2])
+    assert (isinstance(fg, (torch.FloatTensor, torch.cuda.FloatTensor)) and
+            isinstance(alpha, (torch.FloatTensor, torch.cuda.FloatTensor)))
 
     alpha = alpha.squeeze(0)
     fg = fg.clone()

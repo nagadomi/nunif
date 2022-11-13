@@ -1,4 +1,3 @@
-import os
 from wand.image import Image as WandImage
 from torchvision.transforms import functional as TF
 from PIL import Image as PILImage
