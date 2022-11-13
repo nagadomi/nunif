@@ -9,6 +9,7 @@ tmp
 data
 !data/.keep
 waifu2x/pretrained_models
+waifu2x/web-config.ini
 
 
 # ----- Python.gitignore

@@ -200,3 +200,6 @@ label {
     padding: 4px;
     border: 1px solid #ccc;
 }
+.g-recaptcha {
+    margin: 8px;
+}

@@ -9,8 +9,10 @@ from bottle import request, HTTPResponse
 import threading
 import requests
 import io
+import json
 from time import time
 import hashlib
+from configparser import ConfigParser
 from diskcache import Cache
 from nunif.logger import logger, set_log_level
 from nunif.utils import decode_image, save_image
@@ -25,6 +27,7 @@ DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     "upconv_7", "photo"))
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
+RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
 
 
 class CacheGC():
@@ -52,7 +55,7 @@ def setup():
                         help="server backend. It may not work except `waitress`.")
     parser.add_argument("--workers", type=int, default=1, help="The number of worker processes for gunicorn")
     parser.add_argument("--threads", type=int, default=32, help="The number of threads")
-    parser.add_argument("--debug", action="store_true", help="debug=True for bottle")
+    parser.add_argument("--debug", action="store_true", help="Debug print")
     parser.add_argument("--max-body-size", type=int, default=5, help="maximum allowed size(MB) for uploaded files")
     parser.add_argument("--url-timeout", type=int, default=10, help="request_timeout for url")
 
@@ -67,6 +70,8 @@ def setup():
     parser.add_argument("--cache-ttl", type=int, default=120, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
+    parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires web-config.yml")
+    parser.add_argument("--config", type=str, help="config file for API tokens")
 
     args = parser.parse_args()
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
@@ -77,12 +82,20 @@ def setup():
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
     cache_gc = CacheGC(cache, args.cache_ttl * 60)
+    config = ConfigParser()
+    if args.config:
+        config.read(args.config)
+    if "recaptcha" not in config:
+        if args.enable_recaptcha:
+            raise RuntimeError("--enable-recaptcha: No recaptcha setting in config file")
+        else:
+            config["recaptcha"] = {"site_key": "", "secret_key": ""}
 
-    return args, art_ctx, photo_ctx, cache, cache_gc
+    return args, config, art_ctx, photo_ctx, cache, cache_gc
 
 
 global_lock = threading.RLock()
-command_args, art_ctx, photo_ctx, cache, cache_gc = setup()
+command_args, config, art_ctx, photo_ctx, cache, cache_gc = setup()
 # HACK: Avoid unintended argparse in the backend(gunicorn).
 sys.argv = [sys.argv[0]]
 
@@ -96,7 +109,7 @@ def fetch_uploaded_file(upload_file):
             file_size += len(buff)
             upload_buff.write(buff)
             if file_size > max_body_size:
-                logger.debug(f"fetch_uploaded_file: error: too lage")
+                logger.debug("fetch_uploaded_file: error: too lage")
                 bottle.abort(413, f"Request entity too large (max: {command_args.max_body_size}MB)")
             buff = upload_file.file.read(BUFF_SIZE)
 
@@ -109,7 +122,6 @@ def fetch_uploaded_file(upload_file):
 def fetch_url_file(url):
     max_body_size = command_args.max_body_size * SIZE_MB
     timeout = command_args.url_timeout
-    image_data = None
     try:
         headers = {"Referer": url, "User-Agent": "waifu2x/web.py"}
         with requests.get(url, headers=headers, stream=True, timeout=timeout) as res, io.BytesIO() as buff:
@@ -195,11 +207,50 @@ def make_output_filename(style, method, noise_level, meta):
     return f"{base}_waifu2x_{mode}.png"
 
 
-@bottle.route("/api", method=["POST"])
+@bottle.get("/recaptcha_state.json")
+def recaptcha_state():
+    state = {
+        "enabled": command_args.enable_recaptcha,
+        "site_key": config["recaptcha"]["site_key"]
+    }
+    res = HTTPResponse(status=200, body=json.dumps(state))
+    res.set_header("Content-Type", "application/json")
+    return res
+
+
+def verify_recaptcha(request):
+    if not command_args.enable_recaptcha:
+        return True
+
+    timeout = command_args.url_timeout
+    data = {
+        "response": request.forms.get("recap", ""),
+        "secret": config["recaptcha"]["secret_key"],
+        "remoteip": request.remote_addr
+    }
+    try:
+        res = requests.post(RECAPTCHA_VERIFY_URL, data=data, timeout=timeout)
+        if res.status_code == 200:
+            result = json.loads(res.text)
+            if result["success"]:
+                logger.debug("verify_recaptcha: success")
+            else:
+                logger.debug("verify_recaptcha: fail")
+            return result["success"]
+        else:
+            logger.error(f"verify_recaptcha: HTTP Error {res.status_code} {res.text}")
+            return False
+    except requests.exceptions.Timeout:
+        logger.error("verify_recaptcha: error: timeout")
+        return False
+
+
+@bottle.post("/api")
 def api():
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
-    #  'style': 'photo', 'noise': '1', 'scale': '2'}
-
+    #  'style': 'photo', 'noise': '1', 'scale': '2', 'recap': 'xxxxx'}
+    if command_args.enable_recaptcha and not verify_recaptcha(request):
+        bottle.abort(401, "reCAPTCHA Error")
     cache_gc.gc()
     im, meta = get_image(request)
     style, method, noise_level = parse_request(request)
@@ -271,13 +322,12 @@ def resolve_index_file(root_dir, accept_language):
         return "index.html"
 
 
-@bottle.route("/<url:re:.*>", method=["GET"])
+@bottle.get("/<url:re:.*>")
 def static_file(url):
     """
     This assumes that `root` directory is flat.
     In production environment, this method is not used, instead it is directly sent from nginx.
     """
-    print("url", url)
     url = url.replace("\\", "/")
     dirname = posixpath.dirname(url)
     basename = posixpath.basename(url)
