@@ -1,7 +1,10 @@
-# DEBUG=1 python3 -m nunif.cli.import_waifu2x_models
-from nunif.models import save_model, load_model, create_model, load_state_from_waifu2x_json
+# convert old format json model files to pytorch model files
+# DEBUG=1 python3 -m waifu2x.json2pth -i ./waifu2x_json_dir -o output_dir
 import os
-from .. logger import logger
+import argparse
+from nunif.models import save_model, load_model, create_model
+from .models import load_state_from_waifu2x_json
+from nunif.logger import logger
 
 
 def convert_vgg_7(waifu2x_model_dir, output_dir):
@@ -87,12 +90,16 @@ def _test():
 
 
 if __name__ == "__main__":
-    # _test()
-    logger.debug("vgg_7")
-    convert_vgg_7("waifu2x_models", "pretrained_models/waifu2x")
-    logger.debug("upconv_7")
-    convert_upconv_7("waifu2x_models", "pretrained_models/waifu2x")
-    logger.debug("cunet")
-    convert_cunet("waifu2x_models", "pretrained_models/waifu2x")
-    logger.debug("upcunet")
-    convert_upcunet("waifu2x_models", "pretrained_models/waifu2x")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input-dir", "-i", type=str, required=True, help="input waifu2x json model dir")
+    parser.add_argument("--output-dir", "-o", type=str, required=True, help="output dir")
+    args = parser.parse_args()
+
+    logger.info("vgg_7")
+    convert_vgg_7(args.input_dir, args.output_dir)
+    logger.info("upconv_7")
+    convert_upconv_7(args.input_dir, args.output_dir)
+    logger.info("cunet")
+    convert_cunet(args.input_dir, args.output_dir)
+    logger.info("upcunet")
+    convert_upcunet(args.input_dir, args.output_dir)
