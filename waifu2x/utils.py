@@ -1,8 +1,8 @@
 from os import path
 import torch
-import torchvision.transforms.functional as TF
 from nunif.transforms import functional as NF
-from nunif.utils import tiled_render, make_alpha_border
+from nunif.utils.render import tiled_render
+from nunif.utils.alpha import make_alpha_border
 from nunif.models import load_model, get_model_config
 
 
@@ -41,8 +41,8 @@ class Waifu2x():
                                                                        device_ids=self.gpus)
 
     def load_model(self, method, noise_level):
-        assert(method in ("scale", "noise_scale", "noise"))
-        assert(0 <= noise_level and noise_level < 4)
+        assert (method in ("scale", "noise_scale", "noise"))
+        assert (0 <= noise_level and noise_level < 4)
         if method == "scale":
             self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))
         elif method == "noise":
@@ -61,8 +61,8 @@ class Waifu2x():
         self._setup()
 
     def render(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
-        assert(method in ("scale", "noise_scale", "noise"))
-        assert(0 <= noise_level and noise_level < 4)
+        assert (method in ("scale", "noise_scale", "noise"))
+        assert (0 <= noise_level and noise_level < 4)
         if method == "scale":
             z = tiled_render(x, self.scale_model,
                              tile_size=tile_size, batch_size=batch_size,
@@ -85,16 +85,15 @@ class Waifu2x():
         elif method == "noise_scale":
             return get_model_config(self.noise_scale_models[noise_level], "i2i_offset")
 
-    def convert_raw(self, im, meta, method, noise_level,
-                    tile_size=256, batch_size=4,
-                    tta=False, enable_amp=False):
-        assert(method in ("scale", "noise_scale", "noise"))
-        assert(0 <= noise_level and noise_level < 4)
+    def convert(self, x, alpha, method, noise_level,
+                tile_size=256, batch_size=4,
+                tta=False, enable_amp=False):
+        assert (x.shape[0] == 3)
+        assert (alpha is None or alpha.shape[0] == 1 and alpha.shape[1:] == x.shape[1:])
+        assert (method in ("scale", "noise_scale", "noise"))
+        assert (0 <= noise_level and noise_level < 4)
 
-        x = TF.to_tensor(im)
-        alpha = None
-        if meta is not None and "alpha" in meta:
-            alpha = TF.to_tensor(meta["alpha"])
+        if alpha is not None:
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
         if tta:
             rgb = NF.tta_merge([
@@ -103,23 +102,10 @@ class Waifu2x():
         else:
             rgb = self.render(x, method, noise_level, tile_size, batch_size, enable_amp)
 
+        rgb = rgb.to("cpu")
         if alpha is not None and method in ("scale", "noise_scale"):
             alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
             alpha = tiled_render(alpha, self.scale_model,
                                  tile_size=tile_size, batch_size=batch_size).mean(0)
-
+            alpha = alpha.to("cpu")
         return rgb, alpha
-
-    @staticmethod
-    def to_pil(rgb, alpha):
-        rgb = TF.to_pil_image(NF.quantize256(rgb).to("cpu"))
-        if alpha is not None:
-            alpha = TF.to_pil_image(NF.quantize256(alpha).to("cpu"))
-            rgb.putalpha(alpha)
-        return rgb
-
-    def convert(self, im, meta, method, noise_level,
-                tile_size=256, batch_size=4,
-                tta=False, enable_amp=False):
-        rgb, alpha = self.convert_raw(im, meta, method, noise_level, tile_size, batch_size, tta, enable_amp)
-        return self.to_pil(rgb, alpha)

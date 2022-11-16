@@ -15,7 +15,8 @@ import hashlib
 from configparser import ConfigParser
 from diskcache import Cache
 from nunif.logger import logger, set_log_level
-from nunif.utils import decode_image, save_image
+# from nunif.utils.pil_io
+from nunif.utils import wand_io as IL
 from .utils import Waifu2x
 
 
@@ -142,7 +143,7 @@ def fetch_url_file(url):
         bottle.abort(400, "URL timeout")
 
 
-def get_image(request):
+def fetch_image(request):
     upload_file = request.files.get("file", "")
     im, meta = None, None
 
@@ -150,18 +151,18 @@ def get_image(request):
     if upload_file:
         image_data = fetch_uploaded_file(upload_file)
     if image_data:
-        im, meta = decode_image(image_data, upload_file.filename)
+        im, meta = IL.decode_image(image_data, upload_file.filename, color="rgb")
     else:
         url = request.forms.get("url", "")
         if url.startswith("http://") or url.startswith("https://"):
             key = "url_" + url
             image_data = cache.get(key, None)
             if image_data is not None:
-                logger.debug(f"get_image: load cache: {url}")
-                im, meta = decode_image(image_data, posixpath.basename(url))
+                logger.debug(f"fetch_image: load cache: {url}")
+                im, meta = IL.decode_image(image_data, posixpath.basename(url), color="rgb")
             else:
                 image_data = fetch_url_file(url)
-                im, meta = decode_image(image_data, posixpath.basename(url))
+                im, meta = IL.decode_image(image_data, posixpath.basename(url), color="rgb")
                 cache.set(key, image_data, expire=command_args.cache_ttl * 60)
 
     if image_data is not None and meta is not None:
@@ -245,6 +246,11 @@ def verify_recaptcha(request):
         return False
 
 
+def dump_meta(meta):
+    return {k: v if isinstance(v, (str, int, float, type(None)))
+            else str(type(v)) for k, v in meta.items()}
+
+
 @bottle.post("/api")
 def api():
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
@@ -252,38 +258,43 @@ def api():
     if command_args.enable_recaptcha and not verify_recaptcha(request):
         bottle.abort(401, "reCAPTCHA Error")
     cache_gc.gc()
-    im, meta = get_image(request)
+    try:
+        im, meta = fetch_image(request)
+    except:
+        logger.error(f"api: fetch_image error: {sys.exc_info()[:2]}")
+        im, meta = None, None
+
     style, method, noise_level = parse_request(request)
 
     if im is None:
         bottle.abort(400, "Image Load Error")
-    logger.debug(f"api: image: {meta}")
-    ctx_kwargs = {
-        "im": im, "meta": meta,
-        "method": method, "noise_level": noise_level,
-        "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
-        "tta": command_args.tta, "enable_amp": command_args.amp
-    }
+    logger.debug(f"api: image: {dump_meta(meta)}")
+
     output_filename = make_output_filename(style, method, noise_level, meta)
     key = meta["sha1"] + output_filename
     image_data = cache.get(key, None)
     if image_data is None:
         t = time()
         with torch.no_grad():
+            rgb, alpha = IL.to_tensor(im, return_alpha=True)
+            ctx_kwargs = {
+                "x": rgb, "alpha": alpha,
+                "method": method, "noise_level": noise_level,
+                "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
+                "tta": command_args.tta, "enable_amp": command_args.amp
+            }
             with global_lock:
                 if style == "art":
-                    rgb, alpha = art_ctx.convert_raw(**ctx_kwargs)
+                    rgb, alpha = art_ctx.convert(**ctx_kwargs)
                 else:
-                    rgb, alpha = photo_ctx.convert_raw(**ctx_kwargs)
-            z = Waifu2x.to_pil(rgb, alpha)
+                    rgb, alpha = photo_ctx.convert(**ctx_kwargs)
+            z = IL.to_image(rgb, alpha)
         logger.debug(f"api: forward: {style}-{method}, {round(time()-t, 2)}s, "
                      f"pid={os.getpid()}-{threading.get_ident()}")
         t = time()
-        with io.BytesIO() as buff:
-            save_image(z, meta, buff, revert_grayscale=True)
-            image_data = buff.getvalue()
-            cache.set(key, image_data, expire=command_args.cache_ttl * 60)
-            logger.debug(f"api: encode: {round(time()-t, 2)}s")
+        image_data = IL.encode_image(z, format="png", meta=meta)
+        cache.set(key, image_data, expire=command_args.cache_ttl * 60)
+        logger.debug(f"api: encode: {round(time()-t, 2)}s")
     else:
         logger.debug(f"api: load cache: {style}-{method}")
 
