@@ -121,7 +121,6 @@ def to_image(x, alpha=None):
             x = torch.cat((x, alpha), dim=0)
             channel_map = "IA"
         else:
-            im.alpha_channel = False
             channel_map = "I"
     else:
         if alpha is not None:
