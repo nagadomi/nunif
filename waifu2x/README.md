@@ -8,11 +8,7 @@ This command downloads the pre-trained models to `waifu2x/pretrained_models`.
 
 # Current limitations
 
-16bit RGB/RGBA is not suupported due to Pillow does not support for some 16-bit modes.
-
-Some special PNG formats are broken.
-
-The output image is converted to 8-bit RGB/RGBA/Grayscale/GrayscaleAlpha.
+none?
 
 # CLI
 
