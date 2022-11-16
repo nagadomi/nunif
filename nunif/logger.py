@@ -12,6 +12,10 @@ def _setup():
     if os.getenv("DEBUG") is not None:
         handler.setLevel(logging.DEBUG)
         logger.setLevel(level=logging.DEBUG)
+    else:
+        handler.setLevel(logging.INFO)
+        logger.setLevel(level=logging.INFO)
+
     logger.addHandler(handler)
     logger.propagate = False
 
