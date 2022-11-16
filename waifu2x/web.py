@@ -151,7 +151,8 @@ def fetch_image(request):
     if upload_file:
         image_data = fetch_uploaded_file(upload_file)
     if image_data:
-        im, meta = IL.decode_image(image_data, upload_file.filename, color="rgb")
+        im, meta = IL.decode_image(image_data, upload_file.filename,
+                                   color="rgb", keep_alpha=True)
     else:
         url = request.forms.get("url", "")
         if url.startswith("http://") or url.startswith("https://"):
@@ -159,10 +160,12 @@ def fetch_image(request):
             image_data = cache.get(key, None)
             if image_data is not None:
                 logger.debug(f"fetch_image: load cache: {url}")
-                im, meta = IL.decode_image(image_data, posixpath.basename(url), color="rgb")
+                im, meta = IL.decode_image(image_data, posixpath.basename(url),
+                                           color="rgb", keep_alpha=True)
             else:
                 image_data = fetch_url_file(url)
-                im, meta = IL.decode_image(image_data, posixpath.basename(url), color="rgb")
+                im, meta = IL.decode_image(image_data, posixpath.basename(url),
+                                           color="rgb", keep_alpha=True)
                 cache.set(key, image_data, expire=command_args.cache_ttl * 60)
 
     if image_data is not None and meta is not None:
