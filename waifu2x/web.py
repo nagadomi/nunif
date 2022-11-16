@@ -181,22 +181,22 @@ def parse_request(request):
 
     if style != "art":
         style = "photo"
-    if scale != 2:
-        scale = 1
+    if scale not in {-1, 1, 2}:
+        scale = -1
     if not (-1 <= noise_level <= 3):
         noise_level = 2
-    if scale == 1:
-        method = "noise"
+    if scale == -1:
+        if noise_level == -1:
+            method = "none"
+        else:
+            method = "noise"
     else:
         if noise_level == -1:
             method = "scale"
         else:
             method = "noise_scale"
 
-    if noise_level == -1:
-        noise_level = 0
-
-    return style, method, noise_level
+    return style, method, scale, noise_level
 
 
 def make_output_filename(style, method, noise_level, meta):
@@ -208,6 +208,8 @@ def make_output_filename(style, method, noise_level, meta):
         mode = f"{style}_noise{noise_level}_scale"
     elif method == "scale":
         mode = f"{style}_scale"
+    elif method == "none":
+        mode = "none"
     return f"{base}_waifu2x_{mode}.png"
 
 
@@ -267,7 +269,7 @@ def api():
         logger.error(f"api: fetch_image error: {sys.exc_info()[:2]}")
         im, meta = None, None
 
-    style, method, noise_level = parse_request(request)
+    style, method, scale, noise_level = parse_request(request)
 
     if im is None:
         bottle.abort(400, "Image Load Error")
@@ -278,28 +280,40 @@ def api():
     image_data = cache.get(key, None)
     if image_data is None:
         t = time()
-        with torch.no_grad():
-            rgb, alpha = IL.to_tensor(im, return_alpha=True)
-            ctx_kwargs = {
-                "x": rgb, "alpha": alpha,
-                "method": method, "noise_level": noise_level,
-                "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
-                "tta": command_args.tta, "enable_amp": command_args.amp
-            }
-            with global_lock:
-                if style == "art":
-                    rgb, alpha = art_ctx.convert(**ctx_kwargs)
-                else:
-                    rgb, alpha = photo_ctx.convert(**ctx_kwargs)
-            z = IL.to_image(rgb, alpha)
-        logger.debug(f"api: forward: {style}-{method}, {round(time()-t, 2)}s, "
-                     f"pid={os.getpid()}-{threading.get_ident()}")
+        if method == "none":
+            z = im
+        else:
+            if method == "scale":
+                noise_level = 0
+            with torch.no_grad():
+                rgb, alpha = IL.to_tensor(im, return_alpha=True)
+                ctx_kwargs = {
+                    "x": rgb, "alpha": alpha,
+                    "method": method, "noise_level": noise_level,
+                    "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
+                    "tta": command_args.tta, "enable_amp": command_args.amp
+                }
+                with global_lock:
+                    if style == "art":
+                        rgb, alpha = art_ctx.convert(**ctx_kwargs)
+                    else:
+                        rgb, alpha = photo_ctx.convert(**ctx_kwargs)
+                z = IL.to_image(rgb, alpha)
+            logger.debug(f"api: forward: {style}-{method}, noise_level={noise_level}, {round(time()-t, 2)}s, "
+                         f"pid={os.getpid()}-{threading.get_ident()}")
         t = time()
         image_data = IL.encode_image(z, format="png", meta=meta)
         cache.set(key, image_data, expire=command_args.cache_ttl * 60)
         logger.debug(f"api: encode: {round(time()-t, 2)}s")
     else:
-        logger.debug(f"api: load cache: {style}-{method}")
+        logger.debug(f"api: load cache: {style}-{method}, noise_level={noise_level}")
+
+    if scale == 1:
+        # 1.6x
+        im, meta = IL.decode_image(image_data, color="rgb", keep_alpha=True)
+        w, h = int(im.size[0] * (1.6 / 2.0)), int(im.size[1] * (1.6 / 2.0))
+        im.resize(w, h, "lanczos")
+        image_data = IL.encode_image(im, format="png", meta=meta)
 
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", "image/png")
