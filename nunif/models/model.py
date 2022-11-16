@@ -15,7 +15,7 @@ class Model(nn.Module):
 
     def register_kwargs(self, kwargs):
         for name, value in kwargs.items():
-            if name not in {"self"}:
+            if name not in {"self", "__class__"}:
                 self.kwargs[name] = value
 
     def get_kwargs(self):

@@ -13,6 +13,7 @@ def register_model(name, klass):
 
 
 def create_model(name, **kwargs):
+    logger.debug(f"create_model: {kwargs}")
     global _models
     if name not in _models:
         raise ValueError(f"Unknown model name: {name}")
