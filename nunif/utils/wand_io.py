@@ -95,11 +95,12 @@ def to_tensor(im, return_alpha=False, dtype=torch.float32):
     ch = len(channel_map)
     data = im.export_pixels(0, 0, w, h, channel_map=channel_map, storage=storage)
     x = torch.tensor(data, dtype=dtype).view(h, w, ch).permute(2, 0, 1).contiguous()
-
+    del data
     if return_alpha:
         if im.alpha_channel:
             data = im.export_pixels(0, 0, w, h, channel_map="A", storage=storage)
             alpha = torch.tensor(data, dtype=dtype).view(h, w, 1).permute(2, 0, 1).contiguous()
+            del data
         else:
             alpha = None
         return x, alpha
@@ -114,31 +115,22 @@ def to_image(x, alpha=None):
     ch, h, w = x.shape
     assert (ch in {1, 3})
     storage = predict_storage(x.dtype, int_type="long")
+
     if ch == 1:
-        im = Image(width=w, height=h, colorspace="gray", background="black")
-        im.transform_colorspace("gray")
         if alpha is not None:
-            im.alpha_channel = True
             x = torch.cat((x, alpha), dim=0)
             channel_map = "IA"
         else:
             im.alpha_channel = False
             channel_map = "I"
     else:
-        im = Image(width=w, height=h, background="black")
-        im.transform_colorspace("srgb")
         if alpha is not None:
-            im.alpha_channel = True
             x = torch.cat((x, alpha), dim=0)
             channel_map = "RGBA"
         else:
-            im.alpha_channel = False
             channel_map = "RGB"
-    im.import_pixels(
-        0, 0, w, h, channel_map=channel_map, storage=storage,
-        data=x.permute(1, 2, 0).flatten().tolist(),
-    )
-    return im
+
+    return Image.from_array(x.permute(1, 2, 0).numpy(), channel_map=channel_map, storage=storage)
 
 
 def restore(im, meta):
