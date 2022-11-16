@@ -106,6 +106,6 @@ class Waifu2x():
         if alpha is not None and method in ("scale", "noise_scale"):
             alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
             alpha = tiled_render(alpha, self.scale_model,
-                                 tile_size=tile_size, batch_size=batch_size).mean(0)
+                                 tile_size=tile_size, batch_size=batch_size).mean(0).unsqueeze(0)
             alpha = alpha.to("cpu")
         return rgb, alpha
