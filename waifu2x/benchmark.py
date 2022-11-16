@@ -7,9 +7,9 @@ import torch
 import argparse
 import csv
 from torchvision.transforms import functional as TF
-from .. transforms import functional as NF
-from .. logger import logger
-from .. utils import ImageLoader
+from nunif.transforms import functional as NF
+from nunif.logger import logger
+from nunif.utils.image_loader import ImageLoader
 from tqdm import tqdm
 import time
 
@@ -74,19 +74,19 @@ def psnr256(x1, x2, color):
 
 
 def benchmark_waifu2x(raw_argv):
-    from .. tasks.waifu2x import Waifu2x
+    from .utils import Waifu2x
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_dir", type=str, required=True, help="model dir")
+    parser.add_argument("--model-dir", type=str, required=True, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
     parser.add_argument("--method", "-m", type=str, choices=["scale", "noise", "noise_scale"], default="scale", help="method")
-    parser.add_argument("--color", type=str, choices=["rgb", "y", "y_matlab"], default="rgb", help="colorspace")
+    parser.add_argument("--color", type=str, choices=["rgb", "y", "y_matlab"], default="y_matlab", help="colorspace")
     parser.add_argument("--jpeg-quality", type=int, default=75, help="jpeg quality for noise/noise_scale")
     parser.add_argument("--jpeg-times", type=int, default=1, help="number of repetitions of jpeg compression")
     parser.add_argument("--jpeg-quality-down", type=int, default=5, help="value of jpeg quality that decreases every times")
     parser.add_argument("--jpeg-yuv420", action="store_true", help="use yuv420 jpeg")
     parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos",
-                        "sinc", "triangle"], default="lanczos", help="downscaling filter")
+                        "sinc", "triangle"], default="catrom", help="downscaling filter")
     parser.add_argument("--baseline", action="store_true", help="use baseline")
     parser.add_argument("--baseline-filter", type=str, default="catrom",
                         choices=["catrom", "box", "lanczos", "sinc", "triangle"], help="baseline filter for 2x")
@@ -97,13 +97,9 @@ def benchmark_waifu2x(raw_argv):
     parser.add_argument("--output", "-o", type=str, help="output file or directory")
     parser.add_argument("--input", "-i", type=str, required=True, help="input directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true", help="TTA mode")
+    parser.add_argument("--amp", action="store_true", help="AMP mode")
     args = parser.parse_args(raw_argv)
     logger.debug(str(args))
-
-    if args.gpu[0] < 0:
-        device = 'cpu'
-    else:
-        device = f'cuda:{args.gpu[0]}'
 
     ctx = Waifu2x(model_dir=args.model_dir, gpus=args.gpu)
     ctx.load_model(args.method, args.noise_level)
@@ -115,7 +111,7 @@ def benchmark_waifu2x(raw_argv):
     else:
         raise ValueError("Unknown input format")
 
-    loader = ImageLoader(files=files, max_queue_size=128)
+    loader = ImageLoader(files=files, max_queue_size=128, load_func_kwargs={"color": "rgb"})
     if args.output is not None:
         os.makedirs(args.output, exist_ok=True)
     with torch.no_grad():
@@ -128,17 +124,15 @@ def benchmark_waifu2x(raw_argv):
             groundtruth = NF.crop_mod(x, 4)
             x = make_input_waifu2x(groundtruth, args)
             t = time.time()
-            if args.tta:
-                z = NF.tta_merge([ctx.convert_(x_i, args.method, args.noise_level,
-                                  args.tile_size, args.batch_size) for x_i in NF.tta_split(x)])
-            else:
-                z = ctx.convert_(x, args.method, args.noise_level, args.tile_size, args.batch_size)
+            z, _ = ctx.convert(x, None, args.method, args.noise_level,
+                               args.tile_size, args.batch_size,
+                               tta=args.tta, enable_amp=args.amp)
             time_sum += time.time() - t
             if args.border > 0:
-                psnr, mse = psnr256(remove_border(groundtruth, args.border).to(device),
+                psnr, mse = psnr256(remove_border(groundtruth, args.border),
                                     remove_border(z, args.border), args.color)
             else:
-                psnr, mse = psnr256(groundtruth.to(device), z, args.color)
+                psnr, mse = psnr256(groundtruth, z, args.color)
             psnr_sum += psnr
             mse_sum += mse
 
@@ -150,10 +144,10 @@ def benchmark_waifu2x(raw_argv):
                     z = x
                 baseline_time_sum += time.time() - t
                 if args.border > 0:
-                    psnr, mse = psnr256(remove_border(groundtruth, args.border).to(device),
-                                        remove_border(z, args.border).to(device), args.color)
+                    psnr, mse = psnr256(remove_border(groundtruth, args.border),
+                                        remove_border(z, args.border), args.color)
                 else:
-                    psnr, mse = psnr256(groundtruth.to(device), z.to(device), args.color)
+                    psnr, mse = psnr256(groundtruth, z, args.color)
                 baseline_psnr_sum += psnr
                 baseline_mse_sum += mse
             count += 1
@@ -193,3 +187,7 @@ def main():
         pass
 
     return 0
+
+
+if __name__ == "__main__":
+    main()
