@@ -42,7 +42,7 @@ class Waifu2x():
 
     def load_model(self, method, noise_level):
         assert (method in ("scale", "noise_scale", "noise"))
-        assert (0 <= noise_level and noise_level < 4)
+        assert (method == "scale" or 0 <= noise_level and noise_level < 4)
         if method == "scale":
             self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))
         elif method == "noise":
@@ -62,7 +62,7 @@ class Waifu2x():
 
     def render(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
         assert (method in ("scale", "noise_scale", "noise"))
-        assert (0 <= noise_level and noise_level < 4)
+        assert (method == "scale" or 0 <= noise_level and noise_level < 4)
         if method == "scale":
             z = tiled_render(x, self.scale_model,
                              tile_size=tile_size, batch_size=batch_size,
@@ -91,7 +91,7 @@ class Waifu2x():
         assert (x.shape[0] == 3)
         assert (alpha is None or alpha.shape[0] == 1 and alpha.shape[1:] == x.shape[1:])
         assert (method in ("scale", "noise_scale", "noise"))
-        assert (0 <= noise_level and noise_level < 4)
+        assert (method == "scale" or 0 <= noise_level and noise_level < 4)
 
         if alpha is not None:
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))

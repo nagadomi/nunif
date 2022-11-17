@@ -14,6 +14,7 @@ from time import time
 import hashlib
 from configparser import ConfigParser
 from diskcache import Cache
+from enum import Enum
 from nunif.logger import logger, set_log_level
 # from nunif.utils.pil_io
 from nunif.utils import wand_io as IL
@@ -29,6 +30,25 @@ DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
+
+
+class ScaleOption(Enum):
+    NONE = -1
+    X16 = 1
+    X20 = 2
+
+
+class NoiseOption(Enum):
+    NONE = -1
+    JPEG_0 = 0
+    JPEG_1 = 1
+    JPEG_2 = 2
+    JPEG_3 = 3
+
+
+class StyleOption(Enum):
+    ART = "art"
+    PHOTO = "photo"
 
 
 class CacheGC():
@@ -175,39 +195,36 @@ def fetch_image(request):
 
 
 def parse_request(request):
-    style = request.forms.get("style", "photo")
-    scale = int(request.forms.get("scale", "-1"))
-    noise_level = int(request.forms.get("noise", "-1"))
+    try:
+        style = StyleOption(request.forms.get("style", "photo"))
+        scale = ScaleOption(int(request.forms.get("scale", "-1")))
+        noise = NoiseOption(int(request.forms.get("noise", "-1")))
+    except ValueError:
+        bottle.abort(400, "Bad Request")
 
-    if style != "art":
-        style = "photo"
-    if scale not in {-1, 1, 2}:
-        scale = -1
-    if not (-1 <= noise_level <= 3):
-        noise_level = 2
-    if scale == -1:
-        if noise_level == -1:
+    if scale == ScaleOption.NONE:
+        if noise == NoiseOption.NONE:
             method = "none"
         else:
             method = "noise"
     else:
-        if noise_level == -1:
+        if noise == NoiseOption.NONE:
             method = "scale"
         else:
             method = "noise_scale"
 
-    return style, method, scale, noise_level
+    return style, method, scale, noise
 
 
-def make_output_filename(style, method, noise_level, meta):
+def make_output_filename(style, method, noise, meta):
     base = meta["filename"] if meta["filename"] else meta["sha1"] + ".png"
     base = path.splitext(base)[0]
     if method == "noise":
-        mode = f"{style}_noise{noise_level}"
+        mode = f"{style.value}_noise{noise.value}"
     elif method == "noise_scale":
-        mode = f"{style}_noise{noise_level}_scale"
+        mode = f"{style.value}_noise{noise.value}_scale"
     elif method == "scale":
-        mode = f"{style}_scale"
+        mode = f"{style.value}_scale"
     elif method == "none":
         mode = "none"
     return f"{base}_waifu2x_{mode}.png"
@@ -268,47 +285,46 @@ def api():
     except:
         logger.error(f"api: fetch_image error: {sys.exc_info()[:2]}")
         im, meta = None, None
-
-    style, method, scale, noise_level = parse_request(request)
-
     if im is None:
         bottle.abort(400, "Image Load Error")
     logger.debug(f"api: image: {dump_meta(meta)}")
 
-    output_filename = make_output_filename(style, method, noise_level, meta)
+    style, method, scale, noise = parse_request(request)
+    output_filename = make_output_filename(style, method, noise, meta)
     key = meta["sha1"] + output_filename
+
     image_data = cache.get(key, None)
     if image_data is None:
         t = time()
         if method == "none":
+            logger.debug(f"api: forward: {style} {scale} {noise} "
+                         f"pid={os.getpid()}-{threading.get_ident()}")
             z = im
         else:
-            if method == "scale":
-                noise_level = 0
             with torch.no_grad():
                 rgb, alpha = IL.to_tensor(im, return_alpha=True)
                 ctx_kwargs = {
                     "x": rgb, "alpha": alpha,
-                    "method": method, "noise_level": noise_level,
+                    "method": method, "noise_level": noise.value,
                     "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
                     "tta": command_args.tta, "enable_amp": command_args.amp
                 }
                 with global_lock:
-                    if style == "art":
+                    if style == StyleOption.ART:
                         rgb, alpha = art_ctx.convert(**ctx_kwargs)
                     else:
                         rgb, alpha = photo_ctx.convert(**ctx_kwargs)
                 z = IL.to_image(rgb, alpha)
-            logger.debug(f"api: forward: {style}-{method}, noise_level={noise_level}, {round(time()-t, 2)}s, "
+            logger.debug(f"api: forward: {style} {scale} {noise}, {round(time()-t, 2)}s, "
                          f"pid={os.getpid()}-{threading.get_ident()}")
         t = time()
         image_data = IL.encode_image(z, format="png", meta=meta)
         cache.set(key, image_data, expire=command_args.cache_ttl * 60)
         logger.debug(f"api: encode: {round(time()-t, 2)}s")
     else:
-        logger.debug(f"api: load cache: {style}-{method}, noise_level={noise_level}")
+        logger.debug(f"api: load cache: {style} {scale} {noise}")
 
-    if scale == 1:
+    if scale == ScaleOption.X16:
         # 1.6x
         im, meta = IL.decode_image(image_data, color="rgb", keep_alpha=True)
         w, h = int(im.size[0] * (1.6 / 2.0)), int(im.size[1] * (1.6 / 2.0))
