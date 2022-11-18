@@ -1,11 +1,22 @@
 from PIL import Image, ImageCms, PngImagePlugin, UnidentifiedImageError
 import io
 import struct
+import base64
 import torchvision.transforms.functional as TF
 from ..logger import logger
 
 
 sRGB_profile = ImageCms.createProfile("sRGB")
+CIE_Gray_profile = ImageCms.ImageCmsProfile(io.BytesIO(base64.b64decode("""
+AAABqE95cmECMAAAbW50ckdSQVlMYWIgB9oACQABABUADAASYWNzcCpuaXg3FKy3bm9uZW5vbmX+
+/v7/ZG1ubwAAAAAAAPbWAAEAAAAA0y1veXJhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAFY3BydAAAAMAAAABFZGVzYwAAAQgAAABld3RwdAAAAXAAAAAUYmtw
+dAAAAYQAAAAUa1RSQwAAAZgAAAAQdGV4dAAAAABDb3B5cmlnaHQgKEMpIDIwMDUtMjAxMCBLYWkt
+VXdlIEJlaHJtYW5uIDx3d3cuYmVocm1hbm4ubmFtZT4AAAAAZGVzYwAAAAAAAAALR3JheSBDSUUq
+TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABYWVogAAAAAAAA9tYAAQAAAADTLVhZWiAAAAAAAAAA
+AAAAAAAAAAAAY3VydgAAAAAAAAABAQAAAA==
+"""))) #  from debian/icc-profiles-free/Gray-CIE_L.icc
 GAMMA_LCD = 45454
 
 
@@ -26,11 +37,19 @@ def _load_image(im, filename, color=None, keep_alpha=False):
     meta["icc_profile"] = im.info.get("icc_profile")
     if meta['icc_profile'] is not None:
         with io.BytesIO(meta['icc_profile']) as io_handle:
+            # TODO: I'm not sure
             src_profile = ImageCms.ImageCmsProfile(io_handle)
             dst_profile = sRGB_profile
-            # TODO: I'm not sure
-            output_mode = "RGB" if im.mode == "CMYK" else None
-            im = ImageCms.profileToProfile(im, src_profile, dst_profile, outputMode=output_mode)
+            output_mode = None
+            if im.mode == "CMYK":
+                output_mode = "RGB"
+            elif im.mode == "L":
+                output_mode = "L"
+                dst_profile = CIE_Gray_profile
+            try:
+                im = ImageCms.profileToProfile(im, src_profile, dst_profile, outputMode=output_mode)
+            except ImageCms.PyCMSError as e:
+                logger.warning(f"pil_io.load_image: profile error: {e}")
 
     if im.mode not in {"RGB", "RGBA", "L", "LA"}:
         im = im.convert("RGB")
@@ -134,13 +153,17 @@ def save_image(im, filename, format="png",
 
         if meta["icc_profile"] is not None:
             with io.BytesIO(meta['icc_profile']) as io_handle:
+                # TODO: I'm not sure
                 src_profile = sRGB_profile
                 dst_profile = ImageCms.ImageCmsProfile(io_handle)
-                # TODO: I'm not sure
                 try:
                     if meta["mode"] == "CMYK":
                         im = ImageCms.profileToProfile(im, src_profile, dst_profile, outputMode="CMYK")
                         im = im.convert("RGB")
+                    elif meta["mode"] == "L":
+                        src_profile = CIE_Gray_profile
+                        im = im.convert("L")
+                        im = ImageCms.profileToProfile(im, src_profile, dst_profile, outputMode="L")
                     else:
                         im = ImageCms.profileToProfile(im, src_profile, dst_profile)
                     icc_profile = meta["icc_profile"]
