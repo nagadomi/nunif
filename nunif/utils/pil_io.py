@@ -1,4 +1,4 @@
-from PIL import Image, ImageCms, PngImagePlugin
+from PIL import Image, ImageCms, PngImagePlugin, UnidentifiedImageError
 import io
 import struct
 import torchvision.transforms.functional as TF
@@ -73,21 +73,26 @@ def _load_image(im, filename, color=None, keep_alpha=False):
 def load_image(filename, color=None, keep_alpha=False):
     assert (color is None or color in {"rgb", "gray"})
     with open(filename, "rb") as f:
-        im = Image.open(f)
-        return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
+        try:
+            im = Image.open(f)
+            return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
+        except UnidentifiedImageError:
+            return None, None
 
 
 def decode_image(buff, filename=None, color=None, keep_alpha=False):
     with io.BytesIO(buff) as data:
-        im = Image.open(data)
-        return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
+        try:
+            im = Image.open(data)
+            return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
+        except UnidentifiedImageError:
+            return None, None
 
 
 def encode_image(im, format="png", meta=None,
                  compress_level=6):
-    with io.BytesIO as fp:
-        save_image(im, meta, fp,
-                   compress_level=compress_level)
+    with io.BytesIO() as fp:
+        save_image(im, fp, meta=meta, compress_level=compress_level)
         return fp.getvalue()
 
 
@@ -150,6 +155,7 @@ def save_image(im, filename, format="png",
 
         if meta["gamma"] is not None:
             pnginfo.add(b"gAMA", struct.pack(">I", meta["gamma"]))
-            im.save(filename, format="png",
-                    icc_profile=icc_profile, pnginfo=pnginfo,
-                    compress_level=compress_level)
+
+    im.save(filename, format="png",
+            icc_profile=icc_profile, pnginfo=pnginfo,
+            compress_level=compress_level)
