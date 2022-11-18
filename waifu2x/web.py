@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 from os import path
 import posixpath
 import torch
@@ -18,8 +18,6 @@ import psutil
 import gc
 from enum import Enum
 from nunif.logger import logger, set_log_level
-#  from nunif.utils import pil_io as IL
-from nunif.utils import wand_io as IL
 from .utils import Waifu2x
 
 
@@ -100,7 +98,8 @@ def setup():
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch size for tiled render")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--amp", action="store_true", help="with half float")
-
+    parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
+                        help="image library to encode/decode images")
     parser.add_argument("--cache-ttl", type=int, default=120, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
@@ -130,6 +129,13 @@ def setup():
 
 global_lock = threading.RLock()
 command_args, config, art_ctx, photo_ctx, cache, cache_gc = setup()
+if command_args.image_lib == "wand":
+    # 2x slow than pil_io but it supports 16bit output and various formats
+    from nunif.utils import wand_io as IL
+else:
+    from nunif.utils import pil_io as IL
+
+
 # HACK: Avoid unintended argparse in the backend(gunicorn).
 sys.argv = [sys.argv[0]]
 
@@ -268,7 +274,7 @@ def verify_recaptcha(request):
         res = requests.post(RECAPTCHA_VERIFY_URL, data=data, timeout=timeout)
         if res.status_code == 200:
             result = json.loads(res.text)
-            logger.debug(f"verify_recaptcha: " + ("success" if result['success'] else "failure"))
+            logger.debug("verify_recaptcha: " + ("success" if result['success'] else "failure"))
             return result["success"]
         else:
             logger.error(f"verify_recaptcha: HTTP Error {res.status_code} {res.text}")
@@ -283,6 +289,15 @@ def dump_meta(meta):
             else str(type(v)) for k, v in meta.items()}
 
 
+def scale_16x(im, meta):
+    w, h = int(im.size[0] * (1.6 / 2.0)), int(im.size[1] * (1.6 / 2.0))
+    if meta["engine"] == "wand":
+        im.resize(w, h, "lanczos")
+    elif meta["engine"] == "pil":
+        im = im.resize((w, h), 1)
+    return im
+
+
 @bottle.post("/api")
 def api():
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
@@ -291,15 +306,14 @@ def api():
         bottle.abort(401, "reCAPTCHA Error")
     with global_lock:
         cache_gc.gc()
+
+    style, method, scale, noise = parse_request(request)
     im, meta = fetch_image(request)
     if im is None:
         bottle.abort(400, "Image Load Error")
     logger.debug(f"api: image: {dump_meta(meta)}")
-
-    style, method, scale, noise = parse_request(request)
     output_filename = make_output_filename(style, method, noise, meta)
     key = meta["sha1"] + output_filename
-
     image_data = cache.get(key, None)
     if image_data is None:
         t = time()
@@ -327,19 +341,19 @@ def api():
         t = time()
         image_data = IL.encode_image(z, format="png", meta=meta)
         cache.set(key, image_data, expire=command_args.cache_ttl * 60)
+        if im != z:
+            im.close()
+        z.close()
         logger.debug(f"api: encode: {round(time()-t, 2)}s")
     else:
+        im.close()
         logger.debug(f"api: load cache: {style} {scale} {noise}")
 
     if scale == ScaleOption.X16:
-        # 1.6x
-        im, meta = IL.decode_image(image_data, color="rgb", keep_alpha=True)
-        w, h = int(im.size[0] * (1.6 / 2.0)), int(im.size[1] * (1.6 / 2.0))
-        if meta["engine"] == "wand":
-            im.resize(w, h, "lanczos")
-        elif meta["engine"] == "pil":
-            im = im.resize((w, h), 1)
+        im, meta = IL.decode_image(image_data, keep_alpha=True)
+        im = scale_16x(im, meta)
         image_data = IL.encode_image(im, format="png", meta=meta)
+        im.close()
 
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", "image/png")
@@ -396,11 +410,31 @@ def static_file(url):
 if __name__ == "__main__":
     # NOTE: This code expect the server to run with single-process multi-threading.
     import logging
+    import faulthandler
+
+    faulthandler.enable()
 
     if command_args.debug:
         set_log_level(logging.DEBUG)
 
+    backend_kwargs = {}
+    if command_args.backend == "waitress":
+        backend_kwargs = {
+            "preload_app": True,
+            "threads": command_args.threads,
+            "outbuf_overflow": 10 * SIZE_MB,
+            "inbuf_overflow": command_args.max_body_size * 2 * SIZE_MB,
+            "max_request_body_size": command_args.max_body_size * SIZE_MB,
+            "connection_limit": 256,
+            "channel_timeout": 120,
+        }
+    elif command_args.backend == "gnunicon":
+        # NOTE: gunicorn does not work due to `Cannot re-initialize CUDA in forked subprocess`.
+        # Maybe gnunicon uses C-level fork() internally.
+        backend_kwargs = {
+            "preload_app": True,
+            "workers": command_args.workers,
+        }
+
     bottle.run(host=command_args.bind_addr, port=command_args.port, debug=command_args.debug,
-               server=command_args.backend,
-               threads=command_args.threads, workers=command_args.workers, preload_app=True,
-               max_request_body_size=command_args.max_body_size * SIZE_MB)
+               server=command_args.backend, **backend_kwargs)
