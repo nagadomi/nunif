@@ -44,20 +44,37 @@ class Waifu2x():
         assert (method in ("scale", "noise_scale", "noise"))
         assert (method == "scale" or 0 <= noise_level and noise_level < 4)
         if method == "scale":
-            self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))
+            self.scale_model, _ = load_model(
+                path.join(self.model_dir, "scale2x.pth"),
+                map_location=self.device)
         elif method == "noise":
-            self.noise_models[noise_level], _ = load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))
+            self.noise_models[noise_level], _ = load_model(
+                path.join(self.model_dir, f"noise{noise_level}.pth"),
+                map_location=self.device)
         elif method == "noise_scale":
-            self.scale_model, _ = load_model(path.join(self.model_dir, "scale2x.pth"))  # for alpha channel
-            self.noise_scale_models[noise_level], _ = load_model(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"))
+            self.noise_scale_models[noise_level], _ = load_model(
+                path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
+                map_location=self.device)
+            # for alpha channel
+            self.scale_model, _ = load_model(
+                path.join(self.model_dir, "scale2x.pth"),
+                map_location=self.device)
         self._setup()
 
     def load_model_all(self):
-        self.scale_model = load_model(path.join(self.model_dir, "scale2x.pth"))[0]
-        self.noise_models = [load_model(path.join(self.model_dir, f"noise{noise_level}.pth"))[0]
-                             for noise_level in range(4)]
-        self.noise_scale_models = [load_model(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"))[0]
-                                   for noise_level in range(4)]
+        self.scale_model = load_model(
+            path.join(self.model_dir, "scale2x.pth"),
+            map_location=self.device)[0]
+        self.noise_models = [
+            load_model(
+                path.join(self.model_dir, f"noise{noise_level}.pth"),
+                map_location=self.device)[0]
+            for noise_level in range(4)]
+        self.noise_scale_models = [
+            load_model(
+                path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
+                map_location=self.device)[0]
+            for noise_level in range(4)]
         self._setup()
 
     def render(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
