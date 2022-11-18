@@ -1,5 +1,6 @@
 import os
 import sys
+import math
 from os import path
 import posixpath
 import torch
@@ -89,6 +90,7 @@ def setup():
     parser.add_argument("--threads", type=int, default=32, help="The number of threads")
     parser.add_argument("--debug", action="store_true", help="Debug print")
     parser.add_argument("--max-body-size", type=int, default=5, help="maximum allowed size(MB) for uploaded files")
+    parser.add_argument("--max-pixels", type=int, default=3000*3000, help="maximum number of output image pixels ")
     parser.add_argument("--url-timeout", type=int, default=10, help="request_timeout for url")
 
     parser.add_argument("--art-model-dir", type=str, default=DEFAULT_ART_MODEL_DIR, help="art model dir")
@@ -129,15 +131,16 @@ def setup():
 
 global_lock = threading.RLock()
 command_args, config, art_ctx, photo_ctx, cache, cache_gc = setup()
+# HACK: Avoid unintended argparse in the backend(gunicorn).
+sys.argv = [sys.argv[0]]
+
 if command_args.image_lib == "wand":
     # 2x slow than pil_io but it supports 16bit output and various formats
     from nunif.utils import wand_io as IL
 else:
     from nunif.utils import pil_io as IL
-
-
-# HACK: Avoid unintended argparse in the backend(gunicorn).
-sys.argv = [sys.argv[0]]
+MAX_NOISE_PIXELS = command_args.max_pixels
+MAX_SCALE_PIXELS = (math.sqrt(command_args.max_pixels) / 2) ** 2
 
 
 def fetch_uploaded_file(upload_file):
@@ -312,6 +315,13 @@ def api():
     if im is None:
         bottle.abort(400, "Image Load Error")
     logger.debug(f"api: image: {dump_meta(meta)}")
+    if scale != ScaleOption.NONE and im.size[0] * im.size[1] > MAX_SCALE_PIXELS:
+        im.close()
+        bottle.abort(413, "Request Image Too Large")
+    if scale == ScaleOption.NONE and im.size[0] * im.size[1] > MAX_NOISE_PIXELS:
+        im.close()
+        bottle.abort(413, "Request Image Too Large")
+
     output_filename = make_output_filename(style, method, noise, meta)
     key = meta["sha1"] + output_filename
     image_data = cache.get(key, None)
@@ -407,7 +417,7 @@ def static_file(url):
     return bottle.static_file(basename, root=command_args.root)
 
 
-if __name__ == "__main__":
+def main():
     # NOTE: This code expect the server to run with single-process multi-threading.
     import logging
     import faulthandler
@@ -438,3 +448,8 @@ if __name__ == "__main__":
 
     bottle.run(host=command_args.bind_addr, port=command_args.port, debug=command_args.debug,
                server=command_args.backend, **backend_kwargs)
+
+
+if __name__ == "__main__":
+    main()
+
