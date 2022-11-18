@@ -158,9 +158,9 @@ def fetch_url_file(url):
                     bottle.abort(413, f"Request entity too large (max: {command_args.max_body_size}MB)")
             logger.debug(f"fetch_url_file: {round(file_size/(SIZE_MB), 3)}MB, {url}")
             return buff.getvalue()
-    except requests.exceptions.Timeout:
-        logger.debug(f"fetch_url_file: error: timeout, {url}")
-        bottle.abort(400, "URL timeout")
+    except requests.exceptions.RequestException as e:
+        logger.debug(f"fetch_url_file: error: {e}, {url}")
+        bottle.abort(400, "URL Error")
 
 
 def fetch_image(request):
@@ -255,17 +255,14 @@ def verify_recaptcha(request):
         res = requests.post(RECAPTCHA_VERIFY_URL, data=data, timeout=timeout)
         if res.status_code == 200:
             result = json.loads(res.text)
-            if result["success"]:
-                logger.debug("verify_recaptcha: success")
-            else:
-                logger.debug("verify_recaptcha: fail")
+            logger.debug(f"verify_recaptcha: " + ("success" if result['success'] else "failure"))
             return result["success"]
         else:
             logger.error(f"verify_recaptcha: HTTP Error {res.status_code} {res.text}")
-            return False
-    except requests.exceptions.Timeout:
-        logger.error("verify_recaptcha: error: timeout")
-        return False
+            bottle.abort(500, "reCAPTCHA Error")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"verify_recaptcha: error: {e}")
+        bottle.abort(500, "reCAPTCHA Error")
 
 
 def dump_meta(meta):
@@ -280,11 +277,7 @@ def api():
     if command_args.enable_recaptcha and not verify_recaptcha(request):
         bottle.abort(401, "reCAPTCHA Error")
     cache_gc.gc()
-    try:
-        im, meta = fetch_image(request)
-    except:
-        logger.error(f"api: fetch_image error: {sys.exc_info()[:2]}")
-        im, meta = None, None
+    im, meta = fetch_image(request)
     if im is None:
         bottle.abort(400, "Image Load Error")
     logger.debug(f"api: image: {dump_meta(meta)}")
