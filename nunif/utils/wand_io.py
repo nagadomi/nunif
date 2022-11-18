@@ -155,6 +155,8 @@ def encode_image(im, format="png", meta=None):
     with im.convert(format) as out, io.BytesIO() as fp:
         if meta is not None:
             out = restore(out, meta)
+        else:
+            out.depth = 8
         out.save(file=fp)
         return fp.getvalue()
 
