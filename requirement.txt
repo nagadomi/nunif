@@ -13,3 +13,4 @@ waitress
 bottle
 diskcache
 flake8
+psutil

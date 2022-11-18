@@ -14,9 +14,11 @@ from time import time
 import hashlib
 from configparser import ConfigParser
 from diskcache import Cache
+import psutil
+import gc
 from enum import Enum
 from nunif.logger import logger, set_log_level
-# from nunif.utils.pil_io
+#  from nunif.utils import pil_io as IL
 from nunif.utils import wand_io as IL
 from .utils import Waifu2x
 
@@ -56,6 +58,13 @@ class CacheGC():
         self.cache = cache
         self.interval = interval
         self.last_expired_at = 0
+        self.proc = psutil.Process()
+
+    def disk_size_mb(self):
+        return round(self.cache.volume() / SIZE_MB, 2)
+
+    def ram_size_mb(self):
+        return round(self.proc.memory_info().rss / SIZE_MB, 2)
 
     def gc(self):
         now = time()
@@ -63,6 +72,10 @@ class CacheGC():
             self.cache.expire(now)
             self.cache.cull()
             self.last_expired_at = time()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            logger.info(f"diskcache: cache={self.disk_size_mb()}MB, RAM={self.ram_size_mb()}")
 
 
 def setup():
@@ -276,7 +289,8 @@ def api():
     #  'style': 'photo', 'noise': '1', 'scale': '2', 'recap': 'xxxxx'}
     if command_args.enable_recaptcha and not verify_recaptcha(request):
         bottle.abort(401, "reCAPTCHA Error")
-    cache_gc.gc()
+    with global_lock:
+        cache_gc.gc()
     im, meta = fetch_image(request)
     if im is None:
         bottle.abort(400, "Image Load Error")
@@ -308,7 +322,7 @@ def api():
                     else:
                         rgb, alpha = photo_ctx.convert(**ctx_kwargs)
                 z = IL.to_image(rgb, alpha)
-            logger.debug(f"api: forward: {style} {scale} {noise}, {round(time()-t, 2)}s, "
+            logger.debug(f"api: forward: {round(time()-t, 2)}s, {style} {scale} {noise}, "
                          f"pid={os.getpid()}-{threading.get_ident()}")
         t = time()
         image_data = IL.encode_image(z, format="png", meta=meta)
@@ -321,7 +335,10 @@ def api():
         # 1.6x
         im, meta = IL.decode_image(image_data, color="rgb", keep_alpha=True)
         w, h = int(im.size[0] * (1.6 / 2.0)), int(im.size[1] * (1.6 / 2.0))
-        im.resize(w, h, "lanczos")
+        if meta["engine"] == "wand":
+            im.resize(w, h, "lanczos")
+        elif meta["engine"] == "pil":
+            im = im.resize((w, h), 1)
         image_data = IL.encode_image(im, format="png", meta=meta)
 
     res = HTTPResponse(status=200, body=image_data)
