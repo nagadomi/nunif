@@ -71,10 +71,10 @@ class CacheGC():
         if self.last_expired_at + self.interval < now:
             self.cache.expire(now)
             self.cache.cull()
-            self.last_expired_at = time()
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            self.last_expired_at = time()
             logger.info(f"diskcache: cache={self.disk_size_mb()}MB, RAM={self.ram_size_mb()}")
 
 
