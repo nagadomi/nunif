@@ -4,7 +4,7 @@
 numpy
 pillow
 tqdm
-wand
+wand >= 0.6.10
 python-snappy # TODO: migrate to zstd
 zstandard
 # waifu2x-web
