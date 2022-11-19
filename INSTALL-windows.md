@@ -27,7 +27,7 @@ git fetch --all
 git checkout -b dev origin/dev
 ```
 
-3. Setup conda env (optional)
+## 3. Setup conda env (optional)
 
 ```
 conda create -n nunif
@@ -35,7 +35,7 @@ conda activate nunif
 conda install python=3.9
 ```
 
-4. Install Pytorch
+## 4. Install Pytorch
 
 See [Pytorch](https://pytorch.org/get-started/locally/)
 
@@ -43,13 +43,13 @@ See [Pytorch](https://pytorch.org/get-started/locally/)
 conda install pytorch torchvision torchaudio torchtext pytorch-cuda=11.6 -c pytorch -c nvidia
 ```
 
-5. Install pip packages
+## 5. Install pip packages
 
 ```
 pip3 install -r requirements.txt
 ```
 
-6. Run waifu2x.web
+## 6. Run waifu2x.web
 
 ```
 python -m waifu2x.web 

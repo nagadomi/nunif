@@ -33,7 +33,7 @@ activate
 source .venv/bin/activate
 ```
 
-exit
+(exit)
 ```
 deactivate
 ```
@@ -52,7 +52,7 @@ pip3 install torch torchvision torchaudio torchtext
 pip3 install -r requirements.txt
 ```
 
-6. Run waifu2x.web
+## 6. Run waifu2x.web
 
 ```
 python -m waifu2x.web
