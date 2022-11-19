@@ -10,21 +10,8 @@ For the time being, I will make incompatible changes.
 
 We usually support the latest version. If there are bugs or compatibility issues, we will specify the version.
 
-1. Install [Pytorch](https://pytorch.org/get-started/locally/)
-
-2. Install dependencies packages
-
-```
-apt-get install git-core libmagickwand-dev libsnappy-dev
-```
-
-3. Clone
-
-```
-git clone https://github.com/nagadomi/nunif.git
-cd nunif
-pip3 install -r requirement.txt
-```
+- [INSTALL-ubuntu](INSTALL-ubuntu.md)
+- [INSTALL-windows](INSTALL-windows.md)
 
 ## waifu2x
 
