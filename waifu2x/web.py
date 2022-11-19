@@ -79,7 +79,7 @@ class CacheGC():
 
 def setup():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--bind-addr", type=str, default="0.0.0.0",
+    parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
                         help="0.0.0.0 for global, 127.0.0.1 for local")
     parser.add_argument("--port", type=int, default=8812, help="HTTP port number")
     parser.add_argument("--root", type=str, default="waifu2x/public_html",
