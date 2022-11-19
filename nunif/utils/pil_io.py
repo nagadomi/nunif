@@ -39,15 +39,18 @@ def _load_image(im, filename, color=None, keep_alpha=False):
         with io.BytesIO(meta['icc_profile']) as io_handle:
             # TODO: I'm not sure
             src_profile = ImageCms.ImageCmsProfile(io_handle)
-            dst_profile = sRGB_profile
-            output_mode = None
-            if im.mode == "CMYK":
-                output_mode = "RGB"
-            elif im.mode == "L":
-                output_mode = "L"
-                dst_profile = CIE_Gray_profile
             try:
-                im = ImageCms.profileToProfile(im, src_profile, dst_profile, outputMode=output_mode)
+                if im.mode == "CMYK":
+                    im = ImageCms.profileToProfile(im, src_profile, sRGB_profile, outputMode="RGB")
+                elif im.mode == "L":
+                    im = ImageCms.profileToProfile(im, src_profile, CIE_Gray_profile, outputMode="L")
+                elif im.mode == "LA":
+                    alpha = im.getchannel("A")
+                    im = im.convert("L")
+                    im = ImageCms.profileToProfile(im, src_profile, CIE_Gray_profile, outputMode="L")
+                    im.putalpha(alpha)
+                else:
+                    im = ImageCms.profileToProfile(im, src_profile, sRGB_profile)
             except ImageCms.PyCMSError as e:
                 logger.warning(f"pil_io.load_image: profile error: {e}")
 
@@ -154,18 +157,21 @@ def save_image(im, filename, format="png",
         if meta["icc_profile"] is not None:
             with io.BytesIO(meta['icc_profile']) as io_handle:
                 # TODO: I'm not sure
-                src_profile = sRGB_profile
                 dst_profile = ImageCms.ImageCmsProfile(io_handle)
                 try:
                     if meta["mode"] == "CMYK":
-                        im = ImageCms.profileToProfile(im, src_profile, dst_profile, outputMode="CMYK")
+                        im = ImageCms.profileToProfile(im, sRGB_profile, dst_profile, outputMode="CMYK")
                         im = im.convert("RGB")
                     elif meta["mode"] == "L":
-                        src_profile = CIE_Gray_profile
                         im = im.convert("L")
-                        im = ImageCms.profileToProfile(im, src_profile, dst_profile, outputMode="L")
+                        im = ImageCms.profileToProfile(im, CIE_Gray_profile, dst_profile, outputMode="L")
+                    elif meta["mode"] == "LA":
+                        alpha = im.getchannel("A")
+                        im = im.convert("L")
+                        im = ImageCms.profileToProfile(im, CIE_Gray_profile, dst_profile, outputMode="L")
+                        im.putalpha(alpha)
                     else:
-                        im = ImageCms.profileToProfile(im, src_profile, dst_profile)
+                        im = ImageCms.profileToProfile(im, sRGB_profile, dst_profile)
                     icc_profile = meta["icc_profile"]
                 except ImageCms.PyCMSError as e:
                     logger.warning(f"pil_io.save_image: profile error: {e}")
