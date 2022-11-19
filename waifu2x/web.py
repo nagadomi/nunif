@@ -301,6 +301,11 @@ def scale_16x(im, meta):
     return im
 
 
+@bottle.get("/api")
+def api():
+    bottle.abort(405, "Method Not Allowed")
+
+
 @bottle.post("/api")
 def api():
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
