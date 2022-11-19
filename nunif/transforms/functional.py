@@ -1,6 +1,5 @@
 import torch
 from torch.nn import functional as F
-from . import image_magick
 
 
 _clip_eps8 = (1.0 / 255.0) * 0.5 - (1.0e-7 * (1.0 / 255.0) * 0.5)
