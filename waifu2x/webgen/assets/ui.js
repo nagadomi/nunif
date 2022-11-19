@@ -7,12 +7,10 @@ $(function (){
     var recaptcha_js = "https://www.recaptcha.net/recaptcha/api.js";
 
     function clear_file() {
-	var new_file = $("#file").clone();
-	new_file.change(clear_url);
-	$("#file").replaceWith(new_file);
+	$("#file").val("");
     }
     function clear_url() {
-	$("#url").val("")
+	$("#url").val("");
     }
     function on_change_style(e) {
 	var checked = $("input[name=style]:checked");
