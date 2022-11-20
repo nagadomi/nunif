@@ -8,7 +8,7 @@ This command downloads the pre-trained models to `waifu2x/pretrained_models`.
 
 # Current limitations
 
-none?
+training is not supported.
 
 # CLI
 
