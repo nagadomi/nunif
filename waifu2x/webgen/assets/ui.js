@@ -1,7 +1,15 @@
 function on_recap_checked(e) {
+    enable_buttons();
+}
+function disable_buttons() {
+    $("#submit-button").prop("disabled", true);
+    $("#download-button").prop("disabled", true);
+}
+function enable_buttons() {
     $("#submit-button").prop("disabled", false);
     $("#download-button").prop("disabled", false);
 }
+
 $(function (){
     var g_expires = 365;
     var recaptcha_js = "https://www.recaptcha.net/recaptcha/api.js";
@@ -37,8 +45,7 @@ $(function (){
 	    console.log("recaptcha: enabled")
 	    $("#recap_response").val(grecaptcha.getResponse());
 	    grecaptcha.reset();
-	    $("#submit-button").prop("disabled", true);
-	    $("#download-button").prop("disabled", true);
+	    disable_buttons();
 	} else {
 	    console.log("recaptcha: disabled")
 	}
@@ -75,13 +82,12 @@ $(function (){
 	{
 	    return;
 	}
-	$("input[name=download]").attr("disabled", "disabled");
 	e.preventDefault();
 	e.stopPropagation();
 	var xhr = new XMLHttpRequest();
 	xhr.open('POST', '/api', true);
 	xhr.responseType = 'arraybuffer';
-	xhr.onload= function(e) {
+	xhr.onload = function(e) {
 	    if (this.status == 200) {
 		var blob = new Blob([this.response], {type : 'image/png'});
 		var a = document.createElement("a");
@@ -91,10 +97,8 @@ $(function (){
 		a.download = uuid() + ".png";
 		a.click();
 		URL.revokeObjectURL(url);
-		$("input[name=download]").removeAttr("disabled");
 	    } else {
 		alert("Download Error");
-		$("input[name=download]").removeAttr("disabled");
 	    }
 	};
 	commit_recap_response();
@@ -102,8 +106,6 @@ $(function (){
     }
     function load_recaptcha()
     {
-        $("#submit-button").prop("disabled", true);
-        $("#download-button").prop("disabled", true);
 	$.ajax({
 	    url: "/recaptcha_state.json",
 	    type: "GET",
@@ -121,11 +123,10 @@ $(function (){
 		    type: "text/javascript",
 		    src: recaptcha_js
 		}).appendTo(document.head);
+		disable_buttons();
 	    } else {
 		console.log("recaptcha is disabled");
 	    }
-            $("#submit-button").prop("disabled", false);
-            $("#download-button").prop("disabled", false);
 	}).fail(function (e) {
 	    console.log(e)
 	});
