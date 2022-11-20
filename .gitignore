@@ -10,6 +10,7 @@ data
 !data/.keep
 waifu2x/pretrained_models
 waifu2x/web-config.ini
+waifu2x/public_html/recaptcha_state.json
 
 
 # ----- Python.gitignore
