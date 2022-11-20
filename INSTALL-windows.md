@@ -51,11 +51,18 @@ pip3 install -r requirements.txt
 
 ## 6. Run waifu2x.web
 
+## 6. Run waifu2x.web
+
+Generate `waifu2x/public_html`
 ```
-python -m waifu2x.web 
+python -m waifu2x.webgen.gen
 ```
 
-Open http://localhost:8812/ 
+Start the web server.
+```
+python -m waifu2x.web
+```
+Open http://localhost:8812/
 
 If you don't have an nvidia GPU, specify the `--gpu -1` option. (CPU Mode)
 ```

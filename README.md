@@ -6,7 +6,7 @@ For the time being, I will make incompatible changes.
 
 - Python 3 (Probably works with Python 3.6 or later)
 - [PyTorch](https://pytorch.org/get-started/locally/)
-- See requirement.txt
+- See requirements.txt
 
 We usually support the latest version. If there are bugs or compatibility issues, we will specify the version.
 
