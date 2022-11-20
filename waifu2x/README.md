@@ -63,7 +63,12 @@ python -m waifu2x.cli --tta --amp --batch-size 16 -m scale -i tmp/images -o tmp/
 
 # Web Application
 
-The following line executes the Web Server.
+Generate `waifu2x/public_html`.
+```
+python -m waifu2x.webgen.gen
+```
+
+The following line starts the Web Server.
 ```
 python -m waifu2x.web
 ```
@@ -96,15 +101,3 @@ Run
 ```
 python -m waifu2x.web --enable-recaptcha --config waifu2x/web-config.ini
 ```
-
-## Regenerate public_html
-
-NOTE: This will be rewritten in Python, but is not done yet.
-
-```
-cd waifu2x/webgen
-ruby gen.rb
-```
-
-`waifu2x/public_html` is overwritten with the webgen templates.
-
