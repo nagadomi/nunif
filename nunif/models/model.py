@@ -2,26 +2,49 @@ import torch.nn as nn
 
 
 class Model(nn.Module):
-    def __init__(self, name, in_channels, out_channels=None, scale=None, offset=None, input_size=None):
+    name = "nunif.Model"
+
+    def __init__(self, kwargs):
         super(Model, self).__init__()
-        self.name = name
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.scale = scale
-        self.offset = offset
-        self.input_size = input_size
-        self._kwargs = {}
+        self.kwargs = {}
         self.updated_at = None
+        self.register_kwargs(kwargs)
+
+    def get_device(self):
+        return next(self.parameters()).device
 
     def register_kwargs(self, kwargs):
         for name, value in kwargs.items():
-            self._kwargs[name] = value
+            if name not in {"self", "__class__"}:
+                self.kwargs[name] = value
+
+    def get_kwargs(self):
+        return self.kwargs
+
+    def get_config(self):
+        return {}
 
     def __repr__(self):
-        s = f"""name: {self.name}
-in_channels: {self.in_channels}
-out_channels: {self.out_channels}
-scale: {self.scale}
-offset: {self.offset}
-input_size: {self.input_size}\n"""
-        return s + super(Model, self).__repr__()
+        return (f"name: {self.name}\nkwargs: {self.kwargs}\n" +
+                super(Model, self).__repr__())
+
+
+class I2IBaseModel(Model):
+    name = "nunif.i2i_base_model"
+
+    def __init__(self, kwargs, scale, offset, in_channels=None, in_size=None):
+        super(I2IBaseModel, self).__init__(kwargs)
+        self.i2i_scale = scale
+        self.i2i_offset = offset
+        self.i2i_in_channels = in_channels
+        self.i2i_in_size = in_size
+
+    def get_config(self):
+        config = dict(super().get_config())
+        config.update({
+            "i2i_scale": self.i2i_scale,
+            "i2i_offset": self.i2i_offset,
+            "i2i_in_channels": self.i2i_in_channels,
+            "i2i_in_size": self.i2i_in_size
+        })
+        return config

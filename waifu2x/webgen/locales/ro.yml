@@ -1,0 +1,30 @@
+---
+description: O Super-Sistemă de Schimbare Singulară al Rezoluției pentru Desene de Tip Anime ce Utilizează Rețele Neurale Profunde Convoluționale. De-asemenea suportă fotografii.
+show_demonstration: Arată demonstrația deplină
+go_to_github: Mergi la GitHub
+image_choosing: Alegerea imaginii
+type_url: Introdu URL-ul Imaginii
+choose_file: Sau alege un fișier
+file_limits: "Limite: Mărime: 5MB, Reducere Zgomot: 3000x3000px, Lărgire: 1500x1500px"
+style: Tip
+artwork: Desen
+photo: Fotografie
+noise_reduction: Reducere Zgomot
+expect_jpeg: Va crea artefacte de tip JPEG
+nr_none: Fără
+nr_low: Slab
+nr_medium: Mediu
+nr_high: Puternic
+nr_highest: Cel Mai Puternic
+nr_hint: "Veți avea nevoie de Reducere Zgomot dacă imaginea are zgomot sau va crea efecte adverse."
+upscaling: Lărgire
+up_none: Fără
+tta: Augmentare prin Predicție (TTA)
+tta_best_effort: "n-pass auto"
+tta_rule: Arată regulile `n-pass auto`."
+tta_hint: "TTA asigură calitate dar limitează dimensiunele imaginii."
+button_convert: Convertește
+button_download: Descărcă
+hints:
+  - "Dacă utilizezi Firefox, te rog să folosește CTRL+S pentru salvarea imaginii.  Opțiunea \"Save Image\" nu funcționează."
+

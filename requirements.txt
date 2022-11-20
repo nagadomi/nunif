@@ -1,0 +1,17 @@
+# install from https://pytorch.org/get-started/locally/
+# torch
+# torchvision
+numpy
+pillow
+tqdm
+wand >= 0.6.10
+python-snappy # TODO: migrate to zstd
+zstandard
+# waifu2x-web
+#gunicorn
+waitress
+bottle
+diskcache
+flake8
+psutil
+pyyaml

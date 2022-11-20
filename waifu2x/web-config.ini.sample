@@ -1,0 +1,5 @@
+[recaptcha]
+site_key: fill_recaptcha_site_key
+secret_key: fill_recaptcha_secret_key
+
+[patreon]

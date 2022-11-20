@@ -1,13 +1,16 @@
 import sys
-from . model import Model
-from . import waifu2x
-from . load_save import load_model, save_model, load_state_from_waifu2x_json
+from . model import Model, I2IBaseModel
+from . utils import (
+    load_model, save_model,
+    get_model_config, get_model_kwargs, get_model_device)
 from . register import register_model, create_model, register_models
 
 
 register_models(sys.modules[__name__])
-register_models(waifu2x)
 
-__all__ = ["Model", "waifu2x",
-           "load_model", "save_model", "load_state_from_waifu2x_json",
-           "register_model", "create_model"]
+__all__ = [
+    "Model", "I2IBaseModel",
+    "load_model", "save_model",
+    "get_model_config", "get_model_kwargs", "get_model_device",
+    "register_model", "create_model"
+]

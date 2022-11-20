@@ -16,4 +16,4 @@ class SEBlock(nn.Module):
         z = F.relu(z, inplace=True)
         z = self.conv2(z)
         z = torch.sigmoid(z)
-        return x * z.expand_as(x)
+        return x * z.expand(x.shape)

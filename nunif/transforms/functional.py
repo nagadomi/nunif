@@ -1,13 +1,17 @@
 import torch
-from . tta import tta_split, tta_merge
-from . import image_magick
+from torch.nn import functional as F
 
 
 _clip_eps8 = (1.0 / 255.0) * 0.5 - (1.0e-7 * (1.0 / 255.0) * 0.5)
+_clip_eps16 = (1.0 / 65535.0) * 0.5 - (1.0e-7 * (1.0 / 65535.0) * 0.5)
 
 
 def quantize256(ft):
-    return (ft + _clip_eps8).mul_(255.0).clamp_(0, 255).byte()
+    return (ft + _clip_eps8).mul_(255.0).clamp_(0, 255).to(torch.uint8)
+
+
+def quantize65535(ft):
+    return (ft + _clip_eps16).mul_(65535.0).clamp_(0, 65535).to(torch.uint16)
 
 
 def quantize256_f(ft):
@@ -28,12 +32,21 @@ def rgb2y(rgb):
         return _rgb2y(rgb)
 
 
+def to_grayscale(x):
+    if x.shape[0] == 1:
+        return x
+    elif x.shape[0] == 3:
+        return rgb2y(x)
+    else:
+        ValueError("Unknown channel format f{x.shape[0]}")
+
+
 def rgb2y_matlab(rgb):
     """
     rgb2y for compatibility with SISR benchmarks
     y: 16-235
     """
-    assert(isinstance(rgb, (torch.FloatTensor, torch.cuda.FloatTensor)))
+    assert (isinstance(rgb, (torch.FloatTensor, torch.cuda.FloatTensor)))
     y = rgb.new_full((1, rgb.shape[1], rgb.shape[2]), fill_value=0)
     (y.add_(rgb[0], alpha=65.481).
      add_(rgb[1], alpha=128.553).
@@ -51,8 +64,17 @@ def negate(x):
         return (-x).add_(1.0)
 
 
+def pad(x, pad, mode='constant', value=0):
+    x = x.unsqueeze(0)
+    return F.pad(x, pad, mode, value).squeeze(0)
+
+
 def crop(x, i, j, h, w):
-    return x[:, i:(i + h), i:(i + w)].clone()
+    return x[:, i:(i + h), j:(j + w)].clone()
+
+
+def crop_ref(x, i, j, h, w):
+    return x[:, i:(i + h), j:(j + w)]
 
 
 def crop_mod(x, mod):
