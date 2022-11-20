@@ -205,11 +205,11 @@
 	<div id="recap_container">
 	</div>
 	<% if t[:button_convert] && !t[:button_convert].empty? %>
-	  <input type="submit" class="button" value="<%= t[:button_convert] %>">
+	  <input id="submit-button" type="submit" class="button" value="<%= t[:button_convert] %>">
 	<% else %>
-	  <input type="submit" class="button">
+	  <input id="submit-button" type="submit" class="button">
 	<% end %>
-	<input type="submit" name="download" value="<%= t[:button_download]%>" class="button">
+	<input id="download-button" type="submit" name="download" value="<%= t[:button_download]%>" class="button">
 	<div class="bottom-hint">
 	  <ul>
 	    <% t[:hints].each do |hint| %>
