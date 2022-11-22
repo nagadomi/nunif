@@ -52,7 +52,7 @@ def _load_image(im, filename, color=None, keep_alpha=False):
                 else:
                     im = ImageCms.profileToProfile(im, src_profile, sRGB_profile)
             except ImageCms.PyCMSError as e:
-                logger.warning(f"pil_io.load_image: profile error: {e}")
+                logger.warning(f"pil_io.load_image: profile error: im.mode={im.mode}, {e}")
 
     if im.mode not in {"RGB", "RGBA", "L", "LA"}:
         im = im.convert("RGB")
@@ -179,7 +179,7 @@ def save_image(im, filename, format="png",
                         im = ImageCms.profileToProfile(im, sRGB_profile, dst_profile)
                     icc_profile = meta["icc_profile"]
                 except ImageCms.PyCMSError as e:
-                    logger.warning(f"pil_io.save_image: profile error: {e}")
+                    logger.warning(f"pil_io.save_image: profile error: im.mode={im.mode}, meta[mode]={meta['mode']}, {e}")
 
         if meta["grayscale"]:
             if im.mode == "RGB":
