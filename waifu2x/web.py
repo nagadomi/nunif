@@ -102,7 +102,7 @@ def setup():
     parser.add_argument("--amp", action="store_true", help="with half float")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
-    parser.add_argument("--cache-ttl", type=int, default=120, help="cache TTL(min)")
+    parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
     parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires web-config.yml")
