@@ -95,8 +95,9 @@ $(function (){
 		a.href = url;
 		a.target = "_blank";
 		a.download = uuid() + ".png";
+                document.body.appendChild(a);
 		a.click();
-		URL.revokeObjectURL(url);
+		setTimeout(function () { URL.revokeObjectURL(url); }, 100);
 	    } else {
 		alert("Download Error");
 	    }
