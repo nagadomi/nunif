@@ -47,8 +47,10 @@ def _load_image(im, filename, color=None, keep_alpha=False):
                 elif im.mode == "LA":
                     alpha = im.getchannel("A")
                     im = im.convert("L")
-                    im = ImageCms.profileToProfile(im, src_profile, CIE_Gray_profile, outputMode="L")
-                    im.putalpha(alpha)
+                    try:
+                        im = ImageCms.profileToProfile(im, src_profile, CIE_Gray_profile, outputMode="L")
+                    finally:
+                        im.putalpha(alpha)
                 else:
                     im = ImageCms.profileToProfile(im, src_profile, sRGB_profile)
             except ImageCms.PyCMSError as e:
@@ -173,8 +175,10 @@ def save_image(im, filename, format="png",
                     elif meta["mode"] == "LA":
                         alpha = im.getchannel("A")
                         im = im.convert("L")
-                        im = ImageCms.profileToProfile(im, CIE_Gray_profile, dst_profile, outputMode="L")
-                        im.putalpha(alpha)
+                        try:
+                            im = ImageCms.profileToProfile(im, CIE_Gray_profile, dst_profile, outputMode="L")
+                        finally:
+                            im.putalpha(alpha)
                     else:
                         im = ImageCms.profileToProfile(im, sRGB_profile, dst_profile)
                     icc_profile = meta["icc_profile"]
