@@ -386,7 +386,7 @@ def api():
 
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", "image/png")
-    res.set_header("Content-Disposition", f"inline; filename*=utf8''{uri_encode(output_filename, safe='')}")
+    res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
 
     return res
 
