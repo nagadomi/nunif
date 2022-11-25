@@ -18,6 +18,12 @@ from diskcache import Cache
 import psutil
 import gc
 from enum import Enum
+from urllib.parse import (
+    quote as uri_encode,
+    unquote_plus as uri_decode,
+    urlparse,
+)
+import uuid
 from nunif.logger import logger, set_log_level
 from .utils import Waifu2x
 
@@ -102,7 +108,7 @@ def setup():
     parser.add_argument("--amp", action="store_true", help="with half float")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
-    parser.add_argument("--cache-ttl", type=int, default=120, help="cache TTL(min)")
+    parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
     parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires web-config.yml")
@@ -193,20 +199,28 @@ def fetch_image(request):
     if upload_file:
         image_data = fetch_uploaded_file(upload_file)
     if image_data:
-        im, meta = IL.decode_image(image_data, upload_file.filename,
+        filename = upload_file.raw_filename
+        if not filename:
+            filename = uuid.uuid4()
+        im, meta = IL.decode_image(image_data, filename,
                                    color="rgb", keep_alpha=True)
     else:
         url = request.forms.get("url", "")
         if url.startswith("http://") or url.startswith("https://"):
             key = "url_" + url
             image_data = cache.get(key, None)
+            filename = posixpath.basename(urlparse(url).path)
+            if not filename:
+                filename = uuid.uuid4()
+            else:
+                filename = uri_decode(filename)
             if image_data is not None:
                 logger.debug(f"fetch_image: load cache: {url}")
-                im, meta = IL.decode_image(image_data, posixpath.basename(url),
+                im, meta = IL.decode_image(image_data, filename,
                                            color="rgb", keep_alpha=True)
             else:
                 image_data = fetch_url_file(url)
-                im, meta = IL.decode_image(image_data, posixpath.basename(url),
+                im, meta = IL.decode_image(image_data, filename,
                                            color="rgb", keep_alpha=True)
                 cache.set(key, image_data, expire=command_args.cache_ttl * 60)
 
@@ -372,7 +386,7 @@ def api():
 
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", "image/png")
-    res.set_header("Content-Disposition", f'inline; filename="{output_filename}"')
+    res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
 
     return res
 
