@@ -73,6 +73,17 @@ $(function (){
 	    return v.toString(16);
 	});
     }
+    function extract_filename(disposition, default_val)
+    {
+        if (disposition && disposition.indexOf('filename') != -1) {
+            var reg = /filename[^;=\n]*=(?:(\\?['"])(.*?)\1|(?:[^\s]+'.*?')?([^;\n]*))/i;
+            var matches = reg.exec(disposition);
+            if (matches && matches.length >= 4 && matches[3]) {
+                return decodeURI(matches[3]);
+            }
+        }
+        return default_val;
+    }
     function download_with_xhr(e) 
     {
 	if (typeof window.URL.createObjectURL == "undefined" ||
@@ -94,7 +105,7 @@ $(function (){
 		var url = URL.createObjectURL(blob);
 		a.href = url;
 		a.target = "_blank";
-		a.download = uuid() + ".png";
+		a.download = extract_filename(this.getResponseHeader("Content-Disposition"), uuid() + ".png");
                 document.body.appendChild(a);
 		a.click();
 		setTimeout(function () { URL.revokeObjectURL(url); }, 100);
