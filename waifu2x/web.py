@@ -201,7 +201,7 @@ def fetch_image(request):
     if image_data:
         filename = upload_file.raw_filename
         if not filename:
-            filename = uuid.uuid4()
+            filename = str(uuid.uuid4())
         im, meta = IL.decode_image(image_data, filename,
                                    color="rgb", keep_alpha=True)
     else:
@@ -211,7 +211,7 @@ def fetch_image(request):
             image_data = cache.get(key, None)
             filename = posixpath.basename(urlparse(url).path)
             if not filename:
-                filename = uuid.uuid4()
+                filename = str(uuid.uuid4())
             else:
                 filename = uri_decode(filename)
             if image_data is not None:
