@@ -9,6 +9,7 @@ from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
+from nunif.utils.filename import set_image_ext
 from .utils import Waifu2x
 
 
@@ -30,20 +31,25 @@ def convert_files(ctx, files, args, enable_amp):
                 rgb, alpha, args.method, args.noise_level,
                 args.tile_size, args.batch_size,
                 args.tta, enable_amp=enable_amp)
-
-            output_filename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
+            output_filename = set_image_ext(path.basename(meta["filename"]), format=args.format)
             if args.depth is not None:
                 meta["depth"] = args.depth
             futures.append(pool.submit(
                 IL.save_image,
                 IL.to_image(rgb, alpha),
                 filename=path.join(args.output, output_filename),
-                meta=meta))
+                meta=meta,
+                format=args.format))
         for f in futures:
             f.result()
 
 
 def convert_file(ctx, args, enable_amp):
+    _, ext = path.splitext(args.output)
+    fmt = ext.lower()[1:]
+    if fmt not in {"png", "webp", "jpeg", "jpg"}:
+        raise ValueError(f"Unable to recognize image extension: {fmt}")
+
     with torch.no_grad():
         im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
         rgb, alpha = IL.to_tensor(im, return_alpha=True)
@@ -52,7 +58,9 @@ def convert_file(ctx, args, enable_amp):
                                  args.tta, enable_amp=enable_amp)
         if args.depth is not None:
             meta["depth"] = args.depth
-        IL.save_image(IL.to_image(rgb, alpha), args.output, meta=meta)
+        IL.save_image(IL.to_image(rgb, alpha),
+                      filename=args.output, meta=meta,
+                      format=fmt)
 
 
 def load_files(txt):
@@ -92,6 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--depth", type=int, help="bit-depth of output image. enabled only with `--image-lib wand`")
+    parser.add_argument("--format", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format")
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
     if args.image_lib == "wand":
@@ -100,4 +109,3 @@ if __name__ == "__main__":
         from nunif.utils import pil_io as IL
 
     main(args)
-
