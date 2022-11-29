@@ -8,9 +8,13 @@ This command downloads the pre-trained models to `waifu2x/pretrained_models`.
 
 # Current limitations
 
-training is not supported.
+Training is not supported yet.
 
-When `--image-lib pil`(default), 16bit image is not supported. If you want to use `--depth 16`, specify `--image-lib wand`.
+When `--image-lib pil`(default), 16bit image output is not supported. If you want to use `--depth 16`, specify `--image-lib wand`.
+
+When `--format jpeg` is specified, the transparent areas of the image will be set to white background and the alpha channel will be removed.
+
+When `--format jpeg` or `--format webp` is specified, image-gamma value(gAMA) is ignored (removed from the output image).
 
 # Note
 
@@ -43,7 +47,7 @@ python -m waifu2x.cli -m scale  -i tmp/images -o tmp/out
 
 2x, webp output
 ```
-python -m waifu2x.cli -m scale  -i tmp/images -o tmp/out --format webp
+python -m waifu2x.cli -m scale  -i tmp/images -o tmp/out -f webp
 python -m waifu2x.cli -m scale  -i tmp/images/image.jpg -o tmp/out/image.webp
 ```
 
@@ -100,7 +104,7 @@ or
 DEBUG=1 python -m waifu2x.web --tta --amp --debug
 ```
 
-## Use ReCAPTCHA
+## Use reCAPTCHA
 
 Copy `waifu2x/web-config.ini.sample` to `waifu2x/web-config.ini`
 ```
