@@ -119,9 +119,9 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False):
 
 
 def encode_image(im, format="png", meta=None,
-                 compress_level=6):
+                 **save_options):
     with io.BytesIO() as fp:
-        save_image(im, fp, meta=meta, compress_level=compress_level)
+        save_image(im, fp, meta=meta, format=format, save_options=save_options)
         return fp.getvalue()
 
 
@@ -152,11 +152,10 @@ def to_image(im, alpha=None):
 
 def save_image(im, filename, format="png",
                meta=None,
-               compress_level=6):
+               **save_options):
 
     # TODO: support non PNG format
 
-    pnginfo = PngImagePlugin.PngInfo()
     icc_profile = None
     if meta is not None:
         assert (meta["engine"] == "pil")
@@ -191,9 +190,39 @@ def save_image(im, filename, format="png",
             elif im.mode == "RGBA":
                 im = im.convert("LA")
 
-        if meta["gamma"] is not None:
-            pnginfo.add(b"gAMA", struct.pack(">I", meta["gamma"]))
 
-    im.save(filename, format="png",
-            icc_profile=icc_profile, pnginfo=pnginfo,
-            compress_level=compress_level)
+    if format == "png":
+        pnginfo = PngImagePlugin.PngInfo()
+        if meta is not None and meta["gamma"] is not None:
+            pnginfo.add(b"gAMA", struct.pack(">I", meta["gamma"]))
+        options = {
+            "icc_profile": icc_profile,
+            "pnginfo": pnginfo,
+            "compress_level": 6,
+        }
+    elif format == "webp":
+        # TODO: gamma
+        options = {
+            "icc_profile": icc_profile,
+            "quality": 95,
+            "method": 4,
+            "lossless": True
+        }
+    elif format in {"jpg", "jpeg"}:
+        format = "jpeg" #  fix format name
+        options = {
+            "icc_profile": icc_profile,
+            "quality": 95,
+            "subsampling": "4:4:4",
+        }
+        if im.mode in {"LA", "RGBA"}:
+            # remove alpha channel
+            bg_color = tuple([255] * (len(im.mode) -1))
+            tmp = Image.new(im.mode[:-1], im.size, bg_color)
+            tmp.paste(im, im.getchannel("A"))
+            im = tmp
+            fn = filename if isinstance(filename, str) else "(ByteIO)"
+            logger.warning(f"pil_io.save_image: {fn}: alpha channel is removed")
+
+    options.update(save_options)
+    im.save(filename, format=format, **options)

@@ -1,6 +1,7 @@
 import torch
 from wand.image import Image, IMAGE_TYPES
 from wand.api import library
+from wand.color import Color
 import io
 from PIL import ImageCms
 
@@ -157,6 +158,15 @@ def encode_image(im, format="png", meta=None):
             out = restore(out, meta)
         else:
             out.depth = 8
+        if format in {"jpg", "jpeg"}:
+            out.options["jpeg:sampling-factor"] = "1x1,1x1,1x1"
+            out.compression_quality = 95
+            out.background_color = Color('white')
+            out.alpha_channel = "remove"
+
+        elif format == "webp":
+            library.MagickSetOption(out.wand, b"webp:lossless", b"true")
+
         out.save(file=fp)
         return fp.getvalue()
 
