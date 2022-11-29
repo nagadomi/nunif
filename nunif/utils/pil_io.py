@@ -63,6 +63,8 @@ def _load_image(im, filename, color=None, keep_alpha=False):
     meta["gamma"] = None
     gamma = im.info.get("gamma")
     if gamma is not None:
+        if not isinstance(gamma, float):
+            gamma = float(gamma)
         gamma = int(gamma * 100000)
         if gamma != 0 and gamma != GAMMA_LCD:
             meta["gamma"] = gamma
