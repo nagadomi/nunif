@@ -100,7 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--depth", type=int, help="bit-depth of output image. enabled only with `--image-lib wand`")
-    parser.add_argument("--format", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format")
+    parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format")
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
     if args.image_lib == "wand":
