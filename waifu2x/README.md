@@ -10,6 +10,8 @@ This command downloads the pre-trained models to `waifu2x/pretrained_models`.
 
 training is not supported.
 
+When `--image-lib pil`(default), 16bit image is not supported. If you want to use `--depth 16`, specify `--image-lib wand`.
+
 # CLI
 
 The following line executes the CLI command.
