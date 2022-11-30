@@ -7,8 +7,7 @@ class VGG7(I2IBaseModel):
     name = "waifu2x.vgg_7"
 
     def __init__(self, in_channels=3, out_channels=3):
-        super(VGG7, self).__init__(locals(), scale=1, offset=7)
-        self.register_kwargs({"in_channels": in_channels, "out_channels": out_channels})
+        super(VGG7, self).__init__(locals(), scale=1, offset=7, in_channels=in_channels)
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 32, 3, 1, 0),
             nn.LeakyReLU(0.1, inplace=True),
