@@ -17,7 +17,8 @@ def send_random_request(i, host, port, file_path):
     style = random.choice(["art", "photo"])
     scale = str(random.choice([-1, 1, 2]))
     noise = str(random.choice([-1, 0, 1, 2, 3]))
-    data = {"style": style, "scale": scale, "noise": noise}
+    image_format = str(random.choice([0, 1]))
+    data = {"style": style, "scale": scale, "noise": noise, "format": image_format}
 
     with open(file_path, "rb") as f:
         print("%05d" % i, data)
