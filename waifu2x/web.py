@@ -242,7 +242,6 @@ def parse_request(request):
         scale = ScaleOption(int(request.forms.get("scale", "-1")))
         noise = NoiseOption(int(request.forms.get("noise", "-1")))
         image_format = FormatOption(int(request.forms.get("format", "0")))
-        print(request.forms.get("format", "0"), image_format)
     except ValueError:
         bottle.abort(400, "Bad Request")
 
