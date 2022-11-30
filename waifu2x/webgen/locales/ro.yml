@@ -19,6 +19,7 @@ nr_highest: Cel Mai Puternic
 nr_hint: "Veți avea nevoie de Reducere Zgomot dacă imaginea are zgomot sau va crea efecte adverse."
 upscaling: Lărgire
 up_none: Fără
+image_format: Format de imagine
 tta: Augmentare prin Predicție (TTA)
 tta_best_effort: "n-pass auto"
 tta_rule: Arată regulile `n-pass auto`."

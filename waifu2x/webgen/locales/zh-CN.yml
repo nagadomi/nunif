@@ -19,6 +19,7 @@ nr_highest: 最高
 nr_hint: "请仅在图像本身含有噪点的情况下使用降噪，否则可能产生反效果。"
 upscaling: 放大倍数
 up_none: 不放大
+image_format: 图片格式
 button_convert: 转换
 button_download: 下载
 hints:

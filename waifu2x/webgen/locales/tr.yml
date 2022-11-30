@@ -18,6 +18,7 @@ nr_highest: En Yüksek
 nr_hint: "Resimde gürültü varsa gürültü azaltmayı kullanmanızı tavsiye ederiz, yoksa tam tersi etkiler bulunabilir."
 upscaling: Çözünürlük Yükseltme
 up_none: Yok
+image_format: Görüntü formatı
 button_convert: Başlat
 button_download: İndir
 hints:

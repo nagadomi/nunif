@@ -19,6 +19,7 @@ nr_highest: Найвище
 nr_hint: "Використовуйте зменшення шуму лише коли шум дійсно присутній на зображенні, інакше якість може погіршитися."
 upscaling: Збільшення
 up_none: Немає
+image_format: Формат зображення
 tta: TTA
 tta_best_effort: "n-pass auto"
 tta_rule: "Show the rule of `n-pass auto`."

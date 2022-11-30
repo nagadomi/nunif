@@ -19,6 +19,7 @@ nr_highest: Najwyższa
 nr_hint: "Musisz użyć redukcji szumów jeśli zdjęcie ma szum lub możesz otrzymać efekt przeciwny."
 upscaling: Powiększanie skali
 up_none: Brak
+image_format: Format obrazu
 tta: TTA
 tta_best_effort: "n-pass auto"
 tta_rule: "Pokaż zasadę `n-pass auto`."

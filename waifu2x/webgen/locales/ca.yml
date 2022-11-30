@@ -19,6 +19,7 @@ nr_highest: Molt alta
 nr_hint: "Utilitzeu la reducció de soroll si la imatge té soroll, si no, podeu aconseguir l'efecte contrari."
 upscaling: Sobreescalat
 up_none: Cap
+image_format: "Format d'imatge"
 tta: TTA
 tta_best_effort: "n-pass auto"
 tta_rule: "Mostra la regla de `n-pass auto`."
