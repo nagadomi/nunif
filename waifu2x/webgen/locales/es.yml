@@ -17,6 +17,7 @@ nr_high: Alto
 nr_hint: "Es necesario utilizar la reducción de ruido si la imagen dispone de artefactos de compresión; de lo contrario podría producir el efecto opuesto."
 upscaling: Aumento de resolución
 up_none: Ninguno
+image_format: Formato de imagen
 button_convert: Convertir
 button_download: Descargar
 hints:

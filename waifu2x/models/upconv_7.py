@@ -7,7 +7,7 @@ class UpConv7(I2IBaseModel):
     name = "waifu2x.upconv_7"
 
     def __init__(self, in_channels=3, out_channels=3):
-        super(UpConv7, self).__init__(locals(), scale=2, offset=14)
+        super(UpConv7, self).__init__(locals(), scale=2, offset=14, in_channels=in_channels)
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 16, 3, 1, 0),
             nn.LeakyReLU(0.1, inplace=True),

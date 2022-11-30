@@ -202,6 +202,24 @@
 	    </label>
 	  </div>
 	</div>
+	<div class="option-box">
+	  <div class="option-left">
+	    {{image_format}}:
+	    <div class="option-left-small"></div>
+	  </div>
+	  <div class="option-right">
+	    <label><input type="radio" name="format" class="radio" value="0" checked>
+	      <span class="r-text">
+                PNG
+	      </span>
+	    </label>
+	    <label><input type="radio" name="format" class="radio" value="1">
+	      <span class="r-text">
+		WebP
+	      </span>
+	    </label>
+	  </div>
+	</div>
 	<div id="recap_container">
 	</div>
 	% if button_convert:

@@ -18,6 +18,7 @@ nr_highest: maksimuma
 nr_hint: "La redukto de bruo devas esti uzata se la bildo havas kunpremajn artefaktojn; alie oni povus akiri la kontraŭan rezulton."
 upscaling: pliiĝo de rezolucio
 up_none: neniu
+image_format: Bilda Formato
 button_convert: konverti
 button_download: malŝarĝi
 hints:

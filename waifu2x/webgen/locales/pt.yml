@@ -19,6 +19,7 @@ nr_highest: Mais alta
 nr_hint: "Use redução de ruído apenas se a imagem realmente apresentar ruído; do contrário, isso poderá piorar a qualidade da imagem."
 upscaling: Aumento de escala
 up_none: Nenhum
+image_format: Formato de imagem
 button_convert: Converter
 button_download: Baixar
 hints:

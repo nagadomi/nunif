@@ -12,12 +12,14 @@ photo: fotografia
 noise_reduction: riduzione del rumore
 expect_jpeg: saranno ridotti gli artefatti di compressione JPEG
 nr_none: nessuno
+image_format: Image Format
 nr_medium: medio
 nr_high: alto
 nr_highest: massimo
 nr_hint: "È necessario usare la riduzione di rumore se la mmagine presenta artefatti di compressione; altrimenti si potrebbe ottenere il risultato opposto."
 upscaling: aumento della risoluzione
 up_none: nessuno
+image_format: formato immagine
 button_convert: convertire
 button_download: scaricare
 hints:

@@ -19,6 +19,7 @@ nr_highest: Høyeste
 nr_hint: "Bare bruk støyreduksjon hvis bildet faktisk inneholder støy, ellers kan du få motsatt effekt."
 upscaling: Oppskalering
 up_none: Ingen
+image_format: Bildeformat
 tta: TTA
 tta_best_effort: "n-pass auto"
 tta_rule: "Vis `n-pass auto`-valget."

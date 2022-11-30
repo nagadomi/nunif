@@ -19,6 +19,7 @@ nr_highest: 最高
 nr_hint: "去除雜點時可能會犧牲圖片細節。請在確定有 JPEG 雜點時再使用。"
 upscaling: 放大
 up_none: 無
+image_format: 圖像格式
 tta: TTA
 tta_hint: "TTA 能產生穩定的品質。但圖片大小有限制。"
 tta_rule: "規則"

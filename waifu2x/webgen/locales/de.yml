@@ -18,6 +18,7 @@ nr_highest: Höchste
 nr_hint: "Sie sollten Rauschunterdrückung nutzen, wenn das Bild an sich viel Bildrauschen aufweist. Ansonsten könnte es den entgegensetzten Effekt haben."
 upscaling: Hochskalierung
 up_none: Keine
+image_format: Bildformat
 button_convert: Konvertieren
 button_download: Herunterladen
 hints:

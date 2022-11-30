@@ -19,6 +19,7 @@ nr_highest: Hoogste
 nr_hint: "Gebruik ruisvermindering alleen als de afbeelding ook daadwerkelijk ruis bevat, anders zal het effect omgekeerd zijn."
 upscaling: Vergroting
 up_none: Geen
+image_format: Beeldformaat
 tta: TTA
 tta_best_effort: "n-pass auto"
 tta_rule: "Vertoon de `n-pass auto` optie."

@@ -19,6 +19,7 @@ nr_highest: 최고
 nr_hint: "실제로 노이즈가 있는 이미지에만 사용해야 하며, 그렇지 않을 경우 세세한 부분이 뭉개질 수 있습니다."
 upscaling: 확대
 up_none: 없음
+image_format: 이미지 형식
 button_convert: 변환
 button_download: 다운로드
 hints:
