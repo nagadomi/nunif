@@ -104,6 +104,8 @@ def load_image(filename, color=None, keep_alpha=False):
             return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
         except UnidentifiedImageError:
             return None, None
+        except Image.DecompressionBombError:
+            return None, None
         except OSError:
             return None, None
 
@@ -115,9 +117,10 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False):
             return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
         except UnidentifiedImageError:
             return None, None
+        except Image.DecompressionBombError:
+            return None, None
         except OSError:
             return None, None
-
 
 
 def encode_image(im, format="png", meta=None,
