@@ -39,6 +39,11 @@ $(function (){
 	var checked = $("input[name=scale]:checked");
 	$.cookie("scale", checked.val(), {expires: g_expires});
     }
+    function on_change_format(e)
+    {
+	var checked = $("input[name=format]:checked");
+	$.cookie("format", checked.val(), {expires: g_expires});
+    }
     function commit_recap_response()
     {
 	if (typeof grecaptcha != "undefined") {
@@ -61,8 +66,8 @@ $(function (){
 	if ($.cookie("scale")) {
 	    $("input[name=scale]").filter("[value=" + $.cookie("scale") + "]").prop("checked", true);
 	}
-	if ($.cookie("tta_level")) {
-	    $("input[name=tta_level]").filter("[value=" + $.cookie("tta_level") + "]").prop("checked", true);
+	if ($.cookie("format")) {
+	    $("input[name=format]").filter("[value=" + $.cookie("format") + "]").prop("checked", true);
 	}
     }
     function uuid() 
@@ -150,6 +155,7 @@ $(function (){
 	var style = uri.query(true)["style"];
 	var noise = uri.query(true)["noise"];
 	var scale = uri.query(true)["scale"];
+	var format = uri.query(true)["format"];
 	if (url) {
 	    $("input[name=url]").val(url);
 	}
@@ -162,12 +168,16 @@ $(function (){
 	if (scale) {
 	    $("input[name=scale]").filter("[value=" + scale + "]").prop("checked", true);
 	}
+	if (format) {
+	    $("input[name=format]").filter("[value=" + format + "]").prop("checked", true);
+	}
     }
     $("#url").change(clear_file);
     $("#file").change(clear_url);
     $("input[name=style]").change(on_change_style);
     $("input[name=noise]").change(on_change_noise_level);
     $("input[name=scale]").change(on_change_scale_factor);
+    $("input[name=format]").change(on_change_format);
     $("input[name=download]").click(download_with_xhr);
     $("form").submit(function(e) {
 	e.preventDefault();
@@ -178,6 +188,7 @@ $(function (){
     on_change_style();
     on_change_scale_factor();
     on_change_noise_level();
+    on_change_format();
     set_param();
     load_recaptcha();
 })

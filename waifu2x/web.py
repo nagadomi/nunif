@@ -25,6 +25,7 @@ from urllib.parse import (
 )
 import uuid
 from nunif.logger import logger, set_log_level
+from nunif.utils.filename import set_image_ext
 from .utils import Waifu2x
 
 
@@ -51,6 +52,11 @@ class NoiseOption(Enum):
     JPEG_1 = 1
     JPEG_2 = 2
     JPEG_3 = 3
+
+
+class FormatOption(Enum):
+    PNG = 0
+    WEBP = 1
 
 
 class StyleOption(Enum):
@@ -235,6 +241,8 @@ def parse_request(request):
         style = StyleOption(request.forms.get("style", "photo"))
         scale = ScaleOption(int(request.forms.get("scale", "-1")))
         noise = NoiseOption(int(request.forms.get("noise", "-1")))
+        image_format = FormatOption(int(request.forms.get("format", "0")))
+        print(request.forms.get("format", "0"), image_format)
     except ValueError:
         bottle.abort(400, "Bad Request")
 
@@ -248,11 +256,15 @@ def parse_request(request):
             method = "scale"
         else:
             method = "noise_scale"
+    if image_format == FormatOption.PNG:
+        image_format = "png"
+    else:
+        image_format = "webp"
 
-    return style, method, scale, noise
+    return style, method, scale, noise, image_format
 
 
-def make_output_filename(style, method, noise, meta):
+def make_output_filename(style, method, noise, image_format, meta):
     base = meta["filename"] if meta["filename"] else meta["sha1"] + ".png"
     base = path.splitext(base)[0]
     if method == "noise":
@@ -263,7 +275,7 @@ def make_output_filename(style, method, noise, meta):
         mode = f"{style.value}_scale"
     elif method == "none":
         mode = "none"
-    return f"{base}_waifu2x_{mode}.png"
+    return set_image_ext(f"{base}_waifu2x_{mode}", image_format)
 
 
 @bottle.get("/recaptcha_state.json")
@@ -329,7 +341,7 @@ def api():
     with global_lock:
         cache_gc.gc()
 
-    style, method, scale, noise = parse_request(request)
+    style, method, scale, noise, image_format = parse_request(request)
     im, meta = fetch_image(request)
     if im is None:
         bottle.abort(400, "Image Load Error")
@@ -341,13 +353,13 @@ def api():
         im.close()
         bottle.abort(413, "Request Image Too Large")
 
-    output_filename = make_output_filename(style, method, noise, meta)
+    output_filename = make_output_filename(style, method, noise, image_format, meta)
     key = meta["sha1"] + output_filename
     image_data = cache.get(key, None)
     if image_data is None:
         t = time()
         if method == "none":
-            logger.debug(f"api: forward: {style} {scale} {noise} "
+            logger.debug(f"api: forward: {style} {scale} {noise} {image_format}"
                          f"pid={os.getpid()}-{threading.get_ident()}")
             z = im
         else:
@@ -365,10 +377,10 @@ def api():
                     else:
                         rgb, alpha = photo_ctx.convert(**ctx_kwargs)
                 z = IL.to_image(rgb, alpha)
-            logger.debug(f"api: forward: {round(time()-t, 2)}s, {style} {scale} {noise}, "
+            logger.debug(f"api: forward: {round(time()-t, 2)}s, {style} {scale} {noise} {image_format}, "
                          f"pid={os.getpid()}-{threading.get_ident()}")
         t = time()
-        image_data = IL.encode_image(z, format="png", meta=meta)
+        image_data = IL.encode_image(z, format=image_format, meta=meta)
         cache.set(key, image_data, expire=command_args.cache_ttl * 60)
         if im != z:
             im.close()
@@ -381,11 +393,11 @@ def api():
     if scale == ScaleOption.X16:
         im, meta = IL.decode_image(image_data, keep_alpha=True)
         im = scale_16x(im, meta)
-        image_data = IL.encode_image(im, format="png", meta=meta)
+        image_data = IL.encode_image(im, format=image_format, meta=meta)
         im.close()
 
     res = HTTPResponse(status=200, body=image_data)
-    res.set_header("Content-Type", "image/png")
+    res.set_header("Content-Type", f"image/{image_format}")
     res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
 
     return res
