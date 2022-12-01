@@ -195,6 +195,9 @@ def fetch_url_file(url):
     except requests.exceptions.RequestException as e:
         logger.debug(f"fetch_url_file: error: {e}, {url}")
         bottle.abort(400, "URL Error")
+    except UnicodeEncodeError as e:
+        logger.debug(f"fetch_url_file: error: {e}, {url}")
+        bottle.abort(400, "URL Error")
 
 
 def fetch_image(request):
