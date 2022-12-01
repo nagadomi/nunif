@@ -117,3 +117,7 @@ Run
 ```
 python -m waifu2x.web --enable-recaptcha --config waifu2x/web-config.ini
 ```
+
+# API
+
+[API Document](API.md)
