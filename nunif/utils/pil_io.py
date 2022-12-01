@@ -108,6 +108,8 @@ def load_image(filename, color=None, keep_alpha=False):
             return None, None
         except OSError:
             return None, None
+        except ValueError:
+            return None, None
 
 
 def decode_image(buff, filename=None, color=None, keep_alpha=False):
@@ -120,6 +122,8 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False):
         except Image.DecompressionBombError:
             return None, None
         except OSError:
+            return None, None
+        except ValueError:
             return None, None
 
 
