@@ -338,12 +338,13 @@ def api():
 def api():
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
     #  'style': 'photo', 'noise': '1', 'scale': '2', 'recap': 'xxxxx'}
+    style, method, scale, noise, image_format = parse_request(request)
+
     if command_args.enable_recaptcha and not verify_recaptcha(request):
         bottle.abort(401, "reCAPTCHA Error")
     with global_lock:
         cache_gc.gc()
 
-    style, method, scale, noise, image_format = parse_request(request)
     im, meta = fetch_image(request)
     if im is None:
         bottle.abort(400, "Image Load Error")
