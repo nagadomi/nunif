@@ -117,7 +117,7 @@ def setup():
     parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
-    parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires web-config.yml")
+    parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires --config option")
     parser.add_argument("--config", type=str, help="config file for API tokens")
 
     args = parser.parse_args()
@@ -164,7 +164,7 @@ def fetch_uploaded_file(upload_file):
             file_size += len(buff)
             upload_buff.write(buff)
             if file_size > max_body_size:
-                logger.debug("fetch_uploaded_file: error: too lage")
+                logger.debug("fetch_uploaded_file: error: too large")
                 bottle.abort(413, f"Request entity too large (max: {command_args.max_body_size}MB)")
             buff = upload_file.file.read(BUFF_SIZE)
 
