@@ -1,4 +1,4 @@
-from PIL import Image, ImageCms, PngImagePlugin, UnidentifiedImageError
+from PIL import Image, ImageCms, ImageMath, PngImagePlugin, UnidentifiedImageError
 import io
 import struct
 import base64
@@ -20,13 +20,19 @@ AAAAAAAAAAAAY3VydgAAAAAAAAABAQAAAA==
 GAMMA_LCD = 45454
 
 
+def convert_i2l(im):
+    # https://github.com/python-pillow/Pillow/issues/3011
+    return ImageMath.eval('im >> 8', im=im).convert('L')
+
+
 def _load_image(im, filename, color=None, keep_alpha=False):
     meta = {"engine": "pil", "filename": filename}
     im.load()
     meta["mode"] = im.mode
 
     if im.mode == "I;16":
-        im.mode = im.convert("L")
+        # TODO: dont work
+        im = im.convert("L")
     if keep_alpha and im.mode in {"L", "I", "RGB", "P"}:
         transparency = im.info.get('transparency')
         if isinstance(transparency, bytes) or isinstance(transparency, int):
@@ -57,7 +63,10 @@ def _load_image(im, filename, color=None, keep_alpha=False):
                 logger.warning(f"pil_io.load_image: profile error: im.mode={im.mode}, {e}")
 
     if im.mode not in {"RGB", "RGBA", "L", "LA"}:
-        im = im.convert("RGB")
+        if im.mode == "I":
+            im = convert_i2l(im)
+        else:
+            im = im.convert("RGB")
 
     meta["grayscale"] = im.mode in {"L", "LA"}
     meta["gamma"] = None
@@ -108,6 +117,12 @@ def load_image(filename, color=None, keep_alpha=False):
             return None, None
         except OSError:
             return None, None
+        except ValueError:
+            # Decompressed Data Too Large
+            return None, None
+        except SyntaxError:
+            # SyntaxError: broken PNG file
+            return None, None
 
 
 def decode_image(buff, filename=None, color=None, keep_alpha=False):
@@ -120,6 +135,10 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False):
         except Image.DecompressionBombError:
             return None, None
         except OSError:
+            return None, None
+        except ValueError:
+            return None, None
+        except SyntaxError:
             return None, None
 
 
@@ -158,9 +177,6 @@ def to_image(im, alpha=None):
 def save_image(im, filename, format="png",
                meta=None,
                **save_options):
-
-    # TODO: support non PNG format
-
     icc_profile = None
     if meta is not None:
         assert (meta["engine"] == "pil")
@@ -194,7 +210,6 @@ def save_image(im, filename, format="png",
                 im = im.convert("L")
             elif im.mode == "RGBA":
                 im = im.convert("LA")
-
 
     if format == "png":
         pnginfo = PngImagePlugin.PngInfo()
