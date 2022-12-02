@@ -109,6 +109,10 @@ def load_image(filename, color=None, keep_alpha=False):
         except OSError:
             return None, None
         except ValueError:
+            # Decompressed Data Too Large
+            return None, None
+        except SyntaxError:
+            # SyntaxError: broken PNG file
             return None, None
 
 
@@ -124,6 +128,8 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False):
         except OSError:
             return None, None
         except ValueError:
+            return None, None
+        except SyntaxError:
             return None, None
 
 
