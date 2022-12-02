@@ -19,7 +19,7 @@
 ##### Option
 |url|style|scale|noise|format|
 |:---:|:---:|:---:|:---:|:---:|
-|img url|Artwork=art  Photo=photo|None=-1  1.6x=1  2x=2|None=1  Low=0  Medium=1  High=2  Highest=3|PNG=0  WebP=1|
+|img url|Artwork=art  Photo=photo|None=-1  1.6x=1  2x=2|None=-1  Low=0  Medium=1  High=2  Highest=3|PNG=0  WebP=1|
 
 #### Note
 Noise is expect JPEG artifact
