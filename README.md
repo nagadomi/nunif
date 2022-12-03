@@ -16,7 +16,7 @@ We usually support the latest version. If there are bugs or compatibility issues
 ## waifu2x
 
 The repository contains waifu2x pytorch implementation and pretrained models.
-CLI and Web API is supported. Training is currently not implemented.
+Command Line Interface and Web Application is supported. Training is currently not implemented.
 
 See [waifu2x/README.md](waifu2x/README.md)
 

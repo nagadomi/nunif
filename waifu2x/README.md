@@ -10,7 +10,7 @@ This command downloads the pre-trained models to `waifu2x/pretrained_models`.
 
 Training is not supported yet.
 
-When `--image-lib pil`(default), 16bit image output is not supported. If you want to use `--depth 16`, specify `--image-lib wand`.
+The CLI and Web App allow you to switch the image library to be used with `--image-lib (pil|wand)`. When `--image-lib pil`(default), 16bit image output is not supported. If you want to use `--depth 16`, specify `--image-lib wand`.
 
 When `--format jpeg` is specified, the transparent areas of the image will be set to white background and the alpha channel will be removed.
 
@@ -20,7 +20,7 @@ When `--format jpeg` or `--format webp` is specified, image-gamma value(gAMA) is
 
 In Ubuntu 22.04, gThumb(Image Viewer) has a bug in rendering webp's alpha channel. If you encounter any problems with the alpha channel, please check it with Google-chrome.
 
-# CLI
+# Command Line Interface
 
 The following line executes the CLI command.
 ```
@@ -103,6 +103,8 @@ or
 ```
 DEBUG=1 python -m waifu2x.web --tta --amp --debug
 ```
+
+# Image Encode/Decode
 
 ## Use reCAPTCHA
 
