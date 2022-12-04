@@ -118,6 +118,7 @@ def _load_image(im, filename, color=None, keep_alpha=False):
 
 def load_image_simple(filename, color="rgb"):
     im = Image.open(filename)
+    im.load()
 
     if im.mode in {"LA", "RGBA"}:
         im = remove_alpha(im)
