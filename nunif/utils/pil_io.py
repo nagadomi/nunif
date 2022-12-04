@@ -20,6 +20,13 @@ AAAAAAAAAAAAY3VydgAAAAAAAAABAQAAAA==
 GAMMA_LCD = 45454
 
 
+def remove_alpha(im):
+    bg_color = tuple([255] * (len(im.mode) -1))
+    nobg = Image.new(im.mode[:-1], im.size, bg_color)
+    nobg.paste(im, im.getchannel("A"))
+    return nobg
+
+
 def convert_i2l(im):
     # https://github.com/python-pillow/Pillow/issues/3011
     return ImageMath.eval('im >> 8', im=im).convert('L')
@@ -90,6 +97,8 @@ def _load_image(im, filename, color=None, keep_alpha=False):
             elif im.mode == "LA":
                 im = im.convert("RGBA")
         else:
+            if im.mode in {"LA", "RGBA"}:
+                im = remove_alpha(im)
             if im.mode != "RGB":
                 im = im.convert("RGB")
     elif color == "gray":
@@ -99,10 +108,28 @@ def _load_image(im, filename, color=None, keep_alpha=False):
             elif im.mode == "RGBA":
                 im = im.convert("LA")
         else:
+            if im.mode in {"LA", "RGBA"}:
+                im = remove_alpha(im)
             if im.mode != "L":
                 im = im.convert("L")
 
     return im, meta
+
+
+def load_image_simple(filename, color="rgb"):
+    im = Image.open(filename)
+
+    if im.mode in {"LA", "RGBA"}:
+        im = remove_alpha(im)
+
+    if color == "rgb" and im.mode != "RGB":
+        im = im.convert("RGB")
+    elif color == "gray" and im.mode != "L":
+        if im.mode == "I":
+            im = convert_i2l(im)
+        else:
+            im = convert("L")
+    return im, {}
 
 
 def load_image(filename, color=None, keep_alpha=False):
@@ -236,11 +263,7 @@ def save_image(im, filename, format="png",
             "subsampling": "4:4:4",
         }
         if im.mode in {"LA", "RGBA"}:
-            # remove alpha channel
-            bg_color = tuple([255] * (len(im.mode) -1))
-            tmp = Image.new(im.mode[:-1], im.size, bg_color)
-            tmp.paste(im, im.getchannel("A"))
-            im = tmp
+            im = remove_alpha(im)
             fn = filename if isinstance(filename, str) else "(ByteIO)"
             logger.warning(f"pil_io.save_image: {fn}: alpha channel is removed")
 
