@@ -2,7 +2,6 @@ import os
 from os import path
 import torch
 from torch import nn
-from tqdm import tqdm
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR, MultiStepLR
 from .. import models  # register
@@ -14,14 +13,14 @@ from nunif.modules import ClipLoss, LuminanceWeightedLoss, PSNR, AuxiliaryLoss, 
 
 def build_best_model_filename(args):
     if args.method == "scale":
-        return path.join(args.model_dir, f"scale2x.pth")
+        return path.join(args.model_dir, "scale2x.pth")
     else:
         raise NotImplementedError()
 
 
 def build_checkpoint_filename(args):
     if args.method == "scale":
-        return path.join(args.model_dir, f"scale2x.checkpoint.pth")
+        return path.join(args.model_dir, "scale2x.checkpoint.pth")
     else:
         raise NotImplementedError()
 
@@ -50,7 +49,7 @@ def build_dataloader(args, model):
         train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=args.minibatch_size,
             worker_init_fn=train_dataset.worker_init,
-            shuffle=False, 
+            shuffle=False,
             pin_memory=True,
             sampler=train_dataset.sampler(),
             num_workers=args.num_workers,
@@ -63,7 +62,7 @@ def build_dataloader(args, model):
         validation_loader = torch.utils.data.DataLoader(
             validation_dataset, batch_size=args.minibatch_size,
             worker_init_fn=validation_dataset.worker_init,
-            shuffle=False, 
+            shuffle=False,
             num_workers=args.num_workers,
             drop_last=False)
 
@@ -125,10 +124,10 @@ def train(args):
 
     for epoch in range(start_epoch, args.max_epoch):
         print(f"* epoch: {epoch}, lr: {scheduler.get_last_lr()}")
-        print(f"** train")
+        print("** train")
 
         env.train(
-            loader=train_loader, 
+            loader=train_loader,
             optimizer=optimizer,
             grad_scaler=grad_scaler)
         scheduler.step()
@@ -141,7 +140,7 @@ def train(args):
             save_model(model, best_model_filename, train_kwargs=args)
 
         save_model(
-            model, 
+            model,
             checkpoint_filename,
             train_kwargs=args,
             optimizer_state_dict=optimizer.state_dict(),

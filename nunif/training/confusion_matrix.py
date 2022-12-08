@@ -29,7 +29,6 @@ class SoftMaxConfusionMatrix():
         self.confusion_matrix.zero_()
 
     def print(self, prefix, max_print_class=None, file=sys.stdout):
-        average_row_correct = self.class_accuracy.mean().item()
         print(f"{prefix}: global correct: {self.global_correct()},"
               f" average_row_correct: {self.average_row_correct()}",
               file=file)

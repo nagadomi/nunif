@@ -3,7 +3,7 @@ from os import path
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from tqdm import tqdm
 import torchvision.transforms.functional as TF
-from nunif.utils.pil_io import load_image_simple, save_image
+from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import ImageLoader
 
 
@@ -21,7 +21,7 @@ def split_image(filepath_prefix, im, size, stride, reject_rate):
             rects.append((rect, color_stdv))
 
     n_reject = int(len(rects) * reject_rate)
-    rects = [v[0] for v in sorted(rects, key=lambda v: v[1], reverse=True)][0:len(rects)-n_reject]
+    rects = [v[0] for v in sorted(rects, key=lambda v: v[1], reverse=True)][0:len(rects) - n_reject]
 
     index = 0
     for rect in rects:
@@ -40,7 +40,7 @@ def main(args):
             f.result()
         return []
 
-    for dataset_type in ("validation","train"):
+    for dataset_type in ("validation", "train"):
         print(f"** {dataset_type}")
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)

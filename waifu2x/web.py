@@ -102,7 +102,7 @@ def setup():
     parser.add_argument("--threads", type=int, default=32, help="The number of threads")
     parser.add_argument("--debug", action="store_true", help="Debug print")
     parser.add_argument("--max-body-size", type=int, default=5, help="maximum allowed size(MB) for uploaded files")
-    parser.add_argument("--max-pixels", type=int, default=3000*3000, help="maximum number of output image pixels ")
+    parser.add_argument("--max-pixels", type=int, default=3000 * 3000, help="maximum number of output image pixels ")
     parser.add_argument("--url-timeout", type=int, default=10, help="request_timeout for url")
 
     parser.add_argument("--art-model-dir", type=str, default=DEFAULT_ART_MODEL_DIR, help="art model dir")
@@ -330,7 +330,7 @@ def scale_16x(im, meta):
 
 
 @bottle.get("/api")
-def api():
+def api_get_error():
     bottle.abort(405, "Method Not Allowed")
 
 
@@ -486,4 +486,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

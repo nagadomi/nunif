@@ -37,6 +37,7 @@ def resize(x, size, filter_type, blur=1):
         im.resize(w, h, filter_type, blur)
         return to_tensor(im)
 
+
 def scale(x, scale_factor, filter_type, blur=1):
     h, w = int(x.shape[1] * scale_factor), int(x.shape[2] * scale_factor)
     with to_wand_image(x) as im:

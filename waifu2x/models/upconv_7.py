@@ -1,6 +1,5 @@
 import torch.nn as nn
 from nunif.models import I2IBaseModel, register_model
-from nunif.modules.inplace_clip import InplaceClip
 
 
 class UpConv7(I2IBaseModel):

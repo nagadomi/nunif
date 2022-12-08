@@ -11,4 +11,4 @@ def set_image_ext(filename, format):
     elif format in {"jpg", "jpeg"}:
         return filename + ".jpg"
     else:
-        raise NotImplemented(f"{format}")
+        raise NotImplementedError(f"{format}")

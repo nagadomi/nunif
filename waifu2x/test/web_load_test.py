@@ -22,7 +22,7 @@ def send_random_request(i, host, port, file_path):
 
     with open(file_path, "rb") as f:
         print("%05d" % i, data)
-        res = requests.post(f"http://{host}:{port}/api", 
+        res = requests.post(f"http://{host}:{port}/api",
                             files={'file': f}, data=data)
         if res.status_code != 200:
             print(f"Error {res.status_code} {res.reason}", file=sys.stderr)
@@ -67,17 +67,17 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8812, help="remote port")
     parser.add_argument("--image-dir", type=str, required=True, help="input image dir")
     parser.add_argument("--ntest", "-n", type=int, default=100, help="number of tries")
-    parser.add_argument("--max-file-size", type=int, default=1024*1024*5, help="max file size (bytes)")
+    parser.add_argument("--max-file-size", type=int, default=1024 * 1024 * 5, help="max file size (bytes)")
     parser.add_argument("--max-image-size", type=int, default=1500, help="max image size (width/height px)")
     parser.add_argument("--threads", type=int, default=4, help="number of tries")
     args = parser.parse_args()
 
     random.seed(71)
 
-    files = [path.join(args.image_dir, fn) 
-             for fn in os.listdir(args.image_dir) 
+    files = [path.join(args.image_dir, fn)
+             for fn in os.listdir(args.image_dir)
              if fn.endswith(".png") or fn.endswith(".jpg")]
-    dos(args.ntest, 
+    dos(args.ntest,
         host="localhost", port=args.port,
         threads=args.threads, files=files,
         max_file_size=args.max_file_size,

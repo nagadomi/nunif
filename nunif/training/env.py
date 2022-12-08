@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 import torch
-import torch.nn
+import torch.nn as nn
 from tqdm import tqdm
 from . confusion_matrix import SoftMaxConfusionMatrix
 from .. models.utils import get_model_config, get_model_device
-from .. modules import ClipLoss, JaccardIndex
+from .. modules import ClipLoss
 
 
 class BaseEnv(ABC):
@@ -52,7 +52,6 @@ class BaseEnv(ABC):
                 loss.backward()
                 optimizer.step()
         self.train_end()
-
 
     def validate(self, loader):
         self.validation_begin()
@@ -117,7 +116,7 @@ class I2IEnv(BaseEnv):
         if self.criterion is None:
             self.criterion = ClipLoss(nn.HuberLoss()).to(self.device)
         if self.validation_criterion is None:
-            self.criterion = ClipLoss(HuberLoss()).to(self.device)
+            self.criterion = ClipLoss(nn.HuberLoss()).to(self.device)
 
     def clear_loss(self):
         self.sum_loss = 0

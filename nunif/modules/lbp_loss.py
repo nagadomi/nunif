@@ -19,11 +19,11 @@ def generate_random_filters(size, sparcity=0.5):
     """
     out_channels, in_channels, kernel_size, _ = size
     filters = torch.bernoulli(torch.torch.full(size, sparcity))
-    filters[:, :, kernel_size//2, kernel_size//2] = 0
+    filters[:, :, kernel_size // 2, kernel_size // 2] = 0
     filter_sum = filters.view(out_channels, in_channels, -1).sum(dim=2).add_(1e-6)
     filter_sum = filter_sum.view(out_channels, in_channels, 1, 1).expand(size=filters.shape)
     filters.div_(filter_sum)
-    filters[:, :, kernel_size//2, kernel_size//2] = -1
+    filters[:, :, kernel_size // 2, kernel_size // 2] = -1
     filters.mul_(0.5)
     #  print(filters)
 
@@ -34,10 +34,11 @@ def generate_random_filters(size, sparcity=0.5):
 Note: Be careful not to initialize by `if isinstance(module, nn.Conv2d):` condition
 """
 
+
 class RandomBinaryConvolution(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, sparcity=0.9):
         super().__init__(
-            in_channels=in_channels, 
+            in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
             padding=padding,
@@ -50,7 +51,7 @@ class RandomBinaryConvolution(nn.Conv2d):
 class RandomFilterConvolution(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, sparcity=0.5):
         super().__init__(
-            in_channels=in_channels, 
+            in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
             padding=padding,
@@ -69,7 +70,7 @@ class LBPLoss(nn.Module):
 
         # [0] = identity filter
         self.conv.weight.data[0] = 0
-        self.conv.weight.data[0, :, kernel_size//2, kernel_size//2] = 0.5 * kernel_size **2
+        self.conv.weight.data[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
 
     def forward(self, input, target):
         b, ch, *_ = input.shape

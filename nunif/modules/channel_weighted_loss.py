@@ -3,7 +3,7 @@ from torch import nn
 
 class ChannelWeightedLoss(nn.Module):
     """ Wrapper Module for channel weight
-    """ 
+    """
     def __init__(self, module, weight):
         super().__init__()
         self.module = module
@@ -12,7 +12,7 @@ class ChannelWeightedLoss(nn.Module):
     def forward(self, input, target):
         b, ch, *_ = input.shape
         assert (ch == len(self.weight))
-        return sum([self.module(input[:, i:i+1, :, :], target[:, i:i+1, :, :]) * self.weight[i]
+        return sum([self.module(input[:, i:i + 1, :, :], target[:, i:i + 1, :, :]) * self.weight[i]
                     for i in range(ch)])
 
 

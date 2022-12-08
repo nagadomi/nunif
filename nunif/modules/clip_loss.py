@@ -4,7 +4,7 @@ from torch import nn
 
 class ClipLoss(nn.Module):
     """ Wrapper Module for `(clamp(input, 0, 1) - clamp(target, 0, 1))`
-    """ 
+    """
     def __init__(self, module, min_value=0, max_value=1, eta=0.001):
         super().__init__()
         self.module = module

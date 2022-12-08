@@ -3,9 +3,9 @@ from nunif.addon import load_addons
 
 
 def add_default_options(parser):
-    subparser.add_argument("--dataset-dir", "-i", type=str, required=True, help="input dataset dir")
-    subparser.add_argument("--data-dir", "-o", type=str, required=True, help="output data dir")
-    
+    parser.add_argument("--dataset-dir", "-i", type=str, required=True, help="input dataset dir")
+    parser.add_argument("--data-dir", "-o", type=str, required=True, help="output data dir")
+
 
 def main():
     parser = argparse.ArgumentParser()
