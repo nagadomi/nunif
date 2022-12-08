@@ -22,11 +22,19 @@ class UpConv7(I2IBaseModel):
             nn.Conv2d(128, 256, 3, 1, 0),
             nn.LeakyReLU(0.1, inplace=True),
             nn.ConvTranspose2d(256, out_channels, 4, 2, 3),
-            InplaceClip(0, 1)
         )
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        return self.net(x)
+        z = self.net(x)
+        if self.training:
+            return z
+        else:
+            return z.clamp_(0, 1)
 
 
 register_model(UpConv7.name, UpConv7)

@@ -8,6 +8,7 @@ import argparse
 import csv
 from torchvision.transforms import functional as TF
 from nunif.transforms import functional as NF
+import nunif.transforms.image_magick as IM
 from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
 from tqdm import tqdm
@@ -34,22 +35,22 @@ def MSE2PSNR(mse):
 
 def add_jpeg_noise(x, args):
     if args.jpeg_yuv420:
-        sampling_factor = NF.image_magick.YUV420
+        sampling_factor = IM.YUV420
     else:
-        sampling_factor = NF.image_magick.YUV444
+        sampling_factor = IM.YUV444
     for i in range(args.jpeg_times):
         quality = args.jpeg_quality - i * args.jpeg_quality_down
-        x = NF.image_magick.jpeg_noise(x, sampling_factor, quality)
+        x = IM.jpeg_noise(x, sampling_factor, quality)
     return x
 
 
 def make_input_waifu2x(x, args):
     if args.method == "scale":
-        return NF.image_magick.scale(x, 0.5, filter_type=args.filter)
+        return IM.scale(x, 0.5, filter_type=args.filter)
     elif args.method == "noise":
         return add_jpeg_noise(x, args)
     elif args.method == "noise_scale":
-        return add_jpeg_noise(NF.image_magick.scale(x, 0.5, filter_type=args.filter), args)
+        return add_jpeg_noise(IM.scale(x, 0.5, filter_type=args.filter), args)
 
 
 def remove_border(x, border):
@@ -139,7 +140,7 @@ def benchmark_waifu2x(raw_argv):
             if args.baseline:
                 t = time.time()
                 if args.method in ("scale", "noise_scale"):
-                    z = NF.image_magick.scale(x, 2, filter_type=args.baseline_filter)
+                    z = IM.scale(x, 2, filter_type=args.baseline_filter)
                 else:
                     z = x
                 baseline_time_sum += time.time() - t

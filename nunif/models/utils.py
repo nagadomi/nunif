@@ -6,19 +6,22 @@ from . model import Model
 from .. logger import logger
 
 
-def save_model(model, model_path, updated_at=None, train_kwargs=None):
+def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
     if isinstance(model, nn.DataParallel):
         model = model.model
     assert (isinstance(model, Model))
     updated_at = str(updated_at or datetime.now(timezone.utc))
     if train_kwargs is not None and not isinstance(train_kwargs, dict):
         train_kwargs = vars(train_kwargs)  # Namespace
-    torch.save({"nunif_model": 1,
-                "name": model.name,
-                "updated_at": updated_at,
-                "kwargs": model.get_kwargs(),
-                "train_kwargs": train_kwargs,
-                "state_dict": model.state_dict()}, model_path)
+    data = {
+        "nunif_model": 1,
+        "name": model.name,
+        "updated_at": updated_at,
+        "kwargs": model.get_kwargs(),
+        "train_kwargs": train_kwargs,
+        "state_dict": model.state_dict()}
+    data.update(kwargs)
+    torch.save(data, model_path)
 
 
 def load_model(model_path, device_ids=None, strict=True, map_location="cpu"):
