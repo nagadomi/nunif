@@ -10,7 +10,7 @@ class Addon():
     def name(self):
         return self.name
 
-    def register_build_training_data(self, subparser, default_parser):
+    def register_create_training_data(self, subparser, default_parser):
         pass
 
     def register_train(self, subparser, default_parser):

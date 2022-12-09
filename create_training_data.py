@@ -20,7 +20,7 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     subparsers = parser.add_subparsers(help="task", required=True)
     for addon in load_addons():
-        subparser = addon.register_build_training_data(subparsers, default_parser)
+        subparser = addon.register_create_training_data(subparsers, default_parser)
 
     args = parser.parse_args()
     assert (args.handler is not None)

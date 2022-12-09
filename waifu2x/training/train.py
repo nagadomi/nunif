@@ -12,21 +12,21 @@ from nunif.models import create_model, save_model, load_model, get_model_config
 from nunif.modules import ClampLoss, LuminanceWeightedLoss, PSNR, AuxiliaryLoss, LBPLoss
 
 
-def build_best_model_filename(args):
+def create_best_model_filename(args):
     if args.method == "scale":
         return path.join(args.model_dir, "scale2x.pth")
     else:
         raise NotImplementedError()
 
 
-def build_checkpoint_filename(args):
+def create_checkpoint_filename(args):
     if args.method == "scale":
         return path.join(args.model_dir, "scale2x.checkpoint.pth")
     else:
         raise NotImplementedError()
 
 
-def build_model(args, device):
+def create_model_by_arch(args, device):
     kwargs = {"in_channels": 3, "out_channels": 3}
     if args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
         kwargs["no_clip"] = True
@@ -38,7 +38,7 @@ def build_model(args, device):
     return model
 
 
-def build_dataloader(args, model):
+def create_dataloader(args, model):
     model_offset = get_model_config(model, "i2i_offset")
     if args.method == "scale":
         train_dataset = Waifu2xScale2xDataset(
@@ -83,14 +83,14 @@ def train(args):
         device = f"cuda:{args.gpu[0]}"
     else:
         device = "cpu"
-    best_model_filename = build_best_model_filename(args)
-    checkpoint_filename = build_checkpoint_filename(args)
+    best_model_filename = create_best_model_filename(args)
+    checkpoint_filename = create_checkpoint_filename(args)
     if args.resume:
         model, meta = load_model(checkpoint_filename, device_ids=args.gpu)
     else:
-        model = build_model(args, device)
+        model = create_model_by_arch(args, device)
         meta = {}
-    train_loader, validation_loader = build_dataloader(args, model)
+    train_loader, validation_loader = create_dataloader(args, model)
     if args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
         criterion = AuxiliaryLoss([
             ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
