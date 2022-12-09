@@ -1,6 +1,7 @@
 import argparse
 from nunif.addon import load_addons
 from multiprocessing import cpu_count
+from nunif.initializer import set_seed, disable_image_lib_threads
 
 
 def add_default_options(parser):
@@ -30,6 +31,7 @@ def add_default_options(parser):
     parser.add_argument("--amp", action="store_true", help="with AMP")
     parser.add_argument("--resume", action="store_true", help="resume training from the latest checkpoint")
     parser.add_argument("--reset-state", action="store_true", help="reset optimizer,scheduler states for --resume")
+    parser.add_argument("--seed", type=int, default=71, help="random seed")
 
 
 def main():
@@ -40,6 +42,10 @@ def main():
         if subparser is not None:
             add_default_options(subparser)
     args = parser.parse_args()
+
+    disable_image_lib_threads()
+    set_seed(args.seed)
+
     assert(args.handler is not None)
     print(vars(args))
     args.handler(args)
