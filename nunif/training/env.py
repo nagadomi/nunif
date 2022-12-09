@@ -1,10 +1,12 @@
-from abc import ABC, abstractmethod
+import sys
 import torch
 import torch.nn as nn
 from tqdm import tqdm
 from . confusion_matrix import SoftMaxConfusionMatrix
 from .. models.utils import get_model_config, get_model_device
-from .. modules import ClipLoss
+from .. modules import ClampLoss, LuminanceWeightedLoss, LuminancePSNR, PSNR
+
+from abc import ABC, abstractmethod
 
 
 class BaseEnv(ABC):
@@ -114,9 +116,13 @@ class I2IEnv(BaseEnv):
         self.criterion = criterion
         self.validation_criterion = validation_criterion
         if self.criterion is None:
-            self.criterion = ClipLoss(nn.HuberLoss()).to(self.device)
+            self.criterion = ClampLoss(nn.HuberLoss()).to(self.device)
+        else:
+            self.criterion = self.criterion.to(self.device)
         if self.validation_criterion is None:
-            self.criterion = ClipLoss(nn.HuberLoss()).to(self.device)
+            self.validation_criterion = ClampLoss(nn.HuberLoss()).to(self.device)
+        else:
+            self.validation_criterion = self.validation_criterion.to(self.device)
 
     def clear_loss(self):
         self.sum_loss = 0
@@ -154,7 +160,32 @@ class I2IEnv(BaseEnv):
         self.sum_loss += loss.item()
         self.sum_step += 1
 
-    def validation_end(self):
+    def print_validation_result(self, loss, file=sys.stdout):
+        print(f"loss: {loss}", file=file)
+
+    def validation_end(self, file=sys.stdout):
         mean_loss = self.sum_loss / self.sum_step
-        print(f"loss: {mean_loss}")
+        self.print_validation_result(mean_loss, file=file)
         return mean_loss
+
+
+class RGBPSNREnv(I2IEnv):
+    def __init__(self, model, criterion=None):
+        if criterion is None:
+            criterion = ClampLoss(nn.HuberLoss(0.3))
+        super().__init__(model, criterion=criterion, validation_criterion=PSNR())
+
+    def print_validation_result(self, psnr_loss, file=sys.stdout):
+        psnr = -psnr_loss
+        print(f"Batch RGB-PSNR: {psnr}", file=file)
+
+
+class LuminancePSNREnv(I2IEnv):
+    def __init__(self, model, criterion=None):
+        if criterion is None:
+            criterion = ClampLoss(LuminanceWeightedLoss(nn.HuberLoss(0.3)))
+        super().__init__(model, criterion=criterion, validation_criterion=LuminancePSNR())
+
+    def print_validation_result(self, psnr_loss, file=sys.stdout):
+        psnr = -psnr_loss
+        print(f"Batch Y-PSNR: {psnr}", file=file)

@@ -114,10 +114,10 @@ class RandomApply():
         self.transform = transform
 
     def __call__(self, x, y):
-        if random.uniform(0, 1) > self.p:
-            return x, y
-        else:
+        if random.uniform(0, 1) < self.p:
             return self.transform(x, y)
+        else:
+            return x, y
 
 
 class RandomChoiceApply():

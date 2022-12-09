@@ -6,9 +6,9 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR, MultiStepLR
 from .. import models  # register
 from . dataset import Waifu2xScale2xDataset
-from nunif.training.env import I2IEnv
+from nunif.training.env import LuminancePSNREnv
 from nunif.models import create_model, save_model, load_model, get_model_config
-from nunif.modules import ClipLoss, LuminanceWeightedLoss, PSNR, AuxiliaryLoss, LBPLoss
+from nunif.modules import ClampLoss, LuminanceWeightedLoss, PSNR, AuxiliaryLoss, LBPLoss
 
 
 def build_best_model_filename(args):
@@ -71,7 +71,7 @@ def build_dataloader(args, model):
         raise NotImplementedError()
 
 
-class Waifu2xEnv(I2IEnv):
+class Waifu2xEnv(LuminancePSNREnv):
     pass
 
 
@@ -90,14 +90,13 @@ def train(args):
     train_loader, validation_loader = build_dataloader(args, model)
     if args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
         criterion = AuxiliaryLoss([
-            ClipLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
-            ClipLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))],
+            ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
+            ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))],
             weight=(1.0, 0.5)).to(device)
     else:
-        criterion = ClipLoss(LuminanceWeightedLoss(nn.HuberLoss(delta=0.3)))
+        criterion = ClampLoss(LuminanceWeightedLoss(nn.HuberLoss(delta=0.3)))
 
-    psnr = PSNR().to(device)
-    env = Waifu2xEnv(model, criterion=criterion, validation_criterion=psnr)
+    env = Waifu2xEnv(model, criterion=criterion)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = StepLR(optimizer,
                        step_size=args.learning_rate_decay_step[0],
