@@ -1,4 +1,5 @@
 import os
+import argparse
 from os import path
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from tqdm import tqdm
@@ -67,8 +68,12 @@ def main(args):
                 f.result()
 
 
-def register(subparsers):
-    parser = subparsers.add_parser("waifu2x")
+def register(subparsers, default_parser):
+    parser = subparsers.add_parser(
+        "waifu2x",
+        parents=[default_parser],
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
     parser.add_argument("--size", type=int, default=640,
                         help="image size")
     parser.add_argument("--stride", type=float, default=0.25,
@@ -76,4 +81,5 @@ def register(subparsers):
     parser.add_argument("--reject-rate", type=float, default=0.5,
                         help="reject rate for hard example mining")
     parser.set_defaults(handler=main)
+
     return parser

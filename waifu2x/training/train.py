@@ -1,4 +1,5 @@
 import os
+import argparse
 from os import path
 import torch
 from torch import nn
@@ -76,6 +77,8 @@ class Waifu2xEnv(LuminancePSNREnv):
 
 
 def train(args):
+    if args.size % 4 != 0:
+        raise ValueError("--size must be a multiple of 4")
     if args.gpu[0] >= 0:
         device = f"cuda:{args.gpu[0]}"
     else:
@@ -107,7 +110,7 @@ def train(args):
 
     os.makedirs(args.model_dir, exist_ok=True)
 
-    if args.amp:
+    if not (args.disable_amp or device == "cpu"):
         env.enable_amp()
 
     if args.resume:
@@ -149,10 +152,23 @@ def train(args):
             last_epoch=epoch)
 
 
-def register(subparsers):
-    parser = subparsers.add_parser("waifu2x")
-    parser.add_argument("--method", type=str, choices=["scale"], required=True, help="method")
+def register(subparsers, default_parser):
+    parser = subparsers.add_parser(
+        "waifu2x",
+        parents=[default_parser],
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--method", type=str, choices=["scale"], required=True, help="waifu2x method")
+    parser.add_argument("--arch", type=str,
+                        choices=["waifu2x.cunet", "waifu2x.upcunet", "waifu2x.upconv_7", "waifu2x.vgg_7"],
+                        required=True, help="network arch")
     parser.add_argument("--size", type=int, default=104, help="input size")
-    parser.add_argument("--num-samples", type=int, default=10000, help="number of samples for epoch")
+    parser.add_argument("--num-samples", type=int, default=50000, help="number of samples for each epoch")
+
+    parser.set_defaults(minibatch_size=8)
+    parser.set_defaults(learning_rate=0.0002)
+    parser.set_defaults(learning_rate_decay=0.995)
+    parser.set_defaults(learning_rate_decay_step=[1])
+
     parser.set_defaults(handler=train)
+
     return parser
