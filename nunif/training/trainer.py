@@ -39,8 +39,12 @@ class Trainer(ABC):
         if self.args.resume:
             self.resume()
         self.env = self.create_env()
-        if not (self.args.disable_amp or self.device == "cpu"):
+
+        if self.amp_is_enabled():
             self.env.enable_amp()
+
+    def amp_is_enabled(self):
+        return not (self.args.disable_amp or self.device == "cpu")
 
     def resume(self):
         latest_checkpoint_filename = self.create_checkpoint_filename()
@@ -99,7 +103,7 @@ class Trainer(ABC):
                 gamma=self.args.learning_rate_decay)
 
     def create_grad_scaler(self):
-        return torch.cuda.amp.GradScaler()
+        return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
 
     def create_best_model_filename(self):
         return path.join(self.args.model_dir, f"{self.args.arch}.pth")
