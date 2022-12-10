@@ -9,7 +9,7 @@ port=8812
 #debug_log=""
 debug_log="--debug"
 recaptcha=""
-#recaptcha="--enable-recaptcha --config ./waifu2x/web-config.ini"
+#recaptcha="--enable-recaptcha --config ./waifu2x/web/config.ini"
 
 if [ $# -eq 2 ]; then
     gpu=$1

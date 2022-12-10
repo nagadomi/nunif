@@ -11,10 +11,12 @@ data
 models/
 !models/.keep
 waifu2x/pretrained_models
-waifu2x/web-config.ini
-waifu2x/public_html
-!waifu2x/webgen/assets/*.png
-!waifu2x/webgen/assets/*.jpg
+waifu2x/web-config.ini  # for compatibilityfor
+waifu2x/web/config.ini
+waifu2x/public_html  # for compatibilityfor
+waifu2x/web/public_html
+!waifu2x/web/webgen/assets/*.png
+!waifu2x/web/webgen/assets/*.jpg
 
 # ----- Python.gitignore
 # Byte-compiled / optimized / DLL files

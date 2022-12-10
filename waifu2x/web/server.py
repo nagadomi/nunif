@@ -26,14 +26,14 @@ from urllib.parse import (
 import uuid
 from nunif.logger import logger, set_log_level
 from nunif.utils.filename import set_image_ext
-from .utils import Waifu2x
+from ..utils import Waifu2x
 
 
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
-    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
+    path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
     "cunet", "art"))
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
-    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
+    path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
     "upconv_7", "photo"))
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
@@ -94,7 +94,7 @@ def setup():
     parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
                         help="0.0.0.0 for global, 127.0.0.1 for local")
     parser.add_argument("--port", type=int, default=8812, help="HTTP port number")
-    parser.add_argument("--root", type=str, default="waifu2x/public_html",
+    parser.add_argument("--root", type=str, default=path.join(path.dirname(__file__), "public_html"),
                         help="web root directory")
     parser.add_argument("--backend", type=str, default="waitress",
                         help="server backend. It may not work except `waitress`.")
@@ -483,6 +483,3 @@ def main():
     bottle.run(host=command_args.bind_addr, port=command_args.port, debug=command_args.debug,
                server=command_args.backend, **backend_kwargs)
 
-
-if __name__ == "__main__":
-    main()

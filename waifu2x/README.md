@@ -56,7 +56,6 @@ python -m waifu2x.cli -m scale  -i tmp/images/image.jpg -o tmp/out/image.webp
 python -m waifu2x.cli -m noise_scale -n 3 -i tmp/images -o tmp/out
 ```
 
-
 With model dir
 ```
 python -m waifu2x.cli --model-dir ./waifu2x/pretrained_models/upconv_7/photo/ -m noise_scale -n 1 -i tmp/images -o tmp/out
@@ -79,9 +78,9 @@ python -m waifu2x.cli --tta --amp --batch-size 16 -m scale -i tmp/images -o tmp/
 
 # Web Application
 
-Generate `waifu2x/public_html`.
+Generate `waifu2x/web/public_html`.
 ```
-python -m waifu2x.webgen.gen
+python -m waifu2x.web.webgen.gen
 ```
 
 The following line starts the Web Server.
@@ -108,14 +107,14 @@ DEBUG=1 python -m waifu2x.web --tta --amp --debug
 
 ## Use reCAPTCHA
 
-Copy `waifu2x/web-config.ini.sample` to `waifu2x/web-config.ini`
+Copy `waifu2x/web/config.ini.sample` to `waifu2x/web/config.ini`
 ```
-cp waifu2x/web-config.ini.sample waifu2x/web-config.ini
+cp waifu2x/web/config.ini.sample waifu2x/web/config.ini
 ```
 
-Edit `site_key` and `secret_key` in `web-config.ini`.
+Edit `site_key` and `secret_key` in `waifu2x/web/config.ini`.
 
 Run
 ```
-python -m waifu2x.web --enable-recaptcha --config waifu2x/web-config.ini
+python -m waifu2x.web --enable-recaptcha --config waifu2x/web/config.ini
 ```
