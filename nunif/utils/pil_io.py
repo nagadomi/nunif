@@ -120,6 +120,12 @@ def load_image_simple(filename, color="rgb"):
     im = Image.open(filename)
     im.load()
 
+    transparency = im.info.get('transparency')
+    if isinstance(transparency, bytes) or isinstance(transparency, int):
+        if im.mode in {"RGB", "P"}:
+            im = im.convert("RGBA")
+        elif im.mode == "L":
+            im = im.convert("LA")
     if im.mode in {"LA", "RGBA"}:
         im = remove_alpha(im)
 
