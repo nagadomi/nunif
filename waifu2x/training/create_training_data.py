@@ -41,7 +41,7 @@ def main(args):
             f.result()
         return []
 
-    for dataset_type in ("validation", "train"):
+    for dataset_type in ("eval", "train"):
         print(f"** {dataset_type}")
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)

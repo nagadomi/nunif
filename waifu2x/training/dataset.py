@@ -93,9 +93,9 @@ class Waifu2xDataset(Dataset):
 
 
 class Waifu2xScale2xDataset(Waifu2xDataset):
-    def __init__(self, input_dir, model_offset, tile_size=104, num_samples=10000, validation=False):
+    def __init__(self, input_dir, model_offset, tile_size=104, num_samples=10000, eval=False):
         super().__init__(input_dir, num_samples=num_samples)
-        if not validation:
+        if not eval:
             self.transforms = TP.Compose([
                 TP.RandomHardExampleCrop(size=tile_size * 2 + 16, samples=4),
                 RandomDownscaleX(),
@@ -120,7 +120,7 @@ class Waifu2xScale2xDataset(Waifu2xDataset):
 
 
 def _test():
-    dataset = Waifu2xScale2xDataset("./data/waifu2x/validation",
+    dataset = Waifu2xScale2xDataset("./data/waifu2x/eval",
                                     model_offset=36, tile_size=256)
     print(f"len {len(dataset)}")
     x, y = dataset[0]

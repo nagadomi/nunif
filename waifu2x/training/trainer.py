@@ -46,9 +46,9 @@ class Waifu2xTrainer(Trainer):
                     drop_last=True)
             elif type == "eval":
                 dataset = Waifu2xScale2xDataset(
-                    input_dir=path.join(self.args.data_dir, "validation"),
+                    input_dir=path.join(self.args.data_dir, "eval"),
                     model_offset=model_offset,
-                    tile_size=self.args.size, validation=True)
+                    tile_size=self.args.size, eval=True)
                 return torch.utils.data.DataLoader(
                     dataset, batch_size=self.args.minibatch_size,
                     worker_init_fn=dataset.worker_init,

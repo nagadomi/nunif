@@ -66,7 +66,7 @@ class Trainer(ABC):
             self.scheduler.step()
 
             print("--\n eval")
-            loss = self.env.validate(self.eval_loader)
+            loss = self.env.eval(self.eval_loader)
             if loss < self.best_loss:
                 print("* best model updated")
                 self.best_loss = loss
