@@ -1,6 +1,6 @@
 # test client for high server load
 # Do not use this for remote web sites
-# python3 -m waifu2x.test.web_load_test --image-dir /data/dataset/danbooru/images --ntest 100
+# python3 -m waifu2x.web.web_load_test --image-dir /images --ntest 100
 
 import requests
 import argparse
