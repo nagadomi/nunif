@@ -136,7 +136,7 @@ def create_trainer_default_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     num_workers = cpu_count() - 2
     if not num_workers > 0:
-        num_workers = cpu_count
+        num_workers = cpu_count()
 
     parser.add_argument("--data-dir", "-i", type=str, required=True,
                         help="input training data directory that created by `create_training_data` command")
