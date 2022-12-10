@@ -11,8 +11,17 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
         model = model.model
     assert (isinstance(model, Model))
     updated_at = str(updated_at or datetime.now(timezone.utc))
-    if train_kwargs is not None and not isinstance(train_kwargs, dict):
-        train_kwargs = vars(train_kwargs)  # Namespace
+    if train_kwargs is not None:
+        if not isinstance(train_kwargs, dict):
+            # Namespace to dict
+            train_kwargs = vars(train_kwargs)
+        # Remove data that probably cannot be loaded in other environments
+        # The current intended target is a handler
+        remove_keys = [k for k in train_kwargs.keys()
+                       if callable(train_kwargs[k])]
+        for k in remove_keys:
+            train_kwargs.pop(k)
+
     data = {
         "nunif_model": 1,
         "name": model.name,
@@ -24,17 +33,21 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
     torch.save(data, model_path)
 
 
-def load_model(model_path, device_ids=None, strict=True, map_location="cpu"):
+def load_model(model_path, model=None, device_ids=None, strict=True, map_location="cpu"):
     data = torch.load(model_path, map_location=map_location)
     assert ("nunif_model" in data)
-    model = create_model(data["name"], **data["kwargs"])
+    if model is None:
+        model = create_model(data["name"], **data["kwargs"])
+        model_predefine = False
+    else:
+        model_predefine = True
     model.load_state_dict(data["state_dict"], strict=strict)
     logger.debug(f"load: {model.name} from {model_path}")
     if "updated_at" in data:
         model.updated_at = data["updated_at"]
     data.pop("state_dict")
 
-    if device_ids is not None:
+    if not model_predefine and device_ids is not None:
         if len(device_ids) > 1:
             model = torch.nn.DataParallel(model, device_ids=device_ids)
         else:

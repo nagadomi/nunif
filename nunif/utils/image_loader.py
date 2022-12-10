@@ -21,7 +21,7 @@ def image_load_task(q, stop_flag, files, max_queue_size, load_func):
             sleep(0.001)
         try:
             im, meta = load_func(f)
-        except:
+        except:  # noqa: E722
             logger.error(f"ImageLoader: load error: {f}, {sys.exc_info()[:2]}")
             im, meta = None, None
         q.put((im, meta))

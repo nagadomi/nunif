@@ -6,8 +6,8 @@ import numpy as np
 
 def disable_image_lib_threads():
     # Disable OpenMP
-    #os.environ['OMP_NUM_THREADS'] = '1'
-    #os.environ['OMP_THREAD_LIMIT'] = '1'
+    # os.environ['OMP_NUM_THREADS'] = '1'
+    # os.environ['OMP_THREAD_LIMIT'] = '1'
 
     # Disable ImageMagick's Threading
     os.environ['MAGICK_THREAD_LIMIT'] = '1'

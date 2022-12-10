@@ -20,7 +20,7 @@ if not USE_WAND:
         InterpolationMode.LANCZOS,
         InterpolationMode.BICUBIC,
     )
-    INTERPOLATION_MODE_WEIGHTS = (2 / 9, 2 / 9, 4 / 9, 1 / 9)
+    INTERPOLATION_MODE_WEIGHTS = (2/9, 2/9, 4/9, 1/9)  # noqa: E226
 
     class RandomDownscaleX():
         def __init__(self, interpolation=None):
@@ -28,7 +28,7 @@ if not USE_WAND:
 
         def __call__(self, x, y):
             w, h = x.size
-            assert(w % 2 == 0 and h % 2 == 0)
+            assert (w % 2 == 0 and h % 2 == 0)
             if self.interpolation is None:
                 interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
             else:
@@ -42,8 +42,8 @@ else:
         "sinc",
         "catrom"
     )
-    # INTERPOLATION_MODE_WEIGHTS = (4 / 9, 4 / 9, 1 / 9)
-    INTERPOLATION_MODE_WEIGHTS = (1 / 3, 1 / 3, 1 / 3)
+    # INTERPOLATION_MODE_WEIGHTS = (4/9, 4/9, 1/9)  # noqa: E226
+    INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/3)  # noqa: E226
 
     class RandomDownscaleX():
         def __init__(self, interpolation=None):
@@ -51,7 +51,7 @@ else:
 
         def __call__(self, x, y):
             w, h = x.size
-            assert(w % 2 == 0 and h % 2 == 0)
+            assert (w % 2 == 0 and h % 2 == 0)
             if self.interpolation is None:
                 interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
             else:

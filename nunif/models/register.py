@@ -1,4 +1,5 @@
 import inspect
+from torch import nn
 from . model import Model
 from .. logger import logger
 
@@ -12,12 +13,24 @@ def register_model(name, klass):
     logger.debug("register %s -> %s", name, repr(klass))
 
 
-def create_model(name, **kwargs):
+def create_model(name, device_ids=None, **kwargs):
     logger.debug(f"create_model: {name}({kwargs})")
     global _models
     if name not in _models:
         raise ValueError(f"Unknown model name: {name}")
-    return _models[name](**kwargs)
+    model = _models[name](**kwargs)
+
+    if device_ids is not None:
+        if len(device_ids) > 1:
+            model = nn.DataParallel(model, device_ids=device_ids)
+        else:
+            if device_ids[0] < 0:
+                device = 'cpu'
+            else:
+                device = 'cuda:{}'.format(device_ids[0])
+            model = model.to(device)
+
+    return model
 
 
 def register_models(module):
