@@ -33,6 +33,10 @@ def create_model(name, device_ids=None, **kwargs):
     return model
 
 
+def get_model_names():
+    return list(_models.keys())
+
+
 def register_models(module):
     for name, obj in inspect.getmembers(module, inspect.isclass):
         if issubclass(obj, Model) and obj is not Model:
