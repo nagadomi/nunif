@@ -86,15 +86,18 @@ When `--resume --reset-state` is specified, `last_epoch`, `best_loss`, `optimize
 
 ## benchmark
 
-You can run the benchmark with the following commands. 
+PSNR displayed during training depends on mini-batch size and input image size.
+It also displays lower scores due to hard example mining etc.
+
+A fair score can be calculated from the actual image data with benchmark commands.
+
+Show help.
 ```
-python3 -m waifu2x.benchmark waifu2x --method scale --model-dir models/waifu2x_mymodel -i /test_image_dir --tile-size 104 --baseline --baseline-filter lanczos 
+python3 -m waifu2x.benchmark -h
+```
+
+You can run the benchmark with the following commands.
+```
+python3 -m waifu2x.benchmark --method scale --model-dir models/waifu2x_mymodel -i /test_image_dir --color matlab_y --filter catrom --baseline --baseline-filter lanczos --amp
 ```
 Use the `-i` option to specify the directory where the test images are located.
-
-When checking results with the pretrained model.
-```
-python3 -m waifu2x.benchmark waifu2x --method scale --model-dir waifu2x/pretrained_models/cunet/art -i /test_image_dir --tile-size 104
-```
-
-(`waifu2x.benchmark` command is not organized and may change in the future.)
