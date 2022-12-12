@@ -17,6 +17,8 @@ tmp
 /waifu2x/web/public_html
 !/waifu2x/web/webgen/assets/*.png
 !/waifu2x/web/webgen/assets/*.jpg
+/waifu2x/models/_*.py
+!/waifu2x/models/__init__.py
 
 # ----- Python.gitignore
 # Byte-compiled / optimized / DLL files
