@@ -74,9 +74,7 @@ def psnr256(x1, x2, color):
         return psnr, mse
 
 
-def benchmark_waifu2x(raw_argv):
-    from .utils import Waifu2x
-
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=str, required=True, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
@@ -86,9 +84,9 @@ def benchmark_waifu2x(raw_argv):
     parser.add_argument("--jpeg-times", type=int, default=1, help="number of repetitions of jpeg compression")
     parser.add_argument("--jpeg-quality-down", type=int, default=5, help="value of jpeg quality that decreases every times")
     parser.add_argument("--jpeg-yuv420", action="store_true", help="use yuv420 jpeg")
-    parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos",
-                        "sinc", "triangle"], default="catrom", help="downscaling filter")
-    parser.add_argument("--baseline", action="store_true", help="use baseline")
+    parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos", "sinc", "triangle"], default="catrom",
+                        help="downscaling filter for generate LR image")
+    parser.add_argument("--baseline", action="store_true", help="use baseline score by image resize")
     parser.add_argument("--baseline-filter", type=str, default="catrom",
                         choices=["catrom", "box", "lanczos", "sinc", "triangle"], help="baseline filter for 2x")
     parser.add_argument("--border", type=int, default=0, help="border px removed from the result image")
@@ -99,9 +97,16 @@ def benchmark_waifu2x(raw_argv):
     parser.add_argument("--input", "-i", type=str, required=True, help="input directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true", help="TTA mode")
     parser.add_argument("--amp", action="store_true", help="AMP mode")
-    args = parser.parse_args(raw_argv)
-    logger.debug(str(args))
+    args = parser.parse_args()
+    logger.debug(vars(args))
 
+    return args
+
+
+def main():
+    from .utils import Waifu2x
+
+    args = parse_args()
     ctx = Waifu2x(model_dir=args.model_dir, gpus=args.gpu)
     ctx.load_model(args.method, args.noise_level)
 
@@ -169,25 +174,6 @@ def benchmark_waifu2x(raw_argv):
             elif args.method == "noise":
                 print("* jpeg")
             print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(baseline_time_sum, 4)} ({fps} FPS)")
-
-
-def main():
-    argv = list(sys.argv)
-    argv.pop(0)
-    arg = argv.pop(0) if len(argv) > 0 else None
-    if arg is None or arg in ("-h", "--help"):
-        sys.stderr.write("benchmark [type] [options]\n")
-        sys.stderr.write("type: waifu2x, diff, i2i")
-        sys.exit(0)
-    benchmark_type = arg
-    if benchmark_type == "waifu2x":
-        benchmark_waifu2x(argv)
-    elif benchmark_type == "diff":
-        pass
-    elif benchmark_type == "i2i":
-        pass
-
-    return 0
 
 
 if __name__ == "__main__":
