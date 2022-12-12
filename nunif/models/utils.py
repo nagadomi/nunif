@@ -84,3 +84,13 @@ def get_model_device(model):
     if isinstance(model, nn.DataParallel):
         model = model.model
     return model.get_device()
+
+
+def call_model_method(model, name, **kwargs):
+    if isinstance(model, nn.DataParallel):
+        model = model.model
+    func = getattr(model, name, None)
+    if not (func is not None and callable(func)):
+        raise ValueError(f"Unable to call {type(model)}.{name}")
+
+    return func(**kwargs)
