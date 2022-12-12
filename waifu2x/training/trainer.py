@@ -6,7 +6,7 @@ from .. import models  # noqa: F401
 from . dataset import Waifu2xScale2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
-from nunif.models import create_model, get_model_config
+from nunif.models import create_model, get_model_config, get_model_names
 from nunif.modules import ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss
 
 
@@ -59,13 +59,13 @@ class Waifu2xTrainer(Trainer):
             raise NotImplementedError()
 
     def create_env(self):
-        if self.args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
+        if self.args.arch in {"waifu2x.vgg_7", "waifu2x.upconv_7"}:
+            criterion = ClampLoss(LuminanceWeightedLoss(nn.HuberLoss(delta=0.3))).to(self.device)
+        else:
             criterion = AuxiliaryLoss([
                 ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
                 ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))],
                 weight=(1.0, 0.5)).to(self.device)
-        else:
-            criterion = ClampLoss(LuminanceWeightedLoss(nn.HuberLoss(delta=0.3))).to(self.device)
 
         return Waifu2xEnv(self.model, criterion=criterion)
 
@@ -95,10 +95,13 @@ def register(subparsers, default_parser):
         "waifu2x",
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    waifu2x_models = sorted([name for name in get_model_names() if name.startswith("waifu2x.")])
+
     parser.add_argument("--method", type=str, choices=["scale"], required=True,
                         help="waifu2x method")
     parser.add_argument("--arch", type=str,
-                        choices=["waifu2x.cunet", "waifu2x.upcunet", "waifu2x.upconv_7", "waifu2x.vgg_7"],
+                        choices=waifu2x_models,
                         required=True,
                         help="network arch")
     parser.add_argument("--size", type=int, default=104,
