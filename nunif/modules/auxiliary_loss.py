@@ -1,16 +1,26 @@
 import torch
 import torch.nn as nn
-from . functional import auxiliary_loss
+
+
+def auxiliary_loss(inputs, targets, modules, weights):
+    assert (len(inputs) == len(targets) and len(modules) == len(weights))
+    return sum([modules[i].forward(inputs[i], targets[i]) * weights[i] for i in range(len(inputs))])
 
 
 class AuxiliaryLoss(nn.Module):
-    def __init__(self, loss_modules, loss_weights=None):
+    def __init__(self, losses, weight=None):
         super(AuxiliaryLoss, self).__init__()
-        if loss_weights is not None:
-            loss_weights = torch.ones(len(loss_modules)).float()
-        assert (len(loss_modules) == len(loss_modules))
-        self.loss_modules = nn.ModuleList(loss_modules)
-        self.loss_weights = loss_weights
+        if weight is None:
+            weight = torch.tensor([1.0 / len(losses)] * len(losses), dtype=torch.float)
+        if isinstance(weight, (tuple, list)):
+            weight = torch.tensor(weight, dtype=torch.float)
+
+        assert (len(losses) == len(weight))
+        self.losses = nn.ModuleList(losses)
+        self.weight = weight
 
     def forward(self, inputs, targets):
-        return auxiliary_loss(inputs, targets, self.loss_modules, self.loss_weights)
+        assert (isinstance(inputs, (list, tuple)))
+        if not isinstance(targets, (list, tuple)):
+            targets = [targets] * len(inputs)
+        return auxiliary_loss(inputs, targets, self.losses, self.weight)

@@ -1,7 +1,14 @@
 from . se_block import SEBlock
 from . inplace_clip import InplaceClip
-from . weighted_huber_loss import WeightedHuberLoss
+from . lbp_loss import LBPLoss, RandomBinaryConvolution
+from . clamp_loss import ClampLoss
 from . auxiliary_loss import AuxiliaryLoss
-from . lbp_2x2_loss import LBP2x2Loss
+from . channel_weighted_loss import ChannelWeightedLoss, LuminanceWeightedLoss
+from . jaccard import JaccardIndex
+from . psnr import PSNR, LuminancePSNR
 
-__all__ = ["SEBlock", "InplaceClip", "AuxiliaryLoss", "WeightedHuberLoss", "LBP2x2Loss"]
+__all__ = [
+    "SEBlock", "InplaceClip", "LBPLoss", "RandomBinaryConvolution",
+    "ClampLoss", "AuxiliaryLoss", "ChannelWeightedLoss", "LuminanceWeightedLoss",
+    "JaccardIndex", "PSNR", "LuminancePSNR"
+]

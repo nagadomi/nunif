@@ -1,4 +1,4 @@
-import numpy as np
+import random
 from .. utils import wand_io
 
 
@@ -45,29 +45,22 @@ def scale(x, scale_factor, filter_type, blur=1):
         return to_tensor(im)
 
 
-def random_filter_resize(x, size, filters, blur_min=1, blur_max=1, rng=None):
+def random_filter_resize(x, size, filters, blur_min=1, blur_max=1):
     if isinstance(size, (list, tuple)):
         h, w = size
     else:
         h = w = size
-    rng = rng or np.random
-    filter_type = filters[rng.randint(0, len(filters))]
+    filter_type = random.choice(filters)
     if blur_min == blur_max:
         blur = blur_min
     else:
-        blur = rng.uniform(blur_min, blur_max)
+        blur = random.uniform(blur_min, blur_max)
     with to_wand_image(x) as im:
         im.resize(w, h, filter_type, blur)
         return to_tensor(im)
 
 
-def random_filter_scale(x, scale_factor, filters, blur_min, blur_max, rng=None):
-    h, w = int(x.shape[1] * scale_factor), int(x.shape[2] * scale_factor)
-    return random_filter_resize(x, (h, w), filters, blur_min, blur_max, rng)
-
-
-def random_jpeg_noise(x, sampling_factors, quality_min, quality_max, rng=None):
-    rng = rng or np.random
-    quality = rng.randint(quality_min, quality_max)
-    sampling_factor = sampling_factors[rng.randint(0, len(sampling_factors))]
+def random_jpeg_noise(x, sampling_factors, quality_min, quality_max):
+    quality = random.randint(quality_min, quality_max)
+    sampling_factor = random.choice(sampling_factors)
     return jpeg_noise(x, sampling_factor=sampling_factor, quality=quality)

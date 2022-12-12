@@ -16,12 +16,12 @@ VXdlIEJlaHJtYW5uIDx3d3cuYmVocm1hbm4ubmFtZT4AAAAAZGVzYwAAAAAAAAALR3JheSBDSUUq
 TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABYWVogAAAAAAAA9tYAAQAAAADTLVhZWiAAAAAAAAAA
 AAAAAAAAAAAAY3VydgAAAAAAAAABAQAAAA==
-"""))) #  from debian/icc-profiles-free/Gray-CIE_L.icc
+""")))  # from debian/icc-profiles-free/Gray-CIE_L.icc
 GAMMA_LCD = 45454
 
 
 def remove_alpha(im):
-    bg_color = tuple([255] * (len(im.mode) -1))
+    bg_color = tuple([255] * (len(im.mode) - 1))
     nobg = Image.new(im.mode[:-1], im.size, bg_color)
     nobg.paste(im, im.getchannel("A"))
     return nobg
@@ -120,6 +120,12 @@ def load_image_simple(filename, color="rgb"):
     im = Image.open(filename)
     im.load()
 
+    transparency = im.info.get('transparency')
+    if isinstance(transparency, bytes) or isinstance(transparency, int):
+        if im.mode in {"RGB", "P"}:
+            im = im.convert("RGBA")
+        elif im.mode == "L":
+            im = im.convert("LA")
     if im.mode in {"LA", "RGBA"}:
         im = remove_alpha(im)
 
@@ -129,7 +135,7 @@ def load_image_simple(filename, color="rgb"):
         if im.mode == "I":
             im = convert_i2l(im)
         else:
-            im = convert("L")
+            im = im.convert("L")
     return im, {}
 
 
@@ -257,7 +263,7 @@ def save_image(im, filename, format="png",
             "lossless": True
         }
     elif format in {"jpg", "jpeg"}:
-        format = "jpeg" #  fix format name
+        format = "jpeg"  # fix format name
         options = {
             "icc_profile": icc_profile,
             "quality": 95,

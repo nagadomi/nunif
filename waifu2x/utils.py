@@ -1,6 +1,6 @@
 from os import path
 import torch
-from nunif.transforms import functional as NF
+from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
 from nunif.utils.alpha import make_alpha_border
 from nunif.models import load_model, get_model_config
@@ -113,9 +113,9 @@ class Waifu2x():
         if alpha is not None:
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
         if tta:
-            rgb = NF.tta_merge([
+            rgb = tta_merge([
                 self.render(xx, method, noise_level, tile_size, batch_size, enable_amp)
-                for xx in NF.tta_split(x)])
+                for xx in tta_split(x)])
         else:
             rgb = self.render(x, method, noise_level, tile_size, batch_size, enable_amp)
 

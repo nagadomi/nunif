@@ -48,3 +48,18 @@ class I2IBaseModel(Model):
             "i2i_in_size": self.i2i_in_size
         })
         return config
+
+
+class SoftMaxBaseModel(Model):
+    name = "nunif.softmax_base_model"
+
+    def __init__(self, kwargs, class_names):
+        super(SoftMaxBaseModel, self).__init__(kwargs)
+        self.softmax_class_names = class_names
+
+    def get_config(self):
+        config = dict(super().get_config())
+        config.update({
+            "softmax_class_names": self.softmax_class_names
+        })
+        return config

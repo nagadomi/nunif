@@ -6,11 +6,19 @@ tmp
 *.jpg
 *.tar.gz
 *.tar
-data
-!data/.keep
-waifu2x/pretrained_models
-waifu2x/web-config.ini
-waifu2x/public_html
+/data
+!/data/.keep
+/models/
+!/models/.keep
+/waifu2x/pretrained_models
+/waifu2x/web-config.ini  # for compatibilityfor
+/waifu2x/web/config.ini
+/waifu2x/public_html  # for compatibilityfor
+/waifu2x/web/public_html
+!/waifu2x/web/webgen/assets/*.png
+!/waifu2x/web/webgen/assets/*.jpg
+/waifu2x/models/_*.py
+!/waifu2x/models/__init__.py
 
 # ----- Python.gitignore
 # Byte-compiled / optimized / DLL files
