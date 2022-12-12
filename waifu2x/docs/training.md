@@ -81,7 +81,7 @@ or load only model parameters and start training from the beginning.
 ```
 python3 train.py waifu2x --method scale --arch waifu2x.upcunet --data-dir ./data/waifu2x --model-dir ./models/waifu2x_mymodel --resume --reset-state
 ```
-When `--resume --reset-state` is specified, `last_epoch`, `best_loss`, `optimizer`, and `grad_scaler` are reset. model parameters(weight) are not reset.
+When `--resume --reset-state` is specified, `last_epoch`, `best_loss`, `optimizer`, and `grad_scaler` are not loaded. Only the model parameter (weight) is loaded.
 
 
 ## benchmark
@@ -98,6 +98,6 @@ python3 -m waifu2x.benchmark -h
 
 You can run the benchmark with the following commands.
 ```
-python3 -m waifu2x.benchmark --method scale --model-dir models/waifu2x_mymodel -i /test_image_dir --color matlab_y --filter catrom --baseline --baseline-filter lanczos --amp
+python3 -m waifu2x.benchmark --method scale --model-dir models/waifu2x_mymodel -i /test_image_dir --color y_matlab --filter catrom --baseline --baseline-filter lanczos --amp
 ```
 Use the `-i` option to specify the directory where the test images are located.
