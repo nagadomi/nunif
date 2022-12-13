@@ -34,9 +34,10 @@ def convert_files(ctx, files, args, enable_amp):
             output_filename = set_image_ext(path.basename(meta["filename"]), format=args.format)
             if args.depth is not None:
                 meta["depth"] = args.depth
+            depth = meta["depth"] if meta["depth"] is not None else 8
             futures.append(pool.submit(
                 IL.save_image,
-                IL.to_image(rgb, alpha),
+                IL.to_image(rgb, alpha, depth=depth),
                 filename=path.join(args.output, output_filename),
                 meta=meta,
                 format=args.format))
@@ -58,7 +59,8 @@ def convert_file(ctx, args, enable_amp):
                                  args.tta, enable_amp=enable_amp)
         if args.depth is not None:
             meta["depth"] = args.depth
-        IL.save_image(IL.to_image(rgb, alpha),
+        depth = meta["depth"] if meta["depth"] is not None else 8
+        IL.save_image(IL.to_image(rgb, alpha, depth=depth),
                       filename=args.output, meta=meta,
                       format=fmt)
 

@@ -4,6 +4,7 @@ from wand.api import library
 from wand.color import Color
 import io
 from PIL import ImageCms
+from ..transforms.functional import quantize256, quantize65535
 
 
 sRGB_profile = ImageCms.core.profile_tobytes(ImageCms.createProfile("sRGB"))
@@ -109,14 +110,12 @@ def to_tensor(im, return_alpha=False, dtype=torch.float32):
         return x
 
 
-def to_image(x, alpha=None):
+def to_image(x, alpha=None, depth=8):
     assert (alpha is None or
             (x.dtype == alpha.dtype and alpha.shape[0] == 1 and
              alpha.shape[1] == x.shape[1] and alpha.shape[2] == x.shape[2]))
     ch, h, w = x.shape
     assert (ch in {1, 3})
-    storage = predict_storage(x.dtype, int_type="long")
-
     if ch == 1:
         if alpha is not None:
             x = torch.cat((x, alpha), dim=0)
@@ -129,6 +128,12 @@ def to_image(x, alpha=None):
             channel_map = "RGBA"
         else:
             channel_map = "RGB"
+
+    if depth == 8:
+        x = quantize256(x)
+        storage = "char"
+    else:
+        storage = predict_storage(x.dtype, int_type="long")
 
     return Image.from_array(x.permute(1, 2, 0).numpy(), channel_map=channel_map, storage=storage)
 
