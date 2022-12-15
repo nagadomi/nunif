@@ -1,4 +1,4 @@
-from . se_block import SEBlock
+from . attention import SEBlock
 from . inplace_clip import InplaceClip
 from . lbp_loss import LBPLoss, RandomBinaryConvolution
 from . clamp_loss import ClampLoss
