@@ -4,7 +4,7 @@ import argparse
 from multiprocessing import cpu_count
 import torch
 import torch.optim as optim
-from torch.optim.lr_scheduler import StepLR, MultiStepLR
+from torch.optim.lr_scheduler import StepLR, MultiStepLR, CosineAnnealingLR
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
 from abc import ABC, abstractmethod
@@ -59,7 +59,7 @@ class Trainer(ABC):
 
     def fit(self):
         self.initialize()
-        for self.epoch in range(self.start_epoch, self.args.max_epoch):
+        for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
             print("-" * 64)
             print(f" epoch: {self.epoch}, lr: {self.scheduler.get_last_lr()}")
             print("--\n train")
@@ -91,16 +91,26 @@ class Trainer(ABC):
 
     def create_scheduler(self):
         # TODO: support more schedulers if needed
-        if len(self.args.learning_rate_decay_step) == 1:
-            return StepLR(
-                self.optimizer,
-                step_size=self.args.learning_rate_decay_step[0],
-                gamma=self.args.learning_rate_decay)
-        else:
-            return MultiStepLR(
-                self.optimizer,
-                milestones=self.args.learning_rate_decay_step,
-                gamma=self.args.learning_rate_decay)
+        if self.args.scheduler == "step":
+            if len(self.args.learning_rate_decay_step) == 1:
+                return StepLR(
+                    self.optimizer,
+                    step_size=self.args.learning_rate_decay_step[0],
+                    gamma=self.args.learning_rate_decay)
+            else:
+                return MultiStepLR(
+                    self.optimizer,
+                    milestones=self.args.learning_rate_decay_step,
+                    gamma=self.args.learning_rate_decay)
+        elif self.args.scheduler == "cosine":
+            step = self.args.learning_rate_cycles * 2 - 1
+            t_max = self.args.max_epoch // step
+            if self.args.max_epoch % step != 0:
+                old_max_epoch = self.args.max_epoch
+                self.args.max_epoch -= self.args.max_epoch % step
+                print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
+            eta_min = self.args.learning_rate * 1e-3
+            return CosineAnnealingLR(self.optimizer, T_max=t_max, eta_min=eta_min)
 
     def create_grad_scaler(self):
         return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
@@ -158,10 +168,14 @@ def create_trainer_default_parser():
                         help="device ids; if -1 is specified, use CPU")
     parser.add_argument("--learning-rate", type=float, default=0.00025,
                         help="learning rate")
+    parser.add_argument("--scheduler", type=str, choices=["step", "cosine"], default="step",
+                        help="learning rate scheduler")
     parser.add_argument("--learning-rate-decay", type=float, default=0.995,
-                        help="learning rate decay")
+                        help="learning rate decay for StepLR")
     parser.add_argument("--learning-rate-decay-step", type=int, nargs="+", default=[1],
-                        help="learning rate decay step; if multiple values are specified, use MultiStepLR")
+                        help="learning rate decay step for StepLR/MultiStepLR")
+    parser.add_argument("--learning-rate-cycles", type=int, default=5,
+                        help="number of learning rate cycles for CosineAnnealingLR")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
     parser.add_argument("--resume", action="store_true",

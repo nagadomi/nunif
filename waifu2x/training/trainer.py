@@ -139,6 +139,7 @@ def register(subparsers, default_parser):
                         help="random downscale data argumentation for gt image")
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
                         help="random channel shuffle data argumentation for gt image")
+
     parser.set_defaults(
         minibatch_size=8,
         optimizer="adam",
