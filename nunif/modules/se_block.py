@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 
 class SEBlock(nn.Module):
@@ -23,8 +24,9 @@ class SEBlock(nn.Module):
 
 class LocalSEBlock(nn.Module):
     """
-    SEBlock using fixed size local average pooling
-    instead of variable size global average pooling (in tiled rendering).
+    SEBlock with fixed size local average pooling
+    instead of variable size global average pooling.
+    (in tiled rendering these are different)
     """
     def __init__(self, in_channels, kernel_size=16, reduction=8, bias=False):
         super().__init__()
@@ -90,9 +92,34 @@ class SelfWeightedAvgPool2d(nn.Module):
         return z
 
 
+class SelfAttention2d(nn.Module):
+    """ from Latent Diffusion
+    """
+    def __init__(self, in_channels, num_groups=32):
+        super().__init__()
+        self.norm = nn.GroupNorm(num_groups, in_channels)
+        self.q = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=False)
+        self.k = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=False)
+        self.v = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=False)
+        self.proj = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=True)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+
+        z = self.norm(x)
+        q, k, v = self.q(z), self.k(z), self.v(z)
+        z = torch.bmm(q.view(b, c, h * w).permute(0, 2, 1),
+                      k.view(b, c, h * w)) * math.sqrt(1 / c)
+        z = F.softmax(z, dim=2)
+        z = torch.bmm(v.view(b, c, h * w), z.permute(0, 2, 1)).view(b, c, h, w)
+        z = self.proj(z)
+
+        return x + z
+
+
 def _spec():
     device = "cuda:0"
-    x = torch.rand((4, 32, 128, 128)).to(device)
+    x = torch.rand((4, 128, 32, 32)).to(device)
     b, c, h, w = x.shape
 
     sse = LocalSEBlock(c).to(device)
@@ -100,6 +127,9 @@ def _spec():
 
     awvavg = SelfWeightedAvgPool2d(c, 2).to(device)
     print(awvavg(x).shape)
+
+    sa2 = SelfAttention2d(c).to(device)
+    print(sa2(x).shape)
 
 
 if __name__ == "__main__":
