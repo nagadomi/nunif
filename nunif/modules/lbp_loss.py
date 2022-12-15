@@ -61,12 +61,15 @@ class RandomFilterConvolution(nn.Conv2d):
 
 
 class LBPLoss(nn.Module):
-    def __init__(self, in_channels, out_channels=64, kernel_size=3, delta=1.0, sparcity=0.9):
+    def __init__(self, in_channels, out_channels=64, kernel_size=3, sparcity=0.9, loss=None):
         super().__init__()
         self.conv = RandomBinaryConvolution(in_channels, out_channels,
                                             kernel_size=kernel_size, padding=0,
                                             sparcity=sparcity)
-        self.loss = nn.HuberLoss(delta=delta)
+        if loss is None:
+            self.loss = nn.HuberLoss(delta=1)
+        else:
+            self.loss = loss
 
         # [0] = identity filter
         self.conv.weight.data[0] = 0

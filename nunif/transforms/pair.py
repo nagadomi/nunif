@@ -120,15 +120,15 @@ class RandomApply():
             return x, y
 
 
-class RandomChoiceApply():
-    def __init__(self, transforms, weights=None):
+class RandomChoice():
+    def __init__(self, transforms, p=None):
         self.transforms = transforms
-        self.weights = weights
-        if self.weights is None:
-            self.weights = [1] * len(self.transforms)
+        self.p = p
+        if self.p is None:
+            self.p = [1] * len(self.transforms)
 
     def __call__(self, x, y):
-        transform = random.choices(self.transforms, weights=self.weights, k=1)[0]
+        transform = random.choices(self.transforms, weights=self.p, k=1)[0]
         return transform(x, y)
 
 

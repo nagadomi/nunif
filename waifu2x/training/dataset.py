@@ -4,9 +4,11 @@ from torchvision.transforms import (
     functional as TF,
     InterpolationMode,
 )
+from torchvision import transforms as T
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils import pil_io
 from nunif.transforms import pair as TP
+import nunif.transforms as TS
 import random
 
 
@@ -74,6 +76,8 @@ class Waifu2xDataset(Dataset):
     def __init__(self, input_dir, num_samples=10000):
         super(Waifu2xDataset, self).__init__()
         self.files = ImageLoader.listdir(input_dir)
+        if not self.files:
+            raise RuntimeError(f"{input_dir} is empty")
         self.num_samples = num_samples
 
     def __len__(self):
@@ -93,16 +97,28 @@ class Waifu2xDataset(Dataset):
 
 
 class Waifu2xScale2xDataset(Waifu2xDataset):
-    def __init__(self, input_dir, model_offset, tile_size=104, num_samples=10000, eval=False):
+    def __init__(self, input_dir,
+                 model_offset,
+                 tile_size=104, num_samples=10000,
+                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0,
+                 eval=False):
         super().__init__(input_dir, num_samples=num_samples)
-        if not eval:
+        self.training = not eval
+        if self.training:
+            y_min_size = tile_size * 2 + 16
+            self.gt_transforms = T.Compose([
+                T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
+                T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
+                T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
+            ])
             self.transforms = TP.Compose([
-                TP.RandomHardExampleCrop(size=tile_size * 2 + 16, samples=4),
+                TP.RandomHardExampleCrop(size=y_min_size, samples=4),
                 RandomDownscaleX(),
                 TP.RandomFlip(),
                 TP.CenterCrop(size=tile_size, y_scale=2, y_offset=model_offset),
             ])
         else:
+            self.gt_transforms = TS.Identity()
             if USE_WAND:
                 interpolation = "catrom"
             else:
@@ -114,7 +130,11 @@ class Waifu2xScale2xDataset(Waifu2xDataset):
             ])
 
     def __getitem__(self, index):
-        im, _ = pil_io.load_image_simple(super().__getitem__(index), color="rgb")
+        filename = super().__getitem__(index)
+        im, _ = pil_io.load_image_simple(filename, color="rgb")
+        if im is None:
+            raise RuntimeError(f"Unable to load image: {filename}")
+        im = self.gt_transforms(im)
         x, y = self.transforms(im, im)
         return TF.to_tensor(x), TF.to_tensor(y)
 
