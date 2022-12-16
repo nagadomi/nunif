@@ -62,31 +62,27 @@ class Waifu2xTrainer(Trainer):
             raise NotImplementedError()
 
     def create_env(self):
-        if self.args.loss is None:
-            if self.args.arch in {"waifu2x.vgg_7", "waifu2x.upconv_7"}:
-                criterion = ClampLoss(LuminanceWeightedLoss(nn.HuberLoss(delta=0.3))).to(self.device)
-            else:
-                criterion = AuxiliaryLoss([
-                    ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, loss=CharbonnierLoss()))),
-                    ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, loss=CharbonnierLoss()))),
-                ], weight=(1.0, 0.5)).to(self.device)
+        if self.args.loss == "weighted_huber":
+            criterion = ClampLoss(LuminanceWeightedLoss(nn.HuberLoss(delta=0.3))).to(self.device)
+        elif self.args.loss == "aux_lbp":
+            criterion = AuxiliaryLoss([
+                ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
+                ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
+            ], weight=(1.0, 0.5)).to(self.device)
+        elif self.args.loss == "charbonnier":
+            criterion = ClampLoss(CharbonnierLoss()).to(self.device)
+        elif self.args.loss == "aux_charbonnier":
+            criterion = AuxiliaryLoss([
+                ClampLoss(CharbonnierLoss()),
+                ClampLoss(CharbonnierLoss())],
+                weight=(1.0, 0.5)).to(self.device)
+        elif self.args.loss == "aux_lbp_charbonnier":
+            criterion = AuxiliaryLoss([
+                ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, loss=CharbonnierLoss()))),
+                ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, loss=CharbonnierLoss()))),
+            ], weight=(1.0, 0.5)).to(self.device)
         else:
-            if self.args.loss == "weighted_huber":
-                criterion = ClampLoss(LuminanceWeightedLoss(nn.HuberLoss(delta=0.3))).to(self.device)
-            elif self.args.loss == "aux_lbp":
-                criterion = AuxiliaryLoss([
-                    ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, loss=CharbonnierLoss()))),
-                    ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, loss=CharbonnierLoss()))),
-                ], weight=(1.0, 0.5)).to(self.device)
-            elif self.args.loss == "charbonnier":
-                criterion = ClampLoss(CharbonnierLoss()).to(self.device)
-            elif self.args.loss == "aux_charbonnier":
-                criterion = AuxiliaryLoss([
-                    ClampLoss(CharbonnierLoss()),
-                    ClampLoss(CharbonnierLoss())],
-                    weight=(1.0, 0.5)).to(self.device)
-            else:
-                raise NotImplementedError()
+            raise NotImplementedError()
 
         return Waifu2xEnv(self.model, criterion=criterion)
 
@@ -106,6 +102,12 @@ class Waifu2xTrainer(Trainer):
 def train(args):
     if args.size % 4 != 0:
         raise ValueError("--size must be a multiple of 4")
+
+    if args.loss is None:
+        if args.arch in {"waifu2x.vgg_7", "waifu2x.upconv_7"}:
+            args.loss = "weighted_huber"
+        else:
+            args.loss = "aux_lbp"
 
     trainer = Waifu2xTrainer(args)
     trainer.fit()
@@ -131,7 +133,7 @@ def register(subparsers, default_parser):
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str,
                         choices=["weighted_huber", "aux_lbp",
-                                 "aux_charbonnier", "charbonnier"],
+                                 "aux_charbonnier", "charbonnier", "aux_lbp_charbonnier"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data argumentation for gt image")
