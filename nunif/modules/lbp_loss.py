@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from .charbonnier_loss import CharbonnierLoss
 
 
 def generate_lbcnn_filters(size, sparcity=0.9):
@@ -67,7 +68,7 @@ class LBPLoss(nn.Module):
                                             kernel_size=kernel_size, padding=0,
                                             sparcity=sparcity)
         if loss is None:
-            self.loss = nn.HuberLoss(delta=1)
+            self.loss = CharbonnierLoss()
         else:
             self.loss = loss
 
