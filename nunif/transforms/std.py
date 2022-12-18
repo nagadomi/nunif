@@ -78,7 +78,7 @@ class RandomDownscale():
             TF.InterpolationMode.BICUBIC,
             TF.InterpolationMode.LANCZOS])
         w, h = x.size
-        min_scale = self.min_size / (min(w, h) + 1)
+        min_scale = (self.min_size + 1) / min(w, h)
         if min_scale > 1:
             return x
         if min_scale < self.min_scale:
