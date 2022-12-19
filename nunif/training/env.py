@@ -41,6 +41,15 @@ class BaseEnv(ABC):
         loss = 0
         return loss
 
+    def to_device(self, input, device):
+        if torch.is_tensor(input):
+            return input.to(device)
+        if isinstance(input, (tuple, list)):
+            new_list = [self.to_device(elm, device) for elm in input]
+            return tuple(new_list) if isinstance(input, tuple) else new_list
+        # unknown type
+        return input
+
     def train(self, loader, optimizer, grad_scaler):
         self.train_begin()
         for data in tqdm(loader, ncols=80):
@@ -80,7 +89,7 @@ class SoftMaxEnv(BaseEnv):
 
     def train_step(self, data):
         x, y = data
-        x, y = x.to(self.device), y.to(self.device)
+        x, y = self.to_device(x, self.device), self.to_device(y, self.device)
         with torch.autocast(device_type=self.device.type, enabled=self.amp):
             z = self.model(x)
             loss = self.criterion(z, y)
@@ -134,7 +143,7 @@ class I2IEnv(BaseEnv):
 
     def train_step(self, data):
         x, y = data
-        x, y = x.to(self.device), y.to(self.device)
+        x, y = self.to_device(x, self.device), self.to_device(y, self.device)
         with torch.autocast(device_type=self.device.type, enabled=self.amp):
             z = self.model(x)
             loss = self.criterion(z, y)
