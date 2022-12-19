@@ -13,6 +13,7 @@ import random
 
 
 USE_WAND = True
+NEAREST_PREFIX = "__NEAREST_"
 
 
 if not USE_WAND:
@@ -22,6 +23,7 @@ if not USE_WAND:
         InterpolationMode.LANCZOS,
         InterpolationMode.BICUBIC,
     )
+    INTERPOLATION_NEAREST = InterpolationMode.NEAREST
     INTERPOLATION_MODE_WEIGHTS = (2/9, 2/9, 4/9, 1/9)  # noqa: E226
 
     class RandomDownscaleX():
@@ -44,6 +46,7 @@ else:
         "sinc",
         "catrom"
     )
+    INTERPOLATION_NEAREST = "box"
     # INTERPOLATION_MODE_WEIGHTS = (4/9, 4/9, 1/9)  # noqa: E226
     INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/3)  # noqa: E226
 
@@ -117,6 +120,11 @@ class Waifu2xScale2xDataset(Waifu2xDataset):
                 TP.RandomFlip(),
                 TP.CenterCrop(size=tile_size, y_scale=2, y_offset=model_offset),
             ])
+            self.transforms_nearest = TP.Compose([
+                RandomDownscaleX(interpolation=INTERPOLATION_NEAREST),
+                TP.RandomHardExampleCrop(size=tile_size, y_scale=2, y_offset=model_offset, samples=4),
+                TP.RandomFlip(),
+            ])
         else:
             self.gt_transforms = TS.Identity()
             if USE_WAND:
@@ -128,14 +136,21 @@ class Waifu2xScale2xDataset(Waifu2xDataset):
                 RandomDownscaleX(interpolation=interpolation),
                 TP.CenterCrop(size=tile_size, y_scale=2, y_offset=model_offset),
             ])
+            self.transforms_nearest = TP.Compose([
+                RandomDownscaleX(interpolation=INTERPOLATION_NEAREST),
+                TP.CenterCrop(size=tile_size, y_scale=2, y_offset=model_offset),
+            ])
 
     def __getitem__(self, index):
         filename = super().__getitem__(index)
         im, _ = pil_io.load_image_simple(filename, color="rgb")
         if im is None:
             raise RuntimeError(f"Unable to load image: {filename}")
-        im = self.gt_transforms(im)
-        x, y = self.transforms(im, im)
+        if NEAREST_PREFIX in filename:
+            x, y = self.transforms_nearest(im, im)
+        else:
+            im = self.gt_transforms(im)
+            x, y = self.transforms(im, im)
         return TF.to_tensor(x), TF.to_tensor(y)
 
 
