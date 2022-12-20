@@ -12,6 +12,12 @@ See [Install ImageMagick on Windows](https://docs.wand-py.org/en/0.6.10/guide/in
 
 Note: ImageMagick(wand) is not required to run `waifu2x.web` or `waifu2x.cli`. It is used in training codes and benchmarks.
 
+#### Install libraqm.dll (Only required for synthetic training data generation)
+
+Download `libraqm‑0.7.1.dll.zip` from https://www.lfd.uci.edu/~gohlke/pythonlibs/#pillow .
+
+See https://stackoverflow.com/questions/62939101/how-to-install-pre-built-pillow-wheel-with-libraqm-dlls-on-windows
+
 ## 2. Clone
 
 ```
