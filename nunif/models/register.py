@@ -7,10 +7,12 @@ from .. logger import logger
 _models = {}
 
 
-def register_model(name, klass):
+def register_model(cls):
+    assert issubclass(cls, Model)
     global _models
-    _models[name] = klass
-    logger.debug("register %s -> %s", name, repr(klass))
+    _models[cls.name] = cls
+    logger.debug("register %s -> %s", cls.name, repr(cls))
+    return cls
 
 
 def create_model(name, device_ids=None, **kwargs):
@@ -40,4 +42,4 @@ def get_model_names():
 def register_models(module):
     for name, obj in inspect.getmembers(module, inspect.isclass):
         if issubclass(obj, Model) and obj is not Model:
-            register_model(obj.name, obj)
+            register_model(obj)

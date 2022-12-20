@@ -119,6 +119,7 @@ class UNet2(nn.Module):
         return z
 
 
+@register_model
 class UpCUNet(I2IBaseModel):
     name = "waifu2x.upcunet"
 
@@ -141,6 +142,7 @@ class UpCUNet(I2IBaseModel):
             return z.clamp_(0, 1)
 
 
+@register_model
 class CUNet(I2IBaseModel):
     name = "waifu2x.cunet"
 
@@ -162,10 +164,6 @@ class CUNet(I2IBaseModel):
             return (z, z1)
         else:
             return z.clamp_(0, 1)
-
-
-register_model(CUNet.name, CUNet)
-register_model(UpCUNet.name, UpCUNet)
 
 
 if __name__ == "__main__":

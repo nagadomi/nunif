@@ -3,6 +3,7 @@ from nunif.models import I2IBaseModel, register_model
 from nunif.modules.inplace_clip import InplaceClip
 
 
+@register_model
 class VGG7(I2IBaseModel):
     name = "waifu2x.vgg_7"
 
@@ -27,9 +28,6 @@ class VGG7(I2IBaseModel):
 
     def forward(self, x):
         return self.net(x)
-
-
-register_model(VGG7.name, VGG7)
 
 
 if __name__ == "__main__":

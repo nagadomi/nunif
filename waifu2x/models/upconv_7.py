@@ -2,6 +2,7 @@ import torch.nn as nn
 from nunif.models import I2IBaseModel, register_model
 
 
+@register_model
 class UpConv7(I2IBaseModel):
     name = "waifu2x.upconv_7"
 
@@ -34,9 +35,6 @@ class UpConv7(I2IBaseModel):
             return z
         else:
             return z.clamp_(0, 1)
-
-
-register_model(UpConv7.name, UpConv7)
 
 
 if __name__ == "__main__":
