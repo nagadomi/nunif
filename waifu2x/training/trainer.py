@@ -148,6 +148,8 @@ def register(subparsers, default_parser):
         minibatch_size=8,
         optimizer="adam",
         learning_rate=0.0002,
+        scheduler="cosine",
+        learning_rate_cycles=5,
         learning_rate_decay=0.995,
         learning_rate_decay_step=[1]
     )
