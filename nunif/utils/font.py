@@ -3,6 +3,9 @@ from fontTools.ttLib import TTFont
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import threading
 import random
+import os
+from os import path
+from ..logger import logger
 
 
 INVISIBLE_CODES = {
@@ -76,6 +79,7 @@ INVISIBLE_CODES = {
 }
 
 
+# NOTE: https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids
 FONT_NAME_ID = {
     "Name": 4,
     "Family Name": 1,
@@ -89,7 +93,7 @@ FONT_NAME_ID = {
     "URL Designer": 12,
     "License Description": 13,
     "License URL": 14,
-    "Compatible Full": 18
+#    "Compatible Full": 18
 }
 
 
@@ -113,6 +117,12 @@ class FontInfo():
         if validate_cmap:
             font.validate_cmap()
         return font
+
+    def get_metadata(self, name_id=None, name=None):
+        if name_id is not None:
+            return self.ttfont["name"].getDebugName(name_id)
+        elif name is not None:
+            return self.ttfont["name"].getDebugName(FONT_NAME_ID[name])
 
     def validate_cmap(self):
         """
@@ -139,6 +149,28 @@ class FontInfo():
 
     def __repr__(self):
         return f"FontInfo(name={self.name}, file_path={self.file_path})"
+
+
+def load_fonts(font_dir, font_names, validate_cmap=False):
+    # TODO: work in progress
+    fonts = []
+    loaded_font_names = set()
+    for font_file in os.listdir(font_dir):
+        if not font_file.endswith(".otf") or font_file.endswith(".ttf"):
+            continue
+        font_file = path.join(font_dir, font_file)
+        font = FontInfo.load(font_file)
+        if font.name not in font_names:
+            continue
+        loaded_font_names.add(font.name)
+        if validate_cmap:
+            font.validate_cmap()
+        fonts.append(font)
+
+    missing_font_names = [name for name in font_names if name not in loaded_font_names]
+    if missing_font_names:
+        logger.warning("load_fonts: missing fonts: {missing_font_names}")
+    return fonts
 
 
 class ImageFonts():
