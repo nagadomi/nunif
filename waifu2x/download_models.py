@@ -5,7 +5,7 @@ from nunif.logger import logger
 
 
 class ModelDownloader(ArchiveDownloader):
-    def handle_directory(self, src):
+    def handle(self, src):
         src = path.join(src, "pretrained_models")
         dst = path.join(path.dirname(__file__), "pretrained_models")
         logger.debug(f"Downloder: {self.name}: copytree: {src} -> {dst}")

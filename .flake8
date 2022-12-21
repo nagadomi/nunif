@@ -10,3 +10,5 @@ exclude =
         tmp/
         data/
         models/
+        font_resource/fonts
+        font_resource/font_map.py
