@@ -156,7 +156,7 @@ def create_trainer_default_parser():
                         help="input training data directory that created by `create_training_data` command")
     parser.add_argument("--model-dir", type=str, required=True,
                         help="output directory for trained model/checkpoint")
-    parser.add_argument("--minibatch-size", type=int, default=64,
+    parser.add_argument("--batch-size", type=int, default=64,
                         help="minibatch size")
     parser.add_argument("--optimizer", type=str, choices=["adam", "sgd"], default="adam",
                         help="optimizer")

@@ -39,7 +39,7 @@ class Waifu2xTrainer(Trainer):
                     da_scale_p=self.args.da_scale_p,
                     da_chshuf_p=self.args.da_chshuf_p)
                 return torch.utils.data.DataLoader(
-                    dataset, batch_size=self.args.minibatch_size,
+                    dataset, batch_size=self.args.batch_size,
                     worker_init_fn=dataset.worker_init,
                     shuffle=False,
                     pin_memory=True,
@@ -53,7 +53,7 @@ class Waifu2xTrainer(Trainer):
                     tile_size=self.args.size,
                     eval=True)
                 return torch.utils.data.DataLoader(
-                    dataset, batch_size=self.args.minibatch_size,
+                    dataset, batch_size=self.args.batch_size,
                     worker_init_fn=dataset.worker_init,
                     shuffle=False,
                     num_workers=self.args.num_workers,
@@ -145,7 +145,7 @@ def register(subparsers, default_parser):
                         help="random channel shuffle data argumentation for gt image")
 
     parser.set_defaults(
-        minibatch_size=8,
+        batch_size=8,
         optimizer="adam",
         learning_rate=0.0002,
         scheduler="cosine",
