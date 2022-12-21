@@ -106,7 +106,7 @@ class FontInfo():
         self.lock = threading.RLock()
 
     @classmethod
-    def load(cls, file_path, validate_cmap=False):
+    def load(cls, file_path, validate_cmap=False, validate_font_size=16):
         ttfont = TTFont(file_path)
         name = ttfont["name"].getDebugName(FONT_NAME_ID["Name"])
         cmap = set()
@@ -115,7 +115,7 @@ class FontInfo():
         font = FontInfo(ttfont=ttfont, name=name,
                         cmap=cmap, file_path=file_path)
         if validate_cmap:
-            font.validate_cmap()
+            font.validate_cmap(font_size=validate_font_size)
         return font
 
     def get_metadata(self, name_id=None, name=None):
@@ -124,13 +124,13 @@ class FontInfo():
         elif name is not None:
             return self.ttfont["name"].getDebugName(FONT_NAME_ID[name])
 
-    def validate_cmap(self):
+    def validate_cmap(self, font_size=16):
         """
         Most Free Fonts contain many character codes that cannot be rendered.
         It causes mislabeling the generated training data.
         This method tests each code for rendering and removes the character codes that cannot be rendered.
         """
-        font = ImageFont.truetype(self.file_path, size=8, index=0,
+        font = ImageFont.truetype(self.file_path, size=font_size, index=0,
                                   layout_engine=ImageFont.Layout.RAQM)
 
         def render_test(code):
@@ -140,12 +140,13 @@ class FontInfo():
             min_value, max_value = font_image.getextrema()
             if min_value == 0 and max_value == 0:
                 return False
+            font_image.close()
             return True
         invalid_codes = set(code for code in self.cmap
                             if code not in INVISIBLE_CODES and not render_test(code))
         # print([(hex(c), chr(c)) for c in invalid_codes])
         self.cmap -= invalid_codes
-        return len(invalid_codes)
+        return invalid_codes
 
     def __repr__(self):
         return f"FontInfo(name={self.name}, file_path={self.file_path})"
@@ -307,12 +308,9 @@ class CharDraw():
 
 
 def _test_font():
-    info = FontInfo.load("./data/fonts/Kokoro.otf")
+    info = FontInfo.load("font_resource/fonts/Kosugi_Maru/KosugiMaru-Regular.ttf")
     print(info)
-    print(info.validate_cmap())
-
-    info = FontInfo.load("./data/fonts/NotoSansJP-Bold.otf")
-    print(info.validate_cmap())
+    print([chr(c) for c in info.validate_cmap(font_size=32)])
 
 
 def _test_draw():
@@ -322,7 +320,7 @@ def _test_draw():
 どこで生れたかとんと見当けんとうがつかぬ。
 I'm a cat!!
 """
-    font_info = FontInfo.load("./data/fonts/NotoSansJP-Bold.otf", validate_cmap=False)
+    font_info = FontInfo.load("./font_resource/fonts/Noto_Sans_JP/NotoSansJP-Regular.otf")
     font_size = 20
 
     # horizontal
@@ -370,10 +368,11 @@ I'm a cat!!
                 y += box.height
                 if not str.isascii(c) and box.has_letter_spacing:
                     y += letter_spacing
-                w = max(w, box.height)
+                w = max(w, box.width)
         x += w + line_spacing
     im.show()
 
 
 if __name__ == "__main__":
+    #_test_font()
     _test_draw()
