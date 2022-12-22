@@ -93,7 +93,6 @@ FONT_NAME_ID = {
     "URL Designer": 12,
     "License Description": 13,
     "License URL": 14,
-#    "Compatible Full": 18
 }
 
 
@@ -228,6 +227,8 @@ class ImageFonts():
 @dataclass
 class CharBox():
     label: str
+    x: int
+    y: int
     width: int
     height: int
     has_letter_spacing: bool
@@ -290,7 +291,9 @@ class CharDraw():
             else:
                 w = w // code_len
             for i in range(code_len):
-                boxes.append(CharBox(label=label, width=w, height=h, has_letter_spacing=(i == code_len - 1)))
+                boxes.append(CharBox(label=label,
+                                     x=x, y=y, width=w, height=h,
+                                     has_letter_spacing=(i == code_len - 1)))
         else:
             if self.vertical:
                 w, h = self.font.getbbox(text, direction=self.direction, language=self.lang)[2:]
@@ -299,12 +302,48 @@ class CharDraw():
                 w, h = self.font.getbbox(text, direction=self.direction, language=self.lang)[2:]
                 h = max(h, self.char_size)
             # TODO: allow randomize white space size
-            boxes.append(CharBox(label=label, width=int(w), height=int(h), has_letter_spacing=True))
+            boxes.append(CharBox(label=label,
+                                 x=x, y=y, width=int(w), height=int(h),
+                                 has_letter_spacing=True))
 
         return boxes
 
 
-# LineDraw is not defined here because it depends on each task
+@dataclass
+class LineBox():
+    label: str
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class SimpleLineDraw(CharDraw):
+    def __init__(self, font_info, font_size, vertical, lang="ja"):
+        self.font_info = font_info
+        self.font_size = font_size
+        self.vertical = vertical
+        self.lang = lang
+        self.font = ImageFont.truetype(self.font_info.file_path, size=font_size,
+                                       layout_engine=ImageFont.Layout.RAQM)
+        if self.vertical:
+            self.direction = "ttb"
+        else:
+            self.direction = "ltr"
+
+    def can_render(self, text):
+        return all([ord(c) in self.font_info.cmap for c in text])
+
+    def draw(self, gc, x, y, text, label=None, stroke_width=0, color="white"):
+        if label is None:
+            label = text
+        if gc is not None:
+            gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
+                    direction=self.direction, anchor=None, language=self.lang)
+
+        w, h = self.font.getbbox(text, stroke_width=stroke_width,
+                                 direction=self.direction, language=self.lang)[2:]
+        return [LineBox(label=label, x=x, y=y, width=w, height=h)]
 
 
 def _test_font():
@@ -315,13 +354,15 @@ def _test_font():
 
 def _test_draw():
     text = """
-吾輩わがはいは猫である。
+吾輩（わがはい）は猫である。
 名前はまだ無い。
-どこで生れたかとんと見当けんとうがつかぬ。
+どこで生れたかとんと見当（けんとう）がつかぬ。
 I'm a cat!!
 """
     font_info = FontInfo.load("./font_resource/fonts/Noto_Sans_JP/NotoSansJP-Regular.otf")
     font_size = 20
+
+    # CharDraw
 
     # horizontal
     im = Image.new("L", (512, 128), (0,))
@@ -339,7 +380,7 @@ I'm a cat!!
         for c in line:
             boxes = draw.draw(gc, x, y, ord(c), label=c, stroke_width=stroke_width, color=color)
             for box in boxes:
-                gc.rectangle((x, y, x + box.width, y + box.height), outline=(128,))
+                gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
                 x += box.width
                 if not str.isascii(c) and box.has_letter_spacing:
                     x += letter_spacing
@@ -364,7 +405,7 @@ I'm a cat!!
         for c in line:
             boxes = draw.draw(gc, x, y, ord(c), label=c, stroke_width=stroke_width, color=color)
             for box in boxes:
-                gc.rectangle((x, y, x + box.width, y + box.height), outline=(128,))
+                gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
                 y += box.height
                 if not str.isascii(c) and box.has_letter_spacing:
                     y += letter_spacing
@@ -372,7 +413,45 @@ I'm a cat!!
         x += w + line_spacing
     im.show()
 
+    # SimpleLineDraw
+
+    # horizontal
+    im = Image.new("L", (512, 128), (0,))
+    gc = ImageDraw.Draw(im)
+    draw = SimpleLineDraw(font_info, font_size, vertical=False)
+    x = y = 8
+    line_spacing = int(font_size * 0.1)
+    for i, line in enumerate(text.splitlines()):
+        line = line.strip()
+        stroke_width = 0  # if i % 2 == 0 else 1
+        color = (200,) if i % 2 == 0 else "white"
+        h = 0
+        boxes = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color)
+        for box in boxes:
+            gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
+            h = max(h, box.height)
+        y += h + line_spacing
+    im.show()
+
+    # vertical
+    im = Image.new("L", (128, 512), (0,))
+    gc = ImageDraw.Draw(im)
+    draw = SimpleLineDraw(font_info, font_size, vertical=True)
+    x = y = 8
+    line_spacing = int(font_size * 0.1)
+    for i, line in enumerate(reversed(text.splitlines())):
+        line = line.strip()
+        stroke_width = 0  # if i % 2 == 0 else 1
+        color = (200,) if i % 2 == 0 else "white"
+        h = 0
+        boxes = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color)
+        for box in boxes:
+            gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
+            w = max(w, box.width)
+        x += w + line_spacing
+    im.show()
+
 
 if __name__ == "__main__":
-    #_test_font()
+    # _test_font()
     _test_draw()
