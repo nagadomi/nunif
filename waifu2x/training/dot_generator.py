@@ -17,11 +17,11 @@ NEAREST_PREFIX = "__NEAREST_"
 
 
 def exec_prob(prob):
-    return random.uniform(0, 1) > prob
+    return random.uniform(0, 1) < prob
 
 
 def gen_color(black):
-    if exec_prob(0.8):
+    if exec_prob(0.2):
         if black:
             return (0.0, 0.0, 0.0)
         else:
@@ -29,7 +29,7 @@ def gen_color(black):
     else:
         rgb = []
         for _ in range(3):
-            if exec_prob(0.7):
+            if exec_prob(0.3):
                 v = float(random.randint(0, 1))
             else:
                 v = random.uniform(0, 1)
@@ -75,7 +75,7 @@ def gen_dot_block(block_size=24, scale=1, rotate=False):
         for x in range(margin, block_size - margin):
             xc = math.floor(x / size)
             if use_cross_and_skip:
-                if exec_prob(0.25) and mod(yc + b, xc + b):
+                if exec_prob(0.75) and mod(yc + b, xc + b):
                     block[y, x, :] = fg
             else:
                 if mod(yc + b, xc + b):
