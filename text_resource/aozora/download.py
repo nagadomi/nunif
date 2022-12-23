@@ -16,7 +16,7 @@ AOZORA_CSV_URL = "http://www.aozora.gr.jp/index_pages/list_person_all.zip"
 
 class AozoraTextDownloader(ArchiveDownloader):
     def handle(self, src):
-        dst = self.kwargs.get("output_dir")
+        dst = path.join(self.kwargs.get("output_dir"), "cards")
         shutil.copytree(path.join(src, "aozorabunko_text-master", "cards"), dst, dirs_exist_ok=True)
 
 

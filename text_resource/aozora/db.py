@@ -10,7 +10,7 @@ DATA_DIR = path.join(path.dirname(__file__), "data")
 
 
 @dataclass
-class AozoraRecord():
+class AozoraItem():
     author_id: str
     author: str
     title_id: str
@@ -26,6 +26,7 @@ class AozoraDB():
     def __init__(self, data_dir=DATA_DIR):
         self.data_dir = data_dir
         self.csv_file = path.join(data_dir, "list_person_all.csv")
+        self.card_dir = path.join(data_dir, "cards")
         self.load()
 
     def load(self, modern_only=False):
@@ -39,19 +40,19 @@ class AozoraDB():
                     continue
                 file_path = self.find_file_path(row["人物ID"], row["作品ID"])
                 if file_path:
-                    item = AozoraRecord(author_id=row["人物ID"],
-                                        author=row["著者名"],
-                                        title_id=row["作品ID"],
-                                        title=row["作品名"],
-                                        kana_type=row["仮名遣い種別"],
-                                        file_path=file_path,
-                                        file_size=path.getsize(file_path))
+                    item = AozoraItem(author_id=row["人物ID"],
+                                      author=row["著者名"],
+                                      title_id=row["作品ID"],
+                                      title=row["作品名"],
+                                      kana_type=row["仮名遣い種別"],
+                                      file_path=file_path,
+                                      file_size=path.getsize(file_path))
                     self.data.append(item)
                 else:
                     pass
 
     def find_file_path(self, author_id, title_id):
-        author_dir = path.join(self.data_dir, author_id, "files")
+        author_dir = path.join(self.card_dir, author_id, "files")
         if not path.isdir(author_dir):
             return None
         title_id = str(int(title_id, 10))  # remove zero padding
@@ -90,11 +91,21 @@ class AozoraDB():
     def order_by_size(items):
         return list(sorted(items, key=lambda item: item.file_size, reverse=True))
 
-    def find_by_title(self, keyword):
-        return [item for item in self.data if keyword in item.title]
+    def find_by_title(self, title=None, keyword=None):
+        if title is not None:
+            return [item for item in self.data if title == item.title]
+        elif keyword is not None:
+            return [item for item in self.data if keyword in item.title]
+        else:
+            raise ValueError("title or keyword must be specified")
 
-    def find_by_author(self, keyword, modern_only=True, size_order=True, limit=None):
-        items = [item for item in self.data if keyword in item.author]
+    def find_by_author(self, author=None, keyword=None, modern_only=True, size_order=True, limit=None):
+        if author is not None:
+            items = [item for item in self.data if author == item.author]
+        elif keyword is not None:
+            items = [item for item in self.data if keyword in item.author]
+        else:
+            raise ValueError("author or keyword must be specified")
         if modern_only:
             items = self.filter_modern(items)
         if size_order:
@@ -110,6 +121,6 @@ class AozoraDB():
 if __name__ == "__main__":
     from pprint import pprint
     db = AozoraDB()
-    print(len(db))
-    pprint(db.find_by_author("芥川 竜之介"))
-    pprint(db.find_by_title("ねこ"))
+    print("len", len(db))
+    pprint(db.find_by_author("夢野 久作"))
+    pprint(db.find_by_title(keyword="吾輩"))
