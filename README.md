@@ -4,7 +4,7 @@ For the time being, I will make incompatible changes.
 
 ## Dependencies
 
-- Python 3 (Probably works with Python 3.6 or later)
+- Python 3 (Probably works with Python 3.8 or later)
 - [PyTorch](https://pytorch.org/get-started/locally/)
 - See requirements.txt
 
