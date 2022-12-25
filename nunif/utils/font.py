@@ -3,9 +3,6 @@ from fontTools.ttLib import TTFont
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import threading
 import random
-import os
-from os import path
-from ..logger import logger
 
 
 INVISIBLE_CODES = {
@@ -429,8 +426,6 @@ I'm a cat!!
         w = max(w, box.width)
         x += w + line_spacing
     im.show()
-
-
 
 
 if __name__ == "__main__":

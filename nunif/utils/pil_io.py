@@ -283,6 +283,7 @@ def save_image(im, filename, format="png",
 try:
     import cv2
     import numpy as np
+
     def to_cv2(im):
         cvim = np.array(im, dtype=np.uint8)
         if cvim.ndim == 2:

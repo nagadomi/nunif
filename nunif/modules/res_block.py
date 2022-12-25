@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from . se_block import SEBlock, LocalSEBlock, EmptySEBlock
+from .attention import SEBlock
 
 
 """
@@ -93,7 +92,6 @@ def _spec():
     print(resnet)
     print(z.shape)
 
-
     class CustomResBlock(ResBlock):
         def __init__(self, in_channels, out_channels, stride):
             super().__init__(in_channels, out_channels, stride)
@@ -113,10 +111,9 @@ def _spec():
     class CustomResGroup(ResGroup):
         def __init__(self, in_channels, out_channels, num_layers, stride):
             super().__init__(in_channels, out_channels, num_layers, stride)
-        
+
         def create_layer(self, in_channels, out_channels, stride):
             return CustomResBlock(in_channels, out_channels, stride)
-
 
     resnet = nn.Sequential(
         nn.Conv2d(1, 64, 3, 1, 1),

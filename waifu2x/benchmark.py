@@ -1,5 +1,3 @@
-# waifu2x
-import sys
 import os
 from os import path
 import math

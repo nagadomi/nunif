@@ -1,15 +1,11 @@
 # random text image generator
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
+from PIL import Image, ImageDraw
 import random
 import math
 import argparse
 from tqdm import tqdm
 import os
 from os import path
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode
-)
 import torch
 from torch.utils.data.dataset import Dataset
 from multiprocessing import cpu_count
@@ -18,7 +14,7 @@ import torchvision.transforms as TT
 import nunif.transforms as ST
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import list_images
-from nunif.utils.font import CharDraw, SimpleLineDraw, FontInfo
+from nunif.utils.font import SimpleLineDraw
 from nunif.logger import logger
 from text_resource.aozora.db import AozoraDB
 from text_resource.aozora import utils as AU
@@ -90,11 +86,11 @@ class TextImageGenerator(Dataset):
             TT.RandomChoice([
                 ST.Identity(),
                 TT.RandomRotation((-45, 45), interpolation=TT.InterpolationMode.BILINEAR, expand=True),
-                TT.RandomPerspective(distortion_scale=1 - 1/math.sqrt(2), p=1.0),
+                TT.RandomPerspective(distortion_scale=1 - 1 / math.sqrt(2), p=1.0),
             ], p=[5, 1, 1]),
             TT.CenterCrop(args.size),
-            #TT.CenterCrop(tmp_size),
-            #TT.Resize(args.size, interpolation=TT.InterpolationMode.BILINEAR)
+            # TT.CenterCrop(tmp_size),
+            # TT.Resize(args.size, interpolation=TT.InterpolationMode.BILINEAR)
         ])
 
     def gen_basecolor(self):
@@ -208,7 +204,7 @@ def main():
         im = x[0]
         output_path = path.join(args.output_dir, f"__TEXT_{i}_{postfix}.png")
         im.save(output_path)
- 
+
 
 if __name__ == "__main__":
     main()

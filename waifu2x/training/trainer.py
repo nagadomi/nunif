@@ -21,7 +21,7 @@ class Waifu2xTrainer(Trainer):
             kwargs["no_clip"] = True
         model = create_model(self.args.arch, **kwargs)
         if len(self.args.gpu) > 1:
-            model = torch.nn.DataParallel(model, device_ids=self.args.gpu)
+            model = nn.DataParallel(model, device_ids=self.args.gpu)
         model = model.to(self.device)
         return model
 

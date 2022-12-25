@@ -2,7 +2,6 @@ import requests
 import shutil
 from tqdm import tqdm
 from tempfile import NamedTemporaryFile, mkdtemp
-import posixpath
 from abc import ABC, abstractmethod
 from ..logger import logger
 
