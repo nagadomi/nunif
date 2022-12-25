@@ -28,11 +28,15 @@ def image_load_task(q, stop_flag, files, max_queue_size, load_func):
     q.put(None)
 
 
+def list_images(directory):
+    return sorted([f for f in glob.glob(os.path.join(directory, "*"))
+                   if os.path.splitext(f)[-1].lower() in IMG_EXTENSIONS])
+
+
 class ImageLoader():
     @classmethod
     def listdir(cls, directory):
-        return sorted([f for f in glob.glob(os.path.join(directory, "*"))
-                       if os.path.splitext(f)[-1].lower() in IMG_EXTENSIONS])
+        return list_images(directory)
 
     def __init__(self, directory=None, files=None, max_queue_size=256,
                  load_func=pil_io.load_image,

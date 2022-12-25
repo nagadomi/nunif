@@ -96,6 +96,9 @@ FONT_NAME_ID = {
 }
 
 
+VALIDATE_FONT_SIZE = 16
+
+
 class FontInfo():
     def __init__(self, ttfont, file_path, name, cmap):
         self.file_path = file_path
@@ -105,7 +108,7 @@ class FontInfo():
         self.lock = threading.RLock()
 
     @classmethod
-    def load(cls, file_path, validate_cmap=False, validate_font_size=16):
+    def load(cls, file_path, validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE):
         ttfont = TTFont(file_path)
         name = ttfont["name"].getDebugName(FONT_NAME_ID["Name"])
         cmap = set()
@@ -123,7 +126,7 @@ class FontInfo():
         elif name is not None:
             return self.ttfont["name"].getDebugName(FONT_NAME_ID[name])
 
-    def validate_cmap(self, font_size=16):
+    def validate_cmap(self, font_size=VALIDATE_FONT_SIZE):
         """
         Most Free Fonts contain many character codes that cannot be rendered.
         It causes mislabeling the generated training data.
@@ -149,28 +152,6 @@ class FontInfo():
 
     def __repr__(self):
         return f"FontInfo(name={self.name}, file_path={self.file_path})"
-
-
-def load_fonts(font_dir, font_names, validate_cmap=False):
-    # TODO: work in progress
-    fonts = []
-    loaded_font_names = set()
-    for font_file in os.listdir(font_dir):
-        if not font_file.endswith(".otf") or font_file.endswith(".ttf"):
-            continue
-        font_file = path.join(font_dir, font_file)
-        font = FontInfo.load(font_file)
-        if font.name not in font_names:
-            continue
-        loaded_font_names.add(font.name)
-        if validate_cmap:
-            font.validate_cmap()
-        fonts.append(font)
-
-    missing_font_names = [name for name in font_names if name not in loaded_font_names]
-    if missing_font_names:
-        logger.warning("load_fonts: missing fonts: {missing_font_names}")
-    return fonts
 
 
 class ImageFonts():
@@ -343,7 +324,7 @@ class SimpleLineDraw(CharDraw):
 
         w, h = self.font.getbbox(text, stroke_width=stroke_width,
                                  direction=self.direction, language=self.lang)[2:]
-        return [LineBox(label=label, x=x, y=y, width=w, height=h)]
+        return LineBox(label=label, x=x, y=y, width=w, height=h)
 
 
 def _test_font():
@@ -426,10 +407,9 @@ I'm a cat!!
         stroke_width = 0  # if i % 2 == 0 else 1
         color = (200,) if i % 2 == 0 else "white"
         h = 0
-        boxes = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color)
-        for box in boxes:
-            gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
-            h = max(h, box.height)
+        box = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color)
+        gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
+        h = max(h, box.height)
         y += h + line_spacing
     im.show()
 
@@ -444,12 +424,13 @@ I'm a cat!!
         stroke_width = 0  # if i % 2 == 0 else 1
         color = (200,) if i % 2 == 0 else "white"
         h = 0
-        boxes = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color)
-        for box in boxes:
-            gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
-            w = max(w, box.width)
+        box = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color)
+        gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
+        w = max(w, box.width)
         x += w + line_spacing
     im.show()
+
+
 
 
 if __name__ == "__main__":
