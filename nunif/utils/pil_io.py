@@ -130,6 +130,8 @@ def load_image_simple(filename, color="rgb"):
         im = remove_alpha(im)
 
     if color == "rgb" and im.mode != "RGB":
+        if im.mode == "I":
+            im = convert_i2l(im)
         im = im.convert("RGB")
     elif color == "gray" and im.mode != "L":
         if im.mode == "I":
@@ -276,3 +278,23 @@ def save_image(im, filename, format="png",
 
     options.update(save_options)
     im.save(filename, format=format, **options)
+
+
+try:
+    import cv2
+    import numpy as np
+    def to_cv2(im):
+        cvim = np.array(im, dtype=np.uint8)
+        if cvim.ndim == 2:
+            # grayscale
+            pass
+        elif cvim.shape[2] == 3:
+            # RGB
+            cvim = cv2.cvtColor(cvim, cv2.COLOR_RGB2BGR)
+        elif cvim.shape[2] == 4:
+            # RGBA
+            cvim = cv2.cvtColor(cvim, cv2.COLOR_RGBA2BGRA)
+        return cvim
+except ModuleNotFoundError:
+    def to_cv2(im):
+        raise NotImplementedError("opencv-python is not installed")
