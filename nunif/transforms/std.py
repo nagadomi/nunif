@@ -100,3 +100,36 @@ class RandomChannelShuffle():
         channels = list(x.split())
         random.shuffle(channels)
         return Image.merge("RGB", channels)
+
+
+class ReflectionFit():
+    def __init__(self, size):
+        if isinstance(size, int):
+            self.size = (size, size)
+
+    def __call__(self, x):
+        w, h = x.size
+        pad_l = pad_t = pad_r = pad_b = 0
+        if self.size[0] > w:
+            border = (self.size[0] - w)
+            pad_l = border // 2
+            pad_r = border // 2 + (border % 2)
+        if self.size[1] > h:
+            border = (self.size[1] - h)
+            pad_t = border // 2
+            pad_b = border // 2 + (border % 2)
+        if pad_l + pad_t + pad_r + pad_b != 0:
+            x = TF.pad(x, (pad_l, pad_t, pad_r, pad_b), padding_mode="reflect")
+        if w > self.size[0] or h > self.size[1]:
+            i, j, h, w = T.RandomCrop.get_params(x, self.size)
+            x = TF.crop(x, i, j, h, w)
+        return x
+
+
+class RandomPILFilter():
+    def __init__(self, filters):
+        self.filters = filters
+
+    def __call__(self, x):
+        kernel = random.choice(self.filters)
+        return x.filter(kernel)
