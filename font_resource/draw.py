@@ -45,12 +45,17 @@ class CharDraw():
             bold = image.filter(ImageFilter.MaxFilter(1 + stroke_width * 2))
             gc.bitmap((x, y), bold, fill=color)
 
-    def draw(self, gc, x, y, code, label=None, stroke_width=0, color="white"):
+    def draw_text(self, gc, x, y, text, stroke_width, color):
+        gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
+                direction=self.direction, anchor=None, language=self.lang)
+
+    def draw(self, gc, x, y, code, label=None, stroke_width=0, color="white", shadow_color=None):
         text = chr(code)
         if label is None:
             label = text
         image_font = code_len = None
         if gc is not None:
+            # TODO: draw_image with shadow
             if code not in self.font_info.cmap:
                 # use image font
                 image_font, code_len = self.image_fonts.get(code, self.font_size, self.vertical, self.bold)
@@ -60,8 +65,12 @@ class CharDraw():
                     image_font, code_len = self.image_fonts.get(code, self.font_size, self.vertical, self.bold)
                     self.draw_image(gc, x, y, image_font, stroke_width, color)
                 else:
-                    gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
-                            direction=self.direction, anchor=None, language=self.lang)
+                    if shadow_color is not None:
+                        shadow_stroke_width = stroke_width + (2 + self.font_size // 8)
+                        self.draw_text(gc, x, y, text, shadow_stroke_width, shadow_color)
+                        if shadow_stroke_width > 4:
+                            self.draw_text(gc, x, y, text, shadow_stroke_width // 2, shadow_color)
+                    self.draw_text(gc, x, y, text, stroke_width, color)
         boxes = []
         if image_font is not None:
             w, h = image_font.size
@@ -113,13 +122,20 @@ class SimpleLineDraw(CharDraw):
     def can_render(self, text):
         return all([ord(c) in self.font_info.cmap for c in text])
 
-    def draw(self, gc, x, y, text, label=None, stroke_width=0, color="white"):
+    def draw_text(self, gc, x, y, text, stroke_width, color):
+        gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
+                direction=self.direction, anchor=None, language=self.lang)
+
+    def draw(self, gc, x, y, text, label=None, stroke_width=0, color="white", shadow_color=None):
         if label is None:
             label = text
         if gc is not None:
-            gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
-                    direction=self.direction, anchor=None, language=self.lang)
-
+            if shadow_color is not None:
+                shadow_stroke_width = stroke_width + (2 + self.font_size // 8)
+                self.draw_text(gc, x, y, text, stroke_width=shadow_stroke_width, color=shadow_color)
+                if shadow_stroke_width > 4:
+                    self.draw_text(gc, x, y, text, stroke_width=shadow_stroke_width // 2, color=shadow_color)
+            self.draw_text(gc, x, y, text, stroke_width=stroke_width, color=color)
         w, h = self.font.getbbox(text, stroke_width=stroke_width,
                                  direction=self.direction, language=self.lang)[2:]
         return LineBox(label=label, x=x, y=y, width=w, height=h)
@@ -144,7 +160,7 @@ I'm a cat!!
     # CharDraw
 
     # horizontal
-    im = Image.new("L", (512, 128), (0,))
+    im = Image.new("L", (512, 128), (128,))
     gc = ImageDraw.Draw(im)
     draw = CharDraw(font_info, font_size, vertical=False)
     sx = sy = x = y = 8
@@ -157,11 +173,11 @@ I'm a cat!!
         x = sx
         h = 0
         for c in line:
-            boxes = draw.draw(gc, x, y, ord(c), label=c, stroke_width=stroke_width, color=color)
+            boxes = draw.draw(gc, x, y, ord(c), label=c, stroke_width=stroke_width, color=color, shadow_color=0)
             for box in boxes:
-                gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
+                gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(64,))
                 x += box.width
-                if not str.isascii(c) and box.has_letter_spacing:
+                if box.has_letter_spacing:
                     x += letter_spacing
                 h = max(h, box.height)
         y += h + line_spacing
@@ -212,7 +228,7 @@ I'm a cat!!
     im.show()
 
     # vertical
-    im = Image.new("L", (128, 512), (0,))
+    im = Image.new("L", (128, 512), (128,))
     gc = ImageDraw.Draw(im)
     draw = SimpleLineDraw(font_info, font_size, vertical=True)
     x = y = 8
@@ -222,8 +238,8 @@ I'm a cat!!
         stroke_width = 0  # if i % 2 == 0 else 1
         color = (200,) if i % 2 == 0 else "white"
         h = 0
-        box = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color)
-        gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(128,))
+        box = draw.draw(gc, x, y, line, label=c, stroke_width=stroke_width, color=color, shadow_color=64)
+        gc.rectangle((box.x, box.y, box.x + box.width, box.y + box.height), outline=(0,))
         w = max(w, box.width)
         x += w + line_spacing
     im.show()
