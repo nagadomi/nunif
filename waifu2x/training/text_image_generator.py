@@ -1,4 +1,5 @@
 # random text image generator
+# # DEBUG=1 python3 -m waifu2x.training.text_image_generator -n 100 -o ./text_test --bg-dir /bg/eval --seed 73
 from PIL import Image, ImageDraw
 import random
 import math
@@ -17,6 +18,7 @@ import nunif.transforms as ST
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import list_images
 from nunif.logger import logger
+from nunif.initializer import set_seed
 from text_resource.aozora.db import AozoraDB
 from text_resource.aozora import utils as AU
 from font_resource.metadata import DEFAULT_FONT_NAMES, DEFAULT_FONT_DIR
@@ -214,6 +216,7 @@ def main():
     img_gen = torch.utils.data.DataLoader(
         TextImageGenerator(args),
         collate_fn=TextImageGenerator.collate_fn,
+        worker_init_fn=lambda worker_id: set_seed(worker_id + args.seed),
         batch_size=1,
         shuffle=False,
         num_workers=4, drop_last=False)
