@@ -14,12 +14,13 @@ import torchvision.transforms as TT
 import nunif.transforms as ST
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import list_images
-from nunif.utils.font import SimpleLineDraw
 from nunif.logger import logger
 from text_resource.aozora.db import AozoraDB
 from text_resource.aozora import utils as AU
 from font_resource.metadata import DEFAULT_FONT_NAMES, DEFAULT_FONT_DIR
 from font_resource.utils import load_fonts
+from font_resource.draw import SimpleLineDraw
+
 import threading
 
 

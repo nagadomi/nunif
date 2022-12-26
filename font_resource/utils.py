@@ -1,6 +1,5 @@
-from nunif.utils.font import FontInfo, VALIDATE_FONT_SIZE
 from nunif.logger import logger
-from .font_map import FONT_MAP
+from .metadata import FontInfo, VALIDATE_FONT_SIZE, FONT_MAP
 from os import path
 
 
