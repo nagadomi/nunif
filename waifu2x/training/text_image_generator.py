@@ -129,7 +129,10 @@ class TextImageGenerator(Dataset):
     def gen_config(self):
         fg_color, bg_color = self.gen_basecolor()
         font = random.choice(self.fonts)
-        font_size = random.randint(16, 64)
+        if exec_prob(0.85):
+            font_size = random.randint(16, 64)
+        else:
+            font_size = random.randint(64, 256)
         letter_spacing = int(random.uniform(0, 0.2) * font_size)
         line_spacing = int(random.uniform(0.2, 0.5) * font_size)
         vertical = exec_prob(0.5)
