@@ -20,7 +20,6 @@ from text_resource.aozora import utils as AU
 from font_resource.metadata import DEFAULT_FONT_NAMES, DEFAULT_FONT_DIR
 from font_resource.utils import load_fonts
 from font_resource.draw import SimpleLineDraw
-
 import threading
 
 
@@ -112,14 +111,20 @@ class TextImageGenerator(Dataset):
         return tuple(fg), tuple(bg)
 
     def gen_bg(self, bg_color):
+        shadow_color = None
         if self.bg_gen is not None and exec_prob(0.5):
             bg = self.bg_gen.generate()
-            bg_alpha = random.uniform(0.5, 1)
+            bg_alpha = random.uniform(0.2, 1)
             bg_color_im = Image.new("RGB", bg.size, bg_color)
             bg = Image.blend(bg, bg_color_im, bg_alpha)
-            return bg
+            if bg_alpha < 0.5:
+                shadow_color = bg_color
+            elif exec_prob(0.5):
+                shadow_color = bg_color
+            return bg, shadow_color
         else:
-            return Image.new("RGB", (self.safe_size, self.safe_size), bg_color)
+            bg = Image.new("RGB", (self.safe_size, self.safe_size), bg_color)
+            return bg, shadow_color
 
     def gen_config(self):
         fg_color, bg_color = self.gen_basecolor()
@@ -128,12 +133,15 @@ class TextImageGenerator(Dataset):
         letter_spacing = int(random.uniform(0, 0.2) * font_size)
         line_spacing = int(random.uniform(0.2, 0.5) * font_size)
         vertical = exec_prob(0.5)
-        bg = self.gen_bg(bg_color)
+        bg, shadow_color = self.gen_bg(bg_color)
+        shadow_width = 2 + random.randint(0, font_size // 8)
 
-        return fg_color, bg, font, font_size, vertical, letter_spacing, line_spacing
+        return (fg_color, shadow_color, shadow_width, bg,
+                font, font_size, vertical, letter_spacing, line_spacing)
 
     def gen_text_block_image(self):
-        fg_color, bg, font, font_size, vertical, _, line_spacing = self.gen_config()
+        (fg_color, shadow_color, shadow_width, bg,
+         font, font_size, vertical, _, line_spacing) = self.gen_config()
 
         gc = ImageDraw.Draw(bg)
         pen = SimpleLineDraw(font, font_size=font_size, vertical=vertical)
@@ -145,7 +153,8 @@ class TextImageGenerator(Dataset):
                     line = self.text_gen.generate()
                     if pen.can_render(line):
                         break
-                box = pen.draw(gc, x, y, line, color=fg_color)
+                box = pen.draw(gc, x, y, line, color=fg_color,
+                               shadow_color=shadow_color, shadow_width=shadow_width)
                 x += box.width + line_spacing
         else:
             while y + font_size + line_spacing + margin < bg.size[1]:
@@ -153,7 +162,8 @@ class TextImageGenerator(Dataset):
                     line = self.text_gen.generate()
                     if pen.can_render(line):
                         break
-                box = pen.draw(gc, x, y, line, color=fg_color)
+                box = pen.draw(gc, x, y, line, color=fg_color,
+                               shadow_color=shadow_color, shadow_width=shadow_width)
                 y += box.height + line_spacing
         return bg
 
