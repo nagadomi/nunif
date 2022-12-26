@@ -49,7 +49,8 @@ class CharDraw():
         gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
                 direction=self.direction, anchor=None, language=self.lang)
 
-    def draw(self, gc, x, y, code, label=None, stroke_width=0, color="white", shadow_color=None):
+    def draw(self, gc, x, y, code, label=None, stroke_width=0, color="white",
+             shadow_color=None, shadow_width=None):
         text = chr(code)
         if label is None:
             label = text
@@ -66,7 +67,10 @@ class CharDraw():
                     self.draw_image(gc, x, y, image_font, stroke_width, color)
                 else:
                     if shadow_color is not None:
-                        shadow_stroke_width = stroke_width + (2 + self.font_size // 8)
+                        if shadow_width is None:
+                            shadow_stroke_width = stroke_width + (2 + self.font_size // 8)
+                        else:
+                            shadow_stroke_width = stroke_width + shadow_width
                         self.draw_text(gc, x, y, text, shadow_stroke_width, shadow_color)
                         if shadow_stroke_width > 4:
                             self.draw_text(gc, x, y, text, shadow_stroke_width // 2, shadow_color)
@@ -126,12 +130,16 @@ class SimpleLineDraw(CharDraw):
         gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
                 direction=self.direction, anchor=None, language=self.lang)
 
-    def draw(self, gc, x, y, text, label=None, stroke_width=0, color="white", shadow_color=None):
+    def draw(self, gc, x, y, text, label=None, stroke_width=0, color="white",
+             shadow_color=None, shadow_width=None):
         if label is None:
             label = text
         if gc is not None:
             if shadow_color is not None:
-                shadow_stroke_width = stroke_width + (2 + self.font_size // 8)
+                if shadow_width is None:
+                    shadow_stroke_width = stroke_width + (2 + self.font_size // 8)
+                else:
+                    shadow_stroke_width = stroke_width + shadow_width
                 self.draw_text(gc, x, y, text, stroke_width=shadow_stroke_width, color=shadow_color)
                 if shadow_stroke_width > 4:
                     self.draw_text(gc, x, y, text, stroke_width=shadow_stroke_width // 2, color=shadow_color)
