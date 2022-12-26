@@ -6,10 +6,12 @@ import argparse
 from tqdm import tqdm
 import os
 from os import path
+from multiprocessing import cpu_count
+import threading
+import numpy as np
+from types import SimpleNamespace
 import torch
 from torch.utils.data.dataset import Dataset
-from multiprocessing import cpu_count
-import numpy as np
 import torchvision.transforms as TT
 import nunif.transforms as ST
 from nunif.utils.pil_io import load_image_simple
@@ -20,7 +22,6 @@ from text_resource.aozora import utils as AU
 from font_resource.metadata import DEFAULT_FONT_NAMES, DEFAULT_FONT_DIR
 from font_resource.utils import load_fonts
 from font_resource.draw import SimpleLineDraw
-import threading
 
 
 def exec_prob(prob):
@@ -65,8 +66,16 @@ class TextGenerator():
         self.lines = lines
         logger.debug(f"TextGenerator: {len(self.lines)} lines")
 
-    def generate(self):
-        return random.choice(self.lines)
+    def generate(self, drawable):
+        retry_count = 0
+        while True:
+            line = random.choice(self.lines)
+            if drawable(line):
+                break
+            retry_count += 1
+            if retry_count > 100:
+                raise RuntimeError("Unable to generate drawable text")
+        return line
 
 
 class TextImageGenerator(Dataset):
@@ -139,36 +148,31 @@ class TextImageGenerator(Dataset):
         bg, shadow_color = self.gen_bg(bg_color)
         shadow_width = 2 + random.randint(0, font_size // 8)
 
-        return (fg_color, shadow_color, shadow_width, bg,
-                font, font_size, vertical, letter_spacing, line_spacing)
+        return SimpleNamespace(fg_color=fg_color, shadow_color=shadow_color, shadow_width=shadow_width,
+                               bg=bg,
+                               font=font, font_size=font_size, vertical=vertical,
+                               letter_spacing=letter_spacing, line_spacing=line_spacing)
 
     def gen_text_block_image(self):
-        (fg_color, shadow_color, shadow_width, bg,
-         font, font_size, vertical, _, line_spacing) = self.gen_config()
-
-        gc = ImageDraw.Draw(bg)
-        pen = SimpleLineDraw(font, font_size=font_size, vertical=vertical)
-        margin = font_size // 2
+        conf = self.gen_config()
+        canvas = conf.bg
+        gc = ImageDraw.Draw(canvas)
+        pen = SimpleLineDraw(conf.font, font_size=conf.font_size, vertical=conf.vertical)
+        margin = conf.font_size // 2
         x = y = margin
-        if vertical:
-            while x + font_size + line_spacing + margin < bg.size[0]:
-                while True:
-                    line = self.text_gen.generate()
-                    if pen.can_render(line):
-                        break
-                box = pen.draw(gc, x, y, line, color=fg_color,
-                               shadow_color=shadow_color, shadow_width=shadow_width)
-                x += box.width + line_spacing
+        if conf.vertical:
+            while x + conf.font_size + conf.line_spacing + margin < canvas.size[0]:
+                line = self.text_gen.generate(pen.drawable)
+                box = pen.draw(gc, x, y, line, color=conf.fg_color,
+                               shadow_color=conf.shadow_color, shadow_width=conf.shadow_width)
+                x += box.width + conf.line_spacing
         else:
-            while y + font_size + line_spacing + margin < bg.size[1]:
-                while True:
-                    line = self.text_gen.generate()
-                    if pen.can_render(line):
-                        break
-                box = pen.draw(gc, x, y, line, color=fg_color,
-                               shadow_color=shadow_color, shadow_width=shadow_width)
-                y += box.height + line_spacing
-        return bg
+            while y + conf.font_size + conf.line_spacing + margin < canvas.size[1]:
+                line = self.text_gen.generate(pen.drawable)
+                box = pen.draw(gc, x, y, line, color=conf.fg_color,
+                               shadow_color=conf.shadow_color, shadow_width=conf.shadow_width)
+                y += box.height + conf.line_spacing
+        return canvas
 
     def collate_fn(batch):
         return batch

@@ -34,7 +34,7 @@ class CharDraw():
             w, h = self.font.getbbox(test_text, direction=self.direction, language=self.lang)[2:]
             self.char_size = max(h, font_size)
 
-    def can_render(self, code):
+    def drawable(self, code):
         return (code in self.font_info.cmap or self.image_fonts.has_code(code, self.vertical))
 
     def draw_image(self, gc, x, y, image, stroke_width=0, color="white"):
@@ -123,7 +123,7 @@ class SimpleLineDraw(CharDraw):
         else:
             self.direction = "ltr"
 
-    def can_render(self, text):
+    def drawable(self, text):
         return all([ord(c) in self.font_info.cmap for c in text])
 
     def draw_text(self, gc, x, y, text, stroke_width, color):
