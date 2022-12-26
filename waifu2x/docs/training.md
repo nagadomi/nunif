@@ -4,7 +4,9 @@ This document assumes that the working directory is the root directory of nunif 
 
 # Current Limitations
 
-Currently, only `--method scale` training is supported. `noise` and `noise_scale` are not implemented yet.
+- Only `--method scale` training is supported. `noise` and `noise_scale` are not implemented yet.
+- `--seed` option cannot be deterministic for training behavior.
+- DataParallel has not been tested. (multiple `--gpu` option)
 
 I have confirmed that a model trained with this training code can beat the current pretrained upcunet model.
 
