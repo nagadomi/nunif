@@ -1,0 +1,3 @@
+[submodule "craft/training"]
+	path = craft/training
+	url = https://github.com/nagadomi/nunif_craft_training.git
