@@ -4,6 +4,7 @@
 tmp
 *.png
 *.jpg
+*.gif
 *.tar.gz
 *.tar
 /data
