@@ -39,6 +39,7 @@ class Trainer(ABC):
         if self.args.resume:
             self.resume()
         self.env = self.create_env()
+        self.env.trainer = self
 
         if self.amp_is_enabled():
             self.env.enable_amp()
@@ -71,7 +72,9 @@ class Trainer(ABC):
 
             print("--\n eval")
             loss = self.env.eval(self.eval_loader)
-            if loss < self.best_loss:
+            if loss is None:
+                self.save_best_model()
+            elif loss < self.best_loss:
                 print("* best model updated")
                 self.best_loss = loss
                 self.save_best_model()
@@ -116,10 +119,10 @@ class Trainer(ABC):
         return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
 
     def create_best_model_filename(self):
-        return path.join(self.args.model_dir, f"{self.args.arch}.pth")
+        return path.join(self.args.model_dir, f"{self.model.name}.pth")
 
     def create_checkpoint_filename(self):
-        return path.join(self.args.model_dir, f"{self.args.arch}.checkpoint.pth")
+        return path.join(self.args.model_dir, f"{self.model.name}.checkpoint.pth")
 
     def save_checkpoint(self):
         save_model(
