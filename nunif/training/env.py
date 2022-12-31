@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 class BaseEnv(ABC):
     def __init__(self):
         self.amp = False
+        self.trainer = None
 
     def enable_amp(self):
         self.amp = True
@@ -66,9 +67,10 @@ class BaseEnv(ABC):
 
     def eval(self, loader):
         self.eval_begin()
-        for data in tqdm(loader, ncols=80):
-            with torch.no_grad():
-                self.eval_step(data)
+        if loader is not None:
+            for data in tqdm(loader, ncols=80):
+                with torch.no_grad():
+                    self.eval_step(data)
         return self.eval_end()
 
 
@@ -198,3 +200,44 @@ class LuminancePSNREnv(I2IEnv):
     def print_eval_result(self, psnr_loss, file=sys.stdout):
         psnr = -psnr_loss
         print(f"Batch Y-PSNR: {psnr}", file=file)
+
+
+class UnsupervisedEnv(BaseEnv):
+    def __init__(self, model, criterion):
+        super().__init__()
+        self.model = model
+        self.device = get_model_device(self.model)
+        self.criterion = criterion
+        self.t = 0
+
+    def clear_loss(self):
+        self.sum_loss = 0
+        self.sum_step = 0
+
+    def train_begin(self):
+        self.model.train()
+        self.clear_loss()
+
+    def train_step(self, data):
+        x = data
+        x = self.to_device(x, self.device)
+        with torch.autocast(device_type=self.device.type, enabled=self.amp):
+            z = self.model(x)
+            loss = self.criterion(z)
+        self.sum_loss += loss.item()
+        self.sum_step += 1
+        return loss
+
+    def train_end(self):
+        mean_loss = self.sum_loss / self.sum_step
+        print(f"loss: {mean_loss}")
+        return mean_loss
+
+    def eval_begin(self):
+        self.model.eval()
+
+    def eval_step(self, data):
+        pass
+
+    def eval_end(self):
+        return None
