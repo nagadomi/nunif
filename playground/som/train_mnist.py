@@ -76,7 +76,7 @@ class MinMaxNormalize():
 
 
 def main():
-    GRID_SIZE = 32
+    GRID_SIZE = 33
     IMAGE_SCALE = 0.5
     MNIST_SIZE = 28
     IMAGE_SIZE = int(MNIST_SIZE * IMAGE_SCALE)
