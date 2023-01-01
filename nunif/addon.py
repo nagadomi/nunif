@@ -29,14 +29,17 @@ def load_addon(addon_dir):
 
 def load_addons(addon_dirs=None):
     if addon_dirs is None:
-        root_dir = path.join(path.dirname(__file__), "..")
+        search_dirs = [
+            path.join(path.dirname(__file__), ".."),
+            path.join(path.dirname(__file__), "..", "playground")]
         addon_dirs = []
-        for subdir in os.listdir(root_dir):
-            subdir = path.join(root_dir, subdir)
-            if path.isdir(subdir):
-                addon_file = path.join(root_dir, subdir, "nunif_addon.py")
-                if path.exists(addon_file):
-                    addon_dirs.append(subdir)
+        for root_dir in search_dirs:
+            for subdir in os.listdir(root_dir):
+                subdir = path.join(root_dir, subdir)
+                if path.isdir(subdir):
+                    addon_file = path.join(root_dir, subdir, "nunif_addon.py")
+                    if path.exists(addon_file):
+                        addon_dirs.append(subdir)
 
     addons = []
     for addon_dir in addon_dirs:
