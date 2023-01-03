@@ -93,28 +93,28 @@ class SelfWeightedAvgPool2d(nn.Module):
 
 
 class SelfAttention2d(nn.Module):
-    """ from Latent Diffusion
-    """
-    def __init__(self, in_channels, num_groups=32):
+    def __init__(self, in_channels, out_channels=None, bias=True):
         super().__init__()
-        self.norm = nn.GroupNorm(num_groups, in_channels)
-        self.q = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=False)
-        self.k = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=False)
-        self.v = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=False)
-        self.proj = nn.Conv2d(in_channels, in_channels, 1, 1, 0, bias=True)
+        if out_channels is None:
+            out_channels = in_channels
+        self.q = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
+        self.k = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
+        self.v = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
+        if in_channels != out_channels:
+            self.proj_x = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
+        else:
+            self.proj_x = nn.Identity()
+        self.proj = nn.Conv2d(out_channels, out_channels, 1, 1, 0, bias=bias)
 
     def forward(self, x):
-        b, c, h, w = x.shape
-
-        z = self.norm(x)
-        q, k, v = self.q(z), self.k(z), self.v(z)
+        q, k, v = self.q(x), self.k(x), self.v(x)
+        b, c, h, w = q.shape
         z = torch.bmm(q.view(b, c, h * w).permute(0, 2, 1),
                       k.view(b, c, h * w)) * math.sqrt(1 / c)
         z = F.softmax(z, dim=2)
         z = torch.bmm(v.view(b, c, h * w), z.permute(0, 2, 1)).view(b, c, h, w)
-        z = self.proj(z)
-
-        return x + z
+        z = self.proj(z) + self.proj_x(x)
+        return z
 
 
 def _spec():
