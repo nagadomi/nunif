@@ -18,12 +18,15 @@ class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride):
         super().__init__()
         assert (stride in {1, 2})
+        padding_mode = self.padding_mode()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1,
+            nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                      stride=stride, padding=1, padding_mode=padding_mode,
                       bias=self.bias_enabled()),
             self.create_norm_layer(out_channels),
             self.create_activate_function(),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1,
+            nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                      stride=1, padding=1, padding_mode=padding_mode,
                       bias=self.bias_enabled()),
             self.create_norm_layer(out_channels))
         if stride == 2 or in_channels != out_channels:
@@ -44,6 +47,9 @@ class ResBlock(nn.Module):
 
     def bias_enabled(self):
         return False
+
+    def padding_mode(self):
+        return "zeros"
 
     def create_activate_function(self):
         return nn.ReLU(inplace=True)
