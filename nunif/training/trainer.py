@@ -87,6 +87,8 @@ class Trainer(ABC):
         # TODO: support more optimizer if needed
         if self.args.optimizer == "adam":
             return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.optimizer == "adamw":
+            return optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
         elif self.args.optimizer == "sgd":
             return optim.SGD(self.model.parameters(), lr=self.args.learning_rate)
         else:
@@ -161,7 +163,7 @@ def create_trainer_default_parser():
                         help="output directory for trained model/checkpoint")
     parser.add_argument("--batch-size", type=int, default=64,
                         help="minibatch size")
-    parser.add_argument("--optimizer", type=str, choices=["adam", "sgd"], default="adam",
+    parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd"], default="adam",
                         help="optimizer")
     parser.add_argument("--num-workers", type=int, default=num_workers,
                         help="number of worker processes for data loader")
