@@ -1,5 +1,5 @@
-# AE-VQ-SOM
-# python3 -m playground.som.train_aevqsom_mnist
+# AE-SOM
+# python3 -m playground.som.train_aesom_mnist
 from torchvision.datasets import MNIST
 from torchvision import transforms as T
 from torchvision.transforms import functional as TF
@@ -13,7 +13,7 @@ from tqdm import tqdm
 from PIL import ImageOps
 
 
-DATA_DIR = path.join(path.dirname(__file__), "..", "..", "tmp", "aevqsom")
+DATA_DIR = path.join(path.dirname(__file__), "..", "..", "tmp", "aesom")
 
 
 class SOMVectorQuantizer(nn.Module):
@@ -129,8 +129,10 @@ class Decoder(nn.Module):
         self.conv3 = nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=1, padding_mode="replicate")
 
     def forward(self, x):
+        # 7x7
         x = self.conv1(x)
         x = F.interpolate(x, scale_factor=2, mode="nearest")
+        # 14x14
         x = self.conv2(x)
         x = self.conv3(x)
         if self.training:
@@ -139,30 +141,27 @@ class Decoder(nn.Module):
             return torch.clamp(x, 0, 1)
 
 
-class AEVQSOM(nn.Module):
+class AESOM(nn.Module):
     def __init__(self, grid_size, feat_dim, max_t, step_t, warmup_t=10):
         super().__init__()
         self.grid_size = grid_size
+        self.feat_dim = feat_dim
         self.encoder = Encoder(feat_dim)
         self.vq = SOMVectorQuantizer(grid_size, feat_dim, max_t=max_t, step_t=step_t, warmup_t=warmup_t)
-        self.embed = nn.Embedding(grid_size * grid_size, 7 * 7 * feat_dim)
-        self.vq_decoder = Decoder(feat_dim)
         self.positional_embedding = nn.Parameter(torch.randn(1, feat_dim, 7, 7))
         self.feat_decoder = Decoder(feat_dim)
 
     def forward(self, x):
         B = x.shape[0]
-        # Feature Encoder
+        # Encode
         feat = self.encoder(x)
-        # VQ-Decoder path (train for SOM and VQ-Decoder)
+        # VQ
         bmu, vq_loss = self.vq(feat)
-        seed = self.embed(bmu).view(B, -1, 1, 1)
-        seed = F.pixel_shuffle(seed, 7)
-        recon1 = self.vq_decoder(seed)
-        # Auto Encoder-Decoder path (train for Feature Encoder)
-        feat_seed = feat.expand(seed.shape) + self.positional_embedding.expand(seed.shape)
-        recon2 = self.feat_decoder(feat_seed)
-        return recon1, recon2, x, vq_loss
+        # Decode
+        feat_seed = feat.expand(B, self.feat_dim, 7, 7) + self.positional_embedding.expand(B, self.feat_dim, 7, 7)
+        recon = self.feat_decoder(feat_seed)
+
+        return recon, x, vq_loss
 
     def t(self):
         return self.vq.t
@@ -176,23 +175,23 @@ class AEVQSOM(nn.Module):
         vq_index = vq_index.view(self.grid_size * self.grid_size, 1)
         with torch.no_grad():
             device = next(self.parameters()).device
-            seed = self.embed(vq_index.to(device)).view(vq_index.shape[0], -1, 1, 1)
-            seed = F.pixel_shuffle(seed, 7)
-            images = self.vq_decoder(seed).cpu()
+            units = self.vq.units.view(-1, self.feat_dim)
+            units = units.view(units.shape[0], self.feat_dim, 1, 1).expand(units.shape[0], self.feat_dim, 7, 7)
+            x = units + self.positional_embedding.expand(units.shape[0], self.feat_dim, 7, 7)
+            images = self.feat_decoder(x)
         return TF.to_pil_image(make_grid(images, nrow=self.grid_size, padding=0))
 
 
-class AEVQSOMLoss(nn.Module):
+class AESOMLoss(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, recon1, recon2, x, vq_loss):
+    def forward(self, recon, x, vq_loss):
         # charbonnier loss for reconstruction
-        recon1_loss = torch.sqrt((recon1 - x) ** 2 + 1e-6).mean()
-        recon2_loss = torch.sqrt((recon2 - x) ** 2 + 1e-6).mean()
+        recon_loss = torch.sqrt((recon - x) ** 2 + 1e-6).mean()
         # composite
         beta = 1
-        return beta * vq_loss + recon1_loss + recon2_loss
+        return beta * vq_loss + recon_loss
 
 
 class MinMaxNormalize():
@@ -203,11 +202,13 @@ class MinMaxNormalize():
 
 def main():
     GRID_SIZE = 33
-    IMAGE_SIZE = 14
+    IMAGE_SIZE = 14  # this depends on the network arch
     MAX_T = 70  # max epoch
-    device = "cuda:0"
+    FEAT_DIM = 16
+    BATCH_SIZE = 32
+    device = "cuda"
 
-    torch.manual_seed(71)
+    torch.manual_seed(72)
 
     transform = T.Compose([
         T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -215,7 +216,6 @@ def main():
         MinMaxNormalize()
     ])
     dataset = MNIST(DATA_DIR, train=True, download=True, transform=transform)
-    BATCH_SIZE = 32
     loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
@@ -226,8 +226,8 @@ def main():
 
     warmup_t = 10
     step_t = 1 / (len(dataset) // BATCH_SIZE)
-    som = AEVQSOM(GRID_SIZE, feat_dim=16, max_t=MAX_T - warmup_t, step_t=step_t, warmup_t=warmup_t).to(device)
-    criterion = AEVQSOMLoss()
+    som = AESOM(GRID_SIZE, feat_dim=FEAT_DIM, max_t=MAX_T - warmup_t, step_t=step_t, warmup_t=warmup_t).to(device)
+    criterion = AESOMLoss()
     optimizer = torch.optim.Adam(som.parameters(), lr=0.0002)
     image_list = []
     for t in range(MAX_T):
@@ -242,12 +242,12 @@ def main():
         som.eval()
         with torch.no_grad():
             map_image = ImageOps.invert(som.to_image())
-        map_image.save(path.join(DATA_DIR, f"aevqsom_{t}.png"))
+        map_image.save(path.join(DATA_DIR, f"aesom_{t}.png"))
         image_list.append(map_image)
 
     # save animated gif
     image_list[0].save(
-        path.join(DATA_DIR, "aevqsom.gif"), format="gif",
+        path.join(DATA_DIR, "aesom.gif"), format="gif",
         append_images=image_list, save_all=True,
         duration=100, loop=0)
     print(f"save images in `{path.abspath(DATA_DIR)}`")

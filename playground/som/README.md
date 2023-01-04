@@ -13,13 +13,13 @@ The generated images are saved in `tmp/som`.
 
 ![som](figure/som_mnist.png)
 
-# AE-VQ-SOM
+# AE-SOM
 
-A Deep SOM that I designed at random.
+Autoencoder based Deep Convolutional SOM that I designed at random.
 
 ```
-python3 -m playground.som.train_aevqsom_mnist
+python3 -m playground.som.train_aesom_mnist
 ```
-![aevqsom](figure/aevqsom_mnist.png)
+![aesom](figure/aesom_mnist.png)
 
 It's less blurry.
