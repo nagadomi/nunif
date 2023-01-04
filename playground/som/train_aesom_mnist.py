@@ -149,7 +149,7 @@ class AESOM(nn.Module):
         self.encoder = Encoder(feat_dim)
         self.vq = SOMVectorQuantizer(grid_size, feat_dim, max_t=max_t, step_t=step_t, warmup_t=warmup_t)
         self.positional_embedding = nn.Parameter(torch.randn(1, feat_dim, 7, 7))
-        self.feat_decoder = Decoder(feat_dim)
+        self.decoder = Decoder(feat_dim)
 
     def forward(self, x):
         B = x.shape[0]
@@ -159,7 +159,7 @@ class AESOM(nn.Module):
         bmu, vq_loss = self.vq(feat)
         # Decode
         feat_seed = feat.expand(B, self.feat_dim, 7, 7) + self.positional_embedding.expand(B, self.feat_dim, 7, 7)
-        recon = self.feat_decoder(feat_seed)
+        recon = self.decoder(feat_seed)
 
         return recon, x, vq_loss
 
@@ -170,15 +170,11 @@ class AESOM(nn.Module):
         return self.vq.calc_kernel_size(self.vq.t)
 
     def to_image(self):
-        vq_index = torch.tensor([list(range(0, self.grid_size * self.grid_size))],
-                                dtype=torch.long)
-        vq_index = vq_index.view(self.grid_size * self.grid_size, 1)
         with torch.no_grad():
-            device = next(self.parameters()).device
             units = self.vq.units.view(-1, self.feat_dim)
             units = units.view(units.shape[0], self.feat_dim, 1, 1).expand(units.shape[0], self.feat_dim, 7, 7)
             x = units + self.positional_embedding.expand(units.shape[0], self.feat_dim, 7, 7)
-            images = self.feat_decoder(x)
+            images = self.decoder(x)
         return TF.to_pil_image(make_grid(images, nrow=self.grid_size, padding=0))
 
 
