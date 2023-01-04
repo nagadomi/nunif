@@ -12,3 +12,14 @@ python3 -m playground.som.train_mnist
 The generated images are saved in `tmp/som`.
 
 ![som](figure/som_mnist.png)
+
+# AE-VQ-SOM
+
+A Deep SOM that I designed at random.
+
+```
+python3 -m playground.som.train_aevqsom_mnist
+```
+![aevqsom](figure/aevqsom_mnist.png)
+
+It's less blurry.
