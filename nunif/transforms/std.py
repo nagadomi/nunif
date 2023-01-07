@@ -106,6 +106,8 @@ class ReflectionFit():
     def __init__(self, size):
         if isinstance(size, int):
             self.size = (size, size)
+        else:
+            self.size = size
 
     def __call__(self, x):
         w, h = x.size
