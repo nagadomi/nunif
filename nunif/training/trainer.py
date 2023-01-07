@@ -4,7 +4,10 @@ import argparse
 from multiprocessing import cpu_count
 import torch
 import torch.optim as optim
-from torch.optim.lr_scheduler import StepLR, MultiStepLR, CosineAnnealingWarmRestarts
+from torch.optim.lr_scheduler import (
+    StepLR, MultiStepLR, CosineAnnealingWarmRestarts,
+    ConstantLR, ChainedScheduler
+)
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
 from abc import ABC, abstractmethod
@@ -98,12 +101,12 @@ class Trainer(ABC):
         # TODO: support more schedulers if needed
         if self.args.scheduler == "step":
             if len(self.args.learning_rate_decay_step) == 1:
-                return StepLR(
+                scheduler = StepLR(
                     self.optimizer,
                     step_size=self.args.learning_rate_decay_step[0],
                     gamma=self.args.learning_rate_decay)
             else:
-                return MultiStepLR(
+                scheduler = MultiStepLR(
                     self.optimizer,
                     milestones=self.args.learning_rate_decay_step,
                     gamma=self.args.learning_rate_decay)
@@ -115,7 +118,14 @@ class Trainer(ABC):
             self.args.max_epoch -= (self.args.max_epoch % step) + 1
             print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
             eta_min = self.args.learning_rate * 1e-3
-            return CosineAnnealingWarmRestarts(self.optimizer, T_0=t_0, eta_min=eta_min)
+            scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=t_0, eta_min=eta_min)
+        if self.args.warmup_epoch > 0:
+            warmup_scheduler = ConstantLR(self.optimizer,
+                                          factor=self.args.warmup_learning_rate / self.args.learning_rate,
+                                          total_iters=self.args.warmup_epoch)
+            scheduler = ChainedScheduler([warmup_scheduler, scheduler])
+
+        return scheduler
 
     def create_grad_scaler(self):
         return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
@@ -181,6 +191,10 @@ def create_trainer_default_parser():
                         help="learning rate decay step for StepLR/MultiStepLR")
     parser.add_argument("--learning-rate-cycles", type=int, default=5,
                         help="number of learning rate cycles for CosineAnnealingWarmRestarts")
+    parser.add_argument("--warmup-epoch", type=int, default=0,
+                        help="warmup epochs with --warmup-learning-rate")
+    parser.add_argument("--warmup-learning-rate", type=int, default=1e-6,
+                        help="learning rate for warmup")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
     parser.add_argument("--resume", action="store_true",
