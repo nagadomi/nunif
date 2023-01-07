@@ -3,9 +3,10 @@ import sys
 
 
 class SoftMaxConfusionMatrix():
-    def __init__(self, class_names):
+    def __init__(self, class_names, max_print_class=None):
         self.class_names = class_names
         self.num_classes = len(class_names)
+        self.max_print_class = max_print_class
         self.confusion_matrix = torch.zeros(
             (self.num_classes, self.num_classes), dtype=torch.long)
 
@@ -20,7 +21,7 @@ class SoftMaxConfusionMatrix():
         return self.confusion_matrix.diag() / (self.confusion_matrix.sum(1) + 1e-6)
 
     def average_row_correct(self):
-        self.class_accuracy.mean()
+        return self.class_accuracy().mean()
 
     def global_correct(self):
         return self.confusion_matrix.diag().sum() / (self.confusion_matrix.sum() + 1e-6)
@@ -28,12 +29,14 @@ class SoftMaxConfusionMatrix():
     def clear(self):
         self.confusion_matrix.zero_()
 
-    def print(self, prefix, max_print_class=None, file=sys.stdout):
-        print(f"{prefix}: global correct: {self.global_correct()},"
+    def print(self, file=sys.stdout):
+        print(f" global correct:      {self.global_correct()},"
               f" average_row_correct: {self.average_row_correct()}",
               file=file)
         print(self.confusion_matrix, file=file)
-        if max_print_class is not None and max_print_class >= len(self.class_names):
-            class_accuracy = self.class_accuracy()
-            for i, name in enumerate(self.class_names):
-                print(f"  {name}: {round(class_accuracy[i].item(), 4)}")
+        class_accuracy = self.class_accuracy()
+        for i, name in enumerate(self.class_names):
+            if self.max_print_class is not None and self.max_print_class <= i:
+                print("...")
+                break
+            print(f"  {name}: {round(class_accuracy[i].item(), 4)}")

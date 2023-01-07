@@ -50,11 +50,11 @@ class I2IBaseModel(Model):
         return config
 
 
-class SoftMaxBaseModel(Model):
+class SoftmaxBaseModel(Model):
     name = "nunif.softmax_base_model"
 
     def __init__(self, kwargs, class_names):
-        super(SoftMaxBaseModel, self).__init__(kwargs)
+        super().__init__(kwargs)
         self.softmax_class_names = class_names
 
     def get_config(self):

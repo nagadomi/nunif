@@ -74,14 +74,15 @@ class BaseEnv(ABC):
         return self.eval_end()
 
 
-class SoftMaxEnv(BaseEnv):
-    def __init__(self, model, criterion=None):
+class SoftmaxEnv(BaseEnv):
+    def __init__(self, model, criterion=None, eval_tta=False):
         super().__init__()
+        self.eval_tta = eval_tta
         self.model = model
         self.device = get_model_device(self.model)
         self.criterion = criterion
         if self.criterion is None:
-            self.criterion = nn.CrossEntropyLoss().to(self.device)
+            self.criterion = nn.NLLLoss().to(self.device)
         self.class_names = get_model_config(model, "softmax_class_names")
         self.confusion_matrix = SoftMaxConfusionMatrix(self.class_names, max_print_class=16)
 
@@ -95,13 +96,12 @@ class SoftMaxEnv(BaseEnv):
         with torch.autocast(device_type=self.device.type, enabled=self.amp):
             z = self.model(x)
             loss = self.criterion(z, y)
-        with torch.no_grad():
-            self.confusion_matrix.update(torch.max(z, dim=1), y)
+        self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y.cpu())
         return loss
 
     def train_end(self):
-        self.consusion_matrix.print()
-        return 1 - self.consusion_matrix.average_row_correct()
+        self.confusion_matrix.print()
+        return 1 - self.confusion_matrix.average_row_correct()
 
     def eval_begin(self):
         self.model.eval()
@@ -109,14 +109,23 @@ class SoftMaxEnv(BaseEnv):
 
     def eval_step(self, data):
         x, y = data
-        x, y = x.to(self.device), y.to(self.device)
-        with torch.autocast(device_type=self.device.type, enabled=self.amp):
-            z = self.model(x)
-        self.confusion_matrix.update(torch.max(z, dim=1), y)
+        if self.eval_tta:
+            B, TTA, = x.shape[:2]
+            x = x.to(self.device)
+            x = x.reshape(B * TTA, *x.shape[2:])
+            with torch.autocast(device_type=self.device.type, enabled=self.amp):
+                z = self.model(x)
+            z = z.reshape(B, TTA, *z.shape[1:]).mean(dim=1)
+            self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
+        else:
+            x = x.to(self.device)
+            with torch.autocast(device_type=self.device.type, enabled=self.amp):
+                z = self.model(x)
+            self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
 
     def eval_end(self):
-        self.consusion_matrix.print()
-        return 1 - self.consusion_matrix.average_row_correct()
+        self.confusion_matrix.print()
+        return 1 - self.confusion_matrix.average_row_correct()
 
 
 class I2IEnv(BaseEnv):
