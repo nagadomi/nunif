@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import torch
 from torch.utils.data.dataset import Dataset
 import torchvision.transforms as TT
-import nunif.transforms as ST
+import nunif.transforms as NT
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import list_images
 from nunif.logger import logger
@@ -40,7 +40,7 @@ class BackgroundImageGenerator():
         logger.debug(f"BackgroundImageGenerator: {len(self.images)} images")
 
         self.transforms = TT.Compose([
-            ST.ReflectionFit(size),
+            NT.ReflectionResize(size),
             TT.RandomApply([TT.ColorJitter(brightness=0.3, hue=0.1)], p=0.25),
             TT.RandomInvert(p=0.125),
             TT.RandomAutocontrast(p=0.25),
@@ -95,7 +95,7 @@ class TextImageGenerator(Dataset):
         self.lock = threading.RLock()
         self.transforms = TT.Compose([
             TT.RandomChoice([
-                ST.Identity(),
+                NT.Identity(),
                 TT.RandomRotation((-45, 45), interpolation=TT.InterpolationMode.BILINEAR, expand=True),
                 TT.RandomPerspective(distortion_scale=1 - 1 / math.sqrt(2), p=1.0),
             ], p=[5, 1, 1]),

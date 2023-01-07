@@ -102,7 +102,7 @@ class RandomChannelShuffle():
         return Image.merge("RGB", channels)
 
 
-class ReflectionFit():
+class ReflectionResize():
     def __init__(self, size):
         if isinstance(size, int):
             self.size = (size, size)
