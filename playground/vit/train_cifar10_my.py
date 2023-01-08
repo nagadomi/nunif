@@ -1,7 +1,5 @@
 # A ViT designed from what I heard
-# 91.7% accuracy on CIFAR10 using only CIFAR10 training data,
-# but non-linear patch embedding(Conv+BN) helps it a lot.
-#
+# 92% accuracy on CIFAR10 using only CIFAR10 training data,
 # python3 -m playground.vit.train_cifar10_my --data-dir ./tmp/vit --model-dir ./tmp/vit
 from torchvision.datasets import CIFAR10
 from torchvision import transforms as T
@@ -25,21 +23,26 @@ class Normalize():
         return normalize(x)
 
 
+IMG_SIZE = 64
+
+
 class CIFAR10Dataset(torch.utils.data.Dataset):
     def __init__(self, root, train):
         super().__init__()
         self.train = train
         if train:
-            t1 = T.RandomCrop((24, 24))
+            t1 = T.Compose([
+                T.RandomCrop((24, 24)),
+                T.Resize((IMG_SIZE, IMG_SIZE))])
             t2 = T.Compose([
                 T.RandomCrop((26, 26)),
-                T.Resize((24, 24))])
+                T.Resize((IMG_SIZE, IMG_SIZE))])
             t3 = T.Compose([
                 T.RandomCrop((28, 28)),
-                T.Resize((24, 24))])
+                T.Resize((IMG_SIZE, IMG_SIZE))])
             t4 = T.Compose([
                 T.RandomCrop((30, 30)),
-                T.Resize((24, 24))])
+                T.Resize((IMG_SIZE, IMG_SIZE))])
             transform = T.Compose([
                 T.RandomChoice([NT.Identity(),
                                 T.Compose([
@@ -78,9 +81,9 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
             return x, y
         else:
             tta = []
-            tta += TF.five_crop(x, (24, 24))
-            tta += [TF.resize(crop, (24, 24)) for crop in TF.five_crop(x, (28, 28))]
-            tta += [TF.resize(x, (24, 24))]
+            tta += [TF.resize(crop, (IMG_SIZE, IMG_SIZE)) for crop in TF.five_crop(x, (24, 24))]
+            tta += [TF.resize(crop, (IMG_SIZE, IMG_SIZE)) for crop in TF.five_crop(x, (28, 28))]
+            tta += [TF.resize(x, (IMG_SIZE, IMG_SIZE))]
             tta = tta + [TF.hflip(crop) for crop in tta]
             x = torch.stack([normalize(TF.to_tensor(crop)) for crop in tta], dim=0)
             return x, y
@@ -90,16 +93,52 @@ CIFAR10_CLASS_NAMES = ('plane', 'car', 'bird', 'cat',
                        'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 
+class DropPath(nn.Module):
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+        self.register_buffer("mask", None)
+
+    def reset_parameters(self, x):
+        self.mask = x.new_empty(x.shape[0], *((1,) * (x.ndim - 1))).fill_(1)
+
+    def forward(self, x):
+        if self.training:
+            if self.mask is None or self.mask.shape[0] != x.shape[0]:
+                self.reset_parameters(x)
+            return x * F.dropout(self.mask, p=self.p, training=self.training)
+        else:
+            return x
+
+
+class Residual(nn.Module):
+    def __init__(self, layer, shortcut=None, drop_path=0.2):
+        super().__init__()
+        self.layer = layer
+        self.shortcut = shortcut or nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0 else nn.Identity()
+
+    def forward(self, x):
+        return self.drop_path(self.layer(x)) + self.shortcut(x)
+
+
 class Transformer(nn.Module):
-    def __init__(self, embed_dim, num_heads, num_layers, mask_size, mask_kernel_size, dropout=0.1):
+    def __init__(self, embed_dim, num_heads, num_layers, mask_size, mask_kernel_size, drop_path=0.2):
         super().__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim, nhead=num_heads, dim_feedforward=embed_dim,
-            dropout=dropout,
+            dropout=0,
             activation=F.gelu,
             norm_first=True, batch_first=True)
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers)
-        self.register_buffer("src_mask", self.generate_window_mask(mask_size, mask_kernel_size))
+        self.attn = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(embed_dim),
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.GELU(),
+            nn.Linear(embed_dim * 4, embed_dim))
+        self.drop_path1 = DropPath(drop_path)
+        self.drop_path2 = DropPath(drop_path)
+        self.register_buffer("mask", self.generate_window_mask(mask_size, mask_kernel_size))
 
     @staticmethod
     def generate_window_mask(size, kernel_size):
@@ -124,30 +163,33 @@ class Transformer(nn.Module):
                 valid_indices = [i.item() for i in indices if i >= 0]
                 mask_indices.append(valid_indices)
         #  print("***", size, mask_indices)
-        mask = torch.full((size ** 2, size ** 2), -math.inf, dtype=torch.float)
+        mask = torch.full((size ** 2, size ** 2), -math.inf,
+                          dtype=torch.float, requires_grad=False)
         for i, indices in enumerate(mask_indices):
             for j in indices:
                 mask[i][j] = 0.0
         return mask
 
     def forward(self, x):
-        return self.encoder(x, mask=self.src_mask)
+        x = x + self.drop_path1(self.attn(x, mask=self.mask))
+        x = x + self.drop_path2(self.mlp(x))
+        return x
 
 
 class PatchMerging(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.norm = nn.LayerNorm(in_channels)
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0)
+        self.norm = nn.LayerNorm(out_channels)
 
     def forward(self, x):
         B, N, C = x.shape
         assert int(math.sqrt(N)) ** 2 == N
         size = int(math.sqrt(N))
-        x = self.norm(x)
         x = x.permute(0, 2, 1).view(B, C, size, size)
         x = self.conv(x)
-        x = x.view(B, x.shape[1], size // 2 * size // 2).permute(0, 2, 1)
+        x = x.view(B, x.shape[1], size // 2 * size // 2).permute(0, 2, 1).contiguous()
+        x = self.norm(x)
         return x
 
 
@@ -168,35 +210,6 @@ class AttentionPooling(nn.Module):
         return z
 
 
-class DropPath(nn.Module):
-    def __init__(self, p=0.5):
-        super().__init__()
-        self.p = p
-        self.register_buffer("mask", None)
-
-    def reset_parameters(self, x):
-        self.mask = x.new_empty(x.shape[0], *((1,) * (x.ndim - 1))).fill_(1)
-
-    def forward(self, x):
-        if self.training:
-            if self.mask is None or self.mask.shape[0] != x.shape[0]:
-                self.reset_parameters(x)
-            return x * F.dropout(self.mask, p=self.p, training=self.training)
-        else:
-            return x
-
-
-class Residual(nn.Module):
-    def __init__(self, layer, shortcut=None, drop_path=0.):
-        super().__init__()
-        self.layer = layer
-        self.shortcut = shortcut or nn.Identity()
-        self.drop_path = DropPath(drop_path) if drop_path > 0 else nn.Identity()
-
-    def forward(self, x):
-        return self.drop_path(self.layer(x)) + self.shortcut(x)
-
-
 class VIT(SoftmaxBaseModel):
     name = "myvit"
 
@@ -205,23 +218,16 @@ class VIT(SoftmaxBaseModel):
         dim = 64
         self.patch = nn.Sequential(
             nn.BatchNorm2d(3),
-            nn.Conv2d(3, dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
-            nn.BatchNorm2d(dim),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
-            nn.BatchNorm2d(dim),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(dim, dim, kernel_size=3, stride=2, padding=1, padding_mode="replicate"),
+            nn.Conv2d(3, dim, kernel_size=4, stride=4, padding=0),
         )
-        self.pos_embed = nn.Parameter(torch.zeros((1, dim, 12, 12)))
-        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        #self.pos_embed = nn.Parameter(torch.zeros((1, dim, 16, 16)))
+        #nn.init.trunc_normal_(self.pos_embed, std=0.02)
         self.transformer = nn.Sequential(
-            Transformer(dim, 8, num_layers=1, dropout=0.1, mask_size=12, mask_kernel_size=7),
+            Transformer(dim, 8, num_layers=2, mask_size=16, mask_kernel_size=5),
             PatchMerging(dim, dim * 2),
-            Transformer(dim * 2, 8, num_layers=2, dropout=0.2, mask_size=6, mask_kernel_size=5),
+            Transformer(dim * 2, 8, num_layers=6, mask_size=8, mask_kernel_size=5),
             PatchMerging(dim * 2, dim * 4),
-            Residual(Transformer(dim * 4, 8, num_layers=2, dropout=0.2, mask_size=3, mask_kernel_size=3),
-                     drop_path=0.5),
+            Transformer(dim * 4, 16, num_layers=2, mask_size=4, mask_kernel_size=3),
         )
         self.fc = nn.Sequential(
             AttentionPooling(dim * 4, reduction=8),
@@ -243,9 +249,9 @@ class VIT(SoftmaxBaseModel):
     def forward(self, x):
         B = x.shape[0]
         # 24x24
-        x = self.patch(x) + self.pos_embed
+        x = self.patch(x) # + self.pos_embed
         # 12x12
-        x = x.view(B, x.shape[1], -1).permute(0, 2, 1)
+        x = x.view(B, x.shape[1], -1).permute(0, 2, 1).contiguous()
         x = self.transformer(x)
         z = self.fc(x)
         if self.training:
@@ -293,10 +299,13 @@ def main():
     parser.set_defaults(
         batch_size=128,
         num_workers=4,
-        learning_rate=0.001,
-        max_epoch=200,
         scheduler="cosine",
-        optimizer="adam",
+        optimizer="adamw",
+        learning_rate=0.00015,
+        learning_rate_decay=0.99,
+        warmup_epoch=2,
+        warmup_learning_rate=1e-7,
+        max_epoch=200,
         disable_amp=False
     )
     args = parser.parse_args()
