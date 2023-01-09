@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import (
 )
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
+from .weight_decay_config import configure_adamw
 from abc import ABC, abstractmethod
 
 
@@ -91,7 +92,10 @@ class Trainer(ABC):
         if self.args.optimizer == "adam":
             return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         elif self.args.optimizer == "adamw":
-            return optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
+            return configure_adamw(
+                self.model,
+                lr=self.args.learning_rate,
+                weight_decay=self.args.weight_decay)
         elif self.args.optimizer == "sgd":
             return optim.SGD(self.model.parameters(), lr=self.args.learning_rate)
         else:
@@ -177,6 +181,8 @@ def create_trainer_default_parser():
                         help="minibatch size")
     parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd"], default="adam",
                         help="optimizer")
+    parser.add_argument("--weight-decay", type=float, default=0.01,
+                        help="weight decay coefficient for adamw")
     parser.add_argument("--num-workers", type=int, default=num_workers,
                         help="number of worker processes for data loader")
     parser.add_argument("--max-epoch", type=int, default=200,
