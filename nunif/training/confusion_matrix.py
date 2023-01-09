@@ -2,7 +2,7 @@ import torch
 import sys
 
 
-class SoftMaxConfusionMatrix():
+class SoftmaxConfusionMatrix():
     def __init__(self, class_names, max_print_class=None):
         self.class_names = class_names
         self.num_classes = len(class_names)
