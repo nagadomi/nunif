@@ -111,14 +111,14 @@ class SoftmaxEnv(BaseEnv):
         x, y = data
         if self.eval_tta:
             B, TTA, = x.shape[:2]
-            x = x.to(self.device)
+            x = self.to_device(x, self.device)
             x = x.reshape(B * TTA, *x.shape[2:])
             with torch.autocast(device_type=self.device.type, enabled=self.amp):
                 z = self.model(x)
             z = z.reshape(B, TTA, *z.shape[1:]).mean(dim=1)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
         else:
-            x = x.to(self.device)
+            x = self.to_device(x, self.device)
             with torch.autocast(device_type=self.device.type, enabled=self.amp):
                 z = self.model(x)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
@@ -173,7 +173,7 @@ class I2IEnv(BaseEnv):
 
     def eval_step(self, data):
         x, y = data
-        x, y = x.to(self.device), y.to(self.device)
+        x, y = self.to_device(x, self.device), self.to_device(y, self.device)
         with torch.autocast(device_type=self.device.type, enabled=self.amp):
             z = self.model(x)
             loss = self.eval_criterion(z, y)
