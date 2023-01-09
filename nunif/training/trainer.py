@@ -120,6 +120,8 @@ class Trainer(ABC):
             eta_min = self.args.learning_rate * 1e-3
             scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=t_0, eta_min=eta_min)
         if self.args.warmup_epoch > 0:
+            # TODO: `total_iters=self.args.warmup_epoch` does not work correctly,
+            # ConstantLR works fine, but does not work correctly when used with ChainedScheduler.
             warmup_scheduler = ConstantLR(self.optimizer,
                                           factor=self.args.warmup_learning_rate / self.args.learning_rate,
                                           total_iters=self.args.warmup_epoch)
