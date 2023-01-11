@@ -47,6 +47,7 @@ class Trainer(ABC):
 
         if self.amp_is_enabled():
             self.env.enable_amp()
+        self.env.set_amp_dtype(torch.bfloat16 if self.args.amp_float == "bfloat16" else torch.float16)
 
     def amp_is_enabled(self):
         return not (self.args.disable_amp or self.device == "cpu")
@@ -205,6 +206,8 @@ def create_trainer_default_parser():
                         help="learning rate for warmup")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
+    parser.add_argument("--amp-float", type=str, default="bfloat16", choices=["bfloat16", "float16"],
+                        help="dtype for autocast")
     parser.add_argument("--resume", action="store_true",
                         help="resume training from the latest checkpoint file")
     parser.add_argument("--reset-state", action="store_true",
