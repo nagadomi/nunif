@@ -61,6 +61,8 @@ class BaseEnv(ABC):
         for data in tqdm(loader, ncols=80):
             optimizer.zero_grad()
             loss = self.train_step(data)
+            if torch.isnan(loss).any().item():
+                raise FloatingPointError("loss is NaN")
             if self.amp:
                 grad_scaler.scale(loss).backward()
                 grad_scaler.step(optimizer)
