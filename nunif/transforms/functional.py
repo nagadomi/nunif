@@ -51,7 +51,7 @@ def rgb2y_matlab(rgb):
     (y.add_(rgb[0], alpha=65.481).
      add_(rgb[1], alpha=128.553).
      add_(rgb[2], alpha=24.966).
-     add_(16.0).clamp_(0, 255))
+     add_(16.0).add_(0.5 - 1e-6).clamp_(16, 235))
     return y.byte().float()
 
 
