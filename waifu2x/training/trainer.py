@@ -120,8 +120,14 @@ def train(args):
     if args.loss is None:
         if args.arch in {"waifu2x.vgg_7", "waifu2x.upconv_7"}:
             args.loss = "y_charbonnier"
-        else:
+        elif args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
             args.loss = "aux_lbp"
+        elif args.arch in {"waifu2x.swin_unet_1x", "waifu2x.swin_unet_2x",
+                           "waifu2x.swin_unet_4x",
+                           "waifu2x.swinunet", "waifu2x.upswinunet"}:
+            args.loss = "lbp"
+        else:
+            args.loss = "y_charbonnier"
 
     trainer = Waifu2xTrainer(args)
     trainer.fit()

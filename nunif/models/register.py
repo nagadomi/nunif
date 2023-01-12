@@ -12,6 +12,9 @@ def register_model(cls):
     global _models
     _models[cls.name] = cls
     logger.debug("register %s -> %s", cls.name, repr(cls))
+    if hasattr(cls, "name_alias"):
+        for alias in cls.name_alias:
+            _models[alias] = cls
     return cls
 
 
