@@ -29,6 +29,9 @@ class BaseEnv(ABC):
     def train_step(self, data):
         pass
 
+    def train_loss_hook(self, data, loss):
+        pass
+
     @abstractmethod
     def train_end(self):
         pass
@@ -61,6 +64,7 @@ class BaseEnv(ABC):
         for data in tqdm(loader, ncols=80):
             optimizer.zero_grad()
             loss = self.train_step(data)
+            self.train_loss_hook(data, loss)
             if torch.isnan(loss).any().item():
                 raise FloatingPointError("loss is NaN")
             if self.amp:
@@ -98,7 +102,7 @@ class SoftmaxEnv(BaseEnv):
         self.confusion_matrix.clear()
 
     def train_step(self, data):
-        x, y = data
+        x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
         with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
             z = self.model(x)
@@ -115,7 +119,7 @@ class SoftmaxEnv(BaseEnv):
         self.confusion_matrix.clear()
 
     def eval_step(self, data):
-        x, y = data
+        x, y, *_ = data
         if self.eval_tta:
             B, TTA, = x.shape[:2]
             x = self.to_device(x)
@@ -160,7 +164,7 @@ class I2IEnv(BaseEnv):
         self.clear_loss()
 
     def train_step(self, data):
-        x, y = data
+        x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
         with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
             z = self.model(x)
@@ -179,7 +183,7 @@ class I2IEnv(BaseEnv):
         self.clear_loss()
 
     def eval_step(self, data):
-        x, y = data
+        x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
         with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
             z = self.model(x)
@@ -235,7 +239,7 @@ class UnsupervisedEnv(BaseEnv):
         self.clear_loss()
 
     def train_step(self, data):
-        x = data
+        x, *_ = data
         x = self.to_device(x)
         with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
             z = self.model(x)
