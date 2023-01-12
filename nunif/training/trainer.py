@@ -48,6 +48,10 @@ class Trainer(ABC):
         if self.amp_is_enabled():
             self.env.enable_amp()
         self.env.set_amp_dtype(torch.bfloat16 if self.args.amp_float == "bfloat16" else torch.float16)
+        self.setup()
+
+    def setup(self):
+        pass
 
     def amp_is_enabled(self):
         return not (self.args.disable_amp or self.device == "cpu")

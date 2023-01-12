@@ -100,6 +100,20 @@ class Waifu2xDataset(Dataset):
     def sampler(self):
         return self._sampler
 
+    def set_hard_example(self, method):
+        if method == "top10":
+            self._sampler.method = MiningMethod.TOP10
+        elif method == "top20":
+            self._sampler.method = MiningMethod.TOP20
+        elif method == "linear":
+            self._sampler.method = MiningMethod.LINEAR
+
+    def update_hard_example_losses(self, indexes, loss):
+        self._sampler.update_losses(indexes, loss)
+
+    def update_hard_example_weights(self):
+        self._sampler.update_weights()
+
     def __getitem__(self, index):
         return self.files[index]
 

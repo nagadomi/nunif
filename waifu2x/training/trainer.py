@@ -13,20 +13,24 @@ from nunif.modules import ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLo
 class Waifu2xEnv(LuminancePSNREnv):
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
-        if not self.trainer.args.hard_example:
+        if self.trainer.args.hard_example == "none":
             return
-        sampler = self.trainer.train_loader.dataset.sampler()
+        dataset = self.trainer.train_loader.dataset
         index = data[-1]
-        sampler.update_losses(index, loss.item())
+        dataset.update_hard_example_losses(index, loss.item())
 
     def train_end(self):
         super().train_end()
-        if self.trainer.args.hard_example:
-            sampler = self.trainer.train_loader.dataset.sampler()
-            sampler.update_weights()
+        if self.trainer.args.hard_example != "none":
+            dataset = self.trainer.train_loader.dataset
+            dataset.update_hard_example_weights()
 
 
 class Waifu2xTrainer(Trainer):
+    def setup(self):
+        dataset = self.train_loader.dataset
+        dataset.set_hard_example(self.args.hard_example)
+
     def create_model(self):
         kwargs = {"in_channels": 3, "out_channels": 3}
         if self.args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
@@ -161,8 +165,9 @@ def register(subparsers, default_parser):
                         help="random downscale data argumentation for gt image")
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
                         help="random channel shuffle data argumentation for gt image")
-    parser.add_argument("--hard-example", action="store_true",
-                        help="use hard example mining for training data sampleing")
+    parser.add_argument("--hard-example", type=str, default="linear",
+                        choices=["none", "linear", "top10", "top20"],
+                        help="hard example mining for training data sampleing")
 
     parser.set_defaults(
         batch_size=8,
