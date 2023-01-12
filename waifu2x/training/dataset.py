@@ -1,4 +1,5 @@
-from torch.utils.data.sampler import RandomSampler
+import random
+import torch
 from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
     functional as TF,
@@ -8,8 +9,8 @@ from torchvision import transforms as T
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils import pil_io
 from nunif.transforms import pair as TP
+from nunif.training.sampler import OHEMSampler
 import nunif.transforms as TS
-import random
 
 
 USE_WAND = True
@@ -82,6 +83,9 @@ class Waifu2xDataset(Dataset):
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
         self.num_samples = num_samples
+        self._sampler = OHEMSampler(
+            torch.ones((len(self),), dtype=torch.double),
+            num_samples=num_samples)
 
     def __len__(self):
         return len(self.files)
@@ -90,10 +94,7 @@ class Waifu2xDataset(Dataset):
         pass
 
     def sampler(self):
-        return RandomSampler(
-            self,
-            num_samples=self.num_samples,
-            replacement=True)
+        return self._sampler
 
     def __getitem__(self, index):
         return self.files[index]
@@ -151,7 +152,7 @@ class Waifu2xScale2xDataset(Waifu2xDataset):
         else:
             im = self.gt_transforms(im)
             x, y = self.transforms(im, im)
-        return TF.to_tensor(x), TF.to_tensor(y)
+        return TF.to_tensor(x), TF.to_tensor(y), index
 
 
 def _test():
