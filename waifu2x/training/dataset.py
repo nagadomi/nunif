@@ -9,7 +9,7 @@ from torchvision import transforms as T
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils import pil_io
 from nunif.transforms import pair as TP
-from nunif.training.sampler import OHEMSampler
+from nunif.training.sampler import HardExampleSampler, MiningMethod
 import nunif.transforms as TS
 
 
@@ -83,9 +83,13 @@ class Waifu2xDataset(Dataset):
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
         self.num_samples = num_samples
-        self._sampler = OHEMSampler(
+        self._sampler = HardExampleSampler(
             torch.ones((len(self),), dtype=torch.double),
-            num_samples=num_samples)
+            num_samples=num_samples,
+            method=MiningMethod.TOP10,
+            history_size=6,
+            scale_factor=4,
+        )
 
     def __len__(self):
         return len(self.files)

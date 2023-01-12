@@ -13,7 +13,7 @@ from nunif.modules import ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLo
 class Waifu2xEnv(LuminancePSNREnv):
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
-        if not self.trainer.args.ohem:
+        if not self.trainer.args.hard_example:
             return
         sampler = self.trainer.train_loader.dataset.sampler()
         index = data[-1]
@@ -21,10 +21,9 @@ class Waifu2xEnv(LuminancePSNREnv):
 
     def train_end(self):
         super().train_end()
-        if self.trainer.args.ohem:
+        if self.trainer.args.hard_example:
             sampler = self.trainer.train_loader.dataset.sampler()
             sampler.update_weights()
-            print("* Update OHEMSampler")
 
 
 class Waifu2xTrainer(Trainer):
@@ -156,8 +155,8 @@ def register(subparsers, default_parser):
                         help="random downscale data argumentation for gt image")
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
                         help="random channel shuffle data argumentation for gt image")
-    parser.add_argument("--ohem", action="store_true",
-                        help="use online hard example mining for training data sampleing")
+    parser.add_argument("--hard-example", action="store_true",
+                        help="use hard example mining for training data sampleing")
 
     parser.set_defaults(
         batch_size=8,
