@@ -206,8 +206,8 @@ def create_trainer_default_parser():
                         help="learning rate for warmup")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
-    parser.add_argument("--amp-float", type=str, default="bfloat16", choices=["bfloat16", "float16"],
-                        help="dtype for autocast")
+    parser.add_argument("--amp-float", type=str, default="fp16", choices=["bfloat16", "fp16"],
+                        help="dtype for autocast. bfloat/fp16")
     parser.add_argument("--resume", action="store_true",
                         help="resume training from the latest checkpoint file")
     parser.add_argument("--reset-state", action="store_true",
