@@ -26,8 +26,8 @@ EVAL_QUALITY = {
     "art": {
         0: [85 + (95 - 85) // 2],
         1: [65 + (85 - 65) // 2],
-        2: [37 + (70 - 37) // 2, 37 + (70 - 37) // 2 + 5 + (10 - 5) // 2],
-        3: [37 + (70 - 37) // 2, 37 + (70 - 37) // 2 + 5 + (10 - 5) // 2],
+        2: [37 + (70 - 37) // 2, 37 + (70 - 37) // 2 + 5 - (10 - 5) // 2],
+        3: [37 + (70 - 37) // 2, 37 + (70 - 37) // 2 + 5 - (10 - 5) // 2],
     },
     "photo": {
         0: [85 + (95 - 85) // 2],
@@ -42,7 +42,6 @@ def choose_validation_jpeg_quality(index, style, noise_level):
     mod100 = index % 100
     if mod100 > int(NR_RATE[style][noise_level] * 100):
         return [], None
-    index = index // 2
     if index % 2 == 0:
         subsampling = "4:2:0"
     else:
