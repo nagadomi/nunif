@@ -83,6 +83,8 @@ class Waifu2xTrainer(Trainer):
     def create_env(self):
         if self.args.loss == "lbp":
             criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
+        elif self.args.loss == "lbp5":
+            criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
         elif self.args.loss == "y_charbonnier":
             criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())).to(self.device)
         elif self.args.loss == "charbonnier":
@@ -134,9 +136,10 @@ def train(args):
         elif args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
             args.loss = "aux_lbp"
         elif args.arch in {"waifu2x.swin_unet_1x", "waifu2x.swin_unet_2x",
-                           "waifu2x.swin_unet_4x",
                            "waifu2x.swinunet", "waifu2x.upswinunet"}:
             args.loss = "lbp"
+        elif args.arch in {"waifu2x.swin_unet_4x"}:
+            args.loss = "lbp5"
         else:
             args.loss = "y_charbonnier"
 
@@ -163,7 +166,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--num-samples", type=int, default=50000,
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str,
-                        choices=["lbp", "y_charbonnier", "charbonnier",
+                        choices=["lbp", "lbp5", "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
