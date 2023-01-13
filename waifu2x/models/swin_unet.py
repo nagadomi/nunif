@@ -132,7 +132,7 @@ class SwinUNetBase(nn.Module):
             self.swin5 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W)
             self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
         elif scale_factor == 4:
-            self.proj1 = nn.Linear(C * 2, C * 2)
+            self.proj1 = nn.Identity()
             self.up2 = PatchUp(C * 2, C * 2)
             self.proj2 = nn.Linear(C, C * 2)
             self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W)
