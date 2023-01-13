@@ -41,6 +41,8 @@ def main(args):
             f.result()
         return []
 
+    filename_prefix = args.prefix + "_" if args.prefix else ""
+
     for dataset_type in ("eval", "train"):
         print(f"** {dataset_type}")
         input_dir = path.join(args.dataset_dir, dataset_type)
@@ -59,7 +61,7 @@ def main(args):
                 if im is None:
                     continue
                 f = pool.submit(split_image,
-                                path.join(output_dir, str(index)),
+                                path.join(output_dir, filename_prefix + str(index)),
                                 im, args.size, int(args.size * args.stride), args.reject_rate)
                 futures.append(f)
                 index += 1
@@ -80,6 +82,8 @@ def register(subparsers, default_parser):
                         help="stride_size = int(size * stride)")
     parser.add_argument("--reject-rate", type=float, default=0.5,
                         help="reject rate for hard example mining")
+    parser.add_argument("--prefix", type=str, default="",
+                        help="prefix for output filename")
     parser.set_defaults(handler=main)
 
     return parser
