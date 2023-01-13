@@ -42,6 +42,8 @@ class Trainer(ABC):
         self.best_loss = 1000000000
         if self.args.resume:
             self.resume()
+        elif self.args.checkpoint_file is not None:
+            self.load_initial_parameters(self.args.checkpoint_file)
         self.env = self.create_env()
         self.env.trainer = self
 
@@ -66,6 +68,9 @@ class Trainer(ABC):
             self.start_epoch = meta["last_epoch"] + 1
             self.best_loss = meta["best_loss"]
         print(f"* load checkpoint from {latest_checkpoint_filename}")
+
+    def load_initial_parameters(self, checkpoint_filename):
+        load_model(checkpoint_filename, model=self.model)
 
     def fit(self):
         self.initialize()
@@ -218,5 +223,7 @@ def create_trainer_default_parser():
                         help="do not load best_score, optimizer and scheduler state when --resume")
     parser.add_argument("--seed", type=int, default=71,
                         help="random seed")
+    parser.add_argument("--checkpoint-file", type=str,
+                        help="checkpoint file for initializing model parameters")
 
     return parser
