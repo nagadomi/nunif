@@ -97,7 +97,8 @@ class ToImage(nn.Module):
     def forward(self, x):
         x = self.proj(x)
         x = x.permute(0, 3, 1, 2).contiguous()  # BCHW
-        x = F.pixel_shuffle(x, self.scale_factor)
+        if self.scale_factor > 1:
+            x = F.pixel_shuffle(x, self.scale_factor)
         return x
 
 
