@@ -89,7 +89,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=str, default=DEFAULT_MODEL_DIR, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
-    parser.add_argument("--method", "-m", type=str, choices=["scale", "noise", "noise_scale"], default="noise_scale", help="method")
+    parser.add_argument("--method", "-m", type=str,
+                        choices=["scale4x", "scale", "noise", "noise_scale", "noise_scale4x"],
+                        default="noise_scale", help="method")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch_size")
     parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")

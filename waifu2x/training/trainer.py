@@ -3,7 +3,7 @@ from os import path
 import torch
 from torch import nn
 from .. import models  # noqa: F401
-from . dataset import Waifu2xScale2xDataset
+from . dataset import Waifu2xScaleDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import create_model, get_model_config, get_model_names
@@ -44,11 +44,13 @@ class Waifu2xTrainer(Trainer):
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
         model_offset = get_model_config(self.model, "i2i_offset")
-        if self.args.method == "scale":
+        if self.args.method in {"scale", "scale4x"}:
+            scale_factor = 4 if self.args.method == "scale4x" else 2
             if type == "train":
-                dataset = Waifu2xScale2xDataset(
+                dataset = Waifu2xScaleDataset(
                     input_dir=path.join(self.args.data_dir, "train"),
                     model_offset=model_offset,
+                    scale_factor=scale_factor,
                     tile_size=self.args.size,
                     num_samples=self.args.num_samples,
                     da_jpeg_p=self.args.da_jpeg_p,
@@ -63,9 +65,10 @@ class Waifu2xTrainer(Trainer):
                     num_workers=self.args.num_workers,
                     drop_last=True)
             elif type == "eval":
-                dataset = Waifu2xScale2xDataset(
+                dataset = Waifu2xScaleDataset(
                     input_dir=path.join(self.args.data_dir, "eval"),
                     model_offset=model_offset,
+                    scale_factor=scale_factor,
                     tile_size=self.args.size,
                     eval=True)
                 return torch.utils.data.DataLoader(
@@ -107,12 +110,16 @@ class Waifu2xTrainer(Trainer):
     def create_best_model_filename(self):
         if self.args.method == "scale":
             return path.join(self.args.model_dir, "scale2x.pth")
+        elif self.args.method == "scale4x":
+            return path.join(self.args.model_dir, "scale4x.pth")
         else:
             raise NotImplementedError()
 
     def create_checkpoint_filename(self):
         if self.args.method == "scale":
             return path.join(self.args.model_dir, "scale2x.checkpoint.pth")
+        elif self.args.method == "scale4x":
+            return path.join(self.args.model_dir, "scale4x.checkpoint.pth")
         else:
             raise NotImplementedError()
 
@@ -145,7 +152,7 @@ def register(subparsers, default_parser):
 
     waifu2x_models = sorted([name for name in get_model_names() if name.startswith("waifu2x.")])
 
-    parser.add_argument("--method", type=str, choices=["scale"], required=True,
+    parser.add_argument("--method", type=str, choices=["scale", "scale4x"], required=True,
                         help="waifu2x method")
     parser.add_argument("--arch", type=str,
                         choices=waifu2x_models,

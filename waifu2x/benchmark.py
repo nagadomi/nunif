@@ -45,10 +45,14 @@ def add_jpeg_noise(x, args):
 def make_input_waifu2x(x, args):
     if args.method == "scale":
         return IM.scale(x, 0.5, filter_type=args.filter)
+    elif args.method == "scale4x":
+        return IM.scale(x, 0.25, filter_type=args.filter)
     elif args.method == "noise":
         return add_jpeg_noise(x, args)
     elif args.method == "noise_scale":
         return add_jpeg_noise(IM.scale(x, 0.5, filter_type=args.filter), args)
+    elif args.method == "noise_scale4x":
+        return add_jpeg_noise(IM.scale(x, 0.25, filter_type=args.filter), args)
 
 
 def remove_border(x, border):
@@ -76,7 +80,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=str, required=True, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
-    parser.add_argument("--method", "-m", type=str, choices=["scale", "noise", "noise_scale"], default="scale", help="method")
+    parser.add_argument("--method", "-m", type=str,
+                        choices=["scale", "scale4x", "noise", "noise_scale", "noise_scale4x"],
+                        default="scale", help="method")
     parser.add_argument("--color", type=str, choices=["rgb", "y", "y_matlab"], default="y_matlab", help="colorspace")
     parser.add_argument("--jpeg-quality", type=int, default=75, help="jpeg quality for noise/noise_scale")
     parser.add_argument("--jpeg-times", type=int, default=1, help="number of repetitions of jpeg compression")
@@ -144,6 +150,8 @@ def main():
                 t = time.time()
                 if args.method in ("scale", "noise_scale"):
                     z = IM.scale(x, 2, filter_type=args.baseline_filter)
+                elif args.method in ("scale4x", "noise_scale4x"):
+                    z = IM.scale(x, 4, filter_type=args.baseline_filter)
                 else:
                     z = x
                 baseline_time_sum += time.time() - t
@@ -165,9 +173,9 @@ def main():
             mpsnr = round(baseline_psnr_sum / count, 4)
             rmse = round(math.sqrt(baseline_mse_sum / count), 4)
             fps = round(count / baseline_time_sum, 4)
-            if args.method == "scale":
+            if args.method in {"scale", "scale4x"}:
                 print(f"* {args.baseline_filter}")
-            elif args.method == "noise_scale":
+            elif args.method in {"noise_scale", "noise_scale4x"}:
                 print(f"* {args.baseline_filter}, jpeg")
             elif args.method == "noise":
                 print("* jpeg")

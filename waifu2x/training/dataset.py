@@ -11,61 +11,37 @@ from nunif.utils import pil_io
 from nunif.transforms import pair as TP
 from nunif.training.sampler import HardExampleSampler, MiningMethod
 import nunif.transforms as TS
+from nunif.transforms import image_magick as IM
 
 
-USE_WAND = True
 NEAREST_PREFIX = "__NEAREST_"
+INTERPOLATION_MODES = (
+    "box",
+    "sinc",
+    "catrom"
+)
+INTERPOLATION_NEAREST = "box"
+# INTERPOLATION_MODE_WEIGHTS = (4/9, 4/9, 1/9)  # noqa: E226
+INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/3)  # noqa: E226
 
 
-if not USE_WAND:
-    INTERPOLATION_MODES = (
-        InterpolationMode.BOX,
-        InterpolationMode.BILINEAR,
-        InterpolationMode.LANCZOS,
-        InterpolationMode.BICUBIC,
-    )
-    INTERPOLATION_NEAREST = InterpolationMode.NEAREST
-    INTERPOLATION_MODE_WEIGHTS = (2/9, 2/9, 4/9, 1/9)  # noqa: E226
+class RandomDownscaleX():
+    def __init__(self, scale_factor, interpolation=None):
+        assert scale_factor in {2, 4}
+        self.interpolation = interpolation
+        self.scale_factor = scale_factor
 
-    class RandomDownscaleX():
-        def __init__(self, interpolation=None):
-            self.interpolation = interpolation
-
-        def __call__(self, x, y):
-            w, h = x.size
-            assert (w % 2 == 0 and h % 2 == 0)
-            if self.interpolation is None:
-                interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
-            else:
-                interpolation = self.interpolation
-            x = TF.resize(x, size=(w // 2, h // 2), interpolation=interpolation, antialias=True)
-            return x, y
-else:
-    from nunif.transforms import image_magick as IM
-    INTERPOLATION_MODES = (
-        "box",
-        "sinc",
-        "catrom"
-    )
-    INTERPOLATION_NEAREST = "box"
-    # INTERPOLATION_MODE_WEIGHTS = (4/9, 4/9, 1/9)  # noqa: E226
-    INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/3)  # noqa: E226
-
-    class RandomDownscaleX():
-        def __init__(self, interpolation=None):
-            self.interpolation = interpolation
-
-        def __call__(self, x, y):
-            w, h = x.size
-            assert (w % 2 == 0 and h % 2 == 0)
-            if self.interpolation is None:
-                interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
-            else:
-                interpolation = self.interpolation
-            x = pil_io.to_tensor(x)
-            x = IM.resize(x, size=(h // 2, w // 2), filter_type=interpolation, blur=1.0)
-            x = pil_io.to_image(x)
-            return x, y
+    def __call__(self, x, y):
+        w, h = x.size
+        assert (w % self.scale_factor == 0 and h % self.scale_factor == 0)
+        x = pil_io.to_tensor(x)
+        if self.interpolation is None:
+            interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
+        else:
+            interpolation = self.interpolation
+        x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor), filter_type=interpolation, blur=1)
+        x = pil_io.to_image(x)
+        return x, y
 
 
 class RandomJPEGX():
@@ -77,19 +53,22 @@ class RandomJPEGX():
 
 
 class Waifu2xDataset(Dataset):
-    def __init__(self, input_dir, num_samples=10000):
+    def __init__(self, input_dir, num_samples=None):
         super(Waifu2xDataset, self).__init__()
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
         self.num_samples = num_samples
-        self._sampler = HardExampleSampler(
-            torch.ones((len(self),), dtype=torch.double),
-            num_samples=num_samples,
-            method=MiningMethod.TOP10,
-            history_size=6,
-            scale_factor=4,
-        )
+        if num_samples is not None:
+            self._sampler = HardExampleSampler(
+                torch.ones((len(self),), dtype=torch.double),
+                num_samples=num_samples,
+                method=MiningMethod.TOP10,
+                history_size=6,
+                scale_factor=4,
+            )
+        else:
+            self._sampler = None
 
     def __len__(self):
         return len(self.files)
@@ -118,16 +97,17 @@ class Waifu2xDataset(Dataset):
         return self.files[index]
 
 
-class Waifu2xScale2xDataset(Waifu2xDataset):
+class Waifu2xScaleDataset(Waifu2xDataset):
     def __init__(self, input_dir,
                  model_offset,
-                 tile_size=104, num_samples=10000,
+                 scale_factor,
+                 tile_size, num_samples=None,
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0,
                  eval=False):
         super().__init__(input_dir, num_samples=num_samples)
         self.training = not eval
         if self.training:
-            y_min_size = tile_size * 2 + 16
+            y_min_size = tile_size * scale_factor + 16
             self.gt_transforms = T.Compose([
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
@@ -135,29 +115,26 @@ class Waifu2xScale2xDataset(Waifu2xDataset):
             ])
             self.transforms = TP.Compose([
                 TP.RandomHardExampleCrop(size=y_min_size, samples=4),
-                RandomDownscaleX(),
+                RandomDownscaleX(scale_factor=scale_factor),
                 TP.RandomFlip(),
-                TP.CenterCrop(size=tile_size, y_scale=2, y_offset=model_offset),
+                TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
             self.transforms_nearest = TP.Compose([
-                RandomDownscaleX(interpolation=INTERPOLATION_NEAREST),
-                TP.RandomHardExampleCrop(size=tile_size, y_scale=2, y_offset=model_offset, samples=4),
+                RandomDownscaleX(scale_factor=scale_factor, interpolation=INTERPOLATION_NEAREST),
+                TP.RandomHardExampleCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset, samples=4),
                 TP.RandomFlip(),
             ])
         else:
             self.gt_transforms = TS.Identity()
-            if USE_WAND:
-                interpolation = "catrom"
-            else:
-                interpolation = InterpolationMode.BICUBIC
+            interpolation = "catrom"
             self.transforms = TP.Compose([
-                TP.CenterCrop(size=tile_size * 2 + 16),
-                RandomDownscaleX(interpolation=interpolation),
-                TP.CenterCrop(size=tile_size, y_scale=2, y_offset=model_offset),
+                TP.CenterCrop(size=tile_size * scale_factor + 16),
+                RandomDownscaleX(scale_factor=scale_factor, interpolation=interpolation),
+                TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
             self.transforms_nearest = TP.Compose([
-                RandomDownscaleX(interpolation=INTERPOLATION_NEAREST),
-                TP.CenterCrop(size=tile_size, y_scale=2, y_offset=model_offset),
+                RandomDownscaleX(scale_factor=scale_factor, interpolation=INTERPOLATION_NEAREST),
+                TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
 
     def __getitem__(self, index):
