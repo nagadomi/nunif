@@ -5,12 +5,12 @@ from nunif.models import I2IBaseModel, register_model
 from torchvision.models.swin_transformer import (
     # use SwinTransformer V1
     SwinTransformerBlock as SwinTransformerBlockV1,
-    PatchMerging as PatchMergingV1,
 )
 
 
 # No LayerNorm
-NORM_LAYER = lambda dim: nn.Identity()
+def NORM_LAYER(dim):
+    return nn.Identity()
 
 
 class SwinTransformerBlocks(nn.Module):
@@ -102,48 +102,43 @@ class ToImage(nn.Module):
 
 
 class SwinUNetBase(nn.Module):
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96, scale_factor=1):
+    def __init__(self, in_channels=3, out_channels=3, base_dim=96, base_layers=2, scale_factor=1):
         super().__init__()
         assert scale_factor in {1, 2, 4}
         assert base_dim % 16 == 0 and base_dim % 6 == 0
+        assert base_layers % 2 == 0
         C = base_dim
         H = C // 16
+        L = base_layers
+        W = [6, 6]
         self.patch = nn.Sequential(
             nn.Conv2d(in_channels, C // 2, kernel_size=3, stride=1, padding=0),
             nn.LeakyReLU(0.1, inplace=True),
             nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=0),
             nn.LeakyReLU(0.1, inplace=True),
         )
-        self.swin1 = SwinTransformerBlocks(C, num_head=H, num_layers=2, window_size=[6, 6])
+        self.swin1 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W)
         self.down1 = PatchDown(C, C * 2)
-        self.swin2 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=2, window_size=[6, 6])
-        self.down2 = PatchDown(C * 2, C * 4)
-        self.swin3 = SwinTransformerBlocks(C * 4, num_head=H, num_layers=6, window_size=[6, 6])
-        self.up2 = PatchUp(C * 4, C * 2)
+        self.swin2 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W)
+        self.down2 = PatchDown(C * 2, C * 2)
+        self.swin3 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L * 3, window_size=W)
+        self.up2 = PatchUp(C * 2, C * 2)
         if scale_factor in {1, 2}:
             self.proj1 = nn.Identity()
-            self.up2 = PatchUp(C * 4, C * 2)
+            self.up2 = PatchUp(C * 2, C * 2)
             self.proj2 = nn.Identity()
-            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=2, window_size=[6, 6])
+            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W)
             self.up1 = PatchUp(C * 2, C)
-            self.swin5 = SwinTransformerBlocks(C, num_head=H, num_layers=2, window_size=[6, 6])
+            self.swin5 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W)
             self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
-        elif scale_factor == 2:
-            self.proj1 = nn.Identity()
-            self.up2 = PatchUp(C * 4, C * 2)
-            self.proj2 = nn.Linear(C, C * 2)
-            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=2, window_size=[6, 6])
-            self.up1 = PatchUp(C * 2, C * 2)
-            self.swin5 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=2, window_size=[6, 6])
-            self.to_image = ToImage(C * 2, out_channels, scale_factor=scale_factor)
         elif scale_factor == 4:
-            self.proj1 = nn.Linear(C * 2, C * 4)
-            self.up2 = PatchUp(C * 4, C * 4)
-            self.proj2 = nn.Linear(C, C * 4)
-            self.swin4 = SwinTransformerBlocks(C * 4, num_head=H, num_layers=2, window_size=[6, 6])
-            self.up1 = PatchUp(C * 4, C * 4)
-            self.swin5 = SwinTransformerBlocks(C * 4, num_head=H, num_layers=2, window_size=[6, 6])
-            self.to_image = ToImage(C * 4, out_channels, scale_factor=scale_factor)
+            self.proj1 = nn.Linear(C * 2, C * 2)
+            self.up2 = PatchUp(C * 2, C * 2)
+            self.proj2 = nn.Linear(C, C * 2)
+            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W)
+            self.up1 = PatchUp(C * 2, C * 2)
+            self.swin5 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W)
+            self.to_image = ToImage(C * 2, out_channels, scale_factor=scale_factor)
 
     def forward(self, x):
         x2 = self.patch(x)
@@ -175,9 +170,9 @@ class SwinUNet(I2IBaseModel):
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__(locals(), scale=1, offset=8, in_channels=in_channels)
         self.unet = SwinUNetBase(
-            in_channels=in_channels, 
+            in_channels=in_channels,
             out_channels=out_channels,
-            base_dim=96,
+            base_dim=96, base_layers=2,
             scale_factor=1)
 
     def forward(self, x):
@@ -199,7 +194,7 @@ class UpSwinUNet(I2IBaseModel):
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
-            base_dim=96,
+            base_dim=96, base_layers=2,
             scale_factor=2)
 
     def forward(self, x):
@@ -220,7 +215,7 @@ class UpSwinUNet4x(I2IBaseModel):
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
-            base_dim=96,
+            base_dim=96, base_layers=2,
             scale_factor=4)
 
     def forward(self, x):
@@ -233,6 +228,7 @@ class UpSwinUNet4x(I2IBaseModel):
 
 
 if __name__ == "__main__":
+    import io
     device = "cuda:0"
     for model in (SwinUNet(in_channels=3, out_channels=3),
                   UpSwinUNet(in_channels=3, out_channels=3),
@@ -241,4 +237,6 @@ if __name__ == "__main__":
         x = torch.zeros((1, 3, 64, 64)).to(device)
         with torch.no_grad():
             z = model(x)
-            print(model.name, z.shape)
+            buf = io.BytesIO()
+            torch.save(model.state_dict(), buf)
+            print(model.name, "output", z.shape, "size", len(buf.getvalue()))
