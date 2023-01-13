@@ -53,6 +53,7 @@ The trained models are saved in the directory specified by `--model-dir`.
 | `--method`    | best model file           | latest epoch model file(includes training status)
 |---------------|---------------------------|--------------------------------------------------
 | `scale`       | `scale2x.pth`             | `scale2x.checkpoint.pth`
+| `scale4x`     | `scale4x.pth`             | `scale4x.checkpoint.pth`
 | `noise_scale` | `noise{level}_scale2x.pth`| `noise{level}_scale2x.checkpoint.pth`
 | `noise`       | `noise{level}.pth`        | `noise{level}.checkpoint.pth`
 
@@ -62,6 +63,9 @@ The trained models are saved in the directory specified by `--model-dir`.
 |--------------------|------------------------
 | `waifu2x.upcunet`  | `scale`, `noise_scale`
 | `waifu2x.cunet`    | `noise`
+| `waifu2x.swin_unet_1x` | `noise`
+| `waifu2x.swin_unet_2x` | `scale`
+| `waifu2x.swin_unet_4x` | `scale4x`
 | `waifu2x.upconv_7` | `scale`, `noise_scale`
 | `waifu2x.vgg_7`    | `noise`
 
@@ -85,6 +89,17 @@ python3 train.py waifu2x --method scale --arch waifu2x.upcunet --data-dir ./data
 ```
 When `--resume --reset-state` is specified, `last_epoch`, `best_loss`, `optimizer`, and `grad_scaler` are not loaded. Only the model parameter (weight) is loaded.
 
+### SwinUNet
+
+For SwinUNet models, use `--size 64` option.
+
+Also, `waifu2x.swin_unet_2x`/`waifu2x.swin_unet_4x` sometimes causes NaN. If this problem happens, decrease `--learning-rate`.
+
+(I manually decrease `--learning-rate` after NaN Exception happens. Root solution is to use `--disable-amp` option, but the training process is much slower.)
+
+```
+python3 train.py waifu2x --method scale4x --arch waifu2x.swin_unet_4x --data-dir ./data/waifu2x --model-dir ./models/swin --warmup-epoch 1 --loss lbp5 --size 64 --batch-size 8 --optimizer adamw  --learning-rate 0.0001 --resume --reset-state
+```
 
 ## benchmark
 
