@@ -3,7 +3,6 @@ import torch
 from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
     functional as TF,
-    InterpolationMode,
 )
 from torchvision import transforms as T
 from nunif.utils.image_loader import ImageLoader
@@ -12,7 +11,11 @@ from nunif.transforms import pair as TP
 from nunif.training.sampler import HardExampleSampler, MiningMethod
 import nunif.transforms as TS
 from nunif.transforms import image_magick as IM
-
+from .noise_level import (
+    RandomJPEGNoiseX,
+    choose_validation_jpeg_quality,
+    add_jpeg_noise,
+)
 
 NEAREST_PREFIX = "__NEAREST_"
 INTERPOLATION_MODES = (
@@ -41,14 +44,6 @@ class RandomDownscaleX():
             interpolation = self.interpolation
         x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor), filter_type=interpolation, blur=1)
         x = pil_io.to_image(x)
-        return x, y
-
-
-class RandomJPEGX():
-    def __init__(self, level):
-        self.level = 0
-
-    def __call__(self, x, y):
         return x, y
 
 
@@ -103,10 +98,18 @@ class Waifu2xScaleDataset(Waifu2xDataset):
                  scale_factor,
                  tile_size, num_samples=None,
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0,
-                 eval=False):
+                 noise_level=-1, style=None,
+                 training=True):
         super().__init__(input_dir, num_samples=num_samples)
-        self.training = not eval
+        self.training = training
+        self.style = style
+        self.noise_level = noise_level
         if self.training:
+            if noise_level >= 0:
+                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level)
+            else:
+                jpeg_transform = TP.Identity()
+
             y_min_size = tile_size * scale_factor + 16
             self.gt_transforms = T.Compose([
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
@@ -116,11 +119,13 @@ class Waifu2xScaleDataset(Waifu2xDataset):
             self.transforms = TP.Compose([
                 TP.RandomHardExampleCrop(size=y_min_size, samples=4),
                 RandomDownscaleX(scale_factor=scale_factor),
+                jpeg_transform,
                 TP.RandomFlip(),
-                TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
+                TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
             self.transforms_nearest = TP.Compose([
                 RandomDownscaleX(scale_factor=scale_factor, interpolation=INTERPOLATION_NEAREST),
+                jpeg_transform,
                 TP.RandomHardExampleCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset, samples=4),
                 TP.RandomFlip(),
             ])
@@ -147,17 +152,26 @@ class Waifu2xScaleDataset(Waifu2xDataset):
         else:
             im = self.gt_transforms(im)
             x, y = self.transforms(im, im)
+
+        if not self.training:
+            if self.noise_level >= 0:
+                qualities, subsampling = choose_validation_jpeg_quality(
+                    index=index, style=self.style, noise_level=self.noise_level)
+                for quality in qualities:
+                    x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
+
         return TF.to_tensor(x), TF.to_tensor(y), index
 
 
 def _test():
-    dataset = Waifu2xScale2xDataset("./data/waifu2x/eval",
-                                    model_offset=36, tile_size=256)
+    dataset = Waifu2xScaleDataset("./data/waifu2x/eval",
+                                  model_offset=36, tile_size=256, scale_factor=2,
+                                  style="art", noise_level=3)
     print(f"len {len(dataset)}")
-    x, y = dataset[0]
+    x, y, i = dataset[0]
     print("getitem[0]", x.size, y.size)
-    x.show()
-    y.show()
+    TF.to_pil_image(x).show()
+    TF.to_pil_image(y).show()
 
 
 if __name__ == "__main__":
