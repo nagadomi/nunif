@@ -59,6 +59,11 @@ class PatchDown(nn.Module):
         super().__init__()
         self.out_channels = out_channels
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_normal_(self.conv.weight, mode='fan_out', nonlinearity='relu')
+        nn.init.constant_(self.conv.bias, 0)
 
     def forward(self, x):
         B, H, W, C = x.shape
@@ -73,6 +78,11 @@ class PatchUp(nn.Module):
         super().__init__()
         self.out_channels = out_channels
         self.proj = nn.Linear(in_channels, out_channels * 4)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.proj.weight)
+        nn.init.constant_(self.proj.bias, 0)
 
     def forward(self, x):
         x = self.proj(x)
@@ -93,6 +103,11 @@ class ToImage(nn.Module):
         elif scale_factor in {2, 4}:
             scale2 = scale_factor ** 2
             self.proj = nn.Linear(in_channels, out_channels * scale2)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.proj.weight)
+        nn.init.constant_(self.proj.bias, 0)
 
     def forward(self, x):
         x = self.proj(x)
@@ -140,6 +155,19 @@ class SwinUNetBase(nn.Module):
             self.up1 = PatchUp(C * 2, C * 2)
             self.swin5 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W)
             self.to_image = ToImage(C * 2, out_channels, scale_factor=scale_factor)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for m in (list(self.patch.modules()) + [self.proj1, self.proj2]):
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         x2 = self.patch(x)
