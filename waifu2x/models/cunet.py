@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model
 from nunif.modules import SEBlock
+import copy
 
 
 class UNetConv(nn.Module):
@@ -129,17 +130,27 @@ class UpCUNet(I2IBaseModel):
         self.unet2 = UNet2(in_channels, out_channels, deconv=False)
         self.no_clip = no_clip
 
-    def forward(self, x):
+    def _forward(self, x):
         z1 = self.unet1(x)
         if not self.no_clip:
             z1 = torch.clamp(z1, 0., 1.)
         z2 = self.unet2(z1)
         z1 = F.pad(z1, (-20, -20, -20, -20), mode='constant')
         z = z1 + z2
+        return z, z1
+
+    def forward(self, x):
+        z, z1 = self._forward(x)
         if self.training:
             return (z, z1)
         else:
             return torch.clamp(z, 0., 1.)
+
+    def to_script_module(self):
+        net = copy.deepcopy(self)
+        net.__class__ = UpCUNetJIT
+        net.eval()
+        return torch.jit.script(net)
 
 
 @register_model
@@ -152,22 +163,45 @@ class CUNet(I2IBaseModel):
         self.unet2 = UNet2(in_channels, out_channels, deconv=False)
         self.no_clip = no_clip
 
-    def forward(self, x):
+    def _forward(self, x):
         z1 = self.unet1(x)
         if not self.no_clip:
             z1 = torch.clamp(z1, 0., 1.)
         z2 = self.unet2(z1)
         z1 = F.pad(z1, (-20, -20, -20, -20), mode='constant')
         z = z1 + z2
+        return z, z1
 
+    def forward(self, x):
+        z, z1 = self._forward(x)
         if self.training:
             return (z, z1)
         else:
             return torch.clamp(z, 0., 1.)
 
+    def to_script_module(self):
+        net = copy.deepcopy(self)
+        net.__class__ = CUNetJIT
+        net.eval()
+        return torch.jit.script(net)
+
+
+# Inference only model for TorchScript
+
+
+class CUNetJIT(UpCUNet):
+    def forward(self, x):
+        z, _ = self._forward(x)
+        return torch.clamp(z, 0., 1.)
+
+
+class UpCUNetJIT(UpCUNet):
+    def forward(self, x):
+        z, _ = self._forward(x)
+        return torch.clamp(z, 0., 1.)
+
 
 if __name__ == "__main__":
-    import torch
     device = "cuda:0"
     model = CUNet(in_channels=3, out_channels=3).to(device)
     print(model)
