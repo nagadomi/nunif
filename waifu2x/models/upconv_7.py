@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from nunif.models import I2IBaseModel, register_model
 
@@ -34,7 +35,7 @@ class UpConv7(I2IBaseModel):
         if self.training:
             return z
         else:
-            return z.clamp_(0, 1)
+            return torch.clamp(z, 0., 1.)
 
 
 if __name__ == "__main__":

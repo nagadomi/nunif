@@ -1,6 +1,6 @@
+import torch
 import torch.nn as nn
 from nunif.models import I2IBaseModel, register_model
-from nunif.modules.inplace_clip import InplaceClip
 
 
 @register_model
@@ -23,11 +23,14 @@ class VGG7(I2IBaseModel):
             nn.Conv2d(128, 128, 3, 1, 0),
             nn.LeakyReLU(0.1, inplace=True),
             nn.Conv2d(128, out_channels, 3, 1, 0),
-            InplaceClip(0, 1)
         )
 
     def forward(self, x):
-        return self.net(x)
+        x = self.net(x)
+        if self.training:
+            return x
+        else:
+            return torch.clamp(x, 0., 1.)
 
 
 if __name__ == "__main__":
