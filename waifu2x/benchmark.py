@@ -100,7 +100,7 @@ def parse_args():
     parser.add_argument("--output", "-o", type=str, help="output file or directory")
     parser.add_argument("--input", "-i", type=str, required=True, help="input directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true", help="TTA mode")
-    parser.add_argument("--amp", action="store_true", help="AMP mode")
+    parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
     args = parser.parse_args()
     logger.debug(vars(args))
 
@@ -136,7 +136,7 @@ def main():
             t = time.time()
             z, _ = ctx.convert(x, None, args.method, args.noise_level,
                                args.tile_size, args.batch_size,
-                               tta=args.tta, enable_amp=args.amp)
+                               tta=args.tta, enable_amp=not args.disable_amp)
             time_sum += time.time() - t
             if args.border > 0:
                 psnr, mse = psnr256(remove_border(groundtruth, args.border),
