@@ -30,10 +30,17 @@ class Model(nn.Module):
         return (f"name: {self.name}\nkwargs: {self.kwargs}\n" +
                 super(Model, self).__repr__())
 
-    def to_script_module(self):
+    def to_inference_model(self):
         net = copy.deepcopy(self)
         net.eval()
+        return net
+
+    def to_script_module(self):
+        net = self.to_inference_model()
         return torch.jit.script(net)
+
+    def export_onnx(self, f, **kwargs):
+        raise NotImplementedError()
 
 
 class I2IBaseModel(Model):
@@ -55,6 +62,20 @@ class I2IBaseModel(Model):
             "i2i_in_size": self.i2i_in_size
         })
         return config
+
+    def export_onnx(self, f, **kwargs):
+        x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
+        model = self.to_inference_model()
+        torch.onnx.export(
+            model,
+            x,
+            f,
+            input_names=["x"],
+            output_names=["y"],
+            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
+                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            **kwargs
+        )
 
 
 class SoftmaxBaseModel(Model):

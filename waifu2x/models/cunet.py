@@ -146,11 +146,11 @@ class UpCUNet(I2IBaseModel):
         else:
             return torch.clamp(z, 0., 1.)
 
-    def to_script_module(self):
+    def to_inference_model(self):
         net = copy.deepcopy(self)
         net.__class__ = UpCUNetJIT
         net.eval()
-        return torch.jit.script(net)
+        return net
 
 
 @register_model
@@ -179,11 +179,11 @@ class CUNet(I2IBaseModel):
         else:
             return torch.clamp(z, 0., 1.)
 
-    def to_script_module(self):
+    def to_inference_model(self):
         net = copy.deepcopy(self)
         net.__class__ = CUNetJIT
         net.eval()
-        return torch.jit.script(net)
+        return net
 
 
 # Inference only model for TorchScript
