@@ -224,6 +224,6 @@ def create_trainer_default_parser():
     parser.add_argument("--seed", type=int, default=71,
                         help="random seed")
     parser.add_argument("--checkpoint-file", type=str,
-                        help="checkpoint file for initializing model parameters")
+                        help="checkpoint file for initializing model parameters. ignored when --resume is specified")
 
     return parser
