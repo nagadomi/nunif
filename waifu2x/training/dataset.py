@@ -42,14 +42,15 @@ class RandomDownscaleX():
             interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
         else:
             interpolation = self.interpolation
-        x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor), filter_type=interpolation, blur=1)
+        x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
+                      filter_type=interpolation, blur=1)
         x = pil_io.to_image(x)
         return x, y
 
 
-class Waifu2xDataset(Dataset):
+class Waifu2xDatasetBase(Dataset):
     def __init__(self, input_dir, num_samples=None):
-        super(Waifu2xDataset, self).__init__()
+        super().__init__()
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
@@ -92,7 +93,7 @@ class Waifu2xDataset(Dataset):
         return self.files[index]
 
 
-class Waifu2xScaleDataset(Waifu2xDataset):
+class Waifu2xDataset(Waifu2xDatasetBase):
     def __init__(self, input_dir,
                  model_offset,
                  scale_factor,
@@ -100,6 +101,10 @@ class Waifu2xScaleDataset(Waifu2xDataset):
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0,
                  noise_level=-1, style=None,
                  training=True):
+        assert scale_factor in {1, 2, 4}
+        assert noise_level in {-1, 0, 1, 2, 3}
+        assert style in {None, "art", "photo"}
+
         super().__init__(input_dir, num_samples=num_samples)
         self.training = training
         self.style = style
@@ -109,6 +114,13 @@ class Waifu2xScaleDataset(Waifu2xDataset):
                 jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level)
             else:
                 jpeg_transform = TP.Identity()
+            if scale_factor > 1:
+                random_downscale_x = RandomDownscaleX(scale_factor=scale_factor)
+                random_downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
+                                                              interpolation=INTERPOLATION_NEAREST)
+            else:
+                random_downscale_x = TP.Identity()
+                random_downscale_x_nearest = TP.Identity()
 
             y_min_size = tile_size * scale_factor + 16
             self.gt_transforms = T.Compose([
@@ -118,27 +130,39 @@ class Waifu2xScaleDataset(Waifu2xDataset):
             ])
             self.transforms = TP.Compose([
                 TP.RandomHardExampleCrop(size=y_min_size, samples=4),
-                RandomDownscaleX(scale_factor=scale_factor),
+                random_downscale_x,
                 jpeg_transform,
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
             self.transforms_nearest = TP.Compose([
-                RandomDownscaleX(scale_factor=scale_factor, interpolation=INTERPOLATION_NEAREST),
+                random_downscale_x_nearest,
                 jpeg_transform,
-                TP.RandomHardExampleCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset, samples=4),
+                TP.RandomHardExampleCrop(size=tile_size,
+                                         y_scale=scale_factor,
+                                         y_offset=model_offset,
+                                         samples=4),
                 TP.RandomFlip(),
             ])
         else:
             self.gt_transforms = TS.Identity()
             interpolation = "catrom"
+            if scale_factor > 1:
+                downscale_x = RandomDownscaleX(scale_factor=scale_factor,
+                                               interpolation=interpolation)
+                downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
+                                                       interpolation=INTERPOLATION_NEAREST)
+            else:
+                downscale_x = TP.Identity()
+                downscale_x_nearest = TP.Identity()
+
             self.transforms = TP.Compose([
                 TP.CenterCrop(size=tile_size * scale_factor + 16),
-                RandomDownscaleX(scale_factor=scale_factor, interpolation=interpolation),
+                downscale_x,
                 TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
             self.transforms_nearest = TP.Compose([
-                RandomDownscaleX(scale_factor=scale_factor, interpolation=INTERPOLATION_NEAREST),
+                downscale_x_nearest,
                 TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
 
@@ -164,9 +188,9 @@ class Waifu2xScaleDataset(Waifu2xDataset):
 
 
 def _test():
-    dataset = Waifu2xScaleDataset("./data/waifu2x/eval",
-                                  model_offset=36, tile_size=256, scale_factor=2,
-                                  style="art", noise_level=3)
+    dataset = Waifu2xDataset("./data/waifu2x/eval",
+                             model_offset=36, tile_size=256, scale_factor=2,
+                             style="art", noise_level=3)
     print(f"len {len(dataset)}")
     x, y, i = dataset[0]
     print("getitem[0]", x.size, y.size)

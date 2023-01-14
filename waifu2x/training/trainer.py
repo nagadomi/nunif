@@ -3,7 +3,7 @@ from os import path
 import torch
 from torch import nn
 from .. import models  # noqa: F401
-from . dataset import Waifu2xScaleDataset
+from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import create_model, get_model_config, get_model_names
@@ -44,47 +44,52 @@ class Waifu2xTrainer(Trainer):
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
         model_offset = get_model_config(self.model, "i2i_offset")
-        if self.args.method in {"scale", "scale4x", "noise_scale", "noise_scale4x"}:
-            scale_factor = 4 if self.args.method in {"scale4x", "noise_scale4x"} else 2
-            if type == "train":
-                dataset = Waifu2xScaleDataset(
-                    input_dir=path.join(self.args.data_dir, "train"),
-                    model_offset=model_offset,
-                    scale_factor=scale_factor,
-                    style=self.args.style,
-                    noise_level=self.args.noise_level,
-                    tile_size=self.args.size,
-                    num_samples=self.args.num_samples,
-                    da_jpeg_p=self.args.da_jpeg_p,
-                    da_scale_p=self.args.da_scale_p,
-                    da_chshuf_p=self.args.da_chshuf_p,
-                    training=True,
-                )
-                return torch.utils.data.DataLoader(
-                    dataset, batch_size=self.args.batch_size,
-                    worker_init_fn=dataset.worker_init,
-                    shuffle=False,
-                    pin_memory=True,
-                    sampler=dataset.sampler(),
-                    num_workers=self.args.num_workers,
-                    drop_last=True)
-            elif type == "eval":
-                dataset = Waifu2xScaleDataset(
-                    input_dir=path.join(self.args.data_dir, "eval"),
-                    model_offset=model_offset,
-                    scale_factor=scale_factor,
-                    style=self.args.style,
-                    noise_level=self.args.noise_level,
-                    tile_size=self.args.size,
-                    training=False)
-                return torch.utils.data.DataLoader(
-                    dataset, batch_size=self.args.batch_size,
-                    worker_init_fn=dataset.worker_init,
-                    shuffle=False,
-                    num_workers=self.args.num_workers,
-                    drop_last=False)
+        if self.args.method in {"scale", "noise_scale"}:
+            scale_factor = 2
+        elif self.args.method in {"scale4x", "noise_scale4x"}:
+            scale_factor = 4
+        elif self.args.method in {"noise"}:
+            scale_factor = 1
         else:
             raise NotImplementedError()
+
+        if type == "train":
+            dataset = Waifu2xDataset(
+                input_dir=path.join(self.args.data_dir, "train"),
+                model_offset=model_offset,
+                scale_factor=scale_factor,
+                style=self.args.style,
+                noise_level=self.args.noise_level,
+                tile_size=self.args.size,
+                num_samples=self.args.num_samples,
+                da_jpeg_p=self.args.da_jpeg_p,
+                da_scale_p=self.args.da_scale_p,
+                da_chshuf_p=self.args.da_chshuf_p,
+                training=True,
+            )
+            return torch.utils.data.DataLoader(
+                dataset, batch_size=self.args.batch_size,
+                worker_init_fn=dataset.worker_init,
+                shuffle=False,
+                pin_memory=True,
+                sampler=dataset.sampler(),
+                num_workers=self.args.num_workers,
+                drop_last=True)
+        elif type == "eval":
+            dataset = Waifu2xDataset(
+                input_dir=path.join(self.args.data_dir, "eval"),
+                model_offset=model_offset,
+                scale_factor=scale_factor,
+                style=self.args.style,
+                noise_level=self.args.noise_level,
+                tile_size=self.args.size,
+                training=False)
+            return torch.utils.data.DataLoader(
+                dataset, batch_size=self.args.batch_size,
+                worker_init_fn=dataset.worker_init,
+                shuffle=False,
+                num_workers=self.args.num_workers,
+                drop_last=False)
 
     def create_env(self):
         if self.args.loss == "lbp":
@@ -124,6 +129,8 @@ class Waifu2xTrainer(Trainer):
             return path.join(self.args.model_dir, f"noise{self.args.noise_level}_scale2x.pth")
         elif self.args.method == "noise_scale4x":
             return path.join(self.args.model_dir, f"noise{self.args.noise_level}_scale4x.pth")
+        elif self.args.method == "noise":
+            return path.join(self.args.model_dir, f"noise{self.args.noise_level}.pth")
         else:
             raise NotImplementedError()
 
@@ -136,15 +143,25 @@ class Waifu2xTrainer(Trainer):
             return path.join(self.args.model_dir, f"noise{self.args.noise_level}_scale2x.checkpoint.pth")
         elif self.args.method == "noise_scale4x":
             return path.join(self.args.model_dir, f"noise{self.args.noise_level}_scale4x.checkpoint.pth")
+        elif self.args.method == "noise":
+            return path.join(self.args.model_dir, f"noise{self.args.noise_level}.checkpoint.pth")
         else:
             raise NotImplementedError()
 
 
 def train(args):
+    ARCH_SWIN_UNET = {"waifu2x.swin_unet_1x",
+                      "waifu2x.swin_unet_2x",
+                      "waifu2x.swin_unet_4x",
+                      "waifu2x.swinunet",
+                      "waifu2x.upswinunet"}
     if args.size % 4 != 0:
         raise ValueError("--size must be a multiple of 4")
+    if args.arch in ARCH_SWIN_UNET and args.size % 64 != 0:
+        raise ValueError("--size must be a multiple of 64 for SWinUNet models")
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
         raise ValueError("--noise-level is required for noise/noise_scale")
+
     if args.method in {"scale", "scale4x"}:
         # disable
         args.noise_level = -1
@@ -175,7 +192,7 @@ def register(subparsers, default_parser):
     waifu2x_models = sorted([name for name in get_model_names() if name.startswith("waifu2x.")])
 
     parser.add_argument("--method", type=str,
-                        choices=["scale", "noise_scale", "scale4x", "noise_scale4x"],
+                        choices=["scale", "noise_scale", "scale4x", "noise_scale4x", "noise"],
                         required=True,
                         help="waifu2x method")
     parser.add_argument("--arch", type=str,
@@ -185,10 +202,10 @@ def register(subparsers, default_parser):
     parser.add_argument("--style", type=str,
                         choices=["art", "photo"],
                         default="art",
-                        help="image style used for jpeg noise_level")
+                        help="image style used for jpeg noise level")
     parser.add_argument("--noise-level", type=int,
                         choices=[0, 1, 2, 3],
-                        help="jpeg noise_level for noise/noise_scale")
+                        help="jpeg noise level for noise/noise_scale")
     parser.add_argument("--size", type=int, default=104,
                         help="input size")
     parser.add_argument("--num-samples", type=int, default=50000,
