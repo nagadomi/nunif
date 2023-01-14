@@ -64,7 +64,7 @@ class I2IBaseModel(Model):
         return config
 
     def export_onnx(self, f, **kwargs):
-        x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
+        x = torch.rand([1, self.i2i_in_channels, 256, 256], dtype=torch.float32)
         model = self.to_inference_model()
         torch.onnx.export(
             model,
