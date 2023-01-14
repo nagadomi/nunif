@@ -111,7 +111,7 @@ def setup():
     parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch size for tiled render")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
-    parser.add_argument("--amp", action="store_true", help="with half float")
+    parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
@@ -372,7 +372,7 @@ def api():
                     "x": rgb, "alpha": alpha,
                     "method": method, "noise_level": noise.value,
                     "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
-                    "tta": command_args.tta, "enable_amp": command_args.amp
+                    "tta": command_args.tta, "enable_amp": not command_args.disable_amp,
                 }
                 with global_lock:
                     if style == StyleOption.ART:

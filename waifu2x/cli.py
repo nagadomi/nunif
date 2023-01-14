@@ -77,12 +77,12 @@ def main(args):
     ctx.load_model(args.method, args.noise_level)
 
     if path.isdir(args.input):
-        convert_files(ctx, ImageLoader.listdir(args.input), args, enable_amp=args.amp)
+        convert_files(ctx, ImageLoader.listdir(args.input), args, enable_amp=not args.disable_amp)
     else:
         if path.splitext(args.input)[-1] in (".txt", ".csv"):
-            convert_files(ctx, load_files(args.input), args, enable_amp=args.amp)
+            convert_files(ctx, load_files(args.input), args, enable_amp=not args.disable_amp)
         else:
-            convert_file(ctx, args, enable_amp=args.amp)
+            convert_file(ctx, args, enable_amp=not args.disable_amp)
 
 
 if __name__ == "__main__":
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", "-o", type=str, required=True, help="output file or directory")
     parser.add_argument("--input", "-i", type=str, required=True, help="input file or directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
-    parser.add_argument("--amp", action="store_true", help="with half float")
+    parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--depth", type=int, help="bit-depth of output image. enabled only with `--image-lib wand`")
