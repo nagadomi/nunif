@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 from os import path
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
@@ -47,6 +48,10 @@ def main(args):
         print(f"** {dataset_type}")
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)
+
+        if not path.exists(input_dir):
+            print(f"Error: `{input_dir}` not found", file=sys.stderr)
+            return
 
         os.makedirs(output_dir, exist_ok=True)
 
