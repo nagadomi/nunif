@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+import copy
 
 
 class Model(nn.Module):
@@ -27,6 +29,11 @@ class Model(nn.Module):
     def __repr__(self):
         return (f"name: {self.name}\nkwargs: {self.kwargs}\n" +
                 super(Model, self).__repr__())
+
+    def to_script_module(self):
+        net = copy.deepcopy(self)
+        net.eval()
+        return torch.jit.script(net)
 
 
 class I2IBaseModel(Model):
