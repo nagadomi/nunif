@@ -3,7 +3,7 @@ Description = waifu2x API
 
 [Service]
 WorkingDirectory=/home/nagadomi/nunif
-ExecStart = /home/nagadomi/nunif/waifu2x/appendix/run-web.sh 0 8812
+ExecStart = /home/nagadomi/nunif/waifu2x/web/appendix/run-web.sh 0 8812
 Restart = always
 Type = simple
 User = nagadomi
