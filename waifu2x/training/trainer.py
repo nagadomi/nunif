@@ -158,7 +158,7 @@ def train(args):
     if args.size % 4 != 0:
         raise ValueError("--size must be a multiple of 4")
     if args.arch in ARCH_SWIN_UNET and args.size % 64 != 0:
-        raise ValueError("--size must be a multiple of 64 for SWinUNet models")
+        raise ValueError("--size must be a multiple of 64 for SwinUNet models")
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
         raise ValueError("--noise-level is required for noise/noise_scale")
 
