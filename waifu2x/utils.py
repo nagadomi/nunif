@@ -95,7 +95,7 @@ class Waifu2x():
         self.scale_model = load_model(
             path.join(self.model_dir, "scale2x.pth"),
             map_location=self.device)[0]
-        if path.exist(path.join(self.model_dir, "scale4x.pth")):
+        if path.exists(path.join(self.model_dir, "scale4x.pth")):
             self.scale4x_model = load_model(
                 path.join(self.model_dir, "scale4x.pth"),
                 map_location=self.device)[0]
