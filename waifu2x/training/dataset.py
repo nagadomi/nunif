@@ -29,10 +29,11 @@ INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/3)  # noqa: E226
 
 
 class RandomDownscaleX():
-    def __init__(self, scale_factor, interpolation=None):
+    def __init__(self, scale_factor, interpolation=None, training=True):
         assert scale_factor in {2, 4}
         self.interpolation = interpolation
         self.scale_factor = scale_factor
+        self.training = training
 
     def __call__(self, x, y):
         w, h = x.size
@@ -42,8 +43,19 @@ class RandomDownscaleX():
             interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
         else:
             interpolation = self.interpolation
-        x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                      filter_type=interpolation, blur=1)
+        if self.scale_factor == 2:
+            x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
+                          filter_type=interpolation, blur=1)
+        elif self.scale_factor == 4:
+            if (not self.training) or random.uniform(0, 1) > 0.25:
+                x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
+                              filter_type=interpolation, blur=1)
+            else:
+                # 2 step downscale
+                x = IM.resize(x, size=(h // 2, w // 2),
+                              filter_type=interpolation, blur=1)
+                x = IM.resize(x, size=(h // 4, w // 4),
+                              filter_type=interpolation, blur=1)
         x = pil_io.to_image(x)
         return x, y
 
@@ -149,9 +161,11 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             interpolation = "catrom"
             if scale_factor > 1:
                 downscale_x = RandomDownscaleX(scale_factor=scale_factor,
-                                               interpolation=interpolation)
+                                               interpolation=interpolation,
+                                               training=False)
                 downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
-                                                       interpolation=INTERPOLATION_NEAREST)
+                                                       interpolation=INTERPOLATION_NEAREST,
+                                                       training=False)
             else:
                 downscale_x = TP.Identity()
                 downscale_x_nearest = TP.Identity()

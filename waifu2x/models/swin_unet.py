@@ -24,10 +24,10 @@ class SwinTransformerBlocks(nn.Module):
                     num_head,
                     window_size=window_size,
                     shift_size=[0 if i_layer % 2 == 0 else w // 2 for w in window_size],
-                    mlp_ratio=2.0,
-                    dropout=0,
-                    attention_dropout=0,
-                    stochastic_depth_prob=0,
+                    mlp_ratio=2.,
+                    dropout=0.,
+                    attention_dropout=0.,
+                    stochastic_depth_prob=0.,
                     norm_layer=NORM_LAYER,
                 )
             )
