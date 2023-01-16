@@ -5,8 +5,6 @@ numpy
 pillow
 tqdm
 wand >= 0.6.10
-python-snappy # TODO: migrate to zstd
-zstandard
 fonttools
 # waifu2x-web
 #gunicorn
@@ -16,3 +14,4 @@ diskcache
 flake8
 psutil
 pyyaml
+onnx

@@ -1,0 +1,46 @@
+<html>
+  <head>
+    <title>Unlimited Waifu2x</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <script src="script.js"></script>
+    <style>
+     body { background-color: lightgray;}
+     h1 { text-align: center; }
+     #main-panel { margin: 0em auto; width: 90%;}
+     #form-box { margin: 0 auto; margin-bottom: 4px; width: 40%; }
+     input[type=button] { width: 10em; padding: 4px; }
+     #src-box { margin: 1em auto; width: 128px; border: 4px ridge;}
+     #src { width: 128px; height: 128px; }
+     #dest-box { margin: 1em auto; border: 4px ridge;}
+     #button-box { text-align: center; }
+     #message { font-size: 0.8em; color: blue; margin: 0 auto; width: 32em;}
+    </style>
+  </head>
+  <body>
+    <h1>Unlimited Waifu2x</h1>
+    <div id="main-panel">
+      <div id="src-box">
+        <canvas id="src">
+      </div>
+      <form id="form-box">
+        <div>
+          <input type="file" id="file" name="file" style="padding-bottom: 1em">
+        </div>
+        <div id="button-box">
+          <input type="button" id="start" value="Start">
+          <input type="button" id="stop" value="Stop">
+        </div>
+      </form>
+      <div id="message">
+        ( ・∀・)
+      </div>
+      <div id="dest-box">
+        <canvas id="dest">
+      </div>
+      <div>
+        <img id="debug">
+      </div>
+    </div>
+  </body>
+</html>
