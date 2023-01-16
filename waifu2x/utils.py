@@ -119,7 +119,7 @@ class Waifu2x():
         self._setup()
 
     def render(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
-        assert (method in ("scale", "noise_scale", "noise", "scale4x"))
+        assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
         assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
         if method == "scale":
             z = tiled_render(x, self.scale_model,
