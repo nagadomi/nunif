@@ -3,6 +3,7 @@ import io
 import struct
 import base64
 import torchvision.transforms.functional as TF
+from ..transforms.functional import quantize256, quantize65535
 from ..logger import logger
 
 
@@ -202,10 +203,10 @@ def to_tensor(im, return_alpha=False):
     return x
 
 
-def to_image(im, alpha=None):
-    im = TF.to_pil_image(im)
+def to_image(im, alpha=None, depth=None):
+    im = TF.to_pil_image(quantize256(im))
     if alpha is not None:
-        alpha = TF.to_pil_image(alpha)
+        alpha = TF.to_pil_image(quantize256(alpha))
         im.putalpha(alpha)
     return im
 
