@@ -12,11 +12,12 @@ tmp
 /models/
 !/models/.keep
 /waifu2x/pretrained_models
+/waifu2x/onnx_models
 /waifu2x/web-config.ini  # for compatibilityfor
 /waifu2x/web/config.ini
 /waifu2x/public_html  # for compatibilityfor
 /waifu2x/web/public_html
-/waifu2x/web/unlimited_waifu2x/models/
+/waifu2x/web/unlimited_waifu2x/public_html/models
 !/waifu2x/web/webgen/assets/*.png
 !/waifu2x/web/webgen/assets/*.jpg
 /waifu2x/models/_*.py

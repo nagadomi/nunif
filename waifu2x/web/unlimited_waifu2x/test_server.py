@@ -1,14 +1,18 @@
+# python3 -m waifu2x.web.unlimited_waifu2x.test_server
+# View at http://localhost:8812/
+# Do not use this server in product environments.
 import bottle
-import posixpath
 from os import path
+
+
+ROOT_DIR = path.abspath(path.join(path.dirname(__file__), "public_html"))
 
 
 @bottle.get("/<url:re:.*>")
 def static_file(url):
-    basename = url
-    if not basename:
-        basename = "index.html"
-    return bottle.static_file(basename, root=path.abspath(path.dirname(__file__)))
+    if not url:
+        url = "index.html"
+    return bottle.static_file(url, root=ROOT_DIR)
 
 
 def main():

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <title>Unlimited Waifu2x</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <script src="script.js"></script>
+    <link href="style.css" rel="stylesheet" type="text/css">
+  </head>
+  <body>
+    <h1>Unlimited Waifu2x</h1>
+    <div id="main-panel">
+      <div id="src-box">
+        <canvas id="src"></canvas>
+      </div>
+      <form id="form-box">
+        <table>
+          <tr>
+            <td>File</td>
+            <td><input type="file" id="file" name="file" style="padding-bottom: 1em"></td>
+          </tr>
+          <tr>
+            <td>Noise Reduction</td>
+            <td>
+              <select name="noise_level">
+                <option value="-1">(-) None</option>
+                <option value="0" selected>(0) Low</option>
+                <option value="1">(1) Medium</option>
+                <option value="2">(2) High</option>
+                <option value="2">(3) Highest</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td>Upscaling</td>
+            <td>
+              <select name="scale">
+                <option value="1">None</option>
+                <option value="2" selected>2x</option>
+                <option value="4">4x</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2">
+              <div id="button-box">
+                <input type="button" id="start" value="Start">
+                <input type="button" id="stop" value="Stop">
+              </div>
+            </td>
+          </tr>
+        </table>
+      </form>
+      <div id="message">
+        ( ・∀・)
+      </div>
+      <div id="dest-box">
+        <canvas id="dest"></canvas>
+      </div>
+    </div>
+  </body>
+</html>

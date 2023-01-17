@@ -43,9 +43,10 @@ const CONFIG = {
     }
 };
 
-const onnx_utils = {
+const onnx_runner = {
     sessions: {},
     stop_flag: false,
+    running: false,
     scanline_effect: function (data) {
         for (var y = 0; y < data.height; ++y) {
             if (y % 2 == 0) {
@@ -110,15 +111,23 @@ const onnx_utils = {
         p.z_w = Math.floor(p.x_w * scale);
         return p
     },
-    tiled_render: async function(image_data, arch, style, method,
+    tiled_render: async function(image_data, config,
                                  output_canvas, block_callback)
     {
         const TILE_SIZE = 256;
-        const config = CONFIG.get_config(arch, style, method);
         this.stop_flag = false; // reset flag
-        if (config == null) {
-            return null;
+        if (this.running) {
+            console.log("Already running");
+            return;
         }
+        this.running = true;
+
+        // setup output canvas
+        output_canvas.width = image_data.width * config.scale;
+        output_canvas.height = image_data.height * config.scale;
+        var output_ctx = output_canvas.getContext("2d", {willReadFrequently: true});
+
+        // load model
         const model = await this.get_session(config.path);
 
         // preprocessing, padding
@@ -127,22 +136,20 @@ const onnx_utils = {
         x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]));
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
+
         // create temporary canvas for tile input
         image_data = this.to_image_data(x.data, x.dims[3], x.dims[2]);
         var input_canvas = document.createElement("canvas");
         input_canvas.width = w;
         input_canvas.height = h;
-        var input_ctx = input_canvas.getContext("2d");
+        var input_ctx = input_canvas.getContext("2d", {willReadFrequently: true});
         input_ctx.putImageData(image_data, 0, 0);
-        // setup output canvas
-        // todo
-        var output_ctx = output_canvas.getContext("2d");
 
         // tiled rendering
         var output_size = TILE_SIZE * config.scale - config.offset * 2;
         var output_size_in_input = TILE_SIZE - Math.ceil(config.offset / config.scale) * 2;
-        var all_blocks = (h / output_size_in_input) * (w / output_size_in_input);
-        var processed_blocks = 0;
+        var all_blocks = p.h_blocks * p.w_blocks;
+        var progress = 0;
         for (var i = 0; i < h; i += output_size_in_input) {
             for (var j = 0; j < w; j += output_size_in_input) {
                 if (!(i + TILE_SIZE <= h && j + TILE_SIZE <= w)) {
@@ -150,22 +157,24 @@ const onnx_utils = {
                 }
                 var ii = i * config.scale;
                 var jj = j * config.scale;
-                var tile_image_data = input_ctx.getImageData(j, i, j + TILE_SIZE, i + TILE_SIZE);
+                var tile_image_data = input_ctx.getImageData(j, i, TILE_SIZE, TILE_SIZE);
                 var tile_x = this.to_input(tile_image_data.data,
                                            tile_image_data.width, tile_image_data.height);
                 var tile_output = await model.run({x: tile_x});
                 var tile_y = tile_output.y;
                 var output_image_data = this.to_image_data(tile_y.data, tile_y.dims[3], tile_y.dims[2]);
                 output_ctx.putImageData(output_image_data, jj, ii);
-                processed_blocks += 1;
+                progress += 1;
                 if (this.stop_flag) {
-                    block_callback(processed_blocks, all_blocks, false);
+                    block_callback(progress, all_blocks, false);
+                    this.running = false;
                     return;
                 } else {
-                    block_callback(processed_blocks, all_blocks, true);
+                    block_callback(progress, all_blocks, true);
                 }
             }
         }
+        this.running = false;
     },
     padding: async function(x, left, right, top, bottom) {
         const ses = await this.get_session(CONFIG.get_helper_path("pad"));
@@ -200,63 +209,154 @@ $(function () {
     /* init */
     ort.env.debug = true;
     ort.env.wasm.proxy = true;
-    console.log(ort.env.wasm);
-    console.log(ort.env.webgl);
 
-    var SCALE = 2;
-    var OFFSET = 36;
-    var reader = new FileReader();
-    reader.addEventListener("load", function() {
-        var img = new Image();
-        img.src = reader.result;
-        img.onload = async () => {
-            var canvas = $("#src").get(0);
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            var ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0);
-            setup_canvas(img, 2);
+    function removeAlpha(blob)
+    {
+        // TODO: I want to remove alpha channel (PNG24, not PNG32) but can't find a way.
+        return blob;
+    }
+
+    async function process(file) {
+        if (onnx_runner.running) {
+            console.log("Already running");
+            return;
+        }
+        var style = "art";
+        var scale = parseInt($("select[name=scale]").val());
+        var noise_level = parseInt($("select[name=noise_level]").val());
+        var method;
+        if (scale == 1) {
+            if (noise_level == -1) {
+                set_message("(ﾟдﾟ) No Noise Reduction selected!");
+                return;
+            }
+            method = "noise" + noise_level;
+            arch = "cunet";
+        } else if (scale == 2) {
+            if (noise_level == -1) {
+                method = "scale2x";
+            } else {
+                method = "noise" + noise_level + "_scale2x";
+            }
+            arch = "cunet";
+        } else if (scale == 4) {
+            if (noise_level == -1) {
+                method = "scale4x";
+            } else {
+                method = "noise" + noise_level + "_scale4x";
+            }
+            arch = "swin_unet";
+        }
+        const config = CONFIG.get_config(arch, style, method);
+        if (config == null) {
+            set_message("(ﾟдﾟ) Model Not found!");
+            return;
+        }
+
+        var canvas = $("#src").get(0);
+        var ctx = canvas.getContext("2d", {willReadFrequently: true});
+        var output_canvas = $("#dest").get(0);
+        var image_data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        set_message("(・∀・)φ ... ", -1);
+        await onnx_runner.tiled_render(
+            image_data, config,
+            output_canvas, (progress, max_progress, processing) => {
+                if (processing) {
+                    progress_message = "(" + progress + "/" + max_progress + ")";
+                    loop_message(["( ・∀・)φ　 " + progress_message,
+                                  "( ・∀・) φ　" + progress_message], 0.5);
+                } else {
+                    set_message("(ﾟдﾟ) stopped!!");
+                }
+            });
+        if (!onnx_runner.stop_flag) {
             var output_canvas = $("#dest").get(0);
-            var image_data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            var y = await onnx_utils.tiled_render(
-                image_data, "cunet", "art", "scale2x",
-                output_canvas, (progress, max_progress, stop) => {
-                    console.log(progress, max_progress, stop); 
-                });
-            //draw_result(onnx_utils.to_image_data(y.data, y.dims[3], y.dims[2]));
-        };
-    });
-    $("#start").click(function() {
+            output_canvas.toBlob((blob) => {
+                // TODO: removeAlpha is not implemented
+                var url = URL.createObjectURL(removeAlpha(blob));
+                var filename = (file.name.split(/(?=\.[^.]+$)/))[0] + "_waifu2x_" + method + ".png";
+                set_message('( ・∀・)つ　<a href="' + url +
+                            '" download="' + filename  +
+                            '">Download</a>', -1, true);
+            }, "image/png");
+        }
+    };
+    $("#start").click(async () => {
         var file = $("#file").get(0);
         if (file.files.length > 0 && file.files[0].type.match(/image/)) {
-            reader.readAsDataURL(file.files[0]);
+            await process(file.files[0]);
         } else {
             set_message("( ﾟДﾟ) No Image Found");
         }
     });
-    $("#stop").click(function() {
-        onnx_utils.stop_flag = true;
+    $("#file").change(() => {
+        if (onnx_runner.running) {
+            console.log("Already running");
+            return;
+        }
+        if (file.files.length > 0 && file.files[0].type.match(/image/)) {
+            set_input_image(file.files[0]);
+            set_message("( ・∀・)b");
+        }
     });
-    function setup_canvas(img, scale_factor) {
-        var canvas = $("#dest").get(0);
-        canvas.width = img.naturalWidth * scale_factor;
-        canvas.height = img.naturalHeight * scale_factor;
-        var ctx = canvas.getContext("2d");
-        ctx.drawImage(img,
-                      0, 0, img.naturalWidth, img.naturalHeight,
-                      0, 0, canvas.width, canvas.height);
-        var init_image = onnx_utils.scanline_effect(ctx.getImageData(0, 0, canvas.width, canvas.height));
-        ctx.putImageData(init_image, 0, 0);
+    $("#stop").click(() => {
+        onnx_runner.stop_flag = true;
+    });
+    function set_input_image(file) {
+        var reader = new FileReader();
+        reader.addEventListener("load", function() {
+            var img = new Image();
+            img.src = reader.result;
+            img.onload = async () => {
+                // set input canvas
+                var canvas = $("#src").get(0);
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                var ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0);
+                // set input preview size
+                var h_scale = 128 / img.naturalHeight;
+                $("#src").css({width: Math.floor(h_scale * img.naturalWidth)});
+
+                // clear output canvas
+                var canvas = $("#dest").get(0);
+                canvas.width = 128;
+                canvas.height = 128;
+                var ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            };
+        });
+        reader.readAsDataURL(file);
     };
-    function draw_result(image_data) {
-        var canvas = $("#dest").get(0);
-        canvas.width = image_data.height;
-        canvas.height = image_data.width;
-        var ctx = canvas.getContext("2d");
-        ctx.putImageData(image_data, 0, 0);
+
+    function set_message(text, second=2, html=false) {
+        if (html) {
+            $("#message").html(text);
+        } else {
+            $("#message").text(text);
+        }
+        if (second > 0) {
+            setTimeout(() => {
+                if ($("#message").text() == text) {
+                    $("#message").text("( ・∀・)");
+                }
+            }, second * 1000);
+        }
     };
-    function set_message(text, second=2) {
-        $("#message").text(text);
-        setTimeout(() => { $("#message").text("( ・∀・)") }, second * 1000);
+    function loop_message(texts, second=0.5) {
+        var i = 0;
+        $("#message").text(texts[i]);
+        var id = setInterval(() => {
+            var prev_message = texts[i % texts.length];
+            i += 1;
+            var next_message = texts[i % texts.length];
+            if ($("#message").text() == prev_message) {
+                $("#message").text(next_message);
+            } else {
+                clearInterval(id);
+            }
+        }, second * 1000);
     };
 });
+
