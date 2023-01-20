@@ -78,32 +78,48 @@ def psnr256(x1, x2, color):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-dir", type=str, required=True, help="model dir")
-    parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
+    parser.add_argument("--model-dir", type=str, required=True,
+                        help="model dir")
+    parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3],
+                        help="noise level")
     parser.add_argument("--method", "-m", type=str,
                         choices=["scale", "scale4x", "noise", "noise_scale", "noise_scale4x"],
                         default="scale", help="method")
     parser.add_argument("--model-method", type=str,
                         choices=["scale", "scale4x", "noise", "noise_scale", "noise_scale4x"],
                         help="method for target model")
-    parser.add_argument("--color", type=str, choices=["rgb", "y", "y_matlab"], default="y_matlab", help="colorspace")
-    parser.add_argument("--jpeg-quality", type=int, default=75, help="jpeg quality for noise/noise_scale")
-    parser.add_argument("--jpeg-times", type=int, default=1, help="number of repetitions of jpeg compression")
-    parser.add_argument("--jpeg-quality-down", type=int, default=5, help="value of jpeg quality that decreases every times")
-    parser.add_argument("--jpeg-yuv420", action="store_true", help="use yuv420 jpeg")
-    parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos", "sinc", "triangle"], default="catrom",
-                        help="downscaling filter for generate LR image")
+    parser.add_argument("--color", type=str, choices=["rgb", "y", "y_matlab"], default="y_matlab",
+                        help="colorspace")
+    parser.add_argument("--jpeg-quality", type=int, default=75,
+                        help="jpeg quality for noise/noise_scale")
+    parser.add_argument("--jpeg-times", type=int, default=1,
+                        help="number of repetitions of jpeg compression")
+    parser.add_argument("--jpeg-quality-down", type=int, default=5,
+                        help="value of jpeg quality that decreases every times")
+    parser.add_argument("--jpeg-yuv420", action="store_true",
+                        help="use yuv420 jpeg")
+    parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos", "sinc", "triangle"],
+                        default="catrom", help="downscaling filter for generate LR image")
     parser.add_argument("--baseline", action="store_true", help="use baseline score by image resize")
     parser.add_argument("--baseline-filter", type=str, default="catrom",
-                        choices=["catrom", "box", "lanczos", "sinc", "triangle"], help="baseline filter for 2x")
-    parser.add_argument("--border", type=int, default=0, help="border px removed from the result image")
-    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
-    parser.add_argument("--batch-size", type=int, default=4, help="minibatch_size")
-    parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")
-    parser.add_argument("--output", "-o", type=str, help="output file or directory")
-    parser.add_argument("--input", "-i", type=str, required=True, help="input directory. (*.txt, *.csv) for image list")
-    parser.add_argument("--tta", action="store_true", help="TTA mode")
-    parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
+                        choices=["catrom", "box", "lanczos", "sinc", "triangle"],
+                        help="baseline filter for 2x")
+    parser.add_argument("--border", type=int, default=0,
+                        help="border px removed from the result image")
+    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0],
+                        help="GPU device ids. -1 for CPU")
+    parser.add_argument("--batch-size", type=int, default=4,
+                        help="minibatch_size")
+    parser.add_argument("--tile-size", type=int, default=256,
+                        help="tile size for tiled render")
+    parser.add_argument("--output", "-o", type=str,
+                        help="output file or directory")
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input directory. (*.txt, *.csv) for image list")
+    parser.add_argument("--tta", action="store_true",
+                        help="TTA mode")
+    parser.add_argument("--disable-amp", action="store_true",
+                        help="disable AMP for some special reason")
     args = parser.parse_args()
     logger.debug(vars(args))
 
