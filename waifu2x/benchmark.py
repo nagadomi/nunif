@@ -83,6 +83,9 @@ def parse_args():
     parser.add_argument("--method", "-m", type=str,
                         choices=["scale", "scale4x", "noise", "noise_scale", "noise_scale4x"],
                         default="scale", help="method")
+    parser.add_argument("--model-method", type=str,
+                        choices=["scale", "scale4x", "noise", "noise_scale", "noise_scale4x"],
+                        help="method for target model")
     parser.add_argument("--color", type=str, choices=["rgb", "y", "y_matlab"], default="y_matlab", help="colorspace")
     parser.add_argument("--jpeg-quality", type=int, default=75, help="jpeg quality for noise/noise_scale")
     parser.add_argument("--jpeg-times", type=int, default=1, help="number of repetitions of jpeg compression")
@@ -112,7 +115,9 @@ def main():
 
     args = parse_args()
     ctx = Waifu2x(model_dir=args.model_dir, gpus=args.gpu)
-    ctx.load_model(args.method, args.noise_level)
+    model_method = args.model_method if args.model_method is not None else args.method
+
+    ctx.load_model(model_method, args.noise_level)
 
     if path.isdir(args.input):
         files = ImageLoader.listdir(args.input)
@@ -134,7 +139,7 @@ def main():
             groundtruth = NF.crop_mod(x, 4)
             x = make_input_waifu2x(groundtruth, args)
             t = time.time()
-            z, _ = ctx.convert(x, None, args.method, args.noise_level,
+            z, _ = ctx.convert(x, None, model_method, args.noise_level,
                                args.tile_size, args.batch_size,
                                tta=args.tta, enable_amp=not args.disable_amp)
             time_sum += time.time() - t
