@@ -91,30 +91,32 @@ class Waifu2x():
 
         self._setup()
 
-    def load_model_all(self):
+    def load_model_all(self, load_4x=True):
         self.scale_model = load_model(
             path.join(self.model_dir, "scale2x.pth"),
             map_location=self.device)[0]
-        if path.exists(path.join(self.model_dir, "scale4x.pth")):
-            self.scale4x_model = load_model(
-                path.join(self.model_dir, "scale4x.pth"),
-                map_location=self.device)[0]
-        self.noise_models = [
-            load_model(
-                path.join(self.model_dir, f"noise{noise_level}.pth"),
-                map_location=self.device)[0]
-            for noise_level in range(4)]
         self.noise_scale_models = [
             load_model(
                 path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
                 map_location=self.device)[0]
             for noise_level in range(4)]
-        self.noise_scale4x_models = [
+        self.noise_models = [
             load_model(
-                path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
+                path.join(self.model_dir, f"noise{noise_level}.pth"),
                 map_location=self.device)[0]
-            if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale4x.pth")) else None
             for noise_level in range(4)]
+
+        if load_4x:
+            if path.exists(path.join(self.model_dir, "scale4x.pth")):
+                self.scale4x_model = load_model(
+                    path.join(self.model_dir, "scale4x.pth"),
+                    map_location=self.device)[0]
+                self.noise_scale4x_models = [
+                    load_model(
+                        path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
+                        map_location=self.device)[0]
+                    if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale4x.pth")) else None
+                    for noise_level in range(4)]
 
         self._setup()
 
