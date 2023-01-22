@@ -1,6 +1,7 @@
 # helper models for onnxruntime-web
 import torch
 from torch.nn import functional as F
+from torchvision.transforms import functional as TF
 from .model import I2IBaseModel
 from typing import List
 
@@ -34,9 +35,102 @@ class ONNXReflectionPadding(I2IBaseModel):
         )
 
 
-if __name__ == "__main__":
+class ONNXTTASplit(I2IBaseModel):
+    def __init__(self):
+        super().__init__({}, scale=1, offset=0, in_channels=3)
+
+    def forward(self, x: torch.Tensor, tta_level: int):
+        if tta_level == 2:
+            hflip = TF.hflip(x)
+            x = torch.cat([x, hflip], dim=0)
+        elif tta_level == 4:
+            hflip = TF.hflip(x)
+            vflip = TF.vflip(x)
+            vhflip = TF.hflip(vflip)
+            x = torch.cat([x, hflip, vflip, vhflip], dim=0)
+        # tta_level=8 is not supported due to rot90 is not supported
+
+        return x
+
+    def export_onnx(self, f, **kwargs):
+        """
+         const ses = await ort.InferenceSession.create('./tta_split.onnx');
+         var tta_level = 2;
+         var tta_level = BigInt(tta_level);
+         var out = await ses.run({"x": x, "tta_level": tta_level});
+        """
+        x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
+        tta_level = 2
+        model = torch.jit.script(self.to_inference_model())
+        torch.onnx.export(
+            model,
+            [x, tta_level],
+            f,
+            input_names=["x", "tta_level"],
+            output_names=["y"],
+            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
+                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            **kwargs
+        )
+
+
+class ONNXTTAMerge(I2IBaseModel):
+    def __init__(self):
+        super().__init__({}, scale=1, offset=0, in_channels=3)
+
+    def forward(self, x: torch.Tensor, tta_level: int):
+        if tta_level == 2:
+            x = torch.clamp((x[0] + TF.hflip(x[1])).unsqueeze(0) / 2., 0., 1.)
+        elif tta_level == 4:
+            hflip = TF.hflip(x[1])
+            vflip = TF.vflip(x[2])
+            vhflip = TF.vflip(TF.hflip(x[3]))
+            x = torch.clamp((x[0] + hflip + vflip + vhflip).unsqueeze(0) / 4., 0., 1.)
+        return x
+
+    def export_onnx(self, f, **kwargs):
+        """
+         const ses = await ort.InferenceSession.create('./tta_merge.onnx');
+         var tta_level = 2;
+         var tta_level = BigInt(tta_level);
+         var out = await ses.run({"x": x, "tta_level": tta_level});
+        """
+        x = torch.rand([2, 3, 256, 256], dtype=torch.float32)
+        tta_level = 2
+        model = torch.jit.script(self.to_inference_model())
+        torch.onnx.export(
+            model,
+            [x, tta_level],
+            f,
+            input_names=["x", "tta_level"],
+            output_names=["y"],
+            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
+                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            **kwargs
+        )
+
+
+def _test_pad():
     import onnx
     pad = ONNXReflectionPadding()
     pad.export_onnx("./tmp/pad.onnx")
     model = onnx.load("./tmp/pad.onnx")
     print(model.graph)
+
+
+def _test_tta():
+    import onnx
+    tta_split = ONNXTTASplit()
+    tta_split.export_onnx("./tmp/tta_split.onnx")
+    model = onnx.load("./tmp/tta_split.onnx")
+    print(model.graph)
+
+    tta_merge = ONNXTTAMerge()
+    tta_merge.export_onnx("./tmp/tta_merge.onnx")
+    model = onnx.load("./tmp/tta_merge.onnx")
+    print(model.graph)
+
+
+
+if __name__ == "__main__":
+    _test_tta()
