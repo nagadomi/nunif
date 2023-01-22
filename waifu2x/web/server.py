@@ -124,8 +124,8 @@ def setup():
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
     photo_ctx = Waifu2x(model_dir=args.photo_model_dir, gpus=args.gpu)
 
-    art_ctx.load_model_all()
-    photo_ctx.load_model_all()
+    art_ctx.load_model_all(load_4x=False)
+    photo_ctx.load_model_all(load_4x=False)
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
     cache_gc = CacheGC(cache, args.cache_ttl * 60)
