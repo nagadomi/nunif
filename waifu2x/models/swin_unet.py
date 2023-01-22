@@ -205,7 +205,6 @@ class SwinUNet(I2IBaseModel):
             scale_factor=1)
 
     def forward(self, x):
-        assert x.shape[2] % 64 == 0
         z = self.unet(x)
         if self.training:
             return z
@@ -227,7 +226,6 @@ class UpSwinUNet(I2IBaseModel):
             scale_factor=2)
 
     def forward(self, x):
-        assert x.shape[2] % 64 == 0
         z = self.unet(x)
         if self.training:
             return z
@@ -248,7 +246,6 @@ class UpSwinUNet4x(I2IBaseModel):
             scale_factor=4)
 
     def forward(self, x):
-        assert x.shape[2] % 64 == 0
         z = self.unet(x)
         if self.training:
             return z
@@ -263,6 +260,8 @@ if __name__ == "__main__":
                   UpSwinUNet(in_channels=3, out_channels=3),
                   UpSwinUNet4x(in_channels=3, out_channels=3)):
         model = model.to(device)
+        # Note: input size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0`,
+        # e.g. 64,112,160,256,400,640,1024
         x = torch.zeros((1, 3, 64, 64)).to(device)
         with torch.no_grad():
             z = model(x)
