@@ -3,14 +3,6 @@ function gen_arch_config()
 {
     var config = {};
     // [scale, offset]
-    config["cunet"] = {art: {}}
-    config["cunet"]["art"] = {
-        scale2x: {scale: 2, offset: 36}
-    };
-    for (var i = 0; i < 4; ++i) {
-        config["cunet"]["art"]["noise" + i + "_scale2x"] = {scale: 2, offset: 36};
-        config["cunet"]["art"]["noise" + i] = {scale: 1, offset: 28};
-    }
     config["swin_unet"] = {art: {}}
     config["swin_unet"]["art"] = {
         scale2x: {scale: 2, offset: 16},
@@ -111,16 +103,40 @@ const onnx_runner = {
         p.z_w = Math.floor(p.x_w * scale);
         return p
     },
-    tiled_render: async function(image_data, config,
+    find_tile_size: (tile_size, image_data, config) => {
+        const min_size = Math.max(Math.max(image_data.width, image_data.height) + config.offset * 2, 64);
+        if (min_size > tile_size) {
+            return tile_size;
+        }
+        for (var i = min_size; i < min_size * 4; ++i) {
+            if ((i - 16) % 12 == 0 && (i - 16) % 16 == 0) {
+                if (i < tile_size) {
+                    tile_size = i;
+                }
+                return tile_size;
+            }
+        }
+        return 64; // default
+    },
+    shuffleArray: (array) => {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    },
+    tiled_render: async function(image_data, config, tile_size, tile_random,
                                  output_canvas, block_callback)
     {
-        const TILE_SIZE = 256;
+        // NOTE: allowed tile_size = 64, 112, 160, 256, 400, 1024, ...
+        // tile_size must be `((tile_size - 16) % 12 == 0 && (tile_size - 16) % 16 == 0)`
         this.stop_flag = false; // reset flag
         if (this.running) {
             console.log("Already running");
             return;
         }
         this.running = true;
+        tile_size = this.find_tile_size(tile_size, image_data, config);
+        console.log(`tile size = ${tile_size}`);
 
         // setup output canvas
         output_canvas.width = image_data.width * config.scale;
@@ -132,7 +148,7 @@ const onnx_runner = {
 
         // preprocessing, padding
         var x = this.to_input(image_data.data, image_data.width, image_data.height);
-        var p = this.calc_padding_param(x, config.scale, config.offset, TILE_SIZE);
+        var p = this.calc_padding_param(x, config.scale, config.offset, tile_size);
         x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]));
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
@@ -146,34 +162,48 @@ const onnx_runner = {
         input_ctx.putImageData(image_data, 0, 0);
 
         // tiled rendering
-        var output_size = TILE_SIZE * config.scale - config.offset * 2;
-        var output_size_in_input = TILE_SIZE - Math.ceil(config.offset / config.scale) * 2;
+        var output_size = tile_size * config.scale - config.offset * 2;
+        var output_size_in_input = tile_size - Math.ceil(config.offset / config.scale) * 2;
         var all_blocks = p.h_blocks * p.w_blocks;
         var progress = 0;
+
+        console.time("render");
+        // create index list
+        tiles = [];
         for (var i = 0; i < h; i += output_size_in_input) {
             for (var j = 0; j < w; j += output_size_in_input) {
-                if (!(i + TILE_SIZE <= h && j + TILE_SIZE <= w)) {
+                if (!(i + tile_size <= h && j + tile_size <= w)) {
                     continue;
                 }
                 var ii = i * config.scale;
                 var jj = j * config.scale;
-                var tile_image_data = input_ctx.getImageData(j, i, TILE_SIZE, TILE_SIZE);
-                var tile_x = this.to_input(tile_image_data.data,
-                                           tile_image_data.width, tile_image_data.height);
-                var tile_output = await model.run({x: tile_x});
-                var tile_y = tile_output.y;
-                var output_image_data = this.to_image_data(tile_y.data, tile_y.dims[3], tile_y.dims[2]);
-                output_ctx.putImageData(output_image_data, jj, ii);
-                progress += 1;
-                if (this.stop_flag) {
-                    block_callback(progress, all_blocks, false);
-                    this.running = false;
-                    return;
-                } else {
-                    block_callback(progress, all_blocks, true);
-                }
+                tiles.push([i, j, ii, jj])
             }
         }
+        if (tile_random) {
+            this.shuffleArray(tiles);
+        }
+        block_callback(0, all_blocks, true);
+        for (var k = 0; k < tiles.length; ++k) {
+            const [i, j, ii, jj] = tiles[k];
+            var tile_image_data = input_ctx.getImageData(j, i, tile_size, tile_size);
+            var tile_x = this.to_input(tile_image_data.data,
+                                       tile_image_data.width, tile_image_data.height);
+            var tile_output = await model.run({x: tile_x});
+            var tile_y = tile_output.y;
+            var output_image_data = this.to_image_data(tile_y.data, tile_y.dims[3], tile_y.dims[2]);
+            output_ctx.putImageData(output_image_data, jj, ii);
+            progress += 1;
+            if (this.stop_flag) {
+                block_callback(progress, all_blocks, false);
+                this.running = false;
+                console.timeEnd("render");
+                return;
+            } else {
+                block_callback(progress, all_blocks, true);
+            }
+        }
+        console.timeEnd("render");
         this.running = false;
     },
     padding: async function(x, left, right, top, bottom) {
@@ -231,14 +261,14 @@ $(function () {
                 return;
             }
             method = "noise" + noise_level;
-            arch = "cunet";
+            arch = "swin_unet";
         } else if (scale == 2) {
             if (noise_level == -1) {
                 method = "scale2x";
             } else {
                 method = "noise" + noise_level + "_scale2x";
             }
-            arch = "cunet";
+            arch = "swin_unet";
         } else if (scale == 4) {
             if (noise_level == -1) {
                 method = "scale4x";
@@ -252,22 +282,25 @@ $(function () {
             set_message("(ﾟдﾟ) Model Not found!");
             return;
         }
+        const tile_size = parseInt($("select[name=tile_size]").val());
+        const tile_random = $("input[name=tile_random]").prop("checked");
 
         var canvas = $("#src").get(0);
         var ctx = canvas.getContext("2d", {willReadFrequently: true});
+        $("#dest").css({"width": "auto", "height": "auto"});
         var output_canvas = $("#dest").get(0);
         var image_data = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
         set_message("(・∀・)φ ... ", -1);
         await onnx_runner.tiled_render(
-            image_data, config,
+            image_data, config, tile_size, tile_random,
             output_canvas, (progress, max_progress, processing) => {
                 if (processing) {
                     progress_message = "(" + progress + "/" + max_progress + ")";
-                    loop_message(["( ・∀・)φ　 " + progress_message,
-                                  "( ・∀・) φ　" + progress_message], 0.5);
+                    loop_message(["( ・∀・)" + (progress % 2 == 0 ? "φ　 ":" φ　") + progress_message,
+                                  "( ・∀・)" + (progress % 2 != 0 ? "φ　 ":" φ　") + progress_message], 0.5);
                 } else {
-                    set_message("(ﾟдﾟ) stopped!!");
+                    set_message("(ﾟдﾟ) !!", 1);
                 }
             });
         if (!onnx_runner.stop_flag) {
@@ -282,27 +315,6 @@ $(function () {
             }, "image/png");
         }
     };
-    $("#start").click(async () => {
-        var file = $("#file").get(0);
-        if (file.files.length > 0 && file.files[0].type.match(/image/)) {
-            await process(file.files[0]);
-        } else {
-            set_message("( ﾟДﾟ) No Image Found");
-        }
-    });
-    $("#file").change(() => {
-        if (onnx_runner.running) {
-            console.log("Already running");
-            return;
-        }
-        if (file.files.length > 0 && file.files[0].type.match(/image/)) {
-            set_input_image(file.files[0]);
-            set_message("( ・∀・)b");
-        }
-    });
-    $("#stop").click(() => {
-        onnx_runner.stop_flag = true;
-    });
     function set_input_image(file) {
         var reader = new FileReader();
         reader.addEventListener("load", function() {
@@ -317,7 +329,7 @@ $(function () {
                 ctx.drawImage(img, 0, 0);
                 // set input preview size
                 var h_scale = 128 / img.naturalHeight;
-                $("#src").css({width: Math.floor(h_scale * img.naturalWidth)});
+                $("#src").css({width: Math.floor(h_scale * img.naturalWidth), height: 128});
 
                 // clear output canvas
                 var canvas = $("#dest").get(0);
@@ -325,9 +337,26 @@ $(function () {
                 canvas.height = 128;
                 var ctx = canvas.getContext("2d");
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
+                $("#dest").css({width: 128, height: 128});
             };
         });
         reader.readAsDataURL(file);
+    };
+    function clear_input_image(file) {
+        var canvas = $("#src").get(0);
+        canvas.width = 128;
+        canvas.height = 128;
+        var ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        $("#src").css({width: 128, height: 128});
+
+        var canvas = $("#dest").get(0);
+        canvas.width = 128;
+        canvas.height = 128;
+        var ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        $("#dest").css({width: "auto", height: "auto"});
     };
 
     function set_message(text, second=2, html=false) {
@@ -358,5 +387,55 @@ $(function () {
             }
         }, second * 1000);
     };
-});
 
+    $("#start").click(async () => {
+        var file = $("#file").get(0);
+        if (file.files.length > 0 && file.files[0].type.match(/image/)) {
+            await process(file.files[0]);
+        } else {
+            set_message("( ﾟДﾟ) No Image Found");
+        }
+    });
+    $("#file").change(() => {
+        if (onnx_runner.running) {
+            console.log("Already running");
+            return;
+        }
+        if (file.files.length > 0 && file.files[0].type.match(/image/)) {
+            set_input_image(file.files[0]);
+            set_message("( ・∀・)b");
+        } else {
+            clear_input_image();
+            set_message("(・A・)", 1);
+        }
+    });
+    $("#stop").click(() => {
+        onnx_runner.stop_flag = true;
+    });
+
+    $("#src").click(() => {
+        var canvas = $("#src").get(0);
+        var css_width = parseInt($("#src").css("width"));
+        if (css_width != canvas.width) {
+            $("#src").css({width: canvas.width, height: canvas.height});
+        } else {
+            var height = 128;
+            var width = Math.floor((height / canvas.height) * canvas.width);
+            $("#src").css({width: width, height: height});
+        }
+    });
+    $("#dest").click(() => {
+        var width = $("#dest").css("width");
+        var canvas = $("#dest").get(0);
+        if (width == "auto" || parseInt(width) == canvas.width) {
+            var min_size = Math.min(canvas.width, canvas.height);
+            if (min_size > 320) {
+                var scale = 320 / min_size;
+                $("#dest").css({"width": Math.floor(scale * canvas.width),
+                                "height": Math.floor(scale * canvas.height)});
+            }
+        } else {
+            $("#dest").css({"width": "auto", "height": "auto"});
+        }
+    });
+});
