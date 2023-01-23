@@ -160,6 +160,7 @@ class Waifu2x():
     def convert(self, x, alpha, method, noise_level,
                 tile_size=256, batch_size=4,
                 tta=False, enable_amp=False):
+        assert (not torch.is_grad_enabled())
         assert (x.shape[0] == 3)
         assert (alpha is None or alpha.shape[0] == 1 and alpha.shape[1:] == x.shape[1:])
         assert (method in ("scale", "scale4x", "noise_scale", "noise_scale4x", "noise"))

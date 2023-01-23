@@ -197,7 +197,7 @@ class SwinUNet(I2IBaseModel):
     name_alias = ("waifu2x.swinunet",)
 
     def __init__(self, in_channels=3, out_channels=3):
-        super().__init__(locals(), scale=1, offset=8, in_channels=in_channels)
+        super().__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -218,7 +218,7 @@ class UpSwinUNet(I2IBaseModel):
     name_alias = ("waifu2x.upswinunet",)
 
     def __init__(self, in_channels=3, out_channels=3):
-        super().__init__(locals(), scale=2, offset=16, in_channels=in_channels)
+        super().__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=4)
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -238,7 +238,7 @@ class UpSwinUNet4x(I2IBaseModel):
     name = "waifu2x.swin_unet_4x"
 
     def __init__(self, in_channels=3, out_channels=3):
-        super().__init__(locals(), scale=4, offset=32, in_channels=in_channels)
+        super().__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=4)
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
