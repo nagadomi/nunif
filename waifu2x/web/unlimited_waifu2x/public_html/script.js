@@ -27,11 +27,7 @@ const CONFIG = {
         }
     },
     get_helper_path: function(name) {
-        if (name == "pad") {
-            return "models/utils/pad.onnx";
-        } else {
-            return null;
-        }
+        return `models/utils/${name}.onnx`;
     }
 };
 
@@ -124,7 +120,9 @@ const onnx_runner = {
             [array[i], array[j]] = [array[j], array[i]];
         }
     },
-    tiled_render: async function(image_data, config, tile_size, tile_random,
+    tiled_render: async function(image_data, config,
+                                 tta_level,
+                                 tile_size, tile_random,
                                  output_canvas, block_callback)
     {
         // NOTE: allowed tile_size = 64, 112, 160, 256, 400, 1024, ...
@@ -189,8 +187,14 @@ const onnx_runner = {
             var tile_image_data = input_ctx.getImageData(j, i, tile_size, tile_size);
             var tile_x = this.to_input(tile_image_data.data,
                                        tile_image_data.width, tile_image_data.height);
+            if (tta_level > 0) {
+                tile_x = await this.tta_split(tile_x, BigInt(tta_level));
+            }
             var tile_output = await model.run({x: tile_x});
             var tile_y = tile_output.y;
+            if (tta_level > 0) {
+                tile_y = await this.tta_merge(tile_y, BigInt(tta_level));
+            }
             var output_image_data = this.to_image_data(tile_y.data, tile_y.dims[3], tile_y.dims[2]);
             output_ctx.putImageData(output_image_data, jj, ii);
             progress += 1;
@@ -218,6 +222,22 @@ const onnx_runner = {
             "top": top, "bottom": bottom});
         return out.y;
     },
+    tta_split: async function(x, tta_level) {
+        const ses = await this.get_session(CONFIG.get_helper_path("tta_split"));
+        tta_level = new ort.Tensor('int64', BigInt64Array.from([tta_level]), []);
+        var out = await ses.run({
+            "x": x,
+            "tta_level": tta_level});
+        return out.y;
+    },
+    tta_merge: async function(x, tta_level) {
+        const ses = await this.get_session(CONFIG.get_helper_path("tta_merge"));
+        tta_level = new ort.Tensor('int64', BigInt64Array.from([tta_level]), []);
+        var out = await ses.run({
+            "x": x,
+            "tta_level": tta_level});
+        return out.y;
+    },
     get_session: async function(onnx_path) {
         if (!(onnx_path in this.sessions)) {
             try {
@@ -237,7 +257,6 @@ const onnx_runner = {
 /* UI */
 $(function () {
     /* init */
-    ort.env.debug = true;
     ort.env.wasm.proxy = true;
 
     function removeAlpha(blob)
@@ -257,7 +276,7 @@ $(function () {
         var method;
         if (scale == 1) {
             if (noise_level == -1) {
-                set_message("(ﾟдﾟ) No Noise Reduction selected!");
+                set_message("(・A・) No Noise Reduction selected!");
                 return;
             }
             method = "noise" + noise_level;
@@ -279,11 +298,12 @@ $(function () {
         }
         const config = CONFIG.get_config(arch, style, method);
         if (config == null) {
-            set_message("(ﾟдﾟ) Model Not found!");
+            set_message("(・A・) Model Not found!");
             return;
         }
         const tile_size = parseInt($("select[name=tile_size]").val());
         const tile_random = $("input[name=tile_random]").prop("checked");
+        const tta_level = parseInt($("select[name=tta]").val());
 
         var canvas = $("#src").get(0);
         var ctx = canvas.getContext("2d", {willReadFrequently: true});
@@ -293,14 +313,16 @@ $(function () {
 
         set_message("(・∀・)φ ... ", -1);
         await onnx_runner.tiled_render(
-            image_data, config, tile_size, tile_random,
+            image_data, config,
+            tta_level,
+            tile_size, tile_random,
             output_canvas, (progress, max_progress, processing) => {
                 if (processing) {
                     progress_message = "(" + progress + "/" + max_progress + ")";
                     loop_message(["( ・∀・)" + (progress % 2 == 0 ? "φ　 ":" φ　") + progress_message,
                                   "( ・∀・)" + (progress % 2 != 0 ? "φ　 ":" φ　") + progress_message], 0.5);
                 } else {
-                    set_message("(ﾟдﾟ) !!", 1);
+                    set_message("(ﾟ∀ﾟ)!!", 1);
                 }
             });
         if (!onnx_runner.stop_flag) {
@@ -325,7 +347,7 @@ $(function () {
                 var canvas = $("#src").get(0);
                 canvas.width = img.naturalWidth;
                 canvas.height = img.naturalHeight;
-                var ctx = canvas.getContext("2d");
+                var ctx = canvas.getContext("2d", {willReadFrequently: true});
                 ctx.drawImage(img, 0, 0);
                 // set input preview size
                 var h_scale = 128 / img.naturalHeight;
@@ -335,7 +357,7 @@ $(function () {
                 var canvas = $("#dest").get(0);
                 canvas.width = 128;
                 canvas.height = 128;
-                var ctx = canvas.getContext("2d");
+                var ctx = canvas.getContext("2d", {willReadFrequently: true});
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 $("#dest").css({width: 128, height: 128});
             };
@@ -346,14 +368,14 @@ $(function () {
         var canvas = $("#src").get(0);
         canvas.width = 128;
         canvas.height = 128;
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.getContext("2d", {willReadFrequently: true});
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         $("#src").css({width: 128, height: 128});
 
         var canvas = $("#dest").get(0);
         canvas.width = 128;
         canvas.height = 128;
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.getContext("2d", {willReadFrequently: true});
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         $("#dest").css({width: "auto", height: "auto"});
@@ -393,7 +415,7 @@ $(function () {
         if (file.files.length > 0 && file.files[0].type.match(/image/)) {
             await process(file.files[0]);
         } else {
-            set_message("( ﾟДﾟ) No Image Found");
+            set_message("(ﾟ∀ﾟ) No Image Found");
         }
     });
     $("#file").change(() => {
@@ -406,7 +428,7 @@ $(function () {
             set_message("( ・∀・)b");
         } else {
             clear_input_image();
-            set_message("(・A・)", 1);
+            set_message("(ﾟ∀ﾟ)", 1);
         }
     });
     $("#stop").click(() => {
@@ -429,8 +451,8 @@ $(function () {
         var canvas = $("#dest").get(0);
         if (width == "auto" || parseInt(width) == canvas.width) {
             var min_size = Math.min(canvas.width, canvas.height);
-            if (min_size > 320) {
-                var scale = 320 / min_size;
+            if (min_size > 480) {
+                var scale = 480 / min_size;
                 $("#dest").css({"width": Math.floor(scale * canvas.width),
                                 "height": Math.floor(scale * canvas.height)});
             }
