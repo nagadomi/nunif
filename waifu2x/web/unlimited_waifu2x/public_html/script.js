@@ -83,20 +83,69 @@ const onnx_runner = {
         }
         return new ImageData(rgba, width, height);
     },
-    calc_padding_param: function(x, scale, offset, tile_size) {
-        // from nunif/utils/render.py
+    check_single_color: function(rgba) {
+        const bg_color = 1.0;
+        var r = rgba[0];
+        var g = rgba[1];
+        var b = rgba[2];
+        var a = rgba[3];
+        for (var i = 0; i < rgba.length; i += 4) {
+            if (r != rgba[i + 0] || g != rgba[i + 1] || b != rgba[i + 2] || a != rgba[i + 3]) {
+                return null;
+            }
+        }
+        a = a / 255.0;
+        r = a * (r / 255.0) + (1 - a) * bg_color;
+        g = a * (g / 255.0) + (1 - a) * bg_color;
+        b = a * (b / 255.0) + (1 - a) * bg_color;
+        return [r, g, b];
+    },
+    create_single_color_image_data: function(rgb, size) {
+        const rgba = new Uint8ClampedArray(size * size * 4);
+        var r = rgb[0] * 255;
+        var g = rgb[1] * 255;
+        var b = rgb[2] * 255;
+        for (var i = 0; i < rgba.length; i += 4) {
+            rgba[i + 0] = r;
+            rgba[i + 1] = g;
+            rgba[i + 2] = b;
+            rgba[i + 3] = 255;
+        }
+        return new ImageData(rgba, size, size);
+    },
+    calc_parameters: function(x, scale, offset, tile_size, blend_size) {
+        // from nunif/utils/seam_blending.py
         var p = {};
-        p.x_h = x.dims[2];
-        p.x_w = x.dims[3];
-        input_offset = Math.ceil(offset / scale);
-        process_size = tile_size - input_offset * 2;
-        p.h_blocks = Math.floor(p.x_h / process_size) + (p.x_h % process_size == 0 ? 0:1);
-        p.w_blocks = Math.floor(p.x_w / process_size) + (p.x_w % process_size == 0 ? 0:1);
-        h = (p.h_blocks * process_size) + input_offset * 2;
-        w = (p.w_blocks * process_size) + input_offset * 2;
-        p.pad = [input_offset, (w - input_offset) - p.x_w, input_offset, (h - input_offset) - p.x_h];
-        p.z_h = Math.floor(p.x_h * scale);
-        p.z_w = Math.floor(p.x_w * scale);
+        const x_h = x.dims[2];
+        const x_w = x.dims[3];
+
+        p.y_h = x_h * scale;
+        p.y_w = x_w * scale;
+
+        p.input_offset = Math.ceil(offset / scale);
+        p.input_blend_size = Math.ceil(blend_size / scale);
+        p.input_tile_step = tile_size - (p.input_offset * 2 + p.input_blend_size);
+        p.output_tile_step = p.input_tile_step * scale;
+
+        let [h_blocks, w_blocks, input_h, input_w] = [0, 0, 0, 0];
+        while (input_h < x_h + p.input_offset * 2) {
+            input_h = h_blocks * p.input_tile_step + tile_size;
+            h_blocks += 1;
+        }
+        while (input_w < x_w + p.input_offset * 2) {
+            input_w = w_blocks * p.input_tile_step + tile_size;
+            w_blocks += 1;
+        }
+        p.h_blocks = h_blocks;
+        p.w_blocks = w_blocks;
+        p.y_buffer_h = input_h * scale;
+        p.y_buffer_w = input_w * scale;
+        p.pad = [
+            p.input_offset,
+            input_w - (x_w + p.input_offset),
+            p.input_offset,
+            input_h - (x_h + p.input_offset)
+        ];
         return p
     },
     find_tile_size: (tile_size, image_data, config) => {
@@ -146,7 +195,7 @@ const onnx_runner = {
 
         // preprocessing, padding
         var x = this.to_input(image_data.data, image_data.width, image_data.height);
-        var p = this.calc_padding_param(x, config.scale, config.offset, tile_size);
+        var p = this.calc_parameters(x, config.scale, config.offset, tile_size, 0);
         x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]));
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
@@ -160,21 +209,18 @@ const onnx_runner = {
         input_ctx.putImageData(image_data, 0, 0);
 
         // tiled rendering
-        var output_size = tile_size * config.scale - config.offset * 2;
-        var output_size_in_input = tile_size - Math.ceil(config.offset / config.scale) * 2;
         var all_blocks = p.h_blocks * p.w_blocks;
         var progress = 0;
 
         console.time("render");
         // create index list
         tiles = [];
-        for (var i = 0; i < h; i += output_size_in_input) {
-            for (var j = 0; j < w; j += output_size_in_input) {
-                if (!(i + tile_size <= h && j + tile_size <= w)) {
-                    continue;
-                }
-                var ii = i * config.scale;
-                var jj = j * config.scale;
+        for (var h_i = 0; h_i < p.h_blocks; h_i += 1) {
+            for (var w_i = 0; w_i < p.w_blocks; w_i += 1) {
+                const i = h_i * p.input_tile_step;
+                const j = w_i * p.input_tile_step;
+                const ii = h_i * p.output_tile_step;
+                const jj = w_i * p.output_tile_step;
                 tiles.push([i, j, ii, jj])
             }
         }
@@ -185,17 +231,23 @@ const onnx_runner = {
         for (var k = 0; k < tiles.length; ++k) {
             const [i, j, ii, jj] = tiles[k];
             var tile_image_data = input_ctx.getImageData(j, i, tile_size, tile_size);
-            var tile_x = this.to_input(tile_image_data.data,
-                                       tile_image_data.width, tile_image_data.height);
-            if (tta_level > 0) {
-                tile_x = await this.tta_split(tile_x, BigInt(tta_level));
+            var single_color = this.check_single_color(tile_image_data.data);
+            if (single_color == null) {
+                var tile_x = this.to_input(tile_image_data.data,
+                                           tile_image_data.width, tile_image_data.height);
+                if (tta_level > 0) {
+                    tile_x = await this.tta_split(tile_x, BigInt(tta_level));
+                }
+                var tile_output = await model.run({x: tile_x});
+                var tile_y = tile_output.y;
+                if (tta_level > 0) {
+                    tile_y = await this.tta_merge(tile_y, BigInt(tta_level));
+                }
+                var output_image_data = this.to_image_data(tile_y.data, tile_y.dims[3], tile_y.dims[2]);
+            } else {
+                var output_image_data = this.create_single_color_image_data(
+                    single_color, tile_size * config.scale - config.offset * 2);
             }
-            var tile_output = await model.run({x: tile_x});
-            var tile_y = tile_output.y;
-            if (tta_level > 0) {
-                tile_y = await this.tta_merge(tile_y, BigInt(tta_level));
-            }
-            var output_image_data = this.to_image_data(tile_y.data, tile_y.dims[3], tile_y.dims[2]);
             output_ctx.putImageData(output_image_data, jj, ii);
             progress += 1;
             if (this.stop_flag) {
@@ -238,6 +290,19 @@ const onnx_runner = {
             "tta_level": tta_level});
         return out.y;
     },
+    create_seam_blending_filter: async function(scale, offset, tile_size) {
+        const ses = await this.get_session(CONFIG.get_helper_path("create_seam_blending_filter"));
+        scale = new ort.Tensor('int64', BigInt64Array.from([scale]), []);
+        offset = new ort.Tensor('int64', BigInt64Array.from([offset]), []);
+        tile_size = new ort.Tensor('int64', BigInt64Array.from([tile_size]), []);
+        var out = await ses.run({
+            "scale": scale,
+            "offset": offset,
+            "tile_size": tile_size,
+        });
+        return out.y;
+    },
+
     get_session: async function(onnx_path) {
         if (!(onnx_path in this.sessions)) {
             try {
@@ -307,7 +372,7 @@ $(function () {
 
         var canvas = $("#src").get(0);
         var ctx = canvas.getContext("2d", {willReadFrequently: true});
-        $("#dest").css({"width": "auto", "height": "auto"});
+        $("#dest").css({width: "auto", height: "auto"});
         var output_canvas = $("#dest").get(0);
         var image_data = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
@@ -342,7 +407,7 @@ $(function () {
         reader.addEventListener("load", function() {
             var img = new Image();
             img.src = reader.result;
-            img.onload = async () => {
+            img.onload = () => {
                 // set input canvas
                 var canvas = $("#src").get(0);
                 canvas.width = img.naturalWidth;
@@ -360,8 +425,10 @@ $(function () {
                 var ctx = canvas.getContext("2d", {willReadFrequently: true});
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 $("#dest").css({width: 128, height: 128});
+                $("#start").prop("disabled", false);
             };
         });
+        $("#start").prop("disabled", true);
         reader.readAsDataURL(file);
     };
     function clear_input_image(file) {
@@ -377,7 +444,6 @@ $(function () {
         canvas.height = 128;
         var ctx = canvas.getContext("2d", {willReadFrequently: true});
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
         $("#dest").css({width: "auto", height: "auto"});
     };
 
