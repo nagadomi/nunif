@@ -3,7 +3,6 @@ import torch
 from torch.nn import functional as F
 from torchvision.transforms import functional as TF
 from .model import I2IBaseModel
-from typing import List
 
 
 class ONNXReflectionPadding(I2IBaseModel):
@@ -110,6 +109,39 @@ class ONNXTTAMerge(I2IBaseModel):
         )
 
 
+class ONNXCreateSeamBlendingFilter(I2IBaseModel):
+    def __init__(self):
+        super().__init__({}, scale=1, offset=0, in_channels=3)
+
+    def forward(self, scale: int, offset: int, tile_size: int):
+        out_channels = 3
+        blend_size = 4  # fixed
+        model_output_size = tile_size * scale - offset * 2
+        inner_tile_size = model_output_size - blend_size * 2
+        x = torch.ones((out_channels, inner_tile_size, inner_tile_size), dtype=torch.float32)
+        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.8)
+        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.6)
+        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.4)
+        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.2)
+
+        return x
+
+    def export_onnx(self, f, **kwargs):
+        scale = 2
+        offset = 16
+        tile_size = 64
+        model = torch.jit.script(self.to_inference_model())
+        torch.onnx.export(
+            model,
+            [scale, offset, tile_size],
+            f,
+            input_names=["scale", "offset", "tile_size"],
+            output_names=["y"],
+            dynamic_axes={'y': {0: "channels", 1: "height", 2: "width"}},
+            **kwargs
+        )
+
+
 def _test_pad():
     import onnx
     pad = ONNXReflectionPadding()
@@ -131,6 +163,13 @@ def _test_tta():
     print(model.graph)
 
 
+def _test_blend_filter():
+    import onnx
+    pad = ONNXCreateSeamBlendingFilter()
+    pad.export_onnx("./tmp/create_seam_blending_filter.onnx")
+    model = onnx.load("./tmp/create_seam_blending_filter.onnx")
+    print(model.graph)
+
 
 if __name__ == "__main__":
-    _test_tta()
+    pass

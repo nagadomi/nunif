@@ -15,6 +15,7 @@ function gen_arch_config()
     return config;
 }
 
+
 const CONFIG = {
     arch: gen_arch_config(),
     get_config: function(arch, style, method) {
@@ -100,18 +101,16 @@ const onnx_runner = {
         b = a * (b / 255.0) + (1 - a) * bg_color;
         return [r, g, b];
     },
-    create_single_color_image_data: function(rgb, size) {
-        const rgba = new Uint8ClampedArray(size * size * 4);
-        var r = rgb[0] * 255;
-        var g = rgb[1] * 255;
-        var b = rgb[2] * 255;
-        for (var i = 0; i < rgba.length; i += 4) {
-            rgba[i + 0] = r;
-            rgba[i + 1] = g;
-            rgba[i + 2] = b;
-            rgba[i + 3] = 255;
+    create_single_color_tensor: function(rgb, size) {
+        // CHW
+        const data = new Float32Array(size * size * 3);
+        for (var c = 0; c < 3; c += 1) {
+            const v = rgb[c];
+            for (var i = 0; i < size * size; i += 1) {
+                data[c * size * size + i] = v;
+            }
         }
-        return new ImageData(rgba, size, size);
+        return new ort.Tensor("float32", data, [1, 3, size, size]);
     },
     calc_parameters: function(x, scale, offset, tile_size, blend_size) {
         // from nunif/utils/seam_blending.py
@@ -194,8 +193,9 @@ const onnx_runner = {
         const model = await this.get_session(config.path);
 
         // preprocessing, padding
+        const blend_size = 4; // for SwinUNet models
         var x = this.to_input(image_data.data, image_data.width, image_data.height);
-        var p = this.calc_parameters(x, config.scale, config.offset, tile_size, 0);
+        var p = this.calc_parameters(x, config.scale, config.offset, tile_size, blend_size);
         x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]));
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
@@ -210,6 +210,22 @@ const onnx_runner = {
 
         // tiled rendering
         var all_blocks = p.h_blocks * p.w_blocks;
+        var seam_blending_filter = await this.create_seam_blending_filter(
+            BigInt(config.scale), BigInt(config.offset), BigInt(tile_size));
+        var seam_blending_buffer = {
+            weights: new ort.Tensor(
+                'float32',
+                new Float32Array(p.y_buffer_h * p.y_buffer_w * 3),
+                [3, p.y_buffer_h, p.y_buffer_w]), // initialized by 0
+            pixels: new ort.Tensor(
+                'float32',
+                new Float32Array(p.y_buffer_h * p.y_buffer_w * 3),
+                [3, p.y_buffer_h, p.y_buffer_w]),
+        };
+        var seam_blending_y = new ort.Tensor(
+            'float32',
+            new Float32Array(seam_blending_filter.data.length),
+            seam_blending_filter.dims);
         var progress = 0;
 
         console.time("render");
@@ -221,7 +237,7 @@ const onnx_runner = {
                 const j = w_i * p.input_tile_step;
                 const ii = h_i * p.output_tile_step;
                 const jj = w_i * p.output_tile_step;
-                tiles.push([i, j, ii, jj])
+                tiles.push([i, j, ii, jj, h_i, w_i])
             }
         }
         if (tile_random) {
@@ -229,7 +245,7 @@ const onnx_runner = {
         }
         block_callback(0, all_blocks, true);
         for (var k = 0; k < tiles.length; ++k) {
-            const [i, j, ii, jj] = tiles[k];
+            const [i, j, ii, jj, h_i, w_i] = tiles[k];
             var tile_image_data = input_ctx.getImageData(j, i, tile_size, tile_size);
             var single_color = this.check_single_color(tile_image_data.data);
             if (single_color == null) {
@@ -243,11 +259,16 @@ const onnx_runner = {
                 if (tta_level > 0) {
                     tile_y = await this.tta_merge(tile_y, BigInt(tta_level));
                 }
-                var output_image_data = this.to_image_data(tile_y.data, tile_y.dims[3], tile_y.dims[2]);
             } else {
-                var output_image_data = this.create_single_color_image_data(
+                var tile_y = this.create_single_color_tensor(
                     single_color, tile_size * config.scale - config.offset * 2);
             }
+            this.seam_blending(
+                seam_blending_y,
+                tile_y, seam_blending_filter,
+                seam_blending_buffer.pixels, seam_blending_buffer.weights,
+                p.output_tile_step, h_i, w_i);
+            var output_image_data = this.to_image_data(seam_blending_y.data, tile_y.dims[3], tile_y.dims[2]);
             output_ctx.putImageData(output_image_data, jj, ii);
             progress += 1;
             if (this.stop_flag) {
@@ -302,14 +323,39 @@ const onnx_runner = {
         });
         return out.y;
     },
-
+    seam_blending: function(output, x, blend_filter, pixels, weights, step_size, i, j) {
+        const [C, H, W] = blend_filter.dims;
+        const HW = H * W;
+        const buffer_h = pixels.dims[1];
+        const buffer_w = pixels.dims[2];
+        const buffer_hw = buffer_h * buffer_w;
+        const h_i = step_size * i;
+        const w_i = step_size * j;
+        
+        var old_weight, next_weight, new_weight;
+        for (var c = 0; c < 3; ++c) {
+            for (var i = 0; i < H; ++i) {
+                for (var j = 0; j < W; ++j) {
+                    var tile_index = c * HW + i * W + j;
+                    var buffer_index = c * buffer_hw + (h_i + i) * buffer_w + (w_i + j);
+                    old_weight = weights.data[buffer_index];
+                    next_weight = old_weight + blend_filter.data[tile_index];
+                    old_weight = old_weight / next_weight;
+                    new_weight = 1.0 - old_weight;
+                    pixels.data[buffer_index] = pixels.data[buffer_index] * old_weight + x.data[tile_index] * new_weight;
+                    weights.data[buffer_index] += blend_filter.data[tile_index];
+                    output.data[tile_index] = pixels.data[buffer_index];
+                }
+            }
+        }
+    },
     get_session: async function(onnx_path) {
         if (!(onnx_path in this.sessions)) {
             try {
                 this.sessions[onnx_path] = await ort.InferenceSession.create(
                     onnx_path,
                     // webgl provider does not work due to various problems
-                    {executionProviders: ["wasm"]});
+                    { executionProviders: ["wasm"] });
             } catch (error) {
                 console.log(error);
                 return null;
