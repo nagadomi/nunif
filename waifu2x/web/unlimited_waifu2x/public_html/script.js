@@ -551,12 +551,7 @@ $(function () {
         var width = $("#dest").css("width");
         var canvas = $("#dest").get(0);
         if (width == "auto" || parseInt(width) == canvas.width) {
-            var min_size = Math.min(canvas.width, canvas.height);
-            if (min_size > 480) {
-                var scale = 480 / min_size;
-                $("#dest").css({"width": Math.floor(scale * canvas.width),
-                                "height": Math.floor(scale * canvas.height)});
-            }
+            $("#dest").css({"width": "60%", "height": "auto"});
         } else {
             $("#dest").css({"width": "auto", "height": "auto"});
         }

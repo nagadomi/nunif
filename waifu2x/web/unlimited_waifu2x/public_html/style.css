@@ -8,7 +8,7 @@ input[type=button] { width: 10em; padding: 4px; }
 #dest-box { margin: 1em auto; width: fit-content; height: fit-content;}
 #src { width: 128px; height: 128px; border: 8px ridge;}
 #src:hover { cursor: w-resize; }
-#dest { width: 128px; height: 128px; border: 8px ridge; }
+#dest { width: 128px; height: 128px; border: 8px ridge; display: block; margin: auto; }
 #dest:hover { cursor: w-resize; }
 #button-box { text-align: center; }
 #message { font-size: 0.8em; color: blue; margin: 1em auto 2em auto; width: 32em;}
