@@ -13,6 +13,7 @@ input[type=button] { width: 10em; padding: 4px; }
 #button-box { text-align: center; }
 #message { font-size: 0.8em; color: blue; margin: 1em auto 2em auto; width: 32em;}
 #form-box table { margin: auto; }
+#footer {margin: auto; font-size: 0.8em; text-align: center; margin-top: 2em; }
 
 tr {border: 1px solid;}
 td {border: 3px groove; padding: 4px 8px 4px 8px;}
