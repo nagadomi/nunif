@@ -1,8 +1,8 @@
+var g_expires = 365;
 
 function gen_arch_config()
 {
     var config = {};
-    // [scale, offset]
     config["swin_unet"] = {art: {}}
     config["swin_unet"]["art"] = {
         scale2x: {scale: 2, offset: 16},
@@ -21,13 +21,13 @@ const CONFIG = {
     get_config: function(arch, style, method) {
         if ((arch in this.arch) && (style in this.arch[arch]) && (method in this.arch[arch][style])) {
             config = this.arch[arch][style][method];
-            config["path"] = "models/" + arch + "/" + style + "/" + method + ".onnx";
+            config["path"] = `models/${arch}/${style}/${method}.onnx`;
             return config;
         } else {
             return null;
         }
     },
-    get_helper_path: function(name) {
+    get_helper_model_path: function(name) {
         return `models/utils/${name}.onnx`;
     }
 };
@@ -51,10 +51,10 @@ const onnx_runner = {
         return data;
     },
     to_input: function(rgba, width, height) {
-        const rgb = new Float32Array(height * width * 3);
-        const bg_color = 1.0;
         // HWC -> CHW
         // 0-255 -> 0.0-1.0
+        const rgb = new Float32Array(height * width * 3);
+        const bg_color = 1.0;
         for (var y = 0; y < height; ++y) {
             for (var x = 0; x < width; ++x) {
                 var alpha = rgba[(y * width * 4) + (x * 4) + 3] / 255.0;
@@ -106,7 +106,7 @@ const onnx_runner = {
         const data = new Float32Array(size * size * 3);
         for (var c = 0; c < 3; c += 1) {
             const v = rgb[c];
-            for (var i = 0; i < size * size; i += 1) {
+            for (var i = 0; i < size * size; ++i) {
                 data[c * size * size + i] = v;
             }
         }
@@ -129,11 +129,11 @@ const onnx_runner = {
         let [h_blocks, w_blocks, input_h, input_w] = [0, 0, 0, 0];
         while (input_h < x_h + p.input_offset * 2) {
             input_h = h_blocks * p.input_tile_step + tile_size;
-            h_blocks += 1;
+            ++h_blocks;
         }
         while (input_w < x_w + p.input_offset * 2) {
             input_w = w_blocks * p.input_tile_step + tile_size;
-            w_blocks += 1;
+            ++w_blocks;
         }
         p.h_blocks = h_blocks;
         p.w_blocks = w_blocks;
@@ -146,21 +146,6 @@ const onnx_runner = {
             input_h - (x_h + p.input_offset)
         ];
         return p
-    },
-    find_tile_size: (tile_size, image_data, config) => {
-        const min_size = Math.max(Math.max(image_data.width, image_data.height) + config.offset * 2, 64);
-        if (min_size > tile_size) {
-            return tile_size;
-        }
-        for (var i = min_size; i < min_size * 4; ++i) {
-            if ((i - 16) % 12 == 0 && (i - 16) % 16 == 0) {
-                if (i < tile_size) {
-                    tile_size = i;
-                }
-                return tile_size;
-            }
-        }
-        return 64; // default
     },
     shuffleArray: (array) => {
         for (let i = array.length - 1; i > 0; i--) {
@@ -181,7 +166,6 @@ const onnx_runner = {
             return;
         }
         this.running = true;
-        tile_size = this.find_tile_size(tile_size, image_data, config);
         console.log(`tile size = ${tile_size}`);
 
         // setup output canvas
@@ -208,7 +192,7 @@ const onnx_runner = {
         var input_ctx = input_canvas.getContext("2d", {willReadFrequently: true});
         input_ctx.putImageData(image_data, 0, 0);
 
-        // tiled rendering
+        // seam blending resources
         var all_blocks = p.h_blocks * p.w_blocks;
         var seam_blending_filter = await this.create_seam_blending_filter(
             BigInt(config.scale), BigInt(config.offset), BigInt(tile_size));
@@ -226,13 +210,14 @@ const onnx_runner = {
             'float32',
             new Float32Array(seam_blending_filter.data.length),
             seam_blending_filter.dims);
-        var progress = 0;
 
+        // tiled rendering
+        var progress = 0;
         console.time("render");
         // create index list
         tiles = [];
-        for (var h_i = 0; h_i < p.h_blocks; h_i += 1) {
-            for (var w_i = 0; w_i < p.w_blocks; w_i += 1) {
+        for (var h_i = 0; h_i < p.h_blocks; ++h_i) {
+            for (var w_i = 0; w_i < p.w_blocks; ++w_i) {
                 const i = h_i * p.input_tile_step;
                 const j = w_i * p.input_tile_step;
                 const ii = h_i * p.output_tile_step;
@@ -241,6 +226,7 @@ const onnx_runner = {
             }
         }
         if (tile_random) {
+            // shuffle tiled rendering
             this.shuffleArray(tiles);
         }
         block_callback(0, all_blocks, true);
@@ -260,6 +246,7 @@ const onnx_runner = {
                     tile_y = await this.tta_merge(tile_y, BigInt(tta_level));
                 }
             } else {
+                // no need waifu2x, tile is single color image
                 var tile_y = this.create_single_color_tensor(
                     single_color, tile_size * config.scale - config.offset * 2);
             }
@@ -270,7 +257,7 @@ const onnx_runner = {
                 p.output_tile_step, h_i, w_i);
             var output_image_data = this.to_image_data(seam_blending_y.data, tile_y.dims[3], tile_y.dims[2]);
             output_ctx.putImageData(output_image_data, jj, ii);
-            progress += 1;
+            ++progress;
             if (this.stop_flag) {
                 block_callback(progress, all_blocks, false);
                 this.running = false;
@@ -284,7 +271,7 @@ const onnx_runner = {
         this.running = false;
     },
     padding: async function(x, left, right, top, bottom) {
-        const ses = await this.get_session(CONFIG.get_helper_path("pad"));
+        const ses = await this.get_session(CONFIG.get_helper_model_path("pad"));
         left = new ort.Tensor('int64', BigInt64Array.from([left]), []);
         right = new ort.Tensor('int64', BigInt64Array.from([right]), []);
         top = new ort.Tensor('int64', BigInt64Array.from([top]), []);
@@ -296,7 +283,7 @@ const onnx_runner = {
         return out.y;
     },
     tta_split: async function(x, tta_level) {
-        const ses = await this.get_session(CONFIG.get_helper_path("tta_split"));
+        const ses = await this.get_session(CONFIG.get_helper_model_path("tta_split"));
         tta_level = new ort.Tensor('int64', BigInt64Array.from([tta_level]), []);
         var out = await ses.run({
             "x": x,
@@ -304,7 +291,7 @@ const onnx_runner = {
         return out.y;
     },
     tta_merge: async function(x, tta_level) {
-        const ses = await this.get_session(CONFIG.get_helper_path("tta_merge"));
+        const ses = await this.get_session(CONFIG.get_helper_model_path("tta_merge"));
         tta_level = new ort.Tensor('int64', BigInt64Array.from([tta_level]), []);
         var out = await ses.run({
             "x": x,
@@ -312,7 +299,7 @@ const onnx_runner = {
         return out.y;
     },
     create_seam_blending_filter: async function(scale, offset, tile_size) {
-        const ses = await this.get_session(CONFIG.get_helper_path("create_seam_blending_filter"));
+        const ses = await this.get_session(CONFIG.get_helper_model_path("create_seam_blending_filter"));
         scale = new ort.Tensor('int64', BigInt64Array.from([scale]), []);
         offset = new ort.Tensor('int64', BigInt64Array.from([offset]), []);
         tile_size = new ort.Tensor('int64', BigInt64Array.from([tile_size]), []);
@@ -324,6 +311,9 @@ const onnx_runner = {
         return out.y;
     },
     seam_blending: function(output, x, blend_filter, pixels, weights, step_size, i, j) {
+        // Cumulative Tile Seam/Border Blending
+        // This function requires large buffers and does not work with onnxruntime's web-worker.
+        // So this function is implemented in non-async pure javascript.
         const [C, H, W] = blend_filter.dims;
         const HW = H * W;
         const buffer_h = pixels.dims[1];
@@ -331,7 +321,7 @@ const onnx_runner = {
         const buffer_hw = buffer_h * buffer_w;
         const h_i = step_size * i;
         const w_i = step_size * j;
-        
+
         var old_weight, next_weight, new_weight;
         for (var c = 0; c < 3; ++c) {
             for (var i = 0; i < H; ++i) {
@@ -429,6 +419,7 @@ $(function () {
             tile_size, tile_random,
             output_canvas, (progress, max_progress, processing) => {
                 if (processing) {
+                    //progress_message = "(" + progress + "/" + max_progress + ")";
                     progress_message = "(" + progress + "/" + max_progress + ")";
                     loop_message(["( ・∀・)" + (progress % 2 == 0 ? "φ　 ":" φ　") + progress_message,
                                   "( ・∀・)" + (progress % 2 != 0 ? "φ　 ":" φ　") + progress_message], 0.5);
@@ -512,7 +503,7 @@ $(function () {
         $("#message").text(texts[i]);
         var id = setInterval(() => {
             var prev_message = texts[i % texts.length];
-            i += 1;
+            ++i;
             var next_message = texts[i % texts.length];
             if ($("#message").text() == prev_message) {
                 $("#message").text(next_message);
@@ -521,7 +512,6 @@ $(function () {
             }
         }, second * 1000);
     };
-
     $("#start").click(async () => {
         var file = $("#file").get(0);
         if (file.files.length > 0 && file.files[0].type.match(/image/)) {
@@ -546,7 +536,6 @@ $(function () {
     $("#stop").click(() => {
         onnx_runner.stop_flag = true;
     });
-
     $("#src").click(() => {
         var canvas = $("#src").get(0);
         var css_width = parseInt($("#src").css("width"));
@@ -571,5 +560,45 @@ $(function () {
         } else {
             $("#dest").css({"width": "auto", "height": "auto"});
         }
+    });
+
+    function restore_from_cookie()
+    {
+        if ($.cookie("noise_level")) {
+            $("select[name=noise_level]").val($.cookie("noise_level"));
+        }
+        if ($.cookie("scale")) {
+            $("select[name=scale]").val($.cookie("scale"));
+        }
+        if ($.cookie("tta")) {
+            $("select[name=tta]").val($.cookie("tta"));
+        }
+        if ($.cookie("tile_size")) {
+            $("select[name=tile_size]").val($.cookie("tile_size"));
+        }
+        if ($.cookie("tile_random") == "true") {
+            $("input[name=tile_random]").prop("checked", true);
+        }
+    };
+    restore_from_cookie();
+
+    $("select[name=noise_level]").change(() => {
+        $.cookie("noise_level", $("select[name=noise_level]").val(), {expires: g_expires});
+    });
+    $("select[name=scale]").change(() => {
+        $.cookie("scale", $("select[name=scale]").val(), {expires: g_expires});
+    });
+    $("select[name=tta]").change(() => {
+        $.cookie("tta", $("select[name=tta]").val(), {expires: g_expires});
+    });
+    $("select[name=tile_size]").change(() => {
+        $.cookie("tile_size", $("select[name=tile_size]").val(), {expires: g_expires});
+    });
+    $("input[name=tile_random]").change(() => {
+        $.cookie("tile_random", $("input[name=tile_random]").prop("checked"), {expires: g_expires});
+    });
+    window.addEventListener("unhandledrejection", function(e) {
+        set_message(e, -1);
+        console.error(e);
     });
 });
