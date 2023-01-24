@@ -21,11 +21,13 @@ NEAREST_PREFIX = "__NEAREST_"
 INTERPOLATION_MODES = (
     "box",
     "sinc",
+    "lanczos",
+    "triangle",
     "catrom"
 )
 INTERPOLATION_NEAREST = "box"
 # INTERPOLATION_MODE_WEIGHTS = (4/9, 4/9, 1/9)  # noqa: E226
-INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/3)  # noqa: E226
+INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3)  # noqa: E226
 
 
 class RandomDownscaleX():
@@ -44,18 +46,26 @@ class RandomDownscaleX():
         else:
             interpolation = self.interpolation
         if self.scale_factor == 2:
+            if random.uniform(0, 1) < 0.1:
+                blur = random.uniform(0.95, 1.05)
+            else:
+                blur = 1
             x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                          filter_type=interpolation, blur=1)
+                          filter_type=interpolation, blur=blur)
         elif self.scale_factor == 4:
+            if random.uniform(0, 1) < 0.1:
+                blur = random.uniform(0.95, 1.05)
+            else:
+                blur = 1
             if (not self.training) or random.uniform(0, 1) > 0.25:
                 x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                              filter_type=interpolation, blur=1)
+                              filter_type=interpolation, blur=blur)
             else:
                 # 2 step downscale
                 x = IM.resize(x, size=(h // 2, w // 2),
                               filter_type=interpolation, blur=1)
                 x = IM.resize(x, size=(h // 4, w // 4),
-                              filter_type=interpolation, blur=1)
+                              filter_type=interpolation, blur=blur)
         x = pil_io.to_image(x)
         return x, y
 
