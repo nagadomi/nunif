@@ -1,0 +1,16 @@
+server {
+       server_name unlimited.waifu2x.net;
+       access_log	/var/log/nginx/unlimited.waifu2x.net.access.log;
+       root   /home/nagadomi/nunif/waifu2x/web/unlimited_waifu2x/public_html;
+
+       location ~ ^/(apple-touch-icon|browserconfig|mstile)(.*)\.(png|xml|ico)$ {
+          return 204;
+       }
+       location / {
+           add_header Cache-Control "public, max-age=3600, must-revalidate";
+       }
+       location ~* \.(onnx|pth) {
+           add_header Cache-Control "public, max-age=86400, must-revalidate";
+       }
+       listen 80;
+}
