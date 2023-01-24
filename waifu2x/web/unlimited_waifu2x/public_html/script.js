@@ -593,7 +593,9 @@ $(function () {
         $.cookie("tile_random", $("input[name=tile_random]").prop("checked"), {expires: g_expires});
     });
     window.addEventListener("unhandledrejection", function(e) {
-        set_message("Error: " + e.toString(), -1);
-        console.error(e);
+        set_message("(-_-) Error: " + e.reason, -1);
+        // reset running flags
+        onnx_runner.running = false;
+        onnx_runner.stop_flag = false;
     });
 });
