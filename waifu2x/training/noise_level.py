@@ -2,6 +2,7 @@
 import random
 from io import BytesIO
 from PIL import Image
+from torchvision.transforms import functional as TF
 
 
 # p of random apply
@@ -72,12 +73,14 @@ def choose_jpeg_quality(style, noise_level):
             if r > 0.4:
                 qualities.append(random.randint(27, 70))
             elif r > 0.1:
-                quality1 = random.randint(37, 70)
+                # nunif: Add high quality patterns
+                quality1 = random.randint(37, 95)
                 quality2 = quality1 - random.randint(5, 10)
                 qualities.append(quality1)
                 qualities.append(quality2)
             else:
-                quality1 = random.randint(52, 70)
+                # nunif: Add high quality patterns
+                quality1 = random.randint(52, 95)
                 quality2 = quality1 - random.randint(5, 15)
                 quality3 = quality1 - random.randint(15, 25)
                 qualities.append(quality1)
@@ -93,11 +96,38 @@ def choose_jpeg_quality(style, noise_level):
     return qualities
 
 
+def shift_jpeg_block(x, y, x_shift=None):
+    # nunif: Add random crop before the second jpeg
+    y_scale = y.size[0] / x.size[0]
+    assert y_scale in {1, 2, 4}
+    y_scale = int(y_scale)
+    x_w, x_h = x.size
+    y_w, y_h = y.size
+    if x_shift is None:
+        if random.uniform(0, 0.5) < 0.5:
+            x_h_shift = random.randint(0, 7)
+            x_w_shift = random.randint(0, 7)
+        else:
+            x_h_shift = x_w_shift = 0
+    else:
+        x_h_shift = x_w_shift = x_shift
+
+    if x_h_shift > 0 or x_w_shift > 0:
+        y_h_shift = x_h_shift * y_scale
+        y_w_shift = x_w_shift * y_scale
+        x = TF.crop(x, x_h_shift, x_w_shift, x_h - x_h_shift, x_w - x_w_shift)
+        y = TF.crop(y, y_h_shift, y_w_shift, y_h - y_h_shift, y_w - y_w_shift)
+        assert y.size[0] == x.size[0] * y_scale and y.size[1] == x.size[1] * y_scale
+
+    return x, y
+
+
 class RandomJPEGNoiseX():
-    def __init__(self, style, noise_level):
+    def __init__(self, style, noise_level, random_crop=False):
         assert noise_level in {0, 1, 2, 3} and style in {"art", "photo"}
         self.noise_level = noise_level
         self.style = style
+        self.random_crop = random_crop
 
     def __call__(self, x, y):
         if random.uniform(0, 1) > NR_RATE[self.style][self.noise_level]:
@@ -120,9 +150,20 @@ class RandomJPEGNoiseX():
             subsampling = "4:2:0"
         else:
             subsampling = "4:4:4"
-        for quality in qualities:
-            x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
 
+        # scale factor
+        y_scale = y.size[0] / x.size[0]
+        assert y_scale in {1, 2, 4}
+        y_scale = int(y_scale)
+        if self.random_crop and len(qualities) > 1:
+            random_crop = True
+        else:
+            random_crop = False
+
+        for i, quality in enumerate(qualities):
+            x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
+            if random_crop and i != len(qualities) - 1:
+                x, y = shift_jpeg_block(x, y)
         return x, y
 
 

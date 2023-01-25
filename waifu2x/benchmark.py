@@ -31,7 +31,22 @@ def MSE2PSNR(mse):
     return 10 * math.log10((255 * 255) / mse)
 
 
-def add_jpeg_noise(x, args):
+def shift_jpeg_block(x, y, x_shift):
+    if x_shift > 0:
+        y_scale = y.shape[1] / x.shape[1]
+        assert y_scale in {1, 2, 4}
+        y_scale = int(y_scale)
+        x_h, x_w = x.shape[1:]
+        y_h, y_w = y.shape[1:]
+        y_shift = x_shift * y_scale
+        x = TF.crop(x, x_shift, x_shift, x_h - x_shift, x_w - x_shift)
+        y = TF.crop(y, y_shift, y_shift, y_h - y_shift, y_w - y_shift)
+        assert y.shape[1] == x.shape[1] * y_scale and y.shape[2] == x.shape[2] * y_scale
+
+    return x, y
+
+
+def add_jpeg_noise(x, y, args):
     if args.jpeg_yuv420:
         sampling_factor = IM.YUV420
     else:
@@ -39,20 +54,24 @@ def add_jpeg_noise(x, args):
     for i in range(args.jpeg_times):
         quality = args.jpeg_quality - i * args.jpeg_quality_down
         x = IM.jpeg_noise(x, sampling_factor, quality)
-    return x
+        if i != args.jpeg_times - 1:
+            x, y = shift_jpeg_block(x, y, args.jpeg_shift)
+    return x, y
 
 
-def make_input_waifu2x(x, args):
+def make_input_waifu2x(gt, args):
+    x = gt
     if args.method == "scale":
-        return IM.scale(x, 0.5, filter_type=args.filter)
+        x = IM.scale(x, 0.5, filter_type=args.filter)
     elif args.method == "scale4x":
-        return IM.scale(x, 0.25, filter_type=args.filter)
+        x = IM.scale(x, 0.25, filter_type=args.filter)
     elif args.method == "noise":
-        return add_jpeg_noise(x, args)
+        x, gt = add_jpeg_noise(x, gt, args)
     elif args.method == "noise_scale":
-        return add_jpeg_noise(IM.scale(x, 0.5, filter_type=args.filter), args)
+        x, gt = add_jpeg_noise(IM.scale(x, 0.5, filter_type=args.filter), gt, args)
     elif args.method == "noise_scale4x":
-        return add_jpeg_noise(IM.scale(x, 0.25, filter_type=args.filter), args)
+        x, gt = add_jpeg_noise(IM.scale(x, 0.25, filter_type=args.filter), gt, args)
+    return x, gt
 
 
 def remove_border(x, border):
@@ -96,6 +115,8 @@ def parse_args():
                         help="number of repetitions of jpeg compression")
     parser.add_argument("--jpeg-quality-down", type=int, default=5,
                         help="value of jpeg quality that decreases every times")
+    parser.add_argument("--jpeg-shift", type=int, default=0,
+                        help="shift image block each jpeg compression")
     parser.add_argument("--jpeg-yuv420", action="store_true",
                         help="use yuv420 jpeg")
     parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos", "sinc", "triangle"],
@@ -153,7 +174,7 @@ def main():
         for im, meta in tqdm(loader, ncols=60):
             x = TF.to_tensor(im)
             groundtruth = NF.crop_mod(x, 4)
-            x = make_input_waifu2x(groundtruth, args)
+            x, groundtruth = make_input_waifu2x(groundtruth, args)
             t = time.time()
             z, _ = ctx.convert(x, None, model_method, args.noise_level,
                                args.tile_size, args.batch_size,

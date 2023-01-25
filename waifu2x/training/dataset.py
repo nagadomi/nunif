@@ -15,6 +15,7 @@ from .noise_level import (
     RandomJPEGNoiseX,
     choose_validation_jpeg_quality,
     add_jpeg_noise,
+    shift_jpeg_block,
 )
 
 NEAREST_PREFIX = "__NEAREST_"
@@ -133,7 +134,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         self.noise_level = noise_level
         if self.training:
             if noise_level >= 0:
-                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level)
+                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop=True)
             else:
                 jpeg_transform = TP.Identity()
             if scale_factor > 1:
@@ -144,7 +145,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 random_downscale_x = TP.Identity()
                 random_downscale_x_nearest = TP.Identity()
 
-            y_min_size = tile_size * scale_factor + 16
+            # 64 = 8(max jpeg shift size) * 4(max_scale_factor) * 2(max jpeg shift count)
+            y_min_size = tile_size * scale_factor + 64
             self.gt_transforms = T.Compose([
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
@@ -179,16 +181,16 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 downscale_x = TP.Identity()
                 downscale_x_nearest = TP.Identity()
-
+            y_min_size = tile_size * scale_factor + 64
             self.transforms = TP.Compose([
-                TP.CenterCrop(size=tile_size * scale_factor + 16),
+                TP.CenterCrop(size=y_min_size),
                 downscale_x,
-                TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
             self.transforms_nearest = TP.Compose([
                 downscale_x_nearest,
-                TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
+            self.x_jpeg_shift = [0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7]
+            self.center_crop = TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset)
 
     def __getitem__(self, index):
         filename = super().__getitem__(index)
@@ -205,8 +207,11 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             if self.noise_level >= 0:
                 qualities, subsampling = choose_validation_jpeg_quality(
                     index=index, style=self.style, noise_level=self.noise_level)
-                for quality in qualities:
+                for i, quality in enumerate(qualities):
                     x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
+                    if len(qualities) > 1 and i != len(qualities) - 1:
+                        x, y = shift_jpeg_block(x, y, self.x_jpeg_shift[index % len(self.x_jpeg_shift)])
+            x, y = self.center_crop(x, y)
 
         return TF.to_tensor(x), TF.to_tensor(y), index
 
