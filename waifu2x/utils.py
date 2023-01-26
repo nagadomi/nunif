@@ -1,5 +1,6 @@
 from os import path
 import torch
+import torch.nn.functional as F
 from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
 from nunif.utils.alpha import make_alpha_border
@@ -167,6 +168,9 @@ class Waifu2x():
         assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
 
         if alpha is not None:
+            # check all 1 alpha channel
+            blank_alpha = torch.equal(alpha, torch.ones(alpha.shape, dtype=alpha.dtype))
+        if alpha is not None and not blank_alpha:
             x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
         if tta:
             rgb = tta_merge([
@@ -177,9 +181,14 @@ class Waifu2x():
 
         rgb = rgb.to("cpu")
         if alpha is not None and method in ("scale", "noise_scale", "scale4x", "noise_scale4x"):
-            alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
-            model = self.scale4x_model if method in {"scale4x", "noise_scale4x"} else self.scale_model
-            alpha = tiled_render(alpha, model,
-                                 tile_size=tile_size, batch_size=batch_size).mean(0, keepdim=True)
+            if not blank_alpha:
+                alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
+                model = self.scale4x_model if method in {"scale4x", "noise_scale4x"} else self.scale_model
+                alpha = tiled_render(alpha, model,
+                                     tile_size=tile_size, batch_size=batch_size).mean(0, keepdim=True)
+            else:
+                scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
+                alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)
             alpha = alpha.to("cpu")
+
         return rgb, alpha
