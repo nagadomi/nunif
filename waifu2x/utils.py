@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
-from nunif.utils.alpha import make_alpha_border
+from nunif.utils.alpha import AlphaBorderPadding
 from nunif.models import load_model, get_model_config
 
 
@@ -20,6 +20,7 @@ class Waifu2x():
             self.device = f'cuda:{gpus[0]}'
         self.gpus = gpus
         self.model_dir = model_dir
+        self.alpha_pad = AlphaBorderPadding()
 
     def _setup(self):
         if self.scale_model is not None:
@@ -171,7 +172,7 @@ class Waifu2x():
             # check all 1 alpha channel
             blank_alpha = torch.equal(alpha, torch.ones(alpha.shape, dtype=alpha.dtype))
         if alpha is not None and not blank_alpha:
-            x = make_alpha_border(x, alpha, self._model_offset(method, noise_level))
+            x = self.alpha_pad(x, alpha, self._model_offset(method, noise_level))
         if tta:
             rgb = tta_merge([
                 self.render(xx, method, noise_level, tile_size, batch_size, enable_amp)
