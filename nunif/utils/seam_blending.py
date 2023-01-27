@@ -38,6 +38,11 @@ class SeamBlending(torch.nn.Module):
     def get_output(self):
         return torch.clamp(self.pixels[:, 0:self.y_h, 0:self.y_w], 0., 1.)
 
+    def clear(self):
+        if self.weights is not None:
+            self.weights.zero_()
+        self.pixels.zero_()
+
     @staticmethod
     def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=True):
         assert not torch.is_grad_enabled()
