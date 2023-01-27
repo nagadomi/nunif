@@ -1,8 +1,11 @@
 # helper models for onnxruntime-web
 import torch
+import torch.nn as nn
 from torch.nn import functional as F
 from torchvision.transforms import functional as TF
+import copy
 from .model import I2IBaseModel
+from ..utils.alpha import ChannelWiseSum
 
 
 class ONNXReflectionPadding(I2IBaseModel):
@@ -142,6 +145,64 @@ class ONNXCreateSeamBlendingFilter(I2IBaseModel):
         )
 
 
+class ONNXAlphaBorderPadding(nn.Module):
+    # original code at nunif/utils/alpha.py
+    # make it work on onnx
+    def __init__(self):
+        super().__init__()
+        self.sum_alpha = ChannelWiseSum(1, 3)
+        self.sum_rgb = ChannelWiseSum(3, 3)
+        self.eval()
+
+    def forward(self, rgb: torch.Tensor, alpha: torch.Tensor, offset: int):
+        # rgb: CHW, alpha: CHW
+        rgb = rgb.clone()
+        alpha = alpha.squeeze(0)
+        mask = alpha.new_zeros(alpha.shape)
+        mask[alpha > 0.] = 1.
+        mask_nega = (mask - 1.).abs_().unsqueeze(0).expand(rgb.shape)
+        rgb *= mask
+        i = torch.zeros((1,), dtype=torch.int64)
+        while torch.any(i < offset):
+            i += 1
+            mask_weight = self.sum_alpha(mask)
+            border = self.sum_rgb(rgb)
+            border /= mask_weight + 1e-7
+            border *= mask_nega
+            rgb *= mask
+            rgb += border
+            mask = (mask_weight > 0.).float()
+            mask_nega = (mask - 1.).abs_().unsqueeze(0).expand(rgb.shape)
+
+        return rgb.clamp_(0., 1.)
+
+    def to_inference_model(self):
+        net = copy.deepcopy(self)
+        net.eval()
+        return net
+
+    def to_script_module(self):
+        net = self.to_inference_model()
+        return torch.jit.script(net)
+
+    def export_onnx(self, f, **kwargs):
+        rgb = torch.zeros([3, 256, 256], dtype=torch.float32)
+        alpha = torch.zeros([1, 256, 256], dtype=torch.float32)
+        offset = torch.tensor(16, dtype=torch.int64)
+        model = self.to_script_module()
+        torch.onnx.export(
+            model,
+            [rgb, alpha, offset],
+            f,
+            input_names=["rgb", "alpha", "offset"],
+            output_names=["y"],
+            dynamic_axes={'rgb': {1: "height", 2: "width"},
+                          'alpha': {1: "height", 2: "width"},
+                          'y': {1: "height", 2: "width"}},
+            **kwargs
+        )
+
+
 def _test_pad():
     import onnx
     pad = ONNXReflectionPadding()
@@ -169,6 +230,36 @@ def _test_blend_filter():
     pad.export_onnx("./tmp/create_seam_blending_filter.onnx")
     model = onnx.load("./tmp/create_seam_blending_filter.onnx")
     print(model.graph)
+
+
+def _test_alpha_border():
+    import onnxruntime as ort
+    import numpy as np
+    import cv2
+
+    pad = ONNXAlphaBorderPadding()
+    pad.export_onnx("./tmp/alpha_border_padding.onnx")
+
+    ses = ort.InferenceSession("./tmp/alpha_border_padding.onnx",
+                               providers=["CUDAExecutionProvider"])
+    for i in ses.get_inputs():
+        print(i.name, i.shape, i.type)
+    for i in ses.get_outputs():
+        print(i.name, i.shape, i.type)
+
+    im = cv2.imread("./tmp/alpha2.png", cv2.IMREAD_UNCHANGED)
+    im = cv2.cvtColor(im, cv2.COLOR_BGRA2RGBA)
+    rgb = im[:, :, 0:3].transpose(2, 0, 1).astype(np.float32) / 255.0
+    alpha = im[:, :, 3:4].transpose(2, 0, 1).astype(np.float32) / 255.0
+    offset = np.array([4], dtype=np.int64)
+    y = ses.run(["y"], {"rgb": rgb, "alpha": alpha, "offset": offset})[0]
+
+    y = np.clip(y * 255, 0, 255).astype(np.uint8).transpose(1, 2, 0)
+    y = cv2.cvtColor(y, cv2.COLOR_RGB2BGR)
+    print(y.shape)
+
+    cv2.imshow("y", y)
+    cv2.waitKey(0)
 
 
 if __name__ == "__main__":

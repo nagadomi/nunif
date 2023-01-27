@@ -3,27 +3,28 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class ChannelWiseSum(nn.Conv2d):
+class ChannelWiseSum(nn.Module):
     def __init__(self, in_channels, kernel_size):
-        super().__init__(in_channels, in_channels, kernel_size=kernel_size,
-                         stride=1, padding=1, padding_mode="zeros", groups=in_channels,
-                         bias=False)
-        self.weight.data.fill_(1.)
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=kernel_size,
+                              stride=1, padding=1, padding_mode="zeros", groups=in_channels,
+                              bias=False)
+        self.conv.weight.data.fill_(1.)
 
     def forward(self, x):
         if x.ndim == 3:
             # CHW
             x = x.unsqueeze(0)
-            x = super().forward(x)
+            x = self.conv(x)
             x = x.squeeze(0)
         elif x.ndim == 2:
             # HW
             x = x.unsqueeze(0).unsqueeze(0)
-            x = super().forward(x)
+            x = self.conv(x)
             x = x.squeeze(0).squeeze(0)
         else:
             # BCHW
-            x = super().forward(x)
+            x = self.conv(x)
 
         return x
 

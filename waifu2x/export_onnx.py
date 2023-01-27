@@ -62,7 +62,9 @@ def convert_utils(output_dir):
         ONNXReflectionPadding,
         ONNXTTASplit,
         ONNXTTAMerge,
-        ONNXCreateSeamBlendingFilter)
+        ONNXCreateSeamBlendingFilter,
+        ONNXAlphaBorderPadding
+    )
 
     utils_dir = path.join(output_dir, "utils")
     os.makedirs(utils_dir, exist_ok=True)
@@ -78,6 +80,9 @@ def convert_utils(output_dir):
 
     seam_filter = ONNXCreateSeamBlendingFilter()
     seam_filter.export_onnx(path.join(utils_dir, "create_seam_blending_filter.onnx"))
+
+    alpha_border_padding = ONNXAlphaBorderPadding()
+    alpha_border_padding.export_onnx(path.join(utils_dir, "alpha_border_padding.onnx"))
 
 
 if __name__ == "__main__":
