@@ -14,7 +14,7 @@ def _sum2d(x, kernel):
 
 @torch.no_grad()
 def make_alpha_border(rgb, alpha, offset):
-    # Note: this function is faster on CPU than on GPU
+    # NOTE: this function is faster on CPU than on GPU
     if alpha is None:
         return rgb
     rgb = rgb.clone()
@@ -37,21 +37,3 @@ def make_alpha_border(rgb, alpha, offset):
         mask_nega = (mask - 1).abs_().byte()
 
     return rgb.clamp_(0, 1)
-
-
-def fill_alpha(fg, alpha, val=0):
-    if alpha is None:
-        return fg
-    assert (alpha.shape[1] == fg.shape[1] and alpha.shape[2] == fg.shape[2])
-    assert (isinstance(fg, (torch.FloatTensor, torch.cuda.FloatTensor)) and
-            isinstance(alpha, (torch.FloatTensor, torch.cuda.FloatTensor)))
-
-    alpha = alpha.squeeze(0)
-    fg = fg.clone()
-    bg = torch.full(fg.shape, fill_value=val)
-    alpha_inv = 1.0 - alpha
-    for ch in range(fg.shape[0]):
-        bg[ch].mul_(alpha_inv)
-        fg[ch].mul_(alpha)
-    fg.add_(bg).clamp_(0, 1)
-    return fg
