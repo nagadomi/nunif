@@ -7,6 +7,7 @@ tmp
 *.gif
 *.tar.gz
 *.tar
+*.zip
 /data
 !/data/.keep
 /models/
@@ -18,10 +19,12 @@ tmp
 /waifu2x/public_html  # for compatibilityfor
 /waifu2x/web/public_html
 /waifu2x/web/unlimited_waifu2x/public_html/models
+/waifu2x/web/unlimited_waifu2x/public_html/ads.txt
 !/waifu2x/web/webgen/assets/*.png
 !/waifu2x/web/webgen/assets/*.jpg
 /waifu2x/models/_*.py
 !/waifu2x/models/__init__.py
+/waifu2x/appendix/_*
 /font_resource/fonts
 /text_resource/aozora/data
 
