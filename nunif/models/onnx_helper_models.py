@@ -203,6 +203,30 @@ class ONNXAlphaBorderPadding(nn.Module):
         )
 
 
+class ONNXScale1x(I2IBaseModel):
+    # identity module for alpha channel in denoise
+    def __init__(self, offset):
+        super().__init__({}, scale=1, offset=offset, in_channels=3)
+
+    def forward(self, x: torch.Tensor):
+        pad = -self.i2i_offset
+        return F.pad(x, (pad, pad, pad, pad), mode="constant")
+
+    def export_onnx(self, f, **kwargs):
+        x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
+        model = self.to_inference_model()
+        torch.onnx.export(
+            model,
+            x,
+            f,
+            input_names=["x"],
+            output_names=["y"],
+            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
+                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            **kwargs
+        )
+
+
 def _test_pad():
     import onnx
     pad = ONNXReflectionPadding()
