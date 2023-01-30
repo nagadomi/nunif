@@ -15,7 +15,7 @@ from .utils import Waifu2x
 
 DEFAULT_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
-    "cunet", "art"))
+    "swin_unet", "art"))
 
 
 def convert_files(ctx, files, args, enable_amp):
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     parser.add_argument("--model-dir", type=str, default=DEFAULT_MODEL_DIR, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
     parser.add_argument("--method", "-m", type=str,
-                        choices=["scale4x", "scale", "noise", "noise_scale", "noise_scale4x"],
+                        choices=["scale4x", "scale", "noise", "noise_scale", "noise_scale4x", "scale2x", "noise_scale2x"],
                         default="noise_scale", help="method")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch_size")
@@ -111,5 +111,11 @@ if __name__ == "__main__":
         from nunif.utils import wand_io as IL
     else:
         from nunif.utils import pil_io as IL
+
+    # alias for typo
+    if args.method == "scale2x":
+        args.method = "scale"
+    elif args.method == "noise_scale2x":
+        args.method = "noise_scale"
 
     main(args)
