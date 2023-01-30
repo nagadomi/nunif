@@ -74,13 +74,19 @@ def choose_jpeg_quality(style, noise_level):
                 qualities.append(random.randint(27, 70))
             elif r > 0.1:
                 # nunif: Add high quality patterns
-                quality1 = random.randint(37, 95)
+                if random.uniform(0, 1) < 0.05:
+                    quality1 = random.randint(37, 95)
+                else:
+                    quality1 = random.randint(37, 70)
                 quality2 = quality1 - random.randint(5, 10)
                 qualities.append(quality1)
                 qualities.append(quality2)
             else:
                 # nunif: Add high quality patterns
-                quality1 = random.randint(52, 95)
+                if random.uniform(0, 1) < 0.05:
+                    quality1 = random.randint(52, 95)
+                else:
+                    quality1 = random.randint(52, 70)
                 quality2 = quality1 - random.randint(5, 15)
                 quality3 = quality1 - random.randint(15, 25)
                 qualities.append(quality1)
@@ -134,7 +140,7 @@ class RandomJPEGNoiseX():
             # do nothing
             return x, y
 
-        if random.uniform(0, 1) < 0.75:
+        if (self.noise_level == 3 and random.uniform(0, 1) < 0.95) or random.uniform(0, 1) < 0.75:
             # use noise_level noise
             qualities = choose_jpeg_quality(self.style, self.noise_level)
         else:
