@@ -194,7 +194,6 @@ class SwinUNetBase(nn.Module):
 @register_model
 class SwinUNet(I2IBaseModel):
     name = "waifu2x.swin_unet_1x"
-    name_alias = ("waifu2x.swinunet",)
 
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
@@ -215,7 +214,6 @@ class SwinUNet(I2IBaseModel):
 @register_model
 class UpSwinUNet(I2IBaseModel):
     name = "waifu2x.swin_unet_2x"
-    name_alias = ("waifu2x.upswinunet",)
 
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=4)

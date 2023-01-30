@@ -152,13 +152,11 @@ class Waifu2xTrainer(Trainer):
 def train(args):
     ARCH_SWIN_UNET = {"waifu2x.swin_unet_1x",
                       "waifu2x.swin_unet_2x",
-                      "waifu2x.swin_unet_4x",
-                      "waifu2x.swinunet",
-                      "waifu2x.upswinunet"}
+                      "waifu2x.swin_unet_4x"}
     if args.size % 4 != 0:
         raise ValueError("--size must be a multiple of 4")
-    if args.arch in ARCH_SWIN_UNET and args.size % 64 != 0:
-        raise ValueError("--size must be a multiple of 64 for SwinUNet models")
+    if args.arch in ARCH_SWIN_UNET and ((args.size - 16) % 12 != 0 or (args.size - 16) % 16 != 0):
+        raise ValueError("--size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0` for SwinUNet models")
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
         raise ValueError("--noise-level is required for noise/noise_scale")
 
@@ -171,8 +169,7 @@ def train(args):
             args.loss = "y_charbonnier"
         elif args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
             args.loss = "aux_lbp"
-        elif args.arch in {"waifu2x.swin_unet_1x", "waifu2x.swin_unet_2x",
-                           "waifu2x.swinunet", "waifu2x.upswinunet"}:
+        elif args.arch in {"waifu2x.swin_unet_1x", "waifu2x.swin_unet_2x"}:
             args.loss = "lbp"
         elif args.arch in {"waifu2x.swin_unet_4x"}:
             args.loss = "lbp5"
@@ -206,7 +203,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--noise-level", type=int,
                         choices=[0, 1, 2, 3],
                         help="jpeg noise level for noise/noise_scale")
-    parser.add_argument("--size", type=int, default=104,
+    parser.add_argument("--size", type=int, default=112,
                         help="input size")
     parser.add_argument("--num-samples", type=int, default=50000,
                         help="number of samples for each epoch")
@@ -225,8 +222,8 @@ def register(subparsers, default_parser):
                         help="hard example mining for training data sampleing")
 
     parser.set_defaults(
-        batch_size=8,
-        optimizer="adam",
+        batch_size=16,
+        optimizer="adamw",
         learning_rate=0.0002,
         scheduler="cosine",
         learning_rate_cycles=5,
