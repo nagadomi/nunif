@@ -28,13 +28,27 @@ def wand_scale(im, filename, output_dir, filter_type, scale, blur):
     im.save(path.join(output_dir, f"{basename}_{filter_type}_blur{blur}.png"))
 
 
+def torchvision_scale(im, filename, output_dir, mode, scale, antialias):
+    c, h, w = im.shape
+    im = TF.resize(im, size=(h // scale, w // scale),
+                   interpolation=mode, antialias=antialias)
+    basename = path.splitext(path.basename(filename))[0]
+    im = pil_io.to_image(im)
+    im.save(path.join(output_dir, f"{basename}_{mode}_{antialias}.png"))
+
+
 def downscaling_test(filename, output_dir, scale):
     im, _ = pil_io.load_image_simple(filename)
     im = modcrop(im)
-    im = pil_io.to_tensor(im)
+    t = pil_io.to_tensor(im)
     for filter_type in ("box", "sinc", "lanczos", "catrom", "triangle"):
         for blur in (1, 0.95, 1.05):
-            wand_scale(im, filename, output_dir, filter_type, scale, blur)
+            wand_scale(t, filename, output_dir, filter_type, scale, blur)
+
+    torchvision_scale(t, filename, output_dir, InterpolationMode.BILINEAR, scale, antialias=True)
+    torchvision_scale(t, filename, output_dir, InterpolationMode.BILINEAR, scale, antialias=False)
+    torchvision_scale(t, filename, output_dir, InterpolationMode.BICUBIC, scale, antialias=True)
+    torchvision_scale(t, filename, output_dir, InterpolationMode.BICUBIC, scale, antialias=False)
 
 
 def main():
