@@ -54,9 +54,9 @@ pip3 install -r requirements.txt
 
 ## 6. Run waifu2x.web
 
-Generate `waifu2x/public_html`
+Generate `waifu2x/web/public_html`
 ```
-python -m waifu2x.webgen.gen
+python -m waifu2x.web.webgen.gen
 ```
 
 Start the web server.
