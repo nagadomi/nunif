@@ -18,8 +18,8 @@ tmp
 /waifu2x/web/config.ini
 /waifu2x/public_html  # for compatibilityfor
 /waifu2x/web/public_html
-/waifu2x/web/unlimited_waifu2x/public_html/models
-/waifu2x/web/unlimited_waifu2x/public_html/ads.txt
+/waifu2x/unlimited_waifu2x/public_html/models
+/waifu2x/unlimited_waifu2x/public_html/ads.txt
 !/waifu2x/web/webgen/assets/*.png
 !/waifu2x/web/webgen/assets/*.jpg
 /waifu2x/models/_*.py
