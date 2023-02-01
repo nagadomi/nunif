@@ -65,6 +65,7 @@ class Waifu2xTrainer(Trainer):
                 da_jpeg_p=self.args.da_jpeg_p,
                 da_scale_p=self.args.da_scale_p,
                 da_chshuf_p=self.args.da_chshuf_p,
+                deblur=self.args.deblur,
                 training=True,
             )
             return torch.utils.data.DataLoader(
@@ -83,6 +84,7 @@ class Waifu2xTrainer(Trainer):
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
+                deblur=self.args.deblur,
                 training=False)
             return torch.utils.data.DataLoader(
                 dataset, batch_size=self.args.batch_size,
@@ -217,6 +219,9 @@ def register(subparsers, default_parser):
                         help="random downscale data argumentation for gt image")
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
                         help="random channel shuffle data argumentation for gt image")
+    parser.add_argument("--deblur", type=float, default=0.0,
+                        help=("shift the blur parameter of resize."
+                              " 0.025-0.1 is a reasonable value."))
     parser.add_argument("--hard-example", type=str, default="linear",
                         choices=["none", "linear", "top10", "top20"],
                         help="hard example mining for training data sampleing")

@@ -56,10 +56,11 @@ def resize(im, size, filter_type, blur, enable_step=False):
 
 
 class RandomDownscaleX():
-    def __init__(self, scale_factor, interpolation=None, training=True):
+    def __init__(self, scale_factor, blur_shift=0, interpolation=None, training=True):
         assert scale_factor in {2, 4}
         self.interpolation = interpolation
         self.scale_factor = scale_factor
+        self.blur_shift = blur_shift
         self.training = training
 
     def __call__(self, x, y):
@@ -71,15 +72,19 @@ class RandomDownscaleX():
         else:
             interpolation = self.interpolation
         if self.scale_factor == 2:
-            if random.uniform(0, 1) < 0.1:
-                blur = random.uniform(0.95, 1.05)
+            if not self.training:
+                blur = 1 + self.blur_shift / 4
+            elif random.uniform(0, 1) < 0.1:
+                blur = random.uniform(0.95 + self.blur_shift, 1.05 + self.blur_shift)
             else:
                 blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
                        filter_type=interpolation, blur=blur, enable_step=self.training)
         elif self.scale_factor == 4:
-            if random.uniform(0, 1) < 0.1:
-                blur = random.uniform(0.95, 1.05)
+            if not self.training:
+                blur = 1 + self.blur_shift / 4
+            elif random.uniform(0, 1) < 0.1:
+                blur = random.uniform(0.95 + self.blur_shift, 1.05 + self.blur_shift)
             else:
                 blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
@@ -139,6 +144,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  scale_factor,
                  tile_size, num_samples=None,
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0,
+                 deblur=0,
                  noise_level=-1, style=None,
                  training=True):
         assert scale_factor in {1, 2, 4}
@@ -155,7 +161,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 jpeg_transform = TP.Identity()
             if scale_factor > 1:
-                random_downscale_x = RandomDownscaleX(scale_factor=scale_factor)
+                random_downscale_x = RandomDownscaleX(scale_factor=scale_factor, blur_shift=deblur)
                 random_downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
                                                               interpolation=INTERPOLATION_NEAREST)
             else:
@@ -189,7 +195,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             self.gt_transforms = TS.Identity()
             interpolation = "catrom"
             if scale_factor > 1:
-                downscale_x = RandomDownscaleX(scale_factor=scale_factor,
+                downscale_x = RandomDownscaleX(scale_factor=scale_factor, blur_shift=deblur,
                                                interpolation=interpolation,
                                                training=False)
                 downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
