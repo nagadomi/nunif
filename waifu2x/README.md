@@ -22,9 +22,13 @@ In Ubuntu 22.04, gThumb(Image Viewer) has a bug in rendering webp's alpha channe
 
 See [waifu2x Command Line Interface](docs/cli.md).
 
-# Web Application
+# Web Application (server)
 
 See [waifu2x Web Application](docs/web.md)
+
+# Web Application (in-browser)
+
+See [unlimited:waifu2x](web/unlimited_waifu2x/)
 
 # Training
 
