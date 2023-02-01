@@ -8,8 +8,6 @@ This command downloads the pre-trained models to `waifu2x/pretrained_models`.
 
 # Current limitations
 
-Training is only supported `--method scale`(2x scale).
-
 The CLI and Web App allow you to switch the image library to be used with `--image-lib (pil|wand)`. When `--image-lib pil`(default), 16bit image output is not supported. If you want to use `--depth 16`, specify `--image-lib wand`.
 
 When `--format jpeg` is specified, the transparent areas of the image will be set to white background and the alpha channel will be removed.
