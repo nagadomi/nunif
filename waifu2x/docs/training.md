@@ -126,7 +126,7 @@ python3 -m waifu2x.benchmark -h
 
 You can run the benchmark with the following commands.
 ```
-python3 -m waifu2x.benchmark --method scale --model-dir models/waifu2x_mymodel -i /test_image_dir --color y_matlab --filter catrom --baseline --baseline-filter lanczos
+python3 -m waifu2x.benchmark --method scale --model-dir models/waifu2x_mymodel -i /test_image_dir --color y_matlab --filter catrom --baseline --baseline-filter catrom
 ```
 Use the `-i` option to specify the directory where the test images are located.
 

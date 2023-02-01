@@ -16,13 +16,18 @@ Show help.
 python -m waifu2x.web -h
 ```
 
-With TTA, half float, debug log print
+With TTA, debug log print
 ```
-python -m waifu2x.web --tta --amp --debug
+python -m waifu2x.web --tta --debug
 ```
 or
 ```
-DEBUG=1 python -m waifu2x.web --tta --amp --debug
+DEBUG=1 python -m waifu2x.web --tta --debug
+```
+
+Specify HTTP port number and GPU ID.
+```
+DEBUG=1 python -m waifu2x.web --port 8813 --gpu 1
 ```
 
 # Image Encode/Decode
