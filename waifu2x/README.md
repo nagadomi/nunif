@@ -28,7 +28,7 @@ See [waifu2x Web Application](docs/web.md)
 
 # Web Application (in-browser)
 
-See [unlimited:waifu2x](web/unlimited_waifu2x/)
+See [unlimited:waifu2x](unlimited_waifu2x/)
 
 # Training
 
