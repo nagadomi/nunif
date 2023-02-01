@@ -3,6 +3,7 @@ import torch
 from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
     functional as TF,
+    InterpolationMode,
 )
 from torchvision import transforms as T
 from nunif.utils.image_loader import ImageLoader
@@ -24,11 +25,34 @@ INTERPOLATION_MODES = (
     "sinc",
     "lanczos",
     "triangle",
-    "catrom"
+    "catrom",
+#    "vision.bicubic_no_antialias",
 )
 INTERPOLATION_NEAREST = "box"
-# INTERPOLATION_MODE_WEIGHTS = (4/9, 4/9, 1/9)  # noqa: E226
+#INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3, 1/12)  # noqa: E226
 INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3)  # noqa: E226
+
+
+def _resize(im, size, filter_type, blur):
+    if filter_type in {"box", "sinc", "lanczos", "triangle","catrom"}:
+        return IM.resize(im, size, filter_type, blur)
+    elif filter_type == "vision.bicubic_no_antialias":
+        return TF.resize(im, size, InterpolationMode.BICUBIC, antialias=False)
+    else:
+        raise ValueEroror(f"{filter_type}")
+
+
+def resize(im, size, filter_type, blur, enable_step=False):
+    if enable_step and filter_type != INTERPOLATION_NEAREST and random.uniform(0, 1) < 0.1:
+        h, w = im.shape[1:]
+        scale = h / size[0]
+        step1_scale = random.uniform(1, scale)
+        step1_h, step1_w = int(step1_scale * h), int(step1_scale * w)
+        im = _resize(im, (step1_h, step1_w), filter_type, 1)
+        im = _resize(im, size, filter_type, blur)
+        return im
+    else:
+        return _resize(im, size, filter_type, blur)
 
 
 class RandomDownscaleX():
@@ -51,22 +75,15 @@ class RandomDownscaleX():
                 blur = random.uniform(0.95, 1.05)
             else:
                 blur = 1
-            x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                          filter_type=interpolation, blur=blur)
+            x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
+                       filter_type=interpolation, blur=blur, enable_step=self.training)
         elif self.scale_factor == 4:
             if random.uniform(0, 1) < 0.1:
                 blur = random.uniform(0.95, 1.05)
             else:
                 blur = 1
-            if (not self.training) or random.uniform(0, 1) > 0.25:
-                x = IM.resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                              filter_type=interpolation, blur=blur)
-            else:
-                # 2 step downscale
-                x = IM.resize(x, size=(h // 2, w // 2),
-                              filter_type=interpolation, blur=1)
-                x = IM.resize(x, size=(h // 4, w // 4),
-                              filter_type=interpolation, blur=blur)
+            x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
+                       filter_type=interpolation, blur=blur, enable_step=self.training)
         x = pil_io.to_image(x)
         return x, y
 
