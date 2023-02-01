@@ -17,8 +17,15 @@ VXdlIEJlaHJtYW5uIDx3d3cuYmVocm1hbm4ubmFtZT4AAAAAZGVzYwAAAAAAAAALR3JheSBDSUUq
 TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABYWVogAAAAAAAA9tYAAQAAAADTLVhZWiAAAAAAAAAA
 AAAAAAAAAAAAY3VydgAAAAAAAAABAQAAAA==
-"""))) #  from debian/icc-profiles-free/Gray-CIE_L.icc
+""")))  # from debian/icc-profiles-free/Gray-CIE_L.icc
 GAMMA_LCD = 45454
+
+
+def remove_alpha(im):
+    bg_color = tuple([255] * (len(im.mode) - 1))
+    nobg = Image.new(im.mode[:-1], im.size, bg_color)
+    nobg.paste(im, im.getchannel("A"))
+    return nobg
 
 
 def convert_i2l(im):
@@ -91,6 +98,8 @@ def _load_image(im, filename, color=None, keep_alpha=False):
             elif im.mode == "LA":
                 im = im.convert("RGBA")
         else:
+            if im.mode in {"LA", "RGBA"}:
+                im = remove_alpha(im)
             if im.mode != "RGB":
                 im = im.convert("RGB")
     elif color == "gray":
@@ -100,10 +109,37 @@ def _load_image(im, filename, color=None, keep_alpha=False):
             elif im.mode == "RGBA":
                 im = im.convert("LA")
         else:
+            if im.mode in {"LA", "RGBA"}:
+                im = remove_alpha(im)
             if im.mode != "L":
                 im = im.convert("L")
 
     return im, meta
+
+
+def load_image_simple(filename, color="rgb"):
+    im = Image.open(filename)
+    im.load()
+
+    transparency = im.info.get('transparency')
+    if isinstance(transparency, bytes) or isinstance(transparency, int):
+        if im.mode in {"RGB", "P"}:
+            im = im.convert("RGBA")
+        elif im.mode == "L":
+            im = im.convert("LA")
+    if im.mode in {"LA", "RGBA"}:
+        im = remove_alpha(im)
+
+    if color == "rgb" and im.mode != "RGB":
+        if im.mode == "I":
+            im = convert_i2l(im)
+        im = im.convert("RGB")
+    elif color == "gray" and im.mode != "L":
+        if im.mode == "I":
+            im = convert_i2l(im)
+        else:
+            im = im.convert("L")
+    return im, {}
 
 
 def load_image(filename, color=None, keep_alpha=False):
@@ -230,20 +266,37 @@ def save_image(im, filename, format="png",
             "lossless": True
         }
     elif format in {"jpg", "jpeg"}:
-        format = "jpeg" #  fix format name
+        format = "jpeg"  # fix format name
         options = {
             "icc_profile": icc_profile,
             "quality": 95,
             "subsampling": "4:4:4",
         }
         if im.mode in {"LA", "RGBA"}:
-            # remove alpha channel
-            bg_color = tuple([255] * (len(im.mode) -1))
-            tmp = Image.new(im.mode[:-1], im.size, bg_color)
-            tmp.paste(im, im.getchannel("A"))
-            im = tmp
+            im = remove_alpha(im)
             fn = filename if isinstance(filename, str) else "(ByteIO)"
             logger.warning(f"pil_io.save_image: {fn}: alpha channel is removed")
 
     options.update(save_options)
     im.save(filename, format=format, **options)
+
+
+try:
+    import cv2
+    import numpy as np
+
+    def to_cv2(im):
+        cvim = np.array(im, dtype=np.uint8)
+        if cvim.ndim == 2:
+            # grayscale
+            pass
+        elif cvim.shape[2] == 3:
+            # RGB
+            cvim = cv2.cvtColor(cvim, cv2.COLOR_RGB2BGR)
+        elif cvim.shape[2] == 4:
+            # RGBA
+            cvim = cv2.cvtColor(cvim, cv2.COLOR_RGBA2BGRA)
+        return cvim
+except ModuleNotFoundError:
+    def to_cv2(im):
+        raise NotImplementedError("opencv-python is not installed")

@@ -21,17 +21,22 @@ def image_load_task(q, stop_flag, files, max_queue_size, load_func):
             sleep(0.001)
         try:
             im, meta = load_func(f)
-        except:
+        except:  # noqa: E722
             logger.error(f"ImageLoader: load error: {f}, {sys.exc_info()[:2]}")
             im, meta = None, None
         q.put((im, meta))
     q.put(None)
 
 
+def list_images(directory):
+    return sorted([f for f in glob.glob(os.path.join(directory, "*"))
+                   if os.path.splitext(f)[-1].lower() in IMG_EXTENSIONS])
+
+
 class ImageLoader():
     @classmethod
     def listdir(cls, directory):
-        return [f for f in glob.glob(os.path.join(directory, "*")) if os.path.splitext(f)[-1].lower() in IMG_EXTENSIONS]
+        return list_images(directory)
 
     def __init__(self, directory=None, files=None, max_queue_size=256,
                  load_func=pil_io.load_image,

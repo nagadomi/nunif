@@ -6,9 +6,17 @@ I am not familiar with Windows or Anaconda. If you are familiar with Anaconda, d
 
 ## 1. Install dependencies packages
 
-TODO: ImageMagick (Not required to run waifu2x.web)
+#### Install ImageMagick
 
-Perhaps, on windows you need to install the ImageMagick Binary Package, but I haven't tested it.
+See [Install ImageMagick on Windows](https://docs.wand-py.org/en/0.6.10/guide/install.html?highlight=windows#install-imagemagick-on-windows).
+
+Note: ImageMagick(wand) is not required to run `waifu2x.web` or `waifu2x.cli`. It is used in training codes and benchmarks.
+
+#### Install libraqm.dll (Only required for synthetic training data generation)
+
+Download `libraqm‑0.7.1.dll.zip` from https://www.lfd.uci.edu/~gohlke/pythonlibs/#pillow .
+
+See https://stackoverflow.com/questions/62939101/how-to-install-pre-built-pillow-wheel-with-libraqm-dlls-on-windows
 
 ## 2. Clone
 
@@ -62,7 +70,7 @@ python -m waifu2x.web
 ```
 Open http://localhost:8812/
 
-If you don't have an nvidia GPU, specify the `--gpu -1` option. (CPU Mode)
+If you don't have an NVIDIA GPU, specify the `--gpu -1` option. (CPU Mode)
 ```
 python -m waifu2x.web --gpu -1
 ```

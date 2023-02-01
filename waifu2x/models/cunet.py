@@ -1,8 +1,9 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model
 from nunif.modules import SEBlock
-from nunif.modules import functional as NF
+import copy
 
 
 class UNetConv(nn.Module):
@@ -43,8 +44,10 @@ class UNet1(nn.Module):
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.trunc_normal_(m.weight, 0, 0.02)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
@@ -85,8 +88,10 @@ class UNet2(nn.Module):
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.trunc_normal_(m.weight, 0, 0.02)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
@@ -115,55 +120,88 @@ class UNet2(nn.Module):
         return z
 
 
+@register_model
 class UpCUNet(I2IBaseModel):
     name = "waifu2x.upcunet"
 
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels=3, out_channels=3, no_clip=False):
         super(UpCUNet, self).__init__(locals(), scale=2, offset=36, in_channels=in_channels)
         self.unet1 = UNet1(in_channels, out_channels, deconv=True)
         self.unet2 = UNet2(in_channels, out_channels, deconv=False)
+        self.no_clip = no_clip
 
-    def forward(self, x):
+    def _forward(self, x):
         z1 = self.unet1(x)
-        z1 = NF.inplace_clip(z1, 0.0, 1.0)
+        if not self.no_clip:
+            z1 = torch.clamp(z1, 0., 1.)
         z2 = self.unet2(z1)
         z1 = F.pad(z1, (-20, -20, -20, -20), mode='constant')
         z = z1 + z2
-        z = NF.inplace_clip(z, 0.0, 1.0)
+        return z, z1
+
+    def forward(self, x):
+        z, z1 = self._forward(x)
         if self.training:
             return (z, z1)
         else:
-            return z
+            return torch.clamp(z, 0., 1.)
+
+    def to_inference_model(self):
+        net = copy.deepcopy(self)
+        net.__class__ = UpCUNetJIT
+        net.eval()
+        return net
 
 
+@register_model
 class CUNet(I2IBaseModel):
     name = "waifu2x.cunet"
 
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels=3, out_channels=3, no_clip=False):
         super(CUNet, self).__init__(locals(), scale=1, offset=28, in_channels=in_channels)
         self.unet1 = UNet1(in_channels, out_channels, deconv=False)
         self.unet2 = UNet2(in_channels, out_channels, deconv=False)
+        self.no_clip = no_clip
 
-    def forward(self, x):
+    def _forward(self, x):
         z1 = self.unet1(x)
-        z1 = NF.inplace_clip(z1, 0.0, 1.0)
+        if not self.no_clip:
+            z1 = torch.clamp(z1, 0., 1.)
         z2 = self.unet2(z1)
         z1 = F.pad(z1, (-20, -20, -20, -20), mode='constant')
         z = z1 + z2
-        z = NF.inplace_clip(z, 0.0, 1.0)
+        return z, z1
 
+    def forward(self, x):
+        z, z1 = self._forward(x)
         if self.training:
             return (z, z1)
         else:
-            return z
+            return torch.clamp(z, 0., 1.)
+
+    def to_inference_model(self):
+        net = copy.deepcopy(self)
+        net.__class__ = CUNetJIT
+        net.eval()
+        return net
 
 
-register_model(CUNet.name, CUNet)
-register_model(UpCUNet.name, UpCUNet)
+# Inference only model for TorchScript
+
+
+class CUNetJIT(UpCUNet):
+    def forward(self, x):
+        z, _ = self._forward(x)
+        return torch.clamp(z, 0., 1.)
+
+
+class UpCUNetJIT(UpCUNet):
+    def forward(self, x):
+        z, _ = self._forward(x)
+        return torch.clamp(z, 0., 1.)
 
 
 if __name__ == "__main__":
-    import torch
     device = "cuda:0"
     model = CUNet(in_channels=3, out_channels=3).to(device)
     print(model)

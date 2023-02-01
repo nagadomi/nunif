@@ -1,0 +1,23 @@
+body { background-color: lightgray; margin: 8px; }
+h1 { text-align: center; }
+#main-panel { margin: 0em auto; width: 90%;}
+#form-box { margin: 0 auto; margin-bottom: 4px; width: 100%;}
+#button-box { margin: 0 auto; text-align: center; }
+input[type=button] { width: 10em; padding: 4px; }
+#src-box { margin: 1em auto; width: fit-content; height: fit-content;}
+#dest-box { margin: 1em auto; width: fit-content; height: fit-content;}
+#src { width: 128px; height: 128px; border: 8px ridge;}
+#src:hover { cursor: w-resize; }
+#dest { width: 128px; height: 128px; border: 8px ridge; display: block; margin: auto;
+        background-color: darkgray;}
+#dest:hover { cursor: w-resize; }
+#button-box { text-align: center; }
+#message { font-size: 0.8em; color: blue; margin: 1em auto 2em auto; width: 32em;}
+#form-box table { margin: auto; }
+#footer {margin: auto; font-size: 0.8em; text-align: center;
+         margin-top: 2em; padding-bottom: 2em;}
+
+tr {border: 1px solid;}
+td {border: 3px groove; padding: 4px 8px 4px 8px;}
+select { padding: 4px; }
+input[type=file] { padding: 4px; width: 80%;}
