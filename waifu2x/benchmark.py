@@ -62,15 +62,15 @@ def add_jpeg_noise(x, y, args):
 def make_input_waifu2x(gt, args):
     x = gt
     if args.method == "scale":
-        x = IM.scale(x, 0.5, filter_type=args.filter)
+        x = IM.scale(x, 0.5, filter_type=args.filter, blur=args.blur)
     elif args.method == "scale4x":
-        x = IM.scale(x, 0.25, filter_type=args.filter)
+        x = IM.scale(x, 0.25, filter_type=args.filter, blur=args.blur)
     elif args.method == "noise":
         x, gt = add_jpeg_noise(x, gt, args)
     elif args.method == "noise_scale":
-        x, gt = add_jpeg_noise(IM.scale(x, 0.5, filter_type=args.filter), gt, args)
+        x, gt = add_jpeg_noise(IM.scale(x, 0.5, filter_type=args.filter, blur=args.blur), gt, args)
     elif args.method == "noise_scale4x":
-        x, gt = add_jpeg_noise(IM.scale(x, 0.25, filter_type=args.filter), gt, args)
+        x, gt = add_jpeg_noise(IM.scale(x, 0.25, filter_type=args.filter, blur=args.blur), gt, args)
     return x, gt
 
 
@@ -121,6 +121,8 @@ def parse_args():
                         help="use yuv420 jpeg")
     parser.add_argument("--filter", type=str, choices=["catrom", "box", "lanczos", "sinc", "triangle"],
                         default="catrom", help="downscaling filter for generate LR image")
+    parser.add_argument("--blur", type=float,
+                        default=1, help="resize blur. 0.95: shapen, 1.05: blur")
     parser.add_argument("--baseline", action="store_true", help="use baseline score by image resize")
     parser.add_argument("--baseline-filter", type=str, default="catrom",
                         choices=["catrom", "box", "lanczos", "sinc", "triangle"],
@@ -191,9 +193,9 @@ def main():
             if args.baseline:
                 t = time.time()
                 if args.method in ("scale", "noise_scale"):
-                    z = IM.scale(x, 2, filter_type=args.baseline_filter)
+                    z = IM.scale(x, 2, filter_type=args.baseline_filter, blur=args.blur)
                 elif args.method in ("scale4x", "noise_scale4x"):
-                    z = IM.scale(x, 4, filter_type=args.baseline_filter)
+                    z = IM.scale(x, 4, filter_type=args.baseline_filter, blur=args.blur)
                 else:
                     z = x
                 baseline_time_sum += time.time() - t
