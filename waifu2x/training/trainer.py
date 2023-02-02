@@ -66,6 +66,7 @@ class Waifu2xTrainer(Trainer):
                 da_scale_p=self.args.da_scale_p,
                 da_chshuf_p=self.args.da_chshuf_p,
                 deblur=self.args.deblur,
+                resize_blur_p=self.args.resize_blur_p,
                 training=True,
             )
             return torch.utils.data.DataLoader(
@@ -220,8 +221,12 @@ def register(subparsers, default_parser):
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
                         help="random channel shuffle data argumentation for gt image")
     parser.add_argument("--deblur", type=float, default=0.0,
-                        help=("shift the blur parameter of resize."
-                              " 0.025-0.1 is a reasonable value."))
+                        help=("shift parameter of resize blur."
+                              " 0.0-0.1 is a reasonable value."
+                              " blur = uniform(0.95 + deblur, 1.05 + deblur)."
+                              " blur >= 1 is blur, blur <= 1 is sharpen. mean 1 by default"))
+    parser.add_argument("--resize-blur-p", type=float, default=0.1,
+                        help=("probability that resize blur should be used"))
     parser.add_argument("--hard-example", type=str, default="linear",
                         choices=["none", "linear", "top10", "top20"],
                         help="hard example mining for training data sampleing")
