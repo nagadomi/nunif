@@ -2,7 +2,7 @@
 
 Download pre-trained models.
 ```
-python -m waifu2x.download_models
+python3 -m waifu2x.download_models
 ```
 This command downloads the pre-trained models to `waifu2x/pretrained_models`.
 
