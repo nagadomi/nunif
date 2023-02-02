@@ -13,6 +13,6 @@ class ModelDownloader(ArchiveDownloader):
 
 
 if __name__ == "__main__":
-    MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20230131.zip"
+    MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20230202.zip"
     downloder = ModelDownloader(MODEL_URL, name="Waifu2x Models", format="zip")
     downloder.run()
