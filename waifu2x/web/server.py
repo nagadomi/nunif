@@ -31,7 +31,7 @@ from ..utils import Waifu2x
 
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
-    "cunet", "art"))
+    "swin_unet", "art"))
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
     "upconv_7", "photo"))
