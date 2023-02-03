@@ -93,8 +93,8 @@ def convert_utils(output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-dir", "-i", type=str, required=True, help="input waifu2x json model dir")
-    parser.add_argument("--output-dir", "-o", type=str, required=True, help="output dir")
+    parser.add_argument("--input-dir", "-i", type=str, required=True, help="input model dir")
+    parser.add_argument("--output-dir", "-o", type=str, required=True, help="output onnx model dir")
     args = parser.parse_args()
 
     logger.info("cunet")
