@@ -43,4 +43,4 @@ if __name__ == "__main__":
     with torch.no_grad():
         z = model(x)
         print(z.shape)
-        print(model.name, model.offset, model.scale)
+        print(model.name, model.i2i_offset, model.i2i_scale)
