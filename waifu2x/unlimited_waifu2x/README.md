@@ -27,7 +27,7 @@ The pretrained models are available at https://github.com/nagadomi/nunif/release
 
 For testing purposes, web server can be run with the following command.
 ```
-python3 -m waifu2x.web.unlimited_waifu2x.test_server
+python3 -m waifu2x.unlimited_waifu2x.test_server
 ```
 Open http://127.0.0.1:8812/ in web brwoser.
 

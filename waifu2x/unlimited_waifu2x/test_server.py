@@ -1,4 +1,4 @@
-# python3 -m waifu2x.web.unlimited_waifu2x.test_server
+# python3 -m waifu2x.unlimited_waifu2x.test_server
 # View at http://localhost:8812/
 # Do not use this server in product environments.
 import bottle
