@@ -65,6 +65,7 @@ class Waifu2xTrainer(Trainer):
                 da_jpeg_p=self.args.da_jpeg_p,
                 da_scale_p=self.args.da_scale_p,
                 da_chshuf_p=self.args.da_chshuf_p,
+                da_unsharpmask_p=self.args.da_unsharpmask_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,
@@ -220,6 +221,8 @@ def register(subparsers, default_parser):
                         help="random downscale data argumentation for gt image")
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
                         help="random channel shuffle data argumentation for gt image")
+    parser.add_argument("--da-unsharpmask-p", type=float, default=0.0,
+                        help="random unsharp mask data argumentation for gt image")
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of resize blur."
                               " 0.0-0.1 is a reasonable value."
