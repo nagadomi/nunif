@@ -277,7 +277,7 @@ def make_output_filename(style, method, noise, image_format, meta):
         mode = f"{style.value}_scale"
     elif method == "none":
         mode = "none"
-    return set_image_ext(f"{base}_waifu2x_{mode}", image_format)
+    return set_image_ext(f"{base}_waifu2x_{mode}.png", image_format)
 
 
 @bottle.get("/recaptcha_state.json")
