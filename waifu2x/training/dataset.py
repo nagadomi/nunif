@@ -155,7 +155,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  model_offset,
                  scale_factor,
                  tile_size, num_samples=None,
-                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
+                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0, da_grayscale_p=0,
                  deblur=0, resize_blur_p=0.1,
                  noise_level=-1, style=None,
                  training=True):
@@ -187,6 +187,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
                 T.RandomApply([RandomUnsharpMask()], p=da_unsharpmask_p),
+                T.RandomApply([T.RandomGrayscale(p=1)], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
             self.transforms = TP.Compose([
