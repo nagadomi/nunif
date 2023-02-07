@@ -4,6 +4,7 @@ import argparse
 from os import path
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from tqdm import tqdm
+import random
 import torchvision.transforms.functional as TF
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import ImageLoader
@@ -36,6 +37,11 @@ def split_image(filepath_prefix, im, size, stride, reject_rate):
     return None
 
 
+def load_image_with_random_bg_color(f):
+    bg_color = random.randint(0, 255)
+    return load_image_simple(f, color="rgb", bg_color=bg_color)
+
+
 def main(args):
     def wait_pool(futures):
         for f in futures:
@@ -57,8 +63,7 @@ def main(args):
 
         loader = ImageLoader(
             directory=input_dir,
-            load_func=load_image_simple,
-            load_func_kwargs={"color": "rgb"})
+            load_func=load_image_with_random_bg_color)
         index = 0
         futures = []
         with PoolExecutor() as pool:
