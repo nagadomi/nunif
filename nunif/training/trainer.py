@@ -107,7 +107,11 @@ class Trainer(ABC):
                 lr=self.args.learning_rate,
                 weight_decay=self.args.weight_decay)
         elif self.args.optimizer == "sgd":
-            return optim.SGD(self.model.parameters(), lr=self.args.learning_rate)
+            return optim.SGD(
+                self.model.parameters(),
+                lr=self.args.learning_rate,
+                momentum=self.args.momentum,
+                weight_decay=self.args.weight_decay)
         else:
             raise NotImplementedError(f"optimizer = {self.args.optimizer}")
 
@@ -191,8 +195,10 @@ def create_trainer_default_parser():
                         help="minibatch size")
     parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd"], default="adam",
                         help="optimizer")
-    parser.add_argument("--weight-decay", type=float, default=0.01,
-                        help="weight decay coefficient for adamw")
+    parser.add_argument("--weight-decay", type=float, default=1e-4,
+                        help="weight decay coefficient for adamw, sgd")
+    parser.add_argument("--momentum", type=float, default=0.9,
+                        help="momentum for sgd")
     parser.add_argument("--num-workers", type=int, default=num_workers,
                         help="number of worker processes for data loader")
     parser.add_argument("--max-epoch", type=int, default=200,
