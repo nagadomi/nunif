@@ -21,8 +21,8 @@ AAAAAAAAAAAAY3VydgAAAAAAAAABAQAAAA==
 GAMMA_LCD = 45454
 
 
-def remove_alpha(im):
-    bg_color = tuple([255] * (len(im.mode) - 1))
+def remove_alpha(im, bg_color=255):
+    bg_color = tuple([bg_color] * (len(im.mode) - 1))
     nobg = Image.new(im.mode[:-1], im.size, bg_color)
     nobg.paste(im, im.getchannel("A"))
     return nobg
@@ -33,7 +33,7 @@ def convert_i2l(im):
     return ImageMath.eval('im >> 8', im=im).convert('L')
 
 
-def _load_image(im, filename, color=None, keep_alpha=False):
+def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
     meta = {"engine": "pil", "filename": filename}
     im.load()
     meta["mode"] = im.mode
@@ -99,7 +99,7 @@ def _load_image(im, filename, color=None, keep_alpha=False):
                 im = im.convert("RGBA")
         else:
             if im.mode in {"LA", "RGBA"}:
-                im = remove_alpha(im)
+                im = remove_alpha(im, bg_color=bg_color)
             if im.mode != "RGB":
                 im = im.convert("RGB")
     elif color == "gray":
@@ -110,14 +110,14 @@ def _load_image(im, filename, color=None, keep_alpha=False):
                 im = im.convert("LA")
         else:
             if im.mode in {"LA", "RGBA"}:
-                im = remove_alpha(im)
+                im = remove_alpha(im, bg_color=bg_color)
             if im.mode != "L":
                 im = im.convert("L")
 
     return im, meta
 
 
-def load_image_simple(filename, color="rgb"):
+def load_image_simple(filename, color="rgb", bg_color=255):
     im = Image.open(filename)
     im.load()
 
@@ -128,7 +128,7 @@ def load_image_simple(filename, color="rgb"):
         elif im.mode == "L":
             im = im.convert("LA")
     if im.mode in {"LA", "RGBA"}:
-        im = remove_alpha(im)
+        im = remove_alpha(im, bg_color=bg_color)
 
     if color == "rgb" and im.mode != "RGB":
         if im.mode == "I":
@@ -142,12 +142,12 @@ def load_image_simple(filename, color="rgb"):
     return im, {}
 
 
-def load_image(filename, color=None, keep_alpha=False):
+def load_image(filename, color=None, keep_alpha=False, bg_color=255):
     assert (color is None or color in {"rgb", "gray"})
     with open(filename, "rb") as f:
         try:
             im = Image.open(f)
-            return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
+            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color)
         except UnidentifiedImageError:
             return None, None
         except Image.DecompressionBombError:
@@ -162,11 +162,11 @@ def load_image(filename, color=None, keep_alpha=False):
             return None, None
 
 
-def decode_image(buff, filename=None, color=None, keep_alpha=False):
+def decode_image(buff, filename=None, color=None, keep_alpha=False, bg_color=255):
     with io.BytesIO(buff) as data:
         try:
             im = Image.open(data)
-            return _load_image(im, filename, color=color, keep_alpha=keep_alpha)
+            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color)
         except UnidentifiedImageError:
             return None, None
         except Image.DecompressionBombError:
@@ -179,10 +179,10 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False):
             return None, None
 
 
-def encode_image(im, format="png", meta=None,
+def encode_image(im, format="png", meta=None, bg_color=255,
                  **save_options):
     with io.BytesIO() as fp:
-        save_image(im, fp, meta=meta, format=format, save_options=save_options)
+        save_image(im, fp, meta=meta, bg_color=bg_color, format=format, save_options=save_options)
         return fp.getvalue()
 
 
@@ -212,7 +212,7 @@ def to_image(im, alpha=None, depth=None):
 
 
 def save_image(im, filename, format="png",
-               meta=None,
+               meta=None, bg_color=255,
                **save_options):
     icc_profile = None
     if meta is not None:
@@ -273,7 +273,7 @@ def save_image(im, filename, format="png",
             "subsampling": "4:4:4",
         }
         if im.mode in {"LA", "RGBA"}:
-            im = remove_alpha(im)
+            im = remove_alpha(im, bg_color=bg_color)
             fn = filename if isinstance(filename, str) else "(ByteIO)"
             logger.warning(f"pil_io.save_image: {fn}: alpha channel is removed")
 
