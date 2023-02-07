@@ -27,6 +27,15 @@
             </td>
           </tr>
           <tr>
+            <td>Model</td>
+            <td>
+              <select name="model">
+                <option value="swin_unet.art" selected>swin_unet / art (202302)</option>
+                <option value="cunet.art">cunet / art (201811)</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
             <td>JPEG DeNoise</td>
             <td>
               <select name="noise_level">
@@ -46,6 +55,7 @@
                 <option value="2" selected>2x</option>
                 <option value="4">4x</option>
               </select>
+              <span id="scale-comment">no 4x support</span>
             </td>
           </tr>
           <tr>

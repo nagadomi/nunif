@@ -21,3 +21,5 @@ tr {border: 1px solid;}
 td {border: 3px groove; padding: 4px 8px 4px 8px;}
 select { padding: 4px; }
 input[type=file] { padding: 4px; width: 80%;}
+#scale-comment { font-size: 0.8em; color: green; margin-left: 1em; }
+
