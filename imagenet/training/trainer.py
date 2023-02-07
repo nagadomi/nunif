@@ -32,6 +32,7 @@ class ImageNetTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
+                prefetch_factor=self.args.prefetch_factor,
                 drop_last=True)
             return loader
         else:
@@ -45,6 +46,7 @@ class ImageNetTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
+                prefetch_factor=self.args.prefetch_factor,
                 drop_last=False)
             return loader
 

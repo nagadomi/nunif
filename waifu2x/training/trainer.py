@@ -78,6 +78,7 @@ class Waifu2xTrainer(Trainer):
                 pin_memory=True,
                 sampler=dataset.sampler(),
                 num_workers=self.args.num_workers,
+                prefetch_factor=self.args.prefetch_factor,
                 drop_last=True)
         elif type == "eval":
             dataset = Waifu2xDataset(
@@ -94,6 +95,7 @@ class Waifu2xTrainer(Trainer):
                 worker_init_fn=dataset.worker_init,
                 shuffle=False,
                 num_workers=self.args.num_workers,
+                prefetch_factor=self.args.prefetch_factor,
                 drop_last=False)
 
     def create_env(self):

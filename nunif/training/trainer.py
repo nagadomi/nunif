@@ -201,6 +201,8 @@ def create_trainer_default_parser():
                         help="momentum for sgd")
     parser.add_argument("--num-workers", type=int, default=num_workers,
                         help="number of worker processes for data loader")
+    parser.add_argument("--prefetch-factor", type=int, default=4,
+                        help="number of batches loaded in advance by each worker")
     parser.add_argument("--max-epoch", type=int, default=200,
                         help="max epoch")
     parser.add_argument("--gpu", type=int, nargs="+", default=[0],
