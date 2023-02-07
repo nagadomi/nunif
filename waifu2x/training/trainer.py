@@ -66,6 +66,7 @@ class Waifu2xTrainer(Trainer):
                 da_scale_p=self.args.da_scale_p,
                 da_chshuf_p=self.args.da_chshuf_p,
                 da_unsharpmask_p=self.args.da_unsharpmask_p,
+                da_grayscale_p=self.args.da_grayscale_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,
