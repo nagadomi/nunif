@@ -77,6 +77,7 @@ class Waifu2xTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 sampler=dataset.sampler(),
+                persistent_workers=True,
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
                 drop_last=True)
@@ -94,6 +95,7 @@ class Waifu2xTrainer(Trainer):
                 dataset, batch_size=self.args.batch_size,
                 worker_init_fn=dataset.worker_init,
                 shuffle=False,
+                persistent_workers=True,
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
                 drop_last=False)

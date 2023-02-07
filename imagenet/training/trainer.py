@@ -31,6 +31,7 @@ class ImageNetTrainer(Trainer):
                 sampler=dataset.sampler(self.args.num_samples),
                 shuffle=False,
                 pin_memory=True,
+                persistent_workers=True,
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
                 drop_last=True)
@@ -45,6 +46,7 @@ class ImageNetTrainer(Trainer):
                 batch_size=self.args.batch_size,
                 shuffle=False,
                 pin_memory=True,
+                persistent_workers=True,
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
                 drop_last=False)
