@@ -183,7 +183,7 @@ def create_trainer_default_parser():
     parser = argparse.ArgumentParser(
         add_help=False,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    num_workers = cpu_count() - 2
+    num_workers = min(cpu_count() - 2, 8)
     if not num_workers > 0:
         num_workers = cpu_count()
 
