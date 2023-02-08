@@ -117,7 +117,7 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
     return im, meta
 
 
-def load_image_simple(filename, color="rgb", bg_color=255):
+def _load_image_simple(filename, color="rgb", bg_color=255):
     im = Image.open(filename)
     im.load()
 
@@ -140,6 +140,24 @@ def load_image_simple(filename, color="rgb", bg_color=255):
         else:
             im = im.convert("L")
     return im, {}
+
+
+def load_image_simple(filename, color="rgb", bg_color=255):
+    try:
+        im, meta = _load_image_simple(filename, color, bg_color)
+        return im, meta
+    except UnidentifiedImageError:
+        return None, None
+    except Image.DecompressionBombError:
+        return None, None
+    except OSError:
+        return None, None
+    except ValueError:
+        # Decompressed Data Too Large
+        return None, None
+    except SyntaxError:
+        # SyntaxError: broken PNG file
+        return None, None
 
 
 def load_image(filename, color=None, keep_alpha=False, bg_color=255):
