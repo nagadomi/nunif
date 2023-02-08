@@ -58,6 +58,7 @@ class Waifu2xTrainer(Trainer):
                 input_dir=path.join(self.args.data_dir, "train"),
                 model_offset=model_offset,
                 scale_factor=scale_factor,
+                bicubic_only=self.args.b4b,
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
@@ -240,6 +241,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--hard-example", type=str, default="linear",
                         choices=["none", "linear", "top10", "top20"],
                         help="hard example mining for training data sampleing")
+    parser.add_argument("--b4b", action="store_true",
+                        help="use only bicubic downsampling for bicubic downsampling restoration")
 
     parser.set_defaults(
         batch_size=16,
