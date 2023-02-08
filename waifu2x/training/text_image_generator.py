@@ -105,20 +105,33 @@ class TextImageGenerator(Dataset):
         ])
 
     def gen_basecolor(self):
-        bg = []
-        for _ in range(3):
-            bg.append(random.randint(0, 255))
-        bg_mean = int(np.mean(bg))
-        if bg_mean > 128:
-            fg = np.clip([c - random.randint(32, 192) for c in bg], 0, 255)
-        else:
-            fg = np.clip([c + random.randint(32, 192) for c in bg], 0, 255)
+        if random.uniform(0, 1) < 0.7:
+            # random color
+            bg = []
+            for _ in range(3):
+                bg.append(random.randint(0, 255))
+            bg_mean = int(np.mean(bg))
+            if bg_mean > 128:
+                fg = np.clip([c - random.randint(32, 192) for c in bg], 0, 255)
+            else:
+                fg = np.clip([c + random.randint(32, 192) for c in bg], 0, 255)
 
-        is_grayscale = exec_prob(0.5)
-        if is_grayscale:
-            fg_mean = int(np.mean(fg))
-            fg = [fg_mean, fg_mean, fg_mean]
-            bg = [bg_mean, bg_mean, bg_mean]
+            is_grayscale = exec_prob(0.5)
+            if is_grayscale:
+                fg_mean = int(np.mean(fg))
+                fg = [fg_mean, fg_mean, fg_mean]
+                bg = [bg_mean, bg_mean, bg_mean]
+        else:
+            # black white
+            a = random.randint(0, 10)
+            b = random.randint(245, 255)
+            if random.uniform(0, 1) < 0.5:
+                bg = [a, a, a]
+                fg = [b, b, b]
+            else:
+                bg = [b, b, b]
+                fg = [a, a, a]
+
         return tuple(fg), tuple(bg)
 
     def gen_bg(self, bg_color):
