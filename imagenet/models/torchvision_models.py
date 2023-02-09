@@ -11,7 +11,7 @@ class VGG11BN(SoftmaxBaseModel):
     def __init__(self, pretrained=False):
         super().__init__(locals(), class_names=CLASS_NAMES)
         if pretrained:
-            self.net = vgg11_bn(VGG11_BN_Weights)
+            self.net = vgg11_bn(weights=VGG11_BN_Weights.DEFAULT)
         else:
             self.net = vgg11_bn()
 
