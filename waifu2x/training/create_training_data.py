@@ -6,8 +6,11 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from tqdm import tqdm
 import random
 import torchvision.transforms.functional as TF
+from torch.utils.data.dataset import Dataset
+from torch.utils.data import DataLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.utils.image_loader import ImageLoader
+from nunif.utils.image_loader import list_images
+from multiprocessing import cpu_count
 
 
 def split_image(filepath_prefix, im, size, stride, reject_rate):
@@ -28,56 +31,62 @@ def split_image(filepath_prefix, im, size, stride, reject_rate):
 
     index = 0
     for rect in rects:
-        rect.save(f"{filepath_prefix}_{index}.png")
-        rect.close()
+        rect.save(f"{filepath_prefix}_{index}.webp", lossless=True)
         index += 1
 
-    im.close()
 
-    return None
+class CreateTrainingData(Dataset):
+    def __init__(self, input_dir, output_dir, args):
+        super().__init__()
+        self.files = list_images(input_dir)
+        self.args = args
+        self.filename_prefix = args.prefix + "_" if args.prefix else ""
+        self.output_dir = output_dir
 
+    def __len__(self):
+        return len(self.files)
 
-def load_image_with_random_bg_color(f):
-    bg_color = random.randint(0, 255)
-    return load_image_simple(f, color="rgb", bg_color=bg_color)
+    def __getitem__(self, i):
+        filename = self.files[i]
+        bg_color = random.randint(0, 255)
+        im, _ = load_image_simple(filename, color="rgb", bg_color=bg_color)
+        if im is None:
+            return -1
+
+        split_image(
+            path.join(self.output_dir, self.filename_prefix + str(i)),
+            im, self.args.size, int(self.args.size * self.args.stride), self.args.reject_rate)
+        im.close()
+
+        return 0
 
 
 def main(args):
-    def wait_pool(futures):
-        for f in futures:
-            f.result()
-        return []
+    num_workers = cpu_count()
 
-    filename_prefix = args.prefix + "_" if args.prefix else ""
+    for dataset_type in ("eval", "train"):
+        input_dir = path.join(args.dataset_dir, dataset_type)
+        output_dir = path.join(args.data_dir, dataset_type)
+        if not path.exists(input_dir):
+            print(f"Error: `{input_dir}` not found", file=sys.stderr)
+            return
 
     for dataset_type in ("eval", "train"):
         print(f"** {dataset_type}")
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)
 
-        if not path.exists(input_dir):
-            print(f"Error: `{input_dir}` not found", file=sys.stderr)
-            return
-
         os.makedirs(output_dir, exist_ok=True)
-
-        loader = ImageLoader(
-            directory=input_dir,
-            load_func=load_image_with_random_bg_color)
-        index = 0
-        futures = []
-        with PoolExecutor() as pool:
-            for im, _ in tqdm(loader, ncols=80):
-                if im is None:
-                    continue
-                f = pool.submit(split_image,
-                                path.join(output_dir, filename_prefix + str(index)),
-                                im, args.size, int(args.size * args.stride), args.reject_rate)
-                futures.append(f)
-                index += 1
-
-            for f in tqdm(futures, ncols=80):
-                f.result()
+        loader = DataLoader(
+            CreateTrainingData(input_dir, output_dir, args),
+            batch_size=1,
+            shuffle=False,
+            num_workers=num_workers,
+            prefetch_factor=8,
+            drop_last=False
+        )
+        for _ in tqdm(loader, ncols=80):
+            pass
 
 
 def register(subparsers, default_parser):
