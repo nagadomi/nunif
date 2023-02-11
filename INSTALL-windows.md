@@ -40,7 +40,7 @@ git checkout -b dev origin/dev
 ```
 conda create -n nunif
 conda activate nunif
-conda install python=3.9
+conda install python=3.10
 ```
 
 ## 4. Install Pytorch
