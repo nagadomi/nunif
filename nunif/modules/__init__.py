@@ -1,5 +1,6 @@
 from . attention import SEBlock
 from . lbp_loss import LBPLoss, RandomBinaryConvolution
+from . alex11_loss import Alex11Loss
 from . clamp_loss import ClampLoss
 from . auxiliary_loss import AuxiliaryLoss
 from . channel_weighted_loss import ChannelWeightedLoss, LuminanceWeightedLoss
@@ -10,5 +11,5 @@ from . charbonnier_loss import CharbonnierLoss
 __all__ = [
     "SEBlock", "LBPLoss", "RandomBinaryConvolution",
     "ClampLoss", "AuxiliaryLoss", "ChannelWeightedLoss", "LuminanceWeightedLoss",
-    "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss",
+    "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11"
 ]

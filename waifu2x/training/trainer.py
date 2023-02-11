@@ -7,7 +7,10 @@ from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import create_model, get_model_config, get_model_names
-from nunif.modules import ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss, CharbonnierLoss
+from nunif.modules import (
+    ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss, CharbonnierLoss,
+    Alex11Loss
+)
 
 
 class Waifu2xEnv(LuminancePSNREnv):
@@ -106,6 +109,8 @@ class Waifu2xTrainer(Trainer):
             criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
         elif self.args.loss == "lbp5":
             criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
+        elif self.args.loss == "alex11":
+            criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
         elif self.args.loss == "y_charbonnier":
             criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())).to(self.device)
         elif self.args.loss == "charbonnier":
@@ -115,6 +120,11 @@ class Waifu2xTrainer(Trainer):
                 ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
                 ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
             ], weight=(1.0, 0.5)).to(self.device)
+        elif self.args.loss == "aux_alex11":
+            criterion = AuxiliaryLoss([
+                ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+                ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+            ], weights=(1.0, 0.5)).to(self.device)
         elif self.args.loss == "aux_y_charbonnier":
             criterion = AuxiliaryLoss([
                 ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),
@@ -219,7 +229,8 @@ def register(subparsers, default_parser):
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str,
                         choices=["lbp", "lbp5", "y_charbonnier", "charbonnier",
-                                 "aux_lbp", "aux_y_charbonnier", "aux_charbonnier"],
+                                 "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
+                                 "alex11", "aux_alex11"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data argumentation for gt image")
