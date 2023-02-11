@@ -23,7 +23,8 @@ def split_image(filepath_prefix, im, size, stride, reject_rate):
             if not x + size <= w:
                 break
             rect = TF.crop(im, y, x, size, size)
-            color_stdv = TF.to_tensor(rect).permute(1, 2, 0).view(-1, 3).std(dim=0).sum().item()
+            center = TF.center_crop(rect, (size // 2, size // 2))
+            color_stdv = TF.to_tensor(center).std(dim=[1, 2]).sum().item()
             rects.append((rect, color_stdv))
 
     n_reject = int(len(rects) * reject_rate)
