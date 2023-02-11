@@ -38,22 +38,6 @@ class SwinTransformerBlocks(nn.Module):
         return z
 
 
-class GroupLinear(nn.Module):
-    def __init__(self, in_channels, out_channels, groups=4):
-        super().__init__()
-        assert in_channels % groups == 0 and out_channels % groups == 0
-        self.groups = groups
-        self.out_channels = out_channels
-        self.linear = nn.Linear(in_channels // groups, out_channels // groups)
-
-    def forward(self, x):
-        B, H, W, C = x.shape
-        x = x.view(B, H, W, self.groups, C // self.groups).contiguous()
-        x = self.linear(x)
-        x = x.view(B, H, W, self.out_channels).contiguous()
-        return x
-
-
 class PatchDown(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -138,7 +122,6 @@ class SwinUNetBase(nn.Module):
         self.swin2 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W)
         self.down2 = PatchDown(C * 2, C * 2)
         self.swin3 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L * 3, window_size=W)
-        self.up2 = PatchUp(C * 2, C * 2)
         if scale_factor in {1, 2}:
             self.proj1 = nn.Identity()
             self.up2 = PatchUp(C * 2, C * 2)
