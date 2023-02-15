@@ -8,6 +8,7 @@ from torch.optim.lr_scheduler import (
     StepLR, MultiStepLR, CosineAnnealingWarmRestarts,
     ConstantLR, ChainedScheduler
 )
+from ..optim import Lion
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
 from .weight_decay_config import configure_adamw
@@ -112,6 +113,8 @@ class Trainer(ABC):
                 lr=self.args.learning_rate,
                 momentum=self.args.momentum,
                 weight_decay=self.args.weight_decay)
+        elif self.args.optimizer == "lion":
+            return Lion(self.model.parameters(), lr=self.args.learning_rate, weight_decay=self.args.weight_decay)
         else:
             raise NotImplementedError(f"optimizer = {self.args.optimizer}")
 
@@ -193,7 +196,7 @@ def create_trainer_default_parser():
                         help="output directory for trained model/checkpoint")
     parser.add_argument("--batch-size", type=int, default=64,
                         help="minibatch size")
-    parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd"], default="adam",
+    parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd", "lion"], default="adam",
                         help="optimizer")
     parser.add_argument("--weight-decay", type=float, default=1e-4,
                         help="weight decay coefficient for adamw, sgd")
