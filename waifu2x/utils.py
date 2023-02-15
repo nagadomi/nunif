@@ -26,38 +26,22 @@ class Waifu2x():
         if self.scale_model is not None:
             self.scale_model = self.scale_model.to(self.device)
             self.scale_model.eval()
-            if len(self.gpus) > 1:
-                self.scale_model = torch.nn.DataParallel(self.scale_model,
-                                                         device_ids=self.gpus)
         if self.scale4x_model is not None:
             self.scale4x_model = self.scale4x_model.to(self.device)
             self.scale4x_model.eval()
-            if len(self.gpus) > 1:
-                self.scale4x_model = torch.nn.DataParallel(self.scale4x_model,
-                                                           device_ids=self.gpus)
 
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
                 self.noise_models[i] = self.noise_models[i].to(self.device)
                 self.noise_models[i].eval()
-                if len(self.gpus) > 1:
-                    self.noise_models[i] = torch.nn.DataParallel(self.noise_models[i],
-                                                                 device_ids=self.gpus)
 
             if self.noise_scale_models[i] is not None:
                 self.noise_scale_models[i] = self.noise_scale_models[i].to(self.device)
                 self.noise_scale_models[i].eval()
-                if len(self.gpus) > 1:
-                    self.noise_scale_models[i] = torch.nn.DataParallel(self.noise_scale_models[i],
-                                                                       device_ids=self.gpus)
 
             if self.noise_scale4x_models[i] is not None:
                 self.noise_scale4x_models[i] = self.noise_scale4x_models[i].to(self.device)
                 self.noise_scale4x_models[i].eval()
-                if len(self.gpus) > 1:
-                    self.noise_scale4x_models[i] = torch.nn.DataParallel(self.noise_scale4x_models[i],
-                                                                         device_ids=self.gpus)
-
 
     def load_model(self, method, noise_level):
         assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
@@ -65,58 +49,58 @@ class Waifu2x():
         if method == "scale":
             self.scale_model, _ = load_model(
                 path.join(self.model_dir, "scale2x.pth"),
-                map_location=self.device)
+                map_location=self.device, device_ids=self.gpus)
         elif method == "scale4x":
             self.scale4x_model, _ = load_model(
                 path.join(self.model_dir, "scale4x.pth"),
-                map_location=self.device)
+                map_location=self.device, device_ids=self.gpus)
         elif method == "noise":
             self.noise_models[noise_level], _ = load_model(
                 path.join(self.model_dir, f"noise{noise_level}.pth"),
-                map_location=self.device)
+                map_location=self.device, device_ids=self.gpus)
         elif method == "noise_scale":
             self.noise_scale_models[noise_level], _ = load_model(
                 path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
-                map_location=self.device)
+                map_location=self.device, device_ids=self.gpus)
             # for alpha channel
             self.scale_model, _ = load_model(
                 path.join(self.model_dir, "scale2x.pth"),
-                map_location=self.device)
+                map_location=self.device, device_ids=self.gpus)
         elif method == "noise_scale4x":
             self.noise_scale4x_models[noise_level], _ = load_model(
                 path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
-                map_location=self.device)
+                map_location=self.device, device_ids=self.gpus)
             # for alpha channel
             self.scale4x_model, _ = load_model(
                 path.join(self.model_dir, "scale4x.pth"),
-                map_location=self.device)
+                map_location=self.device, device_ids=self.gpus)
 
         self._setup()
 
     def load_model_all(self, load_4x=True):
         self.scale_model = load_model(
             path.join(self.model_dir, "scale2x.pth"),
-            map_location=self.device)[0]
+            map_location=self.device, device_ids=self.gpus)[0]
         self.noise_scale_models = [
             load_model(
                 path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
-                map_location=self.device)[0]
+                map_location=self.device, device_ids=self.gpus)[0]
             for noise_level in range(4)]
         self.noise_models = [
             load_model(
                 path.join(self.model_dir, f"noise{noise_level}.pth"),
-                map_location=self.device)[0]
+                map_location=self.device, device_ids=self.gpus)[0]
             for noise_level in range(4)]
 
         if load_4x:
             if path.exists(path.join(self.model_dir, "scale4x.pth")):
                 self.scale4x_model = load_model(
                     path.join(self.model_dir, "scale4x.pth"),
-                    map_location=self.device)[0]
+                    map_location=self.device, device_ids=self.gpus)[0]
                 self.noise_scale4x_models = [
                     load_model(
                         path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
-                        map_location=self.device)[0]
+                        map_location=self.device, device_ids=self.gpus)[0]
                     if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale4x.pth")) else None
                     for noise_level in range(4)]
 

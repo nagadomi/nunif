@@ -38,9 +38,7 @@ class Waifu2xTrainer(Trainer):
         kwargs = {"in_channels": 3, "out_channels": 3}
         if self.args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
             kwargs["no_clip"] = True
-        model = create_model(self.args.arch, **kwargs)
-        if len(self.args.gpu) > 1:
-            model = nn.DataParallel(model, device_ids=self.args.gpu)
+        model = create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
         model = model.to(self.device)
         return model
 

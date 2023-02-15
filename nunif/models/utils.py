@@ -8,7 +8,7 @@ from .. logger import logger
 
 def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
     if isinstance(model, nn.DataParallel):
-        model = model.model
+        model = model.module
     assert (isinstance(model, Model))
     updated_at = str(updated_at or datetime.now(timezone.utc))
     if train_kwargs is not None:
@@ -37,32 +37,32 @@ def load_model(model_path, model=None, device_ids=None, strict=True, map_locatio
     data = torch.load(model_path, map_location=map_location)
     assert ("nunif_model" in data)
     if model is None:
-        model = create_model(data["name"], **data["kwargs"])
+        model = create_model(data["name"], device_ids=device_ids, **data["kwargs"])
         model_predefine = False
     else:
         model_predefine = True
-    model.load_state_dict(data["state_dict"], strict=strict)
+    if isinstance(model, nn.DataParallel):
+        model.module.load_state_dict(data["state_dict"], strict=strict)
+    else:
+        model.load_state_dict(data["state_dict"], strict=strict)
     logger.debug(f"load: {model.name} from {model_path}")
     if "updated_at" in data:
         model.updated_at = data["updated_at"]
     data.pop("state_dict")
 
     if not model_predefine and device_ids is not None:
-        if len(device_ids) > 1:
-            model = torch.nn.DataParallel(model, device_ids=device_ids)
+        if device_ids[0] < 0:
+            device = 'cpu'
         else:
-            if device_ids[0] < 0:
-                device = 'cpu'
-            else:
-                device = 'cuda:{}'.format(device_ids[0])
-            model = model.to(device)
+            device = 'cuda:{}'.format(device_ids[0])
+        model = model.to(device)
 
     return model, data
 
 
 def get_model_config(model, key=None):
     if isinstance(model, nn.DataParallel):
-        model = model.model
+        model = model.module
     config = model.get_config()
     if key is None:
         return config
@@ -72,7 +72,7 @@ def get_model_config(model, key=None):
 
 def get_model_kwargs(model, key=None):
     if isinstance(model, nn.DataParallel):
-        model = model.model
+        model = model.module
     kwargs = model.get_kwargs()
     if key is None:
         return kwargs
@@ -82,7 +82,7 @@ def get_model_kwargs(model, key=None):
 
 def get_model_device(model):
     if isinstance(model, nn.DataParallel):
-        model = model.model
+        model = model.module
     return model.get_device()
 
 
