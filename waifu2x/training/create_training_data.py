@@ -13,7 +13,7 @@ from nunif.utils.image_loader import list_images
 from multiprocessing import cpu_count
 
 
-def split_image(filepath_prefix, im, size, stride, reject_rate):
+def split_image(filepath_prefix, im, size, stride, reject_rate, format):
     w, h = im.size
     rects = []
     for y in range(0, h, stride):
@@ -32,7 +32,12 @@ def split_image(filepath_prefix, im, size, stride, reject_rate):
 
     index = 0
     for rect in rects:
-        rect.save(f"{filepath_prefix}_{index}.webp", lossless=True)
+        if format == "png":
+            rect.save(f"{filepath_prefix}_{index}.png")
+        elif format == "webp":
+            rect.save(f"{filepath_prefix}_{index}.webp", lossless=True)
+        else:
+            raise ValueError(f"format {format}")
         index += 1
 
 
@@ -56,7 +61,9 @@ class CreateTrainingData(Dataset):
 
         split_image(
             path.join(self.output_dir, self.filename_prefix + str(i)),
-            im, self.args.size, int(self.args.size * self.args.stride), self.args.reject_rate)
+            im, self.args.size, int(self.args.size * self.args.stride), self.args.reject_rate,
+            self.args.format,
+        )
         im.close()
 
         return 0
@@ -104,6 +111,8 @@ def register(subparsers, default_parser):
                         help="reject rate for hard example mining")
     parser.add_argument("--prefix", type=str, default="",
                         help="prefix for output filename")
+    parser.add_argument("--format", type=str, choices=["png", "webp"], default="png",
+                        help="output image format")
     parser.set_defaults(handler=main)
 
     return parser
