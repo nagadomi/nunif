@@ -29,7 +29,7 @@ def create_model(name, device_ids=None, **kwargs):
         if len(device_ids) > 1:
             name = model.name
             model = nn.DataParallel(model, device_ids=device_ids)
-            # Set mdoel name
+            # Set model name
             # TODO: this is a bad practice.
             setattr(model, "name", name)
         else:
