@@ -8,6 +8,7 @@ tmp
 *.tar.gz
 *.tar
 *.zip
+*.xcf
 /data
 !/data/.keep
 /models/
