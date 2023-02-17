@@ -86,7 +86,7 @@ class BaseEnv(ABC):
 
 
 class SoftmaxEnv(BaseEnv):
-    def __init__(self, model, criterion=None, eval_tta=False):
+    def __init__(self, model, criterion=None, eval_tta=False, max_print_class=16):
         super().__init__()
         self.eval_tta = eval_tta
         self.model = model
@@ -95,7 +95,7 @@ class SoftmaxEnv(BaseEnv):
         if self.criterion is None:
             self.criterion = nn.NLLLoss().to(self.device)
         self.class_names = get_model_config(model, "softmax_class_names")
-        self.confusion_matrix = SoftmaxConfusionMatrix(self.class_names, max_print_class=16)
+        self.confusion_matrix = SoftmaxConfusionMatrix(self.class_names, max_print_class=max_print_class)
 
     def train_begin(self):
         self.model.train()

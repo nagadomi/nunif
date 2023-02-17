@@ -140,7 +140,7 @@ def parse_args():
     parser.add_argument("--input", "-i", type=str, required=True,
                         help="input directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true",
-                        help="TTA mode")
+                        help="TTA mode (aka geometric self-ensemble)")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
     args = parser.parse_args()

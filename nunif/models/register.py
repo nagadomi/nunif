@@ -19,7 +19,7 @@ def register_model(cls):
 
 
 def create_model(name, device_ids=None, **kwargs):
-    logger.debug(f"create_model: {name}({kwargs})")
+    logger.debug(f"create_model: {name}({kwargs}), device_ids={device_ids}")
     global _models
     if name not in _models:
         raise ValueError(f"Unknown model name: {name}")
@@ -27,7 +27,11 @@ def create_model(name, device_ids=None, **kwargs):
 
     if device_ids is not None:
         if len(device_ids) > 1:
+            name = model.name
             model = nn.DataParallel(model, device_ids=device_ids)
+            # Set model name
+            # TODO: this is a bad practice.
+            setattr(model, "name", name)
         else:
             if device_ids[0] < 0:
                 device = 'cpu'

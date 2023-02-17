@@ -260,6 +260,9 @@ def _test_alpha_border():
     import onnxruntime as ort
     import numpy as np
     import cv2
+    from ..utils.alpha import AlphaBorderPadding
+    from ..utils import pil_io
+
 
     pad = ONNXAlphaBorderPadding()
     pad.export_onnx("./tmp/alpha_border_padding.onnx")
@@ -275,16 +278,24 @@ def _test_alpha_border():
     im = cv2.cvtColor(im, cv2.COLOR_BGRA2RGBA)
     rgb = im[:, :, 0:3].transpose(2, 0, 1).astype(np.float32) / 255.0
     alpha = im[:, :, 3:4].transpose(2, 0, 1).astype(np.float32) / 255.0
-    offset = np.array([4], dtype=np.int64)
+    offset = np.array([16], dtype=np.int64)
     y = ses.run(["y"], {"rgb": rgb, "alpha": alpha, "offset": offset})[0]
 
     y = np.clip(y * 255, 0, 255).astype(np.uint8).transpose(1, 2, 0)
     y = cv2.cvtColor(y, cv2.COLOR_RGB2BGR)
     print(y.shape)
 
-    cv2.imshow("y", y)
+    cv2.imshow("onnx", y)
+
+    im, _ = pil_io.load_image("./tmp/alpha2.png", keep_alpha=True)
+    pad = AlphaBorderPadding()
+    t, alpha = pil_io.to_tensor(im, return_alpha=True)
+    with torch.no_grad():
+        y = pad(t, alpha, offset=16)
+    cv2.imshow("nunif", pil_io.to_cv2(pil_io.to_image(y)))
+
     cv2.waitKey(0)
 
 
 if __name__ == "__main__":
-    pass
+    _test_alpha_border()

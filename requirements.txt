@@ -6,6 +6,7 @@ pillow
 tqdm
 wand >= 0.6.10
 fonttools
+scipy
 # waifu2x-web
 #gunicorn
 waitress

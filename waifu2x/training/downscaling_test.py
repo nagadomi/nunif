@@ -37,6 +37,14 @@ def torchvision_scale(im, filename, output_dir, mode, scale, antialias):
     im.save(path.join(output_dir, f"{basename}_{mode}_{antialias}.png"))
 
 
+def torchvision_pil_scale(im, filename, output_dir, mode, scale):
+    w, h = im.size
+    im = TF.resize(im, size=(h // scale, w // scale),
+                   interpolation=mode)
+    basename = path.splitext(path.basename(filename))[0]
+    im.save(path.join(output_dir, f"{basename}_pil.{mode}.png"))
+
+
 def downscaling_test(filename, output_dir, scale):
     im, _ = pil_io.load_image_simple(filename)
     im = modcrop(im)
@@ -49,6 +57,9 @@ def downscaling_test(filename, output_dir, scale):
     torchvision_scale(t, filename, output_dir, InterpolationMode.BILINEAR, scale, antialias=False)
     torchvision_scale(t, filename, output_dir, InterpolationMode.BICUBIC, scale, antialias=True)
     torchvision_scale(t, filename, output_dir, InterpolationMode.BICUBIC, scale, antialias=False)
+    for intr in (InterpolationMode.BOX, InterpolationMode.LANCZOS,
+                 InterpolationMode.BICUBIC, InterpolationMode.BILINEAR):
+        torchvision_pil_scale(im, filename, output_dir, intr, scale)
 
 
 def main():

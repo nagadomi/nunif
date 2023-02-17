@@ -54,6 +54,7 @@ The trained models are saved in the directory specified by `--model-dir`.
 | `scale`       | `scale2x.pth`             | `scale2x.checkpoint.pth`
 | `scale4x`     | `scale4x.pth`             | `scale4x.checkpoint.pth`
 | `noise_scale` | `noise{level}_scale2x.pth`| `noise{level}_scale2x.checkpoint.pth`
+| `noise_scale4x` | `noise{level}_scale4x.pth` `noise{level}_scale4x.checkpoint.pth`
 | `noise`       | `noise{level}.pth`        | `noise{level}.checkpoint.pth`
 
 `--arch` option is network architecture. `upconv_7` and `vgg_7` are older versions.
@@ -64,7 +65,7 @@ The trained models are saved in the directory specified by `--model-dir`.
 | `waifu2x.cunet`    | `noise`
 | `waifu2x.swin_unet_1x` | `noise`
 | `waifu2x.swin_unet_2x` | `scale`
-| `waifu2x.swin_unet_4x` | `scale4x`
+| `waifu2x.swin_unet_4x` | `scale4x`, `noise_scale4x`
 | `waifu2x.upconv_7` | `scale`, `noise_scale`
 | `waifu2x.vgg_7`    | `noise`
 

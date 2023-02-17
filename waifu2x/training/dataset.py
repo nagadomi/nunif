@@ -29,6 +29,7 @@ INTERPOLATION_MODES = (
 #    "vision.bicubic_no_antialias",
 )
 INTERPOLATION_NEAREST = "box"
+INTERPOLATION_BICUBIC = "catrom"
 #INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3, 1/12)  # noqa: E226
 INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3)  # noqa: E226
 
@@ -72,6 +73,7 @@ class RandomDownscaleX():
             interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
         else:
             interpolation = self.interpolation
+
         if self.scale_factor == 2:
             if not self.training:
                 blur = 1 + self.blur_shift / 4
@@ -92,6 +94,17 @@ class RandomDownscaleX():
                        filter_type=interpolation, blur=blur, enable_step=self.training)
         x = pil_io.to_image(x)
         return x, y
+
+
+class RandomUnsharpMask():
+    def __init__(self):
+        pass
+
+    def __call__(self, x):
+        x = pil_io.to_tensor(x)
+        x = IM.random_unsharp_mask(x)
+        x = pil_io.to_image(x)
+        return x
 
 
 class Waifu2xDatasetBase(Dataset):
@@ -144,7 +157,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  model_offset,
                  scale_factor,
                  tile_size, num_samples=None,
-                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0,
+                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0, da_grayscale_p=0,
+                 bicubic_only=False,
                  deblur=0, resize_blur_p=0.1,
                  noise_level=-1, style=None,
                  training=True):
@@ -162,7 +176,12 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 jpeg_transform = TP.Identity()
             if scale_factor > 1:
+                if bicubic_only:
+                    interpolation = INTERPOLATION_BICUBIC
+                else:
+                    interpolation = None  # random
                 random_downscale_x = RandomDownscaleX(scale_factor=scale_factor,
+                                                      interpolation=interpolation,
                                                       blur_shift=deblur, resize_blur_p=resize_blur_p)
                 random_downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
                                                               interpolation=INTERPOLATION_NEAREST)
@@ -175,6 +194,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             self.gt_transforms = T.Compose([
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
+                T.RandomApply([RandomUnsharpMask()], p=da_unsharpmask_p),
+                T.RandomApply([T.RandomGrayscale(p=1)], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
             self.transforms = TP.Compose([
@@ -195,7 +216,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             ])
         else:
             self.gt_transforms = TS.Identity()
-            interpolation = "catrom"
+            interpolation = INTERPOLATION_BICUBIC
             if scale_factor > 1:
                 downscale_x = RandomDownscaleX(scale_factor=scale_factor,
                                                blur_shift=deblur,

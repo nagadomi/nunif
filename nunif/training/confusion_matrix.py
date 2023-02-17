@@ -33,6 +33,9 @@ class SoftmaxConfusionMatrix():
         print(f" global correct:      {self.global_correct()},"
               f" average_row_correct: {self.average_row_correct()}",
               file=file)
+        if self.max_print_class is not None and self.max_print_class < 0:
+            return
+
         print(self.confusion_matrix, file=file)
         class_accuracy = self.class_accuracy()
         for i, name in enumerate(self.class_names):

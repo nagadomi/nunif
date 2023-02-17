@@ -36,29 +36,37 @@ Note: Be careful not to initialize by `if isinstance(module, nn.Conv2d):` condit
 """
 
 
-class RandomBinaryConvolution(nn.Conv2d):
+class RandomBinaryConvolution(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, sparcity=0.9):
-        super().__init__(
+        super().__init__()
+        self.conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
             padding=padding,
             groups=in_channels,
             bias=False)
-        self.weight.data.copy_(generate_lbcnn_filters(self.weight.data.shape, sparcity))
-        self.weight.requires_grad_(False)
+        self.conv.weight.data.copy_(generate_lbcnn_filters(self.conv.weight.data.shape, sparcity))
+        self.conv.weight.requires_grad_(False)
+
+    def forward(self, x):
+        return self.conv(x)
 
 
-class RandomFilterConvolution(nn.Conv2d):
+class RandomFilterConvolution(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, sparcity=0.5):
-        super().__init__(
+        super().__init__()
+        self.conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
             padding=padding,
             bias=False)
-        self.weight.data.copy_(generate_random_filters(self.weight.data.shape, sparcity))
-        self.weight.requires_grad_(False)
+        self.conv.weight.data.copy_(generate_random_filters(self.conv.weight.data.shape, sparcity))
+        self.conv.weight.requires_grad_(False)
+
+    def forward(self, x):
+        return self.conv(x)
 
 
 class LBPLoss(nn.Module):
@@ -73,8 +81,8 @@ class LBPLoss(nn.Module):
             self.loss = loss
 
         # [0] = identity filter
-        self.conv.weight.data[0] = 0
-        self.conv.weight.data[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
+        self.conv.conv.weight.data[0] = 0
+        self.conv.conv.weight.data[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
 
     def forward(self, input, target):
         b, ch, *_ = input.shape

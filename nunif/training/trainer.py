@@ -8,6 +8,7 @@ from torch.optim.lr_scheduler import (
     StepLR, MultiStepLR, CosineAnnealingWarmRestarts,
     ConstantLR, ChainedScheduler
 )
+from ..optim import Lion
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
 from .weight_decay_config import configure_adamw
@@ -107,7 +108,13 @@ class Trainer(ABC):
                 lr=self.args.learning_rate,
                 weight_decay=self.args.weight_decay)
         elif self.args.optimizer == "sgd":
-            return optim.SGD(self.model.parameters(), lr=self.args.learning_rate)
+            return optim.SGD(
+                self.model.parameters(),
+                lr=self.args.learning_rate,
+                momentum=self.args.momentum,
+                weight_decay=self.args.weight_decay)
+        elif self.args.optimizer == "lion":
+            return Lion(self.model.parameters(), lr=self.args.learning_rate, weight_decay=self.args.weight_decay)
         else:
             raise NotImplementedError(f"optimizer = {self.args.optimizer}")
 
@@ -179,7 +186,7 @@ def create_trainer_default_parser():
     parser = argparse.ArgumentParser(
         add_help=False,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    num_workers = cpu_count() - 2
+    num_workers = min(cpu_count() - 2, 8)
     if not num_workers > 0:
         num_workers = cpu_count()
 
@@ -189,12 +196,16 @@ def create_trainer_default_parser():
                         help="output directory for trained model/checkpoint")
     parser.add_argument("--batch-size", type=int, default=64,
                         help="minibatch size")
-    parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd"], default="adam",
+    parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd", "lion"], default="adam",
                         help="optimizer")
-    parser.add_argument("--weight-decay", type=float, default=0.01,
-                        help="weight decay coefficient for adamw")
+    parser.add_argument("--weight-decay", type=float, default=1e-4,
+                        help="weight decay coefficient for adamw, sgd")
+    parser.add_argument("--momentum", type=float, default=0.9,
+                        help="momentum for sgd")
     parser.add_argument("--num-workers", type=int, default=num_workers,
                         help="number of worker processes for data loader")
+    parser.add_argument("--prefetch-factor", type=int, default=4,
+                        help="number of batches loaded in advance by each worker")
     parser.add_argument("--max-epoch", type=int, default=200,
                         help="max epoch")
     parser.add_argument("--gpu", type=int, nargs="+", default=[0],

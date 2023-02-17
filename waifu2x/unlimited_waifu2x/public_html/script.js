@@ -9,11 +9,23 @@ function gen_arch_config()
         scale4x: {scale: 4, offset: 32},
         scale1x: {scale: 1, offset: 8}, // bypass for alpha denoise
     };
+    var base = config["swin_unet"];
     for (var i = 0; i < 4; ++i) {
-        config["swin_unet"]["art"]["noise" + i + "_scale2x"] = {scale: 2, offset: 16};
-        config["swin_unet"]["art"]["noise" + i + "_scale4x"] = {scale: 4, offset: 32};
-        config["swin_unet"]["art"]["noise" + i] = {scale: 1, offset: 8};
+        base["art"]["noise" + i + "_scale2x"] = {scale: 2, offset: 16};
+        base["art"]["noise" + i + "_scale4x"] = {scale: 4, offset: 32};
+        base["art"]["noise" + i] = {scale: 1, offset: 8};
     }
+    config["cunet"] = {art: {}}
+    config["cunet"]["art"] = {
+        scale2x: {scale: 2, offset: 36},
+        scale1x: {scale: 1, offset: 28}, // bypass for alpha denoise
+    };
+    var base = config["cunet"];
+    for (var i = 0; i < 4; ++i) {
+        base["art"]["noise" + i + "_scale2x"] = {scale: 2, offset: 36};
+        base["art"]["noise" + i] = {scale: 1, offset: 28};
+    }
+
     return config;
 }
 
@@ -24,6 +36,23 @@ const CONFIG = {
         if ((arch in this.arch) && (style in this.arch[arch]) && (method in this.arch[arch][style])) {
             config = this.arch[arch][style][method];
             config["path"] = `models/${arch}/${style}/${method}.onnx`;
+            if (arch == "swin_unet") {
+                config.calc_tile_size = function (tile_size) {
+                    while (true) {
+                        if ((tile_size - 16) % 12 == 0 && (tile_size - 16) % 16 == 0) {
+                            break;
+                        }
+                        tile_size += 1;
+                    }
+                    return tile_size;
+                };
+            } else if (arch == "cunet") {
+                config.calc_tile_size = function (tile_size) {
+                    tile_size = tile_size + (config.offset - 16) * 2;
+                    tile_size -= tile_size % 4;
+                    return tile_size;
+                };
+            }
             return config;
         } else {
             return null;
@@ -507,7 +536,8 @@ $(function () {
             console.log("Already running");
             return;
         }
-        var style = "art";
+        var model_name = $("select[name=model]").val();
+        var [arch, style] = model_name.split(".");
         var scale = parseInt($("select[name=scale]").val());
         var noise_level = parseInt($("select[name=noise_level]").val());
         var method;
@@ -517,28 +547,25 @@ $(function () {
                 return;
             }
             method = "noise" + noise_level;
-            arch = "swin_unet";
         } else if (scale == 2) {
             if (noise_level == -1) {
                 method = "scale2x";
             } else {
                 method = "noise" + noise_level + "_scale2x";
             }
-            arch = "swin_unet";
         } else if (scale == 4) {
             if (noise_level == -1) {
                 method = "scale4x";
             } else {
                 method = "noise" + noise_level + "_scale4x";
             }
-            arch = "swin_unet";
         }
         const config = CONFIG.get_config(arch, style, method);
         if (config == null) {
             set_message("(・A・) Model Not found!");
             return;
         }
-        const tile_size = parseInt($("select[name=tile_size]").val());
+        const tile_size = config.calc_tile_size(parseInt($("select[name=tile_size]").val()));
         const tile_random = $("input[name=tile_random]").prop("checked");
         const tta_level = parseInt($("select[name=tta]").val());
 
@@ -712,6 +739,12 @@ $(function () {
 
     function restore_from_cookie()
     {
+        if ($.cookie("model")) {
+            $("select[name=model]").val($.cookie("model"));
+            if (!$("select[name=model]").val()) {
+                $("select[name=model]").val("swin_unet.art");
+            }
+        }
         if ($.cookie("noise_level")) {
             $("select[name=noise_level]").val($.cookie("noise_level"));
         }
@@ -733,6 +766,23 @@ $(function () {
     };
     restore_from_cookie();
 
+    $("select[name=model]").change(() => {
+        var model = $("select[name=model]").val();
+        var [arch, style] = model.split(".");
+        $.cookie("model", model, {expires: g_expires});
+        if (arch == "swin_unet") {
+            $("select[name=scale]").children("option[value=4]").show();
+            $("#scale-comment").hide();
+        } else {
+            var scale = $("select[name=scale]").val();
+            $("select[name=scale]").children("option[value=4]").hide();
+            $("#scale-comment").show();
+            if (scale == "4") {
+                $("select[name=scale]").val("2");
+            }
+        }
+    });
+    $("select[name=model]").trigger("change");
     $("select[name=noise_level]").change(() => {
         $.cookie("noise_level", $("select[name=noise_level]").val(), {expires: g_expires});
     });

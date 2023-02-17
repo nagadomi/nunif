@@ -1,6 +1,6 @@
 # unlimited:waifu2x
 
-An experimental onnxruntime-web based in-browser version of waifu2x.
+An experimental [onnxruntime-web](https://github.com/microsoft/onnxruntime/tree/main/js/web) based in-browser version of waifu2x.
 
 http://unlimited.waifu2x.net/
 

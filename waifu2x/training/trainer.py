@@ -7,7 +7,10 @@ from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import create_model, get_model_config, get_model_names
-from nunif.modules import ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss, CharbonnierLoss
+from nunif.modules import (
+    ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss, CharbonnierLoss,
+    Alex11Loss
+)
 
 
 class Waifu2xEnv(LuminancePSNREnv):
@@ -35,9 +38,7 @@ class Waifu2xTrainer(Trainer):
         kwargs = {"in_channels": 3, "out_channels": 3}
         if self.args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
             kwargs["no_clip"] = True
-        model = create_model(self.args.arch, **kwargs)
-        if len(self.args.gpu) > 1:
-            model = nn.DataParallel(model, device_ids=self.args.gpu)
+        model = create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
         model = model.to(self.device)
         return model
 
@@ -58,6 +59,7 @@ class Waifu2xTrainer(Trainer):
                 input_dir=path.join(self.args.data_dir, "train"),
                 model_offset=model_offset,
                 scale_factor=scale_factor,
+                bicubic_only=self.args.b4b,
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
@@ -65,6 +67,8 @@ class Waifu2xTrainer(Trainer):
                 da_jpeg_p=self.args.da_jpeg_p,
                 da_scale_p=self.args.da_scale_p,
                 da_chshuf_p=self.args.da_chshuf_p,
+                da_unsharpmask_p=self.args.da_unsharpmask_p,
+                da_grayscale_p=self.args.da_grayscale_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,
@@ -75,7 +79,9 @@ class Waifu2xTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 sampler=dataset.sampler(),
+                persistent_workers=True,
                 num_workers=self.args.num_workers,
+                prefetch_factor=self.args.prefetch_factor,
                 drop_last=True)
         elif type == "eval":
             dataset = Waifu2xDataset(
@@ -91,7 +97,9 @@ class Waifu2xTrainer(Trainer):
                 dataset, batch_size=self.args.batch_size,
                 worker_init_fn=dataset.worker_init,
                 shuffle=False,
+                persistent_workers=True,
                 num_workers=self.args.num_workers,
+                prefetch_factor=self.args.prefetch_factor,
                 drop_last=False)
 
     def create_env(self):
@@ -99,6 +107,8 @@ class Waifu2xTrainer(Trainer):
             criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
         elif self.args.loss == "lbp5":
             criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
+        elif self.args.loss == "alex11":
+            criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
         elif self.args.loss == "y_charbonnier":
             criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())).to(self.device)
         elif self.args.loss == "charbonnier":
@@ -108,6 +118,11 @@ class Waifu2xTrainer(Trainer):
                 ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
                 ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
             ], weight=(1.0, 0.5)).to(self.device)
+        elif self.args.loss == "aux_alex11":
+            criterion = AuxiliaryLoss([
+                ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+                ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+            ], weights=(1.0, 0.5)).to(self.device)
         elif self.args.loss == "aux_y_charbonnier":
             criterion = AuxiliaryLoss([
                 ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),
@@ -212,7 +227,8 @@ def register(subparsers, default_parser):
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str,
                         choices=["lbp", "lbp5", "y_charbonnier", "charbonnier",
-                                 "aux_lbp", "aux_y_charbonnier", "aux_charbonnier"],
+                                 "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
+                                 "alex11", "aux_alex11"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data argumentation for gt image")
@@ -220,6 +236,10 @@ def register(subparsers, default_parser):
                         help="random downscale data argumentation for gt image")
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
                         help="random channel shuffle data argumentation for gt image")
+    parser.add_argument("--da-unsharpmask-p", type=float, default=0.0,
+                        help="random unsharp mask data argumentation for gt image")
+    parser.add_argument("--da-grayscale-p", type=float, default=0.0,
+                        help="random grayscale data argumentation for gt image")
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of resize blur."
                               " 0.0-0.1 is a reasonable value."
@@ -230,6 +250,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--hard-example", type=str, default="linear",
                         choices=["none", "linear", "top10", "top20"],
                         help="hard example mining for training data sampleing")
+    parser.add_argument("--b4b", action="store_true",
+                        help="use only bicubic downsampling for bicubic downsampling restoration")
 
     parser.set_defaults(
         batch_size=16,

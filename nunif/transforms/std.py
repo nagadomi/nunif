@@ -27,7 +27,7 @@ class RandomSRHardExampleCrop():
         for _ in range(self.samples):
             i, j, h, w = T.RandomCrop.get_params(x, self.size)
             rect = TF.crop(xt, i, j, h, w)
-            color_stdv = rect.permute(1, 2, 0).reshape(-1, 3).std(dim=0).sum().item()
+            color_stdv = rect.std(dim=[1, 2]).sum().item()
             rects.append(((i, j, h, w), color_stdv))
 
         i, j, h, w = max(rects, key=lambda v: v[1])[0]
@@ -67,16 +67,17 @@ class RandomJPEG():
 
 
 class RandomDownscale():
-    def __init__(self, min_size, min_scale=0.5):
+    def __init__(self, min_size, min_scale=0.5, interpolations=None):
         self.min_size = min_size
         self.min_scale = min_scale
+        if interpolations is None:
+            self.interpolations = [TF.InterpolationMode.BICUBIC,
+                                   TF.InterpolationMode.LANCZOS]
+        else:
+            self.interpolations = interpolations
 
     def __call__(self, x):
-        interpolation = random.choice([
-            TF.InterpolationMode.BOX,
-            TF.InterpolationMode.BILINEAR,
-            TF.InterpolationMode.BICUBIC,
-            TF.InterpolationMode.LANCZOS])
+        interpolation = random.choice(self.interpolations)
         w, h = x.size
         min_scale = (self.min_size + 1) / min(w, h)
         if min_scale > 1:

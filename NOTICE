@@ -1,0 +1,5 @@
+nunif/optim/lion.py:
+From Google Brain AutoML: https://github.com/google/automl/blob/master/lion/lion_pytorch.py
+
+nunif/training/weight_decay_config.py:
+From nanoGPT: https://github.com/karpathy/nanoGPT/blob/master/model.py

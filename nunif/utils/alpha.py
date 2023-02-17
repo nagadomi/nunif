@@ -10,6 +10,7 @@ class ChannelWiseSum(nn.Module):
                               stride=1, padding=1, padding_mode="zeros", groups=in_channels,
                               bias=False)
         self.conv.weight.data.fill_(1.)
+        self.conv.weight.requires_grad_(False)
 
     def forward(self, x):
         if x.ndim == 3:
