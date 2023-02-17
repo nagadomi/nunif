@@ -5,6 +5,7 @@ from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
 from nunif.utils.alpha import AlphaBorderPadding
 from nunif.models import load_model, get_model_config
+from nunif.logger import logger
 
 
 class Waifu2x():
@@ -46,13 +47,16 @@ class Waifu2x():
     def load_model(self, method, noise_level):
         assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
         assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
+
+        scale2x_path = path.join(self.model_dir, "scale2x.pth")
+        scale4x_path = path.join(self.model_dir, "scale4x.pth")
         if method == "scale":
             self.scale_model, _ = load_model(
-                path.join(self.model_dir, "scale2x.pth"),
+                scale2x_path,
                 map_location=self.device, device_ids=self.gpus)
         elif method == "scale4x":
             self.scale4x_model, _ = load_model(
-                path.join(self.model_dir, "scale4x.pth"),
+                scale4x_path,
                 map_location=self.device, device_ids=self.gpus)
         elif method == "noise":
             self.noise_models[noise_level], _ = load_model(
@@ -63,18 +67,25 @@ class Waifu2x():
                 path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
                 map_location=self.device, device_ids=self.gpus)
             # for alpha channel
-            self.scale_model, _ = load_model(
-                path.join(self.model_dir, "scale2x.pth"),
-                map_location=self.device, device_ids=self.gpus)
+            if path.exists(scale2x_path):
+                self.scale_model, _ = load_model(
+                    scale2x_path,
+                    map_location=self.device, device_ids=self.gpus)
+            else:
+                logger.warning(f"`{scale2x_path}` used for alpha channel does not exist. "
+                               "So use BILINEAR for upscaling alpha channel.")
         elif method == "noise_scale4x":
             self.noise_scale4x_models[noise_level], _ = load_model(
                 path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
                 map_location=self.device, device_ids=self.gpus)
             # for alpha channel
-            self.scale4x_model, _ = load_model(
-                path.join(self.model_dir, "scale4x.pth"),
-                map_location=self.device, device_ids=self.gpus)
-
+            if path.exists(scale4x_path):
+                self.scale4x_model, _ = load_model(
+                    scale4x_path,
+                    map_location=self.device, device_ids=self.gpus)
+            else:
+                logger.warning(f"`{scale4x_path}` used for alpha channel does not exist. "
+                               "So use BILINEAR for upscaling alpha channel.")
         self._setup()
 
     def load_model_all(self, load_4x=True):
@@ -167,10 +178,15 @@ class Waifu2x():
         rgb = rgb.to("cpu")
         if alpha is not None and method in ("scale", "noise_scale", "scale4x", "noise_scale4x"):
             if not blank_alpha:
-                alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
                 model = self.scale4x_model if method in {"scale4x", "noise_scale4x"} else self.scale_model
-                alpha = tiled_render(alpha, model,
-                                     tile_size=tile_size, batch_size=batch_size).mean(0, keepdim=True)
+                if model is not None:
+                    alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
+                    alpha = tiled_render(alpha, model,
+                                         tile_size=tile_size, batch_size=batch_size).mean(0, keepdim=True)
+                else:
+                    scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
+                    alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor,
+                                          mode="bilinear").squeeze(0)
             else:
                 scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
                 alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)
