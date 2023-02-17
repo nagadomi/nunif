@@ -5,7 +5,6 @@ This document assumes that the working directory is the root directory of nunif 
 # Current Limitations
 
 - `--seed` option cannot be deterministic for training behavior.
-- DataParallel has not been tested. (multiple `--gpu` option)
 
 I have confirmed that a model trained with this training code can beat the original pretrained upcunet model.
 
