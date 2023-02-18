@@ -94,3 +94,12 @@ def call_model_method(model, name, **kwargs):
         raise ValueError(f"Unable to call {type(model)}.{name}")
 
     return func(**kwargs)
+
+
+def to_data_parallel(model, device_ids):
+    name = model.name
+    model = nn.DataParallel(model, device_ids=device_ids)
+    # Set model name
+    # TODO: this is a bad practice.
+    setattr(model, "name", name)
+    return model

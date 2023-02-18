@@ -26,11 +26,11 @@ INTERPOLATION_MODES = (
     "lanczos",
     "triangle",
     "catrom",
-#    "vision.bicubic_no_antialias",
+    # "vision.bicubic_no_antialias",
 )
 INTERPOLATION_NEAREST = "box"
 INTERPOLATION_BICUBIC = "catrom"
-#INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3, 1/12)  # noqa: E226
+# INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3, 1/12)  # noqa: E226
 INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3)  # noqa: E226
 
 
@@ -108,7 +108,7 @@ class RandomUnsharpMask():
 
 
 class Waifu2xDatasetBase(Dataset):
-    def __init__(self, input_dir, num_samples=None):
+    def __init__(self, input_dir, num_samples=None, hard_example_history_size=6):
         super().__init__()
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
@@ -119,7 +119,7 @@ class Waifu2xDatasetBase(Dataset):
                 torch.ones((len(self),), dtype=torch.double),
                 num_samples=num_samples,
                 method=MiningMethod.TOP10,
-                history_size=6,
+                history_size=hard_example_history_size,
                 scale_factor=4,
             )
         else:

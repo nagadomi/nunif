@@ -1,16 +1,55 @@
-import argparse
 from os import path
 import torch
-from torch import nn
 from .. import models  # noqa: F401
 from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
-from nunif.models import create_model, get_model_config, get_model_names
+from nunif.models import create_model, get_model_config, call_model_method
 from nunif.modules import (
     ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss, CharbonnierLoss,
     Alex11Loss
 )
+from nunif.logger import logger
+
+
+def create_criterion(loss):
+    if loss == "lbp":
+        criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
+    elif loss == "lbp5":
+        criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
+    elif loss == "alex11":
+        criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
+    elif loss == "y_charbonnier":
+        criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))
+    elif loss == "charbonnier":
+        criterion = ClampLoss(CharbonnierLoss())
+    elif loss == "aux_lbp":
+        criterion = AuxiliaryLoss([
+            ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
+            ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
+        ], weight=(1.0, 0.5))
+    elif loss == "aux_alex11":
+        criterion = AuxiliaryLoss([
+            ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+            ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+        ], weights=(1.0, 0.5))
+    elif loss == "aux_y_charbonnier":
+        criterion = AuxiliaryLoss([
+            ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),
+            ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))],
+            weight=(1.0, 0.5))
+    elif loss == "aux_charbonnier":
+        criterion = AuxiliaryLoss([
+            ClampLoss(CharbonnierLoss()),
+            ClampLoss(CharbonnierLoss())],
+            weight=(1.0, 0.5))
+    else:
+        raise NotImplementedError()
+
+    return criterion
+
+
+# basic training
 
 
 class Waifu2xEnv(LuminancePSNREnv):
@@ -33,6 +72,11 @@ class Waifu2xTrainer(Trainer):
     def setup(self):
         dataset = self.train_loader.dataset
         dataset.set_hard_example(self.args.hard_example)
+
+    def setup_model(self):
+        if self.args.freeze and hasattr(self.model, "freeze"):
+            call_model_method(self.model, "freeze")
+            logger.debug("call model.freeze()")
 
     def create_model(self):
         kwargs = {"in_channels": 3, "out_channels": 3}
@@ -103,39 +147,7 @@ class Waifu2xTrainer(Trainer):
                 drop_last=False)
 
     def create_env(self):
-        if self.args.loss == "lbp":
-            criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
-        elif self.args.loss == "lbp5":
-            criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
-        elif self.args.loss == "alex11":
-            criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
-        elif self.args.loss == "y_charbonnier":
-            criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())).to(self.device)
-        elif self.args.loss == "charbonnier":
-            criterion = ClampLoss(CharbonnierLoss()).to(self.device)
-        elif self.args.loss == "aux_lbp":
-            criterion = AuxiliaryLoss([
-                ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
-                ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
-            ], weight=(1.0, 0.5)).to(self.device)
-        elif self.args.loss == "aux_alex11":
-            criterion = AuxiliaryLoss([
-                ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
-                ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
-            ], weights=(1.0, 0.5)).to(self.device)
-        elif self.args.loss == "aux_y_charbonnier":
-            criterion = AuxiliaryLoss([
-                ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),
-                ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))],
-                weight=(1.0, 0.5)).to(self.device)
-        elif self.args.loss == "aux_charbonnier":
-            criterion = AuxiliaryLoss([
-                ClampLoss(CharbonnierLoss()),
-                ClampLoss(CharbonnierLoss())],
-                weight=(1.0, 0.5)).to(self.device)
-        else:
-            raise NotImplementedError()
-
+        criterion = create_criterion(self.args.loss).to(self.device)
         return Waifu2xEnv(self.model, criterion=criterion)
 
     def create_best_model_filename(self):
@@ -165,105 +177,3 @@ class Waifu2xTrainer(Trainer):
             return path.join(self.args.model_dir, f"noise{self.args.noise_level}.checkpoint.pth")
         else:
             raise NotImplementedError()
-
-
-def train(args):
-    ARCH_SWIN_UNET = {"waifu2x.swin_unet_1x",
-                      "waifu2x.swin_unet_2x",
-                      "waifu2x.swin_unet_4x"}
-    if args.size % 4 != 0:
-        raise ValueError("--size must be a multiple of 4")
-    if args.arch in ARCH_SWIN_UNET and ((args.size - 16) % 12 != 0 or (args.size - 16) % 16 != 0):
-        raise ValueError("--size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0` for SwinUNet models")
-    if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
-        raise ValueError("--noise-level is required for noise/noise_scale")
-
-    if args.method in {"scale", "scale4x"}:
-        # disable
-        args.noise_level = -1
-
-    if args.loss is None:
-        if args.arch in {"waifu2x.vgg_7", "waifu2x.upconv_7"}:
-            args.loss = "y_charbonnier"
-        elif args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
-            args.loss = "aux_lbp"
-        elif args.arch in {"waifu2x.swin_unet_1x", "waifu2x.swin_unet_2x"}:
-            args.loss = "lbp"
-        elif args.arch in {"waifu2x.swin_unet_4x"}:
-            args.loss = "lbp5"
-        else:
-            args.loss = "y_charbonnier"
-
-    trainer = Waifu2xTrainer(args)
-    trainer.fit()
-
-
-def register(subparsers, default_parser):
-    parser = subparsers.add_parser(
-        "waifu2x",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    waifu2x_models = sorted([name for name in get_model_names() if name.startswith("waifu2x.")])
-
-    parser.add_argument("--method", type=str,
-                        choices=["scale", "noise_scale", "scale4x", "noise_scale4x", "noise"],
-                        required=True,
-                        help="waifu2x method")
-    parser.add_argument("--arch", type=str,
-                        choices=waifu2x_models,
-                        required=True,
-                        help="network arch")
-    parser.add_argument("--style", type=str,
-                        choices=["art", "photo"],
-                        default="art",
-                        help="image style used for jpeg noise level")
-    parser.add_argument("--noise-level", type=int,
-                        choices=[0, 1, 2, 3],
-                        help="jpeg noise level for noise/noise_scale")
-    parser.add_argument("--size", type=int, default=112,
-                        help="input size")
-    parser.add_argument("--num-samples", type=int, default=50000,
-                        help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str,
-                        choices=["lbp", "lbp5", "y_charbonnier", "charbonnier",
-                                 "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
-                                 "alex11", "aux_alex11"],
-                        help="loss function")
-    parser.add_argument("--da-jpeg-p", type=float, default=0.0,
-                        help="HQ JPEG(quality=92-99) data argumentation for gt image")
-    parser.add_argument("--da-scale-p", type=float, default=0.25,
-                        help="random downscale data argumentation for gt image")
-    parser.add_argument("--da-chshuf-p", type=float, default=0.0,
-                        help="random channel shuffle data argumentation for gt image")
-    parser.add_argument("--da-unsharpmask-p", type=float, default=0.0,
-                        help="random unsharp mask data argumentation for gt image")
-    parser.add_argument("--da-grayscale-p", type=float, default=0.0,
-                        help="random grayscale data argumentation for gt image")
-    parser.add_argument("--deblur", type=float, default=0.0,
-                        help=("shift parameter of resize blur."
-                              " 0.0-0.1 is a reasonable value."
-                              " blur = uniform(0.95 + deblur, 1.05 + deblur)."
-                              " blur >= 1 is blur, blur <= 1 is sharpen. mean 1 by default"))
-    parser.add_argument("--resize-blur-p", type=float, default=0.1,
-                        help=("probability that resize blur should be used"))
-    parser.add_argument("--hard-example", type=str, default="linear",
-                        choices=["none", "linear", "top10", "top20"],
-                        help="hard example mining for training data sampleing")
-    parser.add_argument("--b4b", action="store_true",
-                        help="use only bicubic downsampling for bicubic downsampling restoration")
-
-    parser.set_defaults(
-        batch_size=16,
-        optimizer="adamw",
-        learning_rate=0.0002,
-        scheduler="cosine",
-        learning_rate_cycles=5,
-        learning_rate_decay=0.995,
-        learning_rate_decay_step=[1],
-        # for adamw
-        weight_decay=0.001,
-    )
-    parser.set_defaults(handler=train)
-
-    return parser

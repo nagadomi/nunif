@@ -59,21 +59,31 @@ class BaseEnv(ABC):
         # unknown type
         return input
 
-    def train(self, loader, optimizer, grad_scaler):
+    def train(self, loader, optimizer, grad_scaler, backward_step=1):
+        assert backward_step > 0
         self.train_begin()
+        optimizer.zero_grad()
+        t = 1
         for data in tqdm(loader, ncols=80):
-            optimizer.zero_grad()
-            loss = self.train_step(data)
+            loss = self.train_step(data) / backward_step
             self.train_loss_hook(data, loss)
             if torch.isnan(loss).any().item():
                 raise FloatingPointError("loss is NaN")
+
             if self.amp:
                 grad_scaler.scale(loss).backward()
-                grad_scaler.step(optimizer)
-                grad_scaler.update()
+                if t % backward_step == 0:
+                    grad_scaler.step(optimizer)
+                    grad_scaler.update()
+                    optimizer.zero_grad()
             else:
                 loss.backward()
-                optimizer.step()
+                if t % backward_step == 0:
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+            t += 1
+
         self.train_end()
 
     def eval(self, loader):
