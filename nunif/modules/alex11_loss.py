@@ -14,7 +14,7 @@ class Alex11Loss(nn.Module):
         self.cosine_weight = cosine_weight
         self.conv = self.create_filter(in_channels)
         if loss is None:
-            self.loss = CharbonnierLoss()
+            self.loss = CharbonnierLoss(reduction="none")
         else:
             self.loss = loss
 
@@ -43,7 +43,6 @@ class Alex11Loss(nn.Module):
         # conv2d
         conv = nn.Conv2d(in_channels, 64 * in_channels, kernel_size=11, stride=1, padding=0, groups=in_channels, bias=False)
         f = torch.cat([f for _ in range(in_channels)], dim=0)
-        print(f.shape)
         conv.weight.data.copy_(f)
         for m in conv.parameters():
             m.requires_grad_(False)
@@ -52,7 +51,7 @@ class Alex11Loss(nn.Module):
     def forward(self, input, target):
         y = self.conv(input)
         t = self.conv(target)
-        loss_filter = self.loss(y, t)
+        loss_filter = F.max_pool2d(self.loss(y, t), 2).mean()
         if self.cosine_weight > 0:
             loss_cosine = -F.cosine_similarity(y, t).mean()
             loss = loss_filter * (1. - self.cosine_weight) + loss_cosine * self.cosine_weight
