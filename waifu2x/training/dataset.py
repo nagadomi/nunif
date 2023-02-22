@@ -108,7 +108,8 @@ class RandomUnsharpMask():
 
 
 class Waifu2xDatasetBase(Dataset):
-    def __init__(self, input_dir, num_samples=None, hard_example_history_size=6):
+    def __init__(self, input_dir, num_samples=None,
+                 hard_example_history_size=6):
         super().__init__()
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
@@ -120,7 +121,7 @@ class Waifu2xDatasetBase(Dataset):
                 num_samples=num_samples,
                 method=MiningMethod.TOP10,
                 history_size=hard_example_history_size,
-                scale_factor=4,
+                scale_factor=4.,
             )
         else:
             self._sampler = None
@@ -134,13 +135,14 @@ class Waifu2xDatasetBase(Dataset):
     def sampler(self):
         return self._sampler
 
-    def set_hard_example(self, method):
+    def set_hard_example(self, method, scale_factor=4.):
         if method == "top10":
             self._sampler.method = MiningMethod.TOP10
         elif method == "top20":
             self._sampler.method = MiningMethod.TOP20
         elif method == "linear":
             self._sampler.method = MiningMethod.LINEAR
+        self._sampler.scale_factor = scale_factor
 
     def update_hard_example_losses(self, indexes, loss):
         self._sampler.update_losses(indexes, loss)

@@ -71,7 +71,7 @@ class Waifu2xEnv(LuminancePSNREnv):
 class Waifu2xTrainer(Trainer):
     def setup(self):
         dataset = self.train_loader.dataset
-        dataset.set_hard_example(self.args.hard_example)
+        dataset.set_hard_example(self.args.hard_example, self.args.hard_example_scale)
 
     def setup_model(self):
         if self.args.freeze and hasattr(self.model, "freeze"):

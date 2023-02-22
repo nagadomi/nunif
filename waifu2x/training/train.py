@@ -91,6 +91,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--hard-example", type=str, default="linear",
                         choices=["none", "linear", "top10", "top20"],
                         help="hard example mining for training data sampleing")
+    parser.add_argument("--hard-example-scale", type=float, default=4.,
+                        help="max weight scaling factor of hard example sampler")
     parser.add_argument("--b4b", action="store_true",
                         help="use only bicubic downsampling for bicubic downsampling restoration")
     parser.add_argument("--freeze", action="store_true",
