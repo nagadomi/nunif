@@ -32,19 +32,21 @@ class Trainer(ABC):
         set_seed(self.args.seed)
 
         self.model = self.create_model()
+        if self.args.checkpoint_file is not None:
+            self.load_initial_parameters(self.args.checkpoint_file)
+        self.setup_model()
+
         self.train_loader = self.create_dataloader(type="train")
         self.eval_loader = self.create_dataloader(type="eval")
-        self.optimizer = self.create_optimizer()
-        self.scheduler = self.create_scheduler()
-        self.grad_scaler = self.create_grad_scaler()
         self.best_model_filename = self.create_best_model_filename()
         self.epoch = 1
         self.start_epoch = 1
         self.best_loss = 1000000000
+        self.optimizer = self.create_optimizer()
+        self.scheduler = self.create_scheduler()
+        self.grad_scaler = self.create_grad_scaler()
         if self.args.resume:
             self.resume()
-        elif self.args.checkpoint_file is not None:
-            self.load_initial_parameters(self.args.checkpoint_file)
         self.env = self.create_env()
         self.env.trainer = self
 
@@ -54,6 +56,9 @@ class Trainer(ABC):
         self.setup()
 
     def setup(self):
+        pass
+
+    def setup_model(self):
         pass
 
     def amp_is_enabled(self):
@@ -82,7 +87,9 @@ class Trainer(ABC):
             self.env.train(
                 loader=self.train_loader,
                 optimizer=self.optimizer,
-                grad_scaler=self.grad_scaler)
+                grad_scaler=self.grad_scaler,
+                backward_step=self.args.backward_step,
+            )
             self.scheduler.step()
 
             print("--\n eval")
@@ -196,6 +203,8 @@ def create_trainer_default_parser():
                         help="output directory for trained model/checkpoint")
     parser.add_argument("--batch-size", type=int, default=64,
                         help="minibatch size")
+    parser.add_argument("--backward-step", type=int, default=1,
+                        help="number of times to accumulate gradient")
     parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd", "lion"], default="adam",
                         help="optimizer")
     parser.add_argument("--weight-decay", type=float, default=1e-4,

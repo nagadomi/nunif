@@ -1,12 +1,19 @@
 from .cunet import CUNet, UpCUNet
-from .swin_unet import SwinUNet, UpSwinUNet
+from .swin_unet import SwinUNet, UpSwinUNet, UpSwinUNet4x
+from .swin_unet_unif import SwinUNetUnif
 from .vgg_7 import VGG7
 from .upconv_7 import UpConv7
 from .json_model import load_state_from_waifu2x_json
 import os
 import importlib
 
-__all__ = ["CUNet", "UpCUNet", "VGG7", "UpConv7", "load_state_from_waifu2x_json"]
+__all__ = [
+    "VGG7", "UpConv7",
+    "CUNet", "UpCUNet",
+    "SwinUNet", "UpSwinUNet", "UpSwinUNet4x",
+    "SwinUNetUnif",
+    "load_state_from_waifu2x_json"
+]
 
 
 # autoload for experimental models

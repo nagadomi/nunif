@@ -18,7 +18,7 @@ class Waifu2xAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         try:
-            from .training.trainer import register
+            from .training.train import register
             return register(subparsers, default_parser)
         except ModuleNotFoundError:
             return None
