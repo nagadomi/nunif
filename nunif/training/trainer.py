@@ -108,12 +108,14 @@ class Trainer(ABC):
     def create_optimizer(self):
         # TODO: support more optimizer if needed
         if self.args.optimizer == "adam":
-            return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+            return optim.Adam(self.model.parameters(), lr=self.args.learning_rate,
+                              betas=(self.args.adam_beta1, 0.999))
         elif self.args.optimizer == "adamw":
             return configure_adamw(
                 self.model,
                 lr=self.args.learning_rate,
-                weight_decay=self.args.weight_decay)
+                weight_decay=self.args.weight_decay,
+                betas=(self.args.adam_beta1, 0.999))
         elif self.args.optimizer == "sgd":
             return optim.SGD(
                 self.model.parameters(),
@@ -209,6 +211,8 @@ def create_trainer_default_parser():
                         help="optimizer")
     parser.add_argument("--weight-decay", type=float, default=1e-4,
                         help="weight decay coefficient for adamw, sgd")
+    parser.add_argument("--adam-beta1", type=float, default=0.9,
+                        help="beta1 hyperparameter for adam/adamw")
     parser.add_argument("--momentum", type=float, default=0.9,
                         help="momentum for sgd")
     parser.add_argument("--num-workers", type=int, default=num_workers,
