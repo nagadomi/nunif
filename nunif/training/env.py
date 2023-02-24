@@ -249,7 +249,10 @@ class UnsupervisedEnv(BaseEnv):
         self.clear_loss()
 
     def train_step(self, data):
-        x, *_ = data
+        if isinstance(data, (tuple, list)):
+            x, *_ = data
+        else:
+            x = data
         x = self.to_device(x)
         with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
             z = self.model(x)
