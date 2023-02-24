@@ -191,6 +191,9 @@ class FontInfo():
         self.cmap -= invalid_codes
         return invalid_codes
 
+    def drawable(self, text):
+        return all([ord(c) in self.cmap for c in text])
+
     def __repr__(self):
         return f"FontInfo(name={self.name}, file_path={self.file_path})"
 
