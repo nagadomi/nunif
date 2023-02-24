@@ -10,18 +10,31 @@ def normalize_font_name(font_name):
     return font_name.replace("_", " ")
 
 
+def load_font(
+        font_name,
+        validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE,
+        font_dir=FONT_DIR):
+    font_name = normalize_font_name(font_name)
+    if font_name not in FONT_MAP:
+        logger.error(f"load_fonts: unable to load `{font_name}`")
+        return None
+
+    font = FontInfo.load(path.join(font_dir, FONT_MAP[font_name]))
+    if validate_cmap:
+        font.validate_cmap(font_size=validate_font_size)
+    return font
+
+
 def load_fonts(
         font_names, 
         validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE,
         font_dir=FONT_DIR):
     fonts = []
-    for name in font_names:
-        name = normalize_font_name(name)
-        if name in FONT_MAP:
-            font = FontInfo.load(path.join(font_dir, FONT_MAP[name]))
-            if validate_cmap:
-                font.validate_cmap(font_size=validate_font_size)
+    for font_name in font_names:
+        font = load_font(
+            font_name,
+            validate_cmap=validate_cmap, validate_font_size=validate_font_size,
+            font_dir=font_dir)
+        if font is not None:
             fonts.append(font)
-        else:
-            logger.error(f"load_fonts: unable to load `{name}`")
     return fonts
