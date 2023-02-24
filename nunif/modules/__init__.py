@@ -7,9 +7,12 @@ from . channel_weighted_loss import ChannelWeightedLoss, LuminanceWeightedLoss
 from . jaccard import JaccardIndex
 from . psnr import PSNR, LuminancePSNR
 from . charbonnier_loss import CharbonnierLoss
+from . norm import FRN2d, TLU2d, L2Normalize
+
 
 __all__ = [
     "SEBlock", "LBPLoss", "RandomBinaryConvolution",
     "ClampLoss", "AuxiliaryLoss", "ChannelWeightedLoss", "LuminanceWeightedLoss",
-    "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11"
+    "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11",
+    "FRN2d", "TLU2d", "L2Normalize",
 ]
