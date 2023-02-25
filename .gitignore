@@ -11,7 +11,7 @@ tmp
 *.xcf
 /data
 !/data/.keep
-/models/
+/models
 !/models/.keep
 /waifu2x/pretrained_models
 /waifu2x/onnx_models
