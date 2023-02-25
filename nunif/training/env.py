@@ -67,7 +67,8 @@ class BaseEnv(ABC):
             else:
                 loss.backward()
 
-    def optimizer_step(self, optimizers, grad_scaler):
+    def optimizer_step(self, optimizer, grad_scaler):
+        optimizers = optimizer if isinstance(optimizer, (list, tuple)) else [optimizer]
         if self.amp:
             for optimizer in optimizers:
                 grad_scaler.step(optimizer)
