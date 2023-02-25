@@ -32,6 +32,31 @@ class BaseEnv(ABC):
     def train_loss_hook(self, data, loss):
         pass
 
+    def backward(self, loss, grad_scaler):
+        losses = loss if isinstance(loss, (list, tuple)) else [loss]
+        for loss in losses:
+            if self.amp:
+                grad_scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+    def optimizer_step(self, optimizer, grad_scaler):
+        optimizers = optimizer if isinstance(optimizer, (list, tuple)) else [optimizer]
+        if self.amp:
+            for optimizer in optimizers:
+                grad_scaler.step(optimizer)
+                optimizer.zero_grad()
+            grad_scaler.update()
+        else:
+            for optimizer in optimizers:
+                optimizer.step()
+                optimizer.zero_grad()
+
+    def train_backward_step(self, loss, optimizers, grad_scaler, update):
+        self.backward(loss, grad_scaler)
+        if update:
+            self.optimizer_step(optimizers, grad_scaler)
+
     @abstractmethod
     def train_end(self):
         pass
@@ -59,26 +84,6 @@ class BaseEnv(ABC):
         # unknown type
         return input
 
-    def backward(self, loss, grad_scaler):
-        losses = loss if isinstance(loss, (list, tuple)) else [loss]
-        for loss in losses:
-            if self.amp:
-                grad_scaler.scale(loss).backward()
-            else:
-                loss.backward()
-
-    def optimizer_step(self, optimizer, grad_scaler):
-        optimizers = optimizer if isinstance(optimizer, (list, tuple)) else [optimizer]
-        if self.amp:
-            for optimizer in optimizers:
-                grad_scaler.step(optimizer)
-                optimizer.zero_grad()
-            grad_scaler.update()
-        else:
-            for optimizer in optimizers:
-                optimizer.step()
-                optimizer.zero_grad()
-
     @staticmethod
     def check_nan(loss):
         losses = loss if isinstance(loss, (list, tuple)) else [loss]
@@ -94,12 +99,15 @@ class BaseEnv(ABC):
             optimizer.zero_grad()
         t = 1
         for data in tqdm(loader, ncols=80):
-            loss = self.train_step(data) / backward_step
+            loss = self.train_step(data)
+            if isinstance(loss, (list, tuple)):
+                loss = [l / backward_step for l in loss]
+            else:
+                loss = loss / backward_step
             self.train_loss_hook(data, loss)
             self.check_nan(loss)
-            self.backward(loss, grad_scaler)
-            if t % backward_step == 0:
-                self.optimizer_step(optimizers, grad_scaler)
+            self.train_backward_step(loss, optimizers, grad_scaler,
+                                     update=t % backward_step == 0)
             t += 1
         for scheduler in schedulers:
             scheduler.step()

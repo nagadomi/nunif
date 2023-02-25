@@ -1,9 +1,8 @@
-# Generate JIS1 Kanji Fonts with DCGAN
+# Generate JIS Level-1 Kanji Fonts with DCGAN
 # python -m font_resource.download_google_fonts
 # python -m playground.gan.train_font_dcgan --data-dir ./tmp/dcgan --model-dir ./tmp/dcgan
 from os import path
 from PIL import Image, ImageFont, ImageDraw
-from tqdm import tqdm
 from collections import defaultdict
 import torch
 from torch import nn
@@ -126,7 +125,7 @@ class Generator(Model):
 
 
 class DiscriminatorHighLevel(nn.Module):
-    def __init__(self, base_dim):
+    def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=4, stride=2, padding=1, padding_mode="replicate", bias=False),
@@ -155,7 +154,7 @@ class DiscriminatorHighLevel(nn.Module):
 
 
 class DiscriminatorLowLevel(nn.Module):
-    def __init__(self, base_dim):
+    def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1, padding_mode="replicate", bias=False),
@@ -207,69 +206,62 @@ class GANEnv(BaseEnv):
         self.model.train()
         self.clear_loss()
 
-    def train(self, loader, optimizers, schedulers, grad_scaler, backward_step=1):
-        self.train_begin()
+    def train_step(self, data):
+        real = self.to_device(data)
+        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+            # generator
+            noise = torch.randn((real.shape[0], self.latent_dim, 1, 1),
+                                dtype=real.dtype,
+                                device=real.device)
+            fake = self.model.generator(noise)
+
+            yl_fake = self.model.discriminator_low(fake)
+            tl_fake = torch.zeros(yl_fake.shape, dtype=yl_fake.dtype,
+                                  device=yl_fake.device, requires_grad=False)
+            tl_real = torch.ones(yl_fake.shape, dtype=yl_fake.dtype,
+                                 device=yl_fake.device, requires_grad=False)
+
+            yh_fake = self.model.discriminator_high(fake)
+            th_fake = torch.zeros(yh_fake.shape, dtype=yh_fake.dtype,
+                                  device=yh_fake.device, requires_grad=False)
+            th_real = torch.ones(yh_fake.shape, dtype=yh_fake.dtype,
+                                 device=yh_fake.device, requires_grad=False)
+
+            g_loss = sum([self.criterion(yl_fake, tl_real),
+                          self.criterion(yh_fake, th_real)]) * 0.5
+
+            # discriminator
+            yl_fake = self.model.discriminator_low(fake.detach())
+            yl_real = self.model.discriminator_low(real)
+            yh_fake = self.model.discriminator_high(fake.detach())
+            yh_real = self.model.discriminator_high(real)
+            d_loss = sum([self.criterion(yl_fake, tl_fake),
+                          self.criterion(yl_real, tl_real),
+                          self.criterion(yh_fake, th_fake),
+                          self.criterion(yh_real, th_real),
+                          ]) * 0.25
+
+        self.sum_g_loss += g_loss.item()
+        self.sum_d_loss += d_loss.item()
+        self.sum_step += 1
+
+        return g_loss, d_loss
+
+    def train_backward_step(self, loss, optimizers, grad_scaler, update):
+        g_loss, d_loss = loss
         g_opt, dl_opt, dh_opt = optimizers
+
+        # update generator
         g_opt.zero_grad()
-        dh_opt.zero_grad()
+        self.backward(g_loss, grad_scaler)
+        self.optimizer_step(g_opt, grad_scaler)
+
+        # update discriminator
         dl_opt.zero_grad()
-        for data in tqdm(loader, ncols=80):
-            real = data
-            real = self.to_device(real)
-
-            # train generator
-            g_opt.zero_grad()
-            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
-                noise = torch.randn((real.shape[0], self.latent_dim, 1, 1),
-                                    dtype=real.dtype,
-                                    device=real.device)
-                fake = self.model.generator(noise)
-
-                yh_fake = self.model.discriminator_high(fake)
-                th_fake = torch.zeros(yh_fake.shape, dtype=yh_fake.dtype,
-                                      device=yh_fake.device, requires_grad=False)
-                th_real = torch.ones(yh_fake.shape, dtype=yh_fake.dtype,
-                                     device=yh_fake.device, requires_grad=False)
-
-                yl_fake = self.model.discriminator_low(fake)
-                tl_fake = torch.zeros(yl_fake.shape, dtype=yl_fake.dtype,
-                                      device=yl_fake.device, requires_grad=False)
-                tl_real = torch.ones(yl_fake.shape, dtype=yl_fake.dtype,
-                                     device=yl_fake.device, requires_grad=False)
-
-                g_loss = sum([self.criterion(yl_fake, tl_real),
-                              self.criterion(yh_fake, th_real)]) * 0.5
-
-            self.check_nan(g_loss)
-            self.backward(g_loss, grad_scaler)
-            self.optimizer_step(g_opt, grad_scaler)
-            self.sum_g_loss += g_loss.item()
-
-            # train discriminator
-            dl_opt.zero_grad()
-            dh_opt.zero_grad()
-            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
-                yh_fake = self.model.discriminator_high(fake.detach())
-                yh_real = self.model.discriminator_high(real)
-                yl_fake = self.model.discriminator_low(fake.detach())
-                yl_real = self.model.discriminator_low(real)
-                d_loss = sum([self.criterion(yl_fake, tl_fake),
-                              self.criterion(yl_real, tl_real),
-                              self.criterion(yh_fake, th_fake),
-                              self.criterion(yh_real, th_real),
-                              ]) * 0.25
-            self.check_nan(d_loss)
-            self.backward(d_loss, grad_scaler)
-            self.optimizer_step(dl_opt, grad_scaler)
-            self.optimizer_step(dh_opt, grad_scaler)
-            self.sum_d_loss += d_loss.item()
-
-            self.sum_step += 1
-
-        for scheduler in schedulers:
-            scheduler.step()
-
-        self.train_end()
+        dh_opt.zero_grad()
+        self.backward(d_loss, grad_scaler)
+        self.optimizer_step(dl_opt, grad_scaler)
+        self.optimizer_step(dh_opt, grad_scaler)
 
     def train_end(self):
         mean_g_loss = self.sum_g_loss / self.sum_step
@@ -280,9 +272,12 @@ class GANEnv(BaseEnv):
     def eval_begin(self):
         self.model.eval()
 
+    def eval_step(self, data):
+        pass
+
     def eval_end(self):
         model_dir = path.relpath(self.trainer.args.model_dir)
-        output_file = path.join(model_dir, f"gcgan_{self.trainer.epoch}.png")
+        output_file = path.join(model_dir, f"dcgan_{self.trainer.epoch}.png")
         images = []
         with torch.no_grad():
             images = self.model.generator(self.validation_data)
@@ -292,19 +287,13 @@ class GANEnv(BaseEnv):
 
         return None
 
-    def train_step(self, data):
-        pass
-
-    def eval_step(self, data):
-        pass
-
 
 class GANTrainer(Trainer):
     def create_model(self):
         model = GANWrapper(
             generator=Generator(self.args.latent_dim),
-            discriminator_low=DiscriminatorLowLevel(128),
-            discriminator_high=DiscriminatorHighLevel(128),
+            discriminator_low=DiscriminatorLowLevel(),
+            discriminator_high=DiscriminatorHighLevel(),
         ).to(self.device)
         return model
 
@@ -347,14 +336,14 @@ class GANTrainer(Trainer):
 
 def _test_model():
     g = Generator(128)
-    dl = DiscriminatorLowLevel(128)
-    dh = DiscriminatorHighLevel(128)
+    dl = DiscriminatorLowLevel()
+    dh = DiscriminatorHighLevel()
 
-    x = torch.zeros((1, 128, 1, 1))
+    x = torch.zeros((4, 128, 1, 1))
     z = g(x)
     print("generator", z.shape)
 
-    x = torch.zeros((1, 1, IMAGE_SIZE, IMAGE_SIZE))
+    x = torch.zeros((4, 1, IMAGE_SIZE, IMAGE_SIZE))
     z = dl(x)
     print("discriminator_low", z.shape)
     z = dh(x)
@@ -375,7 +364,7 @@ def _test_dataset():
     fonts = [load_font(font_name) for font_name in FONT_NAMES]
     dataset = FontDataset(fonts, size=IMAGE_SIZE, chars=list(Char.JIS1))
     for _ in range(100):
-        im = dataset[random.randint(0, len(dataset))]
+        im = dataset[random.randint(0, len(dataset) - 1)]
         if show_image(TF.to_pil_image(im)) in {ord("q"), ord("x")}:
             break
 
@@ -386,10 +375,10 @@ def main():
     parser.add_argument("--latent-dim", type=int, default=128)
     parser.set_defaults(
         batch_size=128,
-        num_workers=2,
-        max_epoch=200,
-        learning_rate=0.0001,
-        learning_rate_decay=0.98,
+        num_workers=4,
+        max_epoch=100,
+        learning_rate=0.0002,
+        learning_rate_decay=0.96,
         optimizer="adam",
         adam_beta1=0.5,
     )
