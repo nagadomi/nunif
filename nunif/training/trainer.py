@@ -13,12 +13,14 @@ from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
 from .weight_decay_config import configure_adamw
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 
 
 class Trainer(ABC):
     def __init__(self, args):
         self.args = args
         self.initialized = False
+        self.runtime_id = datetime.now(timezone.utc).astimezone().strftime('%Y%m%d%H%M%S')
 
     def initialize(self):
         if self.initialized:
@@ -202,6 +204,10 @@ class Trainer(ABC):
 
     def save_best_model(self):
         save_model(self.model, self.best_model_filename, train_kwargs=self.args)
+        if not self.args.disable_backup:
+            # backup file per runtime
+            backup_file = f"{path.splitext(self.best_model_filename)[0]}.{self.runtime_id}.pth.bk"
+            save_model(self.model, backup_file, train_kwargs=self.args)
 
     @abstractmethod
     def create_dataloader(self, type):
@@ -270,5 +276,7 @@ def create_trainer_default_parser():
                         help="random seed")
     parser.add_argument("--checkpoint-file", type=str,
                         help="checkpoint file for initializing model parameters. ignored when --resume is specified")
+    parser.add_argument("--disable-backup", action="store_true",
+                        help="disable backup of the best model file for every runtime")
 
     return parser
