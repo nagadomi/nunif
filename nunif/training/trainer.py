@@ -203,11 +203,11 @@ class Trainer(ABC):
             last_epoch=self.epoch)
 
     def save_best_model(self):
-        save_model(self.model, self.best_model_filename, train_kwargs=self.args)
+        save_model(self.model, self.best_model_filename)
         if not self.args.disable_backup:
             # backup file per runtime
             backup_file = f"{path.splitext(self.best_model_filename)[0]}.{self.runtime_id}.pth.bk"
-            save_model(self.model, backup_file, train_kwargs=self.args)
+            save_model(self.model, backup_file)
 
     @abstractmethod
     def create_dataloader(self, type):
