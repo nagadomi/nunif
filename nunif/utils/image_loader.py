@@ -29,8 +29,11 @@ def image_load_task(q, stop_flag, files, max_queue_size, load_func):
 
 
 def list_images(directory, extentions=IMG_EXTENSIONS):
-    return sorted([f for f in glob.glob(os.path.join(directory, "*"))
-                   if os.path.splitext(f)[-1].lower() in extentions])
+    return sorted(
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if os.path.splitext(f)[-1].lower() in extentions
+    )
 
 
 class ImageLoader():
