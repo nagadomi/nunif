@@ -79,10 +79,10 @@ def reset_parameters(model):
 class Generator(Model):
     name = "playground.gan.dcgan_font_generator"
 
-    def __init__(self, latent_dim=64):
+    def __init__(self, seed_dim=64):
         super().__init__(locals())
         self.net = nn.Sequential(
-            nn.ConvTranspose2d(latent_dim, 256,
+            nn.ConvTranspose2d(seed_dim, 256,
                                kernel_size=4, stride=1,
                                padding=0,
                                bias=False),
@@ -189,13 +189,13 @@ class GANWrapper(Model):
 
 
 class GANEnv(BaseEnv):
-    def __init__(self, model, latent_dim):
+    def __init__(self, model, seed_dim):
         super().__init__()
         self.model = model
-        self.latent_dim = latent_dim
+        self.seed_dim = seed_dim
         self.device = get_model_device(self.model)
         self.criterion = nn.BCEWithLogitsLoss()
-        self.validation_data = torch.randn((64, latent_dim, 1, 1), dtype=torch.float32, device=self.device)
+        self.validation_data = torch.randn((64, seed_dim, 1, 1), dtype=torch.float32, device=self.device)
 
     def clear_loss(self):
         self.sum_g_loss = 0
@@ -210,7 +210,7 @@ class GANEnv(BaseEnv):
         real = self.to_device(data)
         with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
             # generator
-            noise = torch.randn((real.shape[0], self.latent_dim, 1, 1),
+            noise = torch.randn((real.shape[0], self.seed_dim, 1, 1),
                                 dtype=real.dtype,
                                 device=real.device)
             fake = self.model.generator(noise)
@@ -291,7 +291,7 @@ class GANEnv(BaseEnv):
 class GANTrainer(Trainer):
     def create_model(self):
         model = GANWrapper(
-            generator=Generator(self.args.latent_dim),
+            generator=Generator(self.args.seed_dim),
             discriminator_low=DiscriminatorLowLevel(),
             discriminator_high=DiscriminatorHighLevel(),
         ).to(self.device)
@@ -331,7 +331,7 @@ class GANTrainer(Trainer):
             return None
 
     def create_env(self):
-        return GANEnv(self.model, self.args.latent_dim)
+        return GANEnv(self.model, self.args.seed_dim)
 
 
 def _test_model():
@@ -372,7 +372,7 @@ def _test_dataset():
 def main():
     parser = create_trainer_default_parser()
     parser.add_argument("--num-samples", type=int, default=200000)
-    parser.add_argument("--latent-dim", type=int, default=128)
+    parser.add_argument("--seed-dim", type=int, default=128)
     parser.set_defaults(
         batch_size=128,
         num_workers=4,
