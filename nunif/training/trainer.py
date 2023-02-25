@@ -42,8 +42,8 @@ class Trainer(ABC):
         self.epoch = 1
         self.start_epoch = 1
         self.best_loss = 1000000000
-        self.optimizer = self.create_optimizer()
-        self.scheduler = self.create_scheduler()
+        self.optimizers = self.create_optimizers()
+        self.schedulers = self.create_schedulers(self.optimizers)
         self.grad_scaler = self.create_grad_scaler()
         if self.args.resume:
             self.resume()
@@ -68,8 +68,16 @@ class Trainer(ABC):
         latest_checkpoint_filename = self.create_checkpoint_filename()
         _, meta = load_model(latest_checkpoint_filename, model=self.model)
         if not self.args.reset_state:
-            self.optimizer.load_state_dict(meta["optimizer_state_dict"])
-            self.scheduler.load_state_dict(meta["scheduler_state_dict"])
+            if not isinstance(meta["optimizer_state_dict"], (list, tuple)):
+                self.optimizers[0].load_state_dict(meta["optimizer_state_dict"])
+            else:
+                for i, optimizer_state_dict in enumerate(meta["optimizer_state_dict"]):
+                    self.optimizers[i].load_state_dict(optimizer_state_dict)
+            if not isinstance(meta["scheduler_state_dict"], (list, tuple)):
+                self.schedulers[0].load_state_dict(meta["scheduler_state_dict"])
+            else:
+                for i, scheduler_state_dict in enumerate(meta["scheduler_state_dict"]):
+                    self.schedulers[i].load_state_dict(scheduler_state_dict)
             self.grad_scaler.load_state_dict(meta["grad_scaler_state_dict"])
             self.start_epoch = meta["last_epoch"] + 1
             self.best_loss = meta["best_loss"]
@@ -82,16 +90,15 @@ class Trainer(ABC):
         self.initialize()
         for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
             print("-" * 64)
-            print(f" epoch: {self.epoch}, lr: {self.scheduler.get_last_lr()}")
+            print(f" epoch: {self.epoch}, lr: {[scheduler.get_last_lr() for scheduler in self.schedulers]}")
             print("--\n train")
             self.env.train(
                 loader=self.train_loader,
-                optimizer=self.optimizer,
+                optimizers=self.optimizers,
+                schedulers=self.schedulers,
                 grad_scaler=self.grad_scaler,
                 backward_step=self.args.backward_step,
             )
-            self.scheduler.step()
-
             print("--\n eval")
             loss = self.env.eval(self.eval_loader)
             if loss is None:
@@ -105,39 +112,51 @@ class Trainer(ABC):
     def create_model(self):
         return create_model(self.args.arch, device_ids=self.args.gpu)
 
-    def create_optimizer(self):
-        # TODO: support more optimizer if needed
-        if self.args.optimizer == "adam":
-            return optim.Adam(self.model.parameters(), lr=self.args.learning_rate,
-                              betas=(self.args.adam_beta1, 0.999))
-        elif self.args.optimizer == "adamw":
-            return configure_adamw(
-                self.model,
-                lr=self.args.learning_rate,
-                weight_decay=self.args.weight_decay,
-                betas=(self.args.adam_beta1, 0.999))
-        elif self.args.optimizer == "sgd":
-            return optim.SGD(
-                self.model.parameters(),
-                lr=self.args.learning_rate,
-                momentum=self.args.momentum,
-                weight_decay=self.args.weight_decay)
-        elif self.args.optimizer == "lion":
-            return Lion(self.model.parameters(), lr=self.args.learning_rate, weight_decay=self.args.weight_decay)
-        else:
-            raise NotImplementedError(f"optimizer = {self.args.optimizer}")
+    def create_optimizers(self):
+        return [self.create_optimizer(self.model)]
 
-    def create_scheduler(self):
+    def create_optimizer(self, model, optimizer_type=None, lr=None, weight_decay=None, adam_beta1=None):
+        optimizer_type = optimizer_type or self.args.optimizer
+        lr = lr if lr is not None else self.args.learning_rate
+        weight_decay = weight_decay if weight_decay is not None else self.args.weight_decay
+        adam_beta1 = adam_beta1 if adam_beta1 is not None else self.args.adam_beta1
+
+        if optimizer_type == "adam":
+            return optim.Adam(model.parameters(), lr=lr,
+                              betas=(adam_beta1, 0.999))
+        elif optimizer_type == "adamw":
+            return configure_adamw(
+                model,
+                lr=lr,
+                weight_decay=weight_decay,
+                betas=(adam_beta1, 0.999))
+        elif optimizer_type == "sgd":
+            return optim.SGD(
+                model.parameters(),
+                lr=lr,
+                momentum=self.args.momentum,
+                weight_decay=weight_decay)
+        elif optimizer_type == "lion":
+            return Lion(model.parameters(),
+                        lr=lr,
+                        weight_decay=weight_decay)
+        else:
+            raise NotImplementedError(f"optimizer = {optimizer_type}")
+
+    def create_schedulers(self, optimizers):
+        return [self.create_scheduler(optimizer) for optimizer in optimizers]
+
+    def create_scheduler(self, optimizer):
         # TODO: support more schedulers if needed
         if self.args.scheduler == "step":
             if len(self.args.learning_rate_decay_step) == 1:
                 scheduler = StepLR(
-                    self.optimizer,
+                    optimizer,
                     step_size=self.args.learning_rate_decay_step[0],
                     gamma=self.args.learning_rate_decay)
             else:
                 scheduler = MultiStepLR(
-                    self.optimizer,
+                    optimizer,
                     milestones=self.args.learning_rate_decay_step,
                     gamma=self.args.learning_rate_decay)
         elif self.args.scheduler == "cosine":
@@ -148,11 +167,11 @@ class Trainer(ABC):
             self.args.max_epoch -= (self.args.max_epoch % step) + 1
             print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
             eta_min = self.args.learning_rate * 1e-3
-            scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=t_0, eta_min=eta_min)
+            scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=t_0, eta_min=eta_min)
         if self.args.warmup_epoch > 0:
             # TODO: `total_iters=self.args.warmup_epoch` does not work correctly,
             # ConstantLR works fine, but does not work correctly when used with ChainedScheduler.
-            warmup_scheduler = ConstantLR(self.optimizer,
+            warmup_scheduler = ConstantLR(optimizer,
                                           factor=self.args.warmup_learning_rate / self.args.learning_rate,
                                           total_iters=self.args.warmup_epoch)
             scheduler = ChainedScheduler([warmup_scheduler, scheduler])
@@ -169,12 +188,14 @@ class Trainer(ABC):
         return path.join(self.args.model_dir, f"{self.model.name}.checkpoint.pth")
 
     def save_checkpoint(self):
+        optimizer_state_dict = [optimizer.state_dict() for optimizer in self.optimizers]
+        scheduler_state_dict = [scheduler.state_dict() for scheduler in self.schedulers]
         save_model(
             self.model,
             self.create_checkpoint_filename(),
             train_kwargs=self.args,
-            optimizer_state_dict=self.optimizer.state_dict(),
-            scheduler_state_dict=self.scheduler.state_dict(),
+            optimizer_state_dict=optimizer_state_dict,
+            scheduler_state_dict=scheduler_state_dict,
             grad_scaler_state_dict=self.grad_scaler.state_dict(),
             best_loss=self.best_loss,
             last_epoch=self.epoch)

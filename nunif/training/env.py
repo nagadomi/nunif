@@ -59,30 +59,49 @@ class BaseEnv(ABC):
         # unknown type
         return input
 
-    def train(self, loader, optimizer, grad_scaler, backward_step=1):
+    def backward(self, loss, grad_scaler):
+        losses = loss if isinstance(loss, (list, tuple)) else [loss]
+        for loss in losses:
+            if self.amp:
+                grad_scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+    def optimizer_step(self, optimizers, grad_scaler):
+        if self.amp:
+            for optimizer in optimizers:
+                grad_scaler.step(optimizer)
+                optimizer.zero_grad()
+            grad_scaler.update()
+        else:
+            for optimizer in optimizers:
+                optimizer.step()
+                optimizer.zero_grad()
+
+    @staticmethod
+    def check_nan(loss):
+        losses = loss if isinstance(loss, (list, tuple)) else [loss]
+        for loss in (losses):
+            if torch.isnan(loss).any().item():
+                raise FloatingPointError("loss is NaN")
+
+    def train(self, loader, optimizers, schedulers, grad_scaler, backward_step=1):
         assert backward_step > 0
+
         self.train_begin()
-        optimizer.zero_grad()
+        for optimizer in optimizers:
+            optimizer.zero_grad()
         t = 1
         for data in tqdm(loader, ncols=80):
             loss = self.train_step(data) / backward_step
             self.train_loss_hook(data, loss)
-            if torch.isnan(loss).any().item():
-                raise FloatingPointError("loss is NaN")
-
-            if self.amp:
-                grad_scaler.scale(loss).backward()
-                if t % backward_step == 0:
-                    grad_scaler.step(optimizer)
-                    grad_scaler.update()
-                    optimizer.zero_grad()
-            else:
-                loss.backward()
-                if t % backward_step == 0:
-                    optimizer.step()
-                    optimizer.zero_grad()
-
+            self.check_nan(loss)
+            self.backward(loss, grad_scaler)
+            if t % backward_step == 0:
+                self.optimizer_step(optimizers, grad_scaler)
             t += 1
+        for scheduler in schedulers:
+            scheduler.step()
 
         self.train_end()
 
