@@ -31,13 +31,18 @@ class ResBlock(nn.Module):
         else:
             first_kernel_size = 3
             shortcut_kernel_size = 1
+        if padding_mode == "none":
+            padding = 0
+        else:
+            padding = 1
+
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=first_kernel_size,
-                      stride=stride, padding=1, padding_mode=padding_mode, bias=bias),
+                      stride=stride, padding=padding, padding_mode=padding_mode, bias=bias),
             norm_layer(out_channels),
             activation_layer(out_channels),
             nn.Conv2d(out_channels, out_channels, kernel_size=3,
-                      stride=1, padding=1, padding_mode=padding_mode, bias=bias),
+                      stride=1, padding=padding, padding_mode=padding_mode, bias=bias),
             norm_layer(out_channels))
         if stride == 2 or in_channels != out_channels:
             self.identity = nn.Sequential(
