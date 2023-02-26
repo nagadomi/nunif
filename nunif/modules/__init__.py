@@ -8,11 +8,12 @@ from . jaccard import JaccardIndex
 from . psnr import PSNR, LuminancePSNR
 from . charbonnier_loss import CharbonnierLoss
 from . norm import FRN2d, TLU2d, L2Normalize
+from . pad import Pad
 
 
 __all__ = [
     "SEBlock", "LBPLoss", "RandomBinaryConvolution",
     "ClampLoss", "AuxiliaryLoss", "ChannelWeightedLoss", "LuminanceWeightedLoss",
     "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11",
-    "FRN2d", "TLU2d", "L2Normalize",
+    "FRN2d", "TLU2d", "L2Normalize", "Pad",
 ]
