@@ -57,6 +57,15 @@ class Trainer(ABC):
         self.env.set_amp_dtype(torch.bfloat16 if self.args.amp_float == "bfloat16" else torch.float16)
         self.setup()
 
+    def shutdown(self):
+        if self.train_loader is not None:
+            del self.train_loader
+            self.train_loader = None
+
+        if self.eval_loader is not None:
+            del self.eval_loader
+            self.eval_loader = None
+
     def setup(self):
         pass
 
@@ -110,6 +119,7 @@ class Trainer(ABC):
                 self.best_loss = loss
                 self.save_best_model()
             self.save_checkpoint()
+        self.shutdown()
 
     def create_model(self):
         return create_model(self.args.arch, device_ids=self.args.gpu)
