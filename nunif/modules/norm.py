@@ -52,6 +52,31 @@ class L2Normalize(nn.Module):
         return F.normalize(x, p=2., dim=self.dim, eps=self.eps)
 
 
+class LayerNormNoBias(nn.Module):
+    def __init__(self, normalized_shape):
+        super().__init__()
+        if isinstance(normalized_shape, int):
+            normalized_shape = (normalized_shape,)
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+
+    def forward(self, x):
+        return F.layer_norm(x, self.weight.shape, self.weight)
+
+
+class LayerNormNoBias2d(nn.Module):
+    def __init__(self, normalized_shape):
+        super().__init__()
+        if isinstance(normalized_shape, int):
+            normalized_shape = (normalized_shape,)
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+
+    def forward(self, x):
+        x = x.permute(0, 2, 3, 1)
+        x = F.layer_norm(x, self.weight.shape, self.weight)
+        x = x.permute(0, 3, 1, 2)
+        return x
+
+
 def _test_frn():
     x = torch.zeros((1, 32, 4, 4))
     model = nn.Sequential(FRN2d(32), TLU2d(32))
@@ -80,6 +105,11 @@ def _test_l2norm():
     print(torch.sqrt(torch.sum(y ** 2, dim=3, keepdim=True)))
 
 
+def _test_layer_norm():
+    print(LayerNormNoBias(4)(torch.zeros((1, 2, 2, 4))).shape)
+
+
 if __name__ == "__main__":
-    _test_frn()
-    _test_l2norm()
+    # _test_frn()
+    # _test_l2norm()
+    _test_layer_norm()
