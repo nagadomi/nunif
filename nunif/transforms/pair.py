@@ -81,7 +81,7 @@ class RandomHardExampleCrop():
                 int(j * self.y_scale) + self.y_offset,
                 int(h * self.y_scale) - self.y_offset * 2,
                 int(w * self.y_scale) - self.y_offset * 2)
-            color_stdv = rect.permute(1, 2, 0).reshape(-1, 3).std(dim=0).sum().item()
+            color_stdv = rect.std(dim=[1, 2]).sum().item()
             rects.append(((i, j, h, w), color_stdv))
 
         i, j, h, w = max(rects, key=lambda v: v[1])[0]
