@@ -10,6 +10,13 @@ def normalize_font_name(font_name):
     return font_name.replace("_", " ")
 
 
+def native_path(posix_path):
+    if path.sep == "/":
+        return posix_path
+    else:
+        return posix_path.replace("/", path.sep)
+
+
 def load_font(
         font_name,
         validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE,
@@ -19,7 +26,7 @@ def load_font(
         logger.error(f"load_fonts: unable to load `{font_name}`")
         return None
 
-    font = FontInfo.load(path.join(font_dir, FONT_MAP[font_name]))
+    font = FontInfo.load(path.join(font_dir, native_path(FONT_MAP[font_name])))
     if validate_cmap:
         font.validate_cmap(font_size=validate_font_size)
     return font
