@@ -33,6 +33,7 @@ class ResBlock(nn.Module):
             shortcut_kernel_size = 1
         if padding_mode == "none":
             padding = 0
+            padding_mode = "zeros"
         else:
             padding = 1
 
@@ -111,7 +112,7 @@ def ResBlockFRN(in_channels, out_channels, stride=1, bias=False,
 
 
 class ResGroup(nn.Module):
-    def __init__(self, in_channels, out_channels, num_layers, stride=1, layer=None):
+    def __init__(self, in_channels, out_channels, num_layers, stride=1, layer=None, **layer_kwargs):
         super().__init__()
         assert (stride in {1, 2})
         if layer is None:
@@ -119,9 +120,9 @@ class ResGroup(nn.Module):
         layers = []
         for i in range(num_layers):
             if i == 0:
-                layers.append(layer(in_channels, out_channels, stride))
+                layers.append(layer(in_channels, out_channels, stride, **layer_kwargs))
             else:
-                layers.append(layer(out_channels, out_channels, 1))
+                layers.append(layer(out_channels, out_channels, 1, **layer_kwargs))
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
