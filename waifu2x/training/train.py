@@ -97,6 +97,12 @@ def register(subparsers, default_parser):
                         help="use only bicubic downsampling for bicubic downsampling restoration")
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
+    parser.add_argument("--discriminator", type=str,
+                        help="discriminator or cunet model path, or [`unet2`, `unet1`]")
+    parser.add_argument("--discriminator-weight", type=float, default=0.001,
+                        help="discriminator loss weight")
+    parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss"], default="psnr",
+                        help="criterion for updating best model")
 
     parser.set_defaults(
         batch_size=16,
