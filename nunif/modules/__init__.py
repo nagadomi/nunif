@@ -9,6 +9,7 @@ from . psnr import PSNR, LuminancePSNR
 from . charbonnier_loss import CharbonnierLoss
 from . norm import FRN2d, TLU2d, L2Normalize
 from . pad import Pad
+from . discriminator_loss import DiscriminatorBCELoss
 
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "ClampLoss", "AuxiliaryLoss", "ChannelWeightedLoss", "LuminanceWeightedLoss",
     "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11",
     "FRN2d", "TLU2d", "L2Normalize", "Pad",
+    "DiscriminatorBCELoss"
 ]
