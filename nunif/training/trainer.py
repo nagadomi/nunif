@@ -93,6 +93,7 @@ class Trainer(ABC):
             self.start_epoch = meta["last_epoch"] + 1
             self.best_loss = meta["best_loss"]
         print(f"* load checkpoint from {latest_checkpoint_filename}")
+        return meta
 
     def load_initial_parameters(self, checkpoint_filename):
         load_model(checkpoint_filename, model=self.model)
@@ -199,7 +200,7 @@ class Trainer(ABC):
     def create_checkpoint_filename(self):
         return path.join(self.args.model_dir, f"{self.model.name}.checkpoint.pth")
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, **kwargs):
         optimizer_state_dict = [optimizer.state_dict() for optimizer in self.optimizers]
         scheduler_state_dict = [scheduler.state_dict() for scheduler in self.schedulers]
         save_model(
@@ -210,7 +211,8 @@ class Trainer(ABC):
             scheduler_state_dict=scheduler_state_dict,
             grad_scaler_state_dict=self.grad_scaler.state_dict(),
             best_loss=self.best_loss,
-            last_epoch=self.epoch)
+            last_epoch=self.epoch,
+            **kwargs)
 
     def save_best_model(self):
         save_model(self.model, self.best_model_filename)
