@@ -113,7 +113,7 @@ class Waifu2xEnv(LuminancePSNREnv):
     def train_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             if self.discriminator is None:
                 z = self.model(x)
                 loss = self.criterion(z, y)
@@ -200,7 +200,7 @@ class Waifu2xEnv(LuminancePSNREnv):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
         psnr = 0
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             if self.update_criterion == "psnr":
                 z = self.model(x)
                 psnr = self.eval_criterion(z, y)

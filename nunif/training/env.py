@@ -21,6 +21,11 @@ class BaseEnv(ABC):
     def set_amp_dtype(self, dtype):
         self.amp_dtype = dtype
 
+    def autocast(self, device=None):
+        device = device or getattr(self, "device", None)
+        assert device is not None
+        return torch.autocast(device_type=device.type, dtype=self.amp_dtype, enabled=self.amp)
+
     @abstractmethod
     def train_begin(self):
         pass
@@ -142,7 +147,7 @@ class SoftmaxEnv(BaseEnv):
     def train_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.criterion(z, y)
         self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y.cpu())
@@ -162,13 +167,13 @@ class SoftmaxEnv(BaseEnv):
             B, TTA, = x.shape[:2]
             x = self.to_device(x)
             x = x.reshape(B * TTA, *x.shape[2:])
-            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+            with self.autocast():
                 z = self.model(x)
             z = z.reshape(B, TTA, *z.shape[1:]).mean(dim=1)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
         else:
             x = self.to_device(x)
-            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+            with self.autocast():
                 z = self.model(x)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
 
@@ -204,7 +209,7 @@ class I2IEnv(BaseEnv):
     def train_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.criterion(z, y)
         self.sum_loss += loss.item()
@@ -223,7 +228,7 @@ class I2IEnv(BaseEnv):
     def eval_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.eval_criterion(z, y)
         self.sum_loss += loss.item()
@@ -282,7 +287,7 @@ class UnsupervisedEnv(BaseEnv):
         else:
             x = data
         x = self.to_device(x)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.criterion(z)
         self.sum_loss += loss.item()
