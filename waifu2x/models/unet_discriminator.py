@@ -27,6 +27,7 @@ class UNet2Discriminator(Model):
 
     def forward(self, x):
         assert x.shape[2] % 4 == 0 and x.shape[3] % 4 == 0
+        x = (x - 0.5) * 2.
         return self.unet(x)
 
 
@@ -51,6 +52,7 @@ class UNet1Discriminator(Model):
 
     def forward(self, x):
         assert x.shape[2] % 2 == 0 and x.shape[3] % 2 == 0
+        x = (x - 0.5) * 2.
         return self.unet(x)
 
 
