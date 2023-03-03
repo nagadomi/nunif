@@ -188,7 +188,7 @@ class Waifu2xEnv(LuminancePSNREnv):
 
             # update discriminator
             d_opt.zero_grad()
-            self.backward(d_loss, grad_scaler)
+            self.backward(d_loss * self.discriminator_weight, grad_scaler)
             self.optimizer_step(d_opt, grad_scaler)
 
     def train_end(self):
