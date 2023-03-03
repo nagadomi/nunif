@@ -1,5 +1,6 @@
 from os import path
 import sys
+from time import time
 import torch
 from .. models import UNet2Discriminator, UNet1Discriminator
 from . dataset import Waifu2xDataset
@@ -79,11 +80,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                  discriminator,
                  discriminator_criterion,
                  discriminator_weight,
-                 update_criterion):
+                 update_criterion,
+                 discriminator_only):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
         self.discriminator_weight = discriminator_weight
+        self.discriminator_only = discriminator_only
         self.update_criterion = update_criterion
 
     def train_loss_hook(self, data, loss):
@@ -96,7 +99,8 @@ class Waifu2xEnv(LuminancePSNREnv):
             dataset.update_hard_example_losses(index, loss.item())
         else:
             g_loss, d_loss = loss
-            dataset.update_hard_example_losses(index, g_loss.item())
+            if not self.discriminator_only:
+                dataset.update_hard_example_losses(index, g_loss.item())
 
     def clear_loss(self):
         super().clear_loss()
@@ -109,6 +113,8 @@ class Waifu2xEnv(LuminancePSNREnv):
         super().train_begin()
         if self.discriminator is not None:
             self.discriminator.train()
+            if self.discriminator_only:
+                self.model.eval()
 
     def train_step(self, data):
         x, y, *_ = data
@@ -119,20 +125,30 @@ class Waifu2xEnv(LuminancePSNREnv):
                 loss = self.criterion(z, y)
                 self.sum_loss += loss.item()
             else:
-                # generator (sr) step
-                z = self.model(x)
-                self.discriminator.requires_grad_(False)
-                if isinstance(z, (list, tuple)):
-                    # NOTE: models using auxiliary loss return tuple.
-                    #       first element is SR result.
-                    fake = z[0]
+                if not self.discriminator_only:
+                    # generator (sr) step
+                    z = self.model(x)
+                    self.discriminator.requires_grad_(False)
+                    if isinstance(z, (list, tuple)):
+                        # NOTE: models using auxiliary loss return tuple.
+                        #       first element is SR result.
+                        fake = z[0]
+                    else:
+                        fake = z
+                    fake = fake # torch.clamp(fake, 0., 1.) * 0.99 + fake * 0.01
+                    z_real = self.discriminator(fake)
+                    recon_loss = self.criterion(z, y)
+                    generator_loss = self.discriminator_criterion(z_real)
+                    g_loss = recon_loss + self.discriminator_weight * generator_loss
+
+                    self.sum_loss += g_loss.item()
+                    self.sum_p_loss += recon_loss.item()
+                    self.sum_g_loss += generator_loss.item()
                 else:
-                    fake = z
-                fake = torch.clamp(fake, 0., 1.)
-                z_real = self.discriminator(fake)
-                recon_loss = self.criterion(z, y)
-                generator_loss = self.discriminator_criterion(z_real)
-                g_loss = recon_loss + self.discriminator_weight * generator_loss
+                    with torch.no_grad():
+                        z = self.model(x)
+                        fake = z[0] if isinstance(z, (list, tuple)) else z
+                    g_loss = torch.zeros(1, dtype=x.dtype, device=x.device)
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
@@ -140,9 +156,6 @@ class Waifu2xEnv(LuminancePSNREnv):
                 z_real = self.discriminator(y)
                 d_loss = self.discriminator_criterion(z_real, z_fake)
 
-                self.sum_loss += g_loss.item()
-                self.sum_p_loss += recon_loss.item()
-                self.sum_g_loss += generator_loss.item()
                 self.sum_d_loss += d_loss.item()
                 loss = (g_loss, d_loss)
 
@@ -160,9 +173,10 @@ class Waifu2xEnv(LuminancePSNREnv):
             g_opt, d_opt = optimizers
 
             # update generator
-            g_opt.zero_grad()
-            self.backward(g_loss, grad_scaler)
-            self.optimizer_step(g_opt, grad_scaler)
+            if not self.discriminator_only:
+                g_opt.zero_grad()
+                self.backward(g_loss, grad_scaler)
+                self.optimizer_step(g_opt, grad_scaler)
 
             # update discriminator
             d_opt.zero_grad()
@@ -197,6 +211,9 @@ class Waifu2xEnv(LuminancePSNREnv):
             self.discriminator.eval()
 
     def eval_step(self, data):
+        if self.discriminator_only:
+            return
+
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
         psnr = 0
@@ -219,6 +236,9 @@ class Waifu2xEnv(LuminancePSNREnv):
         self.sum_step += 1
 
     def eval_end(self, file=sys.stdout):
+        if self.discriminator_only:
+            return float(-time() / 1000000000)
+
         mean_psnr = self.sum_psnr / self.sum_step
         mean_loss = self.sum_loss / self.sum_step
 
@@ -241,6 +261,7 @@ class Waifu2xTrainer(Trainer):
                           discriminator=self.discriminator,
                           discriminator_criterion=discriminator_criterion,
                           discriminator_weight=self.args.discriminator_weight,
+                          discriminator_only=bool(self.args.discriminator_only),
                           update_criterion=self.args.update_criterion)
 
     def setup(self):

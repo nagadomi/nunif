@@ -103,6 +103,8 @@ def register(subparsers, default_parser):
                         help="discriminator loss weight")
     parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss"], default="psnr",
                         help="criterion for updating best model")
+    parser.add_argument("--discriminator-only", action="store_true",
+                        help="training discriminator only")
 
     parser.set_defaults(
         batch_size=16,
