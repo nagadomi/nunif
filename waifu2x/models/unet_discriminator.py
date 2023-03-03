@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from nunif.models import Model, get_model_config, register_model
 from .cunet import UNet1, UNet2, CUNet, UpCUNet
 
@@ -25,7 +26,7 @@ class UNet2Discriminator(Model):
 
         return discriminator
 
-    def forward(self, x):
+    def forward(self, x, c=None, scale_factor=None):
         assert x.shape[2] % 4 == 0 and x.shape[3] % 4 == 0
         x = (x - 0.5) * 2.
         return self.unet(x)
@@ -50,9 +51,31 @@ class UNet1Discriminator(Model):
 
         return discriminator
 
-    def forward(self, x):
+    def forward(self, x, c=None, scale_factor=None):
         assert x.shape[2] % 2 == 0 and x.shape[3] % 2 == 0
         x = (x - 0.5) * 2.
+        return self.unet(x)
+
+
+@register_model
+class UNet2ConditionalDiscriminator(Model):
+    name = "waifu2x.unet2_cond_discriminator"
+
+    def __init__(self, in_channels=3):
+        super().__init__(locals())
+        self.unet = UNet2(in_channels=in_channels*2, out_channels=1, deconv=False)
+
+    def forward(self, x, c, scale_factor):
+        assert x.shape[2] % 4 == 0 and x.shape[3] % 4 == 0
+        c = F.interpolate(c, scale_factor=scale_factor, mode="bilinear", align_corners=False)
+        offset = (c.shape[2] - x.shape[2]) // 2
+        if offset > 0:
+            c = F.pad(c, (-offset, -offset, -offset, -offset), mode="constant")
+        assert c.shape[2] == x.shape[2] and c.shape[3] == x.shape[3]
+
+        x = (x - 0.5) * 2.
+        c = (c - 0.5) * 2.
+        x = torch.cat([x, c], dim=1)
         return self.unet(x)
 
 

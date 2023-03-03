@@ -3,6 +3,7 @@ from .swin_unet import SwinUNet, UpSwinUNet, UpSwinUNet4x
 from .swin_unet_unif import SwinUNetUnif
 from .unet_discriminator import (
     UNet2Discriminator,
+    UNet2ConditionalDiscriminator,
     UNet1Discriminator,
 )
 from .vgg_7 import VGG7
@@ -17,7 +18,7 @@ __all__ = [
     "CUNet", "UpCUNet",
     "SwinUNet", "UpSwinUNet", "UpSwinUNet4x",
     "SwinUNetUnif",
-    "UNet2Discriminator", "UNet1Discriminator",
+    "UNet2Discriminator", "UNet2ConditionalDiscriminator", "UNet1Discriminator",
     "load_state_from_waifu2x_json"
 ]
 

@@ -2,7 +2,7 @@ from os import path
 import sys
 from time import time
 import torch
-from .. models import UNet2Discriminator, UNet1Discriminator
+from .. models import UNet2Discriminator, UNet1Discriminator, UNet2ConditionalDiscriminator
 from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
@@ -66,6 +66,8 @@ def create_discriminator(discriminator, device):
         model = UNet1Discriminator()
     elif discriminator == "unet2":
         model = UNet2Discriminator()
+    elif discriminator == "unet2_cond":
+        model = UNet2ConditionalDiscriminator()
     elif path.exists(discriminator):
         model, _ = load_model(discriminator)
         if model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
@@ -102,6 +104,10 @@ class Waifu2xEnv(LuminancePSNREnv):
             if not self.discriminator_only:
                 dataset.update_hard_example_losses(index, g_loss.item())
 
+    def get_scale_factor(self):
+        scale_factor = get_model_config(self.model, "i2i_scale")
+        return scale_factor
+
     def clear_loss(self):
         super().clear_loss()
         self.sum_p_loss = 0
@@ -119,6 +125,8 @@ class Waifu2xEnv(LuminancePSNREnv):
     def train_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
+        scale_factor = self.get_scale_factor()
+
         with self.autocast():
             if self.discriminator is None:
                 z = self.model(x)
@@ -136,7 +144,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     else:
                         fake = z
                     fake = fake # torch.clamp(fake, 0., 1.) * 0.99 + fake * 0.01
-                    z_real = self.discriminator(fake)
+                    z_real = self.discriminator(fake, x, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
                     g_loss = recon_loss + self.discriminator_weight * generator_loss
@@ -152,8 +160,8 @@ class Waifu2xEnv(LuminancePSNREnv):
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
-                z_fake = self.discriminator(fake.detach().clone())
-                z_real = self.discriminator(y)
+                z_fake = self.discriminator(fake.detach().clone(), x, scale_factor)
+                z_real = self.discriminator(y, x, scale_factor)
                 d_loss = self.discriminator_criterion(z_real, z_fake)
 
                 self.sum_d_loss += d_loss.item()
@@ -216,6 +224,8 @@ class Waifu2xEnv(LuminancePSNREnv):
 
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
+        scale_factor = self.get_scale_factor()
+
         psnr = 0
         with self.autocast():
             if self.update_criterion == "psnr":
@@ -228,7 +238,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 psnr = self.eval_criterion(z, y)
                 loss = self.criterion(z, y)
                 if self.discriminator is not None:
-                    z_real = self.discriminator(z)
+                    z_real = self.discriminator(z, x, scale_factor)
                     loss = loss + self.discriminator_criterion(z_real) * self.discriminator_weight
 
         self.sum_psnr += psnr.item()
