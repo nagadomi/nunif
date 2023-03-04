@@ -12,9 +12,7 @@ class ImageNetTrainer(Trainer):
         kwargs = {}
         if self.args.pretrained:
             kwargs = {"pretrained": True}
-        model = nunif_create_model(self.args.arch, **kwargs)
-        if len(self.args.gpu) > 1:
-            model = nn.DataParallel(model, device_ids=self.args.gpu)
+        model = nunif_create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
         model = model.to(self.device)
         return model
 
