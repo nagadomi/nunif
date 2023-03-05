@@ -51,7 +51,7 @@ class Alex11Loss(nn.Module):
     def forward(self, input, target):
         y = self.conv(input)
         t = self.conv(target)
-        loss_filter = F.max_pool2d(self.loss(y, t), 2).mean()
+        loss_filter = self.loss(y, t).mean()
         if self.cosine_weight > 0:
             loss_cosine = -F.cosine_similarity(y, t).mean()
             loss = loss_filter * (1. - self.cosine_weight) + loss_cosine * self.cosine_weight
