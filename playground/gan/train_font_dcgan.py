@@ -18,8 +18,8 @@ from text_resource.char import Char
 IMAGE_SIZE = 32
 FONT_NAMES = [
     "Yuji Boku Regular",
-    "Yuji Mai Regular",
-    "Yuji Syuku Regular",
+    "Klee One Regular",
+    "Kiwi Maru Regular",
     "BIZ UDGothic",
     "M PLUS 1 Code Regular",
     "Noto Sans JP",
