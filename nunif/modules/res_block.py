@@ -35,11 +35,20 @@ class ResBlock(nn.Module):
             first_kernel_size = 3
             shortcut_kernel_size = 1
         if padding_mode == "none":
-            first_padding = second_padding = 0
+            second_padding = 0
+            if stride == 2:
+                first_padding = 0
+                first_kernel_size = 2
+                self.depad = nn.ZeroPad2d((-1, -1, -1, -1))
+            else:
+                first_padding = 0
+                self.depad = nn.ZeroPad2d((-2, -2, -2, -2))
             padding_mode = "zeros"
         else:
             first_padding = (dilation * (first_kernel_size - 1)) // 2
             second_padding = 1
+            self.depad = nn.Identity()
+
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=first_kernel_size,
                       stride=stride, padding=first_padding, padding_mode=padding_mode,
@@ -56,11 +65,12 @@ class ResBlock(nn.Module):
                 norm_layer(out_channels))
         else:
             self.identity = nn.Identity()
+
         self.attn = attention_layer(out_channels)
         self.act = activation_layer(out_channels)
 
     def forward(self, x):
-        return self.attn(self.act(self.conv(x) + self.identity(x)))
+        return self.attn(self.act(self.conv(x) + self.depad(self.identity(x))))
 
 
 def ResBlockBNReLU(in_channels, out_channels, stride=1, bias=False,
