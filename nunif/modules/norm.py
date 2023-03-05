@@ -64,16 +64,12 @@ class LayerNormNoBias(nn.Module):
 
 
 class LayerNormNoBias2d(nn.Module):
-    def __init__(self, normalized_shape):
+    def __init__(self, dim):
         super().__init__()
-        if isinstance(normalized_shape, int):
-            normalized_shape = (normalized_shape,)
-        self.weight = nn.Parameter(torch.ones(normalized_shape))
+        self.weight = nn.Parameter(torch.ones((dim,)))
 
     def forward(self, x):
-        x = x.permute(0, 2, 3, 1)
-        x = F.layer_norm(x, self.weight.shape, self.weight)
-        x = x.permute(0, 3, 1, 2)
+        x = F.group_norm(x, num_groups=1, weight=self.weight, bias=None)
         return x
 
 
