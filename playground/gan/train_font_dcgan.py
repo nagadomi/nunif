@@ -71,9 +71,9 @@ def reset_parameters(model):
             torch.nn.init.normal_(m.weight, 0.0, 0.02)
             if m.bias is not None:
                 torch.nn.init.normal_(m.bias, 0.0, 0.01)
-            elif isinstance(m, (nn.BatchNorm2d,)):
-                torch.nn.init.normal_(m.weight, 1.0, 0.02)
-                torch.nn.init.zeros_(m.bias)
+        elif isinstance(m, (nn.BatchNorm2d,)):
+            torch.nn.init.normal_(m.weight, 1.0, 0.02)
+            torch.nn.init.zeros_(m.bias)
 
 
 class Generator(Model):
