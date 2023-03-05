@@ -71,8 +71,10 @@ class RandomDownscaleX():
         x = pil_io.to_tensor(x)
         if self.interpolation is None:
             interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
+            fixed_interpolation = False
         else:
             interpolation = self.interpolation
+            fixed_interpolation = True
 
         if self.scale_factor == 2:
             if not self.training:
@@ -82,7 +84,7 @@ class RandomDownscaleX():
             else:
                 blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                       filter_type=interpolation, blur=blur, enable_step=self.training)
+                       filter_type=interpolation, blur=blur, enable_step=self.training or fixed_interpolation)
         elif self.scale_factor == 4:
             if not self.training:
                 blur = 1 + self.blur_shift / 4
@@ -91,7 +93,7 @@ class RandomDownscaleX():
             else:
                 blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                       filter_type=interpolation, blur=blur, enable_step=self.training)
+                       filter_type=interpolation, blur=blur, enable_step=self.training or fixed_interpolation)
         x = pil_io.to_image(x)
         return x, y
 
