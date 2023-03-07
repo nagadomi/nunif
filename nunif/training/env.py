@@ -62,6 +62,20 @@ class BaseEnv(ABC):
         if update:
             self.optimizer_step(optimizers, grad_scaler)
 
+    def calculate_adaptive_weight(self, base_loss, second_loss, param,
+                                  grad_scaler, min=1e-6, max=1.):
+        if self.amp:
+            base_loss = grad_scaler.scale(base_loss)
+            second_loss = grad_scaler.scale(second_loss)
+        # ref. taming transformers
+        base_grads = torch.autograd.grad(base_loss, param, retain_graph=True)[0]
+        second_grads = torch.autograd.grad(second_loss, param, retain_graph=True)[0]
+        assert base_grads is not None and second_grads is not None
+        base_norm = torch.norm(base_grads)
+        second_norm = torch.norm(second_grads) + 1e-6
+        weight = torch.clamp(base_norm / second_norm, min, max).item()
+        return weight
+
     @abstractmethod
     def train_end(self):
         pass
