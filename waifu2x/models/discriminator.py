@@ -3,6 +3,30 @@ import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import Model, get_model_config, register_model
 from .cunet import UNet1, UNet2, CUNet, UpCUNet
+from nunif.modules import SEBlock
+
+
+def scale_c(x, c, scale_factor, mode="nearest"):
+    if mode in {"bilinear", "bicubic", "linear", "trilinear"}:
+        c = F.interpolate(c, scale_factor=scale_factor, mode=mode, align_corners=False)
+    else:
+        c = F.interpolate(c, scale_factor=scale_factor, mode=mode)
+    offset = (c.shape[2] - x.shape[2]) // 2
+    if offset > 0:
+        c = F.pad(c, (-offset, -offset, -offset, -offset), mode="constant")
+    assert c.shape[2] == x.shape[2] and c.shape[3] == x.shape[3]
+    return c
+
+def add_noise(x, strength=0.01):
+    B, C, H, W = x.shape
+    noise1x = torch.randn((B, C, H, W), dtype=x.dtype, device=x.device)
+    noise2x = torch.randn((B, C, H // 2, W // 2), dtype=x.dtype, device=x.device)
+    noise2x = F.interpolate(noise2x, size=(H, W), mode="nearest")
+    noise4x = torch.randn((B, C, H // 4, W // 4), dtype=x.dtype, device=x.device)
+    noise4x = F.interpolate(noise4x, size=(H, W), mode="nearest")
+
+    noise = (noise1x + noise2x + noise4x) * (strength / 3.0)
+    return x + noise
 
 
 @register_model
@@ -58,25 +82,48 @@ class UNet1Discriminator(Model):
 
 
 @register_model
-class UNet2ConditionalDiscriminator(Model):
-    name = "waifu2x.unet2_cond_discriminator"
+class L3Discriminator(Model):
+    name = "waifu2x.l3_discriminator"
 
-    def __init__(self, in_channels=3):
+    def __init__(self, out_channels=1):
         super().__init__(locals())
-        self.unet = UNet2(in_channels=in_channels*2, out_channels=1, deconv=False)
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 128, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            nn.GroupNorm(32, 128),
+            nn.LeakyReLU(0.1, inplace=True),
 
-    def forward(self, x, c, scale_factor):
-        assert x.shape[2] % 4 == 0 and x.shape[3] % 4 == 0
-        c = F.interpolate(c, scale_factor=scale_factor, mode="bilinear", align_corners=False)
-        offset = (c.shape[2] - x.shape[2]) // 2
-        if offset > 0:
-            c = F.pad(c, (-offset, -offset, -offset, -offset), mode="constant")
-        assert c.shape[2] == x.shape[2] and c.shape[3] == x.shape[3]
+            nn.Conv2d(128, 128, kernel_size=4, stride=2, padding=1),
+            nn.GroupNorm(32, 128),
+            nn.LeakyReLU(0.1, inplace=True),
 
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
+            nn.GroupNorm(32, 256),
+            nn.LeakyReLU(0.1, inplace=True),
+        )
+        self.classifier = nn.Sequential(
+            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
+            nn.GroupNorm(32, 512),
+            nn.LeakyReLU(0.1, inplace=True),
+            SEBlock(512, bias=True),
+
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=0),
+            nn.GroupNorm(32, 512),
+            nn.LeakyReLU(0.1, inplace=True),
+            SEBlock(512, bias=True),
+
+            nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
+
+        for m in self.classifier.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward(self, x, c=None, scale_factor=None):
         x = (x - 0.5) * 2.
-        c = (c - 0.5) * 2.
-        x = torch.cat([x, c], dim=1)
-        return self.unet(x)
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
 
 
 if __name__ == "__main__":

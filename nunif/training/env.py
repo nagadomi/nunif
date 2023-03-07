@@ -73,6 +73,7 @@ class BaseEnv(ABC):
         assert base_grads is not None and second_grads is not None
         base_norm = torch.norm(base_grads)
         second_norm = torch.norm(second_grads) + 1e-6
+        # print("adaptive_weight", base_loss.item(), base_norm.item(), second_loss.item(), second_norm.item())
         weight = torch.clamp(base_norm / second_norm, min, max).item()
         return weight
 

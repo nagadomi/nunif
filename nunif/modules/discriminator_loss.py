@@ -20,7 +20,7 @@ class DiscriminatorBCELoss(nn.Module):
 
 
 class DiscriminatorHingeLoss(nn.Module):
-    def __init__(self, th=0.0):
+    def __init__(self, th=0.05):
         super().__init__()
         self.th = th
 
