@@ -3,6 +3,11 @@ import torch.nn as nn
 from .pad import Pad
 from .norm import FRN2d, TLU2d
 from .attention import SEBlock
+from torch.nn.utils.parametrizations import spectral_norm
+
+
+def parameterize_none(conv):
+    return conv
 
 
 class ResBlock(nn.Module):
@@ -17,6 +22,7 @@ class ResBlock(nn.Module):
             attention_layer=None,
             valid_stride=False,
             dilation=1,
+            parameterize=parameterize_none
     ):
         super().__init__()
         assert stride in {1, 2}
@@ -50,18 +56,18 @@ class ResBlock(nn.Module):
             self.depad = nn.Identity()
 
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=first_kernel_size,
-                      stride=stride, padding=first_padding, padding_mode=padding_mode,
-                      bias=bias, dilation=dilation),
+            parameterize(nn.Conv2d(in_channels, out_channels, kernel_size=first_kernel_size,
+                                   stride=stride, padding=first_padding, padding_mode=padding_mode,
+                                   bias=bias, dilation=dilation)),
             norm_layer(out_channels),
             activation_layer(out_channels),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3,
-                      stride=1, padding=second_padding, padding_mode=padding_mode, bias=bias),
+            parameterize(nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                                   stride=1, padding=second_padding, padding_mode=padding_mode, bias=bias)),
             norm_layer(out_channels))
         if stride == 2 or in_channels != out_channels:
             self.identity = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=shortcut_kernel_size,
-                          stride=stride, padding=0, bias=bias),
+                parameterize(nn.Conv2d(in_channels, out_channels, kernel_size=shortcut_kernel_size,
+                                       stride=stride, padding=0, bias=bias)),
                 norm_layer(out_channels))
         else:
             self.identity = nn.Identity()
@@ -88,6 +94,31 @@ def ResBlockLReLU(in_channels, out_channels, stride=1, bias=True,
         norm_layer=lambda dim: nn.Identity(),
         activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
         valid_stride=valid_stride, dilation=dilation)
+
+
+def ResBlockSNLReLU(in_channels, out_channels, stride=1, bias=True,
+                    padding_mode="zeros", valid_stride=True, dilation=1):
+    return ResBlock(
+        in_channels, out_channels, stride, bias,
+        padding_mode=padding_mode,
+        norm_layer=lambda dim: nn.Identity(),
+        activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
+        valid_stride=valid_stride, dilation=dilation,
+        parameterize=spectral_norm
+    )
+
+
+def ResBlockSNGNLReLU(in_channels, out_channels, stride=1, bias=True,
+                      padding_mode="zeros", valid_stride=True, dilation=1,
+                      gn_group=32):
+    return ResBlock(
+        in_channels, out_channels, stride, bias,
+        padding_mode=padding_mode,
+        norm_layer=lambda dim: nn.GroupNorm(gn_group, dim),
+        activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
+        valid_stride=valid_stride, dilation=dilation,
+        parameterize=spectral_norm
+    )
 
 
 def ResBlockSELReLU(in_channels, out_channels, stride=1, bias=True,
@@ -124,6 +155,8 @@ def ResBlockFRN(in_channels, out_channels, stride=1, bias=False,
         norm_layer=lambda dim: FRN2d(dim),
         activation_layer=lambda dim: TLU2d(dim),
         valid_stride=valid_stride, dilation=dilation)
+
+
 
 
 class ResGroup(nn.Module):
