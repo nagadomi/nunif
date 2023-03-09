@@ -96,6 +96,17 @@ def ResBlockLReLU(in_channels, out_channels, stride=1, bias=True,
         valid_stride=valid_stride, dilation=dilation)
 
 
+def ResBlockGNLReLU(in_channels, out_channels, stride=1, bias=True,
+                  padding_mode="zeros", valid_stride=True, dilation=1,
+                  gn_group=32):
+    return ResBlock(
+        in_channels, out_channels, stride, bias,
+        padding_mode=padding_mode,
+        norm_layer=lambda dim: nn.GroupNorm(32, dim),
+        activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
+        valid_stride=valid_stride, dilation=dilation)
+
+
 def ResBlockSNLReLU(in_channels, out_channels, stride=1, bias=True,
                     padding_mode="zeros", valid_stride=True, dilation=1):
     return ResBlock(
