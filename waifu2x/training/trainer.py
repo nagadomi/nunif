@@ -2,7 +2,7 @@ from os import path
 import sys
 from time import time
 import torch
-from .. models import UNet2Discriminator, UNet1Discriminator, L3Discriminator
+from .. models import UNet2Discriminator, UNet1Discriminator, L3Discriminator, R3Discriminator
 from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
@@ -68,6 +68,8 @@ def create_discriminator(discriminator, device):
         model = UNet2Discriminator()
     elif discriminator == "l3":
         model = L3Discriminator()
+    elif discriminator == "r3":
+        model = R3Discriminator()
     elif path.exists(discriminator):
         model, _ = load_model(discriminator)
         if model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
@@ -195,30 +197,35 @@ class Waifu2xEnv(LuminancePSNREnv):
 
             recon_loss, generator_loss, d_loss = loss
             g_opt, d_opt = optimizers
+            optimizers = []
 
             # update generator
             if not self.discriminator_only:
                 g_opt.zero_grad()
                 last_layer = get_last_layer(self.model)
-                weight = self.calculate_adaptive_weight(
-                    recon_loss, generator_loss,
-                    last_layer, grad_scaler,
-                    min=1e-5 / self.discriminator_weight,
-                ) * self.discriminator_weight
-                g_loss = recon_loss + generator_loss * weight
+                weight = self.calculate_adaptive_weight(recon_loss, generator_loss, last_layer, grad_scaler,
+                                                        min=1e-5, max=1e2) * self.discriminator_weight
+                recon_weight = 1.0 / weight
+                if generator_loss > 0.05 and d_loss < 0.7:
+                    g_loss = recon_loss * recon_weight + generator_loss
+                else:
+                    g_loss = recon_loss * recon_weight
                 self.sum_loss += g_loss.item()
                 self.sum_d_weight += weight
                 self.backward(g_loss, grad_scaler)
-                self.optimizer_step(g_opt, grad_scaler)
+                optimizers.append(g_opt)
 
-                if False:
-                    print("recon", recon_loss.item(), "generator", generator_loss.item(),
-                          "discriminator", d_loss.item(), "weight", weight)
+                logger.debug(f"recon: {round(recon_loss.item(), 4)}, gen: {round(generator_loss.item(), 4)}, "
+                             f"disc: {round(d_loss.item(), 4)}, weight: {round(weight, 6)}")
 
             # update discriminator
             d_opt.zero_grad()
-            self.backward(d_loss, grad_scaler)
-            self.optimizer_step(d_opt, grad_scaler)
+            if d_loss > 0.2:
+                self.backward(d_loss, grad_scaler)
+                optimizers.append(d_opt)
+
+            if optimizers:
+                self.optimizer_step(optimizers, grad_scaler)
 
     def train_end(self):
         # update sampler
@@ -235,7 +242,7 @@ class Waifu2xEnv(LuminancePSNREnv):
             mean_d_weight = self.sum_d_weight / self.sum_step
             print(f"loss: {round(mean_loss, 6)}, "
                   f"reconstruction loss: {round(mean_p_loss, 6)}, "
-                  f"realistic loss: {round(mean_g_loss, 6)}, "
+                  f"generator loss: {round(mean_g_loss, 6)}, "
                   f"discriminator loss: {round(mean_d_loss, 6)}, "
                   f"discriminator weight: {round(mean_d_weight, 6)}")
             mean_loss = mean_loss + mean_d_loss
