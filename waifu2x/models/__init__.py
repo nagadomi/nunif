@@ -5,6 +5,7 @@ from .discriminator import (
     UNet2Discriminator,
     UNet1Discriminator,
     L3Discriminator,
+    R3Discriminator,
 )
 from .vgg_7 import VGG7
 from .upconv_7 import UpConv7

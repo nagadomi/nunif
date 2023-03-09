@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from nunif.models import Model, get_model_config, register_model
 from .cunet import UNet1, UNet2, CUNet, UpCUNet
 from nunif.modules import SEBlock
+from nunif.modules.res_block import ResBlockGNLReLU
 
 
 def scale_c(x, c, scale_factor, mode="nearest"):
@@ -16,6 +17,7 @@ def scale_c(x, c, scale_factor, mode="nearest"):
         c = F.pad(c, (-offset, -offset, -offset, -offset), mode="constant")
     assert c.shape[2] == x.shape[2] and c.shape[3] == x.shape[3]
     return c
+
 
 def add_noise(x, strength=0.01):
     B, C, H, W = x.shape
@@ -88,29 +90,52 @@ class L3Discriminator(Model):
     def __init__(self, out_channels=1):
         super().__init__(locals())
         self.features = nn.Sequential(
-            nn.Conv2d(3, 128, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
-            nn.GroupNorm(32, 128),
+            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
             nn.LeakyReLU(0.1, inplace=True),
 
-            nn.Conv2d(128, 128, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
             nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.1, inplace=True),
+            SEBlock(128, bias=True),
 
             nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
             nn.GroupNorm(32, 256),
             nn.LeakyReLU(0.1, inplace=True),
+            SEBlock(256, bias=True),
         )
         self.classifier = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
-            nn.GroupNorm(32, 512),
-            nn.LeakyReLU(0.1, inplace=True),
+            ResBlockGNLReLU(256, 512),
             SEBlock(512, bias=True),
+            nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
 
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=0),
-            nn.GroupNorm(32, 512),
+        for m in self.classifier.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward(self, x, c=None, scale_factor=None):
+        x = (x - 0.5) * 2.
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
+
+
+@register_model
+class R3Discriminator(Model):
+    name = "waifu2x.r3_discriminator"
+
+    def __init__(self, out_channels=1):
+        super().__init__(locals())
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
             nn.LeakyReLU(0.1, inplace=True),
+            ResBlockGNLReLU(64, 128, stride=2),
+            ResBlockGNLReLU(128, 256, stride=2),
+        )
+        self.classifier = nn.Sequential(
+            ResBlockGNLReLU(256, 512),
             SEBlock(512, bias=True),
-
             nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
 
         for m in self.classifier.modules():
