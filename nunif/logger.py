@@ -9,7 +9,10 @@ def _setup():
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(asctime)s:%(name)s: [%(levelname)8s] %(message)s"))
 
-    if os.getenv("DEBUG") is not None:
+    debug = os.getenv("DEBUG")
+    if debug is not None and debug.isdigit():
+        debug = int(debug)
+    if bool(debug):
         handler.setLevel(logging.DEBUG)
         logger.setLevel(level=logging.DEBUG)
     else:
