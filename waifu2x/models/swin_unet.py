@@ -9,12 +9,12 @@ from torchvision.models.swin_transformer import (
 
 
 # No LayerNorm
-def NORM_LAYER(dim):
+def NO_NORM_LAYER(dim):
     return nn.Identity()
 
 
 class SwinTransformerBlocks(nn.Module):
-    def __init__(self, in_channels, num_head, num_layers, window_size):
+    def __init__(self, in_channels, num_head, num_layers, window_size, norm_layer=NO_NORM_LAYER):
         super().__init__()
         layers = []
         for i_layer in range(num_layers):
@@ -28,7 +28,7 @@ class SwinTransformerBlocks(nn.Module):
                     dropout=0.,
                     attention_dropout=0.,
                     stochastic_depth_prob=0.,
-                    norm_layer=NORM_LAYER,
+                    norm_layer=norm_layer,
                 )
             )
         self.block = nn.Sequential(*layers)

@@ -6,6 +6,8 @@ from .discriminator import (
     UNet1Discriminator,
     L3Discriminator,
     R3Discriminator,
+    R3ConditionalDiscriminator,
+    S3ConditionalDiscriminator,
 )
 from .vgg_7 import VGG7
 from .upconv_7 import UpConv7
@@ -20,6 +22,7 @@ __all__ = [
     "SwinUNet", "UpSwinUNet", "UpSwinUNet4x",
     "SwinUNetUnif",
     "UNet2Discriminator", "UNet1Discriminator", "L3Discriminator",
+    "R3Discriminator", "R3ConditionalDiscriminator", "S3ConditionalDiscriminator",
     "load_state_from_waifu2x_json"
 ]
 

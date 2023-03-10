@@ -3,8 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import Model, get_model_config, register_model
 from .cunet import UNet1, UNet2, CUNet, UpCUNet
+from .swin_unet import SwinTransformerBlocks
 from nunif.modules import SEBlock
 from nunif.modules.res_block import ResBlockGNLReLU
+from torchvision.models.swin_transformer import PatchMerging
+from torchvision.ops import Permute
+
+
+def normalize(x):
+    return x * 2. - 1.
 
 
 def scale_c(x, c, scale_factor, mode="nearest"):
@@ -35,9 +42,9 @@ def add_noise(x, strength=0.01):
 class UNet2Discriminator(Model):
     name = "waifu2x.unet2_discriminator"
 
-    def __init__(self, in_channels=3):
+    def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals())
-        self.unet = UNet2(in_channels=in_channels, out_channels=1, deconv=False)
+        self.unet = UNet2(in_channels=in_channels, out_channels=out_channels, deconv=False)
 
     @staticmethod
     def from_cunet(cunet):
@@ -54,7 +61,7 @@ class UNet2Discriminator(Model):
 
     def forward(self, x, c=None, scale_factor=None):
         assert x.shape[2] % 4 == 0 and x.shape[3] % 4 == 0
-        x = (x - 0.5) * 2.
+        x = normalize(x)
         return self.unet(x)
 
 
@@ -62,9 +69,9 @@ class UNet2Discriminator(Model):
 class UNet1Discriminator(Model):
     name = "waifu2x.unet1_discriminator"
 
-    def __init__(self, in_channels=3):
+    def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals())
-        self.unet = UNet1(in_channels=in_channels, out_channels=1, deconv=False)
+        self.unet = UNet1(in_channels=in_channels, out_channels=out_channels, deconv=False)
 
     @staticmethod
     def from_cunet(cunet):
@@ -79,7 +86,7 @@ class UNet1Discriminator(Model):
 
     def forward(self, x, c=None, scale_factor=None):
         assert x.shape[2] % 2 == 0 and x.shape[3] % 2 == 0
-        x = (x - 0.5) * 2.
+        x = normalize(x)
         return self.unet(x)
 
 
@@ -87,20 +94,21 @@ class UNet1Discriminator(Model):
 class L3Discriminator(Model):
     name = "waifu2x.l3_discriminator"
 
-    def __init__(self, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals())
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            nn.GroupNorm(32, 64),
+            nn.LeakyReLU(0.2, inplace=True),
 
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
             nn.GroupNorm(32, 128),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True),
             SEBlock(128, bias=True),
 
             nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
             nn.GroupNorm(32, 256),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True),
             SEBlock(256, bias=True),
         )
         self.classifier = nn.Sequential(
@@ -115,7 +123,7 @@ class L3Discriminator(Model):
                     nn.init.constant_(m.bias, 0)
 
     def forward(self, x, c=None, scale_factor=None):
-        x = (x - 0.5) * 2.
+        x = normalize(x)
         x = self.features(x)
         x = self.classifier(x)
         return x
@@ -125,13 +133,15 @@ class L3Discriminator(Model):
 class R3Discriminator(Model):
     name = "waifu2x.r3_discriminator"
 
-    def __init__(self, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals())
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            nn.LeakyReLU(0.2, inplace=True),
             ResBlockGNLReLU(64, 128, stride=2),
+            SEBlock(128, bias=True),
             ResBlockGNLReLU(128, 256, stride=2),
+            SEBlock(256, bias=True),
         )
         self.classifier = nn.Sequential(
             ResBlockGNLReLU(256, 512),
@@ -145,9 +155,69 @@ class R3Discriminator(Model):
                     nn.init.constant_(m.bias, 0)
 
     def forward(self, x, c=None, scale_factor=None):
-        x = (x - 0.5) * 2.
+        x = normalize(x)
         x = self.features(x)
         x = self.classifier(x)
+        return x
+
+
+@register_model
+class R3ConditionalDiscriminator(R3Discriminator):
+    name = "waifu2x.r3_conditional_discriminator"
+
+    def __init__(self, in_channels=6, out_channels=1):
+        super().__init__(in_channels=in_channels, out_channels=out_channels)
+
+    def forward(self, x, c, scale_factor):
+        x = normalize(x)
+        c = scale_c(x, c, scale_factor, mode="nearest")
+        c = normalize(c)
+        x = torch.cat([x, c], dim=1)
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
+
+
+@register_model
+class S3Discriminator(Model):
+    name = "waifu2x.s3_discriminator"
+
+    def __init__(self, in_channels=3, out_channels=1):
+        super().__init__(locals())
+        self.swin_transformer = nn.Sequential(
+            nn.Conv2d(in_channels, 96, kernel_size=4, stride=4, padding=0),
+            Permute([0, 2, 3, 1]),
+            SwinTransformerBlocks(96, num_head=3, num_layers=2, window_size=[8, 8],
+                                  norm_layer=nn.LayerNorm),
+            PatchMerging(96),
+            SwinTransformerBlocks(192, num_head=6, num_layers=4, window_size=[8, 8],
+                                  norm_layer=nn.LayerNorm),
+            PatchMerging(192),
+            SwinTransformerBlocks(384, num_head=12, num_layers=2, window_size=[8, 8],
+                                  norm_layer=nn.LayerNorm),
+            nn.Linear(384, out_channels),
+            Permute([0, 3, 1, 2]),
+        )
+
+    def forward(self, x, c=None, scale_factor=None):
+        x = normalize(x)
+        x = self.swin_transformer(x)
+        return x
+
+
+@register_model
+class S3ConditionalDiscriminator(S3Discriminator):
+    name = "waifu2x.s3_conditional_discriminator"
+
+    def __init__(self, in_channels=6, out_channels=1):
+        super().__init__(in_channels=in_channels, out_channels=out_channels)
+
+    def forward(self, x, c, scale_factor):
+        x = normalize(x)
+        c = scale_c(x, c, scale_factor, mode="nearest")
+        c = normalize(c)
+        x = torch.cat([x, c], dim=1)
+        x = self.swin_transformer(x)
         return x
 
 

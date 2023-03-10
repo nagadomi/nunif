@@ -2,7 +2,12 @@ from os import path
 import sys
 from time import time
 import torch
-from .. models import UNet2Discriminator, UNet1Discriminator, L3Discriminator, R3Discriminator
+from .. models import (
+    UNet2Discriminator, UNet1Discriminator,
+    L3Discriminator,
+    R3Discriminator, R3ConditionalDiscriminator,
+    S3ConditionalDiscriminator,
+)
 from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
@@ -23,16 +28,20 @@ from nunif.logger import logger
 
 
 def create_criterion(loss):
-    if loss == "lbp":
+    if loss == "l1":
+        criterion = ClampLoss(torch.nn.L1Loss())
+    elif loss  == "y_l1":
+        criterion = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
+    elif loss == "lbp":
         criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
     elif loss == "lbp5":
         criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
     elif loss == "alex11":
         criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
-    elif loss == "y_charbonnier":
-        criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))
     elif loss == "charbonnier":
         criterion = ClampLoss(CharbonnierLoss())
+    elif loss == "y_charbonnier":
+        criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))
     elif loss == "aux_lbp":
         criterion = AuxiliaryLoss([
             ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
@@ -70,6 +79,10 @@ def create_discriminator(discriminator, device):
         model = L3Discriminator()
     elif discriminator == "r3":
         model = R3Discriminator()
+    elif discriminator == "r3c":
+        model = R3ConditionalDiscriminator()
+    elif discriminator == "s3c":
+        model = S3ConditionalDiscriminator()
     elif path.exists(discriminator):
         model, _ = load_model(discriminator)
         if model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
@@ -204,7 +217,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 g_opt.zero_grad()
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(recon_loss, generator_loss, last_layer, grad_scaler,
-                                                        min=1e-5, max=1e2) * self.discriminator_weight
+                                                        min=1e-5, max=1e2, mode="max") * self.discriminator_weight
                 recon_weight = 1.0 / weight
                 if generator_loss > 0.05 and d_loss < 0.7:
                     g_loss = recon_loss * recon_weight + generator_loss
@@ -220,7 +233,7 @@ class Waifu2xEnv(LuminancePSNREnv):
 
             # update discriminator
             d_opt.zero_grad()
-            if d_loss > 0.2:
+            if d_loss > 0.4:
                 self.backward(d_loss, grad_scaler)
                 optimizers.append(d_opt)
 

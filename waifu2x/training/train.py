@@ -69,7 +69,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--loss", type=str,
                         choices=["lbp", "lbp5", "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
-                                 "alex11", "aux_alex11"],
+                                 "alex11", "aux_alex11", "l1", "y_l1"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data argumentation for gt image")
@@ -98,7 +98,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
     parser.add_argument("--discriminator", type=str,
-                        help="discriminator.pth or cunet model path, or [`l3`, `r3`, `unet2`, `unet1`].")
+                        help="discriminator.pth or cunet model path, or [`l3`, `r3`, `r3c`, `unet2`, `unet1`].")
     parser.add_argument("--discriminator-weight", type=float, default=1.,
                         help="discriminator loss weight")
     parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss", "all"], default="psnr",
