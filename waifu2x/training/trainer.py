@@ -95,7 +95,8 @@ def create_discriminator(discriminator, device):
 def get_last_layer(model):
     if model.name in {"waifu2x.swin_unet_1x",
                       "waifu2x.swin_unet_2x",
-                      "waifu2x.swin_unet_4x"}:
+                      "waifu2x.swin_unet_4x",
+                      "waifu2x.swin_unet_8x"}:
         return model.unet.to_image.proj.weight
     elif model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
         return model.unet2.conv_bottom.weight
@@ -362,6 +363,8 @@ class Waifu2xTrainer(Trainer):
             scale_factor = 2
         elif self.args.method in {"scale4x", "noise_scale4x"}:
             scale_factor = 4
+        elif self.args.method in {"scale8x", "noise_scale8x"}:
+            scale_factor = 8
         elif self.args.method in {"noise"}:
             scale_factor = 1
         else:
@@ -418,12 +421,16 @@ class Waifu2xTrainer(Trainer):
     def create_filename_prefix(self):
         if self.args.method == "scale":
             return "scale2x"
-        elif self.args.method == "scale4x":
-            return "scale4x"
         elif self.args.method == "noise_scale":
             return f"noise{self.args.noise_level}_scale2x"
+        elif self.args.method == "scale4x":
+            return "scale4x"
         elif self.args.method == "noise_scale4x":
             return f"noise{self.args.noise_level}_scale4x"
+        elif self.args.method == "scale8x":
+            return "scale8x"
+        elif self.args.method == "noise_scale8x":
+            return f"noise{self.args.noise_level}_scale8x"
         elif self.args.method == "noise":
             return f"noise{self.args.noise_level}"
         else:

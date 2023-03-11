@@ -15,7 +15,7 @@ def train(args):
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
         raise ValueError("--noise-level is required for noise/noise_scale")
 
-    if args.method in {"scale", "scale4x", "unif4x"}:
+    if args.method in {"scale", "scale4x", "scale8x", "unif4x"}:
         # disable
         args.noise_level = -1
 
@@ -28,6 +28,8 @@ def train(args):
             args.loss = "lbp"
         elif args.arch in {"waifu2x.swin_unet_4x"}:
             args.loss = "lbp5"
+        elif args.arch in {"waifu2x.swin_unet_8x"}:
+            args.loss = "y_charbonnier"
         else:
             args.loss = "y_charbonnier"
 
@@ -47,7 +49,9 @@ def register(subparsers, default_parser):
     waifu2x_models = sorted([name for name in get_model_names() if name.startswith("waifu2x.")])
 
     parser.add_argument("--method", type=str,
-                        choices=["scale", "noise_scale", "scale4x", "noise_scale4x", "noise",
+                        choices=["noise", "scale", "noise_scale",
+                                 "scale4x", "noise_scale4x",
+                                 "scale8x", "noise_scale8x",
                                  "unif4x", "noise_unif4x"],
                         required=True,
                         help="waifu2x method")

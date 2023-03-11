@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import copy
 from nunif.models import I2IBaseModel, register_model
 from torchvision.models.swin_transformer import (
     # use SwinTransformer V1
@@ -79,12 +80,12 @@ class PatchUp(nn.Module):
 class ToImage(nn.Module):
     def __init__(self, in_channels, out_channels, scale_factor):
         super().__init__()
-        assert scale_factor in {1, 2, 4}
+        assert scale_factor in {1, 2, 4, 8}
         self.scale_factor = scale_factor
         self.out_channels = out_channels
         if scale_factor == 1:
             self.proj = nn.Linear(in_channels, out_channels)
-        elif scale_factor in {2, 4}:
+        elif scale_factor in {2, 4, 8}:
             scale2 = scale_factor ** 2
             self.proj = nn.Linear(in_channels, out_channels * scale2)
         self.reset_parameters()
@@ -104,9 +105,11 @@ class ToImage(nn.Module):
 class SwinUNetBase(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, base_dim=96, base_layers=2, scale_factor=1):
         super().__init__()
-        assert scale_factor in {1, 2, 4}
+        assert scale_factor in {1, 2, 4, 8}
         assert base_dim % 16 == 0 and base_dim % 6 == 0
         assert base_layers % 2 == 0
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         C = base_dim
         H = C // 16
         L = base_layers
@@ -130,7 +133,7 @@ class SwinUNetBase(nn.Module):
             self.up1 = PatchUp(C * 2, C)
             self.swin5 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W)
             self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
-        elif scale_factor == 4:
+        elif scale_factor in {4, 8}:
             self.proj1 = nn.Identity()
             self.up2 = PatchUp(C * 2, C * 2)
             self.proj2 = nn.Linear(C, C * 2)
@@ -195,7 +198,7 @@ class SwinUNet(I2IBaseModel):
 
 
 @register_model
-class UpSwinUNet(I2IBaseModel):
+class SwinUNet2x(I2IBaseModel):
     name = "waifu2x.swin_unet_2x"
 
     def __init__(self, in_channels=3, out_channels=3):
@@ -215,7 +218,7 @@ class UpSwinUNet(I2IBaseModel):
 
 
 @register_model
-class UpSwinUNet4x(I2IBaseModel):
+class SwinUNet4x(I2IBaseModel):
     name = "waifu2x.swin_unet_4x"
 
     def __init__(self, in_channels=3, out_channels=3):
@@ -234,12 +237,119 @@ class UpSwinUNet4x(I2IBaseModel):
             return torch.clamp(z, 0, 1)
 
 
-if __name__ == "__main__":
+@register_model
+class SwinUNet8x(I2IBaseModel):
+    name = "waifu2x.swin_unet_8x"
+
+    def __init__(self, in_channels=3, out_channels=3):
+        super().__init__(locals(), scale=4, offset=64, in_channels=in_channels, blend_size=4)
+        self.unet = SwinUNetBase(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            base_dim=96, base_layers=2,
+            scale_factor=8)
+
+    def forward(self, x):
+        z = self.unet(x)
+        if self.training:
+            return z
+        else:
+            return torch.clamp(z, 0, 1)
+
+
+@register_model
+class SwinUNetDownscaled2x(I2IBaseModel):
+    name = "waifu2x.swin_unet_downscaled_2x"
+
+    def __init__(self, in_channels=3, out_channels=3, downscale_factor=2, unet=None):
+        super().__init__(dict(in_channels=in_channels, out_channels=out_channels),
+                         scale=2, offset=16, in_channels=in_channels, blend_size=4)
+        if unet is None:
+            self.unet = SwinUNetBase(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                base_dim=96, base_layers=2,
+                scale_factor=4)
+        else:
+            self.unet = unet
+        self.mode = "bicubic"
+        self.downscale_factor = downscale_factor
+
+    def forward(self, x):
+        z = self.unet(x)
+        if self.training:
+            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+                              mode=self.mode, align_corners=False, antialias=True)
+            return z
+        else:
+            z = torch.clamp(z, 0., 1.)
+            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+                              mode=self.mode, align_corners=False, antialias=True)
+            z = torch.clamp(z, 0., 1.)
+            return z
+
+    @staticmethod
+    def from_4x(swin_unet_4x):
+        net = SwinUNetDownscaled2x(in_channels=swin_unet_4x.unet.in_channels,
+                                   out_channels=swin_unet_4x.unet.out_channels,
+                                   downscale_factor=2,
+                                   unet=copy.deepcopy(swin_unet_4x.unet))
+        return net
+
+    @staticmethod
+    def from_8x(swin_unet_8x):
+        net = SwinUNetDownscaled2x(in_channels=swin_unet_8x.unet.in_channels,
+                                   out_channels=swin_unet_8x.unet.out_channels,
+                                   downscale_factor=4,
+                                   unet=copy.deepcopy(swin_unet_8x.unet))
+        return net
+
+
+@register_model
+class SwinUNetDownscaled4x(I2IBaseModel):
+    name = "waifu2x.swin_unet_downscaled_4x"
+
+    def __init__(self, in_channels=3, out_channels=3, unet=None):
+        super().__init__(dict(in_channels=in_channels, out_channels=out_channels),
+                         scale=4, offset=32, in_channels=in_channels, blend_size=4)
+        if unet is None:
+            self.unet = SwinUNetBase(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                base_dim=96, base_layers=2,
+                scale_factor=8)
+        else:
+            self.unet = unet
+        self.mode = "bicubic"
+
+    def forward(self, x):
+        z = self.unet(x)
+        if self.training:
+            z = F.interpolate(z, size=(z.shape[2] // 2, z.shape[3] // 2),
+                              mode=self.mode, align_corners=False, antialias=True)
+            return z
+        else:
+            z = torch.clamp(z, 0., 1.)
+            z = F.interpolate(z, size=(z.shape[2] // 2, z.shape[3] // 2),
+                              mode=self.mode, align_corners=False, antialias=True)
+            z = torch.clamp(z, 0., 1.)
+            return z
+
+    @staticmethod
+    def from_8x(swin_unet_8x):
+        net = SwinUNetDownscaled4x(in_channels=swin_unet_8x.unet.in_channels,
+                                   out_channels=swin_unet_8x.unet.out_channels,
+                                   unet=copy.deepcopy(swin_unet_8x.unet))
+        return net
+
+
+def _test():
     import io
     device = "cuda:0"
     for model in (SwinUNet(in_channels=3, out_channels=3),
-                  UpSwinUNet(in_channels=3, out_channels=3),
-                  UpSwinUNet4x(in_channels=3, out_channels=3)):
+                  SwinUNet2x(in_channels=3, out_channels=3),
+                  SwinUNet4x(in_channels=3, out_channels=3),
+                  SwinUNet8x(in_channels=3, out_channels=3)):
         model = model.to(device)
         # Note: input size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0`,
         # e.g. 64,112,160,256,400,640,1024
@@ -249,3 +359,30 @@ if __name__ == "__main__":
             buf = io.BytesIO()
             torch.save(model.state_dict(), buf)
             print(model.name, "output", z.shape, "size", len(buf.getvalue()))
+
+
+def _convert_tool_main():
+    import argparse
+    from nunif.models import load_model, save_model
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--from-scale", type=str, required=True, choices=["8x", "4x"],
+                        help="from scale")
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input 8x or 4x model")
+    parser.add_argument("--output", "-o", type=str, required=True,
+                        help="output swin_unet_downscaled_model")
+    args = parser.parse_args()
+    if args.from_scale == "4x":
+        model_4x, _ = load_model(args.input)
+        model = SwinUNetDownscaled2x.from_4x(model_4x)
+    elif  args.from_scale == "8x":
+        model_8x, _ = load_model(args.input)
+        model = SwinUNetDownscaled4x.from_8x(model_8x)
+
+    save_model(model, args.output)
+
+
+if __name__ == "__main__":
+    _convert_tool_main()
+    # _test()

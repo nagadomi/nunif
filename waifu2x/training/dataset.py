@@ -18,6 +18,8 @@ from .noise_level import (
     add_jpeg_noise,
     shift_jpeg_block,
 )
+from PIL.Image import Resampling
+
 
 NEAREST_PREFIX = "__NEAREST_"
 INTERPOLATION_MODES = (
@@ -56,9 +58,26 @@ def resize(im, size, filter_type, blur, enable_step=False):
         return _resize(im, size, filter_type, blur)
 
 
+def pil_resize(im, size, filter_type):
+    if filter_type == "box":
+        resample = Resampling.BOX
+    elif filter_type == "catrom":
+        resample = Resampling.BICUBIC
+    elif filter_type == "catrom":
+        resample = Resampling.BICUBIC
+    elif filter_type in {"sinc", "lanczos"}:
+        resample = Resampling.LANCZOS
+    elif filter_type == "triangle":
+        resample = Resampling.BILINEAR
+    else:
+        raise NotImplementedError()
+
+    return im.resize(size, resample=resample)
+
+
 class RandomDownscaleX():
     def __init__(self, scale_factor, blur_shift=0, resize_blur_p=0.1, interpolation=None, training=True):
-        assert scale_factor in {2, 4}
+        assert scale_factor in {2, 4, 8}
         self.interpolation = interpolation
         self.scale_factor = scale_factor
         self.blur_shift = blur_shift
@@ -67,34 +86,31 @@ class RandomDownscaleX():
 
     def __call__(self, x, y):
         w, h = x.size
+        if self.scale_factor == 1:
+            return x, y
         assert (w % self.scale_factor == 0 and h % self.scale_factor == 0)
-        x = pil_io.to_tensor(x)
         if self.interpolation is None:
             interpolation = random.choices(INTERPOLATION_MODES, weights=INTERPOLATION_MODE_WEIGHTS, k=1)[0]
             fixed_interpolation = False
         else:
             interpolation = self.interpolation
             fixed_interpolation = True
+        if self.scale_factor in {2, 4}:
+            x = pil_io.to_tensor(x)
+            if not self.training:
+                blur = 1 + self.blur_shift / 4
+            elif random.uniform(0, 1) < self.resize_blur_p:
+                blur = random.uniform(0.95 + self.blur_shift, 1.05 + self.blur_shift)
+            else:
+                blur = 1
+            x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
+                       filter_type=interpolation, blur=blur, enable_step=self.training or fixed_interpolation)
+            x = pil_io.to_image(x)
+        elif self.scale_factor == 8:
+            # wand 8x downscale is very slow for some reason
+            # and, 8x is not used directly, so use pil instead
+            x = pil_resize(x, (h // self.scale_factor, w // self.scale_factor), interpolation)
 
-        if self.scale_factor == 2:
-            if not self.training:
-                blur = 1 + self.blur_shift / 4
-            elif random.uniform(0, 1) < self.resize_blur_p:
-                blur = random.uniform(0.95 + self.blur_shift, 1.05 + self.blur_shift)
-            else:
-                blur = 1
-            x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                       filter_type=interpolation, blur=blur, enable_step=self.training or fixed_interpolation)
-        elif self.scale_factor == 4:
-            if not self.training:
-                blur = 1 + self.blur_shift / 4
-            elif random.uniform(0, 1) < self.resize_blur_p:
-                blur = random.uniform(0.95 + self.blur_shift, 1.05 + self.blur_shift)
-            else:
-                blur = 1
-            x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                       filter_type=interpolation, blur=blur, enable_step=self.training or fixed_interpolation)
-        x = pil_io.to_image(x)
         return x, y
 
 
@@ -166,7 +182,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  deblur=0, resize_blur_p=0.1,
                  noise_level=-1, style=None,
                  training=True):
-        assert scale_factor in {1, 2, 4}
+        assert scale_factor in {1, 2, 4, 8}
         assert noise_level in {-1, 0, 1, 2, 3}
         assert style in {None, "art", "photo"}
 
@@ -193,8 +209,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 random_downscale_x = TP.Identity()
                 random_downscale_x_nearest = TP.Identity()
 
-            # 64 = 8(max jpeg shift size) * 4(max_scale_factor) * 2(max jpeg shift count)
-            y_min_size = tile_size * scale_factor + 64
+            # 8(max jpeg shift size) * 2(max jpeg shift count) * scale_factor
+            y_min_size = tile_size * scale_factor + (8 * 2 * scale_factor)
             self.gt_transforms = T.Compose([
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
@@ -232,7 +248,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 downscale_x = TP.Identity()
                 downscale_x_nearest = TP.Identity()
-            y_min_size = tile_size * scale_factor + 64
+            y_min_size = tile_size * scale_factor + (8 * 2 * scale_factor)
             self.transforms = TP.Compose([
                 TP.CenterCrop(size=y_min_size),
                 downscale_x,

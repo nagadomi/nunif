@@ -24,7 +24,7 @@ class Identity():
 
 class RandomCrop():
     def __init__(self, size, y_offset=0, y_scale=1):
-        assert (y_scale in {1, 2, 4})
+        assert (y_scale in {1, 2, 4, 8})
         self.size = (size, size)
         self.y_offset = y_offset
         self.y_scale = y_scale
@@ -45,7 +45,7 @@ class RandomCrop():
 
 class CenterCrop():
     def __init__(self, size, y_offset=0, y_scale=1):
-        assert (y_scale in {1, 2, 4})
+        assert (y_scale in {1, 2, 4, 8})
         self.size = (size, size)
         self.y_offset = y_offset
         self.y_scale = y_scale
@@ -63,7 +63,7 @@ class CenterCrop():
 
 class RandomHardExampleCrop():
     def __init__(self, size, y_offset=0, y_scale=1, samples=4):
-        assert (y_scale in {1, 2, 4})
+        assert (y_scale in {1, 2, 4, 8})
         self.size = (size, size)
         self.y_offset = y_offset
         self.y_scale = y_scale
