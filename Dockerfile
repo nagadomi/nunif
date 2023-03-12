@@ -13,3 +13,15 @@ RUN git clone https://github.com/nagadomi/nunif.git /root/nunif && \
     python3 -m waifu2x.web.webgen.gen
 
 WORKDIR /root/nunif
+
+# 1. Build
+# 
+# docker build -t nunif .
+# 
+# 2. For CUDA
+# docker run --gpus all -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --max-pixels 16777216 --max-body-size 100
+# 
+# 2. For CPU
+# docker run -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --max-pixels 16777216 --max-body-size 100 --gpu -1
+#
+# Open http://localhost:8812/ 
