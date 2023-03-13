@@ -1,5 +1,5 @@
 from .cunet import CUNet, UpCUNet
-from .swin_unet import SwinUNet, UpSwinUNet, UpSwinUNet4x
+from .swin_unet import SwinUNet, SwinUNet2x, SwinUNet4x, SwinUNetDownscaled2x
 from .swin_unet_unif import SwinUNetUnif
 from .discriminator import (
     UNet2Discriminator,
@@ -19,7 +19,7 @@ import importlib
 __all__ = [
     "VGG7", "UpConv7",
     "CUNet", "UpCUNet",
-    "SwinUNet", "UpSwinUNet", "UpSwinUNet4x",
+    "SwinUNet", "SwinUNet2x", "SwinUNet4x", "SwinUNetDownscaled2x",
     "SwinUNetUnif",
     "UNet2Discriminator", "UNet1Discriminator", "L3Discriminator",
     "R3Discriminator", "R3ConditionalDiscriminator", "S3ConditionalDiscriminator",

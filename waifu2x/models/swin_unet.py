@@ -85,14 +85,22 @@ class ToImage(nn.Module):
         self.out_channels = out_channels
         if scale_factor == 1:
             self.proj = nn.Linear(in_channels, out_channels)
-        elif scale_factor in {2, 4, 8}:
+        elif scale_factor in {2, 4}:
             scale2 = scale_factor ** 2
             self.proj = nn.Linear(in_channels, out_channels * scale2)
+        elif scale_factor in {8}:
+            scale2 = scale_factor ** 2
+            self.proj = nn.Sequential(
+                nn.Linear(in_channels, out_channels * scale2),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Linear(out_channels * scale2, out_channels * scale2))
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.xavier_uniform_(self.proj.weight)
-        nn.init.constant_(self.proj.bias, 0)
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         x = self.proj(x)
@@ -296,52 +304,6 @@ class SwinUNetDownscaled2x(I2IBaseModel):
                                    unet=copy.deepcopy(swin_unet_4x.unet))
         return net
 
-    @staticmethod
-    def from_8x(swin_unet_8x):
-        net = SwinUNetDownscaled2x(in_channels=swin_unet_8x.unet.in_channels,
-                                   out_channels=swin_unet_8x.unet.out_channels,
-                                   downscale_factor=4,
-                                   unet=copy.deepcopy(swin_unet_8x.unet))
-        return net
-
-
-@register_model
-class SwinUNetDownscaled4x(I2IBaseModel):
-    name = "waifu2x.swin_unet_downscaled_4x"
-
-    def __init__(self, in_channels=3, out_channels=3, unet=None):
-        super().__init__(dict(in_channels=in_channels, out_channels=out_channels),
-                         scale=4, offset=32, in_channels=in_channels, blend_size=4)
-        if unet is None:
-            self.unet = SwinUNetBase(
-                in_channels=in_channels,
-                out_channels=out_channels,
-                base_dim=96, base_layers=2,
-                scale_factor=8)
-        else:
-            self.unet = unet
-        self.mode = "bicubic"
-
-    def forward(self, x):
-        z = self.unet(x)
-        if self.training:
-            z = F.interpolate(z, size=(z.shape[2] // 2, z.shape[3] // 2),
-                              mode=self.mode, align_corners=False, antialias=True)
-            return z
-        else:
-            z = torch.clamp(z, 0., 1.)
-            z = F.interpolate(z, size=(z.shape[2] // 2, z.shape[3] // 2),
-                              mode=self.mode, align_corners=False, antialias=True)
-            z = torch.clamp(z, 0., 1.)
-            return z
-
-    @staticmethod
-    def from_8x(swin_unet_8x):
-        net = SwinUNetDownscaled4x(in_channels=swin_unet_8x.unet.in_channels,
-                                   out_channels=swin_unet_8x.unet.out_channels,
-                                   unet=copy.deepcopy(swin_unet_8x.unet))
-        return net
-
 
 def _test():
     import io
@@ -349,7 +311,7 @@ def _test():
     for model in (SwinUNet(in_channels=3, out_channels=3),
                   SwinUNet2x(in_channels=3, out_channels=3),
                   SwinUNet4x(in_channels=3, out_channels=3),
-                  SwinUNet8x(in_channels=3, out_channels=3)):
+                  SwinUNetDownscaled2x(in_channels=3, out_channels=3)):
         model = model.to(device)
         # Note: input size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0`,
         # e.g. 64,112,160,256,400,640,1024
@@ -366,19 +328,13 @@ def _convert_tool_main():
     from nunif.models import load_model, save_model
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--from-scale", type=str, required=True, choices=["8x", "4x"],
-                        help="from scale")
     parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input 8x or 4x model")
+                        help="input 4x model")
     parser.add_argument("--output", "-o", type=str, required=True,
                         help="output swin_unet_downscaled_model")
     args = parser.parse_args()
-    if args.from_scale == "4x":
-        model_4x, _ = load_model(args.input)
-        model = SwinUNetDownscaled2x.from_4x(model_4x)
-    elif  args.from_scale == "8x":
-        model_8x, _ = load_model(args.input)
-        model = SwinUNetDownscaled4x.from_8x(model_8x)
+    model_4x, _ = load_model(args.input)
+    model = SwinUNetDownscaled2x.from_4x(model_4x)
 
     save_model(model, args.output)
 
