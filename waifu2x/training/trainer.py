@@ -62,6 +62,9 @@ def create_criterion(loss):
             ClampLoss(CharbonnierLoss()),
             ClampLoss(CharbonnierLoss())],
             weight=(1.0, 0.5))
+    elif loss == "l1lpips":
+        from nunif.modules.lpips import LPIPSWith
+        criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), 1.0)
     else:
         raise NotImplementedError()
 

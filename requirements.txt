@@ -16,3 +16,4 @@ flake8
 psutil
 pyyaml
 onnx
+lpips
