@@ -1,0 +1,84 @@
+# Dockerfile for custom PyTorch build (For NoGPU, NoAVX, old CPUs)
+# docker build -t nunif -f Dockerfiles/Dockerfile.build_pytorch .
+
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
+MAINTAINER nagadomi <nagadomi@gmail.com>
+
+# Use bash to `RUN` command
+SHELL ["/bin/bash", "-c"]
+
+# Install deps
+RUN apt-get update -y
+RUN apt-get install -y \
+    git-core python3-pip libmagickwand-dev libraqm-dev \
+    wget libomp-dev libopenblas-dev gfortran libblas-dev \
+    m4 cmake python3-dev python3-yaml python3-setuptools ninja-build
+
+# build torch, torchvision, torchtext
+RUN mkdir -p /root/src
+WORKDIR /root/src
+
+# Remove existing torch related lib first
+RUN pip3 uninstall torch torchvision torchtext torchaudio
+
+# Create common build script
+# Edit if needed (for example, USE_CUDA=1)
+RUN echo $'\
+touch .gitignore \n\
+CMAKE_BUILD_TYPE=RelWithDebInfo \
+ATEN_CPU_CAPABILITY=default \
+USE_CUDA=0 \
+USE_AVX=0 \
+USE_AVX2=0 \
+USE_DISTRIBUTED=0 \
+USE_NNPACK=0 \
+USE_QNNPACK=0 \
+USE_MKLDNN=0 \
+BUILD_CAFFE2=0 \
+CAFFE2_COMPILER_SUPPORTS_AVX512_EXTENSIONS=0 \
+USE_ROCM=0 \
+BUILD_TEST=0 \
+python3 setup.py bdist_wheel \n' > /root/src/build.sh
+RUN cat /root/src/build.sh
+
+
+# build and install torch
+RUN echo "* Build torch"
+RUN wget -q https://github.com/pytorch/pytorch/releases/download/v1.13.1/pytorch-v1.13.1.tar.gz -O pytorch-v1.13.1.tar.gz && \
+    tar -xzf pytorch-v1.13.1.tar.gz && \
+    cd pytorch-v1.13.1 && \
+    pip3 install -r requirements.txt && \
+    . ../build.sh && \
+    pip3 install dist/*.whl
+
+# build and install torchvision
+RUN echo "* Build torchvision"
+RUN wget -q https://github.com/pytorch/vision/archive/refs/tags/v0.14.1.tar.gz -O vision-0.14.1.tar.gz && \
+    tar -xzf vision-0.14.1.tar.gz && \
+    cd vision-0.14.1 && \
+    . ../build.sh && \
+    pip3 install dist/*.whl
+
+# build and install torchtext
+# torchtext cannot be compiled from release/tar.gz, so clone from git
+RUN echo "* Build torchtext"
+RUN git clone https://github.com/pytorch/text -b v0.14.1 torchtext-0.14.1  && \
+    cd torchtext-0.14.1 && \
+    . ../build.sh && \
+    pip3 install dist/*.whl
+
+# Clean src dir
+WORKDIR /root
+# Comment out when debugging
+RUN rm -fr /root/src
+
+# Install nunif
+
+RUN git clone https://github.com/nagadomi/nunif.git /root/nunif && \
+    cd /root/nunif && \
+    pip3 install -r requirements.txt && \
+    python3 -m waifu2x.download_models && \
+    python3 -m waifu2x.web.webgen.gen
+
+# Set the working directory
+WORKDIR /root/nunif
