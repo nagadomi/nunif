@@ -3,10 +3,8 @@ import sys
 from time import time
 import torch
 from .. models import (
-    UNet2Discriminator, UNet1Discriminator,
-    L3Discriminator,
+    L3Discriminator, L3ConditionalDiscriminator,
     R3Discriminator, R3ConditionalDiscriminator,
-    S3ConditionalDiscriminator,
 )
 from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
@@ -74,22 +72,16 @@ def create_criterion(loss):
 def create_discriminator(discriminator, device):
     if discriminator is None:
         return None
-    elif discriminator == "unet1":
-        model = UNet1Discriminator()
-    elif discriminator == "unet2":
-        model = UNet2Discriminator()
     elif discriminator == "l3":
         model = L3Discriminator()
+    elif discriminator == "l3c":
+        model = L3ConditionalDiscriminator()
     elif discriminator == "r3":
         model = R3Discriminator()
     elif discriminator == "r3c":
         model = R3ConditionalDiscriminator()
-    elif discriminator == "s3c":
-        model = S3ConditionalDiscriminator()
     elif path.exists(discriminator):
         model, _ = load_model(discriminator)
-        if model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
-            model = UNet2Discriminator.from_cunet(model)
     else:
         raise NotImplementedError()
     return model.to(device)

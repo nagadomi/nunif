@@ -2,12 +2,8 @@ from .cunet import CUNet, UpCUNet
 from .swin_unet import SwinUNet, SwinUNet2x, SwinUNet4x, SwinUNetDownscaled2x
 from .swin_unet_unif import SwinUNetUnif
 from .discriminator import (
-    UNet2Discriminator,
-    UNet1Discriminator,
-    L3Discriminator,
-    R3Discriminator,
-    R3ConditionalDiscriminator,
-    S3ConditionalDiscriminator,
+    L3Discriminator, L3ConditionalDiscriminator,
+    R3Discriminator, R3ConditionalDiscriminator,
 )
 from .vgg_7 import VGG7
 from .upconv_7 import UpConv7
@@ -21,8 +17,8 @@ __all__ = [
     "CUNet", "UpCUNet",
     "SwinUNet", "SwinUNet2x", "SwinUNet4x", "SwinUNetDownscaled2x",
     "SwinUNetUnif",
-    "UNet2Discriminator", "UNet1Discriminator", "L3Discriminator",
-    "R3Discriminator", "R3ConditionalDiscriminator", "S3ConditionalDiscriminator",
+    "L3Discriminator", "L3ConditionalDiscriminator",
+    "R3Discriminator", "R3ConditionalDiscriminator",
     "load_state_from_waifu2x_json"
 ]
 
