@@ -1,7 +1,6 @@
 import argparse
 from nunif.models import get_model_names
 from .trainer import Waifu2xTrainer
-from .trainer_unif import Waifu2xUnifiedTrainer
 
 
 def train(args):
@@ -15,7 +14,7 @@ def train(args):
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
         raise ValueError("--noise-level is required for noise/noise_scale")
 
-    if args.method in {"scale", "scale4x", "scale8x", "unif4x"}:
+    if args.method in {"scale", "scale4x", "scale8x"}:
         # disable
         args.noise_level = -1
 
@@ -33,10 +32,7 @@ def train(args):
         else:
             args.loss = "y_charbonnier"
 
-    if args.method in {"unif4x", "noise_unif4x"}:
-        trainer = Waifu2xUnifiedTrainer(args)
-    else:
-        trainer = Waifu2xTrainer(args)
+    trainer = Waifu2xTrainer(args)
     trainer.fit()
 
 
@@ -51,8 +47,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--method", type=str,
                         choices=["noise", "scale", "noise_scale",
                                  "scale4x", "noise_scale4x",
-                                 "scale8x", "noise_scale8x",
-                                 "unif4x", "noise_unif4x"],
+                                 "scale8x", "noise_scale8x"],
                         required=True,
                         help="waifu2x method")
     parser.add_argument("--arch", type=str,
