@@ -108,16 +108,10 @@ def inf_loss():
 class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
-                 discriminator_criterion,
-                 discriminator_weight,
-                 update_criterion,
-                 discriminator_only):
+                 discriminator_criterion):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
-        self.discriminator_weight = discriminator_weight
-        self.discriminator_only = discriminator_only
-        self.update_criterion = update_criterion
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
@@ -129,7 +123,7 @@ class Waifu2xEnv(LuminancePSNREnv):
             dataset.update_hard_example_losses(index, loss.item())
         else:
             recon_loss, generator_loss, d_loss = loss
-            if not self.discriminator_only:
+            if not self.trainer.args.discriminator_only:
                 dataset.update_hard_example_losses(index, recon_loss.item())
 
     def get_scale_factor(self):
@@ -148,7 +142,7 @@ class Waifu2xEnv(LuminancePSNREnv):
         super().train_begin()
         if self.discriminator is not None:
             self.discriminator.train()
-            if self.discriminator_only:
+            if self.trainer.args.discriminator_only:
                 self.model.eval()
 
     def train_step(self, data):
@@ -162,7 +156,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 loss = self.criterion(z, y)
                 self.sum_loss += loss.item()
             else:
-                if not self.discriminator_only:
+                if not self.trainer.args.discriminator_only:
                     # generator (sr) step
                     self.discriminator.requires_grad_(False)
                     z = self.model(x)
@@ -209,13 +203,13 @@ class Waifu2xEnv(LuminancePSNREnv):
             optimizers = []
 
             # update generator
-            if not self.discriminator_only:
+            if not self.trainer.args.discriminator_only:
                 g_opt.zero_grad()
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(recon_loss, generator_loss, last_layer, grad_scaler,
-                                                        min=1e-5, max=1e2, mode="max") * self.discriminator_weight
+                                                        min=1e-5, max=1e2, mode="max") * self.trainer.args.discriminator_weight
                 recon_weight = 1.0 / weight
-                if generator_loss > 0.05 and d_loss < 0.7:
+                if generator_loss > 0.05 and d_loss < self.trainer.args.generator_start_criteria:
                     g_loss = recon_loss * recon_weight + generator_loss
                 else:
                     g_loss = recon_loss * recon_weight
@@ -229,7 +223,7 @@ class Waifu2xEnv(LuminancePSNREnv):
 
             # update discriminator
             d_opt.zero_grad()
-            if d_loss > 0.4:
+            if d_loss > self.trainer.args.discriminator_stop_criteria:
                 self.backward(d_loss, grad_scaler)
                 optimizers.append(d_opt)
 
@@ -266,7 +260,7 @@ class Waifu2xEnv(LuminancePSNREnv):
             self.discriminator.eval()
 
     def eval_step(self, data):
-        if self.discriminator_only:
+        if self.trainer.args.discriminator_only:
             return
 
         x, y, *_ = data
@@ -275,34 +269,34 @@ class Waifu2xEnv(LuminancePSNREnv):
 
         psnr = 0
         with self.autocast():
-            if self.update_criterion in {"psnr", "all"}:
+            if self.trainer.args.update_criterion in {"psnr", "all"}:
                 z = self.model(x)
                 psnr = self.eval_criterion(z, y)
-                if self.update_criterion == "psnr":
+                if self.trainer.args.update_criterion == "psnr":
                     loss = psnr
                 else:
                     loss = torch.tensor(inf_loss())
-            elif self.update_criterion == "loss":
+            elif self.trainer.args.update_criterion == "loss":
                 z = self.model(x)
                 # TODO: AuxiliaryLoss does not work
                 psnr = self.eval_criterion(z, y)
                 loss = self.criterion(z, y)
                 if self.discriminator is not None:
                     z_real = self.discriminator(z, x, scale_factor)
-                    loss = loss + self.discriminator_criterion(z_real) * self.discriminator_weight
+                    loss = loss + self.discriminator_criterion(z_real)
 
         self.sum_psnr += psnr.item()
         self.sum_loss += loss.item()
         self.sum_step += 1
 
     def eval_end(self, file=sys.stdout):
-        if self.discriminator_only:
+        if self.trainer.args.discriminator_only:
             return inf_loss()
 
         mean_psnr = self.sum_psnr / self.sum_step
         mean_loss = self.sum_loss / self.sum_step
 
-        if self.update_criterion == "psnr":
+        if self.trainer.args.update_criterion == "psnr":
             print(f"Batch Y-PSNR: {round(-mean_psnr, 4)}", file=file)
             return mean_psnr
         else:
@@ -319,10 +313,7 @@ class Waifu2xTrainer(Trainer):
             discriminator_criterion = None
         return Waifu2xEnv(self.model, criterion=criterion,
                           discriminator=self.discriminator,
-                          discriminator_criterion=discriminator_criterion,
-                          discriminator_weight=self.args.discriminator_weight,
-                          discriminator_only=bool(self.args.discriminator_only),
-                          update_criterion=self.args.update_criterion)
+                          discriminator_criterion=discriminator_criterion)
 
     def setup(self):
         dataset = self.train_loader.dataset

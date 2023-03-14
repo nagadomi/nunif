@@ -96,16 +96,25 @@ def register(subparsers, default_parser):
                         help="use only bicubic downsampling for bicubic downsampling restoration")
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
+    # GAN related options
     parser.add_argument("--discriminator", type=str,
                         help="discriminator.pth or [`l3`, `l3c`, `r3`, `r3c`].")
     parser.add_argument("--discriminator-weight", type=float, default=1.,
                         help="discriminator loss weight")
     parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss", "all"], default="psnr",
                         help=("criterion for updating the best model file. "
-                              "`all` saves the best model each epoch."))
+                              "`all` forced to saves the best model each epoch."))
     parser.add_argument("--discriminator-only", action="store_true",
                         help="training discriminator only")
-
+    parser.add_argument("--discriminator-stop-criteria", type=float, default=0.4,
+                        help=("When the loss of the discriminator is less than the specified value,"
+                              " stops training of the discriminator."
+                              " This is the limit to prevent too strong discriminator."))
+    parser.add_argument("--generator-start-criteria", type=float, default=0.7,
+                        help=("When the loss of the discriminator is greater than the specified value,"
+                              " stops training of the generator."
+                              " This is the limit to prevent too strong generator."
+                              " Also do not hit the newbie discriminator."))
     parser.set_defaults(
         batch_size=16,
         optimizer="adamw",
