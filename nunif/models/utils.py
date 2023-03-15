@@ -1,3 +1,4 @@
+from packaging import version as packaging_version
 import torch
 from datetime import datetime, timezone
 import torch.nn as nn
@@ -107,4 +108,10 @@ def to_data_parallel(model, device_ids):
     # Set model name
     # TODO: this is a bad practice.
     setattr(model, "name", name)
+    return model
+
+
+def compile_model(model, **kwargs):
+    if packaging_version.parse(torch.__version__).major >= 2:
+        model = torch.compile(model, **kwargs)
     return model
