@@ -59,6 +59,9 @@ def grain_noise2(x, strength=0.3):
         noise = generate_perlin_noise_2d([ns, ns], [ps, ps]).unsqueeze(0)
         noise = TF.rotate(noise, angle=random.randint(0, 360), interpolation=InterpolationMode.BILINEAR)
         noise = TF.center_crop(noise, (int(noise.shape[1] / math.sqrt(2)), int(noise.shape[2] / math.sqrt(2))))
+        scale = random.uniform(1., noise.shape[1] / size)
+        crop_h = int(h * scale)
+        crop_w = int(w * scale)
     else:
         bs = size
         res = random.choice([1, 2])
@@ -66,10 +69,18 @@ def grain_noise2(x, strength=0.3):
         ps += ps % 4
         ns = ps * res * 2
         noise = generate_perlin_noise_2d([ns, ns], [ps, ps]).unsqueeze(0)
+        keep_aspect = random.uniform(0, 1) < 0.8
+        if keep_aspect:
+            scale = random.uniform(1., noise.shape[1] / size)
+            crop_h = int(h * scale)
+            crop_w = int(w * scale)
+        else:
+            scale_h = random.uniform(1., noise.shape[1] / size)
+            scale_w = random.uniform(1., noise.shape[1] / size)
+            crop_h = int(h * scale_h)
+            crop_w = int(w * scale_w)
+
     noise = ((noise + 1.) * 0.5)
-    scale = random.uniform(1., noise.shape[1] / size)
-    crop_h = int(h * scale)
-    crop_w = int(w * scale)
     noise = random_crop(noise, (crop_h, crop_w))
     noise = TF.resize(noise, (h, w), interpolation=InterpolationMode.BILINEAR, antialias=True)
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
@@ -78,8 +89,8 @@ def grain_noise2(x, strength=0.3):
 NR_RATE = {
     0: 0.1,
     1: 0.1,
-    2: 0.1,
-    3: 0.25,
+    2: 0.2,
+    3: 0.4,
 }
 STRENGTH_FACTOR = {
     0: 0.25,
