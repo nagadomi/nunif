@@ -231,6 +231,7 @@ class SwinUNet4x(I2IBaseModel):
 
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=4)
+        self.out_channels = out_channels
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -243,6 +244,22 @@ class SwinUNet4x(I2IBaseModel):
             return z
         else:
             return torch.clamp(z, 0, 1)
+
+    def to_2x(self, shared=True):
+        if shared:
+            unet = self.unet
+        else:
+            unet = copy.deepcopy(self.unet)
+        return SwinUNetDownscaled(in_channels=self.i2i_in_channels, out_channels=self.out_channels,
+                                  downscale_factor=2, unet=unet)
+
+    def to_1x(self, shared=True):
+        if shared:
+            unet = self.unet
+        else:
+            unet = copy.deepcopy(self.unet)
+        return SwinUNetDownscaled(in_channels=self.i2i_in_channels, out_channels=self.out_channels,
+                                  downscale_factor=4, unet=unet)
 
 
 @register_model
@@ -266,12 +283,16 @@ class SwinUNet8x(I2IBaseModel):
 
 
 @register_model
-class SwinUNetDownscaled2x(I2IBaseModel):
-    name = "waifu2x.swin_unet_downscaled_2x"
+class SwinUNetDownscaled(I2IBaseModel):
+    name = "waifu2x.swin_unet_downscaled"
 
     def __init__(self, in_channels=3, out_channels=3, downscale_factor=2, unet=None):
-        super().__init__(dict(in_channels=in_channels, out_channels=out_channels),
-                         scale=2, offset=16, in_channels=in_channels, blend_size=4)
+        assert downscale_factor in {2, 4}
+        offset = 32 // downscale_factor
+        scale = 4 // downscale_factor
+        super().__init__(dict(in_channels=in_channels, out_channels=out_channels,
+                              downscale_factor=downscale_factor),
+                         scale=scale, offset=offset, in_channels=in_channels, blend_size=4)
         if unet is None:
             self.unet = SwinUNetBase(
                 in_channels=in_channels,
@@ -297,10 +318,10 @@ class SwinUNetDownscaled2x(I2IBaseModel):
             return z
 
     @staticmethod
-    def from_4x(swin_unet_4x):
+    def from_4x(swin_unet_4x, downscale_factor):
         net = SwinUNetDownscaled2x(in_channels=swin_unet_4x.unet.in_channels,
                                    out_channels=swin_unet_4x.unet.out_channels,
-                                   downscale_factor=2,
+                                   downscale_factor=downscale_factor,
                                    unet=copy.deepcopy(swin_unet_4x.unet))
         return net
 
@@ -311,7 +332,8 @@ def _test():
     for model in (SwinUNet(in_channels=3, out_channels=3),
                   SwinUNet2x(in_channels=3, out_channels=3),
                   SwinUNet4x(in_channels=3, out_channels=3),
-                  SwinUNetDownscaled2x(in_channels=3, out_channels=3)):
+                  SwinUNetDownscaled(in_channels=3, out_channels=3, downscale_factor=2),
+                  SwinUNetDownscaled(in_channels=3, out_channels=3, downscale_factor=4)):
         model = model.to(device)
         # Note: input size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0`,
         # e.g. 64,112,160,256,400,640,1024
@@ -332,6 +354,8 @@ def _convert_tool_main():
                         help="input 4x model")
     parser.add_argument("--output", "-o", type=str, required=True,
                         help="output swin_unet_downscaled_model")
+    parser.add_argument("--scale", type=int, choices=[1, 2], required=True,
+                        help="scale factor for output swin_unet_model")
     args = parser.parse_args()
     model_4x, _ = load_model(args.input)
     model = SwinUNetDownscaled2x.from_4x(model_4x)
@@ -340,5 +364,5 @@ def _convert_tool_main():
 
 
 if __name__ == "__main__":
-    _convert_tool_main()
-    # _test()
+    #_convert_tool_main()
+    _test()

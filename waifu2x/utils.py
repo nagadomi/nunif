@@ -45,9 +45,47 @@ class Waifu2x():
                 self.noise_scale4x_models[i] = self.noise_scale4x_models[i].to(self.device)
                 self.noise_scale4x_models[i].eval()
 
+    def load_model_unif(self, method, noise_level):
+        unif4x_path = path.join(self.model_dir, "unif4x.pth")
+        if method in {"scale", "scale4x"}:
+            model, _ = load_model(unif4x_path, map_location=self.device)
+            if method == "scale":
+                self.scale_model = data_parallel_model(model.to_2x(), device_ids=self.gpus)
+            elif method == "scale4x":
+                self.scale4x_model = data_parallel_model(model, device_ids=self.gpus)
+        elif method in {"noise", "noise_scale", "noise_scale4x"}:
+            model, _ = load_model(
+                path.join(self.model_dir, f"noise{noise_level}_unif4x.pth"),
+                map_location=self.device)
+            if method == "noise":
+                self.noise_models[noise_level] = data_parallel_model(model.to_1x(),
+                                                                     device_ids=self.gpus)
+            elif method == "noise_scale":
+                self.noise_scale_models[noise_level] = data_parallel_model(model.to_2x(),
+                                                                           device_ids=self.gpus)
+                if path.exists(unif4x_path):
+                    model, _ = load_model(unif4x_path, map_location=self.device)
+                    self.scale_model = data_parallel_model(model.to_2x(), device_ids=self.gpus)
+                else:
+                    logger.warning(f"`{unif4x_path}` used for alpha channel does not exist. "
+                                   "So use BILINEAR for upscaling alpha channel.")
+            elif method == "noise_scale4x":
+                self.noise_scale4x_models[noise_level] = data_parallel_model(model,
+                                                                             device_ids=self.gpus)
+                if path.exists(unif4x_path):
+                    model, _ = load_model(unif4x_path, map_location=self.device)
+                    self.scale4x_model = data_parallel_model(model, device_ids=self.gpus)
+                else:
+                    logger.warning(f"`{unif4x_path}` used for alpha channel does not exist. "
+                                   "So use BILINEAR for upscaling alpha channel.")
+        self._setup()
+
     def load_model(self, method, noise_level):
         assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
         assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
+
+        if any([fn.endswith("unif4x.pth") for fn in os.listdir(self.model_dir)]):
+            return self.load_model_unif(method, noise_level)
 
         scale2x_path = path.join(self.model_dir, "scale2x.pth")
         scale4x_path = path.join(self.model_dir, "scale4x.pth")
@@ -89,7 +127,29 @@ class Waifu2x():
                                "So use BILINEAR for upscaling alpha channel.")
         self._setup()
 
+    def load_model_all_unif(self, load_4x=True):
+        model, _ = load_model(path.join(self.model_dir, "unif4x.pth"), map_location=self.device)
+        self.scale_model = data_parallel_model(model.to_2x(), device_ids=self.gpus)
+        if load_4x:
+            self.scale4x_model = data_parallel_model(model, device_ids=self.gpus)
+
+        for noise_level in range(4):
+            model, _ = load_model(
+                path.join(self.model_dir, f"noise{noise_level}_unif4x.pth"),
+                map_location=self.device)
+            self.noise_models[noise_level] = data_parallel_model(model.to_1x(),
+                                                                 device_ids=self.gpus)
+            self.noise_scale_models[noise_level] = data_parallel_model(model.to_2x(),
+                                                                       device_ids=self.gpus)
+            if load_4x:
+                self.noise_scale4x_models[noise_level] = data_parallel_model(model,
+                                                                             device_ids=self.gpus)
+        self._setup()
+
     def load_model_all(self, load_4x=True):
+        if any([fn.endswith("unif4x.pth") for fn in os.listdir(self.model_dir)]):
+            return self.load_model_all_unif(load_4x=load_4x)
+
         self.scale_model = load_model(
             path.join(self.model_dir, "scale2x.pth"),
             map_location=self.device, device_ids=self.gpus)[0]
