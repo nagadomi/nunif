@@ -10,3 +10,8 @@ Andrej Karpathy / MIT License
 nunif/waifu2x/docs/images/miku_128.png
 Hatsune Miku / Crypton Future Media inc. / CC BY-NC
 https://piapro.net/intl/en_for_creators.html
+----
+nunif/utils/perlin2d.py
+Original work is perlin-numpy: https://github.com/pvigier/perlin-numpy)
+Pierre Vigier / MIT License
+Vadim Kantorov ported to pytorch: https://gist.github.com/vadimkantorov/ac1b097753f217c5c11bc2ff396e0a57
