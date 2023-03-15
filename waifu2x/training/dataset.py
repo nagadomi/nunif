@@ -18,6 +18,7 @@ from .noise_level import (
     add_jpeg_noise,
     shift_jpeg_block,
 )
+from .photo_noise import RandomPhotoNoiseX
 from PIL.Image import Resampling
 
 
@@ -195,6 +196,15 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop=True)
             else:
                 jpeg_transform = TP.Identity()
+            if style == "photo" and noise_level >= 0:
+                photo_noise = RandomPhotoNoiseX(noise_level=noise_level)
+                if noise_level == 3:
+                    jpeg_transform = T.RandomChoice([
+                        jpeg_transform,
+                        RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.9, 0.1])
+            else:
+                photo_noise = TP.Identity()
+
             if scale_factor > 1:
                 if bicubic_only:
                     interpolation = INTERPOLATION_BICUBIC
@@ -221,6 +231,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             self.transforms = TP.Compose([
                 TP.RandomHardExampleCrop(size=y_min_size, samples=4),
                 random_downscale_x,
+                photo_noise,
                 jpeg_transform,
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),

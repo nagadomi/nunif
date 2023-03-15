@@ -3,6 +3,10 @@
 import torch
 
 
+def blend(a, b, alpha):
+    return a * alpha + b * (1. - alpha)
+
+
 def multiply(a, b):
     return a * b
 
@@ -66,7 +70,7 @@ def _test():
         show(func.__name__, pil_io.to_image(func(pil_io.to_tensor(a), pil_io.to_tensor(b))))
 
     a = Image.open("waifu2x/docs/images/miku_128.png")
-    b = Image.new("RGB", (128, 128), (200,200,200))
+    b = Image.new("RGB", (128, 128), (200, 200, 200))
     ImageDraw.Draw(b).rectangle([0, 0, 64, 128], fill=(50, 50, 50))
     show("a", a)
     show("b", b)
