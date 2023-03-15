@@ -2,10 +2,6 @@ from os import path
 import sys
 from time import time
 import torch
-from .. models import (
-    L3Discriminator, L3ConditionalDiscriminator,
-    R3Discriminator, R3ConditionalDiscriminator,
-)
 from . dataset import Waifu2xDataset
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
@@ -16,7 +12,6 @@ from nunif.models import (
 from nunif.modules import (
     ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss, CharbonnierLoss,
     Alex11Loss,
-    DiscriminatorBCELoss,
     DiscriminatorHingeLoss,
 )
 from nunif.logger import logger
@@ -28,7 +23,7 @@ from nunif.logger import logger
 def create_criterion(loss):
     if loss == "l1":
         criterion = ClampLoss(torch.nn.L1Loss())
-    elif loss  == "y_l1":
+    elif loss == "y_l1":
         criterion = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
     elif loss == "lbp":
         criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
@@ -69,21 +64,21 @@ def create_criterion(loss):
     return criterion
 
 
-def create_discriminator(discriminator, device):
+def create_discriminator(discriminator, device_ids, device):
     if discriminator is None:
         return None
     elif discriminator == "l3":
-        model = L3Discriminator()
+        model = create_model("waifu2x.l3_discriminator", device_ids=device_ids)
     elif discriminator == "l3c":
-        model = L3ConditionalDiscriminator()
+        model = create_model("waifu2x.l3_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "r3":
-        model = R3Discriminator()
+        model = create_model("waifu2x.r3_discriminator", device_ids=device_ids)
     elif discriminator == "r3c":
-        model = R3ConditionalDiscriminator()
+        model = create_model("waifu2x.r3_conditional_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator)
     else:
-        raise NotImplementedError()
+        model = create_model(discriminator)
     return model.to(device)
 
 
@@ -166,7 +161,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                         fake = z[0]
                     else:
                         fake = z
-                    fake = fake # torch.clamp(fake, 0., 1.) * 0.99 + fake * 0.01
+                    fake = fake  # torch.clamp(fake, 0., 1.) * 0.99 + fake * 0.01
                     z_real = self.discriminator(fake, x, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
@@ -320,7 +315,7 @@ class Waifu2xTrainer(Trainer):
         dataset.set_hard_example(self.args.hard_example, self.args.hard_example_scale)
 
     def setup_model(self):
-        self.discriminator = create_discriminator(self.args.discriminator, self.device)
+        self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
 
         if self.args.freeze and hasattr(self.model, "freeze"):
             call_model_method(self.model, "freeze")
