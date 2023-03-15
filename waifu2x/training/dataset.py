@@ -12,7 +12,7 @@ from nunif.transforms import pair as TP
 from nunif.training.sampler import HardExampleSampler, MiningMethod
 import nunif.transforms as TS
 from nunif.transforms import image_magick as IM
-from .noise_level import (
+from .jpeg_noise import (
     RandomJPEGNoiseX,
     choose_validation_jpeg_quality,
     add_jpeg_noise,
