@@ -39,7 +39,7 @@ def grain_noise1(x, strength=0.1):
     noise1 = torch.randn((ch, h, w))
     noise2 = torch.randn((ch, h // 2, w // 2))
     noise2 = TF.resize(noise2, (h, w),
-                       interpolation=InterpolationMode.BILINEAR)
+                       interpolation=InterpolationMode.BILINEAR, antialias=True)
     noise = noise1 * alpha[0] + noise2 * alpha[1]
     max_v = torch.abs(noise).max() + 1e-6
     noise = noise / max_v
@@ -71,7 +71,7 @@ def grain_noise2(x, strength=0.3):
     crop_h = int(h * scale)
     crop_w = int(w * scale)
     noise = random_crop(noise, (crop_h, crop_w))
-    noise = TF.resize(noise, (h, w), interpolation=InterpolationMode.BILINEAR)
+    noise = TF.resize(noise, (h, w), interpolation=InterpolationMode.BILINEAR, antialias=True)
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
