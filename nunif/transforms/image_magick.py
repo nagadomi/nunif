@@ -59,6 +59,16 @@ def random_unsharp_mask(x, sigma=[0.5, 1.5], amount=[0.1, 0.9], threshold=[0.0, 
         return to_tensor(im)
 
 
+def random_noise_enhance(x):
+    radius = random.uniform(0.5, 1.0)
+    sigma = radius
+    amount = random.uniform(0.1, 0.9)
+    threshold = 0
+    with to_wand_image(x) as im:
+        im.unsharp_mask(radius=radius, sigma=sigma, amount=amount, threshold=threshold)
+        return to_tensor(im)
+
+
 def random_filter_resize(x, size, filters, blur_min=1, blur_max=1):
     if isinstance(size, (list, tuple)):
         h, w = size
@@ -94,5 +104,20 @@ def _test_unsharp_mask():
         cv2.waitKey(0)
 
 
+def _test_noise_enhance():
+    import cv2
+    from .. utils import pil_io
+
+    im, _ = wand_io.load_image("./tmp/machine_noise.jpg")
+    t = wand_io.to_tensor(im)
+    cv2.imshow("original", pil_io.to_cv2(pil_io.to_image(t)))
+    for _ in range(20):
+        z = random_noise_enhance(t)
+        cvim = pil_io.to_cv2(pil_io.to_image(z))
+        cv2.imshow("noise_enhance", cvim)
+        cv2.waitKey(0)
+
+
 if __name__ == "__main__":
-    _test_unsharp_mask()
+    #_test_unsharp_mask()
+    _test_noise_enhance()

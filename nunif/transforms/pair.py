@@ -109,13 +109,15 @@ class RandomFlip():
 
 
 class RandomApply():
-    def __init__(self, p, transform):
+    def __init__(self, transforms, p):
+        self.transforms = transforms
         self.p = p
-        self.transform = transform
 
     def __call__(self, x, y):
         if random.uniform(0, 1) < self.p:
-            return self.transform(x, y)
+            for f in self.transforms:
+                x, y = f(x, y)
+            return x, y
         else:
             return x, y
 

@@ -3,6 +3,8 @@ import random
 from io import BytesIO
 from PIL import Image
 from torchvision.transforms import functional as TF
+import torch
+from os import path
 
 
 # p of random apply
@@ -33,10 +35,17 @@ EVAL_QUALITY = {
     "photo": {
         0: [85 + (95 - 85) // 2],
         1: [37 + (70 - 37) // 2],
-        2: [37 + (70 - 37) // 2],
-        3: [37 + (70 - 37) // 2],
+        2: [37 + (70 - 37) // 2, 37 + (70 - 37) // 2 - (5 + (10 - 5) // 2)],
+        3: [37 + (70 - 37) // 2, 37 + (70 - 37) // 2 - (5 + (10 - 5) // 2)],
     }
 }
+
+
+# Use custom qtables
+if path.exists(path.join(path.dirname(__file__), "qtables.pth")):
+    OLD_QTABLES = torch.load(path.join(path.dirname(__file__), "qtables.pth"))
+else:
+    OLD_QTABLES = None
 
 
 def choose_validation_jpeg_quality(index, style, noise_level):
@@ -60,44 +69,50 @@ def add_jpeg_noise(x, quality, subsampling):
         return x
 
 
+def add_jpeg_noise_qtable(x):
+    assert x.mode == "RGB"
+    with BytesIO() as buff:
+        x.save(buff, format="jpeg", qtables=random.choice(OLD_QTABLES))
+        buff.seek(0)
+        x = Image.open(buff)
+        x.load()
+        return x
+
+
 def choose_jpeg_quality(style, noise_level):
     qualities = []
-    if style == "art":
-        if noise_level == 0:
-            qualities.append(random.randint(85, 95))
-        elif noise_level == 1:
+    if noise_level == 0:
+        qualities.append(random.randint(85, 95))
+    elif noise_level == 1:
+        if style == "art":
             qualities.append(random.randint(65, 85))
-        elif noise_level in {2, 3}:
-            # 2 and 3 are the same, NR_RATE is different
-            r = random.uniform(0, 1)
-            if r > 0.4:
-                qualities.append(random.randint(27, 70))
-            elif r > 0.1:
-                # nunif: Add high quality patterns
-                if random.uniform(0, 1) < 0.05:
-                    quality1 = random.randint(37, 95)
-                else:
-                    quality1 = random.randint(37, 70)
-                quality2 = quality1 - random.randint(5, 10)
-                qualities.append(quality1)
-                qualities.append(quality2)
-            else:
-                # nunif: Add high quality patterns
-                if random.uniform(0, 1) < 0.05:
-                    quality1 = random.randint(52, 95)
-                else:
-                    quality1 = random.randint(52, 70)
-                quality2 = quality1 - random.randint(5, 15)
-                quality3 = quality1 - random.randint(15, 25)
-                qualities.append(quality1)
-                qualities.append(quality2)
-                qualities.append(quality3)
-    elif style == "photo":
-        if noise_level == 0:
-            qualities.append(random.randint(85, 95))
         else:
-            # 1,2,3 are the same, NR_RATE is different
             qualities.append(random.randint(37, 70))
+    elif noise_level in {2, 3}:
+        # 2 and 3 are the same, NR_RATE is different
+        r = random.uniform(0, 1)
+        if r > 0.4:
+            qualities.append(random.randint(27, 70))
+        elif r > 0.1:
+            # nunif: Add high quality patterns
+            if random.uniform(0, 1) < 0.05:
+                quality1 = random.randint(37, 95)
+            else:
+                quality1 = random.randint(37, 70)
+            quality2 = quality1 - random.randint(5, 10)
+            qualities.append(quality1)
+            qualities.append(quality2)
+        else:
+            # nunif: Add high quality patterns
+            if random.uniform(0, 1) < 0.05:
+                quality1 = random.randint(52, 95)
+            else:
+                quality1 = random.randint(52, 70)
+            quality2 = quality1 - random.randint(5, 15)
+            quality3 = quality1 - random.randint(15, 25)
+            qualities.append(quality1)
+            qualities.append(quality2)
+            qualities.append(quality3)
 
     return qualities
 
@@ -139,7 +154,11 @@ class RandomJPEGNoiseX():
         if random.uniform(0, 1) > NR_RATE[self.style][self.noise_level]:
             # do nothing
             return x, y
-
+        if OLD_QTABLES and self.noise_level == 3 and random.uniform(0, 1) < 0.02:
+            x = add_jpeg_noise_qtable(x)
+            if random.uniform(0, 1) < 0.2:
+                x = add_jpeg_noise_qtable(x)
+            return x, y
         if (self.noise_level == 3 and random.uniform(0, 1) < 0.95) or random.uniform(0, 1) < 0.75:
             # use noise_level noise
             qualities = choose_jpeg_quality(self.style, self.noise_level)
