@@ -93,7 +93,7 @@ def grain_noise1(x, strength=0.1):
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
-def grain_noise2(x, strength=0.3):
+def grain_noise2(x, strength=0.15):
     c, h, w = x.shape
     size = max(w, h)
     antialias = random.choice([True, False])
@@ -129,7 +129,6 @@ def grain_noise2(x, strength=0.3):
             crop_h = int(h * scale_h)
             crop_w = int(w * scale_w)
 
-    noise = ((noise + 1.) * 0.5)
     noise = random_crop(noise, (crop_h, crop_w))
     noise = TF.resize(noise, (h, w), interpolation=interpolation, antialias=antialias)
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
@@ -170,7 +169,7 @@ class RandomPhotoNoiseX():
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise1(x, strength=strength)
         elif method == 2:
-            strength = random.uniform(0.05, 0.2) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise2(x, strength=strength)
         elif method == 3:
             if random.choice([True, False]):
