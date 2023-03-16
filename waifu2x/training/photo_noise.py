@@ -11,6 +11,53 @@ from nunif.utils.perlin2d import generate_perlin_noise_2d
 from nunif.utils import blend as B
 
 
+_DIRECTION_KERNELS = [
+    [
+        0, 0.2, 0,
+        0, 0.6, 0,
+        0, 0.2, 0,
+    ],
+    [
+        0, 0.0, 0,
+        0.2, 0.6, 0.2,
+        0, 0.0, 0,
+    ],
+    [
+        0, 0.333, 0,
+        0, 0.333, 0,
+        0, 0.333, 0,
+    ],
+    [
+        0, 0.2, 0,
+        0.2, 0.2, 0.2,
+        0, 0.2, 0,
+    ],
+    [
+        0, 0.0, 0,
+        0.333, 0.333, 0.333,
+        0, 0.0, 0,
+    ],
+    [
+        0, 0.0, 0.2,
+        0, 0.6, 0,
+        0.2, 0.0, 0,
+    ],
+    [
+        0.2, 0.0, 0.0,
+        0, 0.6, 0,
+        0, 0.0, 0.2,
+    ],
+    [
+        0.1, 0.1, 0.1,
+        0.1, 0.2, 0.1,
+        0.1, 0.1, 0.1,
+    ]
+]
+DIRECTION_KERNELS = []
+for k in _DIRECTION_KERNELS:
+    DIRECTION_KERNELS.append(torch.tensor(k).reshape(1, 1, 3, 3))
+
+
 def random_crop(x, size):
     i, j, h, w = T.RandomCrop.get_params(x, size)
     x = TF.crop(x, i, j, h, w)
@@ -21,7 +68,7 @@ def random_mask_8x8(x, noise):
     assert x.shape == noise.shape
     h = x.shape[1] // 8 + 1
     w = x.shape[2] // 8 + 1
-    p = random.uniform(0.02, 0.3)
+    p = random.uniform(0.02, 0.5)
     mask = torch.bernoulli(torch.torch.full((1, h, w), p))
     method = random.choice([0, 1, 2])
     if method == 0:
@@ -38,8 +85,6 @@ def random_mask_8x8(x, noise):
         mask = TF.resize(mask, (mask.shape[1] * 2, mask.shape[2] * 2),
                          interpolation=InterpolationMode.BILINEAR, antialias=True)
     mask = mask[:, :x.shape[1], :x.shape[2]]
-    if random.choice([True, False]):
-        mask = mask * torch.bernoulli(torch.torch.full((1, mask.shape[1], mask.shape[2]), 0.5))
     return torch.clamp(x * (1. - mask) + noise * mask, 0., 1.)
 
 
@@ -47,10 +92,23 @@ def gaussian_noise(x, strength=0.05):
     c, h, w = x.shape
     ch = 1 if random.uniform(0., 1.) < 0.5 else 3
     noise = torch.randn((ch, h, w))
+    if random.choice([True, False]):
+        noise = torch.nn.functional.conv2d(noise.unsqueeze(0),
+                                           weight=random.choice(DIRECTION_KERNELS).expand(ch, ch, 3, 3),
+                                           padding=1).squeeze(0)
+    if random.choice([True, False]):
+        p = random.uniform(0.1, 0.5)
+        noise = noise * torch.bernoulli(torch.torch.full((1, noise.shape[1], noise.shape[2]), p))
+    if random.choice([True, False]):
+        scale_h = random.uniform(1, 2)
+        scale_w = random.uniform(1, 2)
+        noise = TF.resize(noise, (int(noise.shape[1] * scale_h), int(noise.shape[2] * scale_w)),
+                          interpolation=InterpolationMode.BILINEAR, antialias=True)
+        noise = random_crop(noise, (x.shape[1], x.shape[2]))
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
-def gaussian_8x8_masked_noise(x, strength=0.05):
+def gaussian_8x8_masked_noise(x, strength=0.1):
     """
     I don't know what kind of noise this is,
     but it happens in old digital photos.
@@ -59,6 +117,22 @@ def gaussian_8x8_masked_noise(x, strength=0.05):
     c, h, w = x.shape
     method = random.choice([0, 1, 2])
     noise = torch.randn((1, h, w))
+    if random.choice([True, False]):
+        noise = torch.nn.functional.conv2d(noise.unsqueeze(0),
+                                           weight=random.choice(DIRECTION_KERNELS),
+                                           padding=1).squeeze(0)
+    if random.choice([True, False]):
+        p = random.uniform(0.1, 0.5)
+        noise = noise * torch.bernoulli(torch.torch.full((1, noise.shape[1], noise.shape[2]), p))
+    if random.choice([True, False]):
+        scale_h = random.uniform(1, 2)
+        scale_w = random.uniform(1, 2)
+        noise = TF.resize(noise, (int(noise.shape[1] * scale_h), int(noise.shape[2] * scale_w)),
+                          interpolation=InterpolationMode.BILINEAR, antialias=True)
+        noise = random_crop(noise, (x.shape[1], x.shape[2]))
+    if random.choice([True, False]):
+        x = gaussian_noise(x, strength=strength*0.5)
+
     noise = x + noise.expand(x.shape) * strength
     return random_mask_8x8(x, noise)
 
@@ -137,8 +211,8 @@ def grain_noise2(x, strength=0.15):
 NR_RATE = {
     0: 0.1,
     1: 0.1,
-    2: 0.2,
-    3: 0.4,
+    2: 0.25,
+    3: 0.5,
 }
 STRENGTH_FACTOR = {
     0: 0.25,
@@ -173,10 +247,10 @@ class RandomPhotoNoiseX():
             x = grain_noise2(x, strength=strength)
         elif method == 3:
             if random.choice([True, False]):
-                strength = random.uniform(0.01, 0.05) * STRENGTH_FACTOR[self.noise_level]
+                strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
                 x = gaussian_noise(x, strength=strength)
             else:
-                strength = random.uniform(0.01, 0.05) * STRENGTH_FACTOR[self.noise_level]
+                strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
                 x = gaussian_8x8_masked_noise(x, strength=strength)
         x = TF.to_pil_image(x)
         return x, y
@@ -201,10 +275,36 @@ def _test():
     show_op(sampling_noise, im)
     show_op(grain_noise1, im)
     show_op(grain_noise2, im)
+    show_op(gaussian_noise, im)
     show_op(gaussian_8x8_masked_noise, im)
 
     cv2.waitKey(0)
 
 
+
+def _test_gaussian():
+    from nunif.utils import pil_io
+    import argparse
+    import cv2
+
+    def show(name, im):
+        cv2.imshow(name, pil_io.to_cv2(im))
+
+    def show_op(func, a):
+        show(func.__name__, pil_io.to_image(func(pil_io.to_tensor(a))))
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
+    args = parser.parse_args()
+    im, _ = pil_io.load_image_simple(args.input)
+
+    while True:
+        show_op(gaussian_noise, im)
+        c = cv2.waitKey(0)
+        if c in {ord("q"), ord("x")}:
+            break
+
+
 if __name__ == "__main__":
     _test()
+    #_test_gaussian()

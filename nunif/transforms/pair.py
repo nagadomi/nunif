@@ -1,3 +1,4 @@
+import math
 from PIL import Image
 from torchvision import transforms as T
 from torchvision.transforms import (
@@ -5,6 +6,7 @@ from torchvision.transforms import (
     InterpolationMode
 )
 import random
+from .std import pad as safe_pad
 
 
 def same_size(a, b):
@@ -92,6 +94,26 @@ class RandomHardExampleCrop():
             int(j * self.y_scale) + self.y_offset,
             int(h * self.y_scale) - self.y_offset * 2,
             int(w * self.y_scale) - self.y_offset * 2)
+
+        return x, y
+
+
+class RandomSafeRotate():
+    def __init__(self, angle_min=-45, angle_max=45, y_scale=1):
+        self.y_scale = y_scale
+        self.angle_min = angle_min
+        self.angle_max = angle_max
+
+    def __call__(self, x, y):
+        pad_x = (math.ceil(max(x.size) * math.sqrt(2)) - max(x.size)) // 2
+        pad_y = pad_x * self.y_scale
+        angle = random.uniform(self.angle_min, self.angle_max)
+        rot_x = TF.rotate(safe_pad(x, (x.size[1] + pad_x * 2, x.size[0] + pad_x * 2)), angle=angle,
+                          interpolation=InterpolationMode.BICUBIC)
+        rot_y = TF.rotate(safe_pad(y, (y.size[1] + pad_y * 2, y.size[0] + pad_y * 2)), angle=angle,
+                          interpolation=InterpolationMode.BICUBIC)
+        x = TF.center_crop(rot_x, (x.size[1], x.size[0]))
+        y = TF.center_crop(rot_y, (y.size[1], y.size[0]))
 
         return x, y
 

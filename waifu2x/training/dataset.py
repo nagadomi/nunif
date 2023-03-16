@@ -126,17 +126,6 @@ class RandomUnsharpMask():
         return x
 
 
-class RandomNoiseEnhance():
-    def __init__(self):
-        pass
-
-    def __call__(self, x, y):
-        x = pil_io.to_tensor(x)
-        x = IM.random_noise_enhance(x)
-        x = pil_io.to_image(x)
-        return x, y
-
-
 class Waifu2xDatasetBase(Dataset):
     def __init__(self, input_dir, num_samples=None,
                  hard_example_history_size=6):
@@ -202,7 +191,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         self.training = training
         self.style = style
         self.noise_level = noise_level
-        noise_enhance = TP.Identity()
+        rotate_transform = TP.Identity()
         if self.training:
             if noise_level >= 0:
                 jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop=True)
@@ -210,11 +199,11 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 jpeg_transform = TP.Identity()
             if style == "photo" and noise_level >= 0:
                 photo_noise = RandomPhotoNoiseX(noise_level=noise_level)
+                rotate_transform = TP.RandomApply([TP.RandomSafeRotate(y_scale=scale_factor)], p=0.1)
                 if noise_level == 3:
                     jpeg_transform = T.RandomChoice([
                         jpeg_transform,
                         RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.9, 0.1])
-                    noise_enhance = RandomNoiseEnhance()
             else:
                 photo_noise = TP.Identity()
 
@@ -245,8 +234,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 TP.RandomHardExampleCrop(size=y_min_size, samples=4),
                 random_downscale_x,
                 photo_noise,
+                rotate_transform,
                 jpeg_transform,
-                TP.RandomApply([noise_enhance], p=0.1),
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
