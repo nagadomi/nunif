@@ -1,0 +1,4 @@
+reference/Zigzag_scanning.jpg
+reference/Dctjpeg.png
+
+from Wikipedia
