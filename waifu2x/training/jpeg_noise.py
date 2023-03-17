@@ -36,7 +36,7 @@ EVAL_QUALITY = {
         0: [90],
         1: [80],
         2: [70],
-        3: [55, 80],
+        3: [60, 90],
     }
 }
 
@@ -163,14 +163,31 @@ LAPLACIAN_KERNEL = torch.tensor([
 ], dtype=torch.float32).reshape(1, 1, 3, 3)
 
 
+def sharpen(x, strength=0.1):
+    grad = torch.nn.functional.conv2d(x.mean(dim=0, keepdim=True).unsqueeze(0),
+                                      weight=LAPLACIAN_KERNEL, stride=1, padding=1).squeeze(0)
+    x = x + grad * strength
+    x = torch.clamp(x, 0., 1.)
+    return x
+
+
 def enhance_noise(original_x, noise_x, strength=0.1):
+    """ shapen noise-original diff
+    """
     original_x = TF.to_tensor(original_x)
     noise_x = TF.to_tensor(noise_x)
     noise = noise_x - original_x
-    grad = torch.nn.functional.conv2d(noise.mean(dim=0, keepdim=True).unsqueeze(0),
-                                      weight=LAPLACIAN_KERNEL, stride=1, padding=1).squeeze(0)
-    noise = noise + grad * strength
+    noise = sharpen(noise, strength=strength)
     x = torch.clamp(original_x + noise, 0., 1.)
+    x = TF.to_pil_image(x)
+    return x
+
+
+def enhance_noise_all(x, strength=0.1):
+    """ just sharpen image
+    """
+    x = TF.to_tensor(x)
+    x = sharpen(x, strength=strength)
     x = TF.to_pil_image(x)
     return x
 
@@ -190,7 +207,16 @@ class RandomJPEGNoiseX():
         if self.style == "photo" and QTABLES and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.2:
             x = add_jpeg_noise_qtable(x)
             if random.uniform(0, 1) < 0.2:
-                x = enhance_noise(original_x, x, strength=random.uniform(0.02, 0.2))
+                if random.uniform(0, 1) < 0.25:
+                    x = enhance_noise(original_x, x, strength=random.uniform(0.05, 0.2))
+                else:
+                    # 3%,
+                    # I do not want to use this because it means applying blur (inverse of sharpening) to the output.
+                    # However, without this,
+                    # it is difficult to remove noise applying sharpness filter after JPEG compression.
+                    x = enhance_noise_all(x, strength=random.uniform(0.1, 0.3))
+                    if random.uniform(0, 1) < 0.25:
+                        x = add_jpeg_noise(x, quality=random.randint(80, 95), subsampling="4:2:0")
             return x, y
         if (self.noise_level == 3 and random.uniform(0, 1) < 0.95) or random.uniform(0, 1) < 0.75:
             # use noise_level noise
@@ -220,11 +246,13 @@ class RandomJPEGNoiseX():
 
         for i, quality in enumerate(qualities):
             x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
+            if (i == 0 and self.style == "photo" and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.2):
+                if random.uniform(0, 1) < 0.75:
+                    x = enhance_noise(original_x, x, strength=random.uniform(0.05, 0.2))
+                else:
+                    x = enhance_noise_all(x, strength=random.uniform(0.1, 0.3))
             if random_crop and i != len(qualities) - 1:
                 x, y = shift_jpeg_block(x, y)
-        if (qualities and not random_crop and
-                self.style == "photo" and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.2):
-            x = enhance_noise(original_x, x, strength=random.uniform(0.02, 0.2))
         return x, y
 
 
@@ -258,7 +286,10 @@ def _test_noise_enhance():
     show("original", im)
     while True:
         noise = add_jpeg_noise_qtable(im)
-        x = enhance_noise(im, noise, 0.2)
+        if False:
+            x = enhance_noise_all(im, noise, 0.2)
+        else:
+            x = enhance_noise_all(noise, 0.3)
         show("noise", noise)
         show("enhance", x)
         c = cv2.waitKey(0)
