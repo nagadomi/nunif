@@ -120,16 +120,14 @@ def gaussian_8x8_masked_noise(x, strength=0.1):
 
 def sampling_noise(x, sampling=8, strength=0.1):
     c, h, w = x.shape
-    noise = (torch.randn((sampling, h, w)) + 0.5).mean(dim=0, keepdim=True)
-    m = random.choice([0, 1, 2, 3])
+    noise = torch.randn((sampling, h, w)).mean(dim=0, keepdim=True)
+    m = random.choice([0, 1, 2])
     if m == 0:
         return torch.clamp(B.lighten(x, x + noise.expand(x.shape) * strength), 0., 1.)
     elif m == 1:
         return torch.clamp(B.darken(x, x + noise.expand(x.shape) * strength), 0., 1.)
     elif m == 2:
-        return torch.clamp(x + B.multiply(x, noise.expand(x.shape)) * strength, 0., 1.)
-    elif m == 3:
-        return torch.clamp(x + B.screen(x, noise.expand(x.shape)) * strength, 0., 1.)
+        return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
 def grain_noise1(x, strength=0.1):
@@ -262,8 +260,15 @@ def _test():
     def show(name, im):
         cv2.imshow(name, pil_io.to_cv2(im))
 
+    def print_mean_diff(name, a, b):
+        a = pil_io.to_tensor(a)
+        b = pil_io.to_tensor(b)
+        print(name, abs(a.mean().item() - b.mean().item()))
+
     def show_op(func, a):
-        show(func.__name__, pil_io.to_image(func(pil_io.to_tensor(a))))
+        b = pil_io.to_image(func(pil_io.to_tensor(a)))
+        print_mean_diff(func.__name__, a, b)
+        show(func.__name__, b)
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input file")
