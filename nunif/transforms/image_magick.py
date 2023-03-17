@@ -59,16 +59,6 @@ def random_unsharp_mask(x, sigma=[0.5, 1.5], amount=[0.1, 0.9], threshold=[0.0, 
         return to_tensor(im)
 
 
-def random_noise_enhance(x):
-    radius = random.uniform(0.5, 1.0)
-    sigma = radius
-    amount = random.uniform(0.1, 0.9)
-    threshold = 0
-    with to_wand_image(x) as im:
-        im.unsharp_mask(radius=radius, sigma=sigma, amount=amount, threshold=threshold)
-        return to_tensor(im)
-
-
 def random_filter_resize(x, size, filters, blur_min=1, blur_max=1):
     if isinstance(size, (list, tuple)):
         h, w = size

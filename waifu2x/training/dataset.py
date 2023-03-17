@@ -18,7 +18,7 @@ from .jpeg_noise import (
     add_jpeg_noise,
     shift_jpeg_block,
 )
-from .photo_noise import RandomPhotoNoiseX
+from .photo_noise import RandomPhotoNoiseX, add_validation_noise
 from PIL.Image import Resampling
 
 
@@ -199,11 +199,11 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 jpeg_transform = TP.Identity()
             if style == "photo" and noise_level >= 0:
                 photo_noise = RandomPhotoNoiseX(noise_level=noise_level)
-                rotate_transform = TP.RandomApply([TP.RandomSafeRotate(y_scale=scale_factor)], p=0.1)
+                rotate_transform = TP.RandomApply([TP.RandomSafeRotate(y_scale=scale_factor)], p=0.05)
                 if noise_level == 3:
                     jpeg_transform = T.RandomChoice([
                         jpeg_transform,
-                        RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.9, 0.1])
+                        RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.95, 0.05])
             else:
                 photo_noise = TP.Identity()
 
@@ -286,6 +286,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
 
         if not self.training:
             if self.noise_level >= 0:
+                if self.style == "photo":
+                    x = add_validation_noise(x, noise_level=self.noise_level, index=index)
                 qualities, subsampling = choose_validation_jpeg_quality(
                     index=index, style=self.style, noise_level=self.noise_level)
                 for i, quality in enumerate(qualities):
@@ -308,5 +310,21 @@ def _test():
     TF.to_pil_image(y).show()
 
 
+def _test_photo_noise():
+    import cv2
+    dataset = Waifu2xDataset("./data/photo/eval",
+                             model_offset=36, tile_size=256, scale_factor=2,
+                             style="photo", noise_level=3)
+    print(f"len {len(dataset)}")
+    for x, y, *_ in dataset:
+        x = pil_io.to_cv2(pil_io.to_image(x))
+        y = pil_io.to_cv2(pil_io.to_image(y))
+        cv2.imshow("x", x)
+        cv2.imshow("y", y)
+        c = cv2.waitKey(0)
+        if c in {ord("q"), ord("x")}:
+            break
+
+
 if __name__ == "__main__":
-    _test()
+    _test_photo_noise()

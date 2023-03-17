@@ -14,7 +14,6 @@ tmp
 /models
 !/models/.keep
 /waifu2x/pretrained_models
-/waifu2x/training/qtables.pth
 /waifu2x/onnx_models
 /waifu2x/web-config.ini  # for compatibilityfor
 /waifu2x/web/config.ini

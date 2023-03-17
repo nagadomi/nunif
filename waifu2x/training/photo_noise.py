@@ -11,53 +11,6 @@ from nunif.utils.perlin2d import generate_perlin_noise_2d
 from nunif.utils import blend as B
 
 
-_DIRECTION_KERNELS = [
-    [
-        0, 0.2, 0,
-        0, 0.6, 0,
-        0, 0.2, 0,
-    ],
-    [
-        0, 0.0, 0,
-        0.2, 0.6, 0.2,
-        0, 0.0, 0,
-    ],
-    [
-        0, 0.333, 0,
-        0, 0.333, 0,
-        0, 0.333, 0,
-    ],
-    [
-        0, 0.2, 0,
-        0.2, 0.2, 0.2,
-        0, 0.2, 0,
-    ],
-    [
-        0, 0.0, 0,
-        0.333, 0.333, 0.333,
-        0, 0.0, 0,
-    ],
-    [
-        0, 0.0, 0.2,
-        0, 0.6, 0,
-        0.2, 0.0, 0,
-    ],
-    [
-        0.2, 0.0, 0.0,
-        0, 0.6, 0,
-        0, 0.0, 0.2,
-    ],
-    [
-        0.1, 0.1, 0.1,
-        0.1, 0.2, 0.1,
-        0.1, 0.1, 0.1,
-    ]
-]
-DIRECTION_KERNELS = []
-for k in _DIRECTION_KERNELS:
-    DIRECTION_KERNELS.append(torch.tensor(k).reshape(1, 1, 3, 3))
-
-
 def random_crop(x, size):
     i, j, h, w = T.RandomCrop.get_params(x, size)
     x = TF.crop(x, i, j, h, w)
@@ -88,23 +41,65 @@ def random_mask_8x8(x, noise):
     return torch.clamp(x * (1. - mask) + noise * mask, 0., 1.)
 
 
-def gaussian_noise(x, strength=0.05):
-    c, h, w = x.shape
-    ch = 1 if random.uniform(0., 1.) < 0.5 else 3
+def gen_direction_kernel(ch):
+    center = random.uniform(1 / 3., 0.99)
+    side = (1. - center) * 0.5
+    direction = random.choice([0, 1, 2, 3])
+    kernel = torch.zeros((3, 3), dtype=torch.float32)
+    kernel[1][1] = center
+    if direction == 0:
+        kernel[0][1] = side
+        kernel[2][1] = side
+    elif direction == 1:
+        kernel[1][0] = side
+        kernel[1][2] = side
+    elif direction == 2:
+        kernel[0][0] = side
+        kernel[2][2] = side
+    elif direction == 3:
+        kernel[0][2] = side
+        kernel[2][0] = side
+
+    # assert math.isclose(kernel.sum().item(), 1., abs_tol=1e-4)
+    kernel = kernel.reshape(1, 1, 3, 3)
+    # for groups=ch
+    kernel = kernel.expand((ch, 1, 3, 3))
+    return kernel
+
+
+def gen_noise_image(size, ch):
+    h, w = size
     noise = torch.randn((ch, h, w))
-    if random.choice([True, False]):
-        noise = torch.nn.functional.conv2d(noise.unsqueeze(0),
-                                           weight=random.choice(DIRECTION_KERNELS).expand(ch, ch, 3, 3),
-                                           padding=1).squeeze(0)
-    if random.choice([True, False]):
+    if random.uniform(0, 1) < 0.25:
+        # blur noise
+        if random.choice([True, False]):
+            weight = gen_direction_kernel(ch)
+            noise = torch.nn.functional.conv2d(
+                noise.unsqueeze(0),
+                weight=weight, stride=1, padding=1, groups=ch).squeeze(0)
+        else:
+            kernel_size = random.choice([3, 5])
+            sigma = random.uniform(0.6, 1.4)
+            noise = TF.gaussian_blur(noise, kernel_size=kernel_size, sigma=sigma)
+    if random.uniform(0, 1) < 0.25:
+        # dot masked noise
         p = random.uniform(0.1, 0.5)
         noise = noise * torch.bernoulli(torch.torch.full((1, noise.shape[1], noise.shape[2]), p))
-    if random.choice([True, False]):
+    if random.uniform(0, 1) < 0.25:
+        # random resize
         scale_h = random.uniform(1, 2)
         scale_w = random.uniform(1, 2)
         noise = TF.resize(noise, (int(noise.shape[1] * scale_h), int(noise.shape[2] * scale_w)),
                           interpolation=InterpolationMode.BILINEAR, antialias=True)
-        noise = random_crop(noise, (x.shape[1], x.shape[2]))
+        noise = random_crop(noise, (h, w))
+
+    return noise
+
+
+def gaussian_noise(x, strength=0.05):
+    c, h, w = x.shape
+    ch = 1 if random.uniform(0., 1.) < 0.5 else 3
+    noise = gen_noise_image((h, w), ch)
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
@@ -115,23 +110,9 @@ def gaussian_8x8_masked_noise(x, strength=0.1):
     (buggy JPEG encoder?)
     """
     c, h, w = x.shape
-    method = random.choice([0, 1, 2])
-    noise = torch.randn((1, h, w))
+    noise = gen_noise_image((h, w), 1)
     if random.choice([True, False]):
-        noise = torch.nn.functional.conv2d(noise.unsqueeze(0),
-                                           weight=random.choice(DIRECTION_KERNELS),
-                                           padding=1).squeeze(0)
-    if random.choice([True, False]):
-        p = random.uniform(0.1, 0.5)
-        noise = noise * torch.bernoulli(torch.torch.full((1, noise.shape[1], noise.shape[2]), p))
-    if random.choice([True, False]):
-        scale_h = random.uniform(1, 2)
-        scale_w = random.uniform(1, 2)
-        noise = TF.resize(noise, (int(noise.shape[1] * scale_h), int(noise.shape[2] * scale_w)),
-                          interpolation=InterpolationMode.BILINEAR, antialias=True)
-        noise = random_crop(noise, (x.shape[1], x.shape[2]))
-    if random.choice([True, False]):
-        x = gaussian_noise(x, strength=strength*0.5)
+        x = gaussian_noise(x, strength=strength * 0.5)
 
     noise = x + noise.expand(x.shape) * strength
     return random_mask_8x8(x, noise)
@@ -211,8 +192,8 @@ def grain_noise2(x, strength=0.15):
 NR_RATE = {
     0: 0.1,
     1: 0.1,
-    2: 0.25,
-    3: 0.5,
+    2: 0.5,
+    3: 1,
 }
 STRENGTH_FACTOR = {
     0: 0.25,
@@ -243,7 +224,7 @@ class RandomPhotoNoiseX():
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise1(x, strength=strength)
         elif method == 2:
-            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.02, 0.15) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise2(x, strength=strength)
         elif method == 3:
             if random.choice([True, False]):
@@ -254,6 +235,23 @@ class RandomPhotoNoiseX():
                 x = gaussian_8x8_masked_noise(x, strength=strength)
         x = TF.to_pil_image(x)
         return x, y
+
+
+def add_validation_noise(x, noise_level, index):
+    def _add_gaussian_noise(x, strength):
+        x = TF.to_tensor(x)
+        x = torch.clamp(x + torch.randn((1, x.shape[1], x.shape[2])) * strength, 0., 1.)
+        x = TF.to_pil_image(x)
+        return x
+    if noise_level in {0, 1}:
+        if index % 10 == 0:
+            x = _add_gaussian_noise(x, 0.05 * STRENGTH_FACTOR[noise_level])
+    elif noise_level == 2:
+        if index % 2 == 0:
+            x = _add_gaussian_noise(x, 0.05 * STRENGTH_FACTOR[noise_level])
+    elif noise_level == 3:
+        x = _add_gaussian_noise(x, 0.05 * STRENGTH_FACTOR[noise_level])
+    return x
 
 
 def _test():
@@ -281,7 +279,6 @@ def _test():
     cv2.waitKey(0)
 
 
-
 def _test_gaussian():
     from nunif.utils import pil_io
     import argparse
@@ -307,4 +304,4 @@ def _test_gaussian():
 
 if __name__ == "__main__":
     _test()
-    #_test_gaussian()
+    # _test_gaussian()
