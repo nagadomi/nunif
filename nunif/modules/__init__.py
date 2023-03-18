@@ -10,7 +10,7 @@ from . charbonnier_loss import CharbonnierLoss
 from . norm import FRN2d, TLU2d, L2Normalize
 from . pad import Pad
 from . discriminator_loss import DiscriminatorBCELoss, DiscriminatorHingeLoss
-
+from . multiscale_loss import MultiscaleLoss
 
 __all__ = [
     "SEBlock", "LBPLoss", "RandomBinaryConvolution",
@@ -18,4 +18,5 @@ __all__ = [
     "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11Loss",
     "FRN2d", "TLU2d", "L2Normalize", "Pad",
     "DiscriminatorBCELoss", "DiscriminatorHingeLoss",
+    "MultiscaleLoss"
 ]

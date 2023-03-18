@@ -66,7 +66,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--num-samples", type=int, default=50000,
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str,
-                        choices=["lbp", "lbp5", "y_charbonnier", "charbonnier",
+                        choices=["lbp", "lbp5", "lbpm", "lbp5m", "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips"],
                         help="loss function")

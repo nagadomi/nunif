@@ -62,7 +62,7 @@ class L3Discriminator(Model):
         self.classifier = nn.Sequential(
             ResBlockGNLReLU(256, 512),
             SEBlock(512, bias=True),
-            nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
+            nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=1))
 
         for m in self.classifier.modules():
             if isinstance(m, nn.Conv2d):
@@ -92,6 +92,30 @@ class L3ConditionalDiscriminator(L3Discriminator):
         x = self.features(x)
         x = self.classifier(x)
         return x
+
+
+@register_model
+class L3MultiscaleDiscriminator(L3Discriminator):
+    name = "waifu2x.l3_multiscale_discriminator"
+
+    def __init__(self, in_channels=3, out_channels=1):
+        super().__init__(in_channels=in_channels, out_channels=out_channels)
+
+    def forward(self, x, c=None, scale_factor=None):
+        B, C, H, W = x.shape
+        x_down = F.interpolate(x, size=(H // 2, W // 2), mode="bicubic")
+
+        x = normalize(x)
+        x = self.features(x)
+        x = self.classifier(x)
+
+        x_down = normalize(x_down)
+        x_down = self.features(x_down)
+        x_down = self.classifier(x_down)
+
+        z = x * 0.8 + F.interpolate(x_down, scale_factor=2, mode="nearest") * 0.2
+
+        return z
 
 
 @register_model

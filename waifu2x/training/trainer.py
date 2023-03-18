@@ -10,9 +10,11 @@ from nunif.models import (
     load_model, save_model
 )
 from nunif.modules import (
-    ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss, LBPLoss, CharbonnierLoss,
+    ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss,
+    LBPLoss, CharbonnierLoss,
     Alex11Loss,
     DiscriminatorHingeLoss,
+    MultiscaleLoss,
 )
 from nunif.logger import logger
 
@@ -27,8 +29,12 @@ def create_criterion(loss):
         criterion = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
     elif loss == "lbp":
         criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
+    elif loss == "lbpm":
+        criterion = MultiscaleLoss(ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))))
     elif loss == "lbp5":
         criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
+    elif loss == "lbp5m":
+        criterion = MultiscaleLoss(ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5))))
     elif loss == "alex11":
         criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
     elif loss == "charbonnier":
@@ -71,6 +77,8 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.l3_discriminator", device_ids=device_ids)
     elif discriminator == "l3c":
         model = create_model("waifu2x.l3_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "l3m":
+        model = create_model("waifu2x.l3_multiscale_discriminator", device_ids=device_ids)
     elif discriminator == "r3":
         model = create_model("waifu2x.r3_discriminator", device_ids=device_ids)
     elif discriminator == "r3c":
