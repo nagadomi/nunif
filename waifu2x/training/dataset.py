@@ -126,6 +126,17 @@ class RandomUnsharpMask():
         return x
 
 
+class AntialiasX():
+    def __init__(self):
+        pass
+
+    def __call__(self, x, y):
+        W, H = x.size
+        x = TF.resize(x, (H * 2, W * 2), interpolation=InterpolationMode.BILINEAR, antialias=True)
+        x = TF.resize(x, (H, W), interpolation=InterpolationMode.BICUBIC, antialias=True)
+        return x, y
+
+
 class Waifu2xDatasetBase(Dataset):
     def __init__(self, input_dir, num_samples=None,
                  hard_example_history_size=6):
@@ -191,12 +202,17 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         self.training = training
         self.style = style
         self.noise_level = noise_level
-        rotate_transform = TP.Identity()
         if self.training:
             if noise_level >= 0:
                 jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop=True)
             else:
                 jpeg_transform = TP.Identity()
+
+            if self.style == "photo":
+                antialias = TP.RandomApply([AntialiasX()], p=0.025)
+            else:
+                antialias = TP.Identity()
+
             if style == "photo" and noise_level >= 0:
                 photo_noise = RandomPhotoNoiseX(noise_level=noise_level)
                 rotate_transform = TP.RandomApply([TP.RandomSafeRotate(y_scale=scale_factor)], p=0.05)
@@ -206,6 +222,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                         RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.95, 0.05])
             else:
                 photo_noise = TP.Identity()
+                rotate_transform = TP.Identity()
 
             if scale_factor > 1:
                 if bicubic_only:
@@ -236,6 +253,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 photo_noise,
                 rotate_transform,
                 jpeg_transform,
+                antialias,
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])

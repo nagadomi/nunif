@@ -7,6 +7,10 @@ import csv
 from tqdm import tqdm
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
+from torchvision.transforms import (
+    functional as TF,
+    InterpolationMode
+)
 from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
@@ -18,6 +22,13 @@ DEFAULT_MODEL_DIR = path.abspath(path.join(
     "swin_unet", "art"))
 
 
+def antialias(x):
+    w, h = x.size
+    x = TF.resize(x, (h * 2, w * 2), interpolation=InterpolationMode.BILINEAR, antialias=True)
+    x = TF.resize(x, (h, w), interpolation=InterpolationMode.BICUBIC, antialias=True)
+    return x
+
+
 def convert_files(ctx, files, args, enable_amp):
     loader = ImageLoader(files=files, max_queue_size=128,
                          load_func=IL.load_image,
@@ -26,6 +37,8 @@ def convert_files(ctx, files, args, enable_amp):
     futures = []
     with torch.no_grad(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         for im, meta in tqdm(loader, ncols=60):
+            if args.pre_antialias:
+                im = antialias(im)
             rgb, alpha = IL.to_tensor(im, return_alpha=True)
             rgb, alpha = ctx.convert(
                 rgb, alpha, args.method, args.noise_level,
@@ -53,6 +66,8 @@ def convert_file(ctx, args, enable_amp):
 
     with torch.no_grad():
         im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
+        if args.pre_antialias:
+            im = antialias(im)
         rgb, alpha = IL.to_tensor(im, return_alpha=True)
         rgb, alpha = ctx.convert(rgb, alpha, args.method, args.noise_level,
                                  args.tile_size, args.batch_size,
@@ -105,6 +120,7 @@ if __name__ == "__main__":
                         help="image library to encode/decode images")
     parser.add_argument("--depth", type=int, help="bit-depth of output image. enabled only with `--image-lib wand`")
     parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format")
+    parser.add_argument("--pre-antialias", action="store_true", help="Removing sharp artifacts before run.")
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
     if args.image_lib == "wand":
