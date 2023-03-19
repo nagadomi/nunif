@@ -20,7 +20,7 @@ def register_model(cls):
 
 
 def data_parallel_model(model, device_ids):
-    if len(device_ids) > 1:
+    if len(device_ids) > 1 and not isinstance(model, nn.DataParallel):
         name = model.name
         model = nn.DataParallel(model, device_ids=device_ids)
         # Set model name

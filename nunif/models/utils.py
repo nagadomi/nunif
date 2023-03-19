@@ -102,15 +102,6 @@ def call_model_method(model, name, **kwargs):
     return func(**kwargs)
 
 
-def to_data_parallel(model, device_ids):
-    name = model.name
-    model = nn.DataParallel(model, device_ids=device_ids)
-    # Set model name
-    # TODO: this is a bad practice.
-    setattr(model, "name", name)
-    return model
-
-
 def compile_model(model, **kwargs):
     if packaging_version.parse(torch.__version__).major >= 2:
         model = torch.compile(model, **kwargs)
