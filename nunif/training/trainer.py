@@ -98,11 +98,18 @@ class Trainer(ABC):
     def load_initial_parameters(self, checkpoint_filename):
         load_model(checkpoint_filename, model=self.model)
 
+    @staticmethod
+    def _lr_format(schedulers):
+        lrs = []
+        for scheduler in schedulers:
+            lrs.append("[" + ", ".join([format(lr, '.3g') for lr in scheduler.get_last_lr()]) + "]")
+        return "[" + ", ".join(lrs) + "]"
+
     def fit(self):
         self.initialize()
         for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
             print("-" * 64)
-            print(f" epoch: {self.epoch}, lr: {[scheduler.get_last_lr() for scheduler in self.schedulers]}")
+            print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
             print("--\n train")
             self.env.train(
                 loader=self.train_loader,
