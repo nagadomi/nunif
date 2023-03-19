@@ -2,16 +2,31 @@
 nunif/optim/lion.py
 From Google Brain AutoML: https://github.com/google/automl/blob/master/lion/lion_pytorch.py
 Google Research / Apache License, Version 2.0
+
 ----
 nunif/training/weight_decay_config.py
 From nanoGPT: https://github.com/karpathy/nanoGPT/blob/master/model.py
 Andrej Karpathy / MIT License
+
 ----
 nunif/waifu2x/docs/images/miku_128.png
 Hatsune Miku / Crypton Future Media inc. / CC BY-NC
 https://piapro.net/intl/en_for_creators.html
+
 ----
 nunif/utils/perlin2d.py
 Original work is perlin-numpy: https://github.com/pvigier/perlin-numpy)
 Pierre Vigier / MIT License
 Vadim Kantorov ported to pytorch: https://gist.github.com/vadimkantorov/ac1b097753f217c5c11bc2ff396e0a57
+
+----
+The various techniques related to GAN are highly referenced from Taming Transformers
+https://github.com/CompVis/taming-transformers
+
+----
+nunif/module/lpips.py
+uses the pretrained model of VGG16 LPIPS (via pip install).
+https://github.com/richzhang/PerceptualSimilarity
+
+----
+Other libraries used are listed in `requirements.txt`.
