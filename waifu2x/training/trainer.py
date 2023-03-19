@@ -63,7 +63,10 @@ def create_criterion(loss):
             weight=(1.0, 0.5))
     elif loss == "l1lpips":
         from nunif.modules.lpips import LPIPSWith
-        criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), 1.0)
+        criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.8)
+    elif loss == "l1lpipsm":
+        from nunif.modules.lpips import LPIPSWith
+        criterion = MultiscaleLoss(LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.8))
     else:
         raise NotImplementedError()
 
@@ -83,6 +86,8 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.r3_discriminator", device_ids=device_ids)
     elif discriminator == "r3c":
         model = create_model("waifu2x.r3_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "s3":
+        model = create_model("waifu2x.s3_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator)
     else:
@@ -210,7 +215,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 g_opt.zero_grad()
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(recon_loss, generator_loss, last_layer, grad_scaler,
-                                                        min=1e-5, max=1e2, mode="max") * self.trainer.args.discriminator_weight
+                                                        min=1e-5, max=1e2, mode="norm") * self.trainer.args.discriminator_weight
                 recon_weight = 1.0 / weight
                 if generator_loss > 0.05 and d_loss < self.trainer.args.generator_start_criteria:
                     g_loss = recon_loss * recon_weight + generator_loss
