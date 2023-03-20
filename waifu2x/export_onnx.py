@@ -15,6 +15,7 @@ from nunif.models.onnx_helper_models import (
     ONNXScale1x,  # identity with offset
 )
 from nunif.logger import logger
+import onnx
 
 
 def export_onnx(load_path, save_path):
@@ -48,27 +49,77 @@ def convert_upcunet(model_dir, output_dir):
                     path.join(out_dir, "scale2x.onnx"))
 
 
-def convert_swin_unet(model_dir, output_dir):
-    for domain in ("art",):
-        in_dir = path.join(model_dir, "swin_unet", domain)
-        out_dir = path.join(output_dir, "swin_unet", domain)
-        os.makedirs(out_dir, exist_ok=True)
-        for noise_level in (0, 1, 2, 3):
-            export_onnx(path.join(in_dir, f"noise{noise_level}.pth"),
-                        path.join(out_dir, f"noise{noise_level}.onnx"))
-            export_onnx(path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
-                        path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
-            export_onnx(path.join(in_dir, f"noise{noise_level}_scale4x.pth"),
-                        path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
+def convert_swin_unet_art(model_dir, output_dir):
+    domain = "art"
+    in_dir = path.join(model_dir, "swin_unet", domain)
+    out_dir = path.join(output_dir, "swin_unet", domain)
+    os.makedirs(out_dir, exist_ok=True)
+    for noise_level in (0, 1, 2, 3):
+        export_onnx(path.join(in_dir, f"noise{noise_level}.pth"),
+                    path.join(out_dir, f"noise{noise_level}.onnx"))
+        export_onnx(path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
+                    path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
+        export_onnx(path.join(in_dir, f"noise{noise_level}_scale4x.pth"),
+                    path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
 
-        export_onnx(path.join(in_dir, "scale4x.pth"),
-                    path.join(out_dir, "scale4x.onnx"))
+    export_onnx(path.join(in_dir, "scale4x.pth"),
+                path.join(out_dir, "scale4x.onnx"))
 
-        export_onnx(path.join(in_dir, "scale2x.pth"),
-                    path.join(out_dir, "scale2x.onnx"))
+    export_onnx(path.join(in_dir, "scale2x.pth"),
+                path.join(out_dir, "scale2x.onnx"))
 
-        scale1x = ONNXScale1x(offset=8)
-        scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
+    scale1x = ONNXScale1x(offset=8)
+    scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
+
+
+
+def patch_resize_antialias(onnx_path):
+    print(f"* ONNX Patch Resize antialias: {onnx_path}")
+    model = onnx.load(onnx_path)
+    onnx.checker.check_model(model)
+    assert model.opset_import[0].version >= 18
+
+    for node in model.graph.node:
+        if node.op_type == "Resize":
+            # Only one Resize node is available in SwinUNetDownscaled.
+            antialias = onnx.helper.make_attribute("antialias", 1)
+            node.attribute.extend([antialias])
+            for attribute in node.attribute:
+                print(attribute)
+
+    onnx.checker.check_model(model)
+    onnx.save(model, onnx_path)
+
+
+def convert_swin_unet_photo(model_dir, output_dir):
+    domain = "photo"
+    in_dir = path.join(model_dir, "swin_unet", domain)
+    out_dir = path.join(output_dir, "swin_unet", domain)
+    os.makedirs(out_dir, exist_ok=True)
+    for noise_level in (0, 1, 2, 3):
+        model_4x, *_ = load_model(path.join(in_dir, f"noise{noise_level}_scale4x.pth"))
+        model_2x = model_4x.to_2x()
+        model_1x = model_4x.to_1x()
+        # PyTorch's onnx exporter does not support downscaling with antialias.
+        # However, it is supported in optset 18.
+        # So once exported with antialias=False, then modify it.
+        model_2x.antialias = False
+        model_1x.antialias = False
+        model_4x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
+        model_2x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"), opset_version=18)
+        patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
+        model_1x.export_onnx(path.join(out_dir, f"noise{noise_level}.onnx"), opset_version=18)
+        patch_resize_antialias(path.join(out_dir, f"noise{noise_level}.onnx"))
+
+    model_4x, *_ = load_model(path.join(in_dir, f"scale4x.pth"))
+    model_2x = model_4x.to_2x()
+    model_2x.antialias = False
+    model_4x.export_onnx(path.join(out_dir, f"scale4x.onnx"))
+    model_2x.export_onnx(path.join(out_dir, f"scale2x.onnx"), opset_version=18)
+    patch_resize_antialias(path.join(out_dir, f"scale2x.onnx"))
+
+    scale1x = ONNXScale1x(offset=8)
+    scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
 
 
 def convert_utils(output_dir):
@@ -104,7 +155,8 @@ if __name__ == "__main__":
     convert_upcunet(args.input_dir, args.output_dir)
 
     logger.info("swin_unet")
-    convert_swin_unet(args.input_dir, args.output_dir)
+    convert_swin_unet_art(args.input_dir, args.output_dir)
+    convert_swin_unet_photo(args.input_dir, args.output_dir)
 
     logger.info("utils")
     convert_utils(args.output_dir)

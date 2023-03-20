@@ -302,18 +302,19 @@ class SwinUNetDownscaled(I2IBaseModel):
         else:
             self.unet = unet
         self.mode = "bicubic"
+        self.antialias = True
         self.downscale_factor = downscale_factor
 
     def forward(self, x):
         z = self.unet(x)
         if self.training:
             z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
-                              mode=self.mode, align_corners=False, antialias=True)
+                              mode=self.mode, align_corners=False, antialias=self.antialias)
             return z
         else:
             z = torch.clamp(z, 0., 1.)
             z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
-                              mode=self.mode, align_corners=False, antialias=True)
+                              mode=self.mode, align_corners=False, antialias=self.antialias)
             z = torch.clamp(z, 0., 1.)
             return z
 
