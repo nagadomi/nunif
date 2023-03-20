@@ -1,6 +1,13 @@
 import torch
 from torch import nn
 import lpips
+from os import path
+
+
+if False:
+    MODEL_PATH = None
+else:
+    MODEL_PATH = path.join(path.dirname(__file__), "_lpips_1.pth")
 
 
 class LPIPSWith(nn.Module):
@@ -8,7 +15,7 @@ class LPIPSWith(nn.Module):
         super().__init__()
         self.base_loss = base_loss
         self.weight = weight
-        self.lpips = lpips.LPIPS(net='vgg').eval()
+        self.lpips = lpips.LPIPS(net='vgg', model_path=MODEL_PATH).eval()
         self.lpips.requires_grad_(False)
 
     def forward(self, input, target):
