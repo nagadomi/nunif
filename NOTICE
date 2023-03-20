@@ -24,8 +24,8 @@ The various techniques related to GAN are highly referenced from Taming Transfor
 https://github.com/CompVis/taming-transformers
 
 ----
-nunif/module/lpips.py
-uses the pretrained model of VGG16 LPIPS (via pip install).
+nunif/module/_lpips_1.pth
+trained with internal forked version of LPIPS.
 https://github.com/richzhang/PerceptualSimilarity
 
 ----
