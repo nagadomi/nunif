@@ -94,20 +94,5 @@ def _test_unsharp_mask():
         cv2.waitKey(0)
 
 
-def _test_noise_enhance():
-    import cv2
-    from .. utils import pil_io
-
-    im, _ = wand_io.load_image("./tmp/machine_noise.jpg")
-    t = wand_io.to_tensor(im)
-    cv2.imshow("original", pil_io.to_cv2(pil_io.to_image(t)))
-    for _ in range(20):
-        z = random_noise_enhance(t)
-        cvim = pil_io.to_cv2(pil_io.to_image(z))
-        cv2.imshow("noise_enhance", cvim)
-        cv2.waitKey(0)
-
-
 if __name__ == "__main__":
-    #_test_unsharp_mask()
-    _test_noise_enhance()
+    _test_unsharp_mask()
