@@ -80,18 +80,14 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.l3_discriminator", device_ids=device_ids)
     elif discriminator == "l3c":
         model = create_model("waifu2x.l3_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "l3m":
-        model = create_model("waifu2x.l3_multiscale_discriminator", device_ids=device_ids)
-    elif discriminator == "r3":
-        model = create_model("waifu2x.r3_discriminator", device_ids=device_ids)
-    elif discriminator == "r3c":
-        model = create_model("waifu2x.r3_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "s3":
-        model = create_model("waifu2x.s3_discriminator", device_ids=device_ids)
+    elif discriminator == "v3":
+        model = create_model("waifu2x.v3_discriminator", device_ids=device_ids)
+    elif discriminator == "v4s":
+        model = create_model("waifu2x.v4_spatial_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
-        model, _ = load_model(discriminator)
+        model, _ = load_model(discriminator, device_ids=device_ids)
     else:
-        model = create_model(discriminator)
+        model = create_model(discriminator, device_ids=device_ids)
     return model.to(device)
 
 
@@ -217,7 +213,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 weight = self.calculate_adaptive_weight(recon_loss, generator_loss, last_layer, grad_scaler,
                                                         min=1e-5, max=1e2, mode="norm") * self.trainer.args.discriminator_weight
                 recon_weight = 1.0 / weight
-                if generator_loss > 0.05 and d_loss < self.trainer.args.generator_start_criteria:
+                if generator_loss > 0.05 and (d_loss < self.trainer.args.generator_start_criteria or generator_loss > 0.95):
                     g_loss = recon_loss * recon_weight + generator_loss
                 else:
                     g_loss = recon_loss * recon_weight

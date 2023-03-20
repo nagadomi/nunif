@@ -37,6 +37,18 @@ def add_noise(x, strength=0.01):
     return x + noise
 
 
+def init_moduels(model):
+    for m in model.modules():
+        if isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, 0, 0.02)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+
 @register_model
 class L3Discriminator(Model):
     name = "waifu2x.l3_discriminator"
@@ -63,11 +75,7 @@ class L3Discriminator(Model):
             SEBlock(512, bias=True),
             nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
 
-        for m in self.classifier.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
+        init_moduels(self)
 
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
@@ -94,58 +102,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
 
 
 @register_model
-class R3Discriminator(Model):
-    # resnet type
-    name = "waifu2x.r3_discriminator"
-
-    def __init__(self, in_channels=3, out_channels=1):
-        super().__init__(locals())
-        self.features = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
-            nn.LeakyReLU(0.2, inplace=True),
-            ResBlockGNLReLU(64, 128, stride=2),
-            SEBlock(128, bias=True),
-            ResBlockGNLReLU(128, 256, stride=2),
-            SEBlock(256, bias=True),
-        )
-        self.classifier = nn.Sequential(
-            ResBlockGNLReLU(256, 512),
-            SEBlock(512, bias=True),
-            nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
-
-        for m in self.classifier.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def forward(self, x, c=None, scale_factor=None):
-        x = normalize(x)
-        x = self.features(x)
-        x = self.classifier(x)
-        return x
-
-
-@register_model
-class R3ConditionalDiscriminator(R3Discriminator):
-    name = "waifu2x.r3_conditional_discriminator"
-
-    def __init__(self, in_channels=6, out_channels=1):
-        super().__init__(in_channels=in_channels, out_channels=out_channels)
-
-    def forward(self, x, c, scale_factor):
-        x = normalize(x)
-        c = scale_c(x, c, scale_factor, mode="bilinear")
-        c = normalize(c)
-        x = torch.cat([x, c], dim=1)
-        x = self.features(x)
-        x = self.classifier(x)
-        return x
-
-
-@register_model
 class V3Discriminator(Model):
-    # vgg type
     name = "waifu2x.v3_discriminator"
 
     def __init__(self, in_channels=3, out_channels=1):
@@ -178,11 +135,7 @@ class V3Discriminator(Model):
             SEBlock(512, bias=True),
             nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
 
-        for m in self.classifier.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
+        init_moduels(self)
 
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
@@ -192,49 +145,82 @@ class V3Discriminator(Model):
 
 
 @register_model
-class S3Discriminator(Model):
-    # swin_transformer type
-    name = "waifu2x.s3_discriminator"
+class V4SpatialDiscriminator(Model):
+    name = "waifu2x.v4_spatial_discriminator"
+
     def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals())
-        self.swin = SwinTransformer(
-            num_classes=1,
-            patch_size=[2, 2],
-            embed_dim=64,
-            depths=[2, 2, 2],
-            num_heads=[8, 8, 8],
-            window_size=[6, 6],
-            stochastic_depth_prob=0.,
-        )
-        self.classifier = nn.Sequential(
-            ResBlockGNLReLU(256, 512),
-            SEBlock(512, bias=True),
-            nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
+        self.features = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1),
+                nn.GroupNorm(32, 64),
+                nn.LeakyReLU(0.2, inplace=True)),
+            nn.Sequential(
+                nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+                nn.GroupNorm(32, 128),
+                nn.LeakyReLU(0.2, inplace=True),
+                SEBlock(128, bias=True),
+                nn.Conv2d(128, 128, kernel_size=4, stride=2, padding=1),
+                nn.GroupNorm(32, 128),
+                nn.LeakyReLU(0.2, inplace=True),
 
-    def forward_features(self, x):
-        x = self.swin.features(x)
-        x = self.swin.norm(x)
-        x = self.swin.permute(x)
-        return x
+                nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+                nn.GroupNorm(32, 256),
+                nn.LeakyReLU(0.2, inplace=True),
+                SEBlock(256, bias=True),
+                nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1),
+                nn.GroupNorm(32, 256),
+                nn.LeakyReLU(0.2, inplace=True)),
+            nn.Sequential(
+                nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
+                nn.GroupNorm(32, 512),
+                nn.LeakyReLU(0.2, inplace=True),
+                SEBlock(512, bias=True),
+                nn.Conv2d(512, 512, kernel_size=4, stride=2, padding=1),
+                nn.GroupNorm(32, 512),
+                nn.LeakyReLU(0.2, inplace=True))
+        ])
+        def make_classifier(in_channels, se_block, pool_size):
+            modules = []
+            if se_block:
+                modules.append(SEBlock(in_channels, bias=True))
+            modules += [
+                nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                nn.GroupNorm(32, in_channels),
+                nn.LeakyReLU(0.2),
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
+            ]
+            if pool_size != 1:
+                modules.append(nn.AvgPool2d((pool_size, pool_size)))
+            return nn.Sequential(*modules)
+        self.classifiers = nn.ModuleList([
+            make_classifier(64, False, 8),
+            make_classifier(256, True, 2),
+            make_classifier(512, True, 1)])
+        init_moduels(self)
 
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
-        x = self.forward_features(x)
-        x = self.classifier(x)
-        return x
+        x1 = self.features[0](x)
+        x2 = self.features[1](x1)
+        x3 = self.features[2](x2)
+        z1 = self.classifiers[0](x1)
+        z2 = self.classifiers[1](x2)
+        z3 = self.classifiers[2](x3)
+        z = (z1 * 0.2 + z2 * 0.5 + z3 * 0.3)
+
+        return z
 
 
 if __name__ == "__main__":
     l3 = L3Discriminator()
     l3c = L3Discriminator()
-    r3 = R3Discriminator()
-    r3c = R3ConditionalDiscriminator()
     v3 = V3Discriminator()
-    s3 = S3Discriminator()
+    v3s = V4SpatialDiscriminator()
     x = torch.zeros((1, 3, 256, 256))
     print(l3(x).shape)
     print(l3c(x, x, 1).shape)
-    print(r3(x).shape)
-    print(r3c(x, x, 1).shape)
     print(v3(x, x, 1).shape)
-    print(s3(x, x, 1).shape)
+    print(v3s(x, x, 1).shape)
