@@ -20,7 +20,7 @@ class Alex11Loss(nn.Module):
         if path.exists(weight_path):
             # Load calculated weights
             # NOTE: If not loaded, need to make sure torchvision's alex weights are still the same
-            f = torch.load(weight_path)
+            f = torch.load(weight_path, weights_only=True)
         else:
             from torchvision.models import alexnet, AlexNet_Weights
 

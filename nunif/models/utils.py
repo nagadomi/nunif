@@ -7,6 +7,9 @@ from . model import Model
 from .. logger import logger
 
 
+PYTORCH2 = packaging_version.parse(torch.__version__).major >= 2
+
+
 def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
     if isinstance(model, nn.DataParallel):
         model = model.module
@@ -35,7 +38,12 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
 
 
 def load_model(model_path, model=None, device_ids=None, strict=True, map_location="cpu"):
-    data = torch.load(model_path, map_location=map_location)
+    if PYTORCH2:
+        data = torch.load(model_path, map_location=map_location, weights_only=True)
+    else:
+        # Pytorch 1.13.1 has a bug in torch.load(weights_only=True), so it cannot be used here.
+        # https://github.com/pytorch/pytorch/issues/94670
+        data = torch.load(model_path, map_location=map_location)
     assert ("nunif_model" in data)
     if model is None:
         model = create_model(data["name"], device_ids=device_ids, **data["kwargs"])
@@ -103,6 +111,6 @@ def call_model_method(model, name, **kwargs):
 
 
 def compile_model(model, **kwargs):
-    if packaging_version.parse(torch.__version__).major >= 2:
+    if PYTORCH2:
         model = torch.compile(model, **kwargs)
     return model
