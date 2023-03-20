@@ -42,8 +42,9 @@ EVAL_QUALITY = {
 
 
 # Use custom qtables
-if path.exists(path.join(path.dirname(__file__), "qtables.pth")):
-    QTABLES = torch.load(path.join(path.dirname(__file__), "qtables.pth"))
+QTABLE_FILE = path.join(path.dirname(__file__), "_qtables_1.pth")
+if path.exists(QTABLE_FILE):
+    QTABLES = torch.load(QTABLE_FILE, weights_only=True)
 else:
     QTABLES = None
 
