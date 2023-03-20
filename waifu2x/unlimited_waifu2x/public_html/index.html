@@ -32,6 +32,7 @@
               <select name="model">
                 <option value="swin_unet.art" selected>swin_unet / art (202302)</option>
                 <option value="cunet.art">cunet / art (201811)</option>
+                <option value="swin_unet.photo">swin_unet / photo (202303)</option>
               </select>
             </td>
           </tr>
@@ -55,20 +56,24 @@
                 <option value="2" selected>2x</option>
                 <option value="4">4x</option>
               </select>
-              <span id="scale-comment">no 4x support</span>
+              <span id="scale-comment" class="comment">no 4x support</span>
             </td>
           </tr>
           <tr>
             <td>Tile</td>
             <td>
-              <select name="tile_size">
-                <option value="64" selected>64</option>
-                <option value="256">256</option>
-              </select>
-              <label>
-                <input type="checkbox" name="tile_random">
-                Shuffle
-              </label>
+              <div>
+                <select name="tile_size">
+                  <option value="64" selected>64</option>
+                  <option value="256">256</option>
+                  <option value="640">640</option>
+                </select>
+                <label>
+                  <input type="checkbox" name="tile_random">
+                  Shuffle
+                </label>
+              </div>
+              <span id="tile-comment" class="comment">256 is recommended</span>
             </td>
           </tr>
           <tr>

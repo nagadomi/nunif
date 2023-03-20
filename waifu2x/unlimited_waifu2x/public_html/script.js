@@ -3,19 +3,21 @@ var g_expires = 365;
 function gen_arch_config()
 {
     var config = {};
-    config["swin_unet"] = {art: {}}
-    config["swin_unet"]["art"] = {
-        scale2x: {scale: 2, offset: 16},
-        scale4x: {scale: 4, offset: 32},
-        scale1x: {scale: 1, offset: 8}, // bypass for alpha denoise
-    };
-    var base = config["swin_unet"];
-    for (var i = 0; i < 4; ++i) {
-        base["art"]["noise" + i + "_scale2x"] = {scale: 2, offset: 16};
-        base["art"]["noise" + i + "_scale4x"] = {scale: 4, offset: 32};
-        base["art"]["noise" + i] = {scale: 1, offset: 8};
+    config["swin_unet"] = {art: {}, photo: {}};
+    var swin = config["swin_unet"];
+    for (const domain of ["art", "photo"]) {
+        swin[domain] = {
+            scale2x: {scale: 2, offset: 16},
+            scale4x: {scale: 4, offset: 32},
+            scale1x: {scale: 1, offset: 8}, // bypass for alpha denoise
+        };
+        for (var i = 0; i < 4; ++i) {
+            swin[domain]["noise" + i + "_scale2x"] = {scale: 2, offset: 16};
+            swin[domain]["noise" + i + "_scale4x"] = {scale: 4, offset: 32};
+            swin[domain]["noise" + i] = {scale: 1, offset: 8};
+        }
     }
-    config["cunet"] = {art: {}}
+    config["cunet"] = {art: {}};
     config["cunet"]["art"] = {
         scale2x: {scale: 2, offset: 36},
         scale1x: {scale: 1, offset: 28}, // bypass for alpha denoise
@@ -781,6 +783,11 @@ $(function () {
                 $("select[name=scale]").val("2");
             }
         }
+        if ((style == "photo" || style == "photo_gan") && $("select[name=tile_size]").val() < 256) {
+            $("#tile-comment").show();
+        } else {
+            $("#tile-comment").hide();
+        }
     });
     $("select[name=model]").trigger("change");
     $("select[name=noise_level]").change(() => {
@@ -791,6 +798,14 @@ $(function () {
     });
     $("select[name=tile_size]").change(() => {
         $.cookie("tile_size", $("select[name=tile_size]").val(), {expires: g_expires});
+
+        var model = $("select[name=model]").val();
+        var [arch, style] = model.split(".");
+        if ((style == "photo" || style == "photo_gan") && $("select[name=tile_size]").val() < 256) {
+            $("#tile-comment").show();
+        } else {
+            $("#tile-comment").hide();
+        }
     });
     $("input[name=tile_random]").change(() => {
         $.cookie("tile_random", $("input[name=tile_random]").prop("checked"), {expires: g_expires});
