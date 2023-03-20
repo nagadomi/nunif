@@ -16,7 +16,7 @@ class Alex11Loss(nn.Module):
 
     @staticmethod
     def create_filter(in_channels):
-        weight_path = path.join(path.dirname(__file__), "alex11.pth")
+        weight_path = path.join(path.dirname(__file__), "_alex11.pth")
         if path.exists(weight_path):
             # Load calculated weights
             # NOTE: If not loaded, need to make sure torchvision's alex weights are still the same
