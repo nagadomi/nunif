@@ -31,7 +31,8 @@ def render(template_file, lang, locale):
 
 def main():
     SELF_DIR = path.dirname(__file__)
-    TEMPLETE_FILE = path.join(SELF_DIR, "templates", "index.html.tpl")
+    TEMPLETE_DEFAULT = path.join(SELF_DIR, "templates", "index.html.tpl")
+    TEMPLETE_MINIMUM = path.join(SELF_DIR, "templates", "index.minimum.html.tpl")
     LANG_DIR = path.join(SELF_DIR, "locales")
     ASSET_DIR = path.join(SELF_DIR, "assets")
     OUTPUT_DIR = path.join(SELF_DIR, "..", "public_html")
@@ -39,8 +40,15 @@ def main():
                         "Do not make changes to this file manually.")
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--template", type=str, choices=["default", "minimum"], default="default")
     parser.add_argument("--output-dir", "-o", type=str, default=OUTPUT_DIR)
     args = parser.parse_args()
+    if args.template == "default":
+        template_file = TEMPLETE_DEFAULT
+    elif args.template == "minimum":
+        template_file = TEMPLETE_MINIMUM
+    else:
+        raise ValueError(args.template)
 
     os.makedirs(args.output_dir, exist_ok=True)
     locales = load_locales(LANG_DIR)
@@ -53,7 +61,7 @@ def main():
             args.output_dir,
             "index.html" if lang == default_lang else f"index.{lang}.html")
         with open(output_path, mode="w", encoding="utf-8") as f:
-            f.write(render(TEMPLETE_FILE, lang, locale))
+            f.write(render(template_file, lang, locale))
     for ent in os.listdir(ASSET_DIR):
         src = path.join(ASSET_DIR, ent)
         dest = path.join(args.output_dir, ent)
