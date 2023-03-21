@@ -244,6 +244,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
                 T.RandomApply([RandomUnsharpMask()], p=da_unsharpmask_p),
+                # TODO: maybe need to prevent color noise for grayscale
                 T.RandomApply([T.RandomGrayscale(p=1)], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
