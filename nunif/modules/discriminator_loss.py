@@ -20,12 +20,27 @@ class DiscriminatorBCELoss(nn.Module):
 
 
 class DiscriminatorHingeLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, loss_weights=(1.0,)):
         super().__init__()
+        self.loss_weights = loss_weights
 
     def forward(self, real, fake=None):
         if real is not None and fake is not None:
-            return (F.relu(1. - real).mean() + F.relu(1. + fake).mean()) * 0.5
+            if isinstance(real, (list, tuple)):
+                assert len(real) == len(fake) == len(self.loss_weights)
+                loss = 0
+                for w, r, f in zip(self.loss_weights, real, fake):
+                    loss = loss + (F.relu(1. - r).mean() + F.relu(1. + f).mean()) * 0.5 * w
+                return loss
+            else:
+                return (F.relu(1. - real).mean() + F.relu(1. + fake).mean()) * 0.5
         else:
-            loss = -torch.mean(real)
+            if isinstance(real, (list, tuple)):
+                assert len(real) == len(self.loss_weights)
+                loss = 0
+                for w, r in zip(self.loss_weights, real):
+                    loss = loss + (-torch.mean(r) * w)
+                return loss
+            else:
+                loss = -torch.mean(real)
             return loss

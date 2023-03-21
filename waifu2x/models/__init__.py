@@ -5,7 +5,7 @@ from .upconv_7 import UpConv7
 from .json_model import load_state_from_waifu2x_json
 from .discriminator import (
     L3Discriminator, L3ConditionalDiscriminator,
-    V3Discriminator, V4SpatialDiscriminator,
+    V3Discriminator, V3SpatialDiscriminator,
 )
 import os
 import importlib

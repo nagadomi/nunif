@@ -99,14 +99,14 @@ def register(subparsers, default_parser):
     # GAN related options
     parser.add_argument("--discriminator", type=str,
                         help="discriminator.pth or [`l3`, `l3c`, `r3`, `r3c`].")
-    parser.add_argument("--discriminator-weight", type=float, default=0.8,
+    parser.add_argument("--discriminator-weight", type=float, default=0.9,
                         help="discriminator loss weight")
     parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss", "all"], default="psnr",
                         help=("criterion for updating the best model file. "
                               "`all` forced to saves the best model each epoch."))
     parser.add_argument("--discriminator-only", action="store_true",
                         help="training discriminator only")
-    parser.add_argument("--discriminator-stop-criteria", type=float, default=0.4,
+    parser.add_argument("--discriminator-stop-criteria", type=float, default=0.5,
                         help=("When the loss of the discriminator is less than the specified value,"
                               " stops training of the discriminator."
                               " This is the limit to prevent too strong discriminator."))
@@ -115,6 +115,8 @@ def register(subparsers, default_parser):
                               " stops training of the generator."
                               " This is the limit to prevent too strong generator."
                               " Also do not hit the newbie discriminator."))
+    parser.add_argument("--discriminator-learning-rate", type=float,
+                        help=("learning-rate for discriminator. --learning-rate by default."))
     parser.set_defaults(
         batch_size=16,
         optimizer="adamw",

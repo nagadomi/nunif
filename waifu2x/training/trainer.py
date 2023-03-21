@@ -82,8 +82,10 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.l3_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "v3":
         model = create_model("waifu2x.v3_discriminator", device_ids=device_ids)
-    elif discriminator == "v4s":
-        model = create_model("waifu2x.v4_spatial_discriminator", device_ids=device_ids)
+    elif discriminator == "v3s":
+        model = create_model("waifu2x.v3_spatial_discriminator", device_ids=device_ids)
+    elif discriminator == "l3v1":
+        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator, device_ids=device_ids)
     else:
@@ -214,7 +216,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                                                         min=1e-5, max=1e2, mode="norm") * self.trainer.args.discriminator_weight
                 recon_weight = 1.0 / weight
                 if generator_loss > 0.05 and (d_loss < self.trainer.args.generator_start_criteria or generator_loss > 0.95):
-                    g_loss = recon_loss * recon_weight + generator_loss
+                    g_loss = (recon_loss * recon_weight + generator_loss) * 0.707
                 else:
                     g_loss = recon_loss * recon_weight
                 self.sum_loss += g_loss.item()
@@ -312,7 +314,9 @@ class Waifu2xTrainer(Trainer):
     def create_env(self):
         criterion = create_criterion(self.args.loss).to(self.device)
         if self.discriminator is not None:
-            discriminator_criterion = DiscriminatorHingeLoss().to(self.device)
+            conf = get_model_config(self.discriminator)
+            loss_weights = conf.get("loss_weights", (1.0,))
+            discriminator_criterion = DiscriminatorHingeLoss(loss_weights=loss_weights).to(self.device)
         else:
             discriminator_criterion = None
         return Waifu2xEnv(self.model, criterion=criterion,
@@ -341,7 +345,9 @@ class Waifu2xTrainer(Trainer):
     def create_optimizers(self):
         if self.discriminator is not None:
             g_opt = self.create_optimizer(self.model)
-            d_opt = self.create_optimizer(self.discriminator)
+
+            lr = self.args.discriminator_learning_rate or self.args.learning_rate
+            d_opt = self.create_optimizer(self.discriminator, lr=lr)
             return g_opt, d_opt
         else:
             return super().create_optimizers()
