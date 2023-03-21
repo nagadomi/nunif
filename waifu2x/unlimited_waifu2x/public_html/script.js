@@ -727,7 +727,9 @@ $(function () {
             }
             var file = e.originalEvent.dataTransfer;
             if (file.files.length > 0 && file.files[0].type.match(/image/)) {
-                $("#file").get(0).files = file.files;
+                var files = new DataTransfer();
+                files.items.add(file.files[0]);
+                $("#file").get(0).files = files.files;
                 $("#file").trigger("change");
                 return false;
             } else {
