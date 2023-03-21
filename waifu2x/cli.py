@@ -17,9 +17,13 @@ from nunif.utils.filename import set_image_ext
 from .utils import Waifu2x
 
 
-DEFAULT_MODEL_DIR = path.abspath(path.join(
+DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
     "swin_unet", "art"))
+
+DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
+    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
+    "swin_unet", "photo"))
 
 
 def antialias(x):
@@ -90,7 +94,15 @@ def load_files(txt):
 
 
 def main(args):
-    ctx = Waifu2x(model_dir=args.model_dir, gpus=args.gpu)
+    if args.model_dir is None:
+        if args.style == "photo":
+            model_dir = DEFAULT_PHOTO_MODEL_DIR
+        else:
+            model_dir = DEFAULT_ART_MODEL_DIR
+    else:
+        model_dir = args.model_dir
+
+    ctx = Waifu2x(model_dir=model_dir, gpus=args.gpu)
     ctx.load_model(args.method, args.noise_level)
 
     if path.isdir(args.input):
@@ -104,7 +116,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-dir", type=str, default=DEFAULT_MODEL_DIR, help="model dir")
+    parser.add_argument("--model-dir", type=str, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
     parser.add_argument("--method", "-m", type=str,
                         choices=["scale4x", "scale", "noise", "noise_scale", "noise_scale4x", "scale2x", "noise_scale2x"],
@@ -121,6 +133,7 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, help="bit-depth of output image. enabled only with `--image-lib wand`")
     parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format")
     parser.add_argument("--pre-antialias", action="store_true", help="Removing sharp artifacts before run.")
+    parser.add_argument("--style", type=str, choices=["art", "photo"], help="style for default model (art/photo). Ignored when --model-dir option is specified.")
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
     if args.image_lib == "wand":
