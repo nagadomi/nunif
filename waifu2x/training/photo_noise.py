@@ -96,7 +96,7 @@ def gen_noise_image(size, ch):
     return noise
 
 
-def gaussian_noise(x, strength=0.05):
+def gaussian_noise_variants(x, strength=0.05):
     c, h, w = x.shape
     ch = 1 if random.uniform(0., 1.) < 0.5 else 3
     noise = gen_noise_image((h, w), ch)
@@ -112,7 +112,7 @@ def gaussian_8x8_masked_noise(x, strength=0.1):
     c, h, w = x.shape
     noise = gen_noise_image((h, w), 1)
     if random.choice([True, False]):
-        x = gaussian_noise(x, strength=strength * 0.5)
+        x = gaussian_noise_variants(x, strength=strength * 0.5)
 
     noise = x + noise.expand(x.shape) * strength
     return random_mask_8x8(x, noise)
@@ -227,7 +227,7 @@ class RandomPhotoNoiseX():
         elif method == 3:
             if random.choice([True, False]):
                 strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
-                x = gaussian_noise(x, strength=strength)
+                x = gaussian_noise_variants(x, strength=strength)
             else:
                 strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
                 x = gaussian_8x8_masked_noise(x, strength=strength)
@@ -278,7 +278,7 @@ def _test():
     show_op(sampling_noise, im)
     show_op(grain_noise1, im)
     show_op(grain_noise2, im)
-    show_op(gaussian_noise, im)
+    show_op(gaussian_noise_variants, im)
     show_op(gaussian_8x8_masked_noise, im)
 
     cv2.waitKey(0)
