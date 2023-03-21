@@ -2,7 +2,7 @@
 
 Generate `waifu2x/web/public_html`.
 ```
-python -m waifu2x.web.webgen.gen
+python -m waifu2x.web.webgen
 ```
 
 The following line starts the Web Server.

@@ -1,6 +1,6 @@
 ## 0. Notes
 
-Basically, I am working on Linux. I will check the work with Windows sometimes.
+Basically, I am working on Linux. I sometimes check to make sure that this code works in Windows.
 
 I am not familiar with Windows or Anaconda. If you are familiar with Anaconda, do it your way.
 
@@ -61,7 +61,7 @@ pip3 install -r requirements.txt
 
 Generate `waifu2x/web/public_html`
 ```
-python -m waifu2x.web.webgen.gen
+python -m waifu2x.web.webgen
 ```
 
 Start the web server.
