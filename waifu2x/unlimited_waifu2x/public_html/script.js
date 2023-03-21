@@ -715,6 +715,26 @@ $(function () {
             set_message("(ﾟ∀ﾟ)", 1);
         }
     });
+    $(document).on({
+        dragover: function() { return false; },
+        drop: function(e) {
+            if (!(e.originalEvent.dataTransfer && e.originalEvent.dataTransfer.files.length)) {
+                return false;
+            }
+            if (onnx_runner.running) {
+                console.log("Already running");
+                return false;
+            }
+            var file = e.originalEvent.dataTransfer;
+            if (file.files.length > 0 && file.files[0].type.match(/image/)) {
+                $("#file").get(0).files = file.files;
+                $("#file").trigger("change");
+                return false;
+            } else {
+                return false;
+            }
+        }
+    });
     $("#stop").click(() => {
         onnx_runner.stop_flag = true;
     });
