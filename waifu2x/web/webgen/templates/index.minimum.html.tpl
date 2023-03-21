@@ -17,6 +17,7 @@
       .option-box { margin: 4px; }
       .option-left { width: 120px; }
       .main-title { text-align: center; display: block; font-size: 1em; margin: 4px auto; }
+      body { background: #ccc; }
     </style>
   </head>
   <body>
