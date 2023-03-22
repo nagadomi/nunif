@@ -172,8 +172,8 @@ def sharpen(x, strength=0.1):
     return x
 
 
-def enhance_noise(original_x, noise_x, strength=0.1):
-    """ shapen noise-original diff
+def sharpen_noise(original_x, noise_x, strength=0.1):
+    """ shapen (noise added image - original image) diff
     """
     original_x = TF.to_tensor(original_x)
     noise_x = TF.to_tensor(noise_x)
@@ -184,7 +184,7 @@ def enhance_noise(original_x, noise_x, strength=0.1):
     return x
 
 
-def enhance_noise_all(x, strength=0.1):
+def sharpen_noise_all(x, strength=0.1):
     """ just sharpen image
     """
     x = TF.to_tensor(x)
@@ -209,12 +209,12 @@ class RandomJPEGNoiseX():
             x = add_jpeg_noise_qtable(x)
             if random.uniform(0, 1) < 0.5:
                 if random.uniform(0, 1) < 0.25:
-                    x = enhance_noise(original_x, x, strength=random.uniform(0.05, 0.2))
+                    x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2))
                 else:
                     # I do not want to use this because it means applying blur (inverse of sharpening) to the output.
                     # However, without this,
                     # it is difficult to remove noise applying sharpness filter after JPEG compression.
-                    x = enhance_noise_all(x, strength=random.uniform(0.1, 0.4))
+                    x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.4))
                     if random.uniform(0, 1) < 0.25:
                         x = add_jpeg_noise(x, quality=random.randint(80, 95), subsampling="4:2:0")
             return x, y
@@ -248,9 +248,9 @@ class RandomJPEGNoiseX():
             x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
             if (i == 0 and self.style == "photo" and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.2):
                 if random.uniform(0, 1) < 0.75:
-                    x = enhance_noise(original_x, x, strength=random.uniform(0.05, 0.2))
+                    x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2))
                 else:
-                    x = enhance_noise_all(x, strength=random.uniform(0.1, 0.3))
+                    x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.3))
             if random_crop and i != len(qualities) - 1:
                 x, y = shift_jpeg_block(x, y)
         return x, y
@@ -270,7 +270,7 @@ def _test_noise_level():
                 print(style, noise_level, choose_validation_jpeg_quality(index, style, noise_level))
 
 
-def _test_noise_enhance():
+def _test_noise_sharpen():
     from nunif.utils import pil_io
     import argparse
     import cv2
@@ -287,11 +287,11 @@ def _test_noise_enhance():
     while True:
         noise = add_jpeg_noise_qtable(im)
         if False:
-            x = enhance_noise_all(im, noise, 0.2)
+            x = sharpen_noise_all(im, noise, 0.2)
         else:
-            x = enhance_noise_all(noise, 0.3)
+            x = sharpen_noise_all(noise, 0.3)
         show("noise", noise)
-        show("enhance", x)
+        show("sharpen", x)
         c = cv2.waitKey(0)
         if c in {ord("q"), ord("x")}:
             break
@@ -299,4 +299,4 @@ def _test_noise_enhance():
 
 if __name__ == "__main__":
     # _test_noise_level()
-    _test_noise_enhance()
+    _test_noise_sharpen()
