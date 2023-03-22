@@ -207,14 +207,17 @@ class RandomJPEGNoiseX():
             return x, y
         if self.style == "photo" and QTABLES and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.25:
             x = add_jpeg_noise_qtable(x)
+            strength_factor = 1. if self.noise_level == 3 else 0.75
             if random.uniform(0, 1) < 0.5:
                 if random.uniform(0, 1) < 0.25:
-                    x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2))
+                    x = sharpen_noise(original_x, x,
+                                      strength=random.uniform(0.05, 0.2) * strength_factor)
                 else:
-                    # I do not want to use this because it means applying blur (inverse of sharpening) to the output.
+                    # I do not want to use this 
+                    # because it means applying blur (inverse of sharpening) to the output.
                     # However, without this,
                     # it is difficult to remove noise applying sharpness filter after JPEG compression.
-                    x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.4))
+                    x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.4) * strength_factor)
                     if random.uniform(0, 1) < 0.25:
                         x = add_jpeg_noise(x, quality=random.randint(80, 95), subsampling="4:2:0")
             return x, y

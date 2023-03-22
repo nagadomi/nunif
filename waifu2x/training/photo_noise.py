@@ -1,6 +1,7 @@
 # Random noise for Photo, made at random.
 import math
 import random
+from PIL import Image, ImageDraw
 from torchvision import transforms as T
 from torchvision.transforms import (
     functional as TF,
@@ -9,6 +10,7 @@ from torchvision.transforms import (
 import torch
 from nunif.utils.perlin2d import generate_perlin_noise_2d
 from nunif.utils import blend as B
+from .jpeg_noise import sharpen
 
 
 def random_crop(x, size):
@@ -187,6 +189,102 @@ def grain_noise2(x, strength=0.15):
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
+def structured_noise(x, strength=0.15):
+    """
+    This is intended to be scanned matte photo paper noise,
+    but it is not very nice
+    """
+    height = width = max(x.shape[1], x.shape[2])
+    # base size 15x15
+    h = random.choice([5, 7, 9, 11, 13, 15])
+    w = random.choice([5, 7, 9, 11, 13, 15])
+    pad_h = (15 - h) // 2
+    pad_w = (15 - w) // 2
+    xy = (pad_w, pad_h, pad_w + w - 1, pad_h + h - 1)
+    shape = random.choice([0, 1, 1, 1, 2])
+    if shape == 0:
+        # circle
+        kernel = Image.new("L", (15, 15), "black")
+        gc = ImageDraw.Draw(kernel)
+        gc.ellipse(xy, fill="white")
+    elif shape == 1:
+        # rectangle
+        kernel = Image.new("L", (15, 15), "black")
+        gc = ImageDraw.Draw(kernel)
+        radius = random.randint(0, min(w, h) // 2)
+        if radius == 0:
+            gc.rectangle(xy, fill="white")
+        else:
+            gc.rounded_rectangle(xy, radius=radius, fill="white")
+    elif shape == 2:
+        # checkboard
+        # 15x15 x 2x2
+        kernel = Image.new("L", (15 * 2, 15 * 2), "black")
+        gc = ImageDraw.Draw(kernel)
+        radius = random.randint(0, min(w, h) // 2)
+        if radius == 0:
+            gc.rectangle(xy, fill="white")
+            gc.rectangle([p + 15 for p in xy], fill="white")
+        else:
+            gc.rounded_rectangle(xy, radius=radius, fill="white")
+            gc.rounded_rectangle([p + 15 for p in xy], radius=radius, fill="white")
+
+    kernel = TF.to_tensor(kernel).squeeze(0)
+    if random.choice([True, False]):
+        kernel = 1. - kernel
+    scale = random.uniform(2 / 15, 5 / 15)
+    resize_w = int((width + 15) * math.sqrt(2) + 1)
+    resize_h = int((height + 15) * math.sqrt(2) + 1)
+    noise_width = int((1.0 / scale) * resize_w)
+    noise_height = int((1.0 / scale) * resize_h)
+    repeat_y = noise_height // kernel.shape[0] + 1
+    repeat_x = noise_width // kernel.shape[1] + 1
+    noise = kernel.squeeze(0).repeat(repeat_y, repeat_x).unsqueeze(0)
+    ch = 3 if random.choice([True, False]) else 1
+    if ch == 3:
+        # color noise
+        noise = noise.expand((3, noise.shape[1], noise.shape[2]))
+    noise_strength = 1 if random.choice([True, True, False]) else random.uniform(0.5, 1)
+    noise = torch.clamp(noise + torch.randn(noise.shape) * noise_strength, 0, 1)
+    noise = TF.resize(noise, (resize_h, resize_w), interpolation=InterpolationMode.BILINEAR,
+                      antialias=True)
+    if random.choice([True, False]):
+        # random blurred mask
+        max_size = max(noise.shape[1], noise.shape[2])
+        s = random.randint(max_size // (max_size // 4), max_size // (max_size // 16))
+        mask = (torch.bernoulli(torch.torch.full((1, s, s), 0.2)) + 1.) * 0.5
+        mask = TF.resize(mask, (noise.shape[1], noise.shape[2]), interpolation=InterpolationMode.BILINEAR,
+                         antialias=True)
+        noise = noise * mask
+
+    rotate = random.choice([0, 1, 1, 1, 2])
+    if rotate == 0:
+        # no rotate
+        noise = random_crop(noise, (x.shape[1], x.shape[2]))
+    else:
+        if rotate == 1:
+            # small rotate
+            angle = random.uniform(-5, 5)
+        else:
+            angle = random.uniform(0, 360)
+        noise = TF.rotate(noise, angle=angle, interpolation=InterpolationMode.BILINEAR)
+        noise = TF.center_crop(noise, (height + 15, width + 15))
+        noise = random_crop(noise, (x.shape[1], x.shape[2]))
+
+    if random.uniform(0, 1) < 0.333:
+        # sharp
+        noise = sharpen(noise, strength=random.uniform(0.05, 0.1))
+
+    if random.uniform(0, 1) < 0.2 and noise.mean() > 0.4:
+        # darken noise
+        noise = (noise - noise.max())
+    else:
+        noise = noise * 2 - 1
+        noise -= noise.mean()
+
+    return torch.clamp(x + noise * strength, 0, 1)
+
+
 NR_RATE = {
     0: 0.1,
     1: 0.1,
@@ -214,7 +312,13 @@ class RandomPhotoNoiseX():
                 return x, y
 
         x = TF.to_tensor(x)
-        method = random.choice([0, 1, 2, 3])
+        if self.noise_level in {0, 1}:
+            method = random.choice([0, 1, 2, 3])
+        elif self.noise_level in {2, 3}:
+            method = random.choice([0, 1, 2, 3, 4, 5])
+        else:
+            raise ValueError(self.noise_level)
+
         if method == 0:
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
             x = sampling_noise(x, strength=strength)
@@ -225,12 +329,15 @@ class RandomPhotoNoiseX():
             strength = random.uniform(0.02, 0.15) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise2(x, strength=strength)
         elif method == 3:
-            if random.choice([True, False]):
-                strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
-                x = gaussian_noise_variants(x, strength=strength)
-            else:
-                strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
-                x = gaussian_8x8_masked_noise(x, strength=strength)
+            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
+            x = gaussian_noise_variants(x, strength=strength)
+        elif method == 4:
+            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[self.noise_level]
+            x = structured_noise(x, strength=strength)
+        elif method == 5:
+            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
+            x = gaussian_8x8_masked_noise(x, strength=strength)
+
         x = TF.to_pil_image(x)
         return x, y
 
@@ -280,6 +387,7 @@ def _test():
     show_op(grain_noise2, im)
     show_op(gaussian_noise_variants, im)
     show_op(gaussian_8x8_masked_noise, im)
+    show_op(structured_noise, im)
 
     cv2.waitKey(0)
 
@@ -307,6 +415,30 @@ def _test_gaussian():
             break
 
 
+def _test_structured_noise():
+    from nunif.utils import pil_io
+    import argparse
+    import cv2
+
+    def show(name, im):
+        cv2.imshow(name, pil_io.to_cv2(im))
+
+    def show_op(func, a):
+        show(func.__name__, pil_io.to_image(func(pil_io.to_tensor(a))))
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
+    args = parser.parse_args()
+    im, _ = pil_io.load_image_simple(args.input)
+
+    while True:
+        show_op(structured_noise, im)
+        c = cv2.waitKey(0)
+        if c in {ord("q"), ord("x")}:
+            break
+
+
 if __name__ == "__main__":
-    _test()
+    # _test()
     # _test_gaussian()
+    _test_structured_noise()
