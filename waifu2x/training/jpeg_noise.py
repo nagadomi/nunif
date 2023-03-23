@@ -17,8 +17,8 @@ NR_RATE = {
     },
     "photo": {
         0: 0.3,
-        1: 0.3,
-        2: 0.6,
+        1: 0.6,
+        2: 1.0,
         3: 1.0,
     }
 }
@@ -116,15 +116,21 @@ def choose_jpeg_quality(style, noise_level):
         if noise_level == 0:
             qualities.append(random.randint(85, 95))
         elif noise_level == 1:
-            qualities.append(random.randint(37, 70))
-        else:
-            if random.uniform(0, 1) < 0.05:
-                quality1 = random.randint(52, 95)
+            if random.uniform(0, 1) < 0.5:
+                qualities.append(random.randint(37, 70))
             else:
-                quality1 = random.randint(37, 70)
-            qualities.append(quality1)
-            if quality1 >= 80 and random.uniform(0, 1) < 0.2:
-                qualities.append(random.randint(70, 90))
+                qualities.append(random.randint(90, 98))
+        else:
+            if noise_level == 3 or random.uniform(0, 1) < 0.6:
+                if random.uniform(0, 1) < 0.05:
+                    quality1 = random.randint(52, 95)
+                else:
+                    quality1 = random.randint(37, 70)
+                qualities.append(quality1)
+                if quality1 >= 80 and random.uniform(0, 1) < 0.2:
+                    qualities.append(random.randint(70, 90))
+            else:
+                qualities.append(random.randint(90, 98))
     else:
         raise NotImplementedError()
 
