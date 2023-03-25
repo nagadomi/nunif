@@ -72,8 +72,13 @@ def convert_swin_unet_art(model_dir, output_dir):
     scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
 
 
-
 def patch_resize_antialias(onnx_path):
+    """
+    PyTorch's onnx exporter does not support bicubic downscaling with antialias=True.
+    However, it is supported in ONNX optset 18.
+    So once exported with antialias=False,
+    then fixed antialias=True with direct ONNX file patch.
+    """
     print(f"* ONNX Patch Resize antialias: {onnx_path}")
     model = onnx.load(onnx_path)
     onnx.checker.check_model(model)
@@ -100,9 +105,6 @@ def convert_swin_unet_photo(model_dir, output_dir):
         model_4x, *_ = load_model(path.join(in_dir, f"noise{noise_level}_scale4x.pth"))
         model_2x = model_4x.to_2x()
         model_1x = model_4x.to_1x()
-        # PyTorch's onnx exporter does not support downscaling with antialias.
-        # However, it is supported in optset 18.
-        # So once exported with antialias=False, then modify it.
         model_2x.antialias = False
         model_1x.antialias = False
         model_4x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))

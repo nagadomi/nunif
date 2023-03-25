@@ -1,14 +1,13 @@
 # install from https://pytorch.org/get-started/locally/
 # torch
 # torchvision
+# torchtext
 numpy
 pillow
 tqdm
 wand >= 0.6.10
 fonttools
 scipy
-# waifu2x-web
-#gunicorn
 waitress
 bottle
 diskcache
@@ -17,3 +16,4 @@ psutil
 pyyaml
 onnx
 lpips
+# opencv-python

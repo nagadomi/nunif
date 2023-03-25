@@ -74,8 +74,8 @@ class BaseEnv(ABC):
         base_grad = base_grad * inv_scale
         second_grad = second_grad * inv_scale
         if mode == "norm":
-            base_grad_strength = torch.norm(base_grad)
-            second_grad_strength = torch.norm(second_grad) + 1e-6
+            base_grad_strength = torch.norm(base_grad, p=2)
+            second_grad_strength = torch.norm(second_grad, p=2) + 1e-6
         elif mode == "max":
             base_grad_strength = torch.max(torch.abs(base_grad))
             second_grad_strength = torch.max(torch.abs(second_grad)) + 1e-6

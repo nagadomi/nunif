@@ -7,6 +7,7 @@ def train(args):
     ARCH_SWIN_UNET = {"waifu2x.swin_unet_1x",
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x"}
+    assert args.discriminator_stop_criteria < args.generator_start_criteria
     if args.size % 4 != 0:
         raise ValueError("--size must be a multiple of 4")
     if args.arch in ARCH_SWIN_UNET and ((args.size - 16) % 12 != 0 or (args.size - 16) % 16 != 0):
@@ -99,7 +100,7 @@ def register(subparsers, default_parser):
     # GAN related options
     parser.add_argument("--discriminator", type=str,
                         help="discriminator.pth or [`l3`, `l3c`, `r3`, `r3c`].")
-    parser.add_argument("--discriminator-weight", type=float, default=0.9,
+    parser.add_argument("--discriminator-weight", type=float, default=1.0,
                         help="discriminator loss weight")
     parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss", "all"], default="psnr",
                         help=("criterion for updating the best model file. "
@@ -109,8 +110,9 @@ def register(subparsers, default_parser):
     parser.add_argument("--discriminator-stop-criteria", type=float, default=0.5,
                         help=("When the loss of the discriminator is less than the specified value,"
                               " stops training of the discriminator."
-                              " This is the limit to prevent too strong discriminator."))
-    parser.add_argument("--generator-start-criteria", type=float, default=0.7,
+                              " This is the limit to prevent too strong discriminator."
+                              " Also, the discriminator skip probability is interpolated between --generator-start-criteria and --discriminator-stop-criteria."))
+    parser.add_argument("--generator-start-criteria", type=float, default=0.9,
                         help=("When the loss of the discriminator is greater than the specified value,"
                               " stops training of the generator."
                               " This is the limit to prevent too strong generator."

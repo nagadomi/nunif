@@ -112,6 +112,17 @@ python3 train.py waifu2x --method scale4x --arch waifu2x.swin_unet_4x --data-dir
 
 See also [appendix](../appendix/).
 
+### Photo model Note
+
+For Photo model training, specify `--style photo` option. This will affect the synthetic noise image generation during training.
+
+Training with GAN has not been very successful. PSNR is higher in the later stages of training (the influence of GAN loss becomes weaker).
+Much of the positive impact compared to PSNR optimized models is due to perceptual loss.
+
+See the code below for the script used to train the current photo model.
+
+[train_photo_psnr.sh](../appendix/train_photo_psnr.sh), [train_photo_gan.sh](../appendix/train_photo_gan.sh).
+
 ## benchmark
 
 PSNR displayed during training depends on mini-batch size and input image size.

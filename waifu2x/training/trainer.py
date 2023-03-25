@@ -17,6 +17,7 @@ from nunif.modules import (
     MultiscaleLoss,
 )
 from nunif.logger import logger
+import random
 
 
 # basic training
@@ -136,6 +137,18 @@ class Waifu2xEnv(LuminancePSNREnv):
         scale_factor = get_model_config(self.model, "i2i_scale")
         return scale_factor
 
+    def calc_discriminator_skip_prob(self, d_loss):
+        start = self.trainer.args.generator_start_criteria
+        stop = self.trainer.args.discriminator_stop_criteria
+        cur = d_loss.item()
+        if cur > start:
+            return 0.
+        elif cur < stop:
+            return 1.
+        else:
+            p = (start - cur) / (start - stop)
+            return p
+
     def clear_loss(self):
         super().clear_loss()
         self.sum_p_loss = 0
@@ -172,7 +185,6 @@ class Waifu2xEnv(LuminancePSNREnv):
                         fake = z[0]
                     else:
                         fake = z
-                    fake = fake  # torch.clamp(fake, 0., 1.) * 0.99 + fake * 0.01
                     z_real = self.discriminator(fake, x, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
@@ -187,7 +199,7 @@ class Waifu2xEnv(LuminancePSNREnv):
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
-                z_fake = self.discriminator(fake.detach().clone(), x, scale_factor)
+                z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), x, scale_factor)
                 z_real = self.discriminator(y, x, scale_factor)
                 discriminator_loss = self.discriminator_criterion(z_real, z_fake)
 
@@ -209,14 +221,17 @@ class Waifu2xEnv(LuminancePSNREnv):
             optimizers = []
 
             # update generator
+            disc_skip_prob = self.calc_discriminator_skip_prob(d_loss)
             if not self.trainer.args.discriminator_only:
                 g_opt.zero_grad()
                 last_layer = get_last_layer(self.model)
-                weight = self.calculate_adaptive_weight(recon_loss, generator_loss, last_layer, grad_scaler,
-                                                        min=1e-5, max=1e2, mode="norm") * self.trainer.args.discriminator_weight
+                weight = self.calculate_adaptive_weight(
+                    recon_loss, generator_loss, last_layer, grad_scaler,
+                    min=1e-5, max=1e2, mode="norm") ** 0.9 * self.trainer.args.discriminator_weight
                 recon_weight = 1.0 / weight
-                if generator_loss > 0.05 and (d_loss < self.trainer.args.generator_start_criteria or generator_loss > 0.95):
-                    g_loss = (recon_loss * recon_weight + generator_loss) * 0.707
+                if generator_loss > 0.05 and (d_loss < self.trainer.args.generator_start_criteria or
+                                              generator_loss > 0.95):
+                    g_loss = (recon_loss * recon_weight + generator_loss) * 0.5
                 else:
                     g_loss = recon_loss * recon_weight
                 self.sum_loss += g_loss.item()
@@ -225,11 +240,12 @@ class Waifu2xEnv(LuminancePSNREnv):
                 optimizers.append(g_opt)
 
                 logger.debug(f"recon: {round(recon_loss.item(), 4)}, gen: {round(generator_loss.item(), 4)}, "
-                             f"disc: {round(d_loss.item(), 4)}, weight: {round(weight, 6)}")
+                             f"disc: {round(d_loss.item(), 4)}, weight: {round(weight, 6)}, "
+                             f"disc skip: {round(disc_skip_prob, 3)}")
 
             # update discriminator
             d_opt.zero_grad()
-            if d_loss > self.trainer.args.discriminator_stop_criteria:
+            if not (random.uniform(0., 1.) < disc_skip_prob):
                 self.backward(d_loss, grad_scaler)
                 optimizers.append(d_opt)
 
