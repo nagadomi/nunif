@@ -49,6 +49,30 @@ class LocalSEBlock(nn.Module):
         return x * F.interpolate(z, size=(h, w), mode='nearest')
 
 
+class AdaptiveSEBlock(nn.Module):
+    """
+    NOTE: if the input size is not a multiple of the output size,
+    miss alignment may occur due to nearest upsampler.
+    """
+    def __init__(self, in_channels, output_size=(2, 2), reduction=8, bias=False):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, in_channels // reduction, 1, 1, 0, bias=bias)
+        self.conv2 = nn.Conv2d(in_channels // reduction, in_channels, 1, 1, 0, bias=bias)
+        self.output_size = output_size
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        assert (c == self.conv1.in_channels)
+
+        z = F.adaptive_avg_pool2d(x, output_size=self.output_size)
+        z = self.conv1(z)
+        z = F.relu(z, inplace=True)
+        z = self.conv2(z)
+        z = torch.sigmoid(z)
+
+        return x * F.interpolate(z, size=(h, w), mode='nearest')
+
+
 class EmptySEBlock(nn.Module):
     def __init__(self, *args):
         super().__init__()
