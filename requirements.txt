@@ -17,3 +17,4 @@ pyyaml
 onnx
 lpips
 # opencv-python
+packaging
