@@ -34,7 +34,7 @@ DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     "swin_unet", "art"))
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
-    "upconv_7", "photo"))
+    "swin_unet", "photo"))
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
