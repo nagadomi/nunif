@@ -119,7 +119,7 @@ class BaseEnv(ABC):
     def check_nan(loss):
         losses = loss if isinstance(loss, (list, tuple)) else [loss]
         for loss in (losses):
-            if torch.isnan(loss).any().item():
+            if torch.is_tensor(loss) and torch.isnan(loss).any().item():
                 raise FloatingPointError("loss is NaN")
 
     def train(self, loader, optimizers, schedulers, grad_scaler, backward_step=1):
@@ -131,10 +131,11 @@ class BaseEnv(ABC):
         t = 1
         for data in tqdm(loader, ncols=80):
             loss = self.train_step(data)
-            if isinstance(loss, (list, tuple)):
-                loss = [l / backward_step for l in loss]
-            else:
-                loss = loss / backward_step
+            if backward_step > 1:
+                if isinstance(loss, (list, tuple)):
+                    loss = [l / backward_step for l in loss]
+                else:
+                    loss = loss / backward_step
             self.train_loss_hook(data, loss)
             self.check_nan(loss)
             self.train_backward_step(loss, optimizers, grad_scaler,
