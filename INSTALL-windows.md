@@ -4,15 +4,17 @@ Basically, I am working on Linux. I sometimes check to make sure that this code 
 
 I am not familiar with Windows or Anaconda. If you are familiar with Anaconda, do it your way.
 
-## 1. Install dependencies packages
+## 1. Install dependencies packages (Optional)
 
 #### Install ImageMagick
 
+NOTE: ImageMagick(wand) is only required for training and benchmark.
+
 See [Install ImageMagick on Windows](https://docs.wand-py.org/en/0.6.10/guide/install.html?highlight=windows#install-imagemagick-on-windows).
 
-Note: ImageMagick(wand) is not required to run `waifu2x.web` or `waifu2x.cli`. It is used in training codes and benchmarks.
+#### Install libraqm.dll
 
-#### Install libraqm.dll (Only required for synthetic training data generation)
+NOTE: libraqm is only required for synthetic training data generation.
 
 Download `libraqm‑0.7.1.dll.zip` from https://www.lfd.uci.edu/~gohlke/pythonlibs/#pillow .
 
@@ -59,6 +61,11 @@ pip3 install -r requirements.txt
 
 ## 6. Run waifu2x.web
 
+Download pre-trained models.
+```
+python -m waifu2x.download_models
+```
+
 Generate `waifu2x/web/public_html`
 ```
 python -m waifu2x.web.webgen
@@ -81,3 +88,7 @@ pip3 install --upgrade pillow
 ```
 
 This seems to be a problem with the pillow that is installed by conda by default.
+
+
+
+See also [waifu2x README.md](waifu2x/README.md).
