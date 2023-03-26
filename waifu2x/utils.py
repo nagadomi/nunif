@@ -5,7 +5,11 @@ import torch.nn.functional as F
 from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
 from nunif.utils.alpha import AlphaBorderPadding
-from nunif.models import load_model, get_model_config, data_parallel_model, call_model_method
+from nunif.models import (
+    load_model, get_model_config,
+    data_parallel_model, call_model_method,
+    compile_model,
+)
 from nunif.logger import logger
 
 
@@ -31,24 +35,20 @@ class Waifu2x():
 
     def _setup(self):
         if self.scale_model is not None:
-            self.scale_model = self.scale_model.to(self.device)
-            self.scale_model.eval()
+            self.scale_model = compile_model(self.scale_model.to(self.device).eval())
         if self.scale4x_model is not None:
-            self.scale4x_model = self.scale4x_model.to(self.device)
-            self.scale4x_model.eval()
+            self.scale4x_model = compile_model(self.scale4x_model.to(self.device).eval())
 
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
-                self.noise_models[i] = self.noise_models[i].to(self.device)
-                self.noise_models[i].eval()
+                self.noise_models[i] = compile_model(self.noise_models[i].to(self.device).eval())
 
             if self.noise_scale_models[i] is not None:
-                self.noise_scale_models[i] = self.noise_scale_models[i].to(self.device)
-                self.noise_scale_models[i].eval()
+                self.noise_scale_models[i] = compile_model(self.noise_scale_models[i].to(self.device).eval())
 
             if self.noise_scale4x_models[i] is not None:
-                self.noise_scale4x_models[i] = self.noise_scale4x_models[i].to(self.device)
-                self.noise_scale4x_models[i].eval()
+                self.noise_scale4x_models[i] = compile_model(
+                    self.noise_scale4x_models[i].to(self.device).eval())
 
     def _load_model(self, method, noise_level):
         if method == "scale4x":
