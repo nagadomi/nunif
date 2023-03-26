@@ -81,6 +81,8 @@ def register(subparsers, default_parser):
                         help="random unsharp mask data argumentation for gt image")
     parser.add_argument("--da-grayscale-p", type=float, default=0.0,
                         help="random grayscale data argumentation for gt image")
+    parser.add_argument("--da-color-p", type=float, default=0.0,
+                        help="random color jitter data argumentation for gt image")
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of resize blur."
                               " 0.0-0.1 is a reasonable value."

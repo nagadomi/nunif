@@ -64,6 +64,7 @@ def create_criterion(loss):
             weight=(1.0, 0.5))
     elif loss == "l1lpips":
         from nunif.modules.lpips import LPIPSWith
+        # weight=0.1, gradient norm is about the same as L1Loss.
         criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.8)
     elif loss == "l1lpipsm":
         from nunif.modules.lpips import LPIPSWith
@@ -188,9 +189,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                     z_real = self.discriminator(fake, x, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
-
                     self.sum_p_loss += recon_loss.item()
                     self.sum_g_loss += generator_loss.item()
+
+                    # loss weight will be recalculated later,
+                    # but multiplied by 10 here to reduce the gap.
+                    # (gradient norm of generator_loss is 10-100x larger than recon_loss)
+                    recon_loss = recon_loss * 10
                 else:
                     with torch.no_grad():
                         z = self.model(x)
@@ -227,10 +232,10 @@ class Waifu2xEnv(LuminancePSNREnv):
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
-                    min=1e-5, max=1e2, mode="norm") ** 0.9 * self.trainer.args.discriminator_weight
+                    min=1e-5, max=1e2, mode="norm") * self.trainer.args.discriminator_weight
                 recon_weight = 1.0 / weight
-                if generator_loss > 0.05 and (d_loss < self.trainer.args.generator_start_criteria or
-                                              generator_loss > 0.95):
+                if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
+                                             generator_loss > 0.95):
                     g_loss = (recon_loss * recon_weight + generator_loss) * 0.5
                 else:
                     g_loss = recon_loss * recon_weight
@@ -397,6 +402,7 @@ class Waifu2xTrainer(Trainer):
                 da_chshuf_p=self.args.da_chshuf_p,
                 da_unsharpmask_p=self.args.da_unsharpmask_p,
                 da_grayscale_p=self.args.da_grayscale_p,
+                da_color_p=self.args.da_color_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,

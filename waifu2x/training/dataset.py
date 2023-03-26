@@ -189,7 +189,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  model_offset,
                  scale_factor,
                  tile_size, num_samples=None,
-                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0, da_grayscale_p=0,
+                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0, da_grayscale_p=0, da_color_p=0,
                  bicubic_only=False,
                  deblur=0, resize_blur_p=0.1,
                  noise_level=-1, style=None,
@@ -242,6 +242,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             y_min_size = tile_size * scale_factor + (8 * 2 * scale_factor)
             self.gt_transforms = T.Compose([
                 T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
+                T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)],
+                              p=da_color_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
                 T.RandomApply([RandomUnsharpMask()], p=da_unsharpmask_p),
                 # TODO: maybe need to prevent color noise for grayscale
