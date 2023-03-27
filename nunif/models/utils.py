@@ -1,6 +1,7 @@
 from packaging import version as packaging_version
 import torch
 from datetime import datetime, timezone
+from collections import OrderedDict
 import torch.nn as nn
 from . register import create_model
 from . model import Model
@@ -114,3 +115,30 @@ def compile_model(model, **kwargs):
     if PYTORCH2:
         model = torch.compile(model, **kwargs)
     return model
+
+
+def merge_state_dict(a, b, alpha=0.5):
+    """
+    NOTE: This only works when `a` and `b` are finetuned models of the same original model.
+          Also constraints may be broken. Should always be verified to work.
+    """
+    assert a.keys() == b.keys()
+    c = OrderedDict()
+    for k in a.keys():
+        c[k] = a[k] * alpha + b[k] * (1. - alpha)
+    return c
+
+
+def mean_state_dict(dicts):
+    assert len(dicts) > 0
+    a = dicts[0]
+    assert all(a.keys() == d.keys() for d in dicts)
+    mean = OrderedDict()
+    scale = 1. / len(dicts)
+    for k in a.keys():
+        for d in dicts:
+            if k not in mean:
+                mean[k] = d[k] * scale
+            else:
+                mean[k] += d[k] * scale
+    return mean
