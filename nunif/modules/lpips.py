@@ -4,10 +4,9 @@ import lpips
 from os import path
 
 
-if False:
-    MODEL_PATH = None
-else:
-    MODEL_PATH = path.join(path.dirname(__file__), "_lpips_1.pth")
+# MODEL_PATH = None
+# MODEL_PATH = path.join(path.dirname(__file__), "_lpips_1.pth")
+MODEL_PATH = path.join(path.dirname(__file__), "_lpips_2.pth")
 
 
 class LPIPSWith(nn.Module):
