@@ -396,6 +396,13 @@ class Waifu2xTrainer(Trainer):
         else:
             raise NotImplementedError()
 
+        dataloader_extra_options = {}
+        if self.args.num_workers > 0:
+            dataloader_extra_options.update({
+                "prefetch_factor": self.args.prefetch_factor,
+                "persistent_workers": True
+            })
+
         if type == "train":
             dataset = Waifu2xDataset(
                 input_dir=path.join(self.args.data_dir, "train"),
@@ -423,10 +430,9 @@ class Waifu2xTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 sampler=self.sampler,
-                persistent_workers=True,
                 num_workers=self.args.num_workers,
-                prefetch_factor=self.args.prefetch_factor,
-                drop_last=True)
+                drop_last=True,
+                **dataloader_extra_options)
             return dataloader
         elif type == "eval":
             dataset = Waifu2xDataset(
@@ -442,10 +448,9 @@ class Waifu2xTrainer(Trainer):
                 dataset, batch_size=self.args.batch_size,
                 worker_init_fn=dataset.worker_init,
                 shuffle=False,
-                persistent_workers=True,
                 num_workers=self.args.num_workers,
-                prefetch_factor=self.args.prefetch_factor,
-                drop_last=False)
+                drop_last=False,
+                **dataloader_extra_options)
             return dataloader
 
     def create_filename_prefix(self):
