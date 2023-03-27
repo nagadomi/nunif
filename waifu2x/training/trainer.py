@@ -3,6 +3,7 @@ import sys
 from time import time
 import torch
 from . dataset import Waifu2xDataset
+from nunif.training.sampler import MiningMethod
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import (
@@ -116,23 +117,25 @@ def inf_loss():
 class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
-                 discriminator_criterion):
+                 discriminator_criterion,
+                 sampler):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
+        self.sampler = sampler
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
         if self.trainer.args.hard_example == "none":
             return
-        dataset = self.trainer.train_loader.dataset
+
         index = data[-1]
         if self.discriminator is None:
-            dataset.update_hard_example_losses(index, loss.item())
+            self.sampler.update_losses(index, loss.item())
         else:
             recon_loss, generator_loss, d_loss = loss
             if not self.trainer.args.discriminator_only:
-                dataset.update_hard_example_losses(index, recon_loss.item())
+                self.sampler.update_losses(index, recon_loss.item())
 
     def get_scale_factor(self):
         scale_factor = get_model_config(self.model, "i2i_scale")
@@ -260,8 +263,7 @@ class Waifu2xEnv(LuminancePSNREnv):
     def train_end(self):
         # update sampler
         if self.trainer.args.hard_example != "none":
-            dataset = self.trainer.train_loader.dataset
-            dataset.update_hard_example_weights()
+            self.sampler.update_weights()
 
         # show loss
         mean_loss = self.sum_loss / self.sum_step
@@ -342,11 +344,18 @@ class Waifu2xTrainer(Trainer):
             discriminator_criterion = None
         return Waifu2xEnv(self.model, criterion=criterion,
                           discriminator=self.discriminator,
-                          discriminator_criterion=discriminator_criterion)
+                          discriminator_criterion=discriminator_criterion,
+                          sampler=self.sampler)
 
     def setup(self):
-        dataset = self.train_loader.dataset
-        dataset.set_hard_example(self.args.hard_example, self.args.hard_example_scale)
+        method = self.args.hard_example
+        if method == "top10":
+            self.sampler.method = MiningMethod.TOP10
+        elif method == "top20":
+            self.sampler.method = MiningMethod.TOP20
+        elif method == "linear":
+            self.sampler.method = MiningMethod.LINEAR
+        self.sampler.scale_factor = self.args.hard_example_scale
 
     def setup_model(self):
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
@@ -407,16 +416,18 @@ class Waifu2xTrainer(Trainer):
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,
             )
-            return torch.utils.data.DataLoader(
+            self.sampler = dataset.create_sampler()
+            dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.args.batch_size,
                 worker_init_fn=dataset.worker_init,
                 shuffle=False,
                 pin_memory=True,
-                sampler=dataset.sampler(),
+                sampler=self.sampler,
                 persistent_workers=True,
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
                 drop_last=True)
+            return dataloader
         elif type == "eval":
             dataset = Waifu2xDataset(
                 input_dir=path.join(self.args.data_dir, "eval"),
@@ -427,7 +438,7 @@ class Waifu2xTrainer(Trainer):
                 tile_size=self.args.size,
                 deblur=self.args.deblur,
                 training=False)
-            return torch.utils.data.DataLoader(
+            dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.args.batch_size,
                 worker_init_fn=dataset.worker_init,
                 shuffle=False,
@@ -435,6 +446,7 @@ class Waifu2xTrainer(Trainer):
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
                 drop_last=False)
+            return dataloader
 
     def create_filename_prefix(self):
         if self.args.method == "scale":

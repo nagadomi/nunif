@@ -138,47 +138,29 @@ class AntialiasX():
 
 
 class Waifu2xDatasetBase(Dataset):
-    def __init__(self, input_dir, num_samples=None,
+    def __init__(self, input_dir, num_samples,
                  hard_example_history_size=6):
         super().__init__()
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
         self.num_samples = num_samples
-        if num_samples is not None:
-            self._sampler = HardExampleSampler(
-                torch.ones((len(self),), dtype=torch.double),
-                num_samples=num_samples,
-                method=MiningMethod.TOP10,
-                history_size=hard_example_history_size,
-                scale_factor=4.,
-            )
-        else:
-            self._sampler = None
+        self.hard_example_history_size = hard_example_history_size
 
-    def __len__(self):
-        return len(self.files)
+    def create_sampler(self):
+        return HardExampleSampler(
+            torch.ones((len(self),), dtype=torch.double),
+            num_samples=self.num_samples,
+            method=MiningMethod.TOP10,
+            history_size=self.hard_example_history_size,
+            scale_factor=4.,
+        )
 
     def worker_init(self, worker_id):
         pass
 
-    def sampler(self):
-        return self._sampler
-
-    def set_hard_example(self, method, scale_factor=4.):
-        if method == "top10":
-            self._sampler.method = MiningMethod.TOP10
-        elif method == "top20":
-            self._sampler.method = MiningMethod.TOP20
-        elif method == "linear":
-            self._sampler.method = MiningMethod.LINEAR
-        self._sampler.scale_factor = scale_factor
-
-    def update_hard_example_losses(self, indexes, loss):
-        self._sampler.update_losses(indexes, loss)
-
-    def update_hard_example_weights(self):
-        self._sampler.update_weights()
+    def __len__(self):
+        return len(self.files)
 
     def __getitem__(self, index):
         return self.files[index]
