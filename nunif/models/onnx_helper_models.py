@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torchvision.transforms import functional as TF
+import onnx
 import copy
 from .model import I2IBaseModel
 from ..utils.alpha import ChannelWiseSum
@@ -227,6 +228,57 @@ class ONNXScale1x(I2IBaseModel):
         )
 
 
+class ONNXAntialias(I2IBaseModel):
+    def __init__(self):
+        super().__init__({}, scale=1, offset=0, in_channels=3)
+
+    def forward(self, x: torch.Tensor):
+        B, C, H, W = x.shape
+        x = F.interpolate(x, size=(H * 2, W * 2), mode="bilinear", align_corners=False, antialias=False)
+        x = F.interpolate(x, size=(H, W), mode="bicubic", align_corners=False, antialias=False)
+        return x
+
+    def export_onnx(self, f, **kwargs):
+        kwargs["opset_version"] = 18
+        x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
+        model = self.to_inference_model()
+        torch.onnx.export(
+            model,
+            x,
+            f,
+            input_names=["x"],
+            output_names=["y"],
+            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
+                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            **kwargs
+        )
+        patch_resize_antialias(f, "/Resize_1")
+
+
+def patch_resize_antialias(onnx_path, name=None):
+    """
+    PyTorch's onnx exporter does not support bicubic downscaling with antialias=True.
+    However, it is supported in ONNX optset 18.
+    So once exported with antialias=False,
+    then fixed antialias=True with ONNX file patch.
+    """
+    print(f"* ONNX Patch Resize antialias: {onnx_path}")
+    model = onnx.load(onnx_path)
+    onnx.checker.check_model(model)
+    assert model.opset_import[0].version >= 18
+
+    for node in model.graph.node:
+        if node.op_type == "Resize":
+            if name is None or name == node.name:
+                antialias = onnx.helper.make_attribute("antialias", 1)
+                node.attribute.extend([antialias])
+                for attribute in node.attribute:
+                    print(attribute)
+
+    onnx.checker.check_model(model)
+    onnx.save(model, onnx_path)
+
+
 def _test_pad():
     import onnx
     pad = ONNXReflectionPadding()
@@ -262,7 +314,6 @@ def _test_alpha_border():
     import cv2
     from ..utils.alpha import AlphaBorderPadding
     from ..utils import pil_io
-
 
     pad = ONNXAlphaBorderPadding()
     pad.export_onnx("./tmp/alpha_border_padding.onnx")

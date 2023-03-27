@@ -520,6 +520,11 @@ const onnx_runner = {
         // squeeze
         return new ort.Tensor("float32", out.y.data, [1, out.y.dims[0], out.y.dims[1], out.y.dims[2]]);
     },
+    antialias: async function(x) {
+        const ses = await onnx_session.get_session(CONFIG.get_helper_model_path("antialias"));
+        var out = await ses.run({"x": x});
+        return out.y;
+    },
 };
 
 /* UI */
