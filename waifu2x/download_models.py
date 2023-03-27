@@ -11,8 +11,11 @@ class ModelDownloader(ArchiveDownloader):
         logger.debug(f"Downloder: {self.name}: copytree: {src} -> {dst}")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
-
-if __name__ == "__main__":
+def main():
     MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_20230202.zip"
     downloder = ModelDownloader(MODEL_URL, name="Waifu2x Models", format="zip")
     downloder.run()
+
+
+if __name__ == "__main__":
+    main()

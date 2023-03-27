@@ -15,6 +15,7 @@ from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
 from .utils import Waifu2x
+from .download_models import main as download_main
 
 
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
@@ -147,4 +148,10 @@ if __name__ == "__main__":
     elif args.method == "noise_scale2x":
         args.method = "noise_scale"
 
+    # download models
+    pretrained_model_dir = path.join(path.dirname(__file__), "pretrained_models")
+    if not path.exists(pretrained_model_dir):
+        download_main()
+
+    # main
     main(args)
