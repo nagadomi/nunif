@@ -409,7 +409,7 @@ def _test_gaussian():
     im, _ = pil_io.load_image_simple(args.input)
 
     while True:
-        show_op(gaussian_noise, im)
+        show_op(gaussian_noise_variants, im)
         c = cv2.waitKey(0)
         if c in {ord("q"), ord("x")}:
             break

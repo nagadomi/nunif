@@ -127,7 +127,8 @@ class ReflectionResize():
             self.size = size
 
     def __call__(self, x):
-        x = pad(x, self.size, mode=="reflect")
+        w, h = x.size
+        x = pad(x, self.size, mode="reflect")
         if w > self.size[0] or h > self.size[1]:
             i, j, h, w = T.RandomCrop.get_params(x, self.size)
             x = TF.crop(x, i, j, h, w)

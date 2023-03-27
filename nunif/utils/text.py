@@ -20,7 +20,7 @@ def separate_speech_lines(text):
                          for regex in SPEECH_BLOCK_PATTERNS], [])
 
     non_speech_text = text
-    for block in sorted(speech_blocks, key=lambda l: len(l), reverse=True):
+    for block in sorted(speech_blocks, key=lambda line: len(line), reverse=True):
         non_speech_text = non_speech_text.replace(block, "")
     non_speech_text = re.sub(r"[\r\n]+", "\n", non_speech_text)
     non_speech_blocks = [block for block in non_speech_text.split("\n")

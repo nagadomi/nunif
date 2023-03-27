@@ -8,7 +8,7 @@ class MultiscaleLoss(nn.Module):
     """
     def __init__(self, module, scale_factors=(1, 2), weights=(0.8, 0.2), mode="bicubic"):
         super().__init__()
-        assert(len(scale_factors) == len(weights))
+        assert len(scale_factors) == len(weights)
         self.module = module
         self.scale_factors = scale_factors
         self.weights = weights

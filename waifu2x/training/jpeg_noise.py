@@ -219,7 +219,7 @@ class RandomJPEGNoiseX():
                     x = sharpen_noise(original_x, x,
                                       strength=random.uniform(0.05, 0.2) * strength_factor)
                 else:
-                    # I do not want to use this 
+                    # I do not want to use this
                     # because it means applying blur (inverse of sharpening) to the output.
                     # However, without this,
                     # it is difficult to remove noise applying sharpness filter after JPEG compression.

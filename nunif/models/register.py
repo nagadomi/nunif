@@ -50,7 +50,7 @@ def create_model(name, device_ids=None, **kwargs):
                 elif torch.backends.mps.is_available():
                     device = 'mps:{}'.format(device_ids[0])
                 else:
-                    raise ValueError(f"No cuda/mps available. Use `--gpu -1` for CPU.")
+                    raise ValueError("No cuda/mps available. Use `--gpu -1` for CPU.")
             model = model.to(device)
 
     return model

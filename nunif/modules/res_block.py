@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from .pad import Pad
 from .norm import FRN2d, TLU2d
 from .attention import SEBlock
 from torch.nn.utils.parametrizations import spectral_norm
@@ -97,8 +96,8 @@ def ResBlockLReLU(in_channels, out_channels, stride=1, bias=True,
 
 
 def ResBlockGNLReLU(in_channels, out_channels, stride=1, bias=True,
-                  padding_mode="zeros", valid_stride=True, dilation=1,
-                  gn_group=32):
+                    padding_mode="zeros", valid_stride=True, dilation=1,
+                    gn_group=32):
     return ResBlock(
         in_channels, out_channels, stride, bias,
         padding_mode=padding_mode,
@@ -166,8 +165,6 @@ def ResBlockFRN(in_channels, out_channels, stride=1, bias=False,
         norm_layer=lambda dim: FRN2d(dim),
         activation_layer=lambda dim: TLU2d(dim),
         valid_stride=valid_stride, dilation=dilation)
-
-
 
 
 class ResGroup(nn.Module):

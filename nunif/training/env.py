@@ -133,7 +133,7 @@ class BaseEnv(ABC):
             loss = self.train_step(data)
             if backward_step > 1:
                 if isinstance(loss, (list, tuple)):
-                    loss = [l / backward_step for l in loss]
+                    loss = [ls / backward_step for ls in loss]
                 else:
                     loss = loss / backward_step
             self.train_loss_hook(data, loss)
