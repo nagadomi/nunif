@@ -33,21 +33,30 @@ class Waifu2x():
         self.model_dir = model_dir
         self.alpha_pad = AlphaBorderPadding()
 
+    def _compile_model(self, model):
+        # currently disabled
+        # very slow and low accuracy.
+        if False:
+            return compile_model(model)
+        else:
+            return model
+
     def _setup(self):
         if self.scale_model is not None:
-            self.scale_model = compile_model(self.scale_model.to(self.device).eval())
+            self.scale_model = self._compile_model(self.scale_model.to(self.device).eval())
         if self.scale4x_model is not None:
-            self.scale4x_model = compile_model(self.scale4x_model.to(self.device).eval())
+            self.scale4x_model = self._compile_model(self.scale4x_model.to(self.device).eval())
 
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
-                self.noise_models[i] = compile_model(self.noise_models[i].to(self.device).eval())
+                self.noise_models[i] = self._compile_model(self.noise_models[i].to(self.device).eval())
 
             if self.noise_scale_models[i] is not None:
-                self.noise_scale_models[i] = compile_model(self.noise_scale_models[i].to(self.device).eval())
+                self.noise_scale_models[i] = self._compile_model(
+                    self.noise_scale_models[i].to(self.device).eval())
 
             if self.noise_scale4x_models[i] is not None:
-                self.noise_scale4x_models[i] = compile_model(
+                self.noise_scale4x_models[i] = self._compile_model(
                     self.noise_scale4x_models[i].to(self.device).eval())
 
     def _load_model(self, method, noise_level):
