@@ -12,10 +12,9 @@ from nunif.models import Model, get_model_device
 from nunif.modules import functional as NF
 from nunif.training.env import UnsupervisedEnv
 from nunif.training.trainer import Trainer, create_trainer_default_parser
-from nunif.modules.res_block import ResBlock as _ResBlock, ResGroup as _ResGroup
-from nunif.modules.attention import SEBlock
+from nunif.modules.res_block import ResBlockSELReLU, ResGroup
 from nunif.modules.embedding import PositionalSeeding
-from nunif.modules import ClampLoss, LBPLoss, CharbonnierLoss, LuminanceWeightedLoss
+from nunif.modules import ClampLoss, LBPLoss, LuminanceWeightedLoss
 
 
 IMAGE_SIZE = 64
@@ -54,50 +53,26 @@ class CelebADataset(torch.utils.data.Dataset):
         return x
 
 
-class ResBlock(_ResBlock):
-    def __init__(self, in_channels, out_channels, stride, se):
-        self.se = se
-        super().__init__(in_channels, out_channels, stride)
-
-    def bias_enabled(self):
-        return True
-
-    def padding_mode(self):
-        return "replicate"
-
-    def create_activate_function(self):
-        return nn.LeakyReLU(0.2, inplace=True)
-
-    def create_norm_layer(self, in_channels):
-        return nn.Identity()
-
-    def create_attention_layer(self, in_channels):
-        if self.se:
-            return SEBlock(in_channels, bias=True)
-        else:
-            return nn.Identity()
+def res_block(in_channels, out_channels, stride):
+    return ResBlockSELReLU(in_channels, out_channels, stride, padding_mode="replicate", se=True)
 
 
-class ResGroup(_ResGroup):
-    def __init__(self, in_channels, out_channels, num_layers, stride, se):
-        self.se = se
-        super().__init__(in_channels, out_channels, num_layers, stride)
-
-    def create_layer(self, in_channels, out_channels, stride):
-        return ResBlock(in_channels, out_channels, stride, se=self.se)
+def res_block_nose(in_channels, out_channels, stride):
+    return ResBlockSELReLU(in_channels, out_channels, stride, padding_mode="replicate", se=False)
 
 
 class Encoder(nn.Module):
     def __init__(self, feat_dim):
         super().__init__()
+
         self.net = nn.Sequential(
             # 64x64
-            ResGroup(3, 32, num_layers=1, stride=1, se=False),
-            ResGroup(32, 64, num_layers=2, stride=2, se=True),
+            ResGroup(3, 32, num_layers=1, stride=1, layer=res_block_nose),
+            ResGroup(32, 64, num_layers=2, stride=2, layer=res_block),
             # 32x32
-            ResGroup(64, 128, num_layers=2, stride=2, se=True),
+            ResGroup(64, 128, num_layers=2, stride=2, layer=res_block),
             # 16x16
-            ResGroup(128, 256, num_layers=2, stride=2, se=True),
+            ResGroup(128, 256, num_layers=2, stride=2, layer=res_block),
             # 8x8
             nn.Flatten(),
             nn.Linear(256 * 8 * 8, feat_dim),
@@ -126,15 +101,15 @@ class Decoder(nn.Module):
         self.seeding = PositionalSeeding(in_channels=latent_dim, out_channels=256, upscale_factor=8)
         self.up1 = nn.Sequential(
             # 8x8
-            ResGroup(256, 256, num_layers=2, stride=1, se=True),
+            ResGroup(256, 256, num_layers=2, stride=1, layer=res_block),
             Up2x(256))
         self.up2 = nn.Sequential(
             # 16x16
-            ResGroup(256, 128, num_layers=2, stride=1, se=True),
+            ResGroup(256, 128, num_layers=2, stride=1, layer=res_block),
             Up2x(128))
         self.up3 = nn.Sequential(
             # 32x32
-            ResGroup(128, 64, num_layers=2, stride=1, se=False),
+            ResGroup(128, 64, num_layers=2, stride=1, layer=res_block_nose),
             Up2x(64))
         # 64x64
         self.final_conv = nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1, padding_mode="replicate")

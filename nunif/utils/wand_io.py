@@ -4,7 +4,7 @@ from wand.api import library
 from wand.color import Color
 import io
 from PIL import ImageCms
-from ..transforms.functional import quantize256, quantize65535
+from ..transforms.functional import quantize256
 
 
 sRGB_profile = ImageCms.core.profile_tobytes(ImageCms.createProfile("sRGB"))

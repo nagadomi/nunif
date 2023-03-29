@@ -13,12 +13,14 @@ from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
 from .weight_decay_config import configure_adamw
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 
 
 class Trainer(ABC):
     def __init__(self, args):
         self.args = args
         self.initialized = False
+        self.runtime_id = datetime.now(timezone.utc).astimezone().strftime('%Y%m%d%H%M%S')
 
     def initialize(self):
         if self.initialized:
@@ -32,19 +34,21 @@ class Trainer(ABC):
         set_seed(self.args.seed)
 
         self.model = self.create_model()
+        if self.args.checkpoint_file is not None:
+            self.load_initial_parameters(self.args.checkpoint_file)
+        self.setup_model()
+
         self.train_loader = self.create_dataloader(type="train")
         self.eval_loader = self.create_dataloader(type="eval")
-        self.optimizer = self.create_optimizer()
-        self.scheduler = self.create_scheduler()
-        self.grad_scaler = self.create_grad_scaler()
         self.best_model_filename = self.create_best_model_filename()
         self.epoch = 1
         self.start_epoch = 1
         self.best_loss = 1000000000
+        self.optimizers = self.create_optimizers()
+        self.schedulers = self.create_schedulers(self.optimizers)
+        self.grad_scaler = self.create_grad_scaler()
         if self.args.resume:
             self.resume()
-        elif self.args.checkpoint_file is not None:
-            self.load_initial_parameters(self.args.checkpoint_file)
         self.env = self.create_env()
         self.env.trainer = self
 
@@ -53,7 +57,19 @@ class Trainer(ABC):
         self.env.set_amp_dtype(torch.bfloat16 if self.args.amp_float == "bfloat16" else torch.float16)
         self.setup()
 
+    def shutdown(self):
+        if self.train_loader is not None:
+            del self.train_loader
+            self.train_loader = None
+
+        if self.eval_loader is not None:
+            del self.eval_loader
+            self.eval_loader = None
+
     def setup(self):
+        pass
+
+    def setup_model(self):
         pass
 
     def amp_is_enabled(self):
@@ -63,28 +79,45 @@ class Trainer(ABC):
         latest_checkpoint_filename = self.create_checkpoint_filename()
         _, meta = load_model(latest_checkpoint_filename, model=self.model)
         if not self.args.reset_state:
-            self.optimizer.load_state_dict(meta["optimizer_state_dict"])
-            self.scheduler.load_state_dict(meta["scheduler_state_dict"])
+            if not isinstance(meta["optimizer_state_dict"], (list, tuple)):
+                self.optimizers[0].load_state_dict(meta["optimizer_state_dict"])
+            else:
+                for i, optimizer_state_dict in enumerate(meta["optimizer_state_dict"]):
+                    self.optimizers[i].load_state_dict(optimizer_state_dict)
+            if not isinstance(meta["scheduler_state_dict"], (list, tuple)):
+                self.schedulers[0].load_state_dict(meta["scheduler_state_dict"])
+            else:
+                for i, scheduler_state_dict in enumerate(meta["scheduler_state_dict"]):
+                    self.schedulers[i].load_state_dict(scheduler_state_dict)
             self.grad_scaler.load_state_dict(meta["grad_scaler_state_dict"])
             self.start_epoch = meta["last_epoch"] + 1
             self.best_loss = meta["best_loss"]
         print(f"* load checkpoint from {latest_checkpoint_filename}")
+        return meta
 
     def load_initial_parameters(self, checkpoint_filename):
         load_model(checkpoint_filename, model=self.model)
+
+    @staticmethod
+    def _lr_format(schedulers):
+        lrs = []
+        for scheduler in schedulers:
+            lrs.append("[" + ", ".join([format(lr, '.3g') for lr in scheduler.get_last_lr()]) + "]")
+        return "[" + ", ".join(lrs) + "]"
 
     def fit(self):
         self.initialize()
         for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
             print("-" * 64)
-            print(f" epoch: {self.epoch}, lr: {self.scheduler.get_last_lr()}")
+            print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
             print("--\n train")
             self.env.train(
                 loader=self.train_loader,
-                optimizer=self.optimizer,
-                grad_scaler=self.grad_scaler)
-            self.scheduler.step()
-
+                optimizers=self.optimizers,
+                schedulers=self.schedulers,
+                grad_scaler=self.grad_scaler,
+                backward_step=self.args.backward_step,
+            )
             print("--\n eval")
             loss = self.env.eval(self.eval_loader)
             if loss is None:
@@ -94,41 +127,56 @@ class Trainer(ABC):
                 self.best_loss = loss
                 self.save_best_model()
             self.save_checkpoint()
+        self.shutdown()
 
     def create_model(self):
         return create_model(self.args.arch, device_ids=self.args.gpu)
 
-    def create_optimizer(self):
-        # TODO: support more optimizer if needed
-        if self.args.optimizer == "adam":
-            return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
-        elif self.args.optimizer == "adamw":
-            return configure_adamw(
-                self.model,
-                lr=self.args.learning_rate,
-                weight_decay=self.args.weight_decay)
-        elif self.args.optimizer == "sgd":
-            return optim.SGD(
-                self.model.parameters(),
-                lr=self.args.learning_rate,
-                momentum=self.args.momentum,
-                weight_decay=self.args.weight_decay)
-        elif self.args.optimizer == "lion":
-            return Lion(self.model.parameters(), lr=self.args.learning_rate, weight_decay=self.args.weight_decay)
-        else:
-            raise NotImplementedError(f"optimizer = {self.args.optimizer}")
+    def create_optimizers(self):
+        return [self.create_optimizer(self.model)]
 
-    def create_scheduler(self):
+    def create_optimizer(self, model, optimizer_type=None, lr=None, weight_decay=None, adam_beta1=None):
+        optimizer_type = optimizer_type or self.args.optimizer
+        lr = lr if lr is not None else self.args.learning_rate
+        weight_decay = weight_decay if weight_decay is not None else self.args.weight_decay
+        adam_beta1 = adam_beta1 if adam_beta1 is not None else self.args.adam_beta1
+
+        if optimizer_type == "adam":
+            return optim.Adam(model.parameters(), lr=lr,
+                              betas=(adam_beta1, 0.999))
+        elif optimizer_type == "adamw":
+            return configure_adamw(
+                model,
+                lr=lr,
+                weight_decay=weight_decay,
+                betas=(adam_beta1, 0.999))
+        elif optimizer_type == "sgd":
+            return optim.SGD(
+                model.parameters(),
+                lr=lr,
+                momentum=self.args.momentum,
+                weight_decay=weight_decay)
+        elif optimizer_type == "lion":
+            return Lion(model.parameters(),
+                        lr=lr,
+                        weight_decay=weight_decay)
+        else:
+            raise NotImplementedError(f"optimizer = {optimizer_type}")
+
+    def create_schedulers(self, optimizers):
+        return [self.create_scheduler(optimizer) for optimizer in optimizers]
+
+    def create_scheduler(self, optimizer):
         # TODO: support more schedulers if needed
         if self.args.scheduler == "step":
             if len(self.args.learning_rate_decay_step) == 1:
                 scheduler = StepLR(
-                    self.optimizer,
+                    optimizer,
                     step_size=self.args.learning_rate_decay_step[0],
                     gamma=self.args.learning_rate_decay)
             else:
                 scheduler = MultiStepLR(
-                    self.optimizer,
+                    optimizer,
                     milestones=self.args.learning_rate_decay_step,
                     gamma=self.args.learning_rate_decay)
         elif self.args.scheduler == "cosine":
@@ -139,11 +187,11 @@ class Trainer(ABC):
             self.args.max_epoch -= (self.args.max_epoch % step) + 1
             print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
             eta_min = self.args.learning_rate * 1e-3
-            scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=t_0, eta_min=eta_min)
+            scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=t_0, eta_min=eta_min)
         if self.args.warmup_epoch > 0:
             # TODO: `total_iters=self.args.warmup_epoch` does not work correctly,
             # ConstantLR works fine, but does not work correctly when used with ChainedScheduler.
-            warmup_scheduler = ConstantLR(self.optimizer,
+            warmup_scheduler = ConstantLR(optimizer,
                                           factor=self.args.warmup_learning_rate / self.args.learning_rate,
                                           total_iters=self.args.warmup_epoch)
             scheduler = ChainedScheduler([warmup_scheduler, scheduler])
@@ -159,19 +207,26 @@ class Trainer(ABC):
     def create_checkpoint_filename(self):
         return path.join(self.args.model_dir, f"{self.model.name}.checkpoint.pth")
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, **kwargs):
+        optimizer_state_dict = [optimizer.state_dict() for optimizer in self.optimizers]
+        scheduler_state_dict = [scheduler.state_dict() for scheduler in self.schedulers]
         save_model(
             self.model,
             self.create_checkpoint_filename(),
             train_kwargs=self.args,
-            optimizer_state_dict=self.optimizer.state_dict(),
-            scheduler_state_dict=self.scheduler.state_dict(),
+            optimizer_state_dict=optimizer_state_dict,
+            scheduler_state_dict=scheduler_state_dict,
             grad_scaler_state_dict=self.grad_scaler.state_dict(),
             best_loss=self.best_loss,
-            last_epoch=self.epoch)
+            last_epoch=self.epoch,
+            **kwargs)
 
     def save_best_model(self):
-        save_model(self.model, self.best_model_filename, train_kwargs=self.args)
+        save_model(self.model, self.best_model_filename)
+        if not self.args.disable_backup:
+            # backup file per runtime
+            backup_file = f"{path.splitext(self.best_model_filename)[0]}.{self.runtime_id}.pth.bk"
+            save_model(self.model, backup_file)
 
     @abstractmethod
     def create_dataloader(self, type):
@@ -196,10 +251,14 @@ def create_trainer_default_parser():
                         help="output directory for trained model/checkpoint")
     parser.add_argument("--batch-size", type=int, default=64,
                         help="minibatch size")
+    parser.add_argument("--backward-step", type=int, default=1,
+                        help="number of times to accumulate gradient")
     parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd", "lion"], default="adam",
                         help="optimizer")
     parser.add_argument("--weight-decay", type=float, default=1e-4,
                         help="weight decay coefficient for adamw, sgd")
+    parser.add_argument("--adam-beta1", type=float, default=0.9,
+                        help="beta1 hyperparameter for adam/adamw")
     parser.add_argument("--momentum", type=float, default=0.9,
                         help="momentum for sgd")
     parser.add_argument("--num-workers", type=int, default=num_workers,
@@ -236,5 +295,7 @@ def create_trainer_default_parser():
                         help="random seed")
     parser.add_argument("--checkpoint-file", type=str,
                         help="checkpoint file for initializing model parameters. ignored when --resume is specified")
+    parser.add_argument("--disable-backup", action="store_true",
+                        help="disable backup of the best model file for every runtime")
 
     return parser

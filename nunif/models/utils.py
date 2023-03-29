@@ -1,9 +1,14 @@
+from packaging import version as packaging_version
 import torch
 from datetime import datetime, timezone
+from collections import OrderedDict
 import torch.nn as nn
 from . register import create_model
 from . model import Model
 from .. logger import logger
+
+
+PYTORCH2 = packaging_version.parse(torch.__version__).major >= 2
 
 
 def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
@@ -34,7 +39,12 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
 
 
 def load_model(model_path, model=None, device_ids=None, strict=True, map_location="cpu"):
-    data = torch.load(model_path, map_location=map_location)
+    if PYTORCH2:
+        data = torch.load(model_path, map_location=map_location, weights_only=True)
+    else:
+        # Pytorch 1.13.1 has a bug in torch.load(weights_only=True), so it cannot be used here.
+        # https://github.com/pytorch/pytorch/issues/94670
+        data = torch.load(model_path, map_location=map_location)
     assert ("nunif_model" in data)
     if model is None:
         model = create_model(data["name"], device_ids=device_ids, **data["kwargs"])
@@ -54,7 +64,12 @@ def load_model(model_path, model=None, device_ids=None, strict=True, map_locatio
         if device_ids[0] < 0:
             device = 'cpu'
         else:
-            device = 'cuda:{}'.format(device_ids[0])
+            if torch.cuda.is_available():
+                device = 'cuda:{}'.format(device_ids[0])
+            elif torch.backends.mps.is_available():
+                device = 'mps:{}'.format(device_ids[0])
+            else:
+                raise ValueError("No cuda/mps available. Use `--gpu -1` for CPU.")
         model = model.to(device)
 
     return model, data
@@ -94,3 +109,36 @@ def call_model_method(model, name, **kwargs):
         raise ValueError(f"Unable to call {type(model)}.{name}")
 
     return func(**kwargs)
+
+
+def compile_model(model, **kwargs):
+    if PYTORCH2:
+        model = torch.compile(model, **kwargs)
+    return model
+
+
+def merge_state_dict(a, b, alpha=0.5):
+    """
+    NOTE: This only works when `a` and `b` are finetuned models of the same original model.
+          Also constraints may be broken. Should always be verified to work.
+    """
+    assert a.keys() == b.keys()
+    c = OrderedDict()
+    for k in a.keys():
+        c[k] = a[k] * alpha + b[k] * (1. - alpha)
+    return c
+
+
+def mean_state_dict(dicts):
+    assert len(dicts) > 0
+    a = dicts[0]
+    assert all(a.keys() == d.keys() for d in dicts)
+    mean = OrderedDict()
+    scale = 1. / len(dicts)
+    for k in a.keys():
+        for d in dicts:
+            if k not in mean:
+                mean[k] = d[k] * scale
+            else:
+                mean[k] += d[k] * scale
+    return mean

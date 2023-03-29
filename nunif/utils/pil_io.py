@@ -3,7 +3,7 @@ import io
 import struct
 import base64
 import torchvision.transforms.functional as TF
-from ..transforms.functional import quantize256, quantize65535
+from ..transforms.functional import quantize256
 from ..logger import logger
 
 

@@ -34,7 +34,7 @@ DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     "swin_unet", "art"))
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
-    "upconv_7", "photo"))
+    "swin_unet", "photo"))
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
@@ -119,6 +119,7 @@ def setup():
     parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
     parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires --config option")
     parser.add_argument("--config", type=str, help="config file for API tokens")
+    parser.add_argument("--no-size-limit", action="store_true", help="No file/image size limits for private server")
 
     args = parser.parse_args()
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
@@ -151,12 +152,18 @@ if command_args.image_lib == "wand":
     from nunif.utils import wand_io as IL
 else:
     from nunif.utils import pil_io as IL
-MAX_NOISE_PIXELS = command_args.max_pixels
-MAX_SCALE_PIXELS = (math.sqrt(command_args.max_pixels) / 2) ** 2
+if not command_args.no_size_limit:
+    MAX_NOISE_PIXELS = command_args.max_pixels
+    MAX_SCALE_PIXELS = (math.sqrt(command_args.max_pixels) / 2) ** 2
+    MAX_BODY_SIZE = command_args.max_body_size
+else:
+    MAX_NOISE_PIXELS = float("inf")
+    MAX_SCALE_PIXELS = float("inf")
+    MAX_BODY_SIZE = float("inf")
 
 
 def fetch_uploaded_file(upload_file):
-    max_body_size = command_args.max_body_size * SIZE_MB
+    max_body_size = MAX_BODY_SIZE * SIZE_MB
     with io.BytesIO() as upload_buff:
         file_size = 0
         buff = upload_file.file.read(BUFF_SIZE)
@@ -165,7 +172,7 @@ def fetch_uploaded_file(upload_file):
             upload_buff.write(buff)
             if file_size > max_body_size:
                 logger.debug("fetch_uploaded_file: error: too large")
-                bottle.abort(413, f"Request entity too large (max: {command_args.max_body_size}MB)")
+                bottle.abort(413, f"Request entity too large (max: {MAX_BODY_SIZE}MB)")
             buff = upload_file.file.read(BUFF_SIZE)
 
         image_data = upload_buff.getvalue()
@@ -175,7 +182,7 @@ def fetch_uploaded_file(upload_file):
 
 
 def fetch_url_file(url):
-    max_body_size = command_args.max_body_size * SIZE_MB
+    max_body_size = MAX_BODY_SIZE * SIZE_MB
     timeout = command_args.url_timeout
     try:
         headers = {"Referer": url, "User-Agent": "waifu2x/web.py"}
@@ -189,7 +196,7 @@ def fetch_url_file(url):
                 file_size += len(chunk)
                 if file_size > max_body_size:
                     logger.debug(f"fetch_url_file: error: too large, {url}")
-                    bottle.abort(413, f"Request entity too large (max: {command_args.max_body_size}MB)")
+                    bottle.abort(413, f"Request entity too large (max: {MAX_BODY_SIZE}MB)")
             logger.debug(f"fetch_url_file: {round(file_size/(SIZE_MB), 3)}MB, {url}")
             return buff.getvalue()
     except requests.exceptions.RequestException as e:
@@ -463,12 +470,16 @@ def main():
 
     backend_kwargs = {}
     if command_args.backend == "waitress":
+        if not command_args.no_size_limit:
+            max_request_body_size = command_args.max_body_size * SIZE_MB
+        else:
+            max_request_body_size = 1073741824  # 1GB
         backend_kwargs = {
             "preload_app": True,
             "threads": command_args.threads,
-            "outbuf_overflow": 10 * SIZE_MB,
-            "inbuf_overflow": command_args.max_body_size * 2 * SIZE_MB,
-            "max_request_body_size": command_args.max_body_size * SIZE_MB,
+            "outbuf_overflow": 20 * SIZE_MB,
+            "inbuf_overflow": 20 * SIZE_MB,
+            "max_request_body_size": max_request_body_size,
             "connection_limit": 256,
             "channel_timeout": 120,
         }

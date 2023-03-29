@@ -72,7 +72,7 @@ class RandomFilterConvolution(nn.Module):
 class LBPLoss(nn.Module):
     def __init__(self, in_channels, out_channels=64, kernel_size=3, sparcity=0.9, loss=None):
         super().__init__()
-        self.conv = RandomBinaryConvolution(in_channels, out_channels,
+        self.conv = RandomBinaryConvolution(in_channels, out_channels - out_channels % in_channels,
                                             kernel_size=kernel_size, padding=0,
                                             sparcity=sparcity)
         if loss is None:

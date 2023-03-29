@@ -5,7 +5,6 @@ This document assumes that the working directory is the root directory of nunif 
 # Current Limitations
 
 - `--seed` option cannot be deterministic for training behavior.
-- DataParallel has not been tested. (multiple `--gpu` option)
 
 I have confirmed that a model trained with this training code can beat the original pretrained upcunet model.
 
@@ -113,12 +112,26 @@ python3 train.py waifu2x --method scale4x --arch waifu2x.swin_unet_4x --data-dir
 
 See also [appendix](../appendix/).
 
+### Photo model Note
+
+For Photo model training, specify `--style photo` option. This will affect the synthetic noise image generation during training.
+
+Currently, training with GAN has not been very successful.
+
+See the code below for the script used to train the current photo model.
+
+[train_photo_psnr.sh](../appendix/train_photo_psnr.sh), [train_photo_gan.sh](../appendix/train_photo_gan.sh).
+
+## CLI
+
+You can use the trained models with [CLI](./cli.md) by specifying the trained model directory with `--model-dir` option.
+
 ## benchmark
 
 PSNR displayed during training depends on mini-batch size and input image size.
-It also displays lower scores due to hard example mining etc.
+It also displays lower/higher score due to some sort of validation process.
 
-A fair score can be calculated from the actual image data with benchmark commands.
+A fair score can be calculated from real input image data with benchmark commands.
 
 Show help.
 ```

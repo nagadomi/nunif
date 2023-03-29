@@ -1,3 +1,4 @@
+import math
 from PIL import Image
 from torchvision import transforms as T
 from torchvision.transforms import (
@@ -5,6 +6,7 @@ from torchvision.transforms import (
     InterpolationMode
 )
 import random
+from .std import pad as safe_pad
 
 
 def same_size(a, b):
@@ -24,7 +26,7 @@ class Identity():
 
 class RandomCrop():
     def __init__(self, size, y_offset=0, y_scale=1):
-        assert (y_scale in {1, 2, 4})
+        assert (y_scale in {1, 2, 4, 8})
         self.size = (size, size)
         self.y_offset = y_offset
         self.y_scale = y_scale
@@ -45,7 +47,7 @@ class RandomCrop():
 
 class CenterCrop():
     def __init__(self, size, y_offset=0, y_scale=1):
-        assert (y_scale in {1, 2, 4})
+        assert (y_scale in {1, 2, 4, 8})
         self.size = (size, size)
         self.y_offset = y_offset
         self.y_scale = y_scale
@@ -63,7 +65,7 @@ class CenterCrop():
 
 class RandomHardExampleCrop():
     def __init__(self, size, y_offset=0, y_scale=1, samples=4):
-        assert (y_scale in {1, 2, 4})
+        assert (y_scale in {1, 2, 4, 8})
         self.size = (size, size)
         self.y_offset = y_offset
         self.y_scale = y_scale
@@ -81,7 +83,7 @@ class RandomHardExampleCrop():
                 int(j * self.y_scale) + self.y_offset,
                 int(h * self.y_scale) - self.y_offset * 2,
                 int(w * self.y_scale) - self.y_offset * 2)
-            color_stdv = rect.permute(1, 2, 0).reshape(-1, 3).std(dim=0).sum().item()
+            color_stdv = rect.std(dim=[1, 2]).sum().item()
             rects.append(((i, j, h, w), color_stdv))
 
         i, j, h, w = max(rects, key=lambda v: v[1])[0]
@@ -92,6 +94,26 @@ class RandomHardExampleCrop():
             int(j * self.y_scale) + self.y_offset,
             int(h * self.y_scale) - self.y_offset * 2,
             int(w * self.y_scale) - self.y_offset * 2)
+
+        return x, y
+
+
+class RandomSafeRotate():
+    def __init__(self, angle_min=-45, angle_max=45, y_scale=1):
+        self.y_scale = y_scale
+        self.angle_min = angle_min
+        self.angle_max = angle_max
+
+    def __call__(self, x, y):
+        pad_x = (math.ceil(max(x.size) * math.sqrt(2)) - max(x.size)) // 2
+        pad_y = pad_x * self.y_scale
+        angle = random.uniform(self.angle_min, self.angle_max)
+        rot_x = TF.rotate(safe_pad(x, (x.size[1] + pad_x * 2, x.size[0] + pad_x * 2)), angle=angle,
+                          interpolation=InterpolationMode.BICUBIC)
+        rot_y = TF.rotate(safe_pad(y, (y.size[1] + pad_y * 2, y.size[0] + pad_y * 2)), angle=angle,
+                          interpolation=InterpolationMode.BICUBIC)
+        x = TF.center_crop(rot_x, (x.size[1], x.size[0]))
+        y = TF.center_crop(rot_y, (y.size[1], y.size[0]))
 
         return x, y
 
@@ -109,13 +131,15 @@ class RandomFlip():
 
 
 class RandomApply():
-    def __init__(self, p, transform):
+    def __init__(self, transforms, p):
+        self.transforms = transforms
         self.p = p
-        self.transform = transform
 
     def __call__(self, x, y):
         if random.uniform(0, 1) < self.p:
-            return self.transform(x, y)
+            for f in self.transforms:
+                x, y = f(x, y)
+            return x, y
         else:
             return x, y
 

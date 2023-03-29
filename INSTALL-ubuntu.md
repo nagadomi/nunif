@@ -54,9 +54,14 @@ pip3 install -r requirements.txt
 
 ## 6. Run waifu2x.web
 
+Download pre-trained models.
+```
+python -m waifu2x.download_models
+```
+
 Generate `waifu2x/web/public_html`
 ```
-python -m waifu2x.web.webgen.gen
+python -m waifu2x.web.webgen
 ```
 
 Start the web server.
@@ -69,3 +74,5 @@ If you don't have an NVIDIA GPU, specify the `--gpu -1` option. (CPU Mode)
 ```
 python -m waifu2x.web --gpu -1
 ```
+
+See also [waifu2x README.md](waifu2x/README.md).

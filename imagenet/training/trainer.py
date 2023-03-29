@@ -12,9 +12,7 @@ class ImageNetTrainer(Trainer):
         kwargs = {}
         if self.args.pretrained:
             kwargs = {"pretrained": True}
-        model = nunif_create_model(self.args.arch, **kwargs)
-        if len(self.args.gpu) > 1:
-            model = nn.DataParallel(model, device_ids=self.args.gpu)
+        model = nunif_create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
         model = model.to(self.device)
         return model
 
@@ -24,7 +22,8 @@ class ImageNetTrainer(Trainer):
             dataset = ImageNetDataset(
                 self.args.data_dir, split="train",
                 resize=self.args.resize, size=self.args.size,
-                norm=self.args.norm)
+                norm=self.args.norm,
+                resize_mode=self.args.resize_mode)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -40,7 +39,8 @@ class ImageNetTrainer(Trainer):
             dataset = ImageNetDataset(
                 self.args.data_dir, split="val",
                 resize=self.args.resize, size=self.args.size,
-                norm=self.args.norm)
+                norm=self.args.norm,
+                resize_mode=self.args.resize_mode)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -72,6 +72,10 @@ def register(subparsers, default_parser):
                         help="network arch")
     parser.add_argument("--resize", type=int, default=256,
                         help="resize size")
+    parser.add_argument("--resize-mode", type=str, choices=["resize", "reflect"], default="reflect",
+                        help=("resize mode. "
+                              "`resize`: just resize, "
+                              "`reflect`: resize with preserving aspect ratio, reflection pad the smaller side"))
     parser.add_argument("--size", type=int, default=224,
                         help="input size")
     parser.add_argument("--num-samples", type=int, default=1_281_167,
@@ -84,14 +88,15 @@ def register(subparsers, default_parser):
 
     parser.set_defaults(
         batch_size=128,
-        optimizer="sgd",
-        learning_rate=0.1,
-        momentum=0.9,
-        weight_decay=1e-4,
+        optimizer="adam",
+        learning_rate=0.01,
         scheduler="step",
         learning_rate_decay=0.1,
         learning_rate_decay_step=[30],
         max_epoch=90,
+        # for sgd
+        momentum=0.9,
+        weight_decay=0,
     )
     parser.set_defaults(handler=train)
 

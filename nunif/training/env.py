@@ -21,6 +21,11 @@ class BaseEnv(ABC):
     def set_amp_dtype(self, dtype):
         self.amp_dtype = dtype
 
+    def autocast(self, device=None):
+        device = device or getattr(self, "device", None)
+        assert device is not None
+        return torch.autocast(device_type=device.type, dtype=self.amp_dtype, enabled=self.amp)
+
     @abstractmethod
     def train_begin(self):
         pass
@@ -31,6 +36,57 @@ class BaseEnv(ABC):
 
     def train_loss_hook(self, data, loss):
         pass
+
+    def backward(self, loss, grad_scaler):
+        losses = loss if isinstance(loss, (list, tuple)) else [loss]
+        for loss in losses:
+            if self.amp:
+                grad_scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+    def optimizer_step(self, optimizer, grad_scaler):
+        optimizers = optimizer if isinstance(optimizer, (list, tuple)) else [optimizer]
+        if self.amp:
+            for optimizer in optimizers:
+                grad_scaler.step(optimizer)
+                optimizer.zero_grad()
+            grad_scaler.update()
+        else:
+            for optimizer in optimizers:
+                optimizer.step()
+                optimizer.zero_grad()
+
+    def train_backward_step(self, loss, optimizers, grad_scaler, update):
+        self.backward(loss, grad_scaler)
+        if update:
+            self.optimizer_step(optimizers, grad_scaler)
+
+    def calculate_adaptive_weight(self, base_loss, second_loss, param,
+                                  grad_scaler, min=1e-6, max=1., mode="norm"):
+        base_loss = grad_scaler.scale(base_loss)
+        second_loss = grad_scaler.scale(second_loss)
+        # ref. taming transformers
+        base_grad = torch.autograd.grad(base_loss, param, retain_graph=True)[0]
+        second_grad = torch.autograd.grad(second_loss, param, retain_graph=True)[0]
+        assert base_grad is not None and second_grad is not None
+        inv_scale = 1.0 / grad_scaler.get_scale()
+        base_grad = base_grad * inv_scale
+        second_grad = second_grad * inv_scale
+        if mode == "norm":
+            base_grad_strength = torch.norm(base_grad, p=2)
+            second_grad_strength = torch.norm(second_grad, p=2) + 1e-6
+        elif mode == "max":
+            base_grad_strength = torch.max(torch.abs(base_grad))
+            second_grad_strength = torch.max(torch.abs(second_grad)) + 1e-6
+        else:
+            raise NotImplementedError()
+        grad_ratio = torch.clamp(base_grad_strength / second_grad_strength, min, max).item()
+        if False:
+            print("base", base_grad_strength.item(), "second", second_grad_strength.item(),
+                  "weight", (base_grad_strength / second_grad_strength).item(),
+                  "inv_scale", inv_scale)
+        return grad_ratio
 
     @abstractmethod
     def train_end(self):
@@ -59,21 +115,35 @@ class BaseEnv(ABC):
         # unknown type
         return input
 
-    def train(self, loader, optimizer, grad_scaler):
-        self.train_begin()
-        for data in tqdm(loader, ncols=80):
-            optimizer.zero_grad()
-            loss = self.train_step(data)
-            self.train_loss_hook(data, loss)
-            if torch.isnan(loss).any().item():
+    @staticmethod
+    def check_nan(loss):
+        losses = loss if isinstance(loss, (list, tuple)) else [loss]
+        for loss in (losses):
+            if torch.is_tensor(loss) and torch.isnan(loss).any().item():
                 raise FloatingPointError("loss is NaN")
-            if self.amp:
-                grad_scaler.scale(loss).backward()
-                grad_scaler.step(optimizer)
-                grad_scaler.update()
-            else:
-                loss.backward()
-                optimizer.step()
+
+    def train(self, loader, optimizers, schedulers, grad_scaler, backward_step=1):
+        assert backward_step > 0
+
+        self.train_begin()
+        for optimizer in optimizers:
+            optimizer.zero_grad()
+        t = 1
+        for data in tqdm(loader, ncols=80):
+            loss = self.train_step(data)
+            if backward_step > 1:
+                if isinstance(loss, (list, tuple)):
+                    loss = [ls / backward_step for ls in loss]
+                else:
+                    loss = loss / backward_step
+            self.train_loss_hook(data, loss)
+            self.check_nan(loss)
+            self.train_backward_step(loss, optimizers, grad_scaler,
+                                     update=t % backward_step == 0)
+            t += 1
+        for scheduler in schedulers:
+            scheduler.step()
+
         self.train_end()
 
     def eval(self, loader):
@@ -104,7 +174,7 @@ class SoftmaxEnv(BaseEnv):
     def train_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.criterion(z, y)
         self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y.cpu())
@@ -124,13 +194,13 @@ class SoftmaxEnv(BaseEnv):
             B, TTA, = x.shape[:2]
             x = self.to_device(x)
             x = x.reshape(B * TTA, *x.shape[2:])
-            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+            with self.autocast():
                 z = self.model(x)
             z = z.reshape(B, TTA, *z.shape[1:]).mean(dim=1)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
         else:
             x = self.to_device(x)
-            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+            with self.autocast():
                 z = self.model(x)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
 
@@ -166,7 +236,7 @@ class I2IEnv(BaseEnv):
     def train_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.criterion(z, y)
         self.sum_loss += loss.item()
@@ -185,7 +255,7 @@ class I2IEnv(BaseEnv):
     def eval_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.eval_criterion(z, y)
         self.sum_loss += loss.item()
@@ -239,9 +309,12 @@ class UnsupervisedEnv(BaseEnv):
         self.clear_loss()
 
     def train_step(self, data):
-        x, *_ = data
+        if isinstance(data, (tuple, list)):
+            x, *_ = data
+        else:
+            x = data
         x = self.to_device(x)
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
+        with self.autocast():
             z = self.model(x)
             loss = self.criterion(z)
         self.sum_loss += loss.item()

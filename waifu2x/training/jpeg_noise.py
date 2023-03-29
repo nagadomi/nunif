@@ -3,6 +3,8 @@ import random
 from io import BytesIO
 from PIL import Image
 from torchvision.transforms import functional as TF
+import torch
+from os import path
 
 
 # p of random apply
@@ -15,8 +17,8 @@ NR_RATE = {
     },
     "photo": {
         0: 0.3,
-        1: 0.3,
-        2: 0.6,
+        1: 0.6,
+        2: 1.0,
         3: 1.0,
     }
 }
@@ -31,12 +33,20 @@ EVAL_QUALITY = {
         3: [37 + (70 - 37) // 2, 37 + (70 - 37) // 2 - (5 + (10 - 5) // 2)],
     },
     "photo": {
-        0: [85 + (95 - 85) // 2],
-        1: [37 + (70 - 37) // 2],
-        2: [37 + (70 - 37) // 2],
-        3: [37 + (70 - 37) // 2],
+        0: [90],
+        1: [80],
+        2: [70],
+        3: [60, 90],
     }
 }
+
+
+# Use custom qtables
+QTABLE_FILE = path.join(path.dirname(__file__), "_qtables_1.pth")
+if path.exists(QTABLE_FILE):
+    QTABLES = torch.load(QTABLE_FILE, weights_only=True)
+else:
+    QTABLES = None
 
 
 def choose_validation_jpeg_quality(index, style, noise_level):
@@ -54,6 +64,16 @@ def add_jpeg_noise(x, quality, subsampling):
     assert x.mode == "RGB"
     with BytesIO() as buff:
         x.save(buff, format="jpeg", quality=quality, subsampling=subsampling)
+        buff.seek(0)
+        x = Image.open(buff)
+        x.load()
+        return x
+
+
+def add_jpeg_noise_qtable(x):
+    assert x.mode == "RGB"
+    with BytesIO() as buff:
+        x.save(buff, format="jpeg", qtables=random.choice(QTABLES), subsampling="4:2:0")
         buff.seek(0)
         x = Image.open(buff)
         x.load()
@@ -95,9 +115,24 @@ def choose_jpeg_quality(style, noise_level):
     elif style == "photo":
         if noise_level == 0:
             qualities.append(random.randint(85, 95))
+        elif noise_level == 1:
+            if random.uniform(0, 1) < 0.5:
+                qualities.append(random.randint(37, 70))
+            else:
+                qualities.append(random.randint(90, 98))
         else:
-            # 1,2,3 are the same, NR_RATE is different
-            qualities.append(random.randint(37, 70))
+            if noise_level == 3 or random.uniform(0, 1) < 0.6:
+                if random.uniform(0, 1) < 0.05:
+                    quality1 = random.randint(52, 95)
+                else:
+                    quality1 = random.randint(37, 70)
+                qualities.append(quality1)
+                if quality1 >= 80 and random.uniform(0, 1) < 0.2:
+                    qualities.append(random.randint(70, 90))
+            else:
+                qualities.append(random.randint(90, 98))
+    else:
+        raise NotImplementedError()
 
     return qualities
 
@@ -128,6 +163,42 @@ def shift_jpeg_block(x, y, x_shift=None):
     return x, y
 
 
+LAPLACIAN_KERNEL = torch.tensor([
+    [0, -1, 0],
+    [-1, 4, -1],
+    [0, -1, 0],
+], dtype=torch.float32).reshape(1, 1, 3, 3)
+
+
+def sharpen(x, strength=0.1):
+    grad = torch.nn.functional.conv2d(x.mean(dim=0, keepdim=True).unsqueeze(0),
+                                      weight=LAPLACIAN_KERNEL, stride=1, padding=1).squeeze(0)
+    x = x + grad * strength
+    x = torch.clamp(x, 0., 1.)
+    return x
+
+
+def sharpen_noise(original_x, noise_x, strength=0.1):
+    """ shapen (noise added image - original image) diff
+    """
+    original_x = TF.to_tensor(original_x)
+    noise_x = TF.to_tensor(noise_x)
+    noise = noise_x - original_x
+    noise = sharpen(noise, strength=strength)
+    x = torch.clamp(original_x + noise, 0., 1.)
+    x = TF.to_pil_image(x)
+    return x
+
+
+def sharpen_noise_all(x, strength=0.1):
+    """ just sharpen image
+    """
+    x = TF.to_tensor(x)
+    x = sharpen(x, strength=strength)
+    x = TF.to_pil_image(x)
+    return x
+
+
 class RandomJPEGNoiseX():
     def __init__(self, style, noise_level, random_crop=False):
         assert noise_level in {0, 1, 2, 3} and style in {"art", "photo"}
@@ -136,10 +207,26 @@ class RandomJPEGNoiseX():
         self.random_crop = random_crop
 
     def __call__(self, x, y):
+        original_x = x
         if random.uniform(0, 1) > NR_RATE[self.style][self.noise_level]:
             # do nothing
             return x, y
-
+        if self.style == "photo" and QTABLES and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.25:
+            x = add_jpeg_noise_qtable(x)
+            strength_factor = 1. if self.noise_level == 3 else 0.75
+            if random.uniform(0, 1) < 0.5:
+                if random.uniform(0, 1) < 0.25:
+                    x = sharpen_noise(original_x, x,
+                                      strength=random.uniform(0.05, 0.2) * strength_factor)
+                else:
+                    # I do not want to use this
+                    # because it means applying blur (inverse of sharpening) to the output.
+                    # However, without this,
+                    # it is difficult to remove noise applying sharpness filter after JPEG compression.
+                    x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.4) * strength_factor)
+                    if random.uniform(0, 1) < 0.25:
+                        x = add_jpeg_noise(x, quality=random.randint(80, 95), subsampling="4:2:0")
+            return x, y
         if (self.noise_level == 3 and random.uniform(0, 1) < 0.95) or random.uniform(0, 1) < 0.75:
             # use noise_level noise
             qualities = choose_jpeg_quality(self.style, self.noise_level)
@@ -168,12 +255,17 @@ class RandomJPEGNoiseX():
 
         for i, quality in enumerate(qualities):
             x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
+            if (i == 0 and self.style == "photo" and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.2):
+                if random.uniform(0, 1) < 0.75:
+                    x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2))
+                else:
+                    x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.3))
             if random_crop and i != len(qualities) - 1:
                 x, y = shift_jpeg_block(x, y)
         return x, y
 
 
-if __name__ == "__main__":
+def _test_noise_level():
     print("** train")
     for style in ["art", "photo"]:
         for noise_level in [0, 1, 2, 3]:
@@ -185,3 +277,35 @@ if __name__ == "__main__":
         for noise_level in [0, 1, 2, 3]:
             for index in range(100):
                 print(style, noise_level, choose_validation_jpeg_quality(index, style, noise_level))
+
+
+def _test_noise_sharpen():
+    from nunif.utils import pil_io
+    import argparse
+    import cv2
+
+    def show(name, im):
+        cv2.imshow(name, pil_io.to_cv2(im))
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
+    args = parser.parse_args()
+    im, _ = pil_io.load_image_simple(args.input)
+
+    show("original", im)
+    while True:
+        noise = add_jpeg_noise_qtable(im)
+        if False:
+            x = sharpen_noise_all(im, noise, 0.2)
+        else:
+            x = sharpen_noise_all(noise, 0.3)
+        show("noise", noise)
+        show("sharpen", x)
+        c = cv2.waitKey(0)
+        if c in {ord("q"), ord("x")}:
+            break
+
+
+if __name__ == "__main__":
+    # _test_noise_level()
+    _test_noise_sharpen()

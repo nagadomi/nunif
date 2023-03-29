@@ -24,12 +24,52 @@ class Normalize():
         return self.f(x)
 
 
+class Resize():
+    def __init__(self, size, mode):
+        assert mode in {"resize", "reflect"}
+        assert isinstance(size, int)
+        self.size = size
+        self.mode = mode
+
+    def __call__(self, x):
+        if self.mode == "resize":
+            # just resize
+            return TF.resize(x, self.size, interpolation=InterpolationMode.BICUBIC, antialias=True)
+        elif self.mode == "reflect":
+            # resize with preserve aspect ratio
+            w, h = x.size
+            if w >= h:
+                scale_factor = self.size / w
+                new_h, new_w = int(h * scale_factor), self.size
+            else:
+                scale_factor = self.size / h
+                new_h, new_w = self.size, int(w * scale_factor)
+            x = TF.resize(x, (new_h, new_w), interpolation=InterpolationMode.BICUBIC, antialias=True)
+
+            # reflection pad for small side
+            w, h = x.size
+            pad_l = pad_t = pad_r = pad_b = 0
+            if self.size > w:
+                border = (self.size - w)
+                pad_l = border // 2
+                pad_r = border // 2 + (border % 2)
+            if self.size > h:
+                border = (self.size - h)
+                pad_t = border // 2
+                pad_b = border // 2 + (border % 2)
+            if pad_l + pad_t + pad_r + pad_b != 0:
+                x = TF.pad(x, (pad_l, pad_t, pad_r, pad_b), padding_mode="reflect")
+
+            assert x.size == (self.size, self.size)
+            return x
+
+
 class ImageNetDataset(torch.utils.data.dataset.Dataset):
-    def __init__(self, root, split, resize=256, size=224, norm="imagenet"):
+    def __init__(self, root, split, resize=256, size=224, norm="imagenet", resize_mode="reflect"):
         assert resize >= size
         if split == "train":
             transform = T.Compose([
-                T.Resize(resize, interpolation=InterpolationMode.BICUBIC, antialias=True),
+                Resize(resize, resize_mode),
                 T.RandomCrop(size),
                 T.RandomHorizontalFlip(),
                 T.RandomGrayscale(p=0.05),
@@ -38,7 +78,7 @@ class ImageNetDataset(torch.utils.data.dataset.Dataset):
             ])
         else:
             transform = T.Compose([
-                T.Resize(resize, interpolation=InterpolationMode.BICUBIC, antialias=True),
+                Resize(resize, resize_mode),
                 T.CenterCrop(size),
                 T.ToTensor(),
                 Normalize(mode=norm)

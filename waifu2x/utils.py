@@ -1,10 +1,15 @@
+import os
 from os import path
 import torch
 import torch.nn.functional as F
 from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
 from nunif.utils.alpha import AlphaBorderPadding
-from nunif.models import load_model, get_model_config
+from nunif.models import (
+    load_model, get_model_config,
+    data_parallel_model, call_model_method,
+    compile_model,
+)
 from nunif.logger import logger
 
 
@@ -16,105 +21,143 @@ class Waifu2x():
         self.noise_scale_models = [None] * 4
         self.noise_scale4x_models = [None] * 4
         if gpus[0] < 0:
-            self.device = 'cpu'
+            self.device = "cpu"
         else:
-            self.device = f'cuda:{gpus[0]}'
+            if torch.cuda.is_available():
+                self.device = f'cuda:{gpus[0]}'
+            elif torch.backends.mps.is_available():
+                device = f'mps:{device_ids[0]}'
+            else:
+                raise ValueError(f"No cuda/mps available. Use `--gpu -1` for CPU.")
         self.gpus = gpus
         self.model_dir = model_dir
         self.alpha_pad = AlphaBorderPadding()
 
+    def _compile_model(self, model):
+        # currently disabled
+        # very slow and low accuracy.
+        if False:
+            return compile_model(model)
+        else:
+            return model
+
     def _setup(self):
         if self.scale_model is not None:
-            self.scale_model = self.scale_model.to(self.device)
-            self.scale_model.eval()
+            self.scale_model = self._compile_model(self.scale_model.to(self.device).eval())
         if self.scale4x_model is not None:
-            self.scale4x_model = self.scale4x_model.to(self.device)
-            self.scale4x_model.eval()
+            self.scale4x_model = self._compile_model(self.scale4x_model.to(self.device).eval())
 
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
-                self.noise_models[i] = self.noise_models[i].to(self.device)
-                self.noise_models[i].eval()
+                self.noise_models[i] = self._compile_model(self.noise_models[i].to(self.device).eval())
 
             if self.noise_scale_models[i] is not None:
-                self.noise_scale_models[i] = self.noise_scale_models[i].to(self.device)
-                self.noise_scale_models[i].eval()
+                self.noise_scale_models[i] = self._compile_model(
+                    self.noise_scale_models[i].to(self.device).eval())
 
             if self.noise_scale4x_models[i] is not None:
-                self.noise_scale4x_models[i] = self.noise_scale4x_models[i].to(self.device)
-                self.noise_scale4x_models[i].eval()
+                self.noise_scale4x_models[i] = self._compile_model(
+                    self.noise_scale4x_models[i].to(self.device).eval())
+
+    def _load_model(self, method, noise_level):
+        if method == "scale4x":
+            if self.scale4x_model is not None:
+                return
+            if path.exists(path.join(self.model_dir, "scale4x.pth")):
+                self.scale4x_model, _ = load_model(
+                    path.join(self.model_dir, "scale4x.pth"),
+                    map_location=self.device, device_ids=self.gpus)
+            else:
+                raise FileNotFoundError(f"scale4x.pth not found in {self.model_dir}")
+        elif method == "scale":
+            if self.scale_model is not None:
+                return
+            if path.exists(path.join(self.model_dir, "scale2x.pth")):
+                self.scale_model, _ = load_model(
+                    path.join(self.model_dir, "scale2x.pth"),
+                    map_location=self.device, device_ids=self.gpus)
+            else:
+                if self.scale4x_model is None:
+                    self._load_model("scale4x", noise_level)
+                self.scale_model = data_parallel_model(call_model_method(self.scale4x_model, "to_2x"),
+                                                       device_ids=self.gpus)
+        elif method == "noise_scale4x":
+            if self.noise_scale4x_models[noise_level] is not None:
+                return
+            if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale4x.pth")):
+                self.noise_scale4x_models[noise_level], _ = load_model(
+                    path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
+                    map_location=self.device, device_ids=self.gpus)
+            else:
+                raise FileNotFoundError(f"scale4x.pth not found in {self.model_dir}")
+
+        elif method == "noise_scale":
+            if self.noise_scale_models[noise_level] is not None:
+                return
+            if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth")):
+                self.noise_scale_models[noise_level], _ = load_model(
+                    path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
+                    map_location=self.device, device_ids=self.gpus)
+            else:
+                if self.noise_scale4x_models[noise_level] is None:
+                    self._load_model("noise_scale4x", noise_level)
+                self.noise_scale_models[noise_level] = data_parallel_model(
+                    call_model_method(self.noise_scale4x_models[noise_level], "to_2x"),
+                    device_ids=self.gpus)
+        elif method == "noise":
+            if self.noise_models[noise_level] is not None:
+                return
+            if path.exists(path.join(self.model_dir, f"noise{noise_level}.pth")):
+                self.noise_models[noise_level], _ = load_model(
+                    path.join(self.model_dir, f"noise{noise_level}.pth"),
+                    map_location=self.device, device_ids=self.gpus)
+            else:
+                if self.noise_scale4x_models[noise_level] is None:
+                    self._load_model("noise_scale4x", noise_level)
+                self.noise_models[noise_level] = data_parallel_model(
+                    call_model_method(self.noise_scale4x_models[noise_level], "to_1x"),
+                    device_ids=self.gpus)
+        else:
+            raise ValueError(method)
 
     def load_model(self, method, noise_level):
         assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
         assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
 
-        scale2x_path = path.join(self.model_dir, "scale2x.pth")
-        scale4x_path = path.join(self.model_dir, "scale4x.pth")
-        if method == "scale":
-            self.scale_model, _ = load_model(
-                scale2x_path,
-                map_location=self.device, device_ids=self.gpus)
-        elif method == "scale4x":
-            self.scale4x_model, _ = load_model(
-                scale4x_path,
-                map_location=self.device, device_ids=self.gpus)
-        elif method == "noise":
-            self.noise_models[noise_level], _ = load_model(
-                path.join(self.model_dir, f"noise{noise_level}.pth"),
-                map_location=self.device, device_ids=self.gpus)
-        elif method == "noise_scale":
-            self.noise_scale_models[noise_level], _ = load_model(
-                path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
-                map_location=self.device, device_ids=self.gpus)
-            # for alpha channel
-            if path.exists(scale2x_path):
-                self.scale_model, _ = load_model(
-                    scale2x_path,
-                    map_location=self.device, device_ids=self.gpus)
-            else:
-                logger.warning(f"`{scale2x_path}` used for alpha channel does not exist. "
-                               "So use BILINEAR for upscaling alpha channel.")
+        if method in {"scale", "scale4x", "noise"}:
+            self._load_model(method, noise_level)
         elif method == "noise_scale4x":
-            self.noise_scale4x_models[noise_level], _ = load_model(
-                path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
-                map_location=self.device, device_ids=self.gpus)
+            self._load_model(method, noise_level)
+            try:
+                self._load_model("scale4x", -1)
+            except FileNotFoundError:
+                logger.warning(f"`scale4x_path used for alpha channel does not exist. "
+                               "So use BILINEAR for upscaling alpha channel.")
+        elif method == "noise_scale":
+            self._load_model(method, noise_level)
             # for alpha channel
-            if path.exists(scale4x_path):
-                self.scale4x_model, _ = load_model(
-                    scale4x_path,
-                    map_location=self.device, device_ids=self.gpus)
-            else:
-                logger.warning(f"`{scale4x_path}` used for alpha channel does not exist. "
+            try:
+                self._load_model("scale", -1)
+            except FileNotFoundError:
+                logger.warning(f"`scale2x.pth` used for alpha channel does not exist. "
                                "So use BILINEAR for upscaling alpha channel.")
         self._setup()
 
     def load_model_all(self, load_4x=True):
-        self.scale_model = load_model(
-            path.join(self.model_dir, "scale2x.pth"),
-            map_location=self.device, device_ids=self.gpus)[0]
-        self.noise_scale_models = [
-            load_model(
-                path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
-                map_location=self.device, device_ids=self.gpus)[0]
-            for noise_level in range(4)]
-        self.noise_models = [
-            load_model(
-                path.join(self.model_dir, f"noise{noise_level}.pth"),
-                map_location=self.device, device_ids=self.gpus)[0]
-            for noise_level in range(4)]
-
         if load_4x:
-            if path.exists(path.join(self.model_dir, "scale4x.pth")):
-                self.scale4x_model = load_model(
-                    path.join(self.model_dir, "scale4x.pth"),
-                    map_location=self.device, device_ids=self.gpus)[0]
-                self.noise_scale4x_models = [
-                    load_model(
-                        path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
-                        map_location=self.device, device_ids=self.gpus)[0]
-                    if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale4x.pth")) else None
-                    for noise_level in range(4)]
+            self._load_model("scale4x", -1)
+            for noise_level in range(4):
+                self._load_model("noise_scale4x", noise_level)
 
+        self._load_model("scale", -1)
+        for noise_level in range(4):
+            self._load_model("noise_scale", noise_level)
+            self._load_model("noise", noise_level)
+
+        if not load_4x:
+            # free 4x models
+            self.scale4x_model = None
+            self.noise_scale4x_models = [None] * 4
         self._setup()
 
     def render(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):

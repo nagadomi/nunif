@@ -1,5 +1,6 @@
 import requests
 import shutil
+import os
 from tqdm import tqdm
 from tempfile import NamedTemporaryFile, mkdtemp
 from abc import ABC, abstractmethod
@@ -27,14 +28,15 @@ class Downloader(ABC):
             self.url = response.url
 
         logger.debug(f"Downloader: {self.name}: url={self.url}, size={total_size}")
-        with NamedTemporaryFile(prefix="nunif-", delete=self.delete_tmp) as tmp:
-            progress_bar = tqdm(desc=self.name, total=total_size, unit='iB', unit_scale=True,
-                                ncols=80, disable=not show_progress)
-            for data in response.iter_content(block_size):
-                tmp.write(data)
-                progress_bar.update(len(data))
-            progress_bar.close()
-            tmp.seek(0)
+        tmp = None
+        try:
+            with NamedTemporaryFile(prefix="nunif-", delete=False) as tmp:
+                progress_bar = tqdm(desc=self.name, total=total_size, unit='iB', unit_scale=True,
+                                    ncols=80, disable=not show_progress)
+                for data in response.iter_content(block_size):
+                    tmp.write(data)
+                    progress_bar.update(len(data))
+                progress_bar.close()
             if self.archive:
                 tmp_dir = mkdtemp(prefix="nunif-")
                 try:
@@ -46,6 +48,10 @@ class Downloader(ABC):
                         shutil.rmtree(tmp_dir, ignore_errors=True)
             else:
                 self.handle_file(src=tmp.name, file=tmp)
+        finally:
+            if self.delete_tmp:
+                if tmp is not None:
+                    os.unlink(tmp.name)
 
     @abstractmethod
     def handle_file(self, src, file):

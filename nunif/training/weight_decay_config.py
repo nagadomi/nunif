@@ -4,6 +4,7 @@
 # Adding modules used in this repo by nagadomi
 import torch
 from torchvision.models.swin_transformer import ShiftedWindowAttentionV2, ShiftedWindowAttention
+from ..modules.norm import LayerNormNoBias, LayerNormNoBias2d
 
 
 def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
@@ -26,7 +27,10 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
         torch.nn.LayerNorm,
         torch.nn.Embedding,
         torch.nn.BatchNorm2d,
-        torch.nn.BatchNorm1d
+        torch.nn.BatchNorm1d,
+        torch.nn.GroupNorm,
+        LayerNormNoBias,
+        LayerNormNoBias2d,
     )
     for mn, m in model.named_modules():
         for pn, p in m.named_parameters():
@@ -56,6 +60,8 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
             elif isinstance(m, ShiftedWindowAttention):
                 if pn.endswith("relative_position_bias_table"):
                     no_decay.add(fpn)
+            elif m.__class__.__name__ in {"ParametrizedConv2d", "ParametrizedLinear"}:
+                no_decay.add(fpn)
             else:
                 pass
 

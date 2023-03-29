@@ -7,15 +7,31 @@ import csv
 from tqdm import tqdm
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
+from torchvision.transforms import (
+    functional as TF,
+    InterpolationMode
+)
 from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
 from .utils import Waifu2x
+from .download_models import main as download_main
 
 
-DEFAULT_MODEL_DIR = path.abspath(path.join(
+DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
     "swin_unet", "art"))
+
+DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
+    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
+    "swin_unet", "photo"))
+
+
+def antialias(x):
+    w, h = x.size
+    x = TF.resize(x, (h * 2, w * 2), interpolation=InterpolationMode.BILINEAR, antialias=True)
+    x = TF.resize(x, (h, w), interpolation=InterpolationMode.BICUBIC, antialias=True)
+    return x
 
 
 def convert_files(ctx, files, args, enable_amp):
@@ -26,6 +42,8 @@ def convert_files(ctx, files, args, enable_amp):
     futures = []
     with torch.no_grad(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         for im, meta in tqdm(loader, ncols=60):
+            if args.pre_antialias:
+                im = antialias(im)
             rgb, alpha = IL.to_tensor(im, return_alpha=True)
             rgb, alpha = ctx.convert(
                 rgb, alpha, args.method, args.noise_level,
@@ -53,6 +71,8 @@ def convert_file(ctx, args, enable_amp):
 
     with torch.no_grad():
         im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
+        if args.pre_antialias:
+            im = antialias(im)
         rgb, alpha = IL.to_tensor(im, return_alpha=True)
         rgb, alpha = ctx.convert(rgb, alpha, args.method, args.noise_level,
                                  args.tile_size, args.batch_size,
@@ -75,7 +95,15 @@ def load_files(txt):
 
 
 def main(args):
-    ctx = Waifu2x(model_dir=args.model_dir, gpus=args.gpu)
+    if args.model_dir is None:
+        if args.style == "photo":
+            model_dir = DEFAULT_PHOTO_MODEL_DIR
+        else:
+            model_dir = DEFAULT_ART_MODEL_DIR
+    else:
+        model_dir = args.model_dir
+
+    ctx = Waifu2x(model_dir=model_dir, gpus=args.gpu)
     ctx.load_model(args.method, args.noise_level)
 
     if path.isdir(args.input):
@@ -89,7 +117,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-dir", type=str, default=DEFAULT_MODEL_DIR, help="model dir")
+    parser.add_argument("--model-dir", type=str, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
     parser.add_argument("--method", "-m", type=str,
                         choices=["scale4x", "scale", "noise", "noise_scale", "noise_scale4x", "scale2x", "noise_scale2x"],
@@ -105,6 +133,8 @@ if __name__ == "__main__":
                         help="image library to encode/decode images")
     parser.add_argument("--depth", type=int, help="bit-depth of output image. enabled only with `--image-lib wand`")
     parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format")
+    parser.add_argument("--pre-antialias", action="store_true", help="Removing sharp artifacts before run.")
+    parser.add_argument("--style", type=str, choices=["art", "photo"], help="style for default model (art/photo). Ignored when --model-dir option is specified.")
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
     if args.image_lib == "wand":
@@ -118,4 +148,10 @@ if __name__ == "__main__":
     elif args.method == "noise_scale2x":
         args.method = "noise_scale"
 
+    # download models
+    pretrained_model_dir = path.join(path.dirname(__file__), "pretrained_models")
+    if not path.exists(pretrained_model_dir):
+        download_main()
+
+    # main
     main(args)

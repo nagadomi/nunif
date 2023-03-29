@@ -184,6 +184,25 @@ $(function (){
         commit_recap_response();
         this.submit();
     });
+    $(document).on({
+        dragover: function() { return false; },
+        drop: function(e) {
+            if (!(e.originalEvent.dataTransfer && e.originalEvent.dataTransfer.files.length)) {
+                return false;
+            }
+            var file = e.originalEvent.dataTransfer;
+            if (file.files.length > 0 && file.files[0].type.match(/image/)) {
+                var files = new DataTransfer();
+                files.items.add(file.files[0]);
+                $("#file").get(0).files = files.files;
+                $("#file").trigger("change");
+                return false;
+            } else {
+                return false;
+            }
+        }
+    });
+
     restore_from_cookie();
     on_change_style();
     on_change_scale_factor();

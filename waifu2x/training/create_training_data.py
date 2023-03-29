@@ -2,7 +2,6 @@ import os
 import sys
 import argparse
 from os import path
-from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from tqdm import tqdm
 import random
 import torchvision.transforms.functional as TF
@@ -10,6 +9,7 @@ from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import list_images
+from nunif.transforms.std import pad
 from multiprocessing import cpu_count
 
 
@@ -58,7 +58,9 @@ class CreateTrainingData(Dataset):
         im, _ = load_image_simple(filename, color="rgb", bg_color=bg_color)
         if im is None:
             return -1
-
+        if self.args.pad:
+            bg = random.randint(0, 255)
+            im = pad(im, [self.args.size] * 2, mode=self.args.pad_mode, fill=bg)
         split_image(
             path.join(self.output_dir, self.filename_prefix + str(i)),
             im, self.args.size, int(self.args.size * self.args.stride), self.args.reject_rate,
@@ -113,6 +115,10 @@ def register(subparsers, default_parser):
                         help="prefix for output filename")
     parser.add_argument("--format", type=str, choices=["png", "webp"], default="png",
                         help="output image format")
+    parser.add_argument("--pad", action="store_true",
+                        help="use padding for small images")
+    parser.add_argument("--pad-mode", choices=["reflect", "edge", "constant"], default="reflect",
+                        help="padding mode for pad")
     parser.set_defaults(handler=main)
 
     return parser
