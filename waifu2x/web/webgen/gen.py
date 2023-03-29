@@ -32,7 +32,7 @@ def render(template_file, lang, locale):
 def main():
     SELF_DIR = path.dirname(__file__)
     TEMPLETE_DEFAULT = path.join(SELF_DIR, "templates", "index.html.tpl")
-    TEMPLETE_MINIMUM = path.join(SELF_DIR, "templates", "index.minimum.html.tpl")
+    TEMPLETE_MINIMAL = path.join(SELF_DIR, "templates", "index.minimal.html.tpl")
     LANG_DIR = path.join(SELF_DIR, "locales")
     ASSET_DIR = path.join(SELF_DIR, "assets")
     OUTPUT_DIR = path.join(SELF_DIR, "..", "public_html")
@@ -40,13 +40,13 @@ def main():
                         "Do not make changes to this file manually.")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--template", type=str, choices=["default", "minimum"], default="default")
+    parser.add_argument("--template", type=str, choices=["default", "minimal"], default="default")
     parser.add_argument("--output-dir", "-o", type=str, default=OUTPUT_DIR)
     args = parser.parse_args()
     if args.template == "default":
         template_file = TEMPLETE_DEFAULT
-    elif args.template == "minimum":
-        template_file = TEMPLETE_MINIMUM
+    elif args.template == "minimal":
+        template_file = TEMPLETE_MINIMAL
     else:
         raise ValueError(args.template)
 
