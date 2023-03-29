@@ -4,6 +4,35 @@ The following line executes the CLI command.
 ```
 python -m waifu2x.cli -h
 ```
+```
+options:
+  -h, --help            show this help message and exit
+  --model-dir MODEL_DIR
+                        model dir
+  --noise-level {0,1,2,3}, -n {0,1,2,3}
+                        noise level
+  --method {scale4x,scale,noise,noise_scale,noise_scale4x,scale2x,noise_scale2x}, -m {scale4x,scale,noise,noise_scale,noise_scale4x,scale2x,noise_scale2x}
+                        method
+  --gpu GPU [GPU ...], -g GPU [GPU ...]
+                        GPU device ids. -1 for CPU
+  --batch-size BATCH_SIZE
+                        minibatch_size
+  --tile-size TILE_SIZE
+                        tile size for tiled render
+  --output OUTPUT, -o OUTPUT
+                        output file or directory
+  --input INPUT, -i INPUT
+                        input file or directory. (*.txt, *.csv) for image list
+  --tta                 use TTA mode
+  --disable-amp         disable AMP for some special reason
+  --image-lib {pil,wand}
+                        image library to encode/decode images
+  --depth DEPTH         bit-depth of output image. enabled only with `--image-lib wand`
+  --format {png,webp,jpeg}, -f {png,webp,jpeg}
+                        output image format
+  --pre-antialias       Removing sharp artifacts before run.
+  --style {art,photo}   style for default model (art/photo). Ignored when --model-dir option is specified.
+```
 
 When `DEBUG` environment variable is defined, DEBUG level log will be printed.
 ```
@@ -37,6 +66,21 @@ python -m waifu2x.cli -m noise_scale -n 3 -i tmp/images -o tmp/out
 4x + Denoise level 3
 ```
 python -m waifu2x.cli -m noise_scale4x -n 3 -i tmp/images -o tmp/out
+```
+
+use photo model
+```
+python -m waifu2x.cli --style photo -m noise_scale4x -n 1 -i tmp/images -o tmp/out
+```
+
+also, for photo models, larger `--tile-size` will give better results (less tile seam/border artifact)
+```
+python -m waifu2x.cli --style photo -m noise_scale4x -n 1 --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
+```
+
+very sharp photo noise may be removed with `--pre-antialis` option. Instead, the output image will be slightly blurred.
+```
+python -m waifu2x.cli --style photo -m noise_scale4x -n 3 --pre-antialias --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
 ```
 
 With model dir

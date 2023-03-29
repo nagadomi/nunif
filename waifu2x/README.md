@@ -14,9 +14,14 @@ When `--format jpeg` is specified, the transparent areas of the image will be se
 
 When `--format jpeg` or `--format webp` is specified, image-gamma value(gAMA) is ignored (removed from the output image).
 
-# Note
+# Note for ubuntu image viewer
 
-In Ubuntu 22.04, gThumb(Image Viewer) has a bug in rendering webp's alpha channel. If you encounter any problems with the alpha channel, please check it with Google-chrome.
+In Ubuntu 22.04, gThumb(default image viewer) has a bug in rendering webp's alpha channel. If you encounter any problems with the alpha channel, please check it with google-chrome.
+
+# Note for update
+
+`waifu2x/pretrained_models` is not automatically updated.
+If new `pretrained_models` are available, run `python -m waifu2x.download_models` manually after updating the sourcecode.
 
 # Command Line Interface
 

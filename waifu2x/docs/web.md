@@ -5,6 +5,12 @@ Generate `waifu2x/web/public_html`.
 python -m waifu2x.web.webgen
 ```
 
+You can also generate minimal WebUI by specifying the `--template minimal` option.
+minimal UI is intended for use when waifu2x.web is used as an embedded iframe in Google Colab for example.
+```
+python -m waifu2x.web.webgen --template minimal
+```
+
 The following line starts the Web Server.
 ```
 python -m waifu2x.web
@@ -27,8 +33,14 @@ DEBUG=1 python -m waifu2x.web --tta --debug
 
 Specify HTTP port number and GPU ID.
 ```
-DEBUG=1 python -m waifu2x.web --port 8813 --gpu 1
+python -m waifu2x.web --port 8813 --gpu 1
 ```
+
+Remove all size limits for the private server.
+```
+python -m waifu2x.web --no-size-limit
+```
+
 
 # Image Encode/Decode
 
