@@ -221,7 +221,7 @@ class V3SpatialDiscriminator(Discriminator):
 @register_model
 class L3V1Discriminator(Discriminator):
     name = "waifu2x.l3v1_discriminator"
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1, normalize_fix=False):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
         self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels)
         self.v1 = nn.Sequential(
@@ -236,10 +236,13 @@ class L3V1Discriminator(Discriminator):
             SEBlock(128, bias=True),
             nn.Conv2d(128, out_channels, kernel_size=3, stride=1, padding=0),
         )
+        self.normalize_fix = normalize_fix
         init_moduels(self.v1)
 
     def forward(self, x, c=None, scale_factor=None):
         l3 = self.l3(x, c, scale_factor)
+        if getattr(self, "normalize_fix", None):
+            x = normalize(x)
         v1 = self.v1(x)
         return l3, v1
 

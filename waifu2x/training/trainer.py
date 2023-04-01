@@ -88,7 +88,8 @@ def create_discriminator(discriminator, device_ids, device):
     elif discriminator == "v3s":
         model = create_model("waifu2x.v3_spatial_discriminator", device_ids=device_ids)
     elif discriminator == "l3v1":
-        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids)
+        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids,
+                             normalize_fix=True)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator, device_ids=device_ids)
     else:
