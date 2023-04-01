@@ -218,24 +218,31 @@ class V3SpatialDiscriminator(Discriminator):
         return z3, z2, z1
 
 
+def vgg1(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
+        nn.LeakyReLU(0.2, inplace=True),
+
+        nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1),
+        nn.GroupNorm(32, 64),
+        nn.LeakyReLU(0.2, inplace=True),
+
+        nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+        nn.GroupNorm(32, 128),
+        nn.LeakyReLU(0.2, inplace=True),
+
+        SEBlock(128, bias=True),
+        nn.Conv2d(128, out_channels, kernel_size=3, stride=1, padding=0),
+    )
+
+
 @register_model
 class L3V1Discriminator(Discriminator):
     name = "waifu2x.l3v1_discriminator"
     def __init__(self, in_channels=3, out_channels=1, normalize_fix=False):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
         self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels)
-        self.v1 = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1),
-            nn.GroupNorm(32, 64),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.GroupNorm(32, 128),
-            nn.LeakyReLU(0.2, inplace=True),
-            SEBlock(128, bias=True),
-            nn.Conv2d(128, out_channels, kernel_size=3, stride=1, padding=0),
-        )
+        self.v1 = vgg1(in_channels, out_channels)
         self.normalize_fix = normalize_fix
         init_moduels(self.v1)
 
@@ -244,6 +251,23 @@ class L3V1Discriminator(Discriminator):
         if getattr(self, "normalize_fix", None):
             x = normalize(x)
         v1 = self.v1(x)
+        return l3, v1
+
+
+@register_model
+class L3V1ConditionalDiscriminator(Discriminator):
+    name = "waifu2x.l3v1_conditional_discriminator"
+    def __init__(self, in_channels=6, out_channels=1):
+        super().__init__(locals(), loss_weights=(0.8, 0.2))
+        self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels)
+        self.v1 = vgg1(in_channels, out_channels)
+        init_moduels(self.v1)
+
+    def forward(self, x, c=None, scale_factor=None):
+        c = scale_c(x, c, scale_factor, mode="bilinear")
+        x = torch.cat([x, c], dim=1)
+        l3 = self.l3(x)
+        v1 = self.v1(normalize(x))
         return l3, v1
 
 
