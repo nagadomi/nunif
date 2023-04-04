@@ -66,10 +66,7 @@ def create_criterion(loss):
     elif loss == "l1lpips":
         from nunif.modules.lpips import LPIPSWith
         # weight=0.1, gradient norm is about the same as L1Loss.
-        criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.8)
-    elif loss == "l1lpipsm":
-        from nunif.modules.lpips import LPIPSWith
-        criterion = MultiscaleLoss(LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.8))
+        criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.4)
     else:
         raise NotImplementedError()
 
@@ -83,13 +80,8 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.l3_discriminator", device_ids=device_ids)
     elif discriminator == "l3c":
         model = create_model("waifu2x.l3_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "v3":
-        model = create_model("waifu2x.v3_discriminator", device_ids=device_ids)
-    elif discriminator == "v3s":
-        model = create_model("waifu2x.v3_spatial_discriminator", device_ids=device_ids)
     elif discriminator == "l3v1":
-        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids,
-                             normalize_fix=True)
+        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids)
     elif discriminator == "l3v1c":
         model = create_model("waifu2x.l3v1_conditional_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
@@ -192,7 +184,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                         fake = z[0]
                     else:
                         fake = z
-                    z_real = self.discriminator(fake, x, scale_factor)
+                    z_real = self.discriminator(fake, y, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
                     self.sum_p_loss += recon_loss.item()
@@ -210,8 +202,8 @@ class Waifu2xEnv(LuminancePSNREnv):
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
-                z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), x, scale_factor)
-                z_real = self.discriminator(y, x, scale_factor)
+                z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
+                z_real = self.discriminator(y, y, scale_factor)
                 discriminator_loss = self.discriminator_criterion(z_real, z_fake)
 
                 self.sum_d_loss += discriminator_loss.item()
@@ -314,7 +306,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 psnr = self.eval_criterion(z, y)
                 loss = self.criterion(z, y)
                 if self.discriminator is not None:
-                    z_real = self.discriminator(z, x, scale_factor)
+                    z_real = self.discriminator(z, y, scale_factor)
                     loss = loss + self.discriminator_criterion(z_real)
 
         self.sum_psnr += psnr.item()
@@ -362,6 +354,13 @@ class Waifu2xTrainer(Trainer):
 
     def setup_model(self):
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
+        if self.discriminator is not None:
+            # initialize lazy modules
+            model_offset = get_model_config(self.model, "i2i_offset")
+            scale_factor = get_model_config(self.model, "i2i_scale")
+            output_size = self.args.size * scale_factor - model_offset * 2
+            y = torch.zeros((1, 3, output_size, output_size)).to(self.device)
+            _ = self.discriminator(y, y, scale_factor)
 
         if self.args.freeze and hasattr(self.model, "freeze"):
             call_model_method(self.model, "freeze")
