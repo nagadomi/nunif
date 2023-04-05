@@ -330,7 +330,7 @@ class RandomPhotoNoiseX():
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise1(x, strength=strength)
         elif method == 2:
-            strength = random.uniform(0.02, 0.15) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise2(x, strength=strength)
         elif method == 3:
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
