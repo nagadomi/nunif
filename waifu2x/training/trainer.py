@@ -3,6 +3,7 @@ import sys
 from time import time
 import torch
 from . dataset import Waifu2xDataset
+from .. models.discriminator import SelfSupervisedDiscriminator
 from nunif.training.sampler import MiningMethod
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
@@ -184,7 +185,12 @@ class Waifu2xEnv(LuminancePSNREnv):
                         fake = z[0]
                     else:
                         fake = z
-                    z_real = self.discriminator(fake, y, scale_factor)
+                    if isinstance(self.discriminator, SelfSupervisedDiscriminator):
+                        *z_real, _ = self.discriminator(fake, y, scale_factor)
+                        if len(z_real) == 1:
+                            z_real = z_real[0]
+                    else:
+                        z_real = self.discriminator(fake, y, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
                     self.sum_p_loss += recon_loss.item()
@@ -202,9 +208,20 @@ class Waifu2xEnv(LuminancePSNREnv):
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
-                z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
-                z_real = self.discriminator(y, y, scale_factor)
-                discriminator_loss = self.discriminator_criterion(z_real, z_fake)
+                if isinstance(self.discriminator, SelfSupervisedDiscriminator):
+                    *z_fake, fake_ss_loss = self.discriminator(torch.clamp(fake.detach(), 0, 1),
+                                                               y, scale_factor)
+                    *z_real, real_ss_loss = self.discriminator(y, y, scale_factor)
+                    if len(z_fake) == 1:
+                        z_fake = z_fake[0]
+                        z_real = z_real[0]
+                else:
+                    z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
+                    z_real = self.discriminator(y, y, scale_factor)
+                    fake_ss_loss = real_ss_loss = 0
+
+                discriminator_loss = (self.discriminator_criterion(z_real, z_fake) +
+                                      (real_ss_loss + fake_ss_loss) * 0.5)
 
                 self.sum_d_loss += discriminator_loss.item()
                 loss = (recon_loss, generator_loss, discriminator_loss)
