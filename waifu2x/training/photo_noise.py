@@ -186,6 +186,8 @@ def grain_noise2(x, strength=0.15):
 
     noise = random_crop(noise, (crop_h, crop_w))
     noise = TF.resize(noise, (h, w), interpolation=interpolation, antialias=antialias)
+    if random.uniform(0, 1) < 0.25:
+        noise = (1. - x) * noise * 1.2
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
@@ -281,6 +283,8 @@ def structured_noise(x, strength=0.15):
     else:
         noise = noise * 2 - 1
         noise -= noise.mean()
+    if random.uniform(0, 1) < 0.25:
+        noise = (1. - x) * noise * 1.2
 
     return torch.clamp(x + noise * strength, 0, 1)
 
