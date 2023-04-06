@@ -83,7 +83,7 @@ const onnx_session = {
     }
 };
 
-const BLEND_SIZE = 4;
+const BLEND_SIZE = 16;
 const SeamBlending = class {
     // Cumulative Tile Seam/Border Blending
     // This function requires large buffers and does not work with onnxruntime's web-worker.

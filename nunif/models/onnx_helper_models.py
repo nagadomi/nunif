@@ -119,14 +119,13 @@ class ONNXCreateSeamBlendingFilter(I2IBaseModel):
 
     def forward(self, scale: int, offset: int, tile_size: int):
         out_channels = 3
-        blend_size = 4  # fixed
+        blend_size = 16  # FIXME: Allow variable
         model_output_size = tile_size * scale - offset * 2
         inner_tile_size = model_output_size - blend_size * 2
         x = torch.ones((out_channels, inner_tile_size, inner_tile_size), dtype=torch.float32)
-        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.8)
-        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.6)
-        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.4)
-        x = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.2)
+        for i in range(blend_size):
+            value = 1 - (1 / (blend_size + 1)) * (i + 1)
+            x = F.pad(x, (1, 1, 1, 1), mode="constant", value=value)
 
         return x
 
@@ -349,4 +348,5 @@ def _test_alpha_border():
 
 
 if __name__ == "__main__":
-    _test_alpha_border()
+    _test_blend_filter()
+    #_test_alpha_border()
