@@ -359,11 +359,16 @@ def _convert_tool_main():
                         help="scale factor for output swin_unet_model")
     args = parser.parse_args()
     model_4x, _ = load_model(args.input)
-    model = SwinUNetDownscaled2x.from_4x(model_4x)
+    if args.scale == 2:
+        model = model_4x.to_2x()
+    elif args.scale == 1:
+        model = model_4x.to_1x()
 
     save_model(model, args.output)
 
 
 if __name__ == "__main__":
-    #_convert_tool_main()
-    _test()
+    if False:
+         _test()
+    else:
+        _convert_tool_main()
