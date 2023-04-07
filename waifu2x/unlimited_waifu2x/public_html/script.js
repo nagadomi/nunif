@@ -3,29 +3,48 @@ var g_expires = 365;
 function gen_arch_config()
 {
     var config = {};
+
+    /* swin_unet */
     config["swin_unet"] = {art: {}, photo: {}};
     var swin = config["swin_unet"];
+    const calc_tile_size_swin_unet = function (tile_size, config) {
+        while (true) {
+            if ((tile_size - 16) % 12 == 0 && (tile_size - 16) % 16 == 0) {
+                break;
+            }
+            tile_size += 1;
+        }
+        return tile_size;
+    };
     for (const domain of ["art", "photo"]) {
+        var base_config = {"arch": "swin_unet", "domain": domain, "calc_tile_size": calc_tile_size_swin_unet};
         swin[domain] = {
-            scale2x: {scale: 2, offset: 16},
-            scale4x: {scale: 4, offset: 32},
-            scale1x: {scale: 1, offset: 8}, // bypass for alpha denoise
+            scale2x: {...base_config, scale: 2, offset: 16},
+            scale4x: {...base_config, scale: 4, offset: 32},
+            scale1x: {...base_config, scale: 1, offset: 8}, // bypass for alpha denoise
         };
         for (var i = 0; i < 4; ++i) {
-            swin[domain]["noise" + i + "_scale2x"] = {scale: 2, offset: 16};
-            swin[domain]["noise" + i + "_scale4x"] = {scale: 4, offset: 32};
-            swin[domain]["noise" + i] = {scale: 1, offset: 8};
+            swin[domain]["noise" + i + "_scale2x"] = {...base_config, scale: 2, offset: 16};
+            swin[domain]["noise" + i + "_scale4x"] = {...base_config, scale: 4, offset: 32};
+            swin[domain]["noise" + i] = {...base_config, scale: 1, offset: 8};
         }
     }
+    /* cunet */
     config["cunet"] = {art: {}};
+    const calc_tile_size_cunet = function (tile_size, config) {
+        tile_size = tile_size + (config.offset - 16) * 2;
+        tile_size -= tile_size % 4;
+        return tile_size;
+    };
+    var base_config = {"arch": "cunet", "domain": "art", "calc_tile_size": calc_tile_size_cunet};
     config["cunet"]["art"] = {
-        scale2x: {scale: 2, offset: 36},
-        scale1x: {scale: 1, offset: 28}, // bypass for alpha denoise
+        scale2x: {...base_config, scale: 2, offset: 36},
+        scale1x: {...base_config, scale: 1, offset: 28}, // bypass for alpha denoise
     };
     var base = config["cunet"];
     for (var i = 0; i < 4; ++i) {
-        base["art"]["noise" + i + "_scale2x"] = {scale: 2, offset: 36};
-        base["art"]["noise" + i] = {scale: 1, offset: 28};
+        base["art"]["noise" + i + "_scale2x"] = {...base_config, scale: 2, offset: 36};
+        base["art"]["noise" + i] = {...base_config, scale: 1, offset: 28};
     }
 
     return config;
@@ -38,23 +57,6 @@ const CONFIG = {
         if ((arch in this.arch) && (style in this.arch[arch]) && (method in this.arch[arch][style])) {
             config = this.arch[arch][style][method];
             config["path"] = `models/${arch}/${style}/${method}.onnx`;
-            if (arch == "swin_unet") {
-                config.calc_tile_size = function (tile_size) {
-                    while (true) {
-                        if ((tile_size - 16) % 12 == 0 && (tile_size - 16) % 16 == 0) {
-                            break;
-                        }
-                        tile_size += 1;
-                    }
-                    return tile_size;
-                };
-            } else if (arch == "cunet") {
-                config.calc_tile_size = function (tile_size) {
-                    tile_size = tile_size + (config.offset - 16) * 2;
-                    tile_size -= tile_size % 4;
-                    return tile_size;
-                };
-            }
             return config;
         } else {
             return null;
@@ -572,7 +574,7 @@ $(function () {
             set_message("(・A・) Model Not found!");
             return;
         }
-        const tile_size = config.calc_tile_size(parseInt($("select[name=tile_size]").val()));
+        const tile_size = config.calc_tile_size(parseInt($("select[name=tile_size]").val()), config);
         const tile_random = $("input[name=tile_random]").prop("checked");
         const tta_level = parseInt($("select[name=tta]").val());
 
