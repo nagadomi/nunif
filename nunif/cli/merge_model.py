@@ -1,13 +1,9 @@
-# image to image
+# merge 2 models
 import os
 from os import path
-import torch
 import argparse
-import sys
-import os
-from os import path
 from .. models import load_model, save_model
-from .. models.utils import merge_state_dict, mean_state_dict
+from .. models.utils import merge_state_dict
 from .. addon import load_addons
 
 
