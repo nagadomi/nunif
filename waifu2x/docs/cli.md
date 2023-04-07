@@ -68,19 +68,19 @@ python -m waifu2x.cli -m noise_scale -n 3 -i tmp/images -o tmp/out
 python -m waifu2x.cli -m noise_scale4x -n 3 -i tmp/images -o tmp/out
 ```
 
-use photo model
+Using photo model (--style photo)
 ```
 python -m waifu2x.cli --style photo -m noise_scale4x -n 1 -i tmp/images -o tmp/out
 ```
 
-also, for photo models, larger `--tile-size` will give better results (less tile seam/border artifact)
+Also, for photo models, larger `--tile-size` will give better results (less tile seam/border artifact)
 ```
 python -m waifu2x.cli --style photo -m noise_scale4x -n 1 --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
 ```
 
-very sharp photo noise may be removed with `--pre-antialis` option. Instead, the output image will be slightly blurred.
+For old photo scans, very sharp photo noise may be removed with `--pre-antialis` option. Instead, the output image will be slightly blurred. So I recommend up to 2x.
 ```
-python -m waifu2x.cli --style photo -m noise_scale4x -n 3 --pre-antialias --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
+python -m waifu2x.cli --style photo -m noise_scale -n 3 --pre-antialias --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
 ```
 
 With model dir
