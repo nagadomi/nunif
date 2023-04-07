@@ -22,13 +22,13 @@ docker build -t nunif -f Dockerfiles/Dockerfile.cpu_noavx Dockerfiles
 ## Running waifu2x.web with larger file limit
 
 ```
-docker run --gpus all -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --max-pixels 16777216 --max-body-size 100
+docker run --gpus all -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --no-size-limit
 ```
 Open http://localhost:8812/ 
 
 For CPU only mode (use `--gpu -1` option)
 ```
-docker run -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --max-pixels 16777216 --max-body-size 100 --gpu -1
+docker run -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --no-size-limit --gpu -1
 ```
 
 ## waifu2x.cli command
