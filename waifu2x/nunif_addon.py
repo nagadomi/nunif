@@ -10,15 +10,9 @@ class Waifu2xAddon(Addon):
         super(Waifu2xAddon, self).__init__("waifu2x")
 
     def register_create_training_data(self, subparsers, default_parser):
-        try:
-            from .training.create_training_data import register
-            return register(subparsers, default_parser)
-        except ModuleNotFoundError:
-            return None
+        from .training.create_training_data import register
+        return register(subparsers, default_parser)
 
     def register_train(self, subparsers, default_parser):
-        try:
-            from .training.train import register
-            return register(subparsers, default_parser)
-        except ModuleNotFoundError:
-            return None
+        from .training.train import register
+        return register(subparsers, default_parser)

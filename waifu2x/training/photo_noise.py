@@ -186,6 +186,11 @@ def grain_noise2(x, strength=0.15):
 
     noise = random_crop(noise, (crop_h, crop_w))
     noise = TF.resize(noise, (h, w), interpolation=interpolation, antialias=antialias)
+    if random.uniform(0, 1) < 0.25:
+        if random.choice([True, False]):
+            noise = (1. - x) * noise * 1.2
+        else:
+            noise = (1. - x.mean(dim=0, keepdim=True)) * noise * 1.2
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
@@ -281,6 +286,11 @@ def structured_noise(x, strength=0.15):
     else:
         noise = noise * 2 - 1
         noise -= noise.mean()
+    if random.uniform(0, 1) < 0.25:
+        if random.choice([True, False]):
+            noise = (1. - x) * noise * 1.2
+        else:
+            noise = (1. - x.mean(dim=0, keepdim=True)) * noise * 1.2
 
     return torch.clamp(x + noise * strength, 0, 1)
 
@@ -326,7 +336,7 @@ class RandomPhotoNoiseX():
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise1(x, strength=strength)
         elif method == 2:
-            strength = random.uniform(0.02, 0.15) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[self.noise_level]
             x = grain_noise2(x, strength=strength)
         elif method == 3:
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
@@ -439,6 +449,6 @@ def _test_structured_noise():
 
 
 if __name__ == "__main__":
-    # _test()
+    _test()
     # _test_gaussian()
-    _test_structured_noise()
+    #_test_structured_noise()

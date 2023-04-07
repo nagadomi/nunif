@@ -210,7 +210,7 @@ class SwinUNet2x(I2IBaseModel):
     name = "waifu2x.swin_unet_2x"
 
     def __init__(self, in_channels=3, out_channels=3):
-        super().__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=4)
+        super().__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -230,7 +230,7 @@ class SwinUNet4x(I2IBaseModel):
     name = "waifu2x.swin_unet_4x"
 
     def __init__(self, in_channels=3, out_channels=3):
-        super().__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=4)
+        super().__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
         self.out_channels = out_channels
         self.unet = SwinUNetBase(
             in_channels=in_channels,
@@ -267,7 +267,7 @@ class SwinUNet8x(I2IBaseModel):
     name = "waifu2x.swin_unet_8x"
 
     def __init__(self, in_channels=3, out_channels=3):
-        super().__init__(locals(), scale=4, offset=64, in_channels=in_channels, blend_size=4)
+        super().__init__(locals(), scale=4, offset=64, in_channels=in_channels, blend_size=32)
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -290,9 +290,10 @@ class SwinUNetDownscaled(I2IBaseModel):
         assert downscale_factor in {2, 4}
         offset = 32 // downscale_factor
         scale = 4 // downscale_factor
+        blend_size = 4 * downscale_factor
         super().__init__(dict(in_channels=in_channels, out_channels=out_channels,
                               downscale_factor=downscale_factor),
-                         scale=scale, offset=offset, in_channels=in_channels, blend_size=4)
+                         scale=scale, offset=offset, in_channels=in_channels, blend_size=blend_size)
         if unet is None:
             self.unet = SwinUNetBase(
                 in_channels=in_channels,
@@ -359,11 +360,16 @@ def _convert_tool_main():
                         help="scale factor for output swin_unet_model")
     args = parser.parse_args()
     model_4x, _ = load_model(args.input)
-    model = SwinUNetDownscaled2x.from_4x(model_4x)
+    if args.scale == 2:
+        model = model_4x.to_2x()
+    elif args.scale == 1:
+        model = model_4x.to_1x()
 
     save_model(model, args.output)
 
 
 if __name__ == "__main__":
-    #_convert_tool_main()
-    _test()
+    if False:
+         _test()
+    else:
+        _convert_tool_main()

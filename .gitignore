@@ -28,6 +28,7 @@ tmp
 /waifu2x/appendix/_*
 /font_resource/fonts
 /text_resource/aozora/data
+.python-version
 
 # ----- Python.gitignore
 # Byte-compiled / optimized / DLL files
