@@ -142,3 +142,25 @@ class RandomPILFilter():
     def __call__(self, x):
         kernel = random.choice(self.filters)
         return x.filter(kernel)
+
+
+class ModCrop():
+    def __init__(self, mul=4):
+        self.mul = mul
+
+    def __call__(self, x):
+        w, h = x.size
+        pad_l = pad_t = pad_r = pad_b = 0
+        if w % self.mul != 0:
+            mod = w % self.mul
+            pad_l = mod // 2
+            pad_r = mod - pad_l
+        if h % self.mul != 0:
+            mod = h % self.mul
+            pad_t = mod // 2
+            pad_b = mod - pad_t
+
+        if pad_l + pad_t + pad_r + pad_b != 0:
+            x = TF.pad(x, (-pad_l, -pad_t, -pad_r, -pad_b), padding_mode="constant")
+
+        return x
