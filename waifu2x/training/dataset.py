@@ -195,16 +195,24 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 antialias = TP.Identity()
 
+            if style == "photo":
+                rotate_transform = TP.RandomApply([
+                    TP.RandomChoice([
+                        TP.RandomSafeRotate(y_scale=scale_factor, angle_min=-45, angle_max=45),
+                        TP.RandomSafeRotate(y_scale=scale_factor, angle_min=-11, angle_max=11)
+                    ], p=[0.2, 0.8]),
+                ], p=0.2)
+            else:
+                rotate_transform = TP.Identity()
+
             if style == "photo" and noise_level >= 0:
                 photo_noise = RandomPhotoNoiseX(noise_level=noise_level)
-                rotate_transform = TP.RandomApply([TP.RandomSafeRotate(y_scale=scale_factor)], p=0.05)
                 if noise_level == 3:
                     jpeg_transform = T.RandomChoice([
                         jpeg_transform,
                         RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.95, 0.05])
             else:
                 photo_noise = TP.Identity()
-                rotate_transform = TP.Identity()
 
             if scale_factor > 1:
                 if bicubic_only:
