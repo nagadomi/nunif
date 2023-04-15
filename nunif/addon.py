@@ -45,5 +45,9 @@ def load_addons(addon_dirs=None):
     for addon_dir in addon_dirs:
         addon = load_addon(addon_dir)
         if addon is not None:
-            addons.append(addon)
+            if isinstance(addon, (tuple, list)):
+                for subaddon in addon:
+                    addons.append(subaddon)
+            else:
+                addons.append(addon)
     return addons
