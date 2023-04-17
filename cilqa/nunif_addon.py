@@ -11,5 +11,5 @@ class CILQAAddon(Addon):
         super().__init__("cilqa.jpeg")
 
     def register_train(self, subparsers, default_parser):
-        from .training.jpeg_trainer import register as jpeg_register
+        from .training.jpeg_noise_trainer import register as jpeg_register
         return jpeg_register(subparsers, default_parser)

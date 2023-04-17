@@ -18,7 +18,6 @@ from nunif.training.env import BaseEnv
 from nunif.training.trainer import Trainer
 
 
-
 class JPEGDataset(Dataset):
     def __init__(self, input_dir, training):
         super().__init__()
