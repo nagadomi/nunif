@@ -30,6 +30,8 @@ tmp
 /text_resource/aozora/data
 .python-version
 
+/cilqa/pretrained_models
+
 # ----- Python.gitignore
 # Byte-compiled / optimized / DLL files
 __pycache__/
