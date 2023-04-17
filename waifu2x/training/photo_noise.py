@@ -193,13 +193,23 @@ def grain_noise2(x, strength=0.15):
             crop_h = int(h * scale_h)
             crop_w = int(w * scale_w)
 
-    noise = random_crop(noise, (crop_h, crop_w))
+    if random.uniform(0, 1) < 0.25:
+        # RGB
+        r = random_crop(noise, (crop_h, crop_w))
+        g = random_crop(noise, (crop_h, crop_w))
+        b = random_crop(noise, (crop_h, crop_w))
+        noise = torch.cat([r, g, b], dim=0)
+    else:
+        # Grayscale
+        noise = random_crop(noise, (crop_h, crop_w))
+
     noise = TF.resize(noise, (h, w), interpolation=interpolation, antialias=antialias)
     if random.uniform(0, 1) < 0.25:
         if random.choice([True, False]):
             noise = (1. - x) * noise * 1.2
         else:
             noise = (1. - x.mean(dim=0, keepdim=True)) * noise * 1.2
+
     return torch.clamp(x + noise.expand(x.shape) * strength, 0., 1.)
 
 
