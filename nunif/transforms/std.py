@@ -45,6 +45,21 @@ class RandomFlip():
         return x
 
 
+def add_jpeg_noise(x, quality, subsampling):
+    assert subsampling in {"4:4:4", "4:2:0"}
+    mode = x.mode
+    if mode != "RGB":
+        x = x.convert("RGB")
+    with BytesIO() as buff:
+        x.save(buff, format="jpeg", quality=quality, subsampling=subsampling)
+        buff.seek(0)
+        x = Image.open(buff)
+        x.load()
+    if mode == "L":
+        x = x.convert("L")
+    return x
+
+
 class RandomJPEG():
     def __init__(self, min_quality=85, max_quality=99, sampling=["4:4:4", "4:2:0"]):
         self.min_quality = min_quality
@@ -54,16 +69,7 @@ class RandomJPEG():
     def __call__(self, x):
         quality = random.randint(self.min_quality, self.max_quality)
         sampling = random.choice(self.sampling)
-        with BytesIO() as f:
-            mode = x.mode
-            rgb = x.convert("RGB")
-            rgb.save(f, format="jpeg", quality=quality, sampling=sampling)
-            f.seek(0)
-            x = Image.open(f)
-            x.load()
-            if mode == "L":
-                x = x.convert("L")
-            return x
+        return add_jpeg_noise(x, quality, sampling)
 
 
 class RandomDownscale():
