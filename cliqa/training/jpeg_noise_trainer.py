@@ -187,11 +187,11 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "cilqa.jpeg",
+        "cliqa.jpeg",
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="cilqa.jpeg_quality", help="network arch")
+    parser.add_argument("--arch", type=str, default="cliqa.jpeg_quality", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
 

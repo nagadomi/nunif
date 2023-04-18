@@ -232,11 +232,11 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "cilqa.grain",
+        "cliqa.grain",
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="cilqa.grain_noise_level", help="network arch")
+    parser.add_argument("--arch", type=str, default="cliqa.grain_noise_level", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
 

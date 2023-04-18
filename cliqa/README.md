@@ -1,4 +1,4 @@
-`cilqa` provides low-vision image quality scores that are more consistent across different images.
+`cliqa` provides low-vision image quality scores that are more consistent across different images.
 
 It is useful for filtering low-quality images with a threshold value.
 
@@ -11,14 +11,14 @@ This can detect low-quality JPEG images even in the following cases.
 - JPEG image in PNG format
 - Re-encoded JPEG image with the higher quality value than the original quality value 
 
-The current pre-trained model can predict JPEG quality value around an average error of 2/100 on clean validation data.
+The current pre-trained model can predict JPEG quality value around an average error of 3/100 on clean validation data.
 In real world data it should be much worse. However, I feel that it has achieved a practical level.
 
-## cilqa.filter_low_quality_jpeg
+## cliqa.filter_low_quality_jpeg
 
 This tool copies only high quality images in the directory specified by `-i` to the directory specified by `-o`.
 ```
-pytyon -m cilqa.filter_low_quality_jpeg -i /path_to_input_dir -o /path_to_output_dir
+pytyon -m cliqa.filter_low_quality_jpeg -i /path_to_input_dir -o /path_to_output_dir
 ```
 
 options.
@@ -30,7 +30,7 @@ options:
   --output OUTPUT, -o OUTPUT
                         output image directory (default: None)
   --checkpoint CHECKPOINT
-                        model parameter file (default: ./cilqa/pretrained_models/jpeg_quality.pth)
+                        model parameter file (default: ./cliqa/pretrained_models/jpeg_quality.pth)
   --gpu GPU [GPU ...], -g GPU [GPU ...]
                         GPU device ids. -1 for CPU (default: [0])
   --num-patches NUM_PATCHES
@@ -40,3 +40,12 @@ options:
   --symlink             create symbolic links, instead of copying the real files (recommended on linux) (default: False)
   --score-prefix        add score prefix to the output filename (default: False)
 ```
+
+# GrainNoiseLevel
+
+Content-based Photo Noise Level predictor. This can detect noisy photos.
+
+The predicted value is `noise_level = 50 - min(PSNR(original_image, noise_added_image), 50)`, so `predicted_psnr = 50 - predicted_noise_level`.
+`predicted_psnr >= 40` is predicted to be a less noisy photo.
+
+Note that this model is trained with not very perfected synthetic noise.
