@@ -46,3 +46,14 @@ def predict_jpeg_quality(model, im, num_patches=8, patch_size=PATCH_SIZE):
     subsampling_prob = torch.sigmoid(subsampling).mean().item()
 
     return quality, subsampling_prob
+
+
+def predict_grain_noise_psnr(model, im, num_patches=8, patch_size=PATCH_SIZE):
+    device = get_model_device(model)
+    x = extract_patches(im, num_patches, patch_size)
+    x = x.to(device)
+    noise_level = model(x)
+    noise_level = torch.clamp(noise_level.mean(), 0, 50).item()
+    psnr = 50. - noise_level
+
+    return psnr
