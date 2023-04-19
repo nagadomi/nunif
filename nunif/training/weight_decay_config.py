@@ -60,7 +60,8 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
             elif isinstance(m, ShiftedWindowAttention):
                 if pn.endswith("relative_position_bias_table"):
                     no_decay.add(fpn)
-            elif m.__class__.__name__ in {"ParametrizedConv2d", "ParametrizedLinear"}:
+            elif m.__class__.__name__ in {"ParametrizedConv2d", "ParametrizedLinear",
+                                          "ParametrizedConvTranspose2d"}:
                 no_decay.add(fpn)
             else:
                 pass

@@ -39,7 +39,7 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
 
 
 def load_model(model_path, model=None, device_ids=None, strict=True, map_location="cpu"):
-    if PYTORCH2:
+    if False: #PYTORCH2: # TODO: Temporarily disabled due to problems with https://github.com/pytorch/pytorch/issues/98921
         data = torch.load(model_path, map_location=map_location, weights_only=True)
     else:
         # Pytorch 1.13.1 has a bug in torch.load(weights_only=True), so it cannot be used here.

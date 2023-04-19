@@ -138,7 +138,7 @@ def _load_image_simple(filename, color="rgb", bg_color=255):
             im = convert_i2l(im)
         else:
             im = im.convert("L")
-    return im, {}
+    return im, {"filename": filename}
 
 
 def load_image_simple(filename, color="rgb", bg_color=255):

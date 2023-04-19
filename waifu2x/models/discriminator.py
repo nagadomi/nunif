@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import Model, register_model
-from nunif.modules import SEBlock
-from nunif.modules.res_block import ResBlockGNLReLU
+from nunif.modules.attention import SEBlock, SNSEBlock
+from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
+from torch.nn.utils.parametrizations import spectral_norm
 
 
 def normalize(x):
@@ -15,7 +16,7 @@ class ImageToCondition(nn.Module):
         super().__init__()
         self.features = nn.Sequential(
             nn.AvgPool2d((4, 4)),
-            nn.Conv2d(1, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
+            nn.Conv2d(3, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
             nn.GroupNorm(4, embed_dim),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((4, 4)),
@@ -30,7 +31,6 @@ class ImageToCondition(nn.Module):
 
     def forward(self, x):
         B = x.shape[0]
-        x = x[:, 0:1, :, :] * 0.29891 + x[:, 1:2, :, :] * 0.58661 + x[:, 2:3, :, :] * 0.11448
         x = normalize(x)
         x = self.features(x)
         x = self.aggregate(x.view(B, -1))
@@ -207,14 +207,72 @@ class SelfSupervisedDiscriminator():
     pass
 
 
+@register_model
+class U3ConditionalDiscriminator(Discriminator):
+    name = "waifu2x.u3_conditional_discriminator"
+
+    def __init__(self, in_channels=3, out_channels=1):
+        super().__init__(locals(), loss_weights=(0.333, 0.333, 0.333))
+        self.enc1 = nn.Sequential(
+            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2,
+                      padding=1, padding_mode="replicate"),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.enc2 = nn.Sequential(
+            ResBlockSNLReLU(64, 128, stride=2),
+            SNSEBlock(128, bias=True))
+        self.enc3 = nn.Sequential(
+            ResBlockSNLReLU(128, 256, stride=2),
+            SNSEBlock(256, bias=True),
+            nn.Conv2d(256, 256, kernel_size=1, stride=1, padding=0))
+        self.class1 = nn.Sequential(
+            ResBlockSNLReLU(256, 256),
+            SNSEBlock(256, bias=True),
+            nn.Conv2d(256, out_channels, kernel_size=3, stride=1, padding=0)
+        )
+        self.up1 = spectral_norm(nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2, padding=0))
+        self.dec1 = ResBlockSNLReLU(128, 128)
+        self.class2 = nn.Sequential(
+            ResBlockSNLReLU(128, 128),
+            SNSEBlock(128, bias=True),
+            nn.Conv2d(128, out_channels, kernel_size=3, stride=1, padding=0)
+        )
+        self.up2 = spectral_norm(nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2, padding=0))
+        self.dec2 = ResBlockSNLReLU(64, 64)
+        self.class3 = nn.Sequential(
+            ResBlockSNLReLU(64, 64),
+            SNSEBlock(64, bias=True),
+            nn.Conv2d(64, out_channels, kernel_size=3, stride=1, padding=0)
+        )
+        init_moduels(self)
+        self.to_cond = ImageToCondition(64, [256])
+
+    def forward(self, x, c=None, scale_factor=None):
+        cond = self.to_cond(c)
+        x = normalize(x)
+        x1 = self.enc1(x)
+        x2 = self.enc2(x1)
+        x3 = F.leaky_relu(self.enc3(x2) + cond[0], 0.2, inplace=True)
+        z1 = self.class1(x3)
+
+        x4 = self.dec1(self.up1(x3) + x2)
+        z2 = self.class2(x4)
+        z3 = self.class3(self.dec2(self.up2(x4) + x1))
+
+        return z1, z2, z3
+
+
 if __name__ == "__main__":
     l3 = L3Discriminator()
     l3c = L3ConditionalDiscriminator()
     l3v1 = L3V1Discriminator()
     l3v1c = L3V1ConditionalDiscriminator()
-    x = torch.zeros((1, 3, 256, 256))
-    c = torch.zeros((1, 3, 256, 256))
+    u3c = U3ConditionalDiscriminator()
+
+    x = torch.zeros((1, 3, 192, 192))
+    c = torch.zeros((1, 3, 192, 192))
     print(l3(x, c, 4).shape)
     print(l3c(x, c, 4).shape)
     print([z.shape for z in l3v1(x, c, 4)])
     print([z.shape for z in l3v1c(x, c, 4)])
+    print([z.shape for z in u3c(x, c, 4)])
