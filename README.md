@@ -15,13 +15,11 @@ We usually support the latest version. If there are bugs or compatibility issues
 
 ## waifu2x
 
-[waifu2x](./waifu2x)
+[waifu2x/README.md](./waifu2x/README.md)
 
 Image Super-Resolution for Anime-Style Art. And it supports photo models (GAN based models)
 
 The repository contains waifu2x pytorch implementation and pretrained models.
-
-See [waifu2x/README.md](waifu2x/README.md)
 
 The demo application can be found at
 - https://waifu2x.udp.jp/ (Cloud version)
@@ -29,7 +27,7 @@ The demo application can be found at
 
 ## cliqa
 
-[cliqa](./cliqa)
+[cliqa/README.md](./cliqa/README.md)
 
 `cliqa` provides low-vision image quality scores that are more consistent across different images.
 
