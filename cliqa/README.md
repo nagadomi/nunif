@@ -99,3 +99,15 @@ Example,
 pytyon -m cliqa.filter_low_quality_jpeg -i ./data/images -o ./data/hq1 --symlink
 pytyon -m cliqa.filter_noisy_photo -i ./data/hq1 -o ./data/hq2 --symlink
 ```
+
+More practical example,
+```bash
+# rename original `images` directory to `images_original` temporary.
+mv ./data/images ./data/images_original
+# filtering low quality jpegs
+pytyon -m cliqa.filter_low_quality_jpeg -i ./data/images_original -o ./data/images_filter_jpeg --symlink
+# filtering noisy photos
+pytyon -m cliqa.filter_noisy_photo -i ./data/images_filter_jpeg -o ./data/images_filter_noisy --symlink
+# Make the original `images` directory link to the cleaned directory. (replace)
+ln -s `realpath ./data/images_filter_noisy` ./data/images
+```
