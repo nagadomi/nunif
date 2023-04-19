@@ -25,7 +25,11 @@ class JPEGDataset(Dataset):
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
-        self.gt_transform = T.Compose([T.RandomCrop((256, 256))])
+        self.gt_transform = T.Compose([
+            T.RandomCrop((256, 256)),
+            T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)], p=0.5),
+            T.RandomGrayscale(p=0.02)
+        ])
         self.random_crop = T.Compose([T.RandomCrop((128, 128)), RandomFlip()])
         self.center_crop = T.CenterCrop((128, 128))
 

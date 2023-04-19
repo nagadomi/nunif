@@ -47,8 +47,12 @@ class GrainNoiseDataset(Dataset):
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
-        self.gt_transform = T.Compose([T.RandomCrop((136, 136))])
+        self.gt_transform = T.Compose([
+            T.RandomCrop((136, 136)),
+            T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)], p=0.5),
+        ])
         self.random_crop = T.Compose([T.RandomCrop((128, 128)), RandomFlip()])
+        self.random_grayscale = T.RandomGrayscale(p=0.02)
         self.center_crop = T.CenterCrop((128, 128))
         self.validation_settings = self._make_validation_settings()
 
@@ -112,9 +116,12 @@ class GrainNoiseDataset(Dataset):
         if random.uniform(0, 1) < 0.5:
             jpeg_quality = random.randint(80, 99)
             jpeg_subsampling = random.choice(["4:4:4", "4:2:0"])
-            x = add_jpeg_noise(TF.to_pil_image(x), quality=jpeg_quality, subsampling=jpeg_subsampling)
+            x = TF.to_pil_image(x)
+            x = self.random_grayscale(x)
+            x = add_jpeg_noise(x, quality=jpeg_quality, subsampling=jpeg_subsampling)
         else:
             x = TF.to_pil_image(x)
+            x = self.random_grayscale(x)
         x = self.random_crop(x)
         x = TF.to_tensor(x)
 
