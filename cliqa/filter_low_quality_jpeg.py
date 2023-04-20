@@ -8,7 +8,6 @@ from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import torch
 from nunif.utils.image_loader import ImageLoader
-# from .download_models import main as download_main
 from nunif.utils import pil_io
 from nunif.models import load_model, get_model_device
 from nunif.logger import logger
@@ -45,7 +44,7 @@ def main():
 
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
-    model, _ = load_model(args.checkpoint, device_ids=args.gpu)
+    model, _ = load_model(args.checkpoint, device_ids=args.gpu, weights_only=True)
     model.eval()
     loader = ImageLoader(args.input,
                          load_func=pil_io.load_image_simple,
