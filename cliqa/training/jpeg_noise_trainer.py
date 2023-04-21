@@ -86,7 +86,6 @@ class JPEGDataset(Dataset):
 
         return x, quality, subsampling
 
-
     def __getitem__(self, index):
         x, _ = pil_io.load_image_simple(self.files[index], color="rgb")
         if self.training:
@@ -180,8 +179,8 @@ class JPEGTrainer(Trainer):
 
     def create_env(self):
         quality_criterion = ClampLoss(nn.L1Loss(), 0, 100).to(self.device)
-        subsampling_loss = nn.BCEWithLogitsLoss().to(self.device)
-        return JPEGEnv(self.model, quality_criterion, subsampling_loss, self.device)
+        subsampling_criterion = nn.BCEWithLogitsLoss().to(self.device)
+        return JPEGEnv(self.model, quality_criterion, subsampling_criterion, self.device)
 
 
 def train(args):
