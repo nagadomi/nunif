@@ -27,6 +27,10 @@ If new `pretrained_models` are available, run `python -m waifu2x.download_models
 
 See [waifu2x Command Line Interface](docs/cli.md).
 
+# Graphical User Interface
+
+See [waifu2x Graphical User Interface](docs/gui.md)
+
 # Web Application (server)
 
 See [waifu2x Web Application](docs/web.md)
