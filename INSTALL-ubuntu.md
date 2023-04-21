@@ -1,7 +1,7 @@
 ## 1. Install dependencies packages
 
 ```
-apt-get install git-core libmagickwand-dev libsnappy-dev libraqm-dev
+./install.sh
 ```
 
 ## 2. Clone
