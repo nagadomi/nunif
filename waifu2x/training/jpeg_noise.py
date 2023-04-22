@@ -127,7 +127,7 @@ def choose_jpeg_quality(style, noise_level):
                 else:
                     quality1 = random.randint(37, 70)
                 qualities.append(quality1)
-                if quality1 >= 80 and random.uniform(0, 1) < 0.2:
+                if quality1 >= 70 and random.uniform(0, 1) < 0.2:
                     qualities.append(random.randint(70, 90))
             else:
                 qualities.append(random.randint(90, 98))
