@@ -17,9 +17,9 @@ We usually support the latest version. If there are bugs or compatibility issues
 
 [waifu2x/README.md](./waifu2x/README.md)
 
-Image Super-Resolution for Anime-Style Art. And it supports photo models (GAN based models)
+waifu2x: Image Super-Resolution for Anime-Style Art. Also it supports photo models (GAN based models)
 
-The repository contains waifu2x pytorch implementation and pretrained models.
+The repository contains waifu2x pytorch implementation and pretrained models, started with porting the original [waifu2x](https://github.com/nagadomi/waifu2x).
 
 The demo application can be found at
 - https://waifu2x.udp.jp/ (Cloud version)
@@ -33,3 +33,9 @@ The demo application can be found at
 
 It is useful for filtering low-quality images with a threshold value when creating image datasets.
 
+Currently, the following two models are supported.
+
+- JPEGQuality: Predicts JPEG Quality from image content
+- GrainNoiseLeve: Predicts Noise Level related to photograph and PSNR degraded by that noise
+
+CLI tools are also available to filter out low quality images from these results.
