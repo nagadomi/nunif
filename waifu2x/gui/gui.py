@@ -9,6 +9,7 @@ TMP = tempfile.TemporaryFile(mode="w+t", encoding="UTF-8")
 
 root = Tk()
 root.title("waifu2x gui")
+root.iconbitmap("./favicon.ico")
 root.geometry("640x400")
 
 la = LabelFrame(root, text="input image")
@@ -163,15 +164,18 @@ def VariableGetVariable():
 def sc():
     file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir = VariableGetVariable()
 
+    print(file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir)
+
+    file_load = f"--input {file_load} "; file_save = f"--output {file_save} "; noise_upscaling = f"--method {noise_upscaling} "; noise_level = f"--noise-level {noise_level} "; tile = f"--tile-size {tile} "
+
+
     op_l = [file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir]
 
-    if platform.system() == "Windows":
-        PC = "python -m waifu2x.cli"
-    elif platform.system() == "Linux":
-        PC = "python3 -m waifu2x.cli"
+    command = "python -m waifu2x.cli "
 
 
-Button(l10, text="start", command=sc()).pack()
+
+st = Button(l10, text="start", command=sc()).pack()
 
 def main():
     try:
