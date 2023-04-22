@@ -190,11 +190,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 jpeg_transform = TP.Identity()
 
-            if self.style == "photo":
-                antialias = TP.RandomApply([AntialiasX()], p=0.025)
-            else:
-                antialias = TP.Identity()
-
             if style == "photo":
                 rotate_transform = TP.RandomApply([
                     TP.RandomChoice([
@@ -246,7 +241,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 photo_noise,
                 rotate_transform,
                 jpeg_transform,
-                antialias,
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
