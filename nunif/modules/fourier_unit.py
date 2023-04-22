@@ -31,8 +31,12 @@ class FourierUnit(nn.Module):
         B, C, H, W = x.shape
 
         # (B, C, H, W/2+1, 2)
-        ffted = torch.fft.rfftn(x, dim=(-2, -1), norm="ortho")
-        ffted = torch.stack((ffted.real, ffted.imag), dim=-1)
+        if x.dtype == torch.float16:
+            ffted = torch.fft.rfftn(x.to(torch.float32), dim=(-2, -1), norm="ortho")
+            ffted = torch.stack((ffted.real, ffted.imag), dim=-1).to(torch.float16)
+        else:
+            ffted = torch.fft.rfftn(x, dim=(-2, -1), norm="ortho")
+            ffted = torch.stack((ffted.real, ffted.imag), dim=-1)
         # (B, C, 2, H, W/2+1)
         ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()
         # (B, C*2, H, W/2+1)
@@ -42,10 +46,17 @@ class FourierUnit(nn.Module):
         ffted = self.act(self.norm(self.conv(ffted)))
         # (B, OUT_C, H, W/2+1, 2)
         ffted = ffted.view((B, -1, 2) + ffted.shape[2:]).permute(0, 1, 3, 4, 2).contiguous()
-        # (B, OUT_C, H, W/2+1)
-        ffted = torch.complex(ffted[..., 0], ffted[..., 1])
-        # (B, OUT_C, H, W)
-        output = torch.fft.irfftn(ffted, s=(H, W), dim=(-2, -1), norm="ortho")
+        if x.dtype == torch.float16:
+            # (B, OUT_C, H, W/2+1)
+            ffted = ffted.to(torch.float32)
+            ffted = torch.complex(ffted[..., 0], ffted[..., 1])
+            # (B, OUT_C, H, W)
+            output = torch.fft.irfftn(ffted, s=(H, W), dim=(-2, -1), norm="ortho").to(torch.float16)
+        else:
+            # (B, OUT_C, H, W/2+1)
+            ffted = torch.complex(ffted[..., 0], ffted[..., 1])
+            # (B, OUT_C, H, W)
+            output = torch.fft.irfftn(ffted, s=(H, W), dim=(-2, -1), norm="ortho")
 
         if self.identity is not None:
             output = output + self.identity(x)
