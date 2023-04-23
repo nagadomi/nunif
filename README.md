@@ -38,4 +38,4 @@ Currently, the following two models are supported.
 - JPEGQuality: Predicts JPEG Quality from image content
 - GrainNoiseLeve: Predicts Noise Level related to photograph and PSNR degraded by that noise
 
-CLI tools are also available to filter out low quality images from these results.
+CLI tools are also available to filter out low quality images using these results.
