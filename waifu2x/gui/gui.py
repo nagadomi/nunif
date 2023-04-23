@@ -1,16 +1,17 @@
 from tkinter import *
 from tkinter import filedialog, LabelFrame
 from tkinter.ttk import *
-import tempfile, os, platform
+import tempfile, os, platform, base64, subprocess, threading
 
 MAX_INT = 2147483647 ; MAX_INT_BIT = 9223372036854775807
-TMP = tempfile.TemporaryFile(mode="w+t", encoding="UTF-8")
-
 
 root = Tk()
 root.title("waifu2x gui")
-root.iconbitmap("./favicon.ico")
-root.geometry("640x400")
+try:
+    root.iconphoto(False, PhotoImage(file=str(os.getcwd()) + "/waifu2x/gui/favicon.png"))
+except:
+    root.iconphoto(False, PhotoImage(file="./favicon.png"))
+root.geometry("1000x400")
 
 la = LabelFrame(root, text="input image")
 la.place(x=0, y=0, height=40)
@@ -19,7 +20,6 @@ def open():
     global load_f
     load_f = filedialog.askopenfilename(initialdir='', title='input image', filetypes=(('png files', '*.png'), ('jpg files', '*.jpg'), ('all files', '*.*')))
     Label(la, text=load_f, background="white").pack(side="left", anchor="n")
-    TMP.write("""{"load_file":load_f}""")
 
 my_btn = Button(la, text='select file', command=open).pack(side="left", anchor="n")
 
@@ -30,7 +30,6 @@ def save():
     global save_f
     save_f = filedialog.asksaveasfilename(initialdir='', initialfile='', title="output image", filetypes=(('png files', '*.png'), ('webp files', '*.webp'), ('jpeg files', '*.jpeg')))
     Label(laa, text=save_f, background="white").pack(side="left", anchor="n")
-    TMP.write("""{"save_file":save_f}""")
 
 asd = Button(laa, text="select file", command=save).pack(side="left", anchor="n")
 
@@ -141,10 +140,8 @@ def VariableGetVariable():
         format
         dir
     """
-    TMP.seek(0)
-    file_load: str = TMP.read()
-    TMP.seek(1)
-    file_save: str = TMP.read()
+    file_load: str = load_f
+    file_save: str = save_f
     #
     noise_upscaling: int = RI_N.get()
     noise_level: int = DL.get()
@@ -156,31 +153,75 @@ def VariableGetVariable():
     lib: str = ILV.get()
     format: str = FV.get()
     dir: str = MV.get()
+    gpu: int = GPUV.get()
     #
-    return file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir
+    return file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir, gpu
 
-#TODO run waifu2x
+class CmdThread (threading.Thread):
+   def __init__(self, command, textvar):
+        threading.Thread.__init__(self)
+        self.command = command
+        self.textvar = textvar
+
+   def run(self):
+        proc = subprocess.Popen(self.command, stdout=subprocess.PIPE)
+        while not proc.poll():
+            data = proc.stdout.readline()
+            if data:
+                print(data)
+                self.textvar.set(data)
+            else:
+                break
 
 def sc():
-    file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir = VariableGetVariable()
 
-    print(file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir)
+    logtext = StringVar()
+    loglabel = Label(root, text=lambda:logtext.get(), textvariable=logtext)
+    loglabel.pack()
 
-    file_load = f"--input {file_load} "; file_save = f"--output {file_save} "; noise_upscaling = f"--method {noise_upscaling} "; noise_level = f"--noise-level {noise_level} "; tile = f"--tile-size {tile} "
+    file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir, gpu = VariableGetVariable()
 
+    print(file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir, gpu)
+
+    file_load = f"--input {file_load} "; file_save = f"--output {file_save} "; noise_upscaling = f"--method {noise_upscaling} "; noise_level = f"--noise-level {noise_level} "; tile = f"--tile-size {tile} "; batch = f"--batch-size {batch} "; depth = f"--depth {depth} "; lib = f"--image-lib {lib} "; format = f"--format {format} "; gpu = f"--gpu {gpu} "
+    #
+    if tta == 1:
+        tta = f"--tta "
+    else:
+        tta = ""
+    #
+    if amp == 1:
+        amp = ""
+    else:
+        amp = f"--disable-amp "
+    #
+    if dir == "If this statement is left as is or no value is given, the default model position will be selected.":
+        dir = ""
+    else:
+        dir = f"--model-dir {dir} "
+    #
 
     op_l = [file_load, file_save, noise_upscaling, noise_level, tile, batch, depth, tta, amp, lib, format, dir]
 
-    command = "python -m waifu2x.cli "
+    if platform.system() in "Windows":
+        commands = "python -m waifu2x.cli "
+    else:
+        commands = "DEBUG=1 python3 -m waifu2x.cli "
 
+    for op in op_l:
+        commands += str(op)
+    
+    print(commands)
 
+    commands = commands.split()
 
-st = Button(l10, text="start", command=sc()).pack()
+    thread = CmdThread(command=commands, textvar=logtext)
+    thread.start()
+
+st = Button(l10, text="start", command= lambda: sc()).pack()
 
 def main():
     try:
         root.mainloop()
-        TMP.close()
     except KeyboardInterrupt:
         print("Exit")
-        TMP.close()
