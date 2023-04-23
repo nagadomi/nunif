@@ -3,9 +3,14 @@ import torch.nn as nn
 from torch.nn.utils.parametrizations import spectral_norm as _spectral_norm
 
 
+# NOTE: This module does not support export to ONNX (at 2023-04, rfftn and irfftn)
+
+
 class FourierUnit(nn.Module):
     """ From LaMa: Resolution-robust Large Mask Inpainting with Fourier Convolutions
              https://github.com/advimman/lama
+             Fast Fourier Convolution
+             https://github.com/pkumivision/FFC
     """
     def __init__(self, in_channels, out_channels,
                  norm_layer=lambda dim: nn.BatchNorm2d(dim),

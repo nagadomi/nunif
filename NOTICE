@@ -26,8 +26,16 @@ https://github.com/CompVis/taming-transformers
 
 ----
 nunif/module/_lpips_1.pth
-is trained with the internal forked version of LPIPS.
+nunif/module/_lpips_2.pth
+are trained with the internal forked version of LPIPS.
 https://github.com/richzhang/PerceptualSimilarity
+
+---
+nunif/modules/fourier_unit.py
+Modified from LaMa https://github.com/advimman/lama/blob/main/saicinpainting/training/modules/ffc.py
+Samsung Research / Apache License Version 2.0
+Original implementation Fast Fourier Convolution https://github.com/pkumivision/FFC/blob/main/model_zoo/ffc.py
+Lu Chi / Apache License Version 2.0
 
 ----
 Other libraries used are listed in `requirements.txt`.
