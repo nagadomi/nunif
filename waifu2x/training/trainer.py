@@ -440,6 +440,7 @@ class Waifu2xTrainer(Trainer):
                 da_unsharpmask_p=self.args.da_unsharpmask_p,
                 da_grayscale_p=self.args.da_grayscale_p,
                 da_color_p=self.args.da_color_p,
+                da_antialias_p=self.args.da_antialias_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,

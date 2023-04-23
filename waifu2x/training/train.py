@@ -72,17 +72,21 @@ def register(subparsers, default_parser):
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
-                        help="HQ JPEG(quality=92-99) data argumentation for gt image")
+                        help="HQ JPEG(quality=92-99) data augmentation for gt image")
     parser.add_argument("--da-scale-p", type=float, default=0.25,
-                        help="random downscale data argumentation for gt image")
+                        help="random downscale data augmentation for gt image")
     parser.add_argument("--da-chshuf-p", type=float, default=0.0,
-                        help="random channel shuffle data argumentation for gt image")
+                        help="random channel shuffle data augmentation for gt image")
     parser.add_argument("--da-unsharpmask-p", type=float, default=0.0,
-                        help="random unsharp mask data argumentation for gt image")
+                        help="random unsharp mask data augmentation for gt image")
     parser.add_argument("--da-grayscale-p", type=float, default=0.0,
-                        help="random grayscale data argumentation for gt image")
+                        help="random grayscale data augmentation for gt image")
     parser.add_argument("--da-color-p", type=float, default=0.0,
-                        help="random color jitter data argumentation for gt image")
+                        help="random color jitter data augmentation for gt image")
+    parser.add_argument("--da-antialias-p", type=float, default=0.0,
+                        help=("--pre-antialias data augmentation for input image, "
+                              "intended to train a specialized model with 1."))
+
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of resize blur."
                               " 0.0-0.1 is a reasonable value."

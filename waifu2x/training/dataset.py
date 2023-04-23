@@ -171,7 +171,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  model_offset,
                  scale_factor,
                  tile_size, num_samples=None,
-                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0, da_grayscale_p=0, da_color_p=0,
+                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
+                 da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
                  deblur=0, resize_blur_p=0.1,
                  noise_level=-1, style=None,
@@ -209,6 +210,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 photo_noise = TP.Identity()
 
+            antialias = TP.RandomApply([AntialiasX()], p=da_antialias_p)
+
             if scale_factor > 1:
                 if bicubic_only:
                     interpolation = INTERPOLATION_BICUBIC
@@ -241,6 +244,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 photo_noise,
                 rotate_transform,
                 jpeg_transform,
+                antialias,
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])
