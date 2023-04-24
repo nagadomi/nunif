@@ -55,3 +55,21 @@ class AlphaBorderPadding(nn.Module):
             mask_nega = mask < 1.
 
         return rgb.clamp_(0., 1.)
+
+
+if __name__ == "__main__":
+    from nunif.utils import pil_io
+    import argparse
+    import cv2
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
+    args = parser.parse_args()
+    im, _ = pil_io.load_image(args.input, color="rgb", keep_alpha=True)
+    rgb, alpha = pil_io.to_tensor(im, return_alpha=True)
+    alpha_pad = AlphaBorderPadding().eval()
+    with torch.no_grad():
+        padded_rgb = alpha_pad(rgb, alpha, 8)
+        cv2.imshow("rgb", pil_io.to_cv2(pil_io.to_image(rgb)))
+        cv2.imshow("paded_rgb", pil_io.to_cv2(pil_io.to_image(padded_rgb)))
+        cv2.waitKey(0)
