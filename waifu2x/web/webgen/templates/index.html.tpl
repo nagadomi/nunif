@@ -100,11 +100,11 @@
       </div>
       <p>{{description}}</p>
       <p class="margin1 link-box">
-	<a href="https://raw.githubusercontent.com/nagadomi/waifu2x/master/images/slide.png" class="blue-link" target="_blank">
+	<a href="https://raw.githubusercontent.com/nagadomi/nunif/master/waifu2x/docs/images/slide.png" class="blue-link" target="_blank">
 	  {{show_demonstration}}
 	</a>
 	| 
-	<a href="https://github.com/nagadomi/waifu2x" class="blue-link" target="_blank">
+	<a href="https://github.com/nagadomi/nunif" class="blue-link" target="_blank">
 	  {{go_to_github}}
 	</a>
       </p>
