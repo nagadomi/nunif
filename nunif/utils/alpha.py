@@ -71,5 +71,5 @@ if __name__ == "__main__":
     with torch.no_grad():
         padded_rgb = alpha_pad(rgb, alpha, 8)
         cv2.imshow("rgb", pil_io.to_cv2(pil_io.to_image(rgb)))
-        cv2.imshow("paded_rgb", pil_io.to_cv2(pil_io.to_image(padded_rgb)))
+        cv2.imshow("padded_rgb", pil_io.to_cv2(pil_io.to_image(padded_rgb)))
         cv2.waitKey(0)
