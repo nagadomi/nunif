@@ -7,11 +7,9 @@ from tqdm import tqdm
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import torch
-from nunif.utils.image_loader import ImageLoader
-from nunif.utils import pil_io
-from nunif.models import load_model, get_model_device
+from nunif.models import load_model
 from nunif.logger import logger
-from .utils import predict_jpeg_quality
+from .utils import predict_jpeg_quality, create_patch_loader
 from .models import jpeg_quality  # noqa
 
 
@@ -46,19 +44,19 @@ def main():
     os.makedirs(args.output, exist_ok=True)
     model, _ = load_model(args.checkpoint, device_ids=args.gpu, weights_only=True)
     model.eval()
-    loader = ImageLoader(args.input,
-                         load_func=pil_io.load_image_simple,
-                         load_func_kwargs={"color": "rgb"})
-
+    loader = create_patch_loader(args.input, num_patches=args.num_patches, num_workers=cpu_count())
     with torch.no_grad(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         futures = []
-        for im, meta in tqdm(loader, ncols=80):
-            quality, subsampling_prob = predict_jpeg_quality(model, im, num_patches=args.num_patches)
-            logger.debug(f"{meta['filename']}: quality: {round(quality, 3)},"
+        for x, filename in tqdm(loader, ncols=80):
+            x, filename = x[0], filename[0]
+            if not filename:  # load error
+                continue
+            quality, subsampling_prob = predict_jpeg_quality(model, x)
+            logger.debug(f"{filename}: quality: {round(quality, 3)},"
                          f" subsampling: {round(subsampling_prob, 3)}")
             jpeg_420 = subsampling_prob >= 0.5
             if quality >= args.quality and (not jpeg_420 or not args.filter_420):
-                src = path.abspath(meta["filename"])
+                src = path.abspath(filename)
                 if args.score_prefix:
                     prefix = f"{str(int(quality)).zfill(3)}_{'420' if jpeg_420 else '444'}_"
                     dst = path.abspath(path.join(args.output, prefix + path.basename(src)))
