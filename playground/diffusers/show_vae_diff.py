@@ -63,7 +63,7 @@ def main():
         y = y.squeeze(0).cpu()
         cv2.imshow("y", pil_io.to_cv2(pil_io.to_image(y)))
 
-        diff = (x - y)
+        diff = (x - y).abs()
         min_v = diff.min()
         max_v = diff.max()
         diff = (diff - min_v) / (max_v - min_v)
