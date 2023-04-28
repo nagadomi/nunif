@@ -12,6 +12,11 @@ def normalize(x):
     return x * 2. - 1.
 
 
+def clamp(x, min=-2., max=2., eps=0.01):
+    c = torch.clamp(x, min, max)
+    return c + (c.detach() - x) * eps
+
+
 class ImageToCondition(nn.Module):
     def __init__(self, embed_dim, outputs):
         super().__init__()
@@ -186,7 +191,7 @@ class L3V1Discriminator(Discriminator):
     def forward(self, x, c=None, scale_factor=None):
         l3 = self.l3(x, c, scale_factor)
         v1 = self.v1(x, c, scale_factor)
-        return l3, v1
+        return clamp(l3), clamp(v1)
 
 
 @register_model
@@ -201,7 +206,7 @@ class L3V1ConditionalDiscriminator(Discriminator):
     def forward(self, x, c=None, scale_factor=None):
         l3 = self.l3(x, c, scale_factor)
         v1 = self.v1(x, c, scale_factor)
-        return l3, v1
+        return clamp(l3), clamp(v1)
 
 
 class SelfSupervisedDiscriminator():
@@ -260,7 +265,7 @@ class U3ConditionalDiscriminator(Discriminator):
         z2 = self.class2(x4)
         z3 = self.class3(self.dec2(self.up2(x4) + x1))
 
-        return z1, z2, z3
+        return clamp(z1), clamp(z2), clamp(z3)
 
 
 @register_model
@@ -317,7 +322,7 @@ class U3FFTConditionalDiscriminator(Discriminator):
         z2 = self.class2(x4)
         z3 = self.class3(self.dec2(self.up2(x4) + x1))
 
-        return z1, z2, z3
+        return clamp(z1), clamp(z2), clamp(z3)
 
 
 if __name__ == "__main__":
