@@ -225,13 +225,24 @@ class SwinUNet2x(I2IBaseModel):
             return torch.clamp(z, 0, 1)
 
 
+def resize_antialias(x, antialias):
+    B, C, H, W = x.shape
+    x = F.interpolate(x, size=(H * 2, W * 2), mode="bicubic",
+                      align_corners=False, antialias=antialias)
+    x = F.interpolate(x, size=(H, W), mode="bicubic",
+                      align_corners=False, antialias=antialias)
+    return x
+
+
 @register_model
 class SwinUNet4x(I2IBaseModel):
     name = "waifu2x.swin_unet_4x"
 
-    def __init__(self, in_channels=3, out_channels=3):
+    def __init__(self, in_channels=3, out_channels=3, pre_antialias=False):
         super().__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
         self.out_channels = out_channels
+        self.pre_antialias = pre_antialias
+        self.antialias = True
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -239,6 +250,8 @@ class SwinUNet4x(I2IBaseModel):
             scale_factor=4)
 
     def forward(self, x):
+        if self.pre_antialias:
+            x = resize_antialias(x, antialias=self.antialias)
         z = self.unet(x)
         if self.training:
             return z
@@ -251,7 +264,7 @@ class SwinUNet4x(I2IBaseModel):
         else:
             unet = copy.deepcopy(self.unet)
         return SwinUNetDownscaled(in_channels=self.i2i_in_channels, out_channels=self.out_channels,
-                                  downscale_factor=2, unet=unet)
+                                  downscale_factor=2, unet=unet, pre_antialias=self.pre_antialias)
 
     def to_1x(self, shared=True):
         if shared:
@@ -259,7 +272,7 @@ class SwinUNet4x(I2IBaseModel):
         else:
             unet = copy.deepcopy(self.unet)
         return SwinUNetDownscaled(in_channels=self.i2i_in_channels, out_channels=self.out_channels,
-                                  downscale_factor=4, unet=unet)
+                                  downscale_factor=4, unet=unet, pre_antialias=self.pre_antialias)
 
 
 @register_model
@@ -286,7 +299,7 @@ class SwinUNet8x(I2IBaseModel):
 class SwinUNetDownscaled(I2IBaseModel):
     name = "waifu2x.swin_unet_downscaled"
 
-    def __init__(self, in_channels=3, out_channels=3, downscale_factor=2, unet=None):
+    def __init__(self, in_channels=3, out_channels=3, downscale_factor=2, unet=None, pre_antialias=False):
         assert downscale_factor in {2, 4}
         offset = 32 // downscale_factor
         scale = 4 // downscale_factor
@@ -302,29 +315,31 @@ class SwinUNetDownscaled(I2IBaseModel):
                 scale_factor=4)
         else:
             self.unet = unet
-        self.mode = "bicubic"
         self.antialias = True
+        self.pre_antialias = pre_antialias
         self.downscale_factor = downscale_factor
 
     def forward(self, x):
+        if self.pre_antialias:
+            x = resize_antialias(x, antialias=self.antialias)
         z = self.unet(x)
         if self.training:
             z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
-                              mode=self.mode, align_corners=False, antialias=self.antialias)
+                              mode="bicubic", align_corners=False, antialias=self.antialias)
             return z
         else:
             z = torch.clamp(z, 0., 1.)
             z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
-                              mode=self.mode, align_corners=False, antialias=self.antialias)
+                              mode="bicubic", align_corners=False, antialias=self.antialias)
             z = torch.clamp(z, 0., 1.)
             return z
 
     @staticmethod
     def from_4x(swin_unet_4x, downscale_factor):
-        net = SwinUNetDownscaled2x(in_channels=swin_unet_4x.unet.in_channels,
-                                   out_channels=swin_unet_4x.unet.out_channels,
-                                   downscale_factor=downscale_factor,
-                                   unet=copy.deepcopy(swin_unet_4x.unet))
+        net = SwinUNetDownscaled(in_channels=swin_unet_4x.unet.in_channels,
+                                 out_channels=swin_unet_4x.unet.out_channels,
+                                 downscale_factor=downscale_factor,
+                                 unet=copy.deepcopy(swin_unet_4x.unet))
         return net
 
 

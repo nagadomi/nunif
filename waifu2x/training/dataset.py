@@ -126,17 +126,6 @@ class RandomUnsharpMask():
         return x
 
 
-class AntialiasX():
-    def __init__(self):
-        pass
-
-    def __call__(self, x, y):
-        W, H = x.size
-        x = TF.resize(x, (H * 2, W * 2), interpolation=InterpolationMode.BILINEAR, antialias=True)
-        x = TF.resize(x, (H, W), interpolation=InterpolationMode.BICUBIC, antialias=True)
-        return x, y
-
-
 class Waifu2xDatasetBase(Dataset):
     def __init__(self, input_dir, num_samples,
                  hard_example_history_size=6):
@@ -172,7 +161,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  scale_factor,
                  tile_size, num_samples=None,
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
-                 da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
+                 da_grayscale_p=0, da_color_p=0,
                  bicubic_only=False,
                  deblur=0, resize_blur_p=0.1,
                  noise_level=-1, style=None,
@@ -210,8 +199,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             else:
                 photo_noise = TP.Identity()
 
-            antialias = TP.RandomApply([AntialiasX()], p=da_antialias_p)
-
             if scale_factor > 1:
                 if bicubic_only:
                     interpolation = INTERPOLATION_BICUBIC
@@ -244,7 +231,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 photo_noise,
                 rotate_transform,
                 jpeg_transform,
-                antialias,
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])

@@ -391,6 +391,8 @@ class Waifu2xTrainer(Trainer):
         kwargs = {"in_channels": 3, "out_channels": 3}
         if self.args.arch in {"waifu2x.cunet", "waifu2x.upcunet"}:
             kwargs["no_clip"] = True
+        if self.args.pre_antialias and self.args.arch == "waifu2x.swin_unet_4x":
+            kwargs["pre_antialias"] = True
         model = create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
         model = model.to(self.device)
         return model
@@ -442,7 +444,6 @@ class Waifu2xTrainer(Trainer):
                 da_unsharpmask_p=self.args.da_unsharpmask_p,
                 da_grayscale_p=self.args.da_grayscale_p,
                 da_color_p=self.args.da_color_p,
-                da_antialias_p=self.args.da_antialias_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,

@@ -14,6 +14,8 @@ def train(args):
         raise ValueError("--size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0` for SwinUNet models")
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
         raise ValueError("--noise-level is required for noise/noise_scale")
+    if args.pre_antialias and args.arch != "waifu2x.swin_unet_4x":
+        raise ValueError("--pre-antialias is only supported for waifu2x.swin_unet_4x")
 
     if args.method in {"scale", "scale4x", "scale8x"}:
         # disable
@@ -83,10 +85,6 @@ def register(subparsers, default_parser):
                         help="random grayscale data augmentation for gt image")
     parser.add_argument("--da-color-p", type=float, default=0.0,
                         help="random color jitter data augmentation for gt image")
-    parser.add_argument("--da-antialias-p", type=float, default=0.0,
-                        help=("--pre-antialias data augmentation for input image, "
-                              "intended to train a specialized model with 1."))
-
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of resize blur."
                               " 0.0-0.1 is a reasonable value."
@@ -125,6 +123,9 @@ def register(subparsers, default_parser):
                               " Also do not hit the newbie discriminator."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
+    parser.add_argument("--pre-antialias", action="store_true",
+                        help=("Set `pre_antialias=True` for SwinUNet4x."))
+
     parser.set_defaults(
         batch_size=16,
         optimizer="adamw",
