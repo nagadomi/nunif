@@ -71,7 +71,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--loss", type=str,
                         choices=["lbp", "lbp5", "lbpm", "lbp5m", "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
-                                 "alex11", "aux_alex11", "l1", "y_l1", "l1lpips"],
+                                 "alex11", "aux_alex11", "l1", "y_l1", "l1lpips", "l1lbp5"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")

@@ -18,6 +18,7 @@ from nunif.modules import (
     DiscriminatorHingeLoss,
     MultiscaleLoss,
 )
+from nunif.modules.lbp_loss import L1LBP
 from nunif.logger import logger
 import random
 
@@ -68,8 +69,10 @@ def create_criterion(loss):
         from nunif.modules.lpips import LPIPSWith
         # weight=0.1, gradient norm is about the same as L1Loss.
         criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.4)
+    elif loss == "l1lbp5":
+        criterion = L1LBP(kernel_size=5, weight=0.4)
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(loss)
 
     return criterion
 

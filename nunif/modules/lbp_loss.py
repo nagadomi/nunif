@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 from .charbonnier_loss import CharbonnierLoss
+from .clamp_loss import ClampLoss
+from .channel_weighted_loss import LuminanceWeightedLoss
 
 
 def generate_lbcnn_filters(size, sparcity=0.9):
@@ -87,6 +89,22 @@ class LBPLoss(nn.Module):
     def forward(self, input, target):
         b, ch, *_ = input.shape
         return self.loss(self.conv(input), self.conv(target))
+
+
+def YLBP(kernel_size=3):
+    return ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size)))
+
+
+class L1LBP(nn.Module):
+    def __init__(self, kernel_size=5, weight=0.4):
+        self.lbp = YLBP(kernel_size=kernel_size)
+        self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
+        self.weight = weight
+
+    def forward(self, input, target):
+        lbp_loss = self.lbp(input, target).mean()
+        l1_loss = self.l1(input, target).mean()
+        return l1_loss + lbp_loss * self.weight
 
 
 if __name__ == "__main__":
