@@ -14,5 +14,5 @@ class Waifu2xAddon(Addon):
         return register(subparsers, default_parser)
 
     def register_train(self, subparsers, default_parser):
-        from .training.train import register
+        from .training.trainer import register
         return register(subparsers, default_parser)
