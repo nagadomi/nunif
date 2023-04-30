@@ -5,7 +5,7 @@ function gen_arch_config()
     var config = {};
 
     /* swin_unet */
-    config["swin_unet"] = {art: {}, photo: {}};
+    config["swin_unet"] = {art: {}, art_scan: {}, photo: {}};
     var swin = config["swin_unet"];
     const calc_tile_size_swin_unet = function (tile_size, config) {
         while (true) {
@@ -16,7 +16,7 @@ function gen_arch_config()
         }
         return tile_size;
     };
-    for (const domain of ["art", "photo"]) {
+    for (const domain of ["art", "art_scan", "photo"]) {
         var base_config = {"arch": "swin_unet", "domain": domain, "calc_tile_size": calc_tile_size_swin_unet};
         swin[domain] = {
             scale2x: {...base_config, scale: 2, offset: 16},
