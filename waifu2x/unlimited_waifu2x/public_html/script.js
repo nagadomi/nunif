@@ -821,7 +821,7 @@ $(function () {
                 $("select[name=scale]").val("2");
             }
         }
-        if ((style == "photo" || style == "photo_gan") && $("select[name=tile_size]").val() < 256) {
+        if ((style == "photo" || style == "photo_gan" || style == "art_scan") && $("select[name=tile_size]").val() < 256) {
             $("#tile-comment").show();
         } else {
             $("#tile-comment").hide();
@@ -839,7 +839,7 @@ $(function () {
 
         var model = $("select[name=model]").val();
         var [arch, style] = model.split(".");
-        if ((style == "photo" || style == "photo_gan") && $("select[name=tile_size]").val() < 256) {
+        if ((style == "photo" || style == "photo_gan" || style == "art_scan") && $("select[name=tile_size]").val() < 256) {
             $("#tile-comment").show();
         } else {
             $("#tile-comment").hide();
