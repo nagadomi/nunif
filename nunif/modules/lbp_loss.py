@@ -97,13 +97,14 @@ def YLBP(kernel_size=3):
 
 class L1LBP(nn.Module):
     def __init__(self, kernel_size=5, weight=0.4):
+        super().__init__()
         self.lbp = YLBP(kernel_size=kernel_size)
         self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
         self.weight = weight
 
     def forward(self, input, target):
-        lbp_loss = self.lbp(input, target).mean()
-        l1_loss = self.l1(input, target).mean()
+        lbp_loss = self.lbp(input, target)
+        l1_loss = self.l1(input, target)
         return l1_loss + lbp_loss * self.weight
 
 
