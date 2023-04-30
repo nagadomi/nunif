@@ -449,6 +449,7 @@ class Waifu2xTrainer(Trainer):
                 da_unsharpmask_p=self.args.da_unsharpmask_p,
                 da_grayscale_p=self.args.da_grayscale_p,
                 da_color_p=self.args.da_color_p,
+                da_antialias_p=self.args.da_antialias_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 training=True,
@@ -618,6 +619,8 @@ def register(subparsers, default_parser):
                         help="random grayscale data augmentation for gt image")
     parser.add_argument("--da-color-p", type=float, default=0.0,
                         help="random color jitter data augmentation for gt image")
+    parser.add_argument("--da-antialias-p", type=float, default=0.0,
+                        help="random antialias input degradation")
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of resize blur."
                               " 0.0-0.1 is a reasonable value."
