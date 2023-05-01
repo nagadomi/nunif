@@ -32,8 +32,10 @@ def random_interpolation(rotate=False):
     return random.choice(interpolations)
 
 
-def gen_color():
-    if random.uniform(0, 1) < 0.25:
+def gen_color(disable_color):
+    line_masking = False
+    line_overlay = None
+    if (not disable_color) and random.uniform(0, 1) < 0.25:
         # random color
         bg = []
         for _ in range(3):
@@ -50,26 +52,38 @@ def gen_color():
             fg = [fg_mean, fg_mean, fg_mean]
             bg = [bg_mean, bg_mean, bg_mean]
             line = fg
-        line_overlay = False
+        if random.uniform(0, 1) < 0.1:
+            if random.uniform(0, 1) < 0.5:
+                line_overlay = tuple(line)
+            else:
+                line_masking = True
+                line_overlay = tuple(bg)
     else:
         # black white
         c = random.randint(255 - 16, 255)
         bg = [c, c, c]
-        if random.uniform(0, 1) < 0.5:
+        if disable_color or random.uniform(0, 1) < 0.5:
             # black ink
             c = random.randint(0, 16)
             fg = [c, c, c]
             line = fg
-            line_overlay = False
+            if random.uniform(0, 1) < 0.1:
+                line_masking = True
+                line_overlay = tuple(bg)
         else:
             # gray
-            c = random.randint(0, 200)
+            if random.uniform(0, 1) < 0.5:
+                c = random.randint(0, 180)
+            else:
+                c = random.randint(80, 180)
             fg = [c, c, c]
             c = random.randint(0, 16)
             line = [c, c, c]
-            line_overlay = random.uniform(0, 1) < 0.25
+            if random.uniform(0, 1) < 0.1:
+                # line overlay
+                line_overlay = tuple(line)
 
-    return tuple(fg), tuple(bg), tuple(line), line_overlay
+    return tuple(fg), tuple(bg), tuple(line), line_overlay, line_masking
 
 
 def gen_mask(size=400):
@@ -120,9 +134,14 @@ def gen_mask(size=400):
     return grid
 
 
-def gen_line_overlay(size):
+def gen_line_overlay(size, line_scale=1):
     window = Image.new("L", (size * 2, size * 2), "black")
-    line_width = random.randint(3, 8) * 2
+    if random.uniform(0, 1) < 0.5:
+        line_width = random.randint(3, 8) * 2
+    else:
+        line_width = random.randint(3, 16) * 2
+    line_width *= line_scale
+
     if random.uniform(0, 1) < 0.5:
         margin = random.randint(int(line_width * 0.75), line_width * 2)
     else:
@@ -146,17 +165,17 @@ IMAGE_SIZE = 640
 WINDOW_SIZE = 400  # 320 < WINDOW_SIZE
 
 
-def gen():
-    fg_color, bg_color, line_color, line_overlay = gen_color()
+def gen(disable_color):
+    fg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
     bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), bg_color)
     fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), fg_color)
     mask = gen_mask(WINDOW_SIZE * 2)
     bg.putalpha(255)
     fg.putalpha(mask)
     window = Image.alpha_composite(bg, fg)
-    if line_overlay:
-        mask = gen_line_overlay(WINDOW_SIZE * 2)
-        fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), line_color)
+    if line_overlay_color is not None:
+        mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=4 if line_masking else 1)
+        fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), line_overlay_color)
         window.putalpha(255)
         fg.putalpha(mask)
         window = Image.alpha_composite(window, fg)
@@ -182,6 +201,7 @@ def main():
                         help="number of images to generate")
     parser.add_argument("--seed", type=int, default=71, help="random seed")
     parser.add_argument("--postfix", type=str, help="filename postfix")
+    parser.add_argument("--use-color", action="store_true", help="use random RGB color")
     parser.add_argument("--output-dir", "-o", type=str, required=True,
                         help="output directory")
     args = parser.parse_args()
@@ -190,7 +210,7 @@ def main():
 
     postfix = "_" + args.postfix if args.postfix else ""
     for i in tqdm(range(args.num_samples), ncols=80):
-        im = gen()
+        im = gen(disable_color=not args.use_color)
         im.save(path.join(args.output_dir, f"__SCREENTONE_{i}{postfix}.png"))
 
 
