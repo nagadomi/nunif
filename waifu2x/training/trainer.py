@@ -20,7 +20,7 @@ from nunif.modules import (
     DiscriminatorHingeLoss,
     MultiscaleLoss,
 )
-from nunif.modules.lbp_loss import L1LBP
+from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
 from nunif.logger import logger
 import random
 
@@ -34,13 +34,17 @@ def create_criterion(loss):
     elif loss == "y_l1":
         criterion = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
     elif loss == "lbp":
-        criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1)))
+        criterion = YLBP()
     elif loss == "lbpm":
-        criterion = MultiscaleLoss(ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))))
+        criterion = MultiscaleLoss(YLBP())
     elif loss == "lbp5":
-        criterion = ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5)))
+        criterion = YLBP(kernel_size=5)
     elif loss == "lbp5m":
-        criterion = MultiscaleLoss(ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=5))))
+        criterion = MultiscaleLoss(YLBP(kernel_size=5))
+    elif loss == "rgb_lbp":
+        criterion = RGBLBP()
+    elif loss == "rgb_lbp5":
+        criterion = RGBLBP(kernel_size=5)
     elif loss == "alex11":
         criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
     elif loss == "charbonnier":
@@ -49,8 +53,8 @@ def create_criterion(loss):
         criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))
     elif loss == "aux_lbp":
         criterion = AuxiliaryLoss([
-            ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
-            ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1))),
+            YLBP(),
+            YLBP(),
         ], weight=(1.0, 0.5))
     elif loss == "aux_alex11":
         criterion = AuxiliaryLoss([
@@ -72,6 +76,8 @@ def create_criterion(loss):
         # weight=0.1, gradient norm is about the same as L1Loss.
         criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.4)
     elif loss == "l1lbp5":
+        criterion = YL1LBP(kernel_size=5, weight=0.4)
+    elif loss == "rgb_l1lbp5":
         criterion = L1LBP(kernel_size=5, weight=0.4)
     else:
         raise NotImplementedError(loss)
@@ -603,9 +609,10 @@ def register(subparsers, default_parser):
     parser.add_argument("--num-samples", type=int, default=50000,
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str,
-                        choices=["lbp", "lbp5", "lbpm", "lbp5m", "y_charbonnier", "charbonnier",
+                        choices=["lbp", "lbp5", "lbpm", "lbp5m", "rgb_lbp", "rgb_lbp5",
+                                 "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
-                                 "alex11", "aux_alex11", "l1", "y_l1", "l1lpips", "l1lbp5"],
+                                 "alex11", "aux_alex11", "l1", "y_l1", "l1lpips", "l1lbp5", "rgb_l1lbp5"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")
