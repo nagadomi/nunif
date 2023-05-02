@@ -5,12 +5,17 @@ from .clamp_loss import ClampLoss
 from .channel_weighted_loss import LuminanceWeightedLoss, AverageWeightedLoss
 
 
-def generate_lbcnn_filters(size, sparcity=0.9):
+def generate_lbcnn_filters(size, sparcity=0.9, seed=71):
     """ from Local Binary Convolutional Neural Network
     """
     out_channels, in_channels, kernel_size, _ = size
-    filters = torch.bernoulli(torch.torch.full(size, 0.5)).mul_(2).add(-1)
-    filters[torch.rand(filters.shape) > sparcity] = 0
+    rng_state = torch.random.get_rng_state()
+    try:
+        torch.manual_seed(seed)
+        filters = torch.bernoulli(torch.torch.full(size, 0.5)).mul_(2).add(-1)
+        filters[torch.rand(filters.shape) > sparcity] = 0
+    finally:
+        torch.random.set_rng_state(rng_state)
     # print(filters)
 
     return filters
@@ -39,7 +44,7 @@ Note: Be careful not to initialize by `if isinstance(module, nn.Conv2d):` condit
 
 
 class RandomBinaryConvolution(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, sparcity=0.9):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, sparcity=0.9, seed=71):
         super().__init__()
         self.conv = nn.Conv2d(
             in_channels=in_channels,
@@ -48,7 +53,7 @@ class RandomBinaryConvolution(nn.Module):
             padding=padding,
             groups=in_channels,
             bias=False)
-        self.conv.weight.data.copy_(generate_lbcnn_filters(self.conv.weight.data.shape, sparcity))
+        self.conv.weight.data.copy_(generate_lbcnn_filters(self.conv.weight.data.shape, sparcity, seed=seed))
         self.conv.weight.requires_grad_(False)
 
     def forward(self, x):
@@ -72,11 +77,11 @@ class RandomFilterConvolution(nn.Module):
 
 
 class LBPLoss(nn.Module):
-    def __init__(self, in_channels, out_channels=64, kernel_size=3, sparcity=0.9, loss=None):
+    def __init__(self, in_channels, out_channels=64, kernel_size=3, sparcity=0.9, loss=None, seed=71):
         super().__init__()
         self.conv = RandomBinaryConvolution(in_channels, out_channels - out_channels % in_channels,
                                             kernel_size=kernel_size, padding=0,
-                                            sparcity=sparcity)
+                                            sparcity=sparcity, seed=seed)
         if loss is None:
             self.loss = CharbonnierLoss()
         else:
@@ -126,7 +131,27 @@ class L1LBP(nn.Module):
         return l1_loss + lbp_loss * self.weight
 
 
-if __name__ == "__main__":
+def _check_gradient_norm():
+    l1_loss = nn.L1Loss()
+    lbp_loss = RGBLBP()
+
+    x1 = torch.ones((1, 3, 32, 32), requires_grad=True) / 2.
+    x2 = torch.ones((1, 3, 32, 32), requires_grad=True) / 2.
+    x2 = x2 + torch.randn(x2.shape) * 0.01
+
+    loss1 = l1_loss(x1, x2)
+    loss2 = lbp_loss(x1, x2)
+
+    grad1 = torch.autograd.grad(loss1, x2, retain_graph=True)[0]
+    grad2 = torch.autograd.grad(loss2, x2, retain_graph=True)[0]
+    norm1 = torch.norm(grad1, p=2)
+    norm2 = torch.norm(grad2, p=2)
+
+    # norm1 / norm2 = around 0.41
+    print(norm1, norm2, norm1 / norm2)
+
+
+def _test():
     conv = RandomFilterConvolution(1, 8, 3, 1)
     data = torch.rand((4, 1, 16, 16))
     print(conv(data).shape)
@@ -134,3 +159,7 @@ if __name__ == "__main__":
     conv = RandomBinaryConvolution(1, 8, 3, 1)
     data = torch.rand((4, 1, 16, 16))
     print(conv(data).shape)
+
+
+if __name__ == "__main__":
+    _check_gradient_norm()
