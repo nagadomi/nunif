@@ -44,6 +44,11 @@
 		{{artwork}}
 	      </span>
 	    </label>
+	    <label><input type="radio" name="style" class="radio" value="art_scan">
+	      <span class="r-text">
+		{{artwork}}/{{scan}}
+	      </span>
+	    </label>
 	    <label><input type="radio" name="style" class="radio" value="photo">
 	      <span class="r-text">
 		{{photo}}

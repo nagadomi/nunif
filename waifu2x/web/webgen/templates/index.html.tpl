@@ -128,12 +128,17 @@
 	  </div>
 	  <div class="option-right">
 	    <label><input type="radio" name="style" class="radio" value="art" checked>
-	      <span class="r-text">
+	      <span class="r-text" title="Anime Style Art, Cliparts">
 		{{artwork}}
 	      </span>
 	    </label>
+	    <label><input type="radio" name="style" class="radio" value="art_scan">
+	      <span class="r-text" title="Manga, Anime Screencaps, Anime Style Art for more clear results">
+		{{artwork}}/{{scan}}
+	      </span>
+	    </label>
 	    <label><input type="radio" name="style" class="radio" value="photo">
-	      <span class="r-text">
+	      <span class="r-text" title="Photograph">
 		{{photo}}
 	      </span>
 	    </label>

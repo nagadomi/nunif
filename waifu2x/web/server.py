@@ -32,6 +32,9 @@ from ..utils import Waifu2x
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
     "swin_unet", "art"))
+DEFAULT_ART_SCAN_MODEL_DIR = path.abspath(path.join(
+    path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
+    "swin_unet", "art_scan"))
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "..", "pretrained_models"),
     "swin_unet", "photo"))
@@ -62,6 +65,7 @@ class FormatOption(Enum):
 class StyleOption(Enum):
     ART = "art"
     PHOTO = "photo"
+    ART_SCAN = "art_scan"
 
 
 class CacheGC():
@@ -106,6 +110,7 @@ def setup():
     parser.add_argument("--url-timeout", type=int, default=10, help="request_timeout for url")
 
     parser.add_argument("--art-model-dir", type=str, default=DEFAULT_ART_MODEL_DIR, help="art model dir")
+    parser.add_argument("--art-scan-model-dir", type=str, default=DEFAULT_ART_SCAN_MODEL_DIR, help="art scan model dir")
     parser.add_argument("--photo-model-dir", type=str, default=DEFAULT_PHOTO_MODEL_DIR, help="photo model dir")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")
@@ -123,9 +128,11 @@ def setup():
 
     args = parser.parse_args()
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
+    art_scan_ctx = Waifu2x(model_dir=args.art_scan_model_dir, gpus=args.gpu)
     photo_ctx = Waifu2x(model_dir=args.photo_model_dir, gpus=args.gpu)
 
     art_ctx.load_model_all(load_4x=False)
+    art_scan_ctx.load_model_all(load_4x=False)
     photo_ctx.load_model_all(load_4x=False)
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
@@ -139,11 +146,11 @@ def setup():
         else:
             config["recaptcha"] = {"site_key": "", "secret_key": ""}
 
-    return args, config, art_ctx, photo_ctx, cache, cache_gc
+    return args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc
 
 
 global_lock = threading.RLock()
-command_args, config, art_ctx, photo_ctx, cache, cache_gc = setup()
+command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc = setup()
 # HACK: Avoid unintended argparse in the backend(gunicorn).
 sys.argv = [sys.argv[0]]
 
@@ -384,6 +391,8 @@ def api():
                 with global_lock:
                     if style == StyleOption.ART:
                         rgb, alpha = art_ctx.convert(**ctx_kwargs)
+                    elif style == StyleOption.ART_SCAN:
+                        rgb, alpha = art_scan_ctx.convert(**ctx_kwargs)
                     else:
                         rgb, alpha = photo_ctx.convert(**ctx_kwargs)
                 z = IL.to_image(rgb, alpha)
