@@ -30,8 +30,7 @@ options:
   --depth DEPTH         bit-depth of output image. enabled only with `--image-lib wand`
   --format {png,webp,jpeg}, -f {png,webp,jpeg}
                         output image format
-  --pre-antialias       Removing sharp artifacts before run.
-  --style {art,photo}   style for default model (art/photo). Ignored when --model-dir option is specified.
+  --style {art,art_scan,scan,photo}   style for default model (art/art_scan/scan/photo). Ignored when --model-dir option is specified.
 ```
 
 When `DEBUG` environment variable is defined, DEBUG level log will be printed.
@@ -70,18 +69,19 @@ python -m waifu2x.cli -m noise_scale4x -n 3 -i tmp/images -o tmp/out
 
 Using photo model (--style photo)
 ```
-python -m waifu2x.cli --style photo -m noise_scale4x -n 1 -i tmp/images -o tmp/out
+python -m waifu2x.cli --style photo -m noise_scale4x -n 3 -i tmp/images -o tmp/out
 ```
 
 Also, for photo models, larger `--tile-size` will give better results (less tile seam/border artifact)
 ```
-python -m waifu2x.cli --style photo -m noise_scale4x -n 1 --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
+python -m waifu2x.cli --style photo -m noise_scale4x -n 3 --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
 ```
 
-For old photo scans, very sharp photo noise may be removed with `--pre-antialis` option. Instead, the output image will be slightly blurred. So I recommend up to 2x.
+Using `art_scan` model (`--style scan` or `--style art_scan`)
 ```
-python -m waifu2x.cli --style photo -m noise_scale -n 3 --pre-antialias --tile-size 640 --batch-size 1 -i tmp/images -o tmp/out
+python -m waifu2x.cli --style scan -m noise_scale4x -n 3 -i tmp/images -o tmp/out
 ```
+
 
 With model dir
 ```
@@ -97,6 +97,7 @@ With TTA
 ```
 python -m waifu2x.cli --tta -m scale -i tmp/images -o tmp/out
 ```
+Note that TTA is not valid for `photo` and `art_scan`, which are GAN-based models.
 
 With TTA, increase mini-batch size
 ```
