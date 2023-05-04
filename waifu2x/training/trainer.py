@@ -79,6 +79,8 @@ def create_criterion(loss):
         criterion = YL1LBP(kernel_size=5, weight=0.4)
     elif loss == "rgb_l1lbp5":
         criterion = L1LBP(kernel_size=5, weight=0.4)
+    elif loss == "rgb_l1lbp":
+        criterion = L1LBP(kernel_size=3, weight=0.4)
     else:
         raise NotImplementedError(loss)
 
@@ -262,13 +264,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
-                    min=1e-5, max=1e2, mode="norm") * self.trainer.args.discriminator_weight
+                    min=1e-3, max=10, mode="norm") * self.trainer.args.discriminator_weight
                 recon_weight = 1.0 / weight
                 if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
                                              generator_loss > 0.95):
                     g_loss = (recon_loss * recon_weight + generator_loss) * 0.5
                 else:
-                    g_loss = recon_loss * recon_weight
+                    g_loss = recon_loss * recon_weight * 0.5
                 self.sum_loss += g_loss.item()
                 self.sum_d_weight += weight
                 self.backward(g_loss, grad_scaler)
@@ -612,7 +614,8 @@ def register(subparsers, default_parser):
                         choices=["lbp", "lbp5", "lbpm", "lbp5m", "rgb_lbp", "rgb_lbp5",
                                  "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
-                                 "alex11", "aux_alex11", "l1", "y_l1", "l1lpips", "l1lbp5", "rgb_l1lbp5"],
+                                 "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
+                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")
