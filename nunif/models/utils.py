@@ -38,13 +38,12 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
     torch.save(data, model_path)
 
 
-def load_model(model_path, model=None, device_ids=None, strict=True, map_location="cpu"):
-    if False: #PYTORCH2: # TODO: Temporarily disabled due to problems with https://github.com/pytorch/pytorch/issues/98921
-        data = torch.load(model_path, map_location=map_location, weights_only=True)
-    else:
-        # Pytorch 1.13.1 has a bug in torch.load(weights_only=True), so it cannot be used here.
-        # https://github.com/pytorch/pytorch/issues/94670
-        data = torch.load(model_path, map_location=map_location)
+def load_model(model_path, model=None, device_ids=None,
+               strict=True, map_location="cpu", weights_only=False):
+    if not PYTORCH2:
+        # Disabled due to https://github.com/pytorch/pytorch/issues/94670
+        weights_only = False
+    data = torch.load(model_path, map_location=map_location, weights_only=weights_only)
     assert ("nunif_model" in data)
     if model is None:
         model = create_model(data["name"], device_ids=device_ids, **data["kwargs"])

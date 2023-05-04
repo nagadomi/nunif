@@ -7,6 +7,7 @@ type_url: URLを入力
 choose_file: ファイルを選択
 file_limits: "制限: サイズ: 5MB, ノイズ除去: 3000x3000px, 拡大(前): 1500x1500px."
 style: スタイル
+scan: スキャン
 artwork: イラスト
 photo: 写真
 noise_reduction: ノイズ除去

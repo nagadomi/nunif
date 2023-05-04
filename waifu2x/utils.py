@@ -59,23 +59,27 @@ class Waifu2x():
                 self.noise_scale4x_models[i] = self._compile_model(
                     self.noise_scale4x_models[i].to(self.device).eval())
 
+    def load_model_by_name(self, filename):
+        return load_model(path.join(self.model_dir, filename),
+                          map_location=self.device, device_ids=self.gpus,
+                          weights_only=True)[0]
+
+    def has_model_file(self, filename):
+        return path.exists(path.join(self.model_dir, filename))
+
     def _load_model(self, method, noise_level):
         if method == "scale4x":
             if self.scale4x_model is not None:
                 return
-            if path.exists(path.join(self.model_dir, "scale4x.pth")):
-                self.scale4x_model, _ = load_model(
-                    path.join(self.model_dir, "scale4x.pth"),
-                    map_location=self.device, device_ids=self.gpus)
+            if self.has_model_file("scale4x.pth"):
+                self.scale4x_model = self.load_model_by_name("scale4x.pth")
             else:
                 raise FileNotFoundError(f"scale4x.pth not found in {self.model_dir}")
         elif method == "scale":
             if self.scale_model is not None:
                 return
-            if path.exists(path.join(self.model_dir, "scale2x.pth")):
-                self.scale_model, _ = load_model(
-                    path.join(self.model_dir, "scale2x.pth"),
-                    map_location=self.device, device_ids=self.gpus)
+            if self.has_model_file("scale2x.pth"):
+                self.scale_model = self.load_model_by_name("scale2x.pth")
             else:
                 if self.scale4x_model is None:
                     self._load_model("scale4x", noise_level)
@@ -84,20 +88,16 @@ class Waifu2x():
         elif method == "noise_scale4x":
             if self.noise_scale4x_models[noise_level] is not None:
                 return
-            if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale4x.pth")):
-                self.noise_scale4x_models[noise_level], _ = load_model(
-                    path.join(self.model_dir, f"noise{noise_level}_scale4x.pth"),
-                    map_location=self.device, device_ids=self.gpus)
+            if self.has_model_file(f"noise{noise_level}_scale4x.pth"):
+                self.noise_scale4x_models[noise_level] = self.load_model_by_name(f"noise{noise_level}_scale4x.pth")
             else:
                 raise FileNotFoundError(f"scale4x.pth not found in {self.model_dir}")
 
         elif method == "noise_scale":
             if self.noise_scale_models[noise_level] is not None:
                 return
-            if path.exists(path.join(self.model_dir, f"noise{noise_level}_scale2x.pth")):
-                self.noise_scale_models[noise_level], _ = load_model(
-                    path.join(self.model_dir, f"noise{noise_level}_scale2x.pth"),
-                    map_location=self.device, device_ids=self.gpus)
+            if self.has_model_file(f"noise{noise_level}_scale2x.pth"):
+                self.noise_scale_models[noise_level] = self.load_model_by_name(f"noise{noise_level}_scale2x.pth")
             else:
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)
@@ -107,10 +107,8 @@ class Waifu2x():
         elif method == "noise":
             if self.noise_models[noise_level] is not None:
                 return
-            if path.exists(path.join(self.model_dir, f"noise{noise_level}.pth")):
-                self.noise_models[noise_level], _ = load_model(
-                    path.join(self.model_dir, f"noise{noise_level}.pth"),
-                    map_location=self.device, device_ids=self.gpus)
+            if self.has_model_file(f"noise{noise_level}.pth"):
+                self.noise_models[noise_level] = self.load_model_by_name(f"noise{noise_level}.pth")
             else:
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)

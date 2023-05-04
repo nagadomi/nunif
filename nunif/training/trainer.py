@@ -54,7 +54,7 @@ class Trainer(ABC):
 
         if self.amp_is_enabled():
             self.env.enable_amp()
-        self.env.set_amp_dtype(torch.bfloat16 if self.args.amp_float == "bfloat16" else torch.float16)
+        self.env.set_amp_dtype(torch.bfloat16 if (self.args.amp_float == "bfloat16" or self.args.gpu[0] < 0) else torch.float16)
         self.setup()
 
     def shutdown(self):

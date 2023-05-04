@@ -8,6 +8,7 @@ choose_file: Or choose a file
 file_limits: "Limits: Size: 5MB, Noise Reduction: 3000x3000px, Upscaling: 1500x1500px."
 style: Style
 artwork: Artwork
+scan: Scans
 photo: Photo
 noise_reduction: Noise Reduction
 expect_jpeg: expect JPEG artifact

@@ -73,8 +73,7 @@ def convert_swin_unet_art(model_dir, output_dir):
     scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
 
 
-def convert_swin_unet_photo(model_dir, output_dir):
-    domain = "photo"
+def convert_swin_unet_downscaled4x(domain, model_dir, output_dir):
     in_dir = path.join(model_dir, "swin_unet", domain)
     out_dir = path.join(output_dir, "swin_unet", domain)
     os.makedirs(out_dir, exist_ok=True)
@@ -86,25 +85,37 @@ def convert_swin_unet_photo(model_dir, output_dir):
         So once exported with antialias=False,
         then fixed antialias=True with ONNX file patch.
         """
+        model_4x.antialias = False
         model_2x = model_4x.to_2x()
         model_1x = model_4x.to_1x()
         model_2x.antialias = False
         model_1x.antialias = False
-        model_4x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
+        model_4x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"), opset_version=18)
+        patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
         model_2x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"), opset_version=18)
         patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
         model_1x.export_onnx(path.join(out_dir, f"noise{noise_level}.onnx"), opset_version=18)
         patch_resize_antialias(path.join(out_dir, f"noise{noise_level}.onnx"))
 
     model_4x, *_ = load_model(path.join(in_dir, "scale4x.pth"))
+    model_4x.antialias = False
     model_2x = model_4x.to_2x()
     model_2x.antialias = False
-    model_4x.export_onnx(path.join(out_dir, "scale4x.onnx"))
+    model_4x.export_onnx(path.join(out_dir, "scale4x.onnx"), opset_version=18)
+    patch_resize_antialias(path.join(out_dir, "scale4x.onnx"))
     model_2x.export_onnx(path.join(out_dir, "scale2x.onnx"), opset_version=18)
     patch_resize_antialias(path.join(out_dir, "scale2x.onnx"))
 
     scale1x = ONNXScale1x(offset=8)
     scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
+
+
+def convert_swin_unet_photo(model_dir, output_dir):
+    convert_swin_unet_downscaled4x("photo", model_dir, output_dir)
+
+
+def convert_swin_unet_art_scan(model_dir, output_dir):
+    convert_swin_unet_downscaled4x("art_scan", model_dir, output_dir)
 
 
 def convert_utils(output_dir):
@@ -145,6 +156,7 @@ if __name__ == "__main__":
     logger.info("swin_unet")
     convert_swin_unet_art(args.input_dir, args.output_dir)
     convert_swin_unet_photo(args.input_dir, args.output_dir)
+    convert_swin_unet_art_scan(args.input_dir, args.output_dir)
 
     logger.info("utils")
     convert_utils(args.output_dir)

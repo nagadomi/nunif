@@ -22,7 +22,7 @@ $(function (){
     }
     function on_change_style(e) {
         var checked = $("input[name=style]:checked");
-        if (checked.val() == "art") {
+        if (checked.val() != "photo") {
             $(".main-title").text("waifu2x");
         } else {
             $(".main-title").html("w<s>/a/</s>ifu2x");

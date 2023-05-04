@@ -5,7 +5,10 @@ function gen_arch_config()
     var config = {};
 
     /* swin_unet */
-    config["swin_unet"] = {art: {}, photo: {}};
+    config["swin_unet"] = {
+        art: {color_stability: true},
+        art_scan: {color_stability: false},
+        photo: {color_stability: false}};
     var swin = config["swin_unet"];
     const calc_tile_size_swin_unet = function (tile_size, config) {
         while (true) {
@@ -16,8 +19,10 @@ function gen_arch_config()
         }
         return tile_size;
     };
-    for (const domain of ["art", "photo"]) {
-        var base_config = {"arch": "swin_unet", "domain": domain, "calc_tile_size": calc_tile_size_swin_unet};
+    for (const domain of ["art", "art_scan", "photo"]) {
+        var base_config = {
+            ...swin[domain],
+            arch: "swin_unet", domain: domain, calc_tile_size: calc_tile_size_swin_unet};
         swin[domain] = {
             scale2x: {...base_config, scale: 2, offset: 16},
             scale4x: {...base_config, scale: 4, offset: 32},
@@ -36,7 +41,10 @@ function gen_arch_config()
         tile_size -= tile_size % 4;
         return tile_size;
     };
-    var base_config = {"arch": "cunet", "domain": "art", "calc_tile_size": calc_tile_size_cunet};
+    var base_config = {
+        arch: "cunet", domain: "art", calc_tile_size: calc_tile_size_cunet,
+        color_stability: true
+    };
     config["cunet"]["art"] = {
         scale2x: {...base_config, scale: 2, offset: 36},
         scale1x: {...base_config, scale: 1, offset: 28}, // bypass for alpha denoise
@@ -423,7 +431,8 @@ const onnx_runner = {
         for (var k = 0; k < tiles.length; ++k) {
             const [i, j, ii, jj, h_i, w_i] = tiles[k];
             var tile_image_data = input_ctx.getImageData(j, i, tile_size, tile_size);
-            var single_color = this.check_single_color(tile_image_data.data, has_alpha);
+            var single_color = (config.color_stability ?
+                                this.check_single_color(tile_image_data.data, has_alpha) : null);
             if (single_color == null) {
                 var tile_x = this.to_input(tile_image_data.data,
                                            tile_image_data.width, tile_image_data.height,
@@ -812,7 +821,7 @@ $(function () {
                 $("select[name=scale]").val("2");
             }
         }
-        if ((style == "photo" || style == "photo_gan") && $("select[name=tile_size]").val() < 256) {
+        if ((style == "photo" || style == "photo_gan" || style == "art_scan") && $("select[name=tile_size]").val() < 256) {
             $("#tile-comment").show();
         } else {
             $("#tile-comment").hide();
@@ -830,7 +839,7 @@ $(function () {
 
         var model = $("select[name=model]").val();
         var [arch, style] = model.split(".");
-        if ((style == "photo" || style == "photo_gan") && $("select[name=tile_size]").val() < 256) {
+        if ((style == "photo" || style == "photo_gan" || style == "art_scan") && $("select[name=tile_size]").val() < 256) {
             $("#tile-comment").show();
         } else {
             $("#tile-comment").hide();

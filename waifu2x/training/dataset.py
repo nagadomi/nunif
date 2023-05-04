@@ -132,7 +132,12 @@ class AntialiasX():
 
     def __call__(self, x, y):
         W, H = x.size
-        x = TF.resize(x, (H * 2, W * 2), interpolation=InterpolationMode.BILINEAR, antialias=True)
+        interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
+        if random.uniform(0, 1) < 0.5:
+            scale = 2
+        else:
+            scale = random.uniform(1.5, 2)
+        x = TF.resize(x, (int(H * scale), int(W * scale)), interpolation=interpolation, antialias=True)
         x = TF.resize(x, (H, W), interpolation=InterpolationMode.BICUBIC, antialias=True)
         return x, y
 
@@ -171,7 +176,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  model_offset,
                  scale_factor,
                  tile_size, num_samples=None,
-                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0, da_grayscale_p=0, da_color_p=0,
+                 da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
+                 da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
                  deblur=0, resize_blur_p=0.1,
                  noise_level=-1, style=None,
@@ -189,11 +195,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop=True)
             else:
                 jpeg_transform = TP.Identity()
-
-            if self.style == "photo":
-                antialias = TP.RandomApply([AntialiasX()], p=0.025)
-            else:
-                antialias = TP.Identity()
 
             if style == "photo":
                 rotate_transform = TP.RandomApply([
@@ -213,6 +214,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                         RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.95, 0.05])
             else:
                 photo_noise = TP.Identity()
+
+            antialias = TP.RandomApply([AntialiasX()], p=da_antialias_p)
 
             if scale_factor > 1:
                 if bicubic_only:
@@ -245,8 +248,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 random_downscale_x,
                 photo_noise,
                 rotate_transform,
-                jpeg_transform,
                 antialias,
+                jpeg_transform,
                 TP.RandomFlip(),
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
             ])

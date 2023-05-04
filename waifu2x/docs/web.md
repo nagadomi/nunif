@@ -41,9 +41,6 @@ Remove all size limits for the private server.
 python -m waifu2x.web --no-size-limit
 ```
 
-
-# Image Encode/Decode
-
 ## Use reCAPTCHA
 
 Copy `waifu2x/web/config.ini.sample` to `waifu2x/web/config.ini`

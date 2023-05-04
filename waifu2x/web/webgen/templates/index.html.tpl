@@ -100,11 +100,11 @@
       </div>
       <p>{{description}}</p>
       <p class="margin1 link-box">
-	<a href="https://raw.githubusercontent.com/nagadomi/waifu2x/master/images/slide.png" class="blue-link" target="_blank">
+	<a href="https://raw.githubusercontent.com/nagadomi/nunif/master/waifu2x/docs/images/slide.png" class="blue-link" target="_blank">
 	  {{show_demonstration}}
 	</a>
 	| 
-	<a href="https://github.com/nagadomi/waifu2x" class="blue-link" target="_blank">
+	<a href="https://github.com/nagadomi/nunif" class="blue-link" target="_blank">
 	  {{go_to_github}}
 	</a>
       </p>
@@ -128,12 +128,17 @@
 	  </div>
 	  <div class="option-right">
 	    <label><input type="radio" name="style" class="radio" value="art" checked>
-	      <span class="r-text">
+	      <span class="r-text" title="Anime Style Art, Cliparts">
 		{{artwork}}
 	      </span>
 	    </label>
+	    <label><input type="radio" name="style" class="radio" value="art_scan">
+	      <span class="r-text" title="Manga, Anime Screencaps, Anime Style Art for more clear results">
+		{{artwork}}/{{scan}}
+	      </span>
+	    </label>
 	    <label><input type="radio" name="style" class="radio" value="photo">
-	      <span class="r-text">
+	      <span class="r-text" title="Photograph">
 		{{photo}}
 	      </span>
 	    </label>
