@@ -35,6 +35,7 @@ def random_interpolation(rotate=False):
 def gen_color(disable_color):
     line_masking = False
     line_overlay = None
+    bg2 = None
     if (not disable_color) and random.uniform(0, 1) < 0.25:
         # random color
         bg = []
@@ -60,8 +61,14 @@ def gen_color(disable_color):
                 line_overlay = tuple(bg)
     else:
         # black white
-        c = random.randint(255 - 16, 255)
-        bg = [c, c, c]
+        if random.uniform(0, 1) < 0.8:
+            c = random.randint(255 - 16, 255)
+            bg = [c, c, c]
+        else:
+            c = random.randint(255 - 80, 255 - 16)
+            bg = [c, c, c]
+            c = random.randint(255 - 16, 255)
+            bg2 = [c, c, c]
         if disable_color or random.uniform(0, 1) < 0.5:
             # black ink
             c = random.randint(0, 16)
@@ -83,7 +90,9 @@ def gen_color(disable_color):
                 # line overlay
                 line_overlay = tuple(line)
 
-    return tuple(fg), tuple(bg), tuple(line), line_overlay, line_masking
+    if bg2 is None:
+        bg2 = bg
+    return tuple(fg), tuple(bg), tuple(bg2), tuple(line), line_overlay, line_masking
 
 
 def gen_mask(size=400):
@@ -166,8 +175,8 @@ WINDOW_SIZE = 400  # 320 < WINDOW_SIZE
 
 
 def gen(disable_color):
-    fg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
-    bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), bg_color)
+    fg_color, window_bg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
+    bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), window_bg_color)
     fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), fg_color)
     mask = gen_mask(WINDOW_SIZE * 2)
     bg.putalpha(255)
