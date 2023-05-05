@@ -542,6 +542,7 @@ const onnx_runner = {
 $(function () {
     /* init */
     ort.env.wasm.proxy = true;
+    ort.env.wasm.numThreads = navigator.hardwareConcurrency;
 
     function removeAlpha(blob)
     {
