@@ -37,7 +37,8 @@ function gen_arch_config()
     /* cunet */
     config["cunet"] = {art: {}};
     const calc_tile_size_cunet = function (tile_size, config) {
-        tile_size = tile_size + (config.offset - 16) * 2;
+        var adj = config.scale == 1 ? 16:32;
+        tile_size = ((tile_size * config.scale + config.offset * 2) - adj) / config.scale;
         tile_size -= tile_size % 4;
         return tile_size;
     };
