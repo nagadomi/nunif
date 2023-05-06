@@ -1,5 +1,27 @@
 var g_expires = 365;
 
+async function check_webgpu()
+{
+    try {
+        if (!navigator.gpu) {
+            return false;
+        }
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+            return false;
+        }
+        const adapter_info = await adapter.requestAdapterInfo();
+        if (!adapter_info) {
+            return false;
+        }
+        console.log(adapter_info);
+        const device = await adapter.requestDevice();
+        return device ? true: false;
+    } catch (e) {
+        return false;
+    }
+};
+
 function gen_arch_config()
 {
     var config = {};
