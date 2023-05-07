@@ -1,12 +1,28 @@
-# Show MiDaS monocular depth estimation result
+# Show MiDaS monocular depth estimation result as 3d point cloud data
 # from https://github.com/pytorch/hub/blob/master/intelisl_midas_v2.md
-# pip3 install opencv-python
-# pip3 install timm
+# pip3 install opencv-python timm open3d
 # python -m playground.midas.show -i playground/jpeg_qtable/images/donut_q100.jpg
 import cv2
 import torch
 import numpy as np
 import argparse
+import open3d as o3d
+
+
+def visualize_pcd(rgb, depth):
+    rgb = o3d.geometry.Image(rgb)
+    depth = o3d.geometry.Image(depth)
+    # o3d.visualization.draw_geometries([rgb])
+    rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+        rgb, depth,
+        depth_scale=1000.0 * 256,
+        convert_rgb_to_intensity=False)
+    pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+        rgbd,
+        o3d.camera.PinholeCameraIntrinsic(
+            o3d.camera.PinholeCameraIntrinsicParameters.PrimeSenseDefault))
+    pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+    o3d.visualization.draw_geometries([pcd])
 
 
 def normalize(x):
@@ -30,9 +46,9 @@ def show_depth(args):
     midas.to(device)
     midas.eval()
 
-    src = img = cv2.imread(args.input, cv2.IMREAD_COLOR)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    input_batch = transform(img).to(device)
+    img = cv2.imread(args.input, cv2.IMREAD_COLOR)
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    input_batch = transform(rgb).to(device)
     print("input", input_batch.shape)
     with torch.no_grad():
         prediction = midas(input_batch)
@@ -42,7 +58,7 @@ def show_depth(args):
               "mean", prediction.mean().item())
         prediction = torch.nn.functional.interpolate(
             prediction.unsqueeze(1),
-            size=img.shape[:2],
+            size=rgb.shape[:2],
             mode="bicubic",
             align_corners=False,
         ).squeeze(0)
@@ -51,13 +67,11 @@ def show_depth(args):
 
     # 16bit grayscale output
     output = normalize(prediction).permute(1, 2, 0).cpu().numpy()
-    output = np.clip(output * 0xffff, 0, 0xffff).astype(np.uint16)
+    depth = np.clip(output * 0xffff, 0, 0xffff).astype(np.uint16) // 2
     if args.output:
-        cv2.imwrite(args.output, output)
-    cv2.imshow("src", src)
-    cv2.imshow("depth", output)
-    print("press key to exit")
-    cv2.waitKey(0)
+        cv2.imwrite(args.output, depth)
+
+    visualize_pcd(rgb, depth)
 
 
 if __name__ == "__main__":
