@@ -64,12 +64,20 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input file")
+    parser.add_argument("--output", "-o", type=str, help="output file")
+    parser.add_argument("--output-rgb", type=str, help="output rgb file")
     args = parser.parse_args()
     im, _ = pil_io.load_image(args.input, color="rgb", keep_alpha=True)
     rgb, alpha = pil_io.to_tensor(im, return_alpha=True)
     alpha_pad = AlphaBorderPadding().eval()
     with torch.no_grad():
         padded_rgb = alpha_pad(rgb, alpha, 8)
-        cv2.imshow("rgb", pil_io.to_cv2(pil_io.to_image(rgb)))
-        cv2.imshow("padded_rgb", pil_io.to_cv2(pil_io.to_image(padded_rgb)))
+        padded_rgb = pil_io.to_image(padded_rgb)
+        rgb = pil_io.to_image(rgb)
+        if args.output is not None:
+            padded_rgb.save(args.output)
+        if args.output_rgb is not None:
+            rgb.save(args.output_rgb)
+        cv2.imshow("rgb", pil_io.to_cv2(rgb))
+        cv2.imshow("padded_rgb", pil_io.to_cv2(padded_rgb))
         cv2.waitKey(0)
