@@ -26,8 +26,14 @@ class Trainer(ABC):
         if self.initialized:
             return
         self.initialized = True
+
         if self.args.gpu[0] >= 0:
-            self.device = f"cuda:{self.args.gpu[0]}"
+            if torch.cuda.is_available():
+                self.device = 'cuda:{}'.format(self.args.gpu[0])
+            elif torch.backends.mps.is_available():
+                self.device = 'mps:{}'.format(self.args.gpu[0])
+            else:
+                raise ValueError("No cuda/mps available. Use `--gpu -1` for CPU.")
         else:
             self.device = "cpu"
         os.makedirs(self.args.model_dir, exist_ok=True)
@@ -73,7 +79,7 @@ class Trainer(ABC):
         pass
 
     def amp_is_enabled(self):
-        return not (self.args.disable_amp or self.device == "cpu")
+        return not (self.args.disable_amp or self.device == "cpu" or "mps" in self.device)
 
     def resume(self):
         latest_checkpoint_filename = self.create_checkpoint_filename()

@@ -24,7 +24,13 @@ class BaseEnv(ABC):
     def autocast(self, device=None):
         device = device or getattr(self, "device", None)
         assert device is not None
-        return torch.autocast(device_type=device.type, dtype=self.amp_dtype, enabled=self.amp)
+        if "mps" in str(self.device) and not self.amp:
+            amp_device_type = "cpu"
+            amp_dtype = torch.bfloat16
+        else:
+            amp_device_type = self.device.type
+            amp_dtype = self.amp_dtype
+        return torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=self.amp)
 
     @abstractmethod
     def train_begin(self):
