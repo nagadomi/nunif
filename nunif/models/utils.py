@@ -43,7 +43,10 @@ def load_model(model_path, model=None, device_ids=None,
     if not PYTORCH2:
         # Disabled due to https://github.com/pytorch/pytorch/issues/94670
         weights_only = False
-    data = torch.load(model_path, map_location=map_location, weights_only=weights_only)
+    if "mps" in str(map_location):
+        data = torch.load(model_path, map_location="cpu", weights_only=weights_only)
+    else:
+        data = torch.load(model_path, map_location=map_location, weights_only=weights_only)
     assert ("nunif_model" in data)
     if model is None:
         model = create_model(data["name"], device_ids=device_ids, **data["kwargs"])
