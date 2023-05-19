@@ -11,6 +11,7 @@ from torch.optim.lr_scheduler import (
 from ..optim import Lion
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
+from ..device import create_device
 from .weight_decay_config import configure_adamw
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -26,10 +27,7 @@ class Trainer(ABC):
         if self.initialized:
             return
         self.initialized = True
-        if self.args.gpu[0] >= 0:
-            self.device = f"cuda:{self.args.gpu[0]}"
-        else:
-            self.device = "cpu"
+        self.device = create_device(self.args.gpu)
         os.makedirs(self.args.model_dir, exist_ok=True)
         set_seed(self.args.seed)
 
@@ -73,7 +71,7 @@ class Trainer(ABC):
         pass
 
     def amp_is_enabled(self):
-        return not (self.args.disable_amp or self.device == "cpu")
+        return not (self.args.disable_amp or self.device.type in {"cpu", "mps"})
 
     def resume(self):
         latest_checkpoint_filename = self.create_checkpoint_filename()

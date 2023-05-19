@@ -1,8 +1,8 @@
 import inspect
-import torch
 from torch import nn
 from . model import Model
 from .. logger import logger
+from .. device import create_device
 
 
 _models = {}
@@ -42,15 +42,7 @@ def create_model(name, device_ids=None, **kwargs):
         if len(device_ids) > 1:
             model = data_parallel_model(model, device_ids)
         else:
-            if device_ids[0] < 0:
-                device = 'cpu'
-            else:
-                if torch.cuda.is_available():
-                    device = 'cuda:{}'.format(device_ids[0])
-                elif torch.backends.mps.is_available():
-                    device = 'mps:{}'.format(device_ids[0])
-                else:
-                    raise ValueError("No cuda/mps available. Use `--gpu -1` for CPU.")
+            device = create_device(device_ids)
             model = model.to(device)
 
     return model

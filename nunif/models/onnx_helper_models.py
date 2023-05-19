@@ -7,6 +7,7 @@ import onnx
 import copy
 from .model import I2IBaseModel
 from ..utils.alpha import ChannelWiseSum
+from ..logger import logger
 
 
 class ONNXReflectionPadding(I2IBaseModel):
@@ -261,21 +262,20 @@ def patch_resize_antialias(onnx_path, name=None):
     So once exported with antialias=False,
     then fixed antialias=True with ONNX file patch.
     """
-    print(f"* ONNX Patch Resize antialias: {onnx_path}")
     model = onnx.load(onnx_path)
     onnx.checker.check_model(model)
     assert model.opset_import[0].version >= 18
-
+    hit = False
     for node in model.graph.node:
         if node.op_type == "Resize":
             if name is None or name == node.name:
                 antialias = onnx.helper.make_attribute("antialias", 1)
                 node.attribute.extend([antialias])
-                for attribute in node.attribute:
-                    print(attribute)
-
+                hit = True
     onnx.checker.check_model(model)
     onnx.save(model, onnx_path)
+    if not hit:
+        logger.warning(f"patch_resize_antialias: No Resize node: {onnx_path}: name={name}")
 
 
 def _test_pad():

@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn.functional as F
 from .. models import get_model_config, get_model_device
+from .. device import autocast
 
 
 class SeamBlending(torch.nn.Module):
@@ -53,6 +54,7 @@ class SeamBlending(torch.nn.Module):
         if blend_size is None:
             blend_size = 0
         device = get_model_device(model)
+
         seam_blending = SeamBlending(x.shape, scale=scale,
                                      offset=offset, tile_size=tile_size,
                                      blend_size=blend_size).to(device)
@@ -70,14 +72,14 @@ class SeamBlending(torch.nn.Module):
                 output_indexes[minibatch_index] = (h_i, w_i)
                 minibatch_index += 1
                 if minibatch_index == batch_size:
-                    with torch.autocast(device_type=device.type, enabled=enable_amp):
+                    with autocast(device, enabled=enable_amp):
                         z = model(minibatch.to(device))
                     for k in range(minibatch_index):
                         seam_blending(z[k], output_indexes[k][0], output_indexes[k][1])
                     minibatch_index = 0
 
         if minibatch_index > 0:
-            with torch.autocast(device_type=device.type, enabled=enable_amp):
+            with autocast(device, enabled=enable_amp):
                 z = model(minibatch[0:minibatch_index].to(device))
             for k in range(minibatch_index):
                 seam_blending(z[k], output_indexes[k][0], output_indexes[k][1])

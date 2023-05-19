@@ -8,9 +8,19 @@ server {
        }
        location / {
            add_header Cache-Control "public, max-age=3600, must-revalidate";
+           # If you want to enable multi-threading
+           #add_header Cross-Origin-Resource-Policy "cross-origin";
+           #add_header Cross-Origin-Embedder-Policy "require-corp";
+           #add_header Cross-Origin-Opener-Policy "same-origin";
        }
        location ~* \.(onnx|pth) {
            add_header Cache-Control "public, max-age=86400, must-revalidate";
        }
+       location ~* \.wasm$ {
+           types {
+               application/wasm wasm;
+           }
+       }
+
        listen 80;
 }

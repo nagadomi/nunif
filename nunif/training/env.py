@@ -5,7 +5,7 @@ from tqdm import tqdm
 from . confusion_matrix import SoftmaxConfusionMatrix
 from .. models.utils import get_model_config, get_model_device
 from .. modules import ClampLoss, LuminanceWeightedLoss, LuminancePSNR, PSNR
-
+from .. device import autocast
 from abc import ABC, abstractmethod
 
 
@@ -24,7 +24,8 @@ class BaseEnv(ABC):
     def autocast(self, device=None):
         device = device or getattr(self, "device", None)
         assert device is not None
-        return torch.autocast(device_type=device.type, dtype=self.amp_dtype, enabled=self.amp)
+
+        return autocast(device, dtype=self.amp_dtype, enabled=self.amp)
 
     @abstractmethod
     def train_begin(self):
