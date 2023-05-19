@@ -6,6 +6,7 @@ import torch.nn as nn
 from . register import create_model
 from . model import Model
 from .. logger import logger
+from .. device import create_device
 
 
 PYTORCH2 = packaging_version.parse(torch.__version__).major >= 2
@@ -63,15 +64,7 @@ def load_model(model_path, model=None, device_ids=None,
     data.pop("state_dict")
 
     if not model_predefine and device_ids is not None:
-        if device_ids[0] < 0:
-            device = 'cpu'
-        else:
-            if torch.cuda.is_available():
-                device = 'cuda:{}'.format(device_ids[0])
-            elif torch.backends.mps.is_available():
-                device = 'mps:{}'.format(device_ids[0])
-            else:
-                raise ValueError("No cuda/mps available. Use `--gpu -1` for CPU.")
+        device = create_device(device_ids)
         model = model.to(device)
 
     return model, data

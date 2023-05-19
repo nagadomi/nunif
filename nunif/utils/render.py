@@ -1,7 +1,7 @@
 import math
-import torch
 import torch.nn.functional as F
 from .. models import get_model_config, get_model_device
+from .. device import autocast
 from .seam_blending import SeamBlending
 
 
@@ -23,7 +23,7 @@ def simple_render(x, model, enable_amp=False):
     if offset > 0:
         input_offset = math.ceil(offset / scale)
         x = F.pad(x, (input_offset,) * 4, mode='replicate')
-    with torch.autocast(device_type=device.type, enabled=enable_amp):
+    with autocast(device, enabled=enable_amp):
         z = model(x)
     if not minibatch:
         z = z.squeeze(0)

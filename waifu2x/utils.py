@@ -1,4 +1,3 @@
-import os
 from os import path
 import torch
 import torch.nn.functional as F
@@ -10,6 +9,7 @@ from nunif.models import (
     data_parallel_model, call_model_method,
     compile_model,
 )
+from nunif.device import create_device
 from nunif.logger import logger
 
 
@@ -20,15 +20,7 @@ class Waifu2x():
         self.noise_models = [None] * 4
         self.noise_scale_models = [None] * 4
         self.noise_scale4x_models = [None] * 4
-        if gpus[0] < 0:
-            self.device = "cpu"
-        else:
-            if torch.cuda.is_available():
-                self.device = f'cuda:{gpus[0]}'
-            elif torch.backends.mps.is_available():
-                self.device = f'mps:{gpus[0]}'
-            else:
-                raise ValueError(f"No cuda/mps available. Use `--gpu -1` for CPU.")
+        self.device = create_device(gpus)
         self.gpus = gpus
         self.model_dir = model_dir
         self.alpha_pad = AlphaBorderPadding()
@@ -129,7 +121,7 @@ class Waifu2x():
             try:
                 self._load_model("scale4x", -1)
             except FileNotFoundError:
-                logger.warning(f"`scale4x_path used for alpha channel does not exist. "
+                logger.warning("`scale4x_path used for alpha channel does not exist. "
                                "So use BILINEAR for upscaling alpha channel.")
         elif method == "noise_scale":
             self._load_model(method, noise_level)
@@ -137,7 +129,7 @@ class Waifu2x():
             try:
                 self._load_model("scale", -1)
             except FileNotFoundError:
-                logger.warning(f"`scale2x.pth` used for alpha channel does not exist. "
+                logger.warning("`scale2x.pth` used for alpha channel does not exist. "
                                "So use BILINEAR for upscaling alpha channel.")
         self._setup()
 
