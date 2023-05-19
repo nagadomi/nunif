@@ -46,14 +46,25 @@ def autocast(device, dtype=None, enabled=True):
         # disabled
         amp_device_type = "cpu"
         amp_dtype = torch.bfloat16
-        enabled = False
-    if device_is_mps(device):
+        if enabled:
+            enabled = False
+    elif device_is_mps(device):
         # currently pytorch does not support mps autocast
         # disabled
         amp_device_type = "cpu"
         amp_dtype = torch.bfloat16
-        enabled = False
+        if enabled:
+            enabled = False
+    elif device_is_cuda(device):
+        amp_device_type = device.type
+        amp_dtype = dtype
+        if False:
+            # TODO: I think better to do this, but leave it to the user (use --disable-amp option)
+            cuda_capability = torch.cuda.get_device_capability(device)
+            if enabled and cuda_capability < (7, 0):
+                enabled = False
     else:
+        # Unknown device
         amp_device_type = device.type
         amp_dtype = dtype
 
