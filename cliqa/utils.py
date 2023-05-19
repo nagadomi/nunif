@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from nunif.models import get_model_device
 from nunif.utils.image_loader import list_images
 from nunif.utils import pil_io
+from nunif.device import autocast
 
 
 PATCH_SIZE = 128
@@ -48,7 +49,8 @@ def predict_jpeg_quality(model, x, num_patches=8, patch_size=PATCH_SIZE):
     if isinstance(x, Image.Image):
         x = extract_patches(x, num_patches, patch_size)
     x = x.to(device)
-    quality, subsampling = model(x)
+    with autocast(device):
+        quality, subsampling = model(x)
     quality = torch.clamp(quality.mean(), 0, 100).item()
     subsampling_prob = torch.sigmoid(subsampling).mean().item()
 
@@ -60,7 +62,8 @@ def predict_grain_noise_psnr(model, x, num_patches=8, patch_size=PATCH_SIZE):
     if isinstance(x, Image.Image):
         x = extract_patches(x, num_patches, patch_size)
     x = x.to(device)
-    noise_level = model(x)
+    with autocast(device):
+        noise_level = model(x)
     noise_level = torch.clamp(noise_level.mean(), 0, 50).item()
     psnr = 50. - noise_level
 
