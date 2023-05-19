@@ -42,8 +42,11 @@ def device_is_cuda(device):
 
 def autocast(device, dtype=None, enabled=True):
     if device_is_cpu(device):
+        # autocast on cpu is extremely slow for unknown reasons
+        # disabled
         amp_device_type = "cpu"
         amp_dtype = torch.bfloat16
+        enabled = False
     if device_is_mps(device):
         # currently pytorch does not support mps autocast
         # disabled
