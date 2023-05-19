@@ -2,16 +2,17 @@
 
 Currently, it works very limitedly on macOS. (2023-05-18)
 
-`swin_unet/*` models (waifu2x's default models) only work with PyTorch 2.0.1 nightly build.
-However, even with PyTorch 2.0.1, `swin_unet/art` output glitches, and `swin_net/art_scan` and `swin_net/photo` do not work on MPS.
-
-Practically, only the older models `upcunet`, `cunet`, `upconv_7`, and `vgg_7` will work.
+`swin_unet/*` models (waifu2x's default models) do not work on MPS backend.
+Only the older models `upcunet`, `cunet`, `upconv_7`, and `vgg_7` will work.
+Use older models such as CUNet or use CPU backend.
 
 To use CUNet models,
 - Specify `--model-dir waifu2x/pretrained_models/cunet/art` option for `waifu2x.cli`
 - Specify `--art-model-dir waifu2x/pretrained_models/cunet/art` option for `waifu2x.web`
 
-Also PyTorch's MPS device does not support 16-bit float operation. If you get errors related to `autocast`, specify `--disable-amp` option or use `--gpu -1`(CPU only mode).
+To use CPU backend,
+- Specify `--gpu -1` option for `waifu2x.cli`
+- Specify `--gpu -1` option for `waifu2x.web`
 
 ## 1. Install dependencies packages
 
@@ -80,6 +81,12 @@ Start the web server.
 ```
 python -m waifu2x.web --art-model-dir ./waifu2x/pretrained_models/cunet/art --photo-model-dir ./waifu2x/pretrained_models/upconv_7/photo
 ```
+
+When using CPU backend
+```
+python -m waifu2x.web --gpu -1
+```
+
 Open http://localhost:8812/ (`style=art_scan` does not work)
 
 See also [waifu2x README.md](waifu2x/README.md).
