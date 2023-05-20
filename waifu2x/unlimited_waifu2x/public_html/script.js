@@ -319,6 +319,20 @@ const onnx_runner = {
         }
         return new ImageData(rgba, width, height);
     },
+    crop_image_data: function(image_data, x, y, width, height)
+    {
+        const roi = new Uint8ClampedArray(height * width * 4);
+        const ey = y + height;
+        let i = 0;
+        for (let yy = y; yy < ey; ++yy) {
+            const sx = image_data.width * 4 * yy + x * 4;
+            const ex = image_data.width * 4 * yy + (x + width) * 4;
+            for (let j = sx; j < ex; ++j) {
+                roi[i++] = image_data.data[j];
+            }
+        }
+        return new ImageData(roi, width, height);
+    },
     check_single_color: function(rgba, keep_alpha=false) {
         var r = rgba[0];
         var g = rgba[1];
@@ -425,11 +439,6 @@ const onnx_runner = {
 
         // create temporary canvas for tile input
         image_data = this.to_image_data(x.data, alpha3.data, x.dims[3], x.dims[2]);
-        var input_canvas = document.createElement("canvas");
-        input_canvas.width = w;
-        input_canvas.height = h;
-        var input_ctx = input_canvas.getContext("2d", {willReadFrequently: true});
-        input_ctx.putImageData(image_data, 0, 0);
         var all_blocks = p.h_blocks * p.w_blocks;
 
         // tiled rendering
@@ -453,7 +462,7 @@ const onnx_runner = {
         block_callback(0, all_blocks, true);
         for (var k = 0; k < tiles.length; ++k) {
             const [i, j, ii, jj, h_i, w_i] = tiles[k];
-            var tile_image_data = input_ctx.getImageData(j, i, tile_size, tile_size);
+            var tile_image_data = this.crop_image_data(image_data, j, i, tile_size, tile_size);
             var single_color = (config.color_stability ?
                                 this.check_single_color(tile_image_data.data, has_alpha) : null);
             if (single_color == null) {
