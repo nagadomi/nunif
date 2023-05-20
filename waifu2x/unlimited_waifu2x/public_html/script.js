@@ -333,24 +333,61 @@ const onnx_runner = {
         }
         return new ImageData(roi, width, height);
     },
-    check_single_color: function(rgba, keep_alpha=false) {
-        var r = rgba[0];
-        var g = rgba[1];
-        var b = rgba[2];
-        var a = rgba[3];
-        for (var i = 0; i < rgba.length; i += 4) {
-            if (r != rgba[i + 0] || g != rgba[i + 1] || b != rgba[i + 2] || a != rgba[i + 3]) {
-                return null;
+    crop_tensor: function(bchw, x, y, width, height)
+    {
+        const [B, C, H, W] = bchw.dims;
+        const ex = x + width;
+        const ey = y + height;
+        let roi = new Float32Array(B * C * height * width);
+        let i = 0;
+        for (let b = 0; b < B; ++b) {
+            const bi = b * C * H * W;
+            for (let c = 0; c < C; ++c) {
+                const ci = bi + c * H * W;
+                for (let h = y; h < ey; ++h) {
+                    const hi = ci + h * W;
+                    for (let w = x; w < ex; ++w) {
+                        roi[i++] = bchw.data[hi + w];
+                    }
+                }
+            }
+        }
+        return new ort.Tensor('float32', roi, [B, C, height, width]);
+    },
+    check_single_color: function(x, alpha3, keep_alpha=false) {
+        const [B, C, H, W] = x.dims;
+        let [r, g, b] = [x.data[0], x.data[1 * (H * W)], x.data[2 * (H * W)]];
+        let a = 1.0;
+        for (let bi = 0; bi < B; ++bi) {
+            for (let h = 0; h < H; ++h) {
+                for (let w = 0; w < W; ++w) {
+                    let i = bi * (C * H * W) + h * W + w;
+                    if (r != x.data[i + 0 * (H * W)]
+                        || g != x.data[i + 1 * (H * W)]
+                        || b != x.data[i + 2 * (H * W)])
+                    {
+                        return null;
+                    }
+                }
+            }
+        }
+        if (alpha3 != null) {
+            a = alpha3.data[0];
+            const n = alpha3.dims[0] * alpha3.dims[1] * alpha3.dims[2] * alpha3.dims[3];
+            for (let i = 0; i < n; ++i) {
+                if (a != alpha3.data[i]) {
+                    console.log(a, alpha3.data[i]);
+                    return null;
+                }
             }
         }
         if (keep_alpha) {
-            return [r / 255.0, g / 255.0, b / 255.0, a / 255.0];
+            return [r, g, b, a];
         } else {
             const bg_color = 1.0;
-            a = a / 255.0;
-            r = a * (r / 255.0) + (1 - a) * bg_color;
-            g = a * (g / 255.0) + (1 - a) * bg_color;
-            b = a * (b / 255.0) + (1 - a) * bg_color;
+            r = a * r + (1 - a) * bg_color;
+            g = a * g + (1 - a) * bg_color;
+            b = a * b + (1 - a) * bg_color;
             return [r, g, b, 1.0];
         }
     },
@@ -425,6 +462,7 @@ const onnx_runner = {
                                    BigInt(p.pad[2]), BigInt(p.pad[3]));
             alpha3 = await this.padding(alpha3, BigInt(p.pad[0]), BigInt(p.pad[1]),
                                         BigInt(p.pad[2]), BigInt(p.pad[3]));
+            alpha1 = null;
         } else {
             var alpha3 = {data: null};
             x = x[0];
@@ -437,8 +475,6 @@ const onnx_runner = {
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
 
-        // create temporary canvas for tile input
-        image_data = this.to_image_data(x.data, alpha3.data, x.dims[3], x.dims[2]);
         var all_blocks = p.h_blocks * p.w_blocks;
 
         // tiled rendering
@@ -462,15 +498,16 @@ const onnx_runner = {
         block_callback(0, all_blocks, true);
         for (var k = 0; k < tiles.length; ++k) {
             const [i, j, ii, jj, h_i, w_i] = tiles[k];
-            var tile_image_data = this.crop_image_data(image_data, j, i, tile_size, tile_size);
-            var single_color = (config.color_stability ?
-                                this.check_single_color(tile_image_data.data, has_alpha) : null);
+
+            let tile_x = this.crop_tensor(x, j, i, tile_size, tile_size);
+            let tile_alpha3 = null;
+            if (has_alpha) {
+                tile_alpha3 = this.crop_tensor(alpha3, j, i, tile_size, tile_size);
+            }
+            let single_color = (config.color_stability ?
+                                this.check_single_color(tile_x, tile_alpha3, has_alpha) : null);
             if (single_color == null) {
-                var tile_x = this.to_input(tile_image_data.data,
-                                           tile_image_data.width, tile_image_data.height,
-                                           has_alpha);
                 if (has_alpha) {
-                    var [tile_x, tile_alpha1, tile_alpha3] = tile_x;
                     if (tta_level > 0) {
                         tile_x = await this.tta_split(tile_x, BigInt(tta_level));
                     }
@@ -482,7 +519,6 @@ const onnx_runner = {
                     var alpha_output = await alpha_model.run({x: tile_alpha3});
                     var tile_alpha_y = alpha_output.y;
                 } else {
-                    tile_x = tile_x[0];
                     if (tta_level > 0) {
                         tile_x = await this.tta_split(tile_x, BigInt(tta_level));
                     }
