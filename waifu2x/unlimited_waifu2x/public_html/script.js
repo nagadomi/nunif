@@ -319,24 +319,74 @@ const onnx_runner = {
         }
         return new ImageData(rgba, width, height);
     },
-    check_single_color: function(rgba, keep_alpha=false) {
-        var r = rgba[0];
-        var g = rgba[1];
-        var b = rgba[2];
-        var a = rgba[3];
-        for (var i = 0; i < rgba.length; i += 4) {
-            if (r != rgba[i + 0] || g != rgba[i + 1] || b != rgba[i + 2] || a != rgba[i + 3]) {
-                return null;
+    crop_image_data: function(image_data, x, y, width, height)
+    {
+        const roi = new Uint8ClampedArray(height * width * 4);
+        const ey = y + height;
+        let i = 0;
+        for (let yy = y; yy < ey; ++yy) {
+            const sx = image_data.width * 4 * yy + x * 4;
+            const ex = image_data.width * 4 * yy + (x + width) * 4;
+            for (let j = sx; j < ex; ++j) {
+                roi[i++] = image_data.data[j];
+            }
+        }
+        return new ImageData(roi, width, height);
+    },
+    crop_tensor: function(bchw, x, y, width, height)
+    {
+        const [B, C, H, W] = bchw.dims;
+        const ex = x + width;
+        const ey = y + height;
+        let roi = new Float32Array(B * C * height * width);
+        let i = 0;
+        for (let b = 0; b < B; ++b) {
+            const bi = b * C * H * W;
+            for (let c = 0; c < C; ++c) {
+                const ci = bi + c * H * W;
+                for (let h = y; h < ey; ++h) {
+                    const hi = ci + h * W;
+                    for (let w = x; w < ex; ++w) {
+                        roi[i++] = bchw.data[hi + w];
+                    }
+                }
+            }
+        }
+        return new ort.Tensor('float32', roi, [B, C, height, width]);
+    },
+    check_single_color: function(x, alpha3, keep_alpha=false) {
+        const [B, C, H, W] = x.dims;
+        let [r, g, b] = [x.data[0], x.data[1 * (H * W)], x.data[2 * (H * W)]];
+        let a = 1.0;
+        for (let bi = 0; bi < B; ++bi) {
+            for (let h = 0; h < H; ++h) {
+                for (let w = 0; w < W; ++w) {
+                    let i = bi * (C * H * W) + h * W + w;
+                    if (r != x.data[i + 0 * (H * W)]
+                        || g != x.data[i + 1 * (H * W)]
+                        || b != x.data[i + 2 * (H * W)])
+                    {
+                        return null;
+                    }
+                }
+            }
+        }
+        if (alpha3 != null) {
+            a = alpha3.data[0];
+            const n = alpha3.dims[0] * alpha3.dims[1] * alpha3.dims[2] * alpha3.dims[3];
+            for (let i = 0; i < n; ++i) {
+                if (a != alpha3.data[i]) {
+                    return null;
+                }
             }
         }
         if (keep_alpha) {
-            return [r / 255.0, g / 255.0, b / 255.0, a / 255.0];
+            return [r, g, b, a];
         } else {
             const bg_color = 1.0;
-            a = a / 255.0;
-            r = a * (r / 255.0) + (1 - a) * bg_color;
-            g = a * (g / 255.0) + (1 - a) * bg_color;
-            b = a * (b / 255.0) + (1 - a) * bg_color;
+            r = a * r + (1 - a) * bg_color;
+            g = a * g + (1 - a) * bg_color;
+            b = a * b + (1 - a) * bg_color;
             return [r, g, b, 1.0];
         }
     },
@@ -407,10 +457,12 @@ const onnx_runner = {
 
             var p = seam_blending.get_rendering_config();
             x = await this.alpha_border_padding(rgb, alpha1, BigInt(config.offset));
+            // _debug_print_image_data(this.to_image_data(x.data, null, x.dims[3], x.dims[2]));
             x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]),
                                    BigInt(p.pad[2]), BigInt(p.pad[3]));
             alpha3 = await this.padding(alpha3, BigInt(p.pad[0]), BigInt(p.pad[1]),
                                         BigInt(p.pad[2]), BigInt(p.pad[3]));
+            alpha1 = null;
         } else {
             var alpha3 = {data: null};
             x = x[0];
@@ -422,14 +474,6 @@ const onnx_runner = {
         }
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
-
-        // create temporary canvas for tile input
-        image_data = this.to_image_data(x.data, alpha3.data, x.dims[3], x.dims[2]);
-        var input_canvas = document.createElement("canvas");
-        input_canvas.width = w;
-        input_canvas.height = h;
-        var input_ctx = input_canvas.getContext("2d", {willReadFrequently: true});
-        input_ctx.putImageData(image_data, 0, 0);
         var all_blocks = p.h_blocks * p.w_blocks;
 
         // tiled rendering
@@ -453,15 +497,16 @@ const onnx_runner = {
         block_callback(0, all_blocks, true);
         for (var k = 0; k < tiles.length; ++k) {
             const [i, j, ii, jj, h_i, w_i] = tiles[k];
-            var tile_image_data = input_ctx.getImageData(j, i, tile_size, tile_size);
-            var single_color = (config.color_stability ?
-                                this.check_single_color(tile_image_data.data, has_alpha) : null);
+
+            let tile_x = this.crop_tensor(x, j, i, tile_size, tile_size);
+            let tile_alpha3 = null;
+            if (has_alpha) {
+                tile_alpha3 = this.crop_tensor(alpha3, j, i, tile_size, tile_size);
+            }
+            let single_color = (config.color_stability ?
+                                this.check_single_color(tile_x, tile_alpha3, has_alpha) : null);
             if (single_color == null) {
-                var tile_x = this.to_input(tile_image_data.data,
-                                           tile_image_data.width, tile_image_data.height,
-                                           has_alpha);
                 if (has_alpha) {
-                    var [tile_x, tile_alpha1, tile_alpha3] = tile_x;
                     if (tta_level > 0) {
                         tile_x = await this.tta_split(tile_x, BigInt(tta_level));
                     }
@@ -473,7 +518,6 @@ const onnx_runner = {
                     var alpha_output = await alpha_model.run({x: tile_alpha3});
                     var tile_alpha_y = alpha_output.y;
                 } else {
-                    tile_x = tile_x[0];
                     if (tta_level > 0) {
                         tile_x = await this.tta_split(tile_x, BigInt(tta_level));
                     }
@@ -561,6 +605,41 @@ const onnx_runner = {
     },
 };
 
+function decode_image(image)
+{
+    const [width, height] = [image.naturalWidth, image.naturalHeight];
+    const canvas = new OffscreenCanvas(width, height);
+    const gl = canvas.getContext("webgl");
+    gl.activeTexture(gl.TEXTURE0);
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    // gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+
+    const image_data = new ImageData(width, height);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, image_data.data);
+    gl.deleteTexture(texture);
+    gl.deleteFramebuffer(framebuffer);
+
+    return image_data;
+};
+
+function _debug_print_image_data(image_data)
+{
+    var canvas = document.createElement("canvas");
+    canvas.width = image_data.width;
+    canvas.height = image_data.height;
+    var ctx = canvas.getContext("2d");
+    ctx.putImageData(image_data, 0, 0);
+    document.body.append(canvas);
+};
+
 /* UI */
 $(function () {
     /* init */
@@ -611,11 +690,10 @@ $(function () {
         const tile_random = $("input[name=tile_random]").prop("checked");
         const tta_level = parseInt($("select[name=tta]").val());
 
-        var canvas = $("#src").get(0);
-        var ctx = canvas.getContext("2d", {willReadFrequently: true});
+        var img = $("#src").get(0);
+        var image_data = decode_image(img);
         $("#dest").css({width: "auto", height: "auto"});
         var output_canvas = $("#dest").get(0);
-        var image_data = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const alpha_enabled = parseInt($("select[name=alpha]").val()) == 1;
         const has_alpha = !alpha_enabled ? false: onnx_runner.check_alpha_channel(image_data.data);
         var alpha_config = null;
@@ -664,15 +742,9 @@ $(function () {
     function set_input_image(file) {
         var reader = new FileReader();
         reader.addEventListener("load", function() {
-            var img = new Image();
+            var img = $("#src").get(0);
             img.src = reader.result;
             img.onload = () => {
-                // set input canvas
-                var canvas = $("#src").get(0);
-                canvas.width = img.naturalWidth;
-                canvas.height = img.naturalHeight;
-                var ctx = canvas.getContext("2d", {willReadFrequently: true});
-                ctx.drawImage(img, 0, 0);
                 // set input preview size
                 var h_scale = 128 / img.naturalHeight;
                 $("#src").css({width: Math.floor(h_scale * img.naturalWidth), height: 128});
@@ -691,11 +763,7 @@ $(function () {
         reader.readAsDataURL(file);
     };
     function clear_input_image(file) {
-        var canvas = $("#src").get(0);
-        canvas.width = 128;
-        canvas.height = 128;
-        var ctx = canvas.getContext("2d", {willReadFrequently: true});
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        $("#src").get(0).src = "blank.png";
         $("#src").css({width: 128, height: 128});
 
         var canvas = $("#dest").get(0);
@@ -781,13 +849,13 @@ $(function () {
         onnx_runner.stop_flag = true;
     });
     $("#src").click(() => {
-        var canvas = $("#src").get(0);
+        var img = $("#src").get(0);
         var css_width = parseInt($("#src").css("width"));
-        if (css_width != canvas.width) {
-            $("#src").css({width: canvas.width, height: canvas.height});
+        if (css_width != img.naturalWidth) {
+            $("#src").css({width: img.naturalWidth, height: img.naturalHeight});
         } else {
             var height = 128;
-            var width = Math.floor((height / canvas.height) * canvas.width);
+            var width = Math.floor((height / img.naturalHeight) * img.naturalWidth);
             $("#src").css({width: width, height: height});
         }
     });
