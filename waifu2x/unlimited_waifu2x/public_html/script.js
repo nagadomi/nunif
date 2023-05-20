@@ -458,6 +458,7 @@ const onnx_runner = {
 
             var p = seam_blending.get_rendering_config();
             x = await this.alpha_border_padding(rgb, alpha1, BigInt(config.offset));
+            // _debug_print_image_data(this.to_image_data(x.data, null, x.dims[3], x.dims[2]));
             x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]),
                                    BigInt(p.pad[2]), BigInt(p.pad[3]));
             alpha3 = await this.padding(alpha3, BigInt(p.pad[0]), BigInt(p.pad[1]),
@@ -474,7 +475,6 @@ const onnx_runner = {
         }
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
-
         var all_blocks = p.h_blocks * p.w_blocks;
 
         // tiled rendering
@@ -606,6 +606,41 @@ const onnx_runner = {
     },
 };
 
+function decode_image(image)
+{
+    const [width, height] = [image.naturalWidth, image.naturalHeight];
+    const canvas = new OffscreenCanvas(width, height);
+    const gl = canvas.getContext("webgl");
+    gl.activeTexture(gl.TEXTURE0);
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    // gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+
+    const image_data = new ImageData(width, height);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, image_data.data);
+    gl.deleteTexture(texture);
+    gl.deleteFramebuffer(framebuffer);
+
+    return image_data;
+};
+
+function _debug_print_image_data(image_data)
+{
+    var canvas = document.createElement("canvas");
+    canvas.width = image_data.width;
+    canvas.height = image_data.height;
+    var ctx = canvas.getContext("2d");
+    ctx.putImageData(image_data, 0, 0);
+    document.body.append(canvas);
+};
+
 /* UI */
 $(function () {
     /* init */
@@ -656,11 +691,10 @@ $(function () {
         const tile_random = $("input[name=tile_random]").prop("checked");
         const tta_level = parseInt($("select[name=tta]").val());
 
-        var canvas = $("#src").get(0);
-        var ctx = canvas.getContext("2d", {willReadFrequently: true});
+        var img = $("#src").get(0);
+        var image_data = decode_image(img);
         $("#dest").css({width: "auto", height: "auto"});
         var output_canvas = $("#dest").get(0);
-        var image_data = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const alpha_enabled = parseInt($("select[name=alpha]").val()) == 1;
         const has_alpha = !alpha_enabled ? false: onnx_runner.check_alpha_channel(image_data.data);
         var alpha_config = null;
@@ -709,15 +743,9 @@ $(function () {
     function set_input_image(file) {
         var reader = new FileReader();
         reader.addEventListener("load", function() {
-            var img = new Image();
+            var img = $("#src").get(0);
             img.src = reader.result;
             img.onload = () => {
-                // set input canvas
-                var canvas = $("#src").get(0);
-                canvas.width = img.naturalWidth;
-                canvas.height = img.naturalHeight;
-                var ctx = canvas.getContext("2d", {willReadFrequently: true});
-                ctx.drawImage(img, 0, 0);
                 // set input preview size
                 var h_scale = 128 / img.naturalHeight;
                 $("#src").css({width: Math.floor(h_scale * img.naturalWidth), height: 128});
@@ -736,11 +764,7 @@ $(function () {
         reader.readAsDataURL(file);
     };
     function clear_input_image(file) {
-        var canvas = $("#src").get(0);
-        canvas.width = 128;
-        canvas.height = 128;
-        var ctx = canvas.getContext("2d", {willReadFrequently: true});
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        $("#src").get(0).src = "blank.png";
         $("#src").css({width: 128, height: 128});
 
         var canvas = $("#dest").get(0);
@@ -826,13 +850,13 @@ $(function () {
         onnx_runner.stop_flag = true;
     });
     $("#src").click(() => {
-        var canvas = $("#src").get(0);
+        var img = $("#src").get(0);
         var css_width = parseInt($("#src").css("width"));
-        if (css_width != canvas.width) {
-            $("#src").css({width: canvas.width, height: canvas.height});
+        if (css_width != img.naturalWidth) {
+            $("#src").css({width: img.naturalWidth, height: img.naturalHeight});
         } else {
             var height = 128;
-            var width = Math.floor((height / canvas.height) * canvas.width);
+            var width = Math.floor((height / img.naturalHeight) * img.naturalWidth);
             $("#src").css({width: width, height: height});
         }
     });
