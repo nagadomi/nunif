@@ -376,7 +376,6 @@ const onnx_runner = {
             const n = alpha3.dims[0] * alpha3.dims[1] * alpha3.dims[2] * alpha3.dims[3];
             for (let i = 0; i < n; ++i) {
                 if (a != alpha3.data[i]) {
-                    console.log(a, alpha3.data[i]);
                     return null;
                 }
             }
