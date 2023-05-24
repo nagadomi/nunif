@@ -111,7 +111,7 @@
       <form action="/api" method="POST" enctype="multipart/form-data" target="_blank">
         <input type="hidden" name="recap" id="recap_response">
 	<div class="option-box first">
-	  <div class="option-left">{{image_choosing}}:</div>
+	  <div class="option-left">{{image_choosing}} (D&amp;D):</div>
 	  <div class="option-right">
 	    <input type="text" id="url" name="url" placeholder="{{type_url}}">
 	    <div class="option-right-small">
