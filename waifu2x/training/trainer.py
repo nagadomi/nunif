@@ -14,7 +14,8 @@ from nunif.models import (
     get_model_names
 )
 from nunif.modules import (
-    ClampLoss, LuminanceWeightedLoss, AuxiliaryLoss,
+    ClampLoss, LuminanceWeightedLoss, AverageWeightedLoss,
+    AuxiliaryLoss,
     LBPLoss, CharbonnierLoss,
     Alex11Loss,
     DiscriminatorHingeLoss,
@@ -74,7 +75,7 @@ def create_criterion(loss):
     elif loss == "l1lpips":
         from nunif.modules.lpips import LPIPSWith
         # weight=0.1, gradient norm is about the same as L1Loss.
-        criterion = LPIPSWith(ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())), weight=0.4)
+        criterion = LPIPSWith(ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3)), weight=0.4)
     elif loss == "l1lbp5":
         criterion = YL1LBP(kernel_size=5, weight=0.4)
     elif loss == "rgb_l1lbp5":
