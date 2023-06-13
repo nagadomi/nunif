@@ -23,3 +23,6 @@ select { padding: 4px; }
 input[type=file] { padding: 4px; width: 80%;}
 .comment { font-size: 0.8em; color: green; margin-left: 1em; }
 
+#paste {
+    text-decoration: none;
+}
