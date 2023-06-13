@@ -7,10 +7,6 @@ import csv
 from tqdm import tqdm
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode
-)
 from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
@@ -31,11 +27,18 @@ DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
     "swin_unet", "photo"))
 
 
-def convert_files(ctx, files, args, enable_amp):
+def find_subdir(dirname):
+    subdirs = [f.path for f in os.scandir(dirname) if f.is_dir()]
+    for dirname in list(subdirs):
+        subdirs.extend(find_subdir(dirname))
+    return subdirs
+
+
+def convert_files(ctx, files, output_dir, args, enable_amp):
     loader = ImageLoader(files=files, max_queue_size=128,
                          load_func=IL.load_image,
                          load_func_kwargs={"color": "rgb", "keep_alpha": True})
-    os.makedirs(args.output, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     futures = []
     with torch.no_grad(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         for im, meta in tqdm(loader, ncols=60):
@@ -53,7 +56,7 @@ def convert_files(ctx, files, args, enable_amp):
             futures.append(pool.submit(
                 IL.save_image,
                 IL.to_image(rgb, alpha, depth=depth),
-                filename=path.join(args.output, output_filename),
+                filename=path.join(output_dir, output_filename),
                 meta=meta,
                 format=args.format))
         for f in futures:
@@ -106,10 +109,23 @@ def main(args):
     ctx.load_model(args.method, args.noise_level)
 
     if path.isdir(args.input):
-        convert_files(ctx, ImageLoader.listdir(args.input), args, enable_amp=not args.disable_amp)
+        if args.recursive:
+            subdirs = sorted([args.input] + find_subdir(args.input))
+            for input_dir in subdirs:
+                files = ImageLoader.listdir(input_dir)
+                if not files:
+                    continue
+                print(f"* {input_dir}")
+                output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
+                convert_files(ctx, files, output_dir,
+                              args, enable_amp=not args.disable_amp)
+        else:
+            convert_files(ctx, ImageLoader.listdir(args.input), args.output,
+                          args, enable_amp=not args.disable_amp)
     else:
         if path.splitext(args.input)[-1] in (".txt", ".csv"):
-            convert_files(ctx, load_files(args.input), args, enable_amp=not args.disable_amp)
+            convert_files(ctx, load_files(args.input), args.output,
+                          args, enable_amp=not args.disable_amp)
         else:
             convert_file(ctx, args, enable_amp=not args.disable_amp)
 
@@ -120,7 +136,7 @@ if __name__ == "__main__":
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
     parser.add_argument("--method", "-m", type=str,
                         choices=["scale4x", "scale2x",
-                                 "noise_scale4x",  "noise_scale2x",
+                                 "noise_scale4x", "noise_scale2x",
                                  "scale", "noise", "noise_scale"],
                         default="noise_scale", help="method")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0],
@@ -146,6 +162,8 @@ if __name__ == "__main__":
                               "Ignored when --model-dir option is specified."))
     parser.add_argument("--grayscale", action="store_true",
                         help="Convert to grayscale format")
+    parser.add_argument("--recursive", "-r", action="store_true",
+                        help="process all subdirectories")
 
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
