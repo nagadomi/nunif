@@ -640,6 +640,37 @@ function _debug_print_image_data(image_data)
     document.body.append(canvas);
 };
 
+function check_clipboard()
+{
+    return ("clipboard" in navigator) && ("read" in navigator.clipboard);
+}
+
+async function read_from_clipboard()
+{
+    try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+            const mime = item.types.find(type => type.startsWith("image/"));
+            if (mime) {
+                const blob = await item.getType(mime);
+                return blob;
+            }
+        }
+    } catch (e) {
+        console.log(e);
+    }
+    return null;
+}
+
+function uuid()
+{
+    // ref: http://stackoverflow.com/a/2117523
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
+        return v.toString(16);
+    });
+}
+
 /* UI */
 $(function () {
     /* init */
@@ -845,6 +876,22 @@ $(function () {
             }
         }
     });
+    if (check_clipboard()) {
+        let a = $("<a>", {id: "paste", href: "#", title: "→paste image", text: "📋"});
+        a.click(async () => {
+            const blob = await read_from_clipboard();
+            if (blob != null) {
+                const file = new File([blob], uuid(), {type: blob.type});
+                let files = new DataTransfer();
+                files.items.add(file);
+                $("#file").get(0).files = files.files;
+                $("#file").trigger("change");
+            }
+            return false;
+        });
+        $("#paste-button").append(", ");
+        $("#paste-button").append(a);
+    }
     $("#stop").click(() => {
         onnx_runner.stop_flag = true;
     });

@@ -83,7 +83,7 @@ class Waifu2x():
             if self.has_model_file(f"noise{noise_level}_scale4x.pth"):
                 self.noise_scale4x_models[noise_level] = self.load_model_by_name(f"noise{noise_level}_scale4x.pth")
             else:
-                raise FileNotFoundError(f"scale4x.pth not found in {self.model_dir}")
+                raise FileNotFoundError(f"noise{noise_level}_scale4x.pth not found in {self.model_dir}")
 
         elif method == "noise_scale":
             if self.noise_scale_models[noise_level] is not None:

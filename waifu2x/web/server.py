@@ -125,6 +125,7 @@ def setup():
     parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires --config option")
     parser.add_argument("--config", type=str, help="config file for API tokens")
     parser.add_argument("--no-size-limit", action="store_true", help="No file/image size limits for private server")
+    parser.add_argument("--torch-threads", type=int, help="The number of threads used for intraop parallelism on CPU")
 
     args = parser.parse_args()
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
@@ -476,6 +477,9 @@ def main():
 
     if command_args.debug:
         set_log_level(logging.DEBUG)
+    if command_args.torch_threads is not None:
+        torch.set_num_threads(command_args.torch_threads)
+        torch.set_num_interop_threads(command_args.torch_threads)
 
     backend_kwargs = {}
     if command_args.backend == "waitress":
