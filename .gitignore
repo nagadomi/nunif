@@ -5,6 +5,7 @@ tmp
 *.png
 *.jpg
 *.gif
+*.mp4
 *.tar.gz
 *.tar
 *.zip
@@ -31,6 +32,7 @@ tmp
 /waifu2x/appendix/_*
 /font_resource/fonts
 /text_resource/aozora/data
+/cc0
 .python-version
 
 /cliqa/pretrained_models
