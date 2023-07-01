@@ -130,7 +130,7 @@ def remove_bg_from_image(im, bg_session):
     # TODO: mask resolution seems to be low
     mask = TF.to_tensor(rembg.remove(im, session=bg_session, only_mask=True))
     im = TF.to_tensor(im)
-    bg_color = im[:, mask.squeeze(0) < 0.2].float().mean(dim=[1]).view(3, 1, 1)
+    bg_color = torch.tensor((0.4, 0.4, 0.2)).view(3, 1, 1)
     im = im * mask + bg_color * (1.0 - mask)
     im = TF.to_pil_image(im)
 
