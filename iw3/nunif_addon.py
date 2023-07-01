@@ -1,4 +1,5 @@
 from nunif.addon import Addon
+from . import models # noqa
 
 
 def addon_config():
