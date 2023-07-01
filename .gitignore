@@ -33,6 +33,7 @@ tmp
 /font_resource/fonts
 /text_resource/aozora/data
 /cc0
+/iw3/pretrained_models
 .python-version
 
 /cliqa/pretrained_models

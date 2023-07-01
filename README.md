@@ -13,6 +13,13 @@ We usually support the latest version. If there are bugs or compatibility issues
 - [INSTALL-ubuntu](INSTALL-ubuntu.md)
 - [INSTALL-windows](INSTALL-windows.md)
 
+## iw3
+
+[iw3/README.md](./iw3/README.md)
+
+I want to watch any 2D video as 3D video on my VR device.
+So I developed this very personal tool.
+
 ## waifu2x
 
 [waifu2x/README.md](./waifu2x/README.md)

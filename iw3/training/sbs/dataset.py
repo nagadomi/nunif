@@ -1,0 +1,74 @@
+import torch
+from torch.utils.data.dataset import Dataset
+from torchvision.transforms import (
+    functional as TF,
+)
+from nunif.utils.image_loader import ImageLoader
+from nunif.utils import pil_io
+from os import path
+from PIL import Image
+from ... import utils as US
+
+
+def load_images(org_file, side):
+    dirname = path.dirname(org_file)
+    basename = path.basename(org_file)
+
+    im_org, _ = pil_io.load_image_simple(org_file, color="rgb")
+    # depth is 16bit int image
+    im_depth = Image.open(path.join(dirname, basename.replace("_C.png", "_D.png")))
+    im_depth.load()
+    if side == "left":
+        im_side, _ = pil_io.load_image_simple(
+            path.join(dirname, basename.replace("_C.png", "_L.png")), color="rgb")
+    else:
+        im_side, _ = pil_io.load_image_simple(
+            path.join(dirname, basename.replace("_C.png", "_R.png")), color="rgb")
+
+    if not all([im_org, im_depth, im_side]):
+        raise RuntimeError(f"load error {org_file}")
+    assert im_org.size == im_depth.size and im_org.size == im_side.size
+
+    return im_org, im_depth, im_side
+
+
+class SBSDataset(Dataset):
+    def __init__(self, input_dir, side, model_offset):
+        super().__init__()
+
+        self.side = side
+        self.model_offset = model_offset
+        self.files = [fn for fn in ImageLoader.listdir(input_dir) if fn.endswith("_C.png")]
+        if not self.files:
+            raise RuntimeError(f"{input_dir} is empty")
+
+    def worker_init(self, worker_id):
+        pass
+
+    def create_sampler(self, num_samples):
+        return torch.utils.data.sampler.RandomSampler(
+            self,
+            num_samples=num_samples,
+            replacement=True)
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, index):
+        im_org, im_depth, im_side = load_images(self.files[index], self.side)
+        depth_max = int(im_depth.text["sbs_depth_max"])
+        depth_min = int(im_depth.text["sbs_depth_min"])
+        original_image_width = int(im_depth.text["sbs_width"])
+        divergence = float(im_depth.text["sbs_divergence"])
+
+        x = US.make_input_tensor(
+            TF.to_tensor(im_org),
+            TF.to_tensor(im_depth),
+            divergence, original_image_width,
+            depth_min=depth_min, depth_max=depth_max
+        )
+        y = TF.to_tensor(TF.crop(im_side, self.model_offset, self.model_offset,
+                                 im_side.height - self.model_offset * 2,
+                                 im_side.width - self.model_offset * 2))
+
+        return x, y
