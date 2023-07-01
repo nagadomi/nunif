@@ -107,7 +107,9 @@ def process_video(input_path, output_path,
             audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
             audio_copy = False
 
-    pbar = tqdm(desc=(title if title else output_path), total=get_frames(video_input_stream), ncols=80)
+    desc = (title if title else output_path)
+    ncols = len(desc) + 60
+    pbar = tqdm(desc=desc, total=get_frames(video_input_stream), ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     for packet in input_container.demux(streams):
         if packet.stream.type == "video":
