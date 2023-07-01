@@ -118,9 +118,9 @@ def save_image(im, output_filename):
 
 def get_output_size(width, height, pad=None, rot=None):
     if pad is not None:
-        pad_h = int(height * args.pad)
+        pad_h = int(height * pad)
         pad_h -= pad_h % 2
-        pad_w = pad_h // 2
+        pad_w = int(width * pad)  // 2
         return width + pad_w * 2, height + pad_h
     else:
         return width, height
