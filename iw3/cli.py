@@ -202,10 +202,14 @@ def process_video(args, depth_model, side_model):
             stream.codec_context.height,
             pad=args.pad,
             rotate=args.rotate_left or args.rotate_right)
+
+        options = {"preset": args.preset, "crf": str(args.crf)}
+        if args.tune:
+            options["tune"] = ",".join(args.tune)
         return VU.VideoOutputConfig(
             width * 2, height,
             fps=fps,
-            options={"preset": args.preset, "crf": str(args.crf)}
+            options=options
         )
 
     def frame_callback(frame):
@@ -264,7 +268,11 @@ def main():
     parser.add_argument("--preset", type=str, default="ultrafast",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
                                  "medium", "slow", "slower", "veryslow", "placebo"],
-                        help="encode preset option for video")
+                        help="encoder preset option for video")
+    parser.add_argument("--tune", type=str, nargs="+", default=["zerolatency"],
+                        choices=["film", "animation", "grain", "stillimage",
+                                 "fastdecode", "zerolatency"],
+                        help="encoder tunings option for video")
     parser.add_argument("--yes", "-y", action="store_true", default=False,
                         help="overwrite output files")
     parser.add_argument("--pad", type=float, help="pad_size = int(size * pad)")
@@ -289,7 +297,6 @@ def main():
         args.bg_session = rembg.new_session(model_name=args.bg_model)
     else:
         args.bg_session = None
-
 
     depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
     if args.method == "row_flow":
