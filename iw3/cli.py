@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import argparse
 from tqdm import tqdm
 import mimetypes
+from PIL import Image
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
@@ -116,14 +117,16 @@ def save_image(im, output_filename):
     im.save(output_filename)
 
 
-def get_output_size(width, height, pad=None, rot=None):
+def get_output_size(width, height, pad=None, rotate=False):
+    if rotate:
+        width, height = height, width
     if pad is not None:
         pad_h = int(height * pad)
         pad_h -= pad_h % 2
         pad_w = int(width * pad)  // 2
-        return width + pad_w * 2, height + pad_h
-    else:
-        return width, height
+        width = width + pad_w * 2
+        height = height + pad_h
+    return width, height
 
 
 def remove_bg_from_image(im, bg_session):
@@ -138,7 +141,12 @@ def remove_bg_from_image(im, bg_session):
 
 
 def process_image(im, args, depth_model, side_model):
+    import time
     with torch.no_grad():
+        if args.rotate_left:
+            im = im.transpose(Image.Transpose.ROTATE_90)
+        elif args.rotate_right:
+            im = im.transpose(Image.Transpose.ROTATE_270)
         im_org = TF.to_tensor(im)
         if args.bg_session is not None:
             im = remove_bg_from_image(im, args.bg_session)
@@ -191,7 +199,9 @@ def process_video(args, depth_model, side_model):
             fps = args.max_fps
         width, height = get_output_size(
             stream.codec_context.width,
-            stream.codec_context.height, args.pad)
+            stream.codec_context.height,
+            pad=args.pad,
+            rotate=args.rotate_left or args.rotate_right)
         return VU.VideoOutputConfig(
             width * 2, height,
             fps=fps,
@@ -265,7 +275,12 @@ def main():
                         help="remove background depth, not recommended for video")
     parser.add_argument("--bg-model", type=str, default="u2net_human_seg",
                         help="rembg model type")
+    parser.add_argument("--rotate-left", action="store_true",
+                        help="Rotate 90 degrees to the left(counterclockwise)")
+    parser.add_argument("--rotate-right", action="store_true",
+                        help="Rotate 90 degrees to the right(clockwise)")
     args = parser.parse_args()
+    assert(not (args.rotate_left and args.rotate_right))
     if args.update:
         update_model()
     if args.remove_bg:
@@ -274,6 +289,7 @@ def main():
         args.bg_session = rembg.new_session(model_name=args.bg_model)
     else:
         args.bg_session = None
+
 
     depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
     if args.method == "row_flow":
