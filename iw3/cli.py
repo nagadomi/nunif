@@ -14,7 +14,7 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, get_model_device
 from nunif.device import create_device
-from .utils import normalize_depth, make_input_tensor
+from .utils import normalize_depth, make_input_tensor, batch_infer
 import nunif.utils.video as VU
 from . import models # noqa
 
@@ -152,7 +152,10 @@ def process_image(im, args, depth_model, side_model):
         im_org = TF.to_tensor(im)
         if args.bg_session is not None:
             im = remove_bg_from_image(im, args.bg_session)
-        depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
+        if args.disable_zoedepth_batch:
+            depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
+        else:
+            depth = batch_infer(depth_model, im)
         if args.method == "grid_sample":
             depth = normalize_depth(depth.squeeze(0))
             left_eye = apply_divergence_grid_sample(im_org, depth, args.divergence, shift=-1)
@@ -289,6 +292,8 @@ def main():
                         help="Rotate 90 degrees to the left(counterclockwise)")
     parser.add_argument("--rotate-right", action="store_true",
                         help="Rotate 90 degrees to the right(clockwise)")
+    parser.add_argument("--disable-zoedepth-batch", action="store_true",
+                        help="disable batch processing for low memory GPU")
     args = parser.parse_args()
     assert not (args.rotate_left and args.rotate_right)
     if args.method == "row_flow" and args.divergence != 2.5:

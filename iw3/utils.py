@@ -1,4 +1,6 @@
 import torch
+import torch.nn.functional as F
+import torchvision.transforms.functional as TF
 
 
 def normalize_depth(depth, depth_min=None, depth_max=None):
@@ -33,3 +35,24 @@ def make_input_tensor(c, depth16, divergence, image_width, depth_min=None, depth
     grid = grid.permute(2, 0, 1)  # CHW
 
     return torch.cat([c, depth.unsqueeze(0) ** 2, divergence_feat.unsqueeze(0), grid], dim=0)
+
+
+@torch.inference_mode()
+def batch_infer(model, im):
+    x = TF.to_tensor(im).unsqueeze(0).to(model.device)
+    x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
+
+    pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
+    pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
+    x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+
+    out = model(x)['metric_depth']
+    if out.shape[-2:] != x.shape[-2:]:
+        out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
+                            mode="bicubic", align_corners=False)
+    if pad_h > 0:
+        out = out[:, :, pad_h:-pad_h, :]
+    if pad_w > 0:
+        out = out[:, :, :, pad_w:-pad_w]
+
+    return ((out[0] + torch.flip(out[1], dims=[2])) * 128).cpu().to(torch.int16)
