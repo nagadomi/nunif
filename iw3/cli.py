@@ -197,7 +197,7 @@ def process_images(args, depth_model, side_model):
             f.result()
 
 
-def process_video(args, depth_model, side_model):
+def process_video_full(args, depth_model, side_model):
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -209,8 +209,14 @@ def process_video(args, depth_model, side_model):
             rotate=args.rotate_left or args.rotate_right)
 
         options = {"preset": args.preset, "crf": str(args.crf)}
+        tune = []
+        if fps < 2:
+            tune += ["stillimage"]
         if args.tune:
-            options["tune"] = ",".join(args.tune)
+            tune += args.tune
+        tune = set(tune)
+        if tune:
+            options["tune"] = ",".join(tune)
         return VU.VideoOutputConfig(
             width * 2, height,
             fps=fps,
@@ -237,6 +243,38 @@ def process_video(args, depth_model, side_model):
     VU.process_video(args.input, output_filename,
                      config_callback=config_callback,
                      frame_callback=frame_callback)
+
+
+def process_video_keyframes(args, depth_model, side_model):
+    if path.isdir(args.output) or "." not in path.basename(args.output):
+        os.makedirs(args.output, exist_ok=True)
+        output_dir = path.join(args.output, make_output_filename(path.basename(args.input), video=True))
+    else:
+        output_dir = args.output
+    output_dir = path.join(path.dirname(output_dir), path.splitext(path.basename(output_dir))[0])
+    if output_dir.endswith("_LRF"):
+        output_dir = output_dir[:-4]
+    os.makedirs(output_dir, exist_ok=True)
+    with PoolExecutor(max_workers=4) as pool:
+        futures = []
+        def frame_callback(frame):
+            output = process_image(frame.to_image(), args, depth_model, side_model)
+            output_filename = path.join(
+                output_dir,
+                path.basename(output_dir) + "_" + str(frame.index).zfill(8) + SBS_SUFFIX + ".png")
+            f = pool.submit(save_image, output, output_filename)
+            futures.append(f)
+        VU.process_video_keyframes(args.input, frame_callback=frame_callback,
+                                   min_interval_sec=args.keyframe_interval)
+        for f in futures:
+            f.result()
+
+
+def process_video(args, depth_model, side_model):
+    if args.keyframe:
+        process_video_keyframes(args, depth_model, side_model)
+    else:
+        process_video_full(args, depth_model, side_model)
 
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_d25.pth")
@@ -294,6 +332,10 @@ def main():
                         help="Rotate 90 degrees to the right(clockwise)")
     parser.add_argument("--disable-zoedepth-batch", action="store_true",
                         help="disable batch processing for low memory GPU")
+    parser.add_argument("--keyframe", action="store_true",
+                        help="process only keyframe as image")
+    parser.add_argument("--keyframe-interval", type=float, default=4.0,
+                        help="keyframe minimum interval (sec)")
     args = parser.parse_args()
     assert not (args.rotate_left and args.rotate_right)
     if args.method == "row_flow" and args.divergence != 2.5:

@@ -147,6 +147,31 @@ def process_video(input_path, output_path,
     input_container.close()
 
 
+def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None):
+    input_container = av.open(input_path)
+    if len(input_container.streams.video) == 0:
+        raise ValueError("No video stream")
+
+    video_input_stream = input_container.streams.video[0]
+    video_input_stream.thread_type = "AUTO"
+    video_input_stream.codec_context.skip_frame = "NONKEY"
+
+    max_progress = get_duration(video_input_stream)
+    desc = (title if title else input_path)
+    ncols = len(desc) + 60
+    pbar = tqdm(desc=desc, total=max_progress, ncols=ncols)
+    prev_sec = 0
+    for frame in input_container.decode(video_input_stream):
+        current_sec = math.ceil(frame.pts * video_input_stream.time_base)
+        if current_sec - prev_sec >= min_interval_sec:
+            frame_callback(frame)
+            pbar.update(current_sec - prev_sec)
+            prev_sec = current_sec
+    pbar.update(max_progress - prev_sec)
+    pbar.close()
+    input_container.close()
+
+
 if __name__ == "__main__":
     from PIL import Image, ImageOps
     import argparse
