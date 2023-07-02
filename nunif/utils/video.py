@@ -126,6 +126,7 @@ def process_video(input_path, output_path,
             if packet.dts is not None:
                 if audio_copy:
                     packet.stream = audio_output_stream
+                    output_container.mux(packet)
                 else:
                     for frame in packet.decode():
                         frame.pts = None
