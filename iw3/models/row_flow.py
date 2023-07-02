@@ -12,7 +12,9 @@ class RowFlow(I2IBaseModel):
         # from diverdence==2.5, (0.5 * 2.5) / 100 * 2048 = 24, so offset must be > 24
         super(RowFlow, self).__init__(locals(), scale=1, offset=28, in_channels=7, blend_size=4)
         self.conv = nn.Sequential(
-            nn.Conv2d(2, 16, kernel_size=(1, 9), stride=1, padding=(0, 4), padding_mode="replicate"),
+            nn.Conv2d(2, 16, kernel_size=(1, 3), stride=1, padding=(0, 1), padding_mode="replicate"),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(16, 16, kernel_size=(1, 9), stride=1, padding=(0, 4), padding_mode="replicate"),
             nn.ReLU(inplace=True),
             nn.Conv2d(16, 32, kernel_size=(1, 9), stride=1, padding=(0, 4), padding_mode="replicate"),
             nn.ReLU(inplace=True),
