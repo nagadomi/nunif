@@ -68,7 +68,7 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="sbs.row_ae", help="network arch")
+    parser.add_argument("--arch", type=str, default="sbs.row_flow", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
     parser.add_argument("--side", type=str, default="left", choices=["left", "right"],
