@@ -102,8 +102,8 @@ def random_resize(im, min_size, max_size):
 
 def gen_divergence():
     if True:
-        # only support divergence == 2
-        return 2.0
+        # only support divergence == 2.5
+        return 2.5
     else:
         p = random.uniform(0., 1.)
         if p < 0.8:

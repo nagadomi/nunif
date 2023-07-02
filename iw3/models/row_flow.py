@@ -9,8 +9,8 @@ class RowFlow(I2IBaseModel):
     name = "sbs.row_flow"
 
     def __init__(self):
-        # from diverdence==2, (0.5 * 2) / 100 * 2048 = 20.48, so offset must be > 20.48
-        super(RowFlow, self).__init__(locals(), scale=1, offset=24, in_channels=7)
+        # from diverdence==2.5, (0.5 * 2.5) / 100 * 2048 = 24, so offset must be > 24
+        super(RowFlow, self).__init__(locals(), scale=1, offset=28, in_channels=7, blend_size=4)
         self.conv = nn.Sequential(
             nn.Conv2d(2, 16, kernel_size=(1, 9), stride=1, padding=(0, 4), padding_mode="replicate"),
             nn.ReLU(inplace=True),
@@ -36,7 +36,7 @@ class RowFlow(I2IBaseModel):
         grid = grid.permute(0, 2, 3, 1)
         z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
 
-        z = F.pad(z, (-24, -24, -24, -24))
+        z = F.pad(z, (-28, -28, -28, -28))
         if self.training:
             return z
         else:

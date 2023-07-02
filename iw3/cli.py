@@ -19,6 +19,9 @@ import nunif.utils.video as VU
 from . import models # noqa
 
 
+FIXED_DIVERGENCE = 2.5
+
+
 def apply_divergence_grid_sample(c, depth, divergence, shift):
     w, h = c.shape[2], c.shape[1]
     index_shift = (1. - depth ** 2) * (shift * divergence * 0.01)
@@ -54,8 +57,8 @@ def apply_divergence_nn(model, c, depth, divergence, shift, batch_size=64):
         dd = p[1][:, i1:i2, j1:j2]
         return make_input_tensor(xx, dd,
                                  # apply divergence scale to image width instead of divergence
-                                 divergence=2.0,
-                                 image_width=image_width * divergence / 2.0,
+                                 divergence=FIXED_DIVERGENCE,
+                                 image_width=image_width * (divergence / FIXED_DIVERGENCE),
                                  depth_min=depth_min, depth_max=depth_max)
 
     z = SeamBlending.tiled_render(c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
@@ -123,7 +126,7 @@ def get_output_size(width, height, pad=None, rotate=False):
     if pad is not None:
         pad_h = int(height * pad)
         pad_h -= pad_h % 2
-        pad_w = int(width * pad)  // 2
+        pad_w = int(width * pad) // 2
         width = width + pad_w * 2
         height = height + pad_h
     return width, height
@@ -141,7 +144,6 @@ def remove_bg_from_image(im, bg_session):
 
 
 def process_image(im, args, depth_model, side_model):
-    import time
     with torch.no_grad():
         if args.rotate_left:
             im = im.transpose(Image.Transpose.ROTATE_90)
@@ -234,7 +236,7 @@ def process_video(args, depth_model, side_model):
                      frame_callback=frame_callback)
 
 
-FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow.pth")
+FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_d25.pth")
 
 
 def main():
@@ -253,7 +255,7 @@ def main():
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
                         help="left-right divergence method")
-    parser.add_argument("--divergence", "-d", type=float, default=2.,
+    parser.add_argument("--divergence", "-d", type=float, default=FIXED_DIVERGENCE,
                         help=("strength of 3D effect"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
@@ -288,7 +290,9 @@ def main():
     parser.add_argument("--rotate-right", action="store_true",
                         help="Rotate 90 degrees to the right(clockwise)")
     args = parser.parse_args()
-    assert(not (args.rotate_left and args.rotate_right))
+    assert not (args.rotate_left and args.rotate_right)
+    if args.method == "row_flow" and args.divergence != 2.5:
+        raise ValueError("--method row_flow only supports --divergence 2.5")
     if args.update:
         update_model()
     if args.remove_bg:
@@ -332,6 +336,7 @@ def main():
                     im, _ = load_image_simple(input_file, color="rgb")
                     output = process_image(im, args, depth_model, side_model)
                     output.save(output_filename)
+
 
 if __name__ == "__main__":
     main()
