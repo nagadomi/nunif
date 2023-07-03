@@ -141,7 +141,7 @@ def remove_bg_from_image(im, bg_session):
 
 
 def process_image(im, args, depth_model, side_model):
-    with torch.no_grad():
+    with torch.inference_mode():
         if args.rotate_left:
             im = im.transpose(Image.Transpose.ROTATE_90)
         elif args.rotate_right:
