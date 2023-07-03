@@ -100,19 +100,6 @@ def random_resize(im, min_size, max_size):
     return im
 
 
-def gen_divergence():
-    if True:
-        # only support divergence == 2.5
-        return 2.5
-    else:
-        p = random.uniform(0., 1.)
-        if p < 0.8:
-            divergence = random.uniform(1., 3.)
-        else:
-            divergence = random.uniform(0.05, 5.05)
-        return divergence
-
-
 def main(args):
     import numba
     from .depthmap_utils import force_update_midas_model, load_zoed_model, generate_sbs
@@ -152,7 +139,7 @@ def main(args):
                 for _ in range(args.times):
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
-                    divergence = gen_divergence()
+                    divergence = args.divergence
                     sbs, depth = generate_sbs(model, im_s, divergence=divergence)
                     f = pool.submit(save_images, im_s, sbs, depth, divergence,
                                     output_base, args.size, args.num_samples)
@@ -177,6 +164,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--times", type=int, default=4,
                         help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
+    parser.add_argument("--divergence", type=float, default=2.0, help="fixed divergence option")
 
     parser.set_defaults(handler=main)
 
