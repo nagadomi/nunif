@@ -22,7 +22,7 @@ class SBSTrainer(Trainer):
         assert (type in {"train", "eval"})
         model_offset = get_model_config(self.model, "i2i_offset")
         if type == "train":
-            dataset = SBSDataset(path.join(self.args.data_dir, "train"), self.args.side, model_offset)
+            dataset = SBSDataset(path.join(self.args.data_dir, "train"), model_offset, training=True)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -33,7 +33,7 @@ class SBSTrainer(Trainer):
                 drop_last=False)
             return loader
         else:
-            dataset = SBSDataset(path.join(self.args.data_dir, "eval"), self.args.side, model_offset)
+            dataset = SBSDataset(path.join(self.args.data_dir, "eval"), model_offset, training=False)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -44,10 +44,10 @@ class SBSTrainer(Trainer):
             return loader
 
     def create_best_model_filename(self):
-        return path.join(self.args.model_dir, f"{self.model.name}.{self.args.side}.pth")
+        return path.join(self.args.model_dir, f"{self.model.name}.left.pth")
 
     def create_checkpoint_filename(self):
-        return path.join(self.args.model_dir, f"{self.model.name}.{self.args.side}.checkpoint.pth")
+        return path.join(self.args.model_dir, f"{self.model.name}.left.checkpoint.pth")
 
     def create_env(self):
         if self.args.loss == "l1":
@@ -71,8 +71,6 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="sbs.row_flow", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--side", type=str, default="left", choices=["left", "right"],
-                        help="side for side-by-side. left or right")
     parser.add_argument("--loss", type=str, default="l1", choices=["l1", "lbp"],
                         help="loss")
 

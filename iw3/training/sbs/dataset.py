@@ -6,6 +6,7 @@ from torchvision.transforms import (
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils import pil_io
 from os import path
+import random
 from PIL import Image
 from ... import utils as US
 
@@ -33,10 +34,9 @@ def load_images(org_file, side):
 
 
 class SBSDataset(Dataset):
-    def __init__(self, input_dir, side, model_offset):
+    def __init__(self, input_dir, model_offset, training):
         super().__init__()
-
-        self.side = side
+        self.training = training
         self.model_offset = model_offset
         self.files = [fn for fn in ImageLoader.listdir(input_dir) if fn.endswith("_C.png")]
         if not self.files:
@@ -55,11 +55,19 @@ class SBSDataset(Dataset):
         return len(self.files)
 
     def __getitem__(self, index):
-        im_org, im_depth, im_side = load_images(self.files[index], self.side)
+        if self.training:
+            side = random.choice(["left", "right"])
+        else:
+            side = "left"
+        im_org, im_depth, im_side = load_images(self.files[index], side)
         depth_max = int(im_depth.text["sbs_depth_max"])
         depth_min = int(im_depth.text["sbs_depth_min"])
         original_image_width = int(im_depth.text["sbs_width"])
         divergence = float(im_depth.text["sbs_divergence"])
+        if side == "right":
+            im_org = TF.hflip(im_org)
+            im_depth = TF.hflip(im_depth)
+            im_side = TF.hflip(im_side)
 
         x = US.make_input_tensor(
             TF.to_tensor(im_org),
