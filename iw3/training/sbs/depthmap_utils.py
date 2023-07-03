@@ -10,7 +10,7 @@ def force_update_midas_model():
 
 
 def load_zoed_model(device, model_type="ZoeD_N"):
-    model = torch.hub.load("isl-org/ZoeDepth", model_type, pretrained=True)
+    model = torch.hub.load("isl-org/ZoeDepth:main", model_type, pretrained=True)
     model = model.to(device)
     model.eval()
     return model

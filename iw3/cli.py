@@ -83,7 +83,7 @@ class HiddenPrints:
 
 def load_depth_model(model_type="ZoeD_N", gpu=0):
     with HiddenPrints():
-        model = torch.hub.load("isl-org/ZoeDepth", model_type, config_mode="infer",
+        model = torch.hub.load("isl-org/ZoeDepth:main", model_type, config_mode="infer",
                                pretrained=True, verbose=False)
     device = create_device(gpu)
     model = model.to(device).eval()
