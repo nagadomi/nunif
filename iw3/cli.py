@@ -239,7 +239,8 @@ def process_video_full(args, depth_model, side_model):
 
     VU.process_video(args.input, output_filename,
                      config_callback=config_callback,
-                     frame_callback=frame_callback)
+                     frame_callback=frame_callback,
+                     vf=args.vf)
 
 
 def process_video_keyframes(args, depth_model, side_model):
@@ -335,6 +336,9 @@ def main():
                         help="process only keyframe as image")
     parser.add_argument("--keyframe-interval", type=float, default=4.0,
                         help="keyframe minimum interval (sec)")
+    parser.add_argument("--vf", type=str, default="",
+                        help=("video filter options for ffmpeg."
+                              "Note thet the video filter that modify the image size will cause errors."))
     args = parser.parse_args()
     assert not (args.rotate_left and args.rotate_right)
     if args.method == "row_flow" and (args.divergence != 2.5 and args.divergence != 2.0):

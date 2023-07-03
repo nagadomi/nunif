@@ -33,14 +33,41 @@ def _print_len(stream):
 
 
 class FixedFPSFilter():
-    def __init__(self, video_stream, fps):
+    @staticmethod
+    def parse_vf_option(vf):
+        video_filters = []
+        vf = vf.strip()
+        if not vf:
+            return video_filters
+        for line in vf.split(","):
+            line = line.strip()
+            if line:
+                col = line.split("=", 1)
+                if len(col) == 2:
+                    filter_name, filter_option = col
+                else:
+                    filter_name, filter_option = col[0], ""
+                filter_name, filter_option = filter_name.strip(), filter_option.strip()
+                video_filters.append((filter_name, filter_option))
+        return video_filters
+
+    @staticmethod
+    def build_graph(graph, template_stream, video_filters):
+        buffer = graph.add_buffer(template=template_stream)
+        prev_filter = buffer
+        for filter_name, filter_option in video_filters:
+            new_filter = graph.add(filter_name, filter_option if filter_option else None)
+            prev_filter.link_to(new_filter)
+            prev_filter = new_filter
+        buffersink = graph.add("buffersink")
+        prev_filter.link_to(buffersink)
+        graph.configure()
+
+    def __init__(self, video_stream, fps, vf=""):
         self.graph = av.filter.Graph()
-        buffer = self.graph.add_buffer(template=video_stream)
-        fps_filter = self.graph.add("fps", str(fps))
-        buffersink = self.graph.add("buffersink")
-        buffer.link_to(fps_filter)
-        fps_filter.link_to(buffersink)
-        self.graph.configure()
+        video_filters = self.parse_vf_option(vf)
+        video_filters.append(("fps", str(fps)))
+        self.build_graph(self.graph, video_stream, video_filters)
 
     def update(self, frame):
         self.graph.push(frame)
@@ -76,7 +103,8 @@ def default_config_callback(stream):
 def process_video(input_path, output_path,
                   frame_callback,
                   config_callback=default_config_callback,
-                  title=None):
+                  title=None,
+                  vf=""):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -92,7 +120,7 @@ def process_video(input_path, output_path,
     config = config_callback(video_input_stream)
     output_container = av.open(output_path, 'w')
 
-    fps_filter = FixedFPSFilter(video_input_stream, config.fps)
+    fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
     video_output_stream = output_container.add_stream("libx264", config.fps)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt

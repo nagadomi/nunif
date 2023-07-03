@@ -107,6 +107,12 @@ Perhaps 4GB VRAM should be enough to run this program.
 
 Use `--rotate-left`(rotate 90 degrees to counterclockwise) or `--rotate-right`(rotate 90 degrees to clockwise) option to fix the rotation.
 
+### Video is interlaced
+
+Use `--vf yadif` option to deinterlace the video source.
+You can use ffmpeg compatible `-vf` option (But the video filter that modify the image size will cause errors).
+See https://ffmpeg.org/ffmpeg-filters.html
+
 ### Recommended workflow for slow processor or very large video
 
 1. First check the results with a few samples. There are two ways.
