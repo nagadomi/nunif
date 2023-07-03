@@ -37,5 +37,10 @@ Samsung Research / Apache License Version 2.0
 Original implementation Fast Fourier Convolution https://github.com/pkumivision/FFC/blob/main/model_zoo/ffc.py
 Lu Chi / Apache License Version 2.0
 
+---
+iw3/training/sbs/stereoimage_generation.py
+is copied from https://github.com/thygate/stable-diffusion-webui-depthmap-script/blob/2838dc5fa24ac9f9e24b34ff61f2d2c169b634a1/scripts/stereoimage_generation.py
+Bob Thiry / MIT License
+
 ----
 Other libraries used are listed in `requirements.txt`.

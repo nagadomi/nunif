@@ -45,9 +45,10 @@ class SeamBlending(torch.nn.Module):
         self.pixels.zero_()
 
     @staticmethod
-    def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=True):
+    def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=True,
+                     config_callback=None, preprocess_callback=None, input_callback=None):
         assert not torch.is_grad_enabled()
-        C, H, W = x.shape
+        C, H, W = x.shape if config_callback is None else config_callback(x)
         scale = get_model_config(model, "i2i_scale")
         offset = get_model_config(model, "i2i_offset")
         blend_size = get_model_config(model, "i2i_blend_size")
@@ -63,12 +64,18 @@ class SeamBlending(torch.nn.Module):
         minibatch = torch.zeros((batch_size, C, tile_size, tile_size))
         output_indexes = [None] * batch_size
 
-        x = F.pad(x.unsqueeze(0), seam_blending.pad, mode='replicate')[0]
+        if preprocess_callback is not None:
+            x = preprocess_callback(x, seam_blending.pad)
+        else:
+            x = F.pad(x.unsqueeze(0), seam_blending.pad, mode='replicate')[0]
         for h_i in range(seam_blending.h_blocks):
             for w_i in range(seam_blending.w_blocks):
                 i = h_i * seam_blending.input_tile_step
                 j = w_i * seam_blending.input_tile_step
-                minibatch[minibatch_index] = x[:, i:i + tile_size, j:j + tile_size]
+                if input_callback is not None:
+                    minibatch[minibatch_index] = input_callback(x, i, i + tile_size, j, j + tile_size)
+                else:
+                    minibatch[minibatch_index] = x[:, i:i + tile_size, j:j + tile_size]
                 output_indexes[minibatch_index] = (h_i, w_i)
                 minibatch_index += 1
                 if minibatch_index == batch_size:
