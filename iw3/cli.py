@@ -19,9 +19,6 @@ import nunif.utils.video as VU
 from . import models # noqa
 
 
-FIXED_DIVERGENCE = 2.5
-
-
 def apply_divergence_grid_sample(c, depth, divergence, shift):
     w, h = c.shape[2], c.shape[1]
     index_shift = (1. - depth ** 2) * (shift * divergence * 0.01)
@@ -57,8 +54,8 @@ def apply_divergence_nn(model, c, depth, divergence, shift, batch_size=64):
         dd = p[1][:, i1:i2, j1:j2]
         return make_input_tensor(xx, dd,
                                  # apply divergence scale to image width instead of divergence
-                                 divergence=FIXED_DIVERGENCE,
-                                 image_width=image_width * (divergence / FIXED_DIVERGENCE),
+                                 divergence=model.fixed_divergence,
+                                 image_width=image_width * (divergence / model.fixed_divergence),
                                  depth_min=depth_min, depth_max=depth_max)
 
     z = SeamBlending.tiled_render(c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
@@ -257,6 +254,7 @@ def process_video_keyframes(args, depth_model, side_model):
     os.makedirs(output_dir, exist_ok=True)
     with PoolExecutor(max_workers=4) as pool:
         futures = []
+
         def frame_callback(frame):
             output = process_image(frame.to_image(), args, depth_model, side_model)
             output_filename = path.join(
@@ -277,7 +275,8 @@ def process_video(args, depth_model, side_model):
         process_video_full(args, depth_model, side_model)
 
 
-FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_d25.pth")
+FLOW_D25_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_d25.pth")
+FLOW_D20_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_d20.pth")
 
 
 def main():
@@ -296,7 +295,7 @@ def main():
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
                         help="left-right divergence method")
-    parser.add_argument("--divergence", "-d", type=float, default=FIXED_DIVERGENCE,
+    parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
@@ -338,8 +337,9 @@ def main():
                         help="keyframe minimum interval (sec)")
     args = parser.parse_args()
     assert not (args.rotate_left and args.rotate_right)
-    if args.method == "row_flow" and args.divergence != 2.5:
-        raise ValueError("--method row_flow only supports --divergence 2.5")
+    if args.method == "row_flow" and (args.divergence != 2.5 and args.divergence != 2.0):
+        raise ValueError("--method row_flow only supports --divergence 2.5 or 2.0")
+
     if args.update:
         update_model()
     if args.remove_bg:
@@ -351,7 +351,12 @@ def main():
 
     depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
     if args.method == "row_flow":
-        side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu])[0].eval()
+        if args.divergence == 2.0:
+            model_path = FLOW_D20_MODEL_PATH
+        elif args.divergence == 2.5:
+            model_path = FLOW_D25_MODEL_PATH
+        side_model = load_model(model_path, device_ids=[args.gpu])[0].eval()
+        setattr(side_model, "fixed_divergence", args.divergence)
     else:
         side_model = None
 
