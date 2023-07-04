@@ -40,7 +40,7 @@ def convert_files(ctx, files, output_dir, args, enable_amp):
                          load_func_kwargs={"color": "rgb", "keep_alpha": True})
     os.makedirs(output_dir, exist_ok=True)
     futures = []
-    with torch.no_grad(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
+    with torch.inference_mode(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         for im, meta in tqdm(loader, ncols=60):
             rgb, alpha = IL.to_tensor(im, return_alpha=True)
             rgb, alpha = ctx.convert(
@@ -69,7 +69,7 @@ def convert_file(ctx, args, enable_amp):
     if fmt not in {"png", "webp", "jpeg", "jpg"}:
         raise ValueError(f"Unable to recognize image extension: {fmt}")
 
-    with torch.no_grad():
+    with torch.inference_mode():
         im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
         rgb, alpha = IL.to_tensor(im, return_alpha=True)
         rgb, alpha = ctx.convert(rgb, alpha, args.method, args.noise_level,

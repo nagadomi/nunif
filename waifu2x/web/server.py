@@ -381,7 +381,7 @@ def api():
                          f"pid={os.getpid()}-{threading.get_ident()}")
             z = im
         else:
-            with torch.no_grad():
+            with torch.inference_mode():
                 rgb, alpha = IL.to_tensor(im, return_alpha=True)
                 ctx_kwargs = {
                     "x": rgb, "alpha": alpha,

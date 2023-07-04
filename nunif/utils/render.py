@@ -11,9 +11,10 @@ def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=False):
         tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp)
 
 
-def simple_render(x, model, enable_amp=False):
+def simple_render(x, model, enable_amp=False, offset=None):
     scale = get_model_config(model, "i2i_scale")
-    offset = get_model_config(model, "i2i_offset")
+    if offset is None:
+        offset = get_model_config(model, "i2i_offset")
     device = get_model_device(model)
     minibatch = True
     if x.dim() == 3:
