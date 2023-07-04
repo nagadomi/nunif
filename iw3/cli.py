@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import argparse
 from tqdm import tqdm
 import mimetypes
-from PIL import Image
+from PIL import Image, ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
@@ -140,7 +140,7 @@ def remove_bg_from_image(im, bg_session):
     return im
 
 
-def process_image(im, args, depth_model, side_model):
+def process_image_impl(im, args, depth_model, side_model):
     with torch.inference_mode():
         if args.rotate_left:
             im = im.transpose(Image.Transpose.ROTATE_90)
@@ -171,6 +171,38 @@ def process_image(im, args, depth_model, side_model):
         sbs = torch.cat([left_eye, right_eye], dim=2)
         sbs = TF.to_pil_image(sbs)
         return sbs
+
+
+def generate_depth_debug(im, args, depth_model, side_model):
+    with torch.inference_mode():
+        if args.rotate_left:
+            im = im.transpose(Image.Transpose.ROTATE_90)
+        elif args.rotate_right:
+            im = im.transpose(Image.Transpose.ROTATE_270)
+        if args.bg_session is not None:
+            im = remove_bg_from_image(im, args.bg_session)
+        if args.disable_zoedepth_batch:
+            depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
+        else:
+            depth = batch_infer(depth_model, im)
+        depth = depth.float()
+        min_depth, max_depth = depth.min(), depth.max()
+        mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
+        depth = normalize_depth(depth)
+        depth2 = depth ** 2
+        out = torch.cat([depth, depth2], dim=2)
+        out = TF.to_pil_image(out)
+        gc = ImageDraw.Draw(out)
+        gc.text((16, 16), f"min={min_depth}\nmax={max_depth}\nmean={mean_depth}\nstd={std_depth}", "gray")
+
+        return out
+
+
+def process_image(im, args, depth_model, side_model):
+    if args.debug_depth:
+        return generate_depth_debug(im, args, depth_model, side_model)
+    else:
+        return process_image_impl(im, args, depth_model, side_model)
 
 
 def process_images(args, depth_model, side_model):
@@ -339,6 +371,9 @@ def main():
     parser.add_argument("--vf", type=str, default="",
                         help=("video filter options for ffmpeg."
                               "Note thet the video filter that modify the image size will cause errors."))
+    parser.add_argument("--debug-depth", action="store_true",
+                        help="debug output normalized depthmap, info and preprocessed depth")
+
     args = parser.parse_args()
     assert not (args.rotate_left and args.rotate_right)
     if args.method == "row_flow" and (args.divergence != 2.5 and args.divergence != 2.0):
