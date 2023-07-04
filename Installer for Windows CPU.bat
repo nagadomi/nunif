@@ -1,6 +1,6 @@
-# Install python 3.10
-python -m venv venv
-call .\venv\Scripts\activate
+@rem Install python 3.10
+python -m venv venv_nunif_CPU
+call .\venv_nunif_CPU\Scripts\activate
 pip3 install torch torchvision torchaudio torchtext
 pip install -r requirements.txt
 python -m waifu2x.download_models
