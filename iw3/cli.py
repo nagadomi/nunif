@@ -315,7 +315,16 @@ FLOW_D25_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "ro
 FLOW_D20_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_d20.pth")
 
 
-def main():
+def parse_args():
+    class Range(object):
+        def __init__(self, start, end):
+            self.start = start
+            self.end = end
+        def __eq__(self, other):
+            return self.start <= other <= self.end
+        def __repr__(self):
+            return f"{self.start} <= value <= {self.end}"
+
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     if torch.cuda.is_available() or torch.backends.mps.is_available():
         default_gpu = 0
@@ -333,7 +342,7 @@ def main():
                         help="left-right divergence method")
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect"))
-    parser.add_argument("--convergence", "-c", type=float, default=0.5,
+    parser.add_argument("--convergence", "-c", type=float, default=0.5, choices=[Range(0, 1)],
                         help=("(normalized) distance of convergence plane(screen position). only work for grid_sample"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
@@ -380,6 +389,11 @@ def main():
                         help="debug output normalized depthmap, info and preprocessed depth")
 
     args = parser.parse_args()
+    return args
+
+
+def main():
+    args = parse_args()
     assert not (args.rotate_left and args.rotate_right)
     if args.method == "row_flow" and (args.divergence != 2.5 and args.divergence != 2.0):
         raise ValueError("--method row_flow only supports --divergence 2.5 or 2.0")
