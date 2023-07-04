@@ -19,24 +19,10 @@ import nunif.utils.video as VU
 from . import models # noqa
 
 
-def apply_divergence_grid_sample(c, depth, divergence, shift):
+def apply_divergence_grid_sample(c, depth, divergence, shift, convergence=0.5):
     w, h = c.shape[2], c.shape[1]
-    index_shift = (1. - depth ** 2) * (shift * divergence * 0.01)
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
-    mesh_x = mesh_x - index_shift
-    grid = torch.stack((mesh_x, mesh_y), 2)
-    z = F.grid_sample(c.unsqueeze(0), grid.unsqueeze(0),
-                      mode="bicubic", padding_mode="border", align_corners=True)
-    z = z.squeeze(0)
-    z = torch.clamp(z, 0., 1.)
-    return z
-
-
-def apply_divergence_grid_sample_fix(c, depth, divergence, shift):
-    """ correct stereo output
-    """
-    w, h = c.shape[2], c.shape[1]
-    index_shift = (depth ** 2) * (-shift * divergence * 0.01)
+    shift_size = (-shift * divergence * 0.01)
+    index_shift = (depth ** 2) * shift_size - shift_size * convergence
     mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
     mesh_x = mesh_x - index_shift
     grid = torch.stack((mesh_x, mesh_y), 2)
@@ -170,12 +156,10 @@ def process_image_impl(im, args, depth_model, side_model):
             depth = batch_infer(depth_model, im)
         if args.method == "grid_sample":
             depth = normalize_depth(depth.squeeze(0))
-            left_eye = apply_divergence_grid_sample(im_org, depth, args.divergence, shift=-1)
-            right_eye = apply_divergence_grid_sample(im_org, depth, args.divergence, shift=1)
-        elif args.method == "grid_sample_fix":
-            depth = normalize_depth(depth.squeeze(0))
-            left_eye = apply_divergence_grid_sample_fix(im_org, depth, args.divergence, shift=-1)
-            right_eye = apply_divergence_grid_sample_fix(im_org, depth, args.divergence, shift=1)
+            left_eye = apply_divergence_grid_sample(
+                im_org, depth, args.divergence, shift=-1, convergence=args.convergence)
+            right_eye = apply_divergence_grid_sample(
+                im_org, depth, args.divergence, shift=1, convergence=args.convergence)
         else:
             left_eye = apply_divergence_nn(side_model, im_org, depth, args.divergence,
                                            shift=-1, batch_size=args.batch_size)
@@ -345,10 +329,12 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--method", type=str, default="row_flow",
-                        choices=["grid_sample", "grid_sample_fix", "row_flow"],
+                        choices=["grid_sample", "row_flow"],
                         help="left-right divergence method")
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect"))
+    parser.add_argument("--convergence", "-c", type=float, default=0.5,
+                        help=("(normalized) distance of convergence plane(screen position). only work for grid_sample"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
     parser.add_argument("--resume", action="store_true",
