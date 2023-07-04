@@ -19,18 +19,24 @@ import nunif.utils.video as VU
 from . import models # noqa
 
 
-def apply_divergence_grid_sample(c, depth, divergence, shift, convergence=0.5):
+def apply_divergence_grid_sample(c, depth, divergence, shift,
+                                 convergence=0.5, device="cpu"):
+    depth = depth.to(device)
+    c = c.to(device)
     w, h = c.shape[2], c.shape[1]
     shift_size = (-shift * divergence * 0.01)
-    index_shift = (depth ** 2) * shift_size - shift_size * convergence
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
+    index_shift = (depth ** 2) * shift_size - (shift_size * convergence)
+    mesh_y, mesh_x = torch.meshgrid(
+        torch.linspace(-1, 1, h, device=device),
+        torch.linspace(-1, 1, w, device=device),
+        indexing="ij")
     mesh_x = mesh_x - index_shift
     grid = torch.stack((mesh_x, mesh_y), 2)
     z = F.grid_sample(c.unsqueeze(0), grid.unsqueeze(0),
                       mode="bicubic", padding_mode="border", align_corners=True)
     z = z.squeeze(0)
     z = torch.clamp(z, 0., 1.)
-    return z
+    return z.cpu()
 
 
 def apply_divergence_nn(model, c, depth, divergence, shift, batch_size=64):
@@ -157,9 +163,13 @@ def process_image_impl(im, args, depth_model, side_model):
         if args.method == "grid_sample":
             depth = normalize_depth(depth.squeeze(0))
             left_eye = apply_divergence_grid_sample(
-                im_org, depth, args.divergence, shift=-1, convergence=args.convergence)
+                im_org, depth,
+                args.divergence, shift=-1, convergence=args.convergence,
+                device=depth_model.device)
             right_eye = apply_divergence_grid_sample(
-                im_org, depth, args.divergence, shift=1, convergence=args.convergence)
+                im_org, depth,
+                args.divergence, shift=1, convergence=args.convergence,
+                device=depth_model.device)
         else:
             left_eye = apply_divergence_nn(side_model, im_org, depth, args.divergence,
                                            shift=-1, batch_size=args.batch_size)
@@ -320,8 +330,10 @@ def parse_args():
         def __init__(self, start, end):
             self.start = start
             self.end = end
+
         def __eq__(self, other):
             return self.start <= other <= self.end
+
         def __repr__(self):
             return f"{self.start} <= value <= {self.end}"
 
