@@ -131,6 +131,7 @@ def main(args):
 
 
 if __name__ == "__main__":
+    default_gpu = 0 if torch.cuda.is_available() or torch.backends.mps.is_available() else -1
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model-dir", type=str, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
@@ -139,7 +140,7 @@ if __name__ == "__main__":
                                  "noise_scale4x", "noise_scale2x",
                                  "scale", "noise", "noise_scale"],
                         default="noise_scale", help="method")
-    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0],
+    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device ids. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4,
                         help="minibatch_size")

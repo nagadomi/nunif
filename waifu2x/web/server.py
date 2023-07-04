@@ -94,6 +94,7 @@ class CacheGC():
 
 
 def setup():
+    default_gpu = 0 if torch.cuda.is_available() or torch.backends.mps.is_available() else -1
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
                         help="0.0.0.0 for global, 127.0.0.1 for local")
@@ -112,7 +113,8 @@ def setup():
     parser.add_argument("--art-model-dir", type=str, default=DEFAULT_ART_MODEL_DIR, help="art model dir")
     parser.add_argument("--art-scan-model-dir", type=str, default=DEFAULT_ART_SCAN_MODEL_DIR, help="art scan model dir")
     parser.add_argument("--photo-model-dir", type=str, default=DEFAULT_PHOTO_MODEL_DIR, help="photo model dir")
-    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
+    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
+                        help="GPU device ids. -1 for CPU")
     parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch size for tiled render")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
