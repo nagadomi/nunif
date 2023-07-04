@@ -32,6 +32,21 @@ def apply_divergence_grid_sample(c, depth, divergence, shift):
     return z
 
 
+def apply_divergence_grid_sample_fix(c, depth, divergence, shift):
+    """ correct stereo output
+    """
+    w, h = c.shape[2], c.shape[1]
+    index_shift = (depth ** 2) * (-shift * divergence * 0.01)
+    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
+    mesh_x = mesh_x - index_shift
+    grid = torch.stack((mesh_x, mesh_y), 2)
+    z = F.grid_sample(c.unsqueeze(0), grid.unsqueeze(0),
+                      mode="bicubic", padding_mode="border", align_corners=True)
+    z = z.squeeze(0)
+    z = torch.clamp(z, 0., 1.)
+    return z
+
+
 def apply_divergence_nn(model, c, depth, divergence, shift, batch_size=64):
     device = get_model_device(model)
     enable_amp = "cuda" in str(device)
@@ -157,6 +172,10 @@ def process_image_impl(im, args, depth_model, side_model):
             depth = normalize_depth(depth.squeeze(0))
             left_eye = apply_divergence_grid_sample(im_org, depth, args.divergence, shift=-1)
             right_eye = apply_divergence_grid_sample(im_org, depth, args.divergence, shift=1)
+        elif args.method == "grid_sample_fix":
+            depth = normalize_depth(depth.squeeze(0))
+            left_eye = apply_divergence_grid_sample_fix(im_org, depth, args.divergence, shift=-1)
+            right_eye = apply_divergence_grid_sample_fix(im_org, depth, args.divergence, shift=1)
         else:
             left_eye = apply_divergence_nn(side_model, im_org, depth, args.divergence,
                                            shift=-1, batch_size=args.batch_size)
@@ -326,7 +345,7 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--method", type=str, default="row_flow",
-                        choices=["grid_sample", "row_flow"],
+                        choices=["grid_sample", "grid_sample_fix", "row_flow"],
                         help="left-right divergence method")
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect"))
