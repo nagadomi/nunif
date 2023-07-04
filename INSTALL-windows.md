@@ -4,7 +4,31 @@ Basically, I am working on Linux. I sometimes check to make sure that this code 
 
 I am not familiar with Windows or Anaconda. If you are familiar with Anaconda, do it your way.
 
-## 1. Install dependencies packages (Optional)
+## Easy way to install
+
+### 1. Install Python
+
+Install Python 3.10 from Windows Store.
+
+### 2. Run installer
+
+- If you have NVIDIA GPU, run `Installer for Windows CUDA.bat`
+- If you do not have NVIDIA GPU, run `Installer for Windows CPU.bat`
+
+( If you have Anaconda installed, make sure you have added `python` to PATH.
+If `python` command opens Windows Store, see https://stackoverflow.com/questions/58754860/cmd-opens-windows-store-when-i-type-python. )
+
+### 3. Run waifu2x web interface
+
+Run `Run waifu2x Web.bat`.
+
+Open http://localhost:8812/
+
+end.
+
+## Manually install
+
+### 1. Install dependencies packages (Optional)
 
 #### Install ImageMagick
 
@@ -20,7 +44,7 @@ Download `libraqm‑0.7.1.dll.zip` from https://www.lfd.uci.edu/~gohlke/pythonli
 
 See https://stackoverflow.com/questions/62939101/how-to-install-pre-built-pillow-wheel-with-libraqm-dlls-on-windows
 
-## 2. Clone
+### 2. Clone
 
 ```
 git clone https://github.com/nagadomi/nunif.git
@@ -37,29 +61,28 @@ git fetch --all
 git checkout -b dev origin/dev
 ```
 
-## 3. Setup conda env (optional)
+### 3. Setup venv (optional)
 
 ```
-conda create -n nunif
-conda activate nunif
-conda install python=3.10
+python -m venv venv
+.\venv\Scripts\activate
 ```
 
-## 4. Install Pytorch
+### 4. Install Pytorch
 
 See [Pytorch](https://pytorch.org/get-started/locally/)
 
 ```
-conda install pytorch torchvision torchaudio torchtext pytorch-cuda=11.6 -c pytorch -c nvidia
+pip install pytorch torchvision torchaudio torchtext pytorch-cuda=11.6 -c pytorch -c nvidia
 ```
 
-## 5. Install pip packages
+### 5. Install pip packages
 
 ```
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-## 6. Run waifu2x.web
+### 6. Run waifu2x.web
 
 Download pre-trained models.
 ```
@@ -77,18 +100,11 @@ python -m waifu2x.web
 ```
 Open http://localhost:8812/
 
-If you don't have an NVIDIA GPU, specify the `--gpu -1` option. (CPU Mode)
-```
-python -m waifu2x.web --gpu -1
-```
-
 If you got `ImportError: cannot import name '_imagingcms' from 'PIL'` error, upgrade the pillow package.
 ```
-pip3 install --upgrade pillow
+pip install --upgrade pillow
 ```
 
 This seems to be a problem with the pillow that is installed by conda by default.
-
-
 
 See also [waifu2x README.md](waifu2x/README.md).
