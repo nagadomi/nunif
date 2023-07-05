@@ -34,7 +34,22 @@ def find_subdir(dirname):
     return subdirs
 
 
-def convert_files(ctx, files, output_dir, args, enable_amp):
+def process_image(ctx, im, meta, args):
+    rgb, alpha = IL.to_tensor(im, return_alpha=True)
+    rgb, alpha = ctx.convert(
+        rgb, alpha, args.method, args.noise_level,
+        args.tile_size, args.batch_size,
+        args.tta, enable_amp=not args.disable_amp)
+    if args.depth is not None:
+        meta["depth"] = args.depth
+    depth = meta["depth"] if "depth" in meta and meta["depth"] is not None else 8
+    if args.grayscale:
+        meta["grayscale"] = True
+
+    return IL.to_image(rgb, alpha, depth=depth)
+
+
+def convert_files(ctx, files, output_dir, args):
     loader = ImageLoader(files=files, max_queue_size=128,
                          load_func=IL.load_image,
                          load_func_kwargs={"color": "rgb", "keep_alpha": True})
@@ -42,28 +57,17 @@ def convert_files(ctx, files, output_dir, args, enable_amp):
     futures = []
     with torch.inference_mode(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         for im, meta in tqdm(loader, ncols=60):
-            rgb, alpha = IL.to_tensor(im, return_alpha=True)
-            rgb, alpha = ctx.convert(
-                rgb, alpha, args.method, args.noise_level,
-                args.tile_size, args.batch_size,
-                args.tta, enable_amp=enable_amp)
+            output = process_image(ctx, im, meta, args)
             output_filename = set_image_ext(path.basename(meta["filename"]), format=args.format)
-            if args.depth is not None:
-                meta["depth"] = args.depth
-            depth = meta["depth"] if "depth" in meta and meta["depth"] is not None else 8
-            if args.grayscale:
-                meta["grayscale"] = True
             futures.append(pool.submit(
-                IL.save_image,
-                IL.to_image(rgb, alpha, depth=depth),
+                IL.save_image, output,
                 filename=path.join(output_dir, output_filename),
-                meta=meta,
-                format=args.format))
+                meta=meta, format=args.format))
         for f in futures:
             f.result()
 
 
-def convert_file(ctx, args, enable_amp):
+def convert_file(ctx, args):
     _, ext = path.splitext(args.output)
     fmt = ext.lower()[1:]
     if fmt not in {"png", "webp", "jpeg", "jpg"}:
@@ -71,18 +75,8 @@ def convert_file(ctx, args, enable_amp):
 
     with torch.inference_mode():
         im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
-        rgb, alpha = IL.to_tensor(im, return_alpha=True)
-        rgb, alpha = ctx.convert(rgb, alpha, args.method, args.noise_level,
-                                 args.tile_size, args.batch_size,
-                                 args.tta, enable_amp=enable_amp)
-        if args.depth is not None:
-            meta["depth"] = args.depth
-        depth = meta["depth"] if "depth" in meta and meta["depth"] is not None else 8
-        if args.grayscale:
-            meta["grayscale"] = True
-        IL.save_image(IL.to_image(rgb, alpha, depth=depth),
-                      filename=args.output, meta=meta,
-                      format=fmt)
+        output = process_image(ctx, im, meta, args)
+        IL.save_image(output, filename=args.output, meta=meta, format=fmt)
 
 
 def load_files(txt):
@@ -117,17 +111,14 @@ def main(args):
                     continue
                 print(f"* {input_dir}")
                 output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
-                convert_files(ctx, files, output_dir,
-                              args, enable_amp=not args.disable_amp)
+                convert_files(ctx, files, output_dir, args)
         else:
-            convert_files(ctx, ImageLoader.listdir(args.input), args.output,
-                          args, enable_amp=not args.disable_amp)
+            convert_files(ctx, ImageLoader.listdir(args.input), args.output, args)
     else:
         if path.splitext(args.input)[-1] in (".txt", ".csv"):
-            convert_files(ctx, load_files(args.input), args.output,
-                          args, enable_amp=not args.disable_amp)
+            convert_files(ctx, load_files(args.input), args.output, args)
         else:
-            convert_file(ctx, args, enable_amp=not args.disable_amp)
+            convert_file(ctx, args)
 
 
 if __name__ == "__main__":
