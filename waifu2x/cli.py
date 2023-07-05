@@ -56,7 +56,7 @@ def is_text(filename, mime=None):
 
 
 def is_output_dir(filename):
-    return path.isdir(filename) or "." not in path.basename(args.output)
+    return path.isdir(filename) or "." not in path.basename(filename)
 
 
 @torch.inference_mode()
