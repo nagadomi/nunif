@@ -7,7 +7,7 @@ def get_fps(stream):
     return stream.guessed_rate
 
 
-def gusess_frames(stream, fps=None):
+def guess_frames(stream, fps=None):
     fps = fps or get_fps(stream)
     return math.ceil(float(stream.duration * stream.time_base) * fps)
 
@@ -26,7 +26,7 @@ def get_frames(stream):
 
 def _print_len(stream):
     print("frames", stream.frames)
-    print("guessed_frames", gusess_frames(stream))
+    print("guessed_frames", guess_frames(stream))
     print("duration", get_duration(stream))
     print("base_rate", float(stream.base_rate))
     print("average_rate", float(stream.average_rate))
@@ -138,7 +138,7 @@ def process_video(input_path, output_path,
 
     desc = (title if title else output_path)
     ncols = len(desc) + 60
-    pbar = tqdm(desc=desc, total=gusess_frames(video_input_stream, config.fps), ncols=ncols)
+    pbar = tqdm(desc=desc, total=guess_frames(video_input_stream, config.fps), ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     for packet in input_container.demux(streams):
         if packet.stream.type == "video":

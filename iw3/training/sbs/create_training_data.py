@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
 
 
-def save_images(im_org, im_sbs, im_depth, divergence, filename_base, size, num_samples):
+def save_images(im_org, im_sbs, im_depth, divergence, convergence, filename_base, size, num_samples):
     im_l = TF.crop(im_sbs, 0, 0, im_org.height, im_org.width)
     im_r = TF.crop(im_sbs, 0, im_org.width, im_org.height, im_org.width)
     assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size
@@ -24,10 +24,11 @@ def save_images(im_org, im_sbs, im_depth, divergence, filename_base, size, num_s
     metadata.add_text("sbs_width", str(im_org.width))
     metadata.add_text("sbs_height", str(im_org.height))
     metadata.add_text("sbs_divergence", str(round(divergence, 6)))
+    metadata.add_text("sbs_convergence", str(round(convergence, 6)))
     metadata.add_text("sbs_depth_max", str(max_v))
     metadata.add_text("sbs_depth_min", str(min_v))
 
-    # im_sbs.save(filename_base + "_LRF.png")
+    im_sbs.save(filename_base + "_LRF.png")
 
     stride = size // 2
     w, h = im_org.size
@@ -139,9 +140,11 @@ def main(args):
                 for _ in range(args.times):
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
-                    divergence = args.divergence
-                    sbs, depth = generate_sbs(model, im_s, divergence=divergence)
-                    f = pool.submit(save_images, im_s, sbs, depth, divergence,
+                    sbs, depth = generate_sbs(
+                        model, im_s,
+                        divergence=args.divergence, convergence=args.convergence)
+                    f = pool.submit(save_images, im_s, sbs, depth,
+                                    args.divergence, args.divergence,
                                     output_base, args.size, args.num_samples)
                     # f.result() # debug
                     futures.append(f)
@@ -165,6 +168,7 @@ def register(subparsers, default_parser):
                         help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
     parser.add_argument("--divergence", type=float, default=2.0, help="fixed divergence option")
+    parser.add_argument("--convergence", type=float, default=1.0, help="convergence plane")
 
     parser.set_defaults(handler=main)
 

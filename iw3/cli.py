@@ -1,5 +1,4 @@
 import os
-import sys
 from os import path
 import torch
 import torch.nn.functional as F
@@ -8,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import argparse
 from tqdm import tqdm
 import mimetypes
-from PIL import Image
+from PIL import Image, ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
@@ -16,20 +15,28 @@ from nunif.models import load_model, get_model_device
 from nunif.device import create_device
 from .utils import normalize_depth, make_input_tensor, batch_infer
 import nunif.utils.video as VU
+from nunif.utils.ui import HiddenPrints
 from . import models # noqa
 
 
-def apply_divergence_grid_sample(c, depth, divergence, shift):
+def apply_divergence_grid_sample(c, depth, divergence, shift,
+                                 convergence=0.5, device="cpu"):
+    depth = depth.to(device)
+    c = c.to(device)
     w, h = c.shape[2], c.shape[1]
-    index_shift = (1. - depth ** 2) * (shift * divergence * 0.01)
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
+    shift_size = (-shift * divergence * 0.01)
+    index_shift = (depth ** 2) * shift_size - (shift_size * convergence)
+    mesh_y, mesh_x = torch.meshgrid(
+        torch.linspace(-1, 1, h, device=device),
+        torch.linspace(-1, 1, w, device=device),
+        indexing="ij")
     mesh_x = mesh_x - index_shift
     grid = torch.stack((mesh_x, mesh_y), 2)
     z = F.grid_sample(c.unsqueeze(0), grid.unsqueeze(0),
                       mode="bicubic", padding_mode="border", align_corners=True)
     z = z.squeeze(0)
     z = torch.clamp(z, 0., 1.)
-    return z
+    return z.cpu()
 
 
 def apply_divergence_nn(model, c, depth, divergence, shift, batch_size=64):
@@ -65,20 +72,6 @@ def apply_divergence_nn(model, c, depth, divergence, shift, batch_size=64):
     if shift > 0:
         z = torch.flip(z, (2,))
     return z
-
-
-class HiddenPrints:
-    def __enter__(self):
-        self._original_stdout = sys.stdout
-        self._original_stderr = sys.stderr
-        sys.stdout = open(os.devnull, 'w')
-        sys.stderr = open(os.devnull, 'w')
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        sys.stdout.close()
-        sys.stderr.close()
-        sys.stdout = self._original_stdout
-        sys.stderr = self._original_stderr
 
 
 def load_depth_model(model_type="ZoeD_N", gpu=0):
@@ -140,7 +133,7 @@ def remove_bg_from_image(im, bg_session):
     return im
 
 
-def process_image(im, args, depth_model, side_model):
+def process_image_impl(im, args, depth_model, side_model):
     with torch.inference_mode():
         if args.rotate_left:
             im = im.transpose(Image.Transpose.ROTATE_90)
@@ -155,8 +148,14 @@ def process_image(im, args, depth_model, side_model):
             depth = batch_infer(depth_model, im)
         if args.method == "grid_sample":
             depth = normalize_depth(depth.squeeze(0))
-            left_eye = apply_divergence_grid_sample(im_org, depth, args.divergence, shift=-1)
-            right_eye = apply_divergence_grid_sample(im_org, depth, args.divergence, shift=1)
+            left_eye = apply_divergence_grid_sample(
+                im_org, depth,
+                args.divergence, shift=-1, convergence=args.convergence,
+                device=depth_model.device)
+            right_eye = apply_divergence_grid_sample(
+                im_org, depth,
+                args.divergence, shift=1, convergence=args.convergence,
+                device=depth_model.device)
         else:
             left_eye = apply_divergence_nn(side_model, im_org, depth, args.divergence,
                                            shift=-1, batch_size=args.batch_size)
@@ -171,6 +170,38 @@ def process_image(im, args, depth_model, side_model):
         sbs = torch.cat([left_eye, right_eye], dim=2)
         sbs = TF.to_pil_image(sbs)
         return sbs
+
+
+def generate_depth_debug(im, args, depth_model, side_model):
+    with torch.inference_mode():
+        if args.rotate_left:
+            im = im.transpose(Image.Transpose.ROTATE_90)
+        elif args.rotate_right:
+            im = im.transpose(Image.Transpose.ROTATE_270)
+        if args.bg_session is not None:
+            im = remove_bg_from_image(im, args.bg_session)
+        if args.disable_zoedepth_batch:
+            depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
+        else:
+            depth = batch_infer(depth_model, im)
+        depth = depth.float()
+        min_depth, max_depth = depth.min(), depth.max()
+        mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
+        depth = normalize_depth(depth)
+        depth2 = depth ** 2
+        out = torch.cat([depth, depth2], dim=2)
+        out = TF.to_pil_image(out)
+        gc = ImageDraw.Draw(out)
+        gc.text((16, 16), f"min={min_depth}\nmax={max_depth}\nmean={mean_depth}\nstd={std_depth}", "gray")
+
+        return out
+
+
+def process_image(im, args, depth_model, side_model):
+    if args.debug_depth:
+        return generate_depth_debug(im, args, depth_model, side_model)
+    else:
+        return process_image_impl(im, args, depth_model, side_model)
 
 
 def process_images(args, depth_model, side_model):
@@ -280,7 +311,18 @@ FLOW_D25_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "ro
 FLOW_D20_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_d20.pth")
 
 
-def main():
+def parse_args():
+    class Range(object):
+        def __init__(self, start, end):
+            self.start = start
+            self.end = end
+
+        def __eq__(self, other):
+            return self.start <= other <= self.end
+
+        def __repr__(self):
+            return f"{self.start} <= value <= {self.end}"
+
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     if torch.cuda.is_available() or torch.backends.mps.is_available():
         default_gpu = 0
@@ -298,6 +340,8 @@ def main():
                         help="left-right divergence method")
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect"))
+    parser.add_argument("--convergence", "-c", type=float, default=0.5, choices=[Range(0, 1)],
+                        help=("(normalized) distance of convergence plane(screen position). only work for grid_sample"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
     parser.add_argument("--resume", action="store_true",
@@ -339,7 +383,15 @@ def main():
     parser.add_argument("--vf", type=str, default="",
                         help=("video filter options for ffmpeg."
                               "Note thet the video filter that modify the image size will cause errors."))
+    parser.add_argument("--debug-depth", action="store_true",
+                        help="debug output normalized depthmap, info and preprocessed depth")
+
     args = parser.parse_args()
+    return args
+
+
+def main():
+    args = parse_args()
     assert not (args.rotate_left and args.rotate_right)
     if args.method == "row_flow" and (args.divergence != 2.5 and args.divergence != 2.0):
         raise ValueError("--method row_flow only supports --divergence 2.5 or 2.0")

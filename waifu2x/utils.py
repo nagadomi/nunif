@@ -11,6 +11,7 @@ from nunif.models import (
 )
 from nunif.device import create_device
 from nunif.logger import logger
+from nunif.utils.ui import HiddenPrints
 
 
 class Waifu2x():
@@ -52,9 +53,10 @@ class Waifu2x():
                     self.noise_scale4x_models[i].to(self.device).eval())
 
     def load_model_by_name(self, filename):
-        return load_model(path.join(self.model_dir, filename),
-                          map_location=self.device, device_ids=self.gpus,
-                          weights_only=True)[0]
+        with HiddenPrints():
+            return load_model(path.join(self.model_dir, filename),
+                              map_location=self.device, device_ids=self.gpus,
+                              weights_only=True)[0]
 
     def has_model_file(self, filename):
         return path.exists(path.join(self.model_dir, filename))
