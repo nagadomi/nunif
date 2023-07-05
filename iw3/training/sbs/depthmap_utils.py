@@ -33,7 +33,7 @@ def to_input_depth(im_depth):
     return normalize_depth(TF.to_tensor(im_depth).squeeze(0).cpu().numpy())
 
 
-def generate_sbs(model, im, divergence=2):
+def generate_sbs(model, im, divergence=2, convergence=1):
     im_org = im
     with torch.inference_mode():
         im_depth = model.infer_pil(im, output_type="pil")
@@ -41,7 +41,9 @@ def generate_sbs(model, im, divergence=2):
         np.array(im_org, dtype=np.uint8),
         to_input_depth(im_depth),
         divergence,
-        modes=["left-right"])[0]
+        modes=["left-right"],
+        convergence=convergence
+    )[0]
     assert sbs.width == im_org.width * 2 and sbs.height == im_org.height
     assert im_depth.width == im_org.width and im_depth.height == im_org.height
 
