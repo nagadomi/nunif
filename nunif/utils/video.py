@@ -101,6 +101,9 @@ def default_config_callback(stream):
     )
 
 
+# TODO: correct colorspace convertion
+
+
 def process_video(input_path, output_path,
                   frame_callback,
                   config_callback=default_config_callback,
