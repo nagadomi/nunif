@@ -1,5 +1,4 @@
 import os
-import sys
 from os import path
 import torch
 import torch.nn.functional as F
@@ -16,6 +15,7 @@ from nunif.models import load_model, get_model_device
 from nunif.device import create_device
 from .utils import normalize_depth, make_input_tensor, batch_infer
 import nunif.utils.video as VU
+from nunif.utils.ui import HiddenPrints
 from . import models # noqa
 
 
@@ -72,20 +72,6 @@ def apply_divergence_nn(model, c, depth, divergence, shift, batch_size=64):
     if shift > 0:
         z = torch.flip(z, (2,))
     return z
-
-
-class HiddenPrints:
-    def __enter__(self):
-        self._original_stdout = sys.stdout
-        self._original_stderr = sys.stderr
-        sys.stdout = open(os.devnull, 'w')
-        sys.stderr = open(os.devnull, 'w')
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        sys.stdout.close()
-        sys.stderr.close()
-        sys.stdout = self._original_stdout
-        sys.stderr = self._original_stderr
 
 
 def load_depth_model(model_type="ZoeD_N", gpu=0):

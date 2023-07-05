@@ -2,14 +2,20 @@
 import os
 from os import path
 import torch
+from torchvision.transforms import (
+    functional as TF,
+    InterpolationMode)
+from PIL import Image
 import argparse
 import csv
 from tqdm import tqdm
+import mimetypes
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
+from nunif.utils import video as VU
 from .utils import Waifu2x
 from .download_models import main as download_main
 
@@ -34,6 +40,26 @@ def find_subdir(dirname):
     return subdirs
 
 
+def is_image(filename, mime=None):
+    mime = mime or mimetypes.guess_type(filename)[0]
+    return mime.startswith("image")
+
+
+def is_video(filename, mime=None):
+    mime = mime or mimetypes.guess_type(filename)[0]
+    return mime.startswith("video")
+
+
+def is_text(filename, mime=None):
+    mime = mime or mimetypes.guess_type(filename)[0]
+    return mime.startswith("text")
+
+
+def is_output_dir(filename):
+    return path.isdir(filename) or "." not in path.basename(args.output)
+
+
+@torch.inference_mode()
 def process_image(ctx, im, meta, args):
     rgb, alpha = IL.to_tensor(im, return_alpha=True)
     rgb, alpha = ctx.convert(
@@ -49,34 +75,146 @@ def process_image(ctx, im, meta, args):
     return IL.to_image(rgb, alpha, depth=depth)
 
 
-def convert_files(ctx, files, output_dir, args):
+def process_images(ctx, files, output_dir, args):
+    os.makedirs(output_dir, exist_ok=True)
     loader = ImageLoader(files=files, max_queue_size=128,
                          load_func=IL.load_image,
                          load_func_kwargs={"color": "rgb", "keep_alpha": True})
-    os.makedirs(output_dir, exist_ok=True)
     futures = []
-    with torch.inference_mode(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
+    with PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         for im, meta in tqdm(loader, ncols=60):
+            output_filename = path.join(
+                output_dir,
+                set_image_ext(path.basename(meta["filename"]), format=args.format))
+            if args.resume and path.exists(output_filename):
+                continue
             output = process_image(ctx, im, meta, args)
-            output_filename = set_image_ext(path.basename(meta["filename"]), format=args.format)
             futures.append(pool.submit(
                 IL.save_image, output,
-                filename=path.join(output_dir, output_filename),
+                filename=output_filename,
                 meta=meta, format=args.format))
         for f in futures:
             f.result()
 
 
-def convert_file(ctx, args):
-    _, ext = path.splitext(args.output)
-    fmt = ext.lower()[1:]
-    if fmt not in {"png", "webp", "jpeg", "jpg"}:
-        raise ValueError(f"Unable to recognize image extension: {fmt}")
+def calc_output_resolution(width, height, method, rotate=False):
+    if rotate:
+        width, height = height, width
+    if method in {"scale", "noise_scale", "scale2x", "noise_scale2x"}:
+        scale = 2
+    elif method in {"scale4x", "noise_scale4x"}:
+        scale = 4
+    else:
+        scale = 1
 
-    with torch.inference_mode():
-        im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
+    return width * scale, height * scale
+
+
+def process_video(ctx, input_filename, args):
+    def config_callback(stream):
+        fps = VU.get_fps(stream)
+        if float(fps) > args.max_fps:
+            fps = args.max_fps
+
+        width, height = calc_output_resolution(
+            stream.codec_context.width,
+            stream.codec_context.height,
+            method=args.method,
+            rotate=args.rotate_left or args.rotate_right)
+
+        options = {"preset": args.preset, "crf": str(args.crf)}
+        tune = []
+        if fps < 2:
+            tune += ["stillimage"]
+        if args.grain:
+            tune += ["grain"]
+        if args.tune:
+            tune += args.tune
+        tune = set(tune)
+        if tune:
+            options["tune"] = ",".join(tune)
+        return VU.VideoOutputConfig(
+            width, height,
+            fps=fps,
+            pix_fmt=args.pix_fmt,
+            options=options
+        )
+
+    def frame_callback(frame):
+        im = frame.to_image()
+        if args.rotate_left:
+            im = im.transpose(Image.Transpose.ROTATE_90)
+        elif args.rotate_right:
+            im = im.transpose(Image.Transpose.ROTATE_270)
+
+        rgb = TF.to_tensor(im)
+        with torch.inference_mode():
+            output, _ = ctx.convert(
+                rgb, None, args.method, args.noise_level,
+                args.tile_size, args.batch_size,
+                args.tta, enable_amp=not args.disable_amp)
+        if args.grain:
+            noise = (torch.randn(output.shape) +
+                     TF.resize(torch.randn((3, output.shape[1] // 2, output.shape[2] // 2)),
+                               (output.shape[1], output.shape[2]),
+                               interpolation=InterpolationMode.NEAREST))
+            correlated_noise = noise * output
+            light_decay = (1. - output.mean(dim=0, keepdim=True)) ** 2
+            output = output + correlated_noise * light_decay * args.grain_strength
+            output = torch.clamp(output, 0, 1)
+        return frame.from_image(TF.to_pil_image(output))
+
+    if is_output_dir(args.output):
+        os.makedirs(args.output, exist_ok=True)
+        output_filename = path.join(
+            args.output,
+            path.splitext(path.basename(input_filename))[0] + ".mp4")
+    else:
+        output_filename = args.output
+
+    if args.resume and path.exists(output_filename):
+        return
+
+    if not args.yes and path.exists(output_filename):
+        y = input(f"File '{output_filename}' already exists. Overwrite? [y/N]").lower()
+        if y not in {"y", "ye", "yes"}:
+            return
+
+    VU.process_video(input_filename, output_filename,
+                     config_callback=config_callback,
+                     frame_callback=frame_callback,
+                     vf=args.vf)
+
+
+def process_file(ctx, input_filename, args):
+    if is_video(input_filename):
+        process_video(ctx, input_filename, args)
+    elif is_image(input_filename):
+        if is_output_dir(args.output):
+            os.makedirs(args.output, exist_ok=True)
+            fmt = args.format
+            output_filename = path.join(
+                args.output,
+                set_image_ext(path.basename(args.input), format=fmt))
+        else:
+            _, ext = path.splitext(input_filename)
+            fmt = ext.lower()[1:]
+            if fmt not in {"png", "webp", "jpeg", "jpg"}:
+                raise ValueError(f"Unable to recognize image extension: {fmt}")
+            output_filename = args.output
+        if args.resume and path.exists(output_filename):
+            return
+        im, meta = IL.load_image(input_filename, color="rgb", keep_alpha=True)
         output = process_image(ctx, im, meta, args)
-        IL.save_image(output, filename=args.output, meta=meta, format=fmt)
+        IL.save_image(output, filename=output_filename, meta=meta, format=fmt)
+    elif is_text(input_filename):
+        files = load_files(input_filename)
+        image_files = [f for f in files if is_image(f)]
+        if image_files:
+            process_images(ctx, image_files, args.output, args)
+        video_files = [f for f in files if is_video(f)]
+        for video_file in video_files:
+            process_video(ctx, video_file, args)
 
 
 def load_files(txt):
@@ -111,14 +249,11 @@ def main(args):
                     continue
                 print(f"* {input_dir}")
                 output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
-                convert_files(ctx, files, output_dir, args)
+                process_images(ctx, files, output_dir, args)
         else:
-            convert_files(ctx, ImageLoader.listdir(args.input), args.output, args)
+            process_images(ctx, ImageLoader.listdir(args.input), args.output, args)
     else:
-        if path.splitext(args.input)[-1] in (".txt", ".csv"):
-            convert_files(ctx, load_files(args.input), args.output, args)
-        else:
-            convert_file(ctx, args)
+        process_file(ctx, args.input, args)
 
 
 if __name__ == "__main__":
@@ -156,6 +291,36 @@ if __name__ == "__main__":
                         help="Convert to grayscale format")
     parser.add_argument("--recursive", "-r", action="store_true",
                         help="process all subdirectories")
+    parser.add_argument("--resume", action="store_true",
+                        help="skip processing when output file is already exist")
+    parser.add_argument("--max-fps", type=float, default=128,
+                        help="max framerate. output fps = min(fps, --max-fps) (video only)")
+    parser.add_argument("--crf", type=int, default=20,
+                        help="constant quality value. smaller value is higher quality (video only)")
+    parser.add_argument("--preset", type=str, default="ultrafast",
+                        choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
+                                 "medium", "slow", "slower", "veryslow", "placebo"],
+                        help="encoder preset option (video only)")
+    parser.add_argument("--tune", type=str, nargs="+", default=["zerolatency"],
+                        choices=["film", "animation", "grain", "stillimage",
+                                 "fastdecode", "zerolatency"],
+                        help="encoder tunings option (video only)")
+    parser.add_argument("--yes", "-y", action="store_true", default=False,
+                        help="overwrite output files (video only)")
+    parser.add_argument("--rotate-left", action="store_true",
+                        help="Rotate 90 degrees to the left(counterclockwise) (video only)")
+    parser.add_argument("--rotate-right", action="store_true",
+                        help="Rotate 90 degrees to the right(clockwise) (video only)")
+    parser.add_argument("--vf", type=str, default="",
+                        help=("video filter options for ffmpeg."
+                              "Note thet the video filter that modify the image size will cause errors."
+                              " (video only)"))
+    parser.add_argument("--grain", action="store_true",
+                        help=("add noise after denosing (video only)"))
+    parser.add_argument("--grain-strength", type=float, default=0.05,
+                        help=("noise strength  (video only)"))
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p"],
+                        help=("pixel format (video only)"))
 
     args = parser.parse_args()
     logger.debug(f"waifu2x.cli.main: {str(args)}")
