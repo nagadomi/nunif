@@ -10,9 +10,9 @@ class RowFlow(I2IBaseModel):
 
     def __init__(self):
         # from diverdence==2.5, (0.5 * 2.5) / 100 * 2048 = 24, so offset must be > 24
-        super(RowFlow, self).__init__(locals(), scale=1, offset=28, in_channels=7, blend_size=4)
+        super(RowFlow, self).__init__(locals(), scale=1, offset=28, in_channels=8, blend_size=4)
         self.conv = nn.Sequential(
-            nn.Conv2d(2, 16, kernel_size=(1, 3), stride=1, padding=(0, 1), padding_mode="replicate"),
+            nn.Conv2d(3, 16, kernel_size=(1, 3), stride=1, padding=(0, 1), padding_mode="replicate"),
             nn.ReLU(inplace=True),
             nn.Conv2d(16, 16, kernel_size=(1, 9), stride=1, padding=(0, 4), padding_mode="replicate"),
             nn.ReLU(inplace=True),
@@ -30,8 +30,8 @@ class RowFlow(I2IBaseModel):
 
     def forward(self, x):
         rgb = x[:, 0:3, :, ]
-        grid = x[:, 5:7, :, ]
-        x = x[:, 3:5, :, ]  # depth + diverdence feature
+        grid = x[:, 6:8, :, ]
+        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
 
         delta = self.conv(x)
         grid = grid + torch.cat([delta, torch.zeros_like(delta)], dim=1)

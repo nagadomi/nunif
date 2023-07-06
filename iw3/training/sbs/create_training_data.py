@@ -28,7 +28,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, filename_base
     metadata.add_text("sbs_depth_max", str(max_v))
     metadata.add_text("sbs_depth_min", str(min_v))
 
-    im_sbs.save(filename_base + "_LRF.png")
+    # im_sbs.save(filename_base + "_LRF.png")
 
     stride = size // 2
     w, h = im_org.size
@@ -101,6 +101,20 @@ def random_resize(im, min_size, max_size):
     return im
 
 
+def gen_divergence():
+    if random.uniform(0, 1) < 0.7:
+        return random.choice([2., 2.5])
+    else:
+        return random.uniform(0., 2.5)
+
+
+def gen_convergence():
+    if random.uniform(0, 1) < 0.7:
+        return random.choice([0.0, 0.5, 1.0])
+    else:
+        return random.uniform(0., 1.)
+
+
 def main(args):
     import numba
     from .depthmap_utils import force_update_midas_model, load_zoed_model, generate_sbs
@@ -140,11 +154,13 @@ def main(args):
                 for _ in range(args.times):
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
+                    divergence = gen_divergence()
+                    convergence = gen_convergence()
                     sbs, depth = generate_sbs(
                         model, im_s,
-                        divergence=args.divergence, convergence=args.convergence)
+                        divergence=divergence, convergence=convergence)
                     f = pool.submit(save_images, im_s, sbs, depth,
-                                    args.divergence, args.divergence,
+                                    divergence, convergence,
                                     output_base, args.size, args.num_samples)
                     # f.result() # debug
                     futures.append(f)
@@ -167,8 +183,6 @@ def register(subparsers, default_parser):
     parser.add_argument("--times", type=int, default=4,
                         help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
-    parser.add_argument("--divergence", type=float, default=2.0, help="fixed divergence option")
-    parser.add_argument("--convergence", type=float, default=1.0, help="convergence plane")
 
     parser.set_defaults(handler=main)
 
