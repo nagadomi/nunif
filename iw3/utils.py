@@ -69,7 +69,7 @@ def batch_infer(model, im):
 
 
 def softplus01(depth):
-    # smooth function of `depth if depth > 0.5 else 0`
+    # smooth function of `(depth - 0.5) * 2 if depth > 0.5 else 0`
     return torch.log(1. + torch.exp(depth * 12.0 - 6.)) / 6.0
 
 

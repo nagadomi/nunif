@@ -21,7 +21,7 @@ python -m iw3 -i <input file or directory> -o <output file or directory>
 
 When specifying a directory with the `-i` option, only image files within that directory will be processed.
 
-If you want to process multiple video files, create a text file (e.g., `video_list.txt`) and list the file names inside it, with each file name on a new line. Then, use the appropriate option to specify the text file, such as `-i video_list.txt`. The text file is assumed to be in UTF-8 encoding.
+If you want to process multiple video files, create a text file (e.g., `video_list.txt`) and list the file names inside it, with each file name on a new line. Then, specify the the text file, such as `-i video_list.txt`. Note that the text file is assumed to be in UTF-8 encoding.
 
 ```
 python -m iw3 -i video_list.txt -o output_dir
@@ -34,9 +34,23 @@ python -m iw3 -h
 
 Also, when running `iw3` for the first time, it may take some time as it needs to download large model files.
 
+### What is `--divergence`(`-d`) option?
+
+![divergence option](figure/divergence.png)
+
+`2.0` by default. You can also specify `2.5`.
+
+### What is `--convergence`(`-c`) option?
+
+![convergence option](figure/convergence.png)
+
+- `0` is good, but screen edge areas are hard to see.
+- `1` is the most friendly for curved display setting.
+- `0.5` by default.
+
 ## About VR Player
 
-I have tested the results with the following software. Curved display setting is recommended for both software.
+I have tested the results with the following software.
 
 ### Pigasus VR Media Player
 
@@ -68,9 +82,11 @@ When specifying a directory with the `-o` option, it is automatically output as 
 
 This tends to happen with outdoor scene photos.
 
-Try
-- `--remove-bg` option
-- or `--depth-model ZoeD_NK` option
+There are some ways.
+- Try `--mapper softplus2` option
+- Try`--remove-bg` option
+
+When `--mapper softplus2` is specified, the depthmap is remapped to see big differences on the foreground side. [mapper functions](https://github.com/nagadomi/nunif/assets/287255/0071a65a-62ff-4928-850c-0ad22bceba41)
 
 When `--remove-bg` is specified, the background area is removed using [rembg](https://github.com/danielgatis/rembg) with [U2-net](https://github.com/xuebinqin/U-2-Net)'s human segmentation model, before estimating depthmap.
 
@@ -95,6 +111,8 @@ You can try adjusting scale manually.
 On SKYBOX Player, set the 3D effect slider to around < -0.3.
 
 On Pigasus, set `Settings > Advanced Settings > IPD` slider to large.
+
+Also, on Pigasus, you can zoom and pan the image by double-clicking the trigger button on the VR controller.
 
 ### CUDA Out of Memory
 
@@ -136,6 +154,4 @@ If the results are acceptable, process the full video.
 
 ## Limitation
 
-`--method row_flow`(by default) is currently only supports  ( (`--divergence 2.0` or `--divergence 2.5`) and (input width <= 1920px) ).
-
-When results are strange for large width image/video, try `--method grid_sample` option. `--method grid_sample` compatible with any `--divergence` option and image width but may cause ghost artifacts on the edge area of the depthmap.
+`--method row_flow`(by default) is currently only supports (`0 <= divergence <= 2.5` and `input width <= 1920`).
