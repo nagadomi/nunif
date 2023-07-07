@@ -18,13 +18,16 @@ Install Python 3.10 from Windows Store.
 ( If you have Anaconda installed, make sure you have added `python` to PATH.
 If `python` command opens Windows Store, see https://stackoverflow.com/questions/58754860/cmd-opens-windows-store-when-i-type-python. )
 
-### 3. Run waifu2x web interface
+### 3.1 Run waifu2x web interface
 
 Run `Run waifu2x Web.bat`.
 
 Open http://localhost:8812/
 
-end.
+### 3.2 Open CLI Prompt
+
+Run `Open Prompt.bat`.
+
 
 ## Manually install
 
