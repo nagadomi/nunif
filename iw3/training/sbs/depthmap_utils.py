@@ -1,7 +1,9 @@
 import torch
 import torchvision.transforms.functional as TF
 import numpy as np
+from PIL import Image
 from .stereoimage_generation import create_stereoimages
+from ... utils import batch_infer
 
 
 def force_update_midas_model():
@@ -36,7 +38,8 @@ def to_input_depth(im_depth):
 def generate_sbs(model, im, divergence=2, convergence=1):
     im_org = im
     with torch.inference_mode():
-        im_depth = model.infer_pil(im, output_type="pil")
+        depth = batch_infer(model, im)
+        im_depth = Image.fromarray(depth.squeeze(0).numpy().astype(np.uint16))
     sbs = create_stereoimages(
         np.array(im_org, dtype=np.uint8),
         to_input_depth(im_depth),
