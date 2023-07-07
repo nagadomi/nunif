@@ -26,9 +26,11 @@ def make_divergence_feature_value(divergence, convergence, image_width):
 
 
 def make_input_tensor(c, depth16, divergence, convergence,
-                      image_width, depth_min=None, depth_max=None):
+                      image_width, depth_min=None, depth_max=None,
+                      mapper="pow2"):
     w, h = c.shape[2], c.shape[1]
     depth = normalize_depth(depth16.squeeze(0), depth_min, depth_max)
+    depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
     divergence_feat = torch.full_like(depth, divergence_value)
     convergence_feat = torch.full_like(depth, convergence_value)
@@ -38,7 +40,7 @@ def make_input_tensor(c, depth16, divergence, convergence,
 
     return torch.cat([
         c,
-        depth.unsqueeze(0) ** 2,
+        depth.unsqueeze(0),
         divergence_feat.unsqueeze(0),
         convergence_feat.unsqueeze(0),
         grid,
@@ -64,3 +66,22 @@ def batch_infer(model, im):
         out = out[:, :, :, pad_w:-pad_w]
 
     return ((out[0] + torch.flip(out[1], dims=[2])) * 128).cpu().to(torch.int16)
+
+
+def softplus01(depth):
+    # smooth function of `depth if depth > 0.5 else 0`
+    return torch.log(1. + torch.exp(depth * 12.0 - 6.)) / 6.0
+
+
+def get_mapper(name):
+    # https://github.com/nagadomi/nunif/assets/287255/0071a65a-62ff-4928-850c-0ad22bceba41
+    if name == "pow2":
+        return lambda x: x ** 2
+    elif name == "none":
+        return lambda x: x
+    elif name == "softplus":
+        return softplus01
+    elif name == "softplus2":
+        return lambda x: softplus01(x) ** 2
+    else:
+        raise NotImplementedError()

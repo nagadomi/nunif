@@ -13,14 +13,10 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, get_model_device
 from nunif.device import create_device
-from .utils import normalize_depth, make_input_tensor, batch_infer
+from .utils import normalize_depth, make_input_tensor, batch_infer, get_mapper
 import nunif.utils.video as VU
 from nunif.utils.ui import HiddenPrints
 from . import models # noqa
-
-
-def softplus01(depth):
-    return (torch.log(1 + torch.exp(depth * 12.0 - 6)) / 6.0) ** 2
 
 
 def apply_divergence_grid_sample(c, depth, divergence, convergence,
@@ -29,7 +25,7 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence,
     c = c.to(device)
     w, h = c.shape[2], c.shape[1]
     shift_size = (-shift * divergence * 0.01)
-    index_shift = (depth ** 2) * shift_size - (shift_size * convergence)
+    index_shift = depth * shift_size - (shift_size * convergence)
     mesh_y, mesh_x = torch.meshgrid(
         torch.linspace(-1, 1, h, device=device),
         torch.linspace(-1, 1, w, device=device),
@@ -43,7 +39,8 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence,
     return z.cpu()
 
 
-def apply_divergence_nn(model, c, depth, divergence, convergence, shift, batch_size=64):
+def apply_divergence_nn(model, c, depth, divergence, convergence,
+                        mapper, shift, batch_size=64):
     device = get_model_device(model)
     enable_amp = "cuda" in str(device)
     image_width = c.shape[2]
@@ -63,16 +60,18 @@ def apply_divergence_nn(model, c, depth, divergence, convergence, shift, batch_s
     def input_callback(p, i1, i2, j1, j2):
         xx = p[0][:, i1:i2, j1:j2]
         dd = p[1][:, i1:i2, j1:j2]
-        return make_input_tensor(xx, dd,
-                                 # apply divergence scale to image width instead of divergence
-                                 divergence=divergence, convergence=convergence,
-                                 image_width=image_width,
-                                 depth_min=depth_min, depth_max=depth_max)
+        return make_input_tensor(
+            xx, dd,
+            divergence=divergence, convergence=convergence,
+            image_width=image_width,
+            depth_min=depth_min, depth_max=depth_max,
+            mapper=mapper)
 
-    z = SeamBlending.tiled_render(c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
-                                  config_callback=config_callback,
-                                  preprocess_callback=preprocess_callback,
-                                  input_callback=input_callback)
+    z = SeamBlending.tiled_render(
+        c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
+        config_callback=config_callback,
+        preprocess_callback=preprocess_callback,
+        input_callback=input_callback)
     if shift > 0:
         z = torch.flip(z, (2,))
     return z
@@ -152,6 +151,7 @@ def process_image_impl(im, args, depth_model, side_model):
             depth = batch_infer(depth_model, im)
         if args.method == "grid_sample":
             depth = normalize_depth(depth.squeeze(0))
+            depth = get_mapper(args.mapper)(depth)
             left_eye = apply_divergence_grid_sample(
                 im_org, depth,
                 args.divergence, convergence=args.convergence, shift=-1,
@@ -163,10 +163,10 @@ def process_image_impl(im, args, depth_model, side_model):
         else:
             left_eye = apply_divergence_nn(side_model, im_org, depth,
                                            args.divergence, args.convergence,
-                                           shift=-1, batch_size=args.batch_size)
+                                           args.mapper, shift=-1, batch_size=args.batch_size)
             right_eye = apply_divergence_nn(side_model, im_org, depth,
                                             args.divergence, args.convergence,
-                                            shift=1, batch_size=args.batch_size)
+                                            args.mapper, shift=1, batch_size=args.batch_size)
         if args.pad is not None:
             pad_h = int(left_eye.shape[1] * args.pad)
             pad_h -= pad_h % 2
@@ -346,7 +346,7 @@ def parse_args():
     parser.add_argument("--divergence", "-d", type=float, default=2.0, choices=[Range(0.0, 2.5)],
                         help=("strength of 3D effect"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5, choices=[Range(0.0, 1.0)],
-                        help=("(normalized) distance of convergence plane(screen position). only work for grid_sample"))
+                        help=("(normalized) distance of convergence plane(screen position)"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
     parser.add_argument("--resume", action="store_true",
@@ -390,7 +390,9 @@ def parse_args():
                               "Note thet the video filter that modify the image size will cause errors."))
     parser.add_argument("--debug-depth", action="store_true",
                         help="debug output normalized depthmap, info and preprocessed depth")
-
+    parser.add_argument("--mapper", type=str, default="pow2",
+                        choices=["pow2", "softplus", "softplus2", "none"],
+                        help="(re-)mapper function for depth")
     args = parser.parse_args()
     return args
 
