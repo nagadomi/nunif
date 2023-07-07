@@ -1,3 +1,5 @@
+# file from https://github.com/thygate/stable-diffusion-webui-depthmap-script
+# MIT License / Copyright (c) 2023 Bob Thiry
 from numba import njit, prange
 import numpy as np
 from PIL import Image
