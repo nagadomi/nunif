@@ -259,7 +259,7 @@ def process_video_full(args, depth_model, side_model):
             rotate=args.rotate_left or args.rotate_right,
             vr180=args.vr180)
 
-        options = {"preset": args.preset, "crf": str(args.crf)}
+        options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
         tune = []
         if fps < 2:
             tune += ["stillimage"]
