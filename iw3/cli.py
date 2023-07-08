@@ -13,7 +13,10 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, get_model_device
 from nunif.device import create_device
-from .utils import normalize_depth, make_input_tensor, batch_infer, get_mapper
+from .utils import (
+    normalize_depth, make_input_tensor, batch_infer, get_mapper,
+    equirectangular_projection,
+)
 import nunif.utils.video as VU
 from nunif.utils.ui import HiddenPrints
 from . import models # noqa
@@ -95,6 +98,7 @@ def update_model():
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
 SBS_SUFFIX = "_LRF"
+VR180_SUFFIX = "_180x180_LR"
 
 
 # SMB Invalid characters
@@ -103,17 +107,18 @@ SBS_SUFFIX = "_LRF"
 SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
-def make_output_filename(input_filename, video=False):
+def make_output_filename(input_filename, video=False, vr180=False):
     basename = path.splitext(path.basename(input_filename))[0]
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
-    return basename + SBS_SUFFIX + (".mp4" if video else ".png")
+    auto_detect_suffix = VR180_SUFFIX if vr180 else SBS_SUFFIX
+    return basename + auto_detect_suffix + (".mp4" if video else ".png")
 
 
 def save_image(im, output_filename):
     im.save(output_filename)
 
 
-def get_output_size(width, height, pad=None, rotate=False):
+def get_output_size(width, height, pad=None, rotate=False, vr180=False):
     if rotate:
         width, height = height, width
     if pad is not None:
@@ -122,6 +127,14 @@ def get_output_size(width, height, pad=None, rotate=False):
         pad_w = int(width * pad) // 2
         width = width + pad_w * 2
         height = height + pad_h
+    if vr180:
+        max_edge = max(height, width)
+        output_size = max_edge + max_edge // 2
+        pad_w = (output_size - width) // 2
+        pad_h = (output_size - height) // 2
+        width = width + pad_w * 2
+        height = height + pad_h * 2
+
     return width, height
 
 
@@ -173,6 +186,9 @@ def process_image_impl(im, args, depth_model, side_model):
             pad_w = int(left_eye.shape[2] * args.pad) // 2
             left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, 0), padding_mode="constant")
             right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, 0), padding_mode="constant")
+        if args.vr180:
+            left_eye = equirectangular_projection(left_eye, device=depth_model.device)
+            right_eye = equirectangular_projection(right_eye, device=depth_model.device)
         sbs = torch.cat([left_eye, right_eye], dim=2)
         sbs = TF.to_pil_image(sbs)
         return sbs
@@ -240,7 +256,8 @@ def process_video_full(args, depth_model, side_model):
             stream.codec_context.width,
             stream.codec_context.height,
             pad=args.pad,
-            rotate=args.rotate_left or args.rotate_right)
+            rotate=args.rotate_left or args.rotate_right,
+            vr180=args.vr180)
 
         options = {"preset": args.preset, "crf": str(args.crf)}
         tune = []
@@ -262,7 +279,9 @@ def process_video_full(args, depth_model, side_model):
 
     if path.isdir(args.output) or "." not in path.basename(args.output):
         os.makedirs(args.output, exist_ok=True)
-        output_filename = path.join(args.output, make_output_filename(path.basename(args.input), video=True))
+        output_filename = path.join(
+            args.output,
+            make_output_filename(path.basename(args.input), video=True, vr180=args.vr180))
     else:
         output_filename = args.output
 
@@ -393,6 +412,8 @@ def parse_args():
     parser.add_argument("--mapper", type=str, default="pow2",
                         choices=["pow2", "softplus", "softplus2", "none"],
                         help="(re-)mapper function for depth")
+    parser.add_argument("--vr180", action="store_true",
+                        help="output in VR180 format")
     args = parser.parse_args()
     return args
 

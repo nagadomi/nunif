@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
@@ -85,3 +86,35 @@ def get_mapper(name):
         return lambda x: softplus01(x) ** 2
     else:
         raise NotImplementedError()
+
+
+def equirectangular_projection(c, device="cpu"):
+    c = c.to(device)
+    h, w = c.shape[1:]
+    max_edge = max(h, w)
+    output_size = max_edge + max_edge // 2
+    pad_w = (output_size - w) // 2
+    pad_h = (output_size - h) // 2
+    c = TF.pad(c, (pad_w, pad_h, pad_w, pad_h),
+               padding_mode="constant", fill=0)
+
+    h, w = c.shape[1:]
+    y, x = torch.meshgrid(torch.linspace(-1, 1, h, device=device),
+                          torch.linspace(-1, 1, w, device=device), indexing="ij")
+
+    azimuth = x * (math.pi * 0.5)
+    elevation = y * (math.pi * 0.5)
+    cos_elevation = torch.cos(elevation)
+    x = cos_elevation * torch.sin(azimuth)
+    y = torch.sin(elevation)
+    z = cos_elevation * torch.cos(azimuth)
+    mesh_x = 0.6666 * x / z
+    mesh_y = 0.6666 * y / z
+    grid = torch.stack((mesh_x, mesh_y), 2)
+    z = F.grid_sample(c.unsqueeze(0),
+                      grid.unsqueeze(0),
+                      mode="bicubic", padding_mode="zeros",
+                      align_corners=True).squeeze(0)
+    z = torch.clamp(z, 0, 1)
+
+    return z

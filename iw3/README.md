@@ -76,6 +76,14 @@ Adding `_LRF` suffix to the filename will identify the file as full side-by-side
 
 When specifying a directory with the `-o` option, it is automatically output as a filename with `{original_filename}_LRF.(png|mp4)`.
 
+## VR180 format
+
+When `--vr180` option is specified, the video is output in VR180 format (equirectangular).
+
+This is usually not recommended because of poor usability during playback.
+
+This is useful if your video player does not have the ability to play SBS 3D videos or if you want to post the video on Youtube.
+
 ## Trouble shooting
 
 ### Very flat foreground
