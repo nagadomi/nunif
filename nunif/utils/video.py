@@ -1,6 +1,7 @@
 import av
 import math
 from tqdm import tqdm
+from PIL import Image
 
 
 def get_fps(stream):
@@ -21,7 +22,7 @@ def get_frames(stream):
         return stream.frames
     else:
         # frames is unknown
-        return gusess_frames(stream)
+        return guess_frames(stream)
 
 
 def _print_len(stream):
@@ -82,11 +83,9 @@ class FixedFPSFilter():
 
 
 class VideoOutputConfig():
-    def __init__(self, width=None, height=None, pix_fmt="yuv420p", fps=30, options={}):
-        self.width = width
-        self.height = height
-        self.fps = fps
+    def __init__(self, pix_fmt="yuv420p", fps=30, options={}):
         self.pix_fmt = pix_fmt
+        self.fps = fps
         self.options = options
 
 
@@ -95,10 +94,17 @@ def default_config_callback(stream):
     if float(fps) > 30:
         fps = 30
     return VideoOutputConfig(
-        stream.codec_context.width, stream.codec_context.height,
         fps=fps,
         options={"preset": "ultrafast", "crf": "20"}
     )
+
+
+def test_output_size(frame_callback, input_width, input_height):
+    # TODO: video filter
+    empty_image = Image.new("RGB", (input_width, input_height), (128, 128, 128))
+    test_frame = av.video.frame.VideoFrame.from_image(empty_image)
+    output_frame = frame_callback(test_frame)
+    return output_frame.width, output_frame.height
 
 
 # TODO: correct colorspace transform
@@ -125,11 +131,15 @@ def process_video(input_path, output_path,
     output_container = av.open(output_path, 'w')
 
     fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
+    output_size = test_output_size(
+        frame_callback,
+        video_input_stream.codec_context.width,
+        video_input_stream.codec_context.height)
     video_output_stream = output_container.add_stream("libx264", config.fps)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
-    video_output_stream.width = config.width
-    video_output_stream.height = config.height
+    video_output_stream.width = output_size[0]
+    video_output_stream.height = output_size[1]
     video_output_stream.options = config.options
     if audio_input_stream is not None:
         try:
@@ -206,7 +216,7 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
 
 
 if __name__ == "__main__":
-    from PIL import Image, ImageOps
+    from PIL import ImageOps
     import argparse
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)

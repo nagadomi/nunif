@@ -139,7 +139,6 @@ Use `--vf yadif` option to deinterlace the video source.
 You can use ffmpeg's video filter with `--vf` option.
 
 Note that
-- the video filter that modify the image size will cause errors
 - only serial pipeline is supported
 
 See https://ffmpeg.org/ffmpeg-filters.html

@@ -118,26 +118,6 @@ def save_image(im, output_filename):
     im.save(output_filename)
 
 
-def get_output_size(width, height, pad=None, rotate=False, vr180=False):
-    if rotate:
-        width, height = height, width
-    if pad is not None:
-        pad_h = int(height * pad)
-        pad_h -= pad_h % 2
-        pad_w = int(width * pad) // 2
-        width = width + pad_w * 2
-        height = height + pad_h
-    if vr180:
-        max_edge = max(height, width)
-        output_size = max_edge + max_edge // 2
-        pad_w = (output_size - width) // 2
-        pad_h = (output_size - height) // 2
-        width = width + pad_w * 2
-        height = height + pad_h * 2
-
-    return width, height
-
-
 def remove_bg_from_image(im, bg_session):
     # TODO: mask resolution seems to be low
     mask = TF.to_tensor(rembg.remove(im, session=bg_session, only_mask=True))
@@ -181,11 +161,10 @@ def process_image_impl(im, args, depth_model, side_model):
                                             args.divergence, args.convergence,
                                             args.mapper, shift=1, batch_size=args.batch_size)
         if args.pad is not None:
-            pad_h = int(left_eye.shape[1] * args.pad)
-            pad_h -= pad_h % 2
+            pad_h = int(left_eye.shape[1] * args.pad) // 2
             pad_w = int(left_eye.shape[2] * args.pad) // 2
-            left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, 0), padding_mode="constant")
-            right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, 0), padding_mode="constant")
+            left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+            right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         if args.vr180:
             left_eye = equirectangular_projection(left_eye, device=depth_model.device)
             right_eye = equirectangular_projection(right_eye, device=depth_model.device)
@@ -252,12 +231,6 @@ def process_video_full(args, depth_model, side_model):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
             fps = args.max_fps
-        width, height = get_output_size(
-            stream.codec_context.width,
-            stream.codec_context.height,
-            pad=args.pad,
-            rotate=args.rotate_left or args.rotate_right,
-            vr180=args.vr180)
 
         options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
         tune = []
@@ -269,7 +242,6 @@ def process_video_full(args, depth_model, side_model):
         if tune:
             options["tune"] = ",".join(tune)
         return VU.VideoOutputConfig(
-            width * 2, height,
             fps=fps,
             options=options
         )
@@ -405,8 +377,7 @@ def parse_args():
     parser.add_argument("--keyframe-interval", type=float, default=4.0,
                         help="keyframe minimum interval (sec)")
     parser.add_argument("--vf", type=str, default="",
-                        help=("video filter options for ffmpeg."
-                              "Note thet the video filter that modify the image size will cause errors."))
+                        help="video filter options for ffmpeg.")
     parser.add_argument("--debug-depth", action="store_true",
                         help="debug output normalized depthmap, info and preprocessed depth")
     parser.add_argument("--mapper", type=str, default="pow2",
