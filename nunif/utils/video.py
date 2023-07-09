@@ -231,7 +231,6 @@ if __name__ == "__main__":
         if fps > 30:
             fps = 30
         return VideoOutputConfig(
-            stream.codec_context.width * 2, stream.codec_context.height,
             fps=fps,
             options={"preset": "ultrafast", "crf": "20"}
         )
