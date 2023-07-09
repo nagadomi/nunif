@@ -138,10 +138,10 @@ def process_image_impl(im, args, depth_model, side_model):
         im_org = TF.to_tensor(im)
         if args.bg_session is not None:
             im = remove_bg_from_image(im, args.bg_session)
-        if args.disable_zoedepth_batch:
+        if args.disable_zoedepth_batch and args.tta:
             depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
         else:
-            depth = batch_infer(depth_model, im)
+            depth = batch_infer(depth_model, im, flip_aug=args.tta)
         if args.method == "grid_sample":
             depth = normalize_depth(depth.squeeze(0))
             depth = get_mapper(args.mapper)(depth)
@@ -184,7 +184,7 @@ def generate_depth_debug(im, args, depth_model, side_model):
         if args.disable_zoedepth_batch:
             depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
         else:
-            depth = batch_infer(depth_model, im)
+            depth = batch_infer(depth_model, im, flip_aug=args.tta)
         depth = depth.float()
         min_depth, max_depth = depth.min(), depth.max()
         mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
@@ -385,6 +385,8 @@ def parse_args():
                         help="(re-)mapper function for depth")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
+    parser.add_argument("--tta", action="store_true",
+                        help="Use flip augmentation on depth model")
     args = parser.parse_args()
     return args
 

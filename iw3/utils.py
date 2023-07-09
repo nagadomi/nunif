@@ -49,9 +49,10 @@ def make_input_tensor(c, depth16, divergence, convergence,
 
 
 @torch.inference_mode()
-def batch_infer(model, im):
+def batch_infer(model, im, flip_aug=True):
     x = TF.to_tensor(im).unsqueeze(0).to(model.device)
-    x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
+    if flip_aug:
+        x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
 
     pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
     pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
@@ -65,8 +66,11 @@ def batch_infer(model, im):
         out = out[:, :, pad_h:-pad_h, :]
     if pad_w > 0:
         out = out[:, :, :, pad_w:-pad_w]
-
-    return ((out[0] + torch.flip(out[1], dims=[2])) * 128).cpu().to(torch.int16)
+    if flip_aug:
+        z = (out[0] + torch.flip(out[1], dims=[2])) * 128
+    else:
+        z = out[0] * 256
+    return z.cpu().to(torch.int16)
 
 
 def softplus01(depth):
