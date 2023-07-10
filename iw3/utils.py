@@ -145,7 +145,7 @@ def equirectangular_projection(c, device="cpu"):
 
 def is_image(filename):
     mime = mimetypes.guess_type(filename)[0]
-    return mime and mime.startswith("image"):
+    return mime and mime.startswith("image")
 
 
 def is_video(filename):
