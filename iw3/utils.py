@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 import argparse
+import threading
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import math
 from tqdm import tqdm
@@ -136,6 +137,25 @@ def equirectangular_projection(c, device="cpu"):
     z = torch.clamp(z, 0, 1)
 
     return z
+
+
+def is_image(filename):
+    mime = mimetypes.guess_type(filename)[0]
+    return mime.startswith("image")
+
+
+def is_video(filename):
+    mime = mimetypes.guess_type(filename)[0]
+    return mime.startswith("video")
+
+
+def is_text(filename):
+    mime = mimetypes.guess_type(filename)[0]
+    return mime.startswith("text")
+
+
+def is_output_dir(filename):
+    return path.isdir(filename) or "." not in path.basename(filename)
 
 
 def apply_divergence_grid_sample(c, depth, divergence, convergence,
@@ -323,13 +343,16 @@ def process_image(im, args, depth_model, side_model):
 
 def process_images(args, depth_model, side_model):
     os.makedirs(args.output, exist_ok=True)
+    files = ImageLoader.listdir(args.input)
     loader = ImageLoader(
-        directory=args.input,
+        files=files,
         load_func=load_image_simple,
         load_func_kwargs={"color": "rgb"})
     futures = []
+    tqdm_fn = args.state["tqdm_fn"] or tqdm
+    pbar = tqdm_fn(ncols=80, total=len(files))
     with PoolExecutor(max_workers=4) as pool:
-        for im, meta in tqdm(loader, ncols=80):
+        for im, meta in loader:
             filename = meta["filename"]
             output_filename = path.join(args.output, make_output_filename(filename))
             if im is None or (args.resume and path.exists(output_filename)):
@@ -338,8 +361,12 @@ def process_images(args, depth_model, side_model):
             f = pool.submit(save_image, output, output_filename)
             #  f.result() # for debug
             futures.append(f)
+            pbar.update(1)
+            if args.state["stop_event"].is_set():
+                break
         for f in futures:
             f.result()
+    pbar.close()
 
 
 def process_video_full(args, depth_model, side_model):
@@ -350,8 +377,6 @@ def process_video_full(args, depth_model, side_model):
 
         options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
         tune = []
-        if fps < 2:
-            tune += ["stillimage"]
         if args.tune:
             tune += args.tune
         tune = set(tune)
@@ -365,7 +390,7 @@ def process_video_full(args, depth_model, side_model):
     def frame_callback(frame):
         return frame.from_image(process_image(frame.to_image(), args, depth_model, side_model))
 
-    if path.isdir(args.output) or "." not in path.basename(args.output):
+    if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
         output_filename = path.join(
             args.output,
@@ -384,11 +409,13 @@ def process_video_full(args, depth_model, side_model):
     VU.process_video(args.input, output_filename,
                      config_callback=config_callback,
                      frame_callback=frame_callback,
-                     vf=args.vf)
+                     vf=args.vf,
+                     stop_event=args.state["stop_event"],
+                     tqdm_fn=args.state["tqdm_fn"])
 
 
 def process_video_keyframes(args, depth_model, side_model):
-    if path.isdir(args.output) or "." not in path.basename(args.output):
+    if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
         output_dir = path.join(args.output, make_output_filename(path.basename(args.input), video=True))
     else:
@@ -408,7 +435,8 @@ def process_video_keyframes(args, depth_model, side_model):
             f = pool.submit(save_image, output, output_filename)
             futures.append(f)
         VU.process_video_keyframes(args.input, frame_callback=frame_callback,
-                                   min_interval_sec=args.keyframe_interval)
+                                   min_interval_sec=args.keyframe_interval,
+                                   stop_event=args.state["stop_event"])
         for f in futures:
             f.result()
 
@@ -423,7 +451,7 @@ def process_video(args, depth_model, side_model):
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow.pth")
 
 
-def create_parser():
+def create_parser(required_true=True):
     class Range(object):
         def __init__(self, start, end):
             self.start = start
@@ -441,9 +469,9 @@ def create_parser():
     else:
         default_gpu = -1
 
-    parser.add_argument("--input", "-i", type=str, required=True,
+    parser.add_argument("--input", "-i", type=str, required=required_true,
                         help="input file or directory")
-    parser.add_argument("--output", "-o", type=str, required=True,
+    parser.add_argument("--output", "-o", type=str, required=required_true,
                         help="output file or directory")
     parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
                         help="GPU device id. -1 for CPU")
@@ -506,6 +534,11 @@ def create_parser():
     return parser
 
 
+def set_state_args(args, stop_event=None, tqdm_fn=None):
+    args.state = {"stop_event": stop_event, "tqdm_fn": tqdm_fn}
+    return args
+
+
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
     if args.method == "row_flow" and (args.divergence != 2.5 and args.divergence != 2.0):
@@ -529,11 +562,10 @@ def iw3_main(args):
     if path.isdir(args.input):
         process_images(args, depth_model, side_model)
     else:
-        mime = mimetypes.guess_type(args.input)[0]
-        if mime.startswith("video"):
+        if is_video(args.input):
             process_video(args, depth_model, side_model)
         else:
-            if mime == "text/plain":
+            if is_text(args.input):
                 files = []
                 with open(args.input, mode="r", encoding="utf-8") as f:
                     for line in f.readlines():
@@ -541,12 +573,11 @@ def iw3_main(args):
             else:
                 files = [args.input]
             for input_file in files:
-                mime = mimetypes.guess_type(input_file)[0]
-                if mime.startswith("video"):
+                if is_video(input_file):
                     args.input = input_file
                     process_video(args, depth_model, side_model)
-                elif mime.startswith("image"):
-                    if path.isdir(args.output) or "." not in path.basename(args.output):
+                elif is_image(input_file):
+                    if is_output_dir(args.output):
                         os.makedirs(args.output, exist_ok=True)
                         output_filename = path.join(args.output, make_output_filename(input_file))
                     else:
@@ -554,3 +585,6 @@ def iw3_main(args):
                     im, _ = load_image_simple(input_file, color="rgb")
                     output = process_image(im, args, depth_model, side_model)
                     output.save(output_filename)
+                if args.state["stop_event"].is_set():
+                    break
+    return True

@@ -13,6 +13,20 @@ This project is under construction.
 
 ## Usage
 
+### GUI (experimental)
+
+Run `iw3.gui` module from the root directory of nunif.
+
+```
+python -m iw3.gui
+```
+with `--lang` option
+```
+python -m iw3.gui --lang ja_JP
+```
+
+### CLI
+
 Run `iw3` module from the root directory of nunif.
 
 ```

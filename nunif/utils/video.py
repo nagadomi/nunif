@@ -114,7 +114,8 @@ def process_video(input_path, output_path,
                   frame_callback,
                   config_callback=default_config_callback,
                   title=None,
-                  vf=""):
+                  vf="",
+                  stop_event=None, tqdm_fn=None):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -151,7 +152,8 @@ def process_video(input_path, output_path,
 
     desc = (title if title else output_path)
     ncols = len(desc) + 60
-    pbar = tqdm(desc=desc, total=guess_frames(video_input_stream, config.fps), ncols=ncols)
+    tqdm_fn = tqdm_fn or tqdm
+    pbar = tqdm_fn(desc=desc, total=guess_frames(video_input_stream, config.fps), ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     for packet in input_container.demux(streams):
         if packet.stream.type == "video":
@@ -175,7 +177,8 @@ def process_video(input_path, output_path,
                         enc_packet = audio_output_stream.encode(frame)
                         if enc_packet:
                             output_container.mux(enc_packet)
-
+        if stop_event is not None and stop_event.is_set():
+            break
     pbar.close()
     frame = fps_filter.update(None)
     if frame is not None:
@@ -190,7 +193,7 @@ def process_video(input_path, output_path,
     input_container.close()
 
 
-def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None):
+def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -210,7 +213,8 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
             frame_callback(frame)
             pbar.update(current_sec - prev_sec)
             prev_sec = current_sec
-    pbar.update(max_progress - prev_sec)
+        if stop_event is not None and stop_event.is_set():
+            break
     pbar.close()
     input_container.close()
 
