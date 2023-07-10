@@ -344,6 +344,9 @@ class MainFrame(wx.Frame):
         self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
+        # Fix Frame and Panel background colors are different in windows
+        self.SetBackgroundColour(self.pnl_file.GetBackgroundColour())
+
         # state
         self.btn_cancel.Disable()
 
