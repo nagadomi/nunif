@@ -44,7 +44,7 @@ options:
   --yes, -y             overwrite output files (video only) (default: False)
   --rotate-left         Rotate 90 degrees to the left(counterclockwise) (video only) (default: False)
   --rotate-right        Rotate 90 degrees to the right(clockwise) (video only) (default: False)
-  --vf VF               video filter options for ffmpeg. Note thet the video filter that modify the image size will cause errors. (video only) (default: )
+  --vf VF               video filter options for ffmpeg.  (video only) (default: )
   --grain               add noise after denosing (video only) (default: False)
   --grain-strength GRAIN_STRENGTH
                         noise strength (video only) (default: 0.05)

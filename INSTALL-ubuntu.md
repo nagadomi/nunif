@@ -4,6 +4,17 @@
 apt-get install git-core libmagickwand-dev libsnappy-dev libraqm-dev
 ```
 
+If using GUI, install wxpython >= 4.0.0
+```
+apt-get install python3-wxgtk4.0
+```
+or 
+```
+apt-get install libwxgtk3.0-gtk3-dev 
+pip3 install -r requirements-gui.txt
+```
+or install wheel package from https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04/
+
 ## 2. Clone
 
 ```

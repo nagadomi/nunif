@@ -20,6 +20,10 @@ from .utils import Waifu2x
 from .download_models import main as download_main
 
 
+# Add missing webp mimetype
+mimetypes.add_type("image/webp", ".webp")
+
+
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
     "swin_unet", "art"))
@@ -42,17 +46,17 @@ def find_subdir(dirname):
 
 def is_image(filename, mime=None):
     mime = mime or mimetypes.guess_type(filename)[0]
-    return mime.startswith("image")
+    return mime and mime.startswith("image")
 
 
 def is_video(filename, mime=None):
     mime = mime or mimetypes.guess_type(filename)[0]
-    return mime.startswith("video")
+    return mime and mime.startswith("video")
 
 
 def is_text(filename, mime=None):
     mime = mime or mimetypes.guess_type(filename)[0]
-    return mime.startswith("text")
+    return mime and mime.startswith("text")
 
 
 def is_output_dir(filename):
@@ -97,30 +101,11 @@ def process_images(ctx, files, output_dir, args):
             f.result()
 
 
-def calc_output_resolution(width, height, method, rotate=False):
-    if rotate:
-        width, height = height, width
-    if method in {"scale", "noise_scale", "scale2x", "noise_scale2x"}:
-        scale = 2
-    elif method in {"scale4x", "noise_scale4x"}:
-        scale = 4
-    else:
-        scale = 1
-
-    return width * scale, height * scale
-
-
 def process_video(ctx, input_filename, args):
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
             fps = args.max_fps
-
-        width, height = calc_output_resolution(
-            stream.codec_context.width,
-            stream.codec_context.height,
-            method=args.method,
-            rotate=args.rotate_left or args.rotate_right)
 
         options = {"preset": args.preset, "crf": str(args.crf)}
         tune = []
@@ -134,7 +119,6 @@ def process_video(ctx, input_filename, args):
         if tune:
             options["tune"] = ",".join(tune)
         return VU.VideoOutputConfig(
-            width, height,
             fps=fps,
             pix_fmt=args.pix_fmt,
             options=options
@@ -312,9 +296,7 @@ if __name__ == "__main__":
     parser.add_argument("--rotate-right", action="store_true",
                         help="Rotate 90 degrees to the right(clockwise) (video only)")
     parser.add_argument("--vf", type=str, default="",
-                        help=("video filter options for ffmpeg."
-                              "Note thet the video filter that modify the image size will cause errors."
-                              " (video only)"))
+                        help="video filter options for ffmpeg. (video only)")
     parser.add_argument("--grain", action="store_true",
                         help=("add noise after denosing (video only)"))
     parser.add_argument("--grain-strength", type=float, default=0.05,
