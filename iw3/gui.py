@@ -135,12 +135,12 @@ class MainFrame(wx.Frame):
 
         self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
         self.cbo_divergence = wx.ComboBox(self.grp_stereo, choices=["2.5", "2.0", "1.0"],
-                                          style=wx.CB_SIMPLE, name="cbo_divergence")
+                                          style=wx.CB_DROPDOWN, name="cbo_divergence")
         self.cbo_divergence.SetSelection(1)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
         self.cbo_convergence = wx.ComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
-                                           style=wx.CB_SIMPLE, name="cbo_convergence")
+                                           style=wx.CB_DROPDOWN, name="cbo_convergence")
         self.cbo_convergence.SetSelection(1)
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
@@ -246,7 +246,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
         self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "1", "2"],
-                                   style=wx.CB_SIMPLE, name="cbo_pad")
+                                   style=wx.CB_DROPDOWN, name="cbo_pad")
         self.cbo_pad.SetSelection(0)
 
         self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
