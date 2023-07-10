@@ -23,6 +23,8 @@ python -m iw3.gui
 
 On Windows, run `Run iw3 GUI.bat`.
 
+![gui](https://github.com/nagadomi/nunif/assets/287255/8f6c20e2-0898-4b13-87bd-1e57f3ddf41b)
+
 ### CLI
 
 Run `iw3` module from the root directory of nunif.
