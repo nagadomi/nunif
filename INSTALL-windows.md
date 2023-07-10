@@ -15,6 +15,8 @@ Install Python 3.10 from Windows Store.
 - If you have NVIDIA GPU, run `Installer for Windows CUDA.bat`
 - If you do not have NVIDIA GPU, run `Installer for Windows CPU.bat`
 
+If you want to reinstall, delete `venv` folder and run it again.
+
 ( If you have Anaconda installed, make sure you have added `python` to PATH.
 If `python` command opens Windows Store, see https://stackoverflow.com/questions/58754860/cmd-opens-windows-store-when-i-type-python. )
 
