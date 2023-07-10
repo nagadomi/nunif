@@ -19,6 +19,10 @@ import nunif.utils.video as VU
 from nunif.utils.ui import HiddenPrints
 
 
+# Add missing webp mimetype
+mimetypes.add_type("image/webp", ".webp")
+
+
 def normalize_depth(depth, depth_min=None, depth_max=None):
     depth = depth.float()
     if depth_min is None:
@@ -141,17 +145,17 @@ def equirectangular_projection(c, device="cpu"):
 
 def is_image(filename):
     mime = mimetypes.guess_type(filename)[0]
-    return mime.startswith("image")
+    return mime and mime.startswith("image"):
 
 
 def is_video(filename):
     mime = mimetypes.guess_type(filename)[0]
-    return mime.startswith("video")
+    return mime and mime.startswith("video")
 
 
 def is_text(filename):
     mime = mimetypes.guess_type(filename)[0]
-    return mime.startswith("text")
+    return mime and mime.startswith("text")
 
 
 def is_output_dir(filename):
