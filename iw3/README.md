@@ -13,6 +13,18 @@ This project is under construction.
 
 ## Usage
 
+### GUI (experimental)
+
+Run `iw3.gui` module from the root directory of nunif.
+
+```
+python -m iw3.gui
+```
+
+On Windows, run `Run iw3 GUI.bat`.
+
+### CLI
+
 Run `iw3` module from the root directory of nunif.
 
 ```

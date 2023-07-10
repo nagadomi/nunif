@@ -20,6 +20,10 @@ from .utils import Waifu2x
 from .download_models import main as download_main
 
 
+# Add missing webp mimetype
+mimetypes.add_type("image/webp", ".webp")
+
+
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
     path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
     "swin_unet", "art"))
@@ -42,17 +46,17 @@ def find_subdir(dirname):
 
 def is_image(filename, mime=None):
     mime = mime or mimetypes.guess_type(filename)[0]
-    return mime.startswith("image")
+    return mime and mime.startswith("image")
 
 
 def is_video(filename, mime=None):
     mime = mime or mimetypes.guess_type(filename)[0]
-    return mime.startswith("video")
+    return mime and mime.startswith("video")
 
 
 def is_text(filename, mime=None):
     mime = mime or mimetypes.guess_type(filename)[0]
-    return mime.startswith("text")
+    return mime and mime.startswith("text")
 
 
 def is_output_dir(filename):
