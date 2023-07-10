@@ -39,3 +39,5 @@ LOCALES = {
         "Low VRAM": "低VRAM",
     },
 }
+# For Windows
+LOCALES["Japanese_Japan"] = LOCALES["ja_JP"]
