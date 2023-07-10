@@ -20,10 +20,8 @@ Run `iw3.gui` module from the root directory of nunif.
 ```
 python -m iw3.gui
 ```
-with `--lang` option
-```
-python -m iw3.gui --lang ja_JP
-```
+
+On Windows, run `Run iw3 GUI.bat`.
 
 ### CLI
 
