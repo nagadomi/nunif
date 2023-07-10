@@ -545,8 +545,6 @@ def set_state_args(args, stop_event=None, tqdm_fn=None):
 
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
-    if args.method == "row_flow" and (args.divergence != 2.5 and args.divergence != 2.0):
-        raise ValueError("--method row_flow only supports --divergence 2.5 or 2.0")
 
     if args.update:
         force_update_midas_model()
