@@ -22,7 +22,6 @@ if %ERRORLEVEL% neq 0 (
 git --version > nul 2>&1
 if %ERRORLEVEL% neq 0 (
   call :install_git
-  echo !ERRORLEVEL!
   if !ERRORLEVEL! neq 0 goto :on_error
 )
 
@@ -33,7 +32,7 @@ if not exist %NUNIF_DIR% (
   if !ERRORLEVEL! neq 0 goto :on_error
 ) else (
   git -C %NUNIF_DIR% pull
-  if %ERRORLEVEL% neq 0 (
+  if !ERRORLEVEL! neq 0 (
     git -C %NUNIF_DIR% reset --hard
     if !ERRORLEVEL! neq 0 goto :on_error
     git -C %NUNIF_DIR% pull
@@ -64,19 +63,15 @@ exit /b 0
   set MINGIT_URL=https://github.com/git-for-windows/git/releases/download/v2.41.0.windows.2/MinGit-2.41.0.2-64-bit.zip
   set TMP_DIR=%ROOT_DIR%\tmp
 
-  if exist %MINGIT_DIR% rmdir /s /q %MINGIT_DIR%
-  if exist %TMP_DIR% rmdir /s /q %TMP_DIR%
-  mkdir %TMP_DIR%
+  if not exist %TMP_DIR% mkdir %TMP_DIR%
 
   @rem Install MinGit
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
              "Start-BitsTransfer -Source $env:MINGIT_URL -Destination $env:TMP_DIR\mingit.zip"
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-             "Expand-Archive $env:TMP_DIR\mingit.zip $env:MINGIT_DIR"
+             "Expand-Archive -Force $env:TMP_DIR\mingit.zip $env:MINGIT_DIR"
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
-
-  rmdir /s /q %TMP_DIR%
 
   echo Successfully installed MinGit
 
@@ -92,16 +87,14 @@ exit /b 0
   set PTH_PATH=%PYTHON_DIR%\python310._pth
   set TMP_DIR=%ROOT_DIR%\tmp
 
-  if exist %PYTHON_DIR% rmdir /s /q %PYTHON_DIR%
-  if exist %TMP_DIR% rmdir /s /q %TMP_DIR%
-  mkdir %TMP_DIR%
+  if not exist %TMP_DIR% mkdir %TMP_DIR%
 
   @rem Install Embeddable Python
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
              "Start-BitsTransfer -Source $env:PYTHON_URL -Destination $env:TMP_DIR\python.zip"
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-             "Expand-Archive $env:TMP_DIR\python.zip $env:PYTHON_DIR"
+             "Expand-Archive -Force $env:TMP_DIR\python.zip $env:PYTHON_DIR"
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
   @rem delete pth file to disable isolated mode
@@ -119,8 +112,6 @@ exit /b 0
   python %PYTHON_DIR%\get-pip.py
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
-  rmdir /s /q %TMP_DIR%
-
   echo Successfully installed pip
   exit /b 0
 
@@ -129,4 +120,3 @@ exit /b 0
   echo Error!
   pause
   exit /b 1
-
