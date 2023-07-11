@@ -26,6 +26,10 @@ LOCALES = {
         "Preset": "プリセット",
         "Tune": "チューニング",
 
+        "Background Removal": "背景除去",
+        "Seg Model": "領域分割モデル",
+        "Enable": "有効化",
+
         "Video Filter": "ビデオフィルタ",
         "Deinterlace": "デインターレース",
         "Padding": "パディング",
