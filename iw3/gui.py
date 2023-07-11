@@ -77,7 +77,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(900, 540),
+            size=(920, 580),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -163,7 +163,7 @@ class MainFrame(wx.Frame):
                                              style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
-        layout = wx.GridSizer(rows=6, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=6, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -228,6 +228,23 @@ class MainFrame(wx.Frame):
 
         sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
         sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
+
+        # background removal
+        self.grp_rembg = wx.StaticBox(self.pnl_options, label=T("Background Removal"))
+        self.chk_rembg = wx.CheckBox(self.grp_rembg, label=T("Enable"), name="chk_rembg")
+        self.lbl_bg_model = wx.StaticText(self.grp_rembg, label=T("Seg Model"))
+        self.cbo_bg_model = wx.ComboBox(self.grp_rembg,
+                                        choices=["u2net", "u2net_human_seg",
+                                                 "isnet-general-use", "isnet-anime"],
+                                        style=wx.CB_READONLY, name="cbo_bg_model")
+        self.cbo_bg_model.SetSelection(1)
+
+        layout = wx.GridBagSizer(vgap=4, hgap=4)
+        layout.Add(self.chk_rembg, (0, 0), (0, 2), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_bg_model, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_bg_model, (1, 1), flag=wx.EXPAND)
+        sizer_rembg = wx.StaticBoxSizer(self.grp_rembg, wx.VERTICAL)
+        sizer_rembg.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # input video filter
         # deinterlace, rotate, vf
@@ -303,7 +320,8 @@ class MainFrame(wx.Frame):
 
         layout = wx.GridBagSizer(wx.HORIZONTAL)
         layout.Add(sizer_stereo, (0, 0), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_video, (0, 1), (2, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(sizer_video, (0, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(sizer_rembg, (1, 1), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_video_filter, (0, 2), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_processor, (1, 2), flag=wx.ALL | wx.EXPAND, border=4)
         self.pnl_options.SetSizer(layout)
@@ -358,6 +376,7 @@ class MainFrame(wx.Frame):
         self.persistence_manager.Save(self)
 
         self.update_start_button_state()
+        self.update_rembg_state()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -369,6 +388,15 @@ class MainFrame(wx.Frame):
                 self.btn_start.Enable()
             else:
                 self.btn_start.Disable()
+
+    def update_rembg_state(self):
+        if is_video(self.txt_input.GetValue()):
+            self.chk_rembg.SetValue(False)
+            self.chk_rembg.Disable()
+            self.cbo_bg_model.Disable()
+        else:
+            self.chk_rembg.Enable()
+            self.cbo_bg_model.Enable()
 
     def on_click_btn_input_file(self, event):
         wildcard = (f"Image and Video files|{IMAGE_EXTENTIONS};{VIDEO_EXTENTIONS}"
@@ -415,6 +443,7 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
+        self.update_rembg_state()
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
@@ -492,6 +521,9 @@ class MainFrame(wx.Frame):
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
+
+            remove_bg=self.chk_rembg.GetValue(),
+            bg_model=self.cbo_bg_model.GetValue(),
 
             pad=pad,
             rotate_right=rotate_right,
