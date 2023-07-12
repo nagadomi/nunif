@@ -81,7 +81,7 @@ class MainFrame(wx.Frame):
             None,
             name="waifu2x-gui",
             title=T("waifu2x-gui"),
-            size=(820, 680),
+            size=(820, 720),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
