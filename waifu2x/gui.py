@@ -1,4 +1,4 @@
-import nunif.pythonw_fix
+import nunif.pythonw_fix  # noqa
 import locale
 import os
 from os import path
