@@ -35,11 +35,17 @@ def resolve_default_dir(src):
     return default_dir
 
 
-def to_float(s, default_value):
+def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):
+    if allow_empty and s is None or s == "":
+        return True
     try:
-        return float(s)
+        if is_int:
+            v = int(s)
+        else:
+            v = float(s)
+        return min_value <= v and v <= max_value
     except ValueError:
-        return default_value
+        return False
 
 
 myEVT_TQDM = wx.NewEventType()
@@ -472,9 +478,26 @@ class MainFrame(wx.Frame):
         else:
             return True
 
+    def show_validation_error_message(self, name, min_value, max_value):
+        wx.MessageDialog(
+            None,
+            message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
+            caption=T("Error"),
+            style=wx.OK).ShowModal()
+
     def on_click_btn_start(self, event):
+        if not validate_number(self.cbo_divergence.GetValue(), 0.0, 2.5):
+            self.show_validation_error_message(T("3D Strength"), 0.0, 2.5)
+            return
+        if not validate_number(self.cbo_convergence.GetValue(), 0.0, 1.0):
+            self.show_validation_error_message(T("Convergence Plane"), 0.0, 1.0)
+            return
+        if not validate_number(self.cbo_pad.GetValue(), 0.0, 10.0, allow_empty=True):
+            self.show_validation_error_message(T("Padding"), 0.0, 10.0)
+            return
         if not self.confirm_overwrite():
             return
+
         self.btn_start.Disable()
         self.btn_cancel.Enable()
         self.stop_event.clear()
@@ -513,14 +536,14 @@ class MainFrame(wx.Frame):
             output=self.txt_output.GetValue(),
             yes=True,  # TODO: remove this
 
-            divergence=to_float(self.cbo_divergence.GetValue(), 2.0),
-            convergence=to_float(self.cbo_convergence.GetValue(), 0.5),
+            divergence=float(self.cbo_divergence.GetValue()),
+            convergence=float(self.cbo_convergence.GetValue()),
             method=self.cbo_method.GetValue(),
             depth_model=self.cbo_depth_model.GetValue(),
             mapper=self.cbo_mapper.GetValue(),
             vr180=vr180,
 
-            max_fps=to_float(self.cbo_fps.GetValue(), 30),
+            max_fps=float(self.cbo_fps.GetValue()),
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
