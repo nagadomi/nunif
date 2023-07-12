@@ -218,7 +218,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_tune = wx.StaticText(self.grp_video, label=T("Tune"))
         self.cbo_tune = wx.ComboBox(
-            self.grp_video, choices=["", "film", "animation", "grain", "stillimage"],
+            self.grp_video, choices=["", "film", "animation", "grain", "stillimage", "psnr"],
             style=wx.CB_READONLY, name="cbo_tune")
         self.cbo_tune.SetSelection(0)
         self.chk_tune_fastdecode = wx.CheckBox(self.grp_video, label=T("fastdecode"),

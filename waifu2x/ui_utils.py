@@ -248,7 +248,7 @@ def create_parser(required_true=True):
                                  "medium", "slow", "slower", "veryslow", "placebo"],
                         help="encoder preset option (video only)")
     parser.add_argument("--tune", type=str, nargs="+", default=["zerolatency"],
-                        choices=["film", "animation", "grain", "stillimage",
+                        choices=["film", "animation", "grain", "stillimage", "psnr",
                                  "fastdecode", "zerolatency"],
                         help="encoder tunings option (video only)")
     parser.add_argument("--yes", "-y", action="store_true", default=False,
