@@ -144,7 +144,7 @@ class MainFrame(wx.Frame):
             self.grp_sr, label=T("Model"),
             choices=[T("artwork"), T("artwork") + "/" + T("scan"),
                      T("photo"), "cunet/art", "upconv_7/art", "upconv_7/photo"],
-            name="opt_model")
+            majorDimension=3, name="opt_model")
         self.model_dirs = [
             DEFAULT_ART_MODEL_DIR, DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR,
             path.join(MODEL_DIR, "cunet", "art"),
@@ -173,10 +173,10 @@ class MainFrame(wx.Frame):
             name="opt_upscaling")
         self.opt_upscaling.SetSelection(1)
 
-        layout = wx.GridBagSizer(vgap=8, hgap=8)
-        layout.Add(self.opt_model, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.opt_upscaling, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.opt_noise_level, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout = wx.BoxSizer(wx.VERTICAL)
+        layout.Add(self.opt_model, 0, wx.ALL | wx.EXPAND, border=4)
+        layout.Add(self.opt_upscaling, 0, wx.ALL | wx.EXPAND, border=4)
+        layout.Add(self.opt_noise_level, 0, wx.ALL | wx.EXPAND, border=4)
         sizer_sr = wx.StaticBoxSizer(self.grp_sr, wx.VERTICAL)
         sizer_sr.Add(layout, 1, wx.ALL | wx.EXPAND, 8)
 
