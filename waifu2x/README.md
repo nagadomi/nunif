@@ -23,6 +23,10 @@ In Ubuntu 22.04, gThumb(default image viewer) has a bug in rendering webp's alph
 `waifu2x/pretrained_models` is not automatically updated.
 If new `pretrained_models` are available, run `python -m waifu2x.download_models` manually after updating the sourcecode.
 
+# Graphical User Interface
+
+See [waifu2x GUI](docs/gui.md).
+
 # Command Line Interface
 
 See [waifu2x Command Line Interface](docs/cli.md).

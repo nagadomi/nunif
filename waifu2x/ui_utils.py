@@ -1,4 +1,3 @@
-# waifu2x
 import os
 from os import path
 import torch
@@ -24,17 +23,10 @@ from .download_models import main as download_main
 mimetypes.add_type("image/webp", ".webp")
 
 
-DEFAULT_ART_MODEL_DIR = path.abspath(path.join(
-    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
-    "swin_unet", "art"))
-
-DEFAULT_ART_SCAN_MODEL_DIR = path.abspath(path.join(
-    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
-    "swin_unet", "art_scan"))
-
-DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
-    path.join(path.dirname(path.abspath(__file__)), "pretrained_models"),
-    "swin_unet", "photo"))
+MODEL_DIR = path.join(path.dirname(path.abspath(__file__)), "pretrained_models")
+DEFAULT_ART_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art")
+DEFAULT_ART_SCAN_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art_scan")
+DEFAULT_PHOTO_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "photo")
 
 
 def find_subdir(dirname):
@@ -86,7 +78,9 @@ def process_images(ctx, files, output_dir, args):
                          load_func_kwargs={"color": "rgb", "keep_alpha": True})
     futures = []
     with PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
-        for im, meta in tqdm(loader, ncols=60):
+        tqdm_fn = args.state["tqdm_fn"] or tqdm
+        pbar = tqdm_fn(ncols=80, total=len(files))
+        for im, meta in loader:
             output_filename = path.join(
                 output_dir,
                 set_image_ext(path.basename(meta["filename"]), format=args.format))
@@ -97,8 +91,12 @@ def process_images(ctx, files, output_dir, args):
                 IL.save_image, output,
                 filename=output_filename,
                 meta=meta, format=args.format))
+            pbar.update(1)
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                break
         for f in futures:
             f.result()
+        pbar.close()
 
 
 def process_video(ctx, input_filename, args):
@@ -109,10 +107,6 @@ def process_video(ctx, input_filename, args):
 
         options = {"preset": args.preset, "crf": str(args.crf)}
         tune = []
-        if fps < 2:
-            tune += ["stillimage"]
-        if args.grain:
-            tune += ["grain"]
         if args.tune:
             tune += args.tune
         tune = set(tune)
@@ -167,7 +161,9 @@ def process_video(ctx, input_filename, args):
     VU.process_video(input_filename, output_filename,
                      config_callback=config_callback,
                      frame_callback=frame_callback,
-                     vf=args.vf)
+                     vf=args.vf,
+                     stop_event=args.state["stop_event"],
+                     tqdm_fn=args.state["tqdm_fn"])
 
 
 def process_file(ctx, input_filename, args):
