@@ -4,6 +4,8 @@ LOCALES = {
         "Output": "出力",
         "Choose a file": "ファイルを選択",
         "Choose a directory": "フォルダを選択",
+        "Set the same directory": "同じフォルダを設定",
+
         "Error": "エラー",
         "Initializing": "初期化中",
         "Cancelled": "キャンセル済み",
