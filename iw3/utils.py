@@ -366,7 +366,7 @@ def process_images(args, depth_model, side_model):
             #  f.result() # for debug
             futures.append(f)
             pbar.update(1)
-            if args.state["stop_event"].is_set():
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 break
         for f in futures:
             f.result()
@@ -587,6 +587,6 @@ def iw3_main(args):
                     im, _ = load_image_simple(input_file, color="rgb")
                     output = process_image(im, args, depth_model, side_model)
                     output.save(output_filename)
-                if args.state["stop_event"].is_set():
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     break
     return True
