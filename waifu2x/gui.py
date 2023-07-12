@@ -497,7 +497,7 @@ class MainFrame(wx.Frame):
         self.btn_cancel.Enable()
         self.stop_event.clear()
         self.prg_tqdm.SetValue(0)
-        self.SetStatusText(T("Initializing") + "...")
+        self.SetStatusText("...")
 
         parser = create_parser(required_true=False)
 
