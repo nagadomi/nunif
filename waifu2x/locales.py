@@ -48,13 +48,8 @@ LOCALES = {
         "Preset": "プリセット",
         "Tune": "チューニング",
 
-        "Background Removal": "背景除去",
-        "Seg Model": "領域分割モデル",
-        "Enable": "有効化",
-
         "Video Filter": "ビデオフィルタ",
         "Deinterlace": "デインターレース",
-        "Padding": "パディング",
         "Rotate": "回転",
         "Left 90 (counterclockwise)": "左に90°回転 (半時計回り)",
         "Right 90 (clockwise)": "右に90°回転 (時計回り)",
@@ -63,7 +58,7 @@ LOCALES = {
         "Processor": "プロセッサ",
         "Device": "デバイス",
         "Batch Size": "バッチサイズ",
-        "Low VRAM": "低VRAM",
+        "Tile Size": "分割サイズ",
     },
     "en_US": {}
 }
