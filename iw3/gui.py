@@ -435,6 +435,8 @@ class MainFrame(wx.Frame):
 
     def on_click_btn_output_dir(self, event):
         default_dir = resolve_default_dir(self.txt_output.GetValue())
+        if not path.exists(default_dir):
+            default_dir = path.dirname(default_dir)
         with wx.DirDialog(self.pnl_file, T("Choose a directory"),
                           defaultPath=default_dir,
                           style=wx.DD_DEFAULT_STYLE) as dlg_dir:
