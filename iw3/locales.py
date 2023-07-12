@@ -10,7 +10,7 @@ LOCALES = {
         "Finished": "完了",
         "Confirm": "確認",
         "already exists. Overwrite?": "すでに存在します。上書きしますか？",
-
+        "`{}` must be a number {} - {}": "`{}` は {} から {} の数字でなければなりません",
         "Stereo Generation": "ステレオ生成",
         "3D Strength": "3Dの強さ",
         "Convergence Plane": "収束平面",
