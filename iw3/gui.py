@@ -111,11 +111,16 @@ class MainFrame(wx.Frame):
         self.txt_output = wx.TextCtrl(self.pnl_file, name="txt_output")
         self.btn_input_file = wx.Button(self.pnl_file, label=T("..."),
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_file.SetToolTip(T("Choose a file"))
         self.btn_input_dir = wx.Button(self.pnl_file, label=T("..."),
                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
-        self.btn_output_file = wx.StaticText(self.pnl_file, label="")  # dummy
+        self.btn_input_dir.SetToolTip(T("Choose a directory"))
+        self.btn_same_output_dir = wx.Button(self.pnl_file, label=T("<<<"),
+                                             size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_same_output_dir.SetToolTip(T("Set the same directory"))
         self.btn_output_dir = wx.Button(self.pnl_file, label=T("..."),
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_output_dir.SetToolTip(T("Choose a directory"))
 
         layout = wx.FlexGridSizer(rows=2, cols=4, vgap=4, hgap=4)
         layout.Add(self.lbl_input, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
@@ -125,8 +130,8 @@ class MainFrame(wx.Frame):
 
         layout.Add(self.lbl_output, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_output, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
+        layout.Add(self.btn_same_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_output_file, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -360,6 +365,7 @@ class MainFrame(wx.Frame):
         self.btn_input_file.Bind(wx.EVT_BUTTON, self.on_click_btn_input_file)
         self.btn_input_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_input_dir)
         self.btn_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_output_dir)
+        self.btn_same_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_same_output_dir)
 
         self.txt_input.Bind(wx.EVT_TEXT, self.on_text_changed_txt_input)
         self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
@@ -406,6 +412,13 @@ class MainFrame(wx.Frame):
             self.chk_rembg.Enable()
             self.cbo_bg_model.Enable()
 
+    def set_same_output_dir(self):
+        selected_path = self.txt_input.GetValue()
+        if path.isdir(selected_path):
+            self.txt_output.SetValue(path.join(selected_path, "iw3"))
+        else:
+            self.txt_output.SetValue(path.join(path.dirname(selected_path), "iw3"))
+
     def on_click_btn_input_file(self, event):
         wildcard = (f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
                     f"|Video files|{VIDEO_EXTENSIONS}"
@@ -420,10 +433,7 @@ class MainFrame(wx.Frame):
             selected_path = dlg_file.GetPath()
             self.txt_input.SetValue(selected_path)
             if not self.txt_output.GetValue():
-                if path.isdir(selected_path):
-                    self.txt_output.SetValue(path.join(selected_path, "iw3"))
-                else:
-                    self.txt_output.SetValue(path.join(path.dirname(selected_path), "iw3"))
+                self.set_same_output_dir()
 
     def on_click_btn_input_dir(self, event):
         default_dir = resolve_default_dir(self.txt_input.GetValue())
@@ -435,10 +445,10 @@ class MainFrame(wx.Frame):
             selected_path = dlg_dir.GetPath()
             self.txt_input.SetValue(selected_path)
             if not self.txt_output.GetValue():
-                if path.isdir(selected_path):
-                    self.txt_output.SetValue(path.join(selected_path, "iw3"))
-                else:
-                    self.txt_output.SetValue(path.join(path.dirname(selected_path), "iw3"))
+                self.set_same_output_dir()
+
+    def on_click_btn_same_output_dir(self, event):
+        self.set_same_output_dir()
 
     def on_click_btn_output_dir(self, event):
         default_dir = resolve_default_dir(self.txt_output.GetValue())
