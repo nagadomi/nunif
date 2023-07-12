@@ -19,10 +19,6 @@ from .utils import Waifu2x
 from .download_models import main as download_main
 
 
-# Add missing webp mimetype
-mimetypes.add_type("image/webp", ".webp")
-
-
 MODEL_DIR = path.join(path.dirname(path.abspath(__file__)), "pretrained_models")
 DEFAULT_ART_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art")
 DEFAULT_ART_SCAN_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art_scan")

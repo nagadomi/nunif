@@ -19,10 +19,6 @@ import nunif.utils.video as VU
 from nunif.utils.ui import HiddenPrints
 
 
-# Add missing webp mimetype
-mimetypes.add_type("image/webp", ".webp")
-
-
 def normalize_depth(depth, depth_min=None, depth_max=None):
     depth = depth.float()
     if depth_min is None:

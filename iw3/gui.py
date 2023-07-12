@@ -13,13 +13,14 @@ import wx.lib.agw.persist as wxpm
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_video, is_output_dir, make_output_filename)
+from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from .locales import LOCALES
 from . import models # noqa
 import torch
 
 
-IMAGE_EXTENTIONS = "*.png;*.jpg;*.jpeg;*.bmp;*.webp"
-VIDEO_EXTENTIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
+IMAGE_EXTENSIONS = ";".join(["*" + ext for ext in LOADER_SUPPORTED_EXTENSIONS])
+VIDEO_EXTENSIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
 CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "iw3-gui.cfg")
 os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
 
@@ -406,9 +407,9 @@ class MainFrame(wx.Frame):
             self.cbo_bg_model.Enable()
 
     def on_click_btn_input_file(self, event):
-        wildcard = (f"Image and Video files|{IMAGE_EXTENTIONS};{VIDEO_EXTENTIONS}"
-                    f"|Video files|{VIDEO_EXTENTIONS}"
-                    f"|Image files|{IMAGE_EXTENTIONS}"
+        wildcard = (f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
+                    f"|Video files|{VIDEO_EXTENSIONS}"
+                    f"|Image files|{IMAGE_EXTENSIONS}"
                     "|All Files|*.*")
         default_dir = resolve_default_dir(self.txt_input.GetValue())
         with wx.FileDialog(self.pnl_file, T("Choose a file"),
