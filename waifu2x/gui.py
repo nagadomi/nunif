@@ -1,3 +1,4 @@
+import nunif.pythonw_fix
 import locale
 import os
 from os import path
