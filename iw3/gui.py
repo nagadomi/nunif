@@ -36,7 +36,7 @@ def resolve_default_dir(src):
 
 
 def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):
-    if allow_empty and s is None or s == "":
+    if allow_empty and (s is None or s == ""):
         return True
     try:
         if is_int:
