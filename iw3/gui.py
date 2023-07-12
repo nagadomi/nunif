@@ -528,7 +528,7 @@ class MainFrame(wx.Frame):
             pad=pad,
             rotate_right=rotate_right,
             rotate_left=rotate_left,
-            vr=vf,
+            vf=vf,
 
             gpu=int(self.cbo_device.GetClientData(self.cbo_device.GetSelection())),
             batch_size=int(self.cbo_batch_size.GetValue()),
