@@ -578,6 +578,7 @@ class MainFrame(wx.Frame):
             ret = result.get()  # noqa
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
+                self.SetStatusText(T("Finished"))
             else:
                 self.SetStatusText(T("Cancelled"))
         except:  # noqa
@@ -605,6 +606,7 @@ class MainFrame(wx.Frame):
             self.prg_tqdm.SetRange(value)
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
+            self.SetStatusText(f"0/{value}")
         elif type == 1:
             # update
             self.prg_tqdm.SetValue(self.prg_tqdm.GetValue() + value)
@@ -620,7 +622,7 @@ class MainFrame(wx.Frame):
             self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ]")
         elif type == 2:
             # close
-            self.SetStatusText(T("Finished"))
+            pass
 
 
 LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
