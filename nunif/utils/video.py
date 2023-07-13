@@ -143,12 +143,16 @@ def process_video(input_path, output_path,
     video_output_stream.height = output_size[1]
     video_output_stream.options = config.options
     if audio_input_stream is not None:
-        try:
-            audio_output_stream = output_container.add_stream(template=audio_input_stream)
-            audio_copy = True
-        except ValueError:
-            audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+        if audio_input_stream.rate < 16000:
+            audio_output_stream = output_container.add_stream("aac", 16000)
             audio_copy = False
+        else:
+            try:
+                audio_output_stream = output_container.add_stream(template=audio_input_stream)
+                audio_copy = True
+            except ValueError:
+                audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+                audio_copy = False
 
     desc = (title if title else output_path)
     ncols = len(desc) + 60
