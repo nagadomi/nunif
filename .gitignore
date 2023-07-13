@@ -33,6 +33,9 @@ tmp
 /font_resource/fonts
 /text_resource/aozora/data
 /cc0
+/windows_package/python
+/windows_package/git
+/windows_package/nunif
 .python-version
 
 /cliqa/pretrained_models

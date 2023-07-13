@@ -4,13 +4,15 @@ LOCALES = {
         "Output": "出力",
         "Choose a file": "ファイルを選択",
         "Choose a directory": "フォルダを選択",
+        "Set the same directory": "同じフォルダを設定",
+
         "Error": "エラー",
         "Initializing": "初期化中",
         "Cancelled": "キャンセル済み",
         "Finished": "完了",
         "Confirm": "確認",
         "already exists. Overwrite?": "すでに存在します。上書きしますか？",
-
+        "`{}` must be a number {} - {}": "`{}` は {} から {} の数字でなければなりません",
         "Stereo Generation": "ステレオ生成",
         "3D Strength": "3Dの強さ",
         "Convergence Plane": "収束平面",
@@ -25,6 +27,10 @@ LOCALES = {
         "CRF": "CRF(固定品質)",
         "Preset": "プリセット",
         "Tune": "チューニング",
+
+        "Background Removal": "背景除去",
+        "Seg Model": "領域分割モデル",
+        "Enable": "有効化",
 
         "Video Filter": "ビデオフィルタ",
         "Deinterlace": "デインターレース",
