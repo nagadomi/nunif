@@ -159,9 +159,9 @@ class MainFrame(wx.Frame):
         self.opt_model.SetItemToolTip(0, T("Anime Style Art, Cliparts"))
         self.opt_model.SetItemToolTip(1, T("Manga, Anime Screencaps, Anime Style Art for more clear results"))
         self.opt_model.SetItemToolTip(2, T("Photograph"))
-        self.opt_model.SetItemToolTip(3, T("Older edition Art model, fast"))
-        self.opt_model.SetItemToolTip(4, T("Older edition Art model, veryfast"))
-        self.opt_model.SetItemToolTip(5, T("Older edition Photo model, veryfast"))
+        self.opt_model.SetItemToolTip(3, T("Old version, Art model, fast"))
+        self.opt_model.SetItemToolTip(4, T("Old version, Art model, veryfast"))
+        self.opt_model.SetItemToolTip(5, T("Old version, Photo model, veryfast"))
 
         self.opt_noise_level = wx.RadioBox(
             self.grp_sr, label=T("noise_reduction"),

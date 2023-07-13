@@ -39,6 +39,13 @@ LOCALES = {
 
         "Superresolution": "超解像",
         "Model": "モデル",
+        "Anime Style Art, Cliparts": "アニメスタイルアート、クリップアート",
+        "Manga, Anime Screencaps, Anime Style Art for more clear results":
+        "漫画, アニメキャプチャ, イラスト, よりくっきりした結果",
+        "Photograph": "写真・実写",
+        "Old version, Art model, fast": "旧バージョン, イラストモデル, 速い",
+        "Old version, Art model, veryfast": "旧バージョン, イラストモデル, とても速い",
+        "Old version, Photo model, veryfast": "旧バージョン, 写真モデル, とても速い",
 
         "Video Encoding": "動画圧縮",
 
