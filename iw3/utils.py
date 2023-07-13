@@ -238,7 +238,7 @@ ZOED_MODEL_FILES = {
 
 def has_depth_model(model_type):
     assert model_type in ZOED_MODEL_FILES
-    return path.exists(ZOED_MIDAS_MODEL_FILE) and path.exists(ZOED_MODEL_FILES[model_type])
+    return path.exists(ZOED_MODEL_FILES[model_type])
 
 
 def force_update_midas_model():
