@@ -4,7 +4,6 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 import argparse
-import threading
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import math
 from tqdm import tqdm
@@ -227,6 +226,19 @@ def load_depth_model(model_type="ZoeD_N", gpu=0):
     device = create_device(gpu)
     model = model.to(device).eval()
     return model
+
+
+ZOED_MIDAS_MODEL_FILE = path.join(HUB_MODEL_DIR, "checkpoints", "dpt_beit_large_384.pt")
+ZOED_MODEL_FILES = {
+    "ZoeD_N": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_N.pt"),
+    "ZoeD_K": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_K.pt"),
+    "ZoeD_NK": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_NK.pt"),
+}
+
+
+def has_depth_model(model_type):
+    assert model_type in ZOED_MODEL_FILES
+    return path.exists(ZOED_MIDAS_MODEL_FILE) and path.exists(ZOED_MODEL_FILES[model_type])
 
 
 def force_update_midas_model():
@@ -536,8 +548,12 @@ def create_parser(required_true=True):
     return parser
 
 
-def set_state_args(args, stop_event=None, tqdm_fn=None):
-    args.state = {"stop_event": stop_event, "tqdm_fn": tqdm_fn}
+def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
+    args.state = {
+        "stop_event": stop_event,
+        "tqdm_fn": tqdm_fn,
+        "depth_model": depth_model,
+    }
     return args
 
 
@@ -553,7 +569,11 @@ def iw3_main(args):
     else:
         args.bg_session = None
 
-    depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
+    if args.state["depth_model"] is not None:
+        depth_model = args.state["depth_model"]
+    else:
+        depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
+
     if args.method == "row_flow":
         side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu])[0].eval()
     else:

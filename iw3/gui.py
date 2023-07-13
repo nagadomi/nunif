@@ -12,7 +12,9 @@ from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
 from .utils import (
     create_parser, set_state_args, iw3_main,
-    is_video, is_output_dir, make_output_filename)
+    is_video, is_output_dir, make_output_filename,
+    load_depth_model, has_depth_model,
+)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from .locales import LOCALES
@@ -94,6 +96,9 @@ class MainFrame(wx.Frame):
         self.start_time = 0
         self.input_type = None
         self.stop_event = threading.Event()
+        self.depth_model = None
+        self.depth_model_type = None
+        self.depth_model_device_id = None
         self.initialize_component()
 
     def initialize_component(self):
@@ -544,6 +549,26 @@ class MainFrame(wx.Frame):
             vf += [self.txt_vf.GetValue()]
         vf = ",".join(vf)
 
+        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        depth_model_type = self.cbo_depth_model.GetValue()
+        if (self.depth_model is None or (self.depth_model_type != depth_model_type or
+                                         self.depth_model_device_id != device_id)):
+            if has_depth_model(depth_model_type):
+                # Realod depth model
+                self.SetStatusText(f"Loading {depth_model_type}...")
+                self.depth_model = None
+                gc.collect()
+                torch.cuda.empty_cache()
+                self.depth_model = load_depth_model(model_type=depth_model_type, gpu=device_id)
+                self.depth_model_type = depth_model_type
+                self.depth_model_device_id = device_id
+            else:
+                # Need to download the model, so download the model in the worker thread
+                self.SetStatusText(f"Downloading {depth_model_type}...")
+                self.depth_model = None
+                self.depth_model_type = None
+                self.depth_model_device_id = None
+
         parser.set_defaults(
             input=self.txt_input.GetValue(),
             output=self.txt_output.GetValue(),
@@ -552,7 +577,7 @@ class MainFrame(wx.Frame):
             divergence=float(self.cbo_divergence.GetValue()),
             convergence=float(self.cbo_convergence.GetValue()),
             method=self.cbo_method.GetValue(),
-            depth_model=self.cbo_depth_model.GetValue(),
+            depth_model=depth_model_type,
             mapper=self.cbo_mapper.GetValue(),
             vr180=vr180,
 
@@ -569,7 +594,7 @@ class MainFrame(wx.Frame):
             rotate_left=rotate_left,
             vf=vf,
 
-            gpu=int(self.cbo_device.GetClientData(self.cbo_device.GetSelection())),
+            gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             tta=self.chk_tta.GetValue(),
             disable_zoedepth_batch=self.chk_low_vram.GetValue(),
@@ -578,7 +603,9 @@ class MainFrame(wx.Frame):
         set_state_args(
             args,
             stop_event=self.stop_event,
-            tqdm_fn=functools.partial(TQDMGUI, self))
+            tqdm_fn=functools.partial(TQDMGUI, self),
+            depth_model=self.depth_model,
+        )
         startWorker(self.on_exit_worker, iw3_main, wargs=(args,))
         self.processing = True
 
