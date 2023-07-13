@@ -16,7 +16,11 @@ from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, get_model_device
 from nunif.device import create_device
 import nunif.utils.video as VU
-from nunif.utils.ui import HiddenPrints
+from nunif.utils.ui import HiddenPrints, TorchHubDir
+
+
+FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow.pth")
+HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 
 
 def normalize_depth(depth, depth_min=None, depth_max=None):
@@ -217,9 +221,9 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
 
 
 def load_depth_model(model_type="ZoeD_N", gpu=0):
-    with HiddenPrints():
+    with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         model = torch.hub.load("isl-org/ZoeDepth:main", model_type, config_mode="infer",
-                               pretrained=True, verbose=False)
+                               pretrained=True, verbose=False, trust_repo=True)
     device = create_device(gpu)
     model = model.to(device).eval()
     return model
@@ -228,7 +232,8 @@ def load_depth_model(model_type="ZoeD_N", gpu=0):
 def force_update_midas_model():
     # See https://github.com/isl-org/ZoeDepth/blob/main/hubconf.py
     # Triggers fresh download of MiDaS repo
-    torch.hub.help("isl-org/MiDaS", "DPT_BEiT_L_384", force_reload=True)
+    with TorchHubDir(HUB_MODEL_DIR):
+        torch.hub.help("isl-org/MiDaS", "DPT_BEiT_L_384", force_reload=True, trust_repo=True)
 
 
 # Filename suffix for VR Player's video format detection
@@ -446,9 +451,6 @@ def process_video(args, depth_model, side_model):
         process_video_keyframes(args, depth_model, side_model)
     else:
         process_video_full(args, depth_model, side_model)
-
-
-FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow.pth")
 
 
 def create_parser(required_true=True):

@@ -36,6 +36,7 @@ tmp
 /windows_package/python
 /windows_package/git
 /windows_package/nunif
+/iw3/pretrained_models/hub
 .python-version
 
 /cliqa/pretrained_models
