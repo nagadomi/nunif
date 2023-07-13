@@ -20,6 +20,8 @@ from nunif.utils.ui import HiddenPrints, TorchHubDir
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow.pth")
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+REMBG_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "rembg")
+os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
 
 
 def normalize_depth(depth, depth_min=None, depth_max=None):
