@@ -19,10 +19,6 @@ import nunif.utils.video as VU
 from nunif.utils.ui import HiddenPrints
 
 
-# Add missing webp mimetype
-mimetypes.add_type("image/webp", ".webp")
-
-
 def normalize_depth(depth, depth_min=None, depth_max=None):
     depth = depth.float()
     if depth_min is None:
@@ -501,7 +497,7 @@ def create_parser(required_true=True):
                                  "medium", "slow", "slower", "veryslow", "placebo"],
                         help="encoder preset option for video")
     parser.add_argument("--tune", type=str, nargs="+", default=["zerolatency"],
-                        choices=["film", "animation", "grain", "stillimage",
+                        choices=["film", "animation", "grain", "stillimage", "psnr",
                                  "fastdecode", "zerolatency"],
                         help="encoder tunings option for video")
     parser.add_argument("--yes", "-y", action="store_true", default=False,

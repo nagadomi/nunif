@@ -5,10 +5,16 @@ from threading import Thread, Event
 from queue import Queue
 from .. logger import logger
 from . import pil_io
+import mimetypes
+
+
+# Add missing mimetypes
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("image/vnd.ms-dds", ".dds")
 
 
 # TODO: there are other extensions that can be used
-IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
+IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp', '.dds')
 
 
 def image_load_task(q, stop_flag, files, max_queue_size, load_func):
