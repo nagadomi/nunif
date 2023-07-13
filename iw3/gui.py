@@ -14,12 +14,14 @@ from .utils import (
     create_parser, set_state_args, iw3_main,
     is_video, is_output_dir, make_output_filename)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
+from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from .locales import LOCALES
 from . import models # noqa
 import torch
 
 
 IMAGE_EXTENSIONS = ";".join(["*" + ext for ext in LOADER_SUPPORTED_EXTENSIONS])
+VIDEO_EXTENSIONS = ";".join(["*" + ext for ext in KNOWN_VIDEO_EXTENSIONS])
 VIDEO_EXTENSIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
 CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "iw3-gui.cfg")
 os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)

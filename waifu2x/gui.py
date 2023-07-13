@@ -18,13 +18,14 @@ from .ui_utils import (
     MODEL_DIR, DEFAULT_ART_MODEL_DIR,
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
+from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from .locales import LOCALES
 from . import models # noqa
 import torch
 
 
 IMAGE_EXTENSIONS = ";".join(["*" + ext for ext in LOADER_SUPPORTED_EXTENSIONS])
-VIDEO_EXTENSIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
+VIDEO_EXTENSIONS = ";".join(["*" + ext for ext in KNOWN_VIDEO_EXTENSIONS])
 CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "waifu2x-gui.cfg")
 os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
 

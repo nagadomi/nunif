@@ -2,6 +2,25 @@ import av
 import math
 from tqdm import tqdm
 from PIL import Image
+import mimetypes
+
+
+# Add video mimetypes that does not exist in mimetypes
+mimetypes.add_type("video/x-ms-asf", ".asf")
+mimetypes.add_type("video/x-ms-vob", ".vob")
+mimetypes.add_type("video/divx", ".divx")
+mimetypes.add_type("video/3gpp", ".3gp")
+mimetypes.add_type("video/ogg", ".ogg")
+mimetypes.add_type("video/3gpp2", ".3g2")
+mimetypes.add_type("video/m2ts", ".m2ts")
+mimetypes.add_type("video/m2ts", ".ts")
+mimetypes.add_type("video/vnd.rn-realmedia", ".rm")  # fake
+
+
+VIDEO_EXTENSIONS = [
+    ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".mp2", ".avi", ".wmv", ".mov", ".flv", ".webm",
+    ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
+]
 
 
 def get_fps(stream):
