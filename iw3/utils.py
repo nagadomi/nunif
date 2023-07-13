@@ -243,6 +243,10 @@ def has_depth_model(model_type):
     return path.exists(ZOED_MODEL_FILES[model_type])
 
 
+def has_rembg_model(model_type):
+    return path.exists(path.join(REMBG_MODEL_DIR, f"{model_type}.onnx"))
+
+
 def force_update_midas_model():
     # See https://github.com/isl-org/ZoeDepth/blob/main/hubconf.py
     # Triggers fresh download of MiDaS repo

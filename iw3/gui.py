@@ -13,7 +13,7 @@ import wx.lib.agw.persist as wxpm
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_video, is_output_dir, make_output_filename,
-    load_depth_model, has_depth_model,
+    load_depth_model, has_depth_model, has_rembg_model,
 )
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
@@ -569,6 +569,11 @@ class MainFrame(wx.Frame):
                 self.depth_model_type = None
                 self.depth_model_device_id = None
 
+        remove_bg = self.chk_rembg.GetValue()
+        bg_model_type = self.cbo_bg_model.GetValue()
+        if remove_bg and not has_rembg_model(bg_model_type):
+            self.SetStatusText(f"Downloading {bg_model_type}...")
+
         parser.set_defaults(
             input=self.txt_input.GetValue(),
             output=self.txt_output.GetValue(),
@@ -586,8 +591,8 @@ class MainFrame(wx.Frame):
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
 
-            remove_bg=self.chk_rembg.GetValue(),
-            bg_model=self.cbo_bg_model.GetValue(),
+            remove_bg=remove_bg,
+            bg_model=bg_model_type,
 
             pad=pad,
             rotate_right=rotate_right,
