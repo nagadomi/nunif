@@ -8,7 +8,7 @@ or
 python -m waifu2x.gui --lang en_US
 ```
 
-![waifu2x-gui](https://github.com/nagadomi/nunif/assets/287255/251342dc-24e7-4f54-9b77-1673f6b8f3b2)
+![waifu2x-gui](https://github.com/nagadomi/nunif/assets/287255/2613b8d5-c735-4b31-aa63-1c02ee620331)
 
 It requires `wxpython` to be installed.
 
