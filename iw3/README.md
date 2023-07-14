@@ -138,10 +138,10 @@ Also, on Pigasus, you can zoom and pan the image by double-clicking the trigger 
 
 ### CUDA Out of Memory
 
-Try `--disable-zoedepth-batch` option.
+Use `--low-vram` option.
 
-I tested this program on RTX 3070 Ti (8GB VRAM).
-Perhaps 4GB VRAM should be enough to run this program.
+I tested this program on RTX 3070 Ti (8GB VRAM) and GTX 1050 Ti (4GB VRAM, Laptop).
+Both work with the default option.
 
 ### How to convert rotated(height width swapped) video correctly
 

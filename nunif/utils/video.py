@@ -44,6 +44,10 @@ def get_frames(stream):
         return guess_frames(stream)
 
 
+def from_image(im):
+    return av.video.frame.VideoFrame.from_image(im)
+
+
 def _print_len(stream):
     print("frames", stream.frames)
     print("guessed_frames", guess_frames(stream))
@@ -122,7 +126,11 @@ def test_output_size(frame_callback, input_width, input_height):
     # TODO: video filter
     empty_image = Image.new("RGB", (input_width, input_height), (128, 128, 128))
     test_frame = av.video.frame.VideoFrame.from_image(empty_image)
-    output_frame = frame_callback(test_frame)
+    while True:
+        output_frame = get_new_frames(frame_callback(test_frame))
+        if output_frame:
+            output_frame = output_frame[0]
+            break
     return output_frame.width, output_frame.height
 
 

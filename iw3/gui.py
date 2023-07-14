@@ -335,11 +335,15 @@ class MainFrame(wx.Frame):
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
 
-        self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Batch Size"))
-        self.cbo_batch_size = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
-                                          name="cbo_batch_size")
-        for n in (64, 32, 16, 8, 4):
-            self.cbo_batch_size.Append(str(n), n)
+        self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
+        self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
+                                               choices=[str(n) for n in (16, 8, 4, 2, 1)],
+                                               style=wx.CB_READONLY, name="cbo_zoed_batch_size")
+        self.cbo_zoed_batch_size.SetSelection(3)
+        self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Stereo") + " " + T("Batch Size"))
+        self.cbo_batch_size = wx.ComboBox(self.grp_processor,
+                                          choices=[str(n) for n in (64, 32, 16, 8, 4)],
+                                          style=wx.CB_READONLY, name="cbo_batch_size")
         self.cbo_batch_size.SetSelection(1)
 
         self.chk_low_vram = wx.CheckBox(self.grp_processor, label=T("Low VRAM"), name="chk_low_vram")
@@ -348,10 +352,12 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_batch_size, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (2, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_batch_size, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_batch_size, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (3, 1), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -628,8 +634,9 @@ class MainFrame(wx.Frame):
 
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
+            zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
             tta=self.chk_tta.GetValue(),
-            disable_zoedepth_batch=self.chk_low_vram.GetValue(),
+            low_vram=self.chk_low_vram.GetValue(),
         )
         args = parser.parse_args()
         set_state_args(

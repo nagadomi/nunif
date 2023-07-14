@@ -42,7 +42,9 @@ LOCALES = {
         "Processor": "プロセッサ",
         "Device": "デバイス",
         "Batch Size": "バッチサイズ",
-        "Low VRAM": "低VRAM",
+        "Depth": "深度",
+        "Stereo": "ステレオ",
+        "Low VRAM": "低ビデオメモリ",
     },
 }
 # For Windows

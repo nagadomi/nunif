@@ -69,16 +69,39 @@ def make_input_tensor(c, depth16, divergence, convergence,
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True):
-    x = TF.to_tensor(im).unsqueeze(0).to(model.device)
-    if flip_aug:
-        x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
+def batch_infer(model, im, flip_aug=True, low_vram=False):
+    batch = False
+    if torch.is_tensor(im):
+        assert im.ndim == 3 or im.ndim == 4
+        if im.ndim == 3:
+            im = im.unsqueeze(0)
+        else:
+            batch = True
+        x = im.to(model.device)
+    else:
+        # PIL
+        x = TF.to_tensor(im).unsqueeze(0).to(model.device)
 
-    pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-    pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-    x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+    if not low_vram:
+        if flip_aug:
+            x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
+        pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
+        pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
+        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        out = model(x)['metric_depth']
+    else:
+        x_org = x
+        pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
+        pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
+        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        out = model(x)['metric_depth']
+        if flip_aug:
+            x = torch.flip(x_org, dims=[3])
+            pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
+            pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
+            x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+            out = torch.cat([out, model(x)['metric_depth']], dim=0)
 
-    out = model(x)['metric_depth']
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
                             mode="bicubic", align_corners=False)
@@ -87,9 +110,18 @@ def batch_infer(model, im, flip_aug=True):
     if pad_w > 0:
         out = out[:, :, :, pad_w:-pad_w]
     if flip_aug:
-        z = (out[0] + torch.flip(out[1], dims=[2])) * 128
+        if batch:
+            n = out.shape[0] // 2
+            z = torch.empty((n, *out.shape[1:]), device=out.device)
+            for i in range(n):
+                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 128
+        else:
+            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 128
     else:
-        z = out[0] * 256
+        z = out * 256
+    if not batch:
+        assert z.shape[0] == 1
+        z = z.squeeze(0)
     return z.cpu().to(torch.int16)
 
 
@@ -288,47 +320,55 @@ def remove_bg_from_image(im, bg_session):
     return im
 
 
+def preprocess_image(im, args):
+    if args.rotate_left:
+        im = im.transpose(Image.Transpose.ROTATE_90)
+    elif args.rotate_right:
+        im = im.transpose(Image.Transpose.ROTATE_270)
+    im_org = TF.to_tensor(im)
+    if args.bg_session is not None:
+        im = remove_bg_from_image(im, args.bg_session)
+
+    return im_org, TF.to_tensor(im)
+
+
+def postprocess_image(depth, im_org, args, side_model, device):
+    if args.method == "grid_sample":
+        depth = normalize_depth(depth.squeeze(0))
+        depth = get_mapper(args.mapper)(depth)
+        left_eye = apply_divergence_grid_sample(
+            im_org, depth,
+            args.divergence, convergence=args.convergence, shift=-1,
+            device=device)
+        right_eye = apply_divergence_grid_sample(
+            im_org, depth,
+            args.divergence, convergence=args.convergence, shift=1,
+            device=device)
+    else:
+        left_eye = apply_divergence_nn(side_model, im_org, depth,
+                                       args.divergence, args.convergence,
+                                       args.mapper, shift=-1, batch_size=args.batch_size)
+        right_eye = apply_divergence_nn(side_model, im_org, depth,
+                                        args.divergence, args.convergence,
+                                        args.mapper, shift=1, batch_size=args.batch_size)
+    if args.pad is not None:
+        pad_h = int(left_eye.shape[1] * args.pad) // 2
+        pad_w = int(left_eye.shape[2] * args.pad) // 2
+        left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+        right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+    if args.vr180:
+        left_eye = equirectangular_projection(left_eye, device=device)
+        right_eye = equirectangular_projection(right_eye, device=device)
+    sbs = torch.cat([left_eye, right_eye], dim=2)
+    sbs = TF.to_pil_image(sbs)
+    return sbs
+
+
 def process_image_impl(im, args, depth_model, side_model):
     with torch.inference_mode():
-        if args.rotate_left:
-            im = im.transpose(Image.Transpose.ROTATE_90)
-        elif args.rotate_right:
-            im = im.transpose(Image.Transpose.ROTATE_270)
-        im_org = TF.to_tensor(im)
-        if args.bg_session is not None:
-            im = remove_bg_from_image(im, args.bg_session)
-        if args.disable_zoedepth_batch and args.tta:
-            depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
-        else:
-            depth = batch_infer(depth_model, im, flip_aug=args.tta)
-        if args.method == "grid_sample":
-            depth = normalize_depth(depth.squeeze(0))
-            depth = get_mapper(args.mapper)(depth)
-            left_eye = apply_divergence_grid_sample(
-                im_org, depth,
-                args.divergence, convergence=args.convergence, shift=-1,
-                device=depth_model.device)
-            right_eye = apply_divergence_grid_sample(
-                im_org, depth,
-                args.divergence, convergence=args.convergence, shift=1,
-                device=depth_model.device)
-        else:
-            left_eye = apply_divergence_nn(side_model, im_org, depth,
-                                           args.divergence, args.convergence,
-                                           args.mapper, shift=-1, batch_size=args.batch_size)
-            right_eye = apply_divergence_nn(side_model, im_org, depth,
-                                            args.divergence, args.convergence,
-                                            args.mapper, shift=1, batch_size=args.batch_size)
-        if args.pad is not None:
-            pad_h = int(left_eye.shape[1] * args.pad) // 2
-            pad_w = int(left_eye.shape[2] * args.pad) // 2
-            left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
-            right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
-        if args.vr180:
-            left_eye = equirectangular_projection(left_eye, device=depth_model.device)
-            right_eye = equirectangular_projection(right_eye, device=depth_model.device)
-        sbs = torch.cat([left_eye, right_eye], dim=2)
-        sbs = TF.to_pil_image(sbs)
+        im_org, im = preprocess_image(im, args)
+        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
+        sbs = postprocess_image(depth, im_org, args, side_model, depth_model.device)
         return sbs
 
 
@@ -340,10 +380,7 @@ def generate_depth_debug(im, args, depth_model, side_model):
             im = im.transpose(Image.Transpose.ROTATE_270)
         if args.bg_session is not None:
             im = remove_bg_from_image(im, args.bg_session)
-        if args.disable_zoedepth_batch:
-            depth = TF.to_tensor(depth_model.infer_pil(im, output_type="pil"))
-        else:
-            depth = batch_infer(depth_model, im, flip_aug=args.tta)
+        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
         depth = depth.float()
         min_depth, max_depth = depth.min(), depth.max()
         mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
@@ -410,10 +447,37 @@ def process_video_full(args, depth_model, side_model):
             options=options
         )
 
+    minibatch_queue = []
+
+    @torch.inference_mode()
+    def run_minibatch():
+        if not minibatch_queue:
+            return []
+        x_orgs = []
+        xs = []
+        for im in minibatch_queue:
+            x_org, x = preprocess_image(im, args)
+            x_orgs.append(x_org)
+            xs.append(x.unsqueeze(0))
+        minibatch_queue.clear()
+        x = torch.cat(xs, dim=0)
+        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram)
+        return [VU.from_image(postprocess_image(depth, x_org, args, side_model, depth_model.device))
+                for depth, x_org in zip(depths, x_orgs)]
+
     def frame_callback(frame):
-        if frame is None:
-            return None
-        return frame.from_image(process_image(frame.to_image(), args, depth_model, side_model))
+        if not args.low_vram:
+            if frame is None:
+                return run_minibatch()
+            minibatch_queue.append(frame.to_image())
+            if len(minibatch_queue) >= args.zoed_batch_size:
+                return run_minibatch()
+            else:
+                return None
+        else:
+            if frame is None:
+                return None
+            return VU.from_image(process_image(frame.to_image(), args, depth_model, side_model))
 
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
@@ -508,8 +572,10 @@ def create_parser(required_true=True):
                         help="force update midas models from torch hub")
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when output file is already exist")
-    parser.add_argument("--batch-size", type=int, default=64,
-                        help="batch size for 256x256 tiled input")
+    parser.add_argument("--batch-size", type=int, default=64, choices=[Range(1, 256)],
+                        help="batch size for RowFlow model, 256x256 tiled input")
+    parser.add_argument("--zoed-batch-size", type=int, default=2, choices=[Range(1, 64)],
+                        help="batch size for ZoeDepth model. ignored when --low-vram")
     parser.add_argument("--max-fps", type=float, default=30,
                         help="max framerate for video. output fps = min(fps, --max-fps)")
     parser.add_argument("--crf", type=int, default=20,
@@ -536,7 +602,7 @@ def create_parser(required_true=True):
                         help="Rotate 90 degrees to the left(counterclockwise)")
     parser.add_argument("--rotate-right", action="store_true",
                         help="Rotate 90 degrees to the right(clockwise)")
-    parser.add_argument("--disable-zoedepth-batch", action="store_true",
+    parser.add_argument("--low-vram", action="store_true",
                         help="disable batch processing for low memory GPU")
     parser.add_argument("--keyframe", action="store_true",
                         help="process only keyframe as image")
