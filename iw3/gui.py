@@ -83,6 +83,15 @@ class TQDMGUI():
 LAYOUT_DEBUG = False
 
 
+class IW3App(wx.App):
+    def OnInit(self):
+        main_frame = MainFrame()
+        self.SetAppName(main_frame.GetTitle())
+        main_frame.Show()
+        self.SetTopWindow(main_frame)
+        return True
+
+
 class MainFrame(wx.Frame):
     def __init__(self):
         super(MainFrame, self).__init__(
@@ -685,9 +694,7 @@ def main():
         LOCALE_DICT = LOCALES.get(args.lang, {})
     sys.argv = [sys.argv[0]]  # clear command arguments
 
-    app = wx.App()
-    main = MainFrame()
-    main.Show()
+    app = IW3App()
     app.MainLoop()
 
 
