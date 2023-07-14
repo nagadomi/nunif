@@ -579,6 +579,7 @@ def iw3_main(args):
         depth_model = args.state["depth_model"]
     else:
         depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
+        args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
         side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu])[0].eval()
@@ -613,4 +614,5 @@ def iw3_main(args):
                     output.save(output_filename)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     break
-    return True
+
+    return args

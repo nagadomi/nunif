@@ -13,7 +13,7 @@ import wx.lib.agw.persist as wxpm
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_video, is_output_dir, make_output_filename,
-    load_depth_model, has_depth_model, has_rembg_model,
+    has_depth_model, has_rembg_model,
 )
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
@@ -584,21 +584,17 @@ class MainFrame(wx.Frame):
         depth_model_type = self.cbo_depth_model.GetValue()
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
                                          self.depth_model_device_id != device_id)):
+            self.depth_model = None
+            self.depth_model_type = None
+            self.depth_model_device_id = None
+            gc.collect()
+            torch.cuda.empty_cache()
             if has_depth_model(depth_model_type):
                 # Realod depth model
                 self.SetStatusText(f"Loading {depth_model_type}...")
-                self.depth_model = None
-                gc.collect()
-                torch.cuda.empty_cache()
-                self.depth_model = load_depth_model(model_type=depth_model_type, gpu=device_id)
-                self.depth_model_type = depth_model_type
-                self.depth_model_device_id = device_id
             else:
-                # Need to download the model, so download the model in the worker thread
+                # Need to download the model
                 self.SetStatusText(f"Downloading {depth_model_type}...")
-                self.depth_model = None
-                self.depth_model_type = None
-                self.depth_model_device_id = None
 
         remove_bg = self.chk_rembg.GetValue()
         bg_model_type = self.cbo_bg_model.GetValue()
@@ -647,13 +643,17 @@ class MainFrame(wx.Frame):
 
     def on_exit_worker(self, result):
         try:
-            ret = result.get()  # noqa
+            args = result.get()
+            self.depth_model = args.state["depth_model"]
+            self.depth_model_type = args.depth_model
+            self.depth_model_device_id = args.gpu
+
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
                 self.SetStatusText(T("Finished"))
             else:
                 self.SetStatusText(T("Cancelled"))
-        except:  # noqa
+        except: # noqa
             self.SetStatusText(T("Error"))
             message = traceback.format_exc()
             if len(message) > 1024:
