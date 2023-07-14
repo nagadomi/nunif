@@ -80,6 +80,15 @@ class TQDMGUI():
         wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0))
 
 
+class FileDropCallback(wx.FileDropTarget):
+    def __init__(self, callback):
+        super(FileDropCallback, self).__init__()
+        self.callback = callback
+
+    def OnDropFiles(self, x, y, filenames):
+        return self.callback(x, y, filenames)
+
+
 LAYOUT_DEBUG = False
 
 
@@ -392,6 +401,12 @@ class MainFrame(wx.Frame):
         self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
+        self.SetDropTarget(FileDropCallback(self.on_drop_files))
+        # Disable default drop target
+        for control in (self.txt_input, self.txt_output, self.txt_vf,
+                        self.cbo_divergence, self.cbo_convergence, self.cbo_pad):
+            control.SetDropTarget(FileDropCallback(self.on_drop_files))
+
         # Fix Frame and Panel background colors are different in windows
         self.SetBackgroundColour(self.pnl_file.GetBackgroundColour())
 
@@ -411,6 +426,13 @@ class MainFrame(wx.Frame):
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
         event.Skip()
+
+    def on_drop_files(self, x, y, filenames):
+        if filenames:
+            self.txt_input.SetValue(filenames[0])
+            if not self.txt_output.GetValue():
+                self.set_same_output_dir()
+        return True
 
     def update_start_button_state(self):
         if not self.processing:
