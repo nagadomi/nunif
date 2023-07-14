@@ -18,7 +18,7 @@ import nunif.utils.video as VU
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 
 
-FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow.pth")
+FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_fp32.pth")
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 REMBG_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "rembg")
 os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
@@ -218,7 +218,6 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence,
 def apply_divergence_nn(model, c, depth, divergence, convergence,
                         mapper, shift, batch_size=64):
     device = get_model_device(model)
-    enable_amp = "cuda" in str(device)
     image_width = c.shape[2]
     depth_min, depth_max = depth.min(), depth.max()
     if shift > 0:
@@ -244,7 +243,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
             mapper=mapper)
 
     z = SeamBlending.tiled_render(
-        c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
+        c, model, tile_size=256, batch_size=batch_size, enable_amp=False,
         config_callback=config_callback,
         preprocess_callback=preprocess_callback,
         input_callback=input_callback)
