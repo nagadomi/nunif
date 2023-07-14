@@ -411,6 +411,8 @@ def process_video_full(args, depth_model, side_model):
         )
 
     def frame_callback(frame):
+        if frame is None:
+            return None
         return frame.from_image(process_image(frame.to_image(), args, depth_model, side_model))
 
     if is_output_dir(args.output):

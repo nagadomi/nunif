@@ -126,6 +126,15 @@ def test_output_size(frame_callback, input_width, input_height):
     return output_frame.width, output_frame.height
 
 
+def get_new_frames(frame_or_frames_or_none):
+    if frame_or_frames_or_none is None:
+        return []
+    elif isinstance(frame_or_frames_or_none, (list, tuple)):
+        return frame_or_frames_or_none
+    else:
+        return [frame_or_frames_or_none]
+
+
 # TODO: correct colorspace transform
 
 
@@ -183,11 +192,11 @@ def process_video(input_path, output_path,
             for frame in packet.decode():
                 frame = fps_filter.update(frame)
                 if frame is not None:
-                    new_frame = frame_callback(frame)
-                    enc_packet = video_output_stream.encode(new_frame)
-                    if enc_packet:
-                        output_container.mux(enc_packet)
-                    pbar.update(1)
+                    for new_frame in get_new_frames(frame_callback(frame)):
+                        enc_packet = video_output_stream.encode(new_frame)
+                        if enc_packet:
+                            output_container.mux(enc_packet)
+                        pbar.update(1)
 
         elif packet.stream.type == "audio":
             if packet.dts is not None:
@@ -202,16 +211,25 @@ def process_video(input_path, output_path,
                             output_container.mux(enc_packet)
         if stop_event is not None and stop_event.is_set():
             break
-    pbar.close()
+
     frame = fps_filter.update(None)
     if frame is not None:
-        new_frame = frame_callback(frame)
+        for new_frame in get_new_frames(frame_callback(frame)):
+            enc_packet = video_output_stream.encode(new_frame)
+            if enc_packet:
+                output_container.mux(enc_packet)
+                pbar.update(1)
+
+    for new_frame in get_new_frames(frame_callback(None)):
         enc_packet = video_output_stream.encode(new_frame)
         if enc_packet:
             output_container.mux(enc_packet)
+            pbar.update(1)
+
     packet = video_output_stream.encode(None)
     if packet:
         output_container.mux(packet)
+    pbar.close()
     output_container.close()
     input_container.close()
 
@@ -263,6 +281,8 @@ if __name__ == "__main__":
         )
 
     def process_image(frame):
+        if frame is None:
+            return None
         im = frame.to_image()
         mirror = ImageOps.mirror(im)
         new_im = Image.new("RGB", (im.width * 2, im.height))
