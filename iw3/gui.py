@@ -107,7 +107,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(940, 580),
+            size=(1000, 620),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -324,7 +324,7 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA, Low VRAM
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(240, -1), style=wx.CB_READONLY,
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), style=wx.CB_READONLY,
                                       name="cbo_device")
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
