@@ -428,6 +428,7 @@ def process_video_full(args, depth_model, side_model):
         )
 
     minibatch_queue = []
+    minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
 
     @torch.inference_mode()
     def run_minibatch():
@@ -450,7 +451,7 @@ def process_video_full(args, depth_model, side_model):
             if frame is None:
                 return run_minibatch()
             minibatch_queue.append(frame.to_image())
-            if len(minibatch_queue) >= args.zoed_batch_size:
+            if len(minibatch_queue) >= minibatch_size:
                 return run_minibatch()
             else:
                 return None

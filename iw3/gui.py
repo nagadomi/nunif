@@ -293,6 +293,7 @@ class MainFrame(wx.Frame):
 
         self.chk_low_vram = wx.CheckBox(self.grp_processor, label=T("Low VRAM"), name="chk_low_vram")
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
+        self.chk_tta.SetToolTip(T("Use flip augmentation to improve depth quality (slow)"))
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
