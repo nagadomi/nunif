@@ -266,7 +266,7 @@ class MainFrame(wx.Frame):
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # processor settings
-        # device, batch-size, TTA, Low VRAM
+        # device, batch-size, TTA, Low VRAM, fp16
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
         self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), style=wx.CB_READONLY,
@@ -294,16 +294,20 @@ class MainFrame(wx.Frame):
         self.chk_low_vram = wx.CheckBox(self.grp_processor, label=T("Low VRAM"), name="chk_low_vram")
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
         self.chk_tta.SetToolTip(T("Use flip augmentation to improve depth quality (slow)"))
+        self.chk_fp16 = wx.CheckBox(self.grp_processor, label=T("FP16"), name="chk_fp16")
+        self.chk_fp16.SetToolTip(T("Use FP16 for stereo generation models (fast)"))
+        self.chk_fp16.SetValue(True)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_device, (0, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_batch_size, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_zoed_batch_size, (1, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_batch_size, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (3, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -581,6 +585,7 @@ class MainFrame(wx.Frame):
             batch_size=int(self.cbo_batch_size.GetValue()),
             zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
             tta=self.chk_tta.GetValue(),
+            disable_amp=not self.chk_fp16.GetValue(),
             low_vram=self.chk_low_vram.GetValue(),
         )
         args = parser.parse_args()

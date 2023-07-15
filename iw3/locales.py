@@ -45,7 +45,10 @@ LOCALES = {
         "Depth": "深度",
         "Stereo": "ステレオ",
         "Low VRAM": "低ビデオメモリ",
-        "Use flip augmentation to improve depth quality (slow)": "左右反転画像を使って深度の品質を改善します (遅い)",
+        "Use flip augmentation to improve depth quality (slow)":
+        "左右反転画像を使って深度の品質を改善する (遅い)",
+        "Use FP16 for stereo generation models (fast)":
+        "ステレオ生成モデルにFP16を使う (速い)",
     },
 }
 # For Windows

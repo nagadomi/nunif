@@ -198,7 +198,7 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence,
 
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
-                        mapper, shift, batch_size=64):
+                        mapper, shift, batch_size, enable_amp):
     image_width = c.shape[2]
     depth_min, depth_max = depth.min(), depth.max()
     if shift > 0:
@@ -224,7 +224,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
             mapper=mapper)
 
     z = SeamBlending.tiled_render(
-        c, model, tile_size=256, batch_size=batch_size, enable_amp=False,
+        c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
         config_callback=config_callback,
         preprocess_callback=preprocess_callback,
         input_callback=input_callback)
@@ -327,10 +327,12 @@ def postprocess_image(depth, im_org, args, side_model, device):
     else:
         left_eye = apply_divergence_nn(side_model, im_org, depth,
                                        args.divergence, args.convergence,
-                                       args.mapper, shift=-1, batch_size=args.batch_size)
+                                       args.mapper, shift=-1,
+                                       batch_size=args.batch_size, enable_amp=not args.disable_amp)
         right_eye = apply_divergence_nn(side_model, im_org, depth,
                                         args.divergence, args.convergence,
-                                        args.mapper, shift=1, batch_size=args.batch_size)
+                                        args.mapper, shift=1,
+                                        batch_size=args.batch_size, enable_amp=not args.disable_amp)
     if args.pad is not None:
         pad_h = int(left_eye.shape[1] * args.pad) // 2
         pad_w = int(left_eye.shape[2] * args.pad) // 2
@@ -601,6 +603,8 @@ def create_parser(required_true=True):
                         help="output in VR180 format")
     parser.add_argument("--tta", action="store_true",
                         help="Use flip augmentation on depth model")
+    parser.add_argument("--disable-amp", action="store_true",
+                        help="disable AMP for some special reason")
     return parser
 
 
