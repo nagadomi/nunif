@@ -66,6 +66,7 @@ LOCALES = {
         "Device": "デバイス",
         "Batch Size": "バッチサイズ",
         "Tile Size": "分割サイズ",
+        "FP16 (fast)": "FP16 (速い)",
     },
     "en_US": {}
 }

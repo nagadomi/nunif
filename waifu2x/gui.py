@@ -1,5 +1,6 @@
 import nunif.pythonw_fix  # noqa
 import locale
+import sys
 import os
 from os import path
 import gc
@@ -18,63 +19,31 @@ from .ui_utils import (
     MODEL_DIR, DEFAULT_ART_MODEL_DIR,
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
+from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
+from nunif.utils.gui import (
+    TQDMGUI, FileDropCallback, EVT_TQDM,
+    resolve_default_dir, extension_list_to_wildcard)
 from .locales import LOCALES
 from . import models # noqa
 import torch
 
 
-IMAGE_EXTENSIONS = ";".join(["*" + ext for ext in LOADER_SUPPORTED_EXTENSIONS])
-VIDEO_EXTENSIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
+IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
+VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "waifu2x-gui.cfg")
 os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
 
 
-def resolve_default_dir(src):
-    if src:
-        if "." in path.basename(src):
-            default_dir = path.dirname(src)
-        else:
-            default_dir = src
-    else:
-        default_dir = ""
-    return default_dir
-
-
-def to_float(s, default_value):
-    try:
-        return float(s)
-    except ValueError:
-        return default_value
-
-
-myEVT_TQDM = wx.NewEventType()
-EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
-
-
-class TQDMEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, type=None, value=None):
-        super(TQDMEvent, self).__init__(etype, eid)
-        self.type = type
-        self.value = value
-
-    def GetValue(self):
-        return (self.type, self.value)
-
-
-class TQDMGUI():
-    def __init__(self, parent, **kwargs):
-        self.parent = parent
-        total = kwargs["total"]
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 0, total))
-
-    def update(self, n=1):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, n))
-
-    def close(self):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0))
-
-
 LAYOUT_DEBUG = False
+
+
+class Waifu2xApp(wx.App):
+    def OnInit(self):
+        main_frame = MainFrame()
+        self.SetAppName(main_frame.GetTitle())
+        main_frame.Show()
+        self.SetTopWindow(main_frame)
+        return True
 
 
 class MainFrame(wx.Frame):
@@ -306,6 +275,8 @@ class MainFrame(wx.Frame):
         self.cbo_batch_size.SetSelection(4)
 
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
+        self.chk_amp = wx.CheckBox(self.grp_processor, label=T("FP16 (fast)"), name="chk_amp")
+        self.chk_amp.SetValue(True)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -315,6 +286,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_batch_size, (2, 1), flag=wx.EXPAND)
         layout.Add(self.chk_tta, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_amp, (3, 1), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -366,6 +338,11 @@ class MainFrame(wx.Frame):
         self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
+        self.SetDropTarget(FileDropCallback(self.on_drop_files))
+        # Disable default drop target
+        for control in (self.txt_input, self.txt_output, self.txt_vf):
+            control.SetDropTarget(FileDropCallback(self.on_drop_files))
+
         # Fix Frame and Panel background colors are different in windows
         self.SetBackgroundColour(self.pnl_file.GetBackgroundColour())
 
@@ -386,6 +363,13 @@ class MainFrame(wx.Frame):
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
         event.Skip()
+
+    def on_drop_files(self, x, y, filenames):
+        if filenames:
+            self.txt_input.SetValue(filenames[0])
+            if not self.txt_output.GetValue():
+                self.set_same_output_dir()
+        return True
 
     def update_upscaling_state(self):
         if self.model_4x_support[self.opt_model.GetSelection()]:
@@ -482,12 +466,10 @@ class MainFrame(wx.Frame):
             output_path = output_path
 
         if path.exists(output_path) and is_video(output_path):
-            ret = wx.MessageDialog(
-                None,
-                message=output_path + "\n" + T("already exists. Overwrite?"),
-                caption=T("Confirm"),
-                style=wx.YES_NO).ShowModal()
-            return ret == wx.ID_YES
+            with wx.MessageDialog(None,
+                                  message=output_path + "\n" + T("already exists. Overwrite?"),
+                                  caption=T("Confirm"), style=wx.YES_NO) as dlg:
+                return dlg.ShowModal() == wx.ID_YES
         else:
             return True
 
@@ -549,7 +531,7 @@ class MainFrame(wx.Frame):
             noise_level=noise_level,
             method=method,
             yes=True,  # TODO: remove this
-            max_fps=to_float(self.cbo_fps.GetValue(), 30),
+            max_fps=float(self.cbo_fps.GetValue()),
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
@@ -565,9 +547,9 @@ class MainFrame(wx.Frame):
             batch_size=int(self.cbo_batch_size.GetValue()),
             tile_size=int(self.cbo_tile_size.GetValue()),
             tta=self.chk_tta.GetValue(),
+            disable_amp=not self.chk_amp.GetValue(),
         )
         args = parser.parse_args()
-        pprint(vars(args))
         set_state_args(
             args,
             stop_event=self.stop_event,
@@ -585,10 +567,9 @@ class MainFrame(wx.Frame):
                 self.SetStatusText(T("Cancelled"))
         except:  # noqa
             self.SetStatusText(T("Error"))
-            message = traceback.format_exc()
-            if len(message) > 1024:
-                message = "..." + message[-1024:]
-            wx.MessageBox(message, T("Error"), wx.OK | wx.ICON_ERROR)
+            e_type, e, stacktrace = sys.exc_info()
+            message = getattr(e, "message", str(e))
+            wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
         self.processing = False
         self.btn_cancel.Disable()
@@ -651,9 +632,7 @@ def main():
         LOCALE_DICT = LOCALES.get(args.lang, {})
     sys.argv = [sys.argv[0]]  # clear command arguments
 
-    app = wx.App()
-    main = MainFrame()
-    main.Show()
+    app = Waifu2xApp()
     app.MainLoop()
 
 

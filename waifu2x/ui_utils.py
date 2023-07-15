@@ -115,6 +115,8 @@ def process_video(ctx, input_filename, args):
         )
 
     def frame_callback(frame):
+        if frame is None:
+            return None
         im = frame.to_image()
         if args.rotate_left:
             im = im.transpose(Image.Transpose.ROTATE_90)

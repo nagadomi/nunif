@@ -1,5 +1,6 @@
 import nunif.pythonw_fix  # noqa
 import locale
+import sys
 import os
 from os import path
 import gc
@@ -12,71 +13,35 @@ from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
 from .utils import (
     create_parser, set_state_args, iw3_main,
-    is_video, is_output_dir, make_output_filename)
+    is_video, is_output_dir, make_output_filename,
+    has_depth_model, has_rembg_model,
+)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
+from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
+from nunif.utils.gui import (
+    TQDMGUI, FileDropCallback, EVT_TQDM,
+    resolve_default_dir, extension_list_to_wildcard, validate_number)
 from .locales import LOCALES
 from . import models # noqa
 import torch
 
 
-IMAGE_EXTENSIONS = ";".join(["*" + ext for ext in LOADER_SUPPORTED_EXTENSIONS])
-VIDEO_EXTENSIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
+IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
+VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "iw3-gui.cfg")
 os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
 
 
-def resolve_default_dir(src):
-    if src:
-        if "." in path.basename(src):
-            default_dir = path.dirname(src)
-        else:
-            default_dir = src
-    else:
-        default_dir = ""
-    return default_dir
-
-
-def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):
-    if allow_empty and (s is None or s == ""):
-        return True
-    try:
-        if is_int:
-            v = int(s)
-        else:
-            v = float(s)
-        return min_value <= v and v <= max_value
-    except ValueError:
-        return False
-
-
-myEVT_TQDM = wx.NewEventType()
-EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
-
-
-class TQDMEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, type=None, value=None):
-        super(TQDMEvent, self).__init__(etype, eid)
-        self.type = type
-        self.value = value
-
-    def GetValue(self):
-        return (self.type, self.value)
-
-
-class TQDMGUI():
-    def __init__(self, parent, **kwargs):
-        self.parent = parent
-        total = kwargs["total"]
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 0, total))
-
-    def update(self, n=1):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, n))
-
-    def close(self):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0))
-
-
 LAYOUT_DEBUG = False
+
+
+class IW3App(wx.App):
+    def OnInit(self):
+        main_frame = MainFrame()
+        self.SetAppName(main_frame.GetTitle())
+        main_frame.Show()
+        self.SetTopWindow(main_frame)
+        return True
 
 
 class MainFrame(wx.Frame):
@@ -85,13 +50,16 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(940, 580),
+            size=(1000, 620),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
         self.start_time = 0
         self.input_type = None
         self.stop_event = threading.Event()
+        self.depth_model = None
+        self.depth_model_type = None
+        self.depth_model_device_id = None
         self.initialize_component()
 
     def initialize_component(self):
@@ -299,7 +267,7 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA, Low VRAM
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(240, -1), style=wx.CB_READONLY,
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), style=wx.CB_READONLY,
                                       name="cbo_device")
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
@@ -310,11 +278,15 @@ class MainFrame(wx.Frame):
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
 
-        self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Batch Size"))
-        self.cbo_batch_size = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
-                                          name="cbo_batch_size")
-        for n in (64, 32, 16, 8, 4):
-            self.cbo_batch_size.Append(str(n), n)
+        self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
+        self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
+                                               choices=[str(n) for n in (16, 8, 4, 2, 1)],
+                                               style=wx.CB_READONLY, name="cbo_zoed_batch_size")
+        self.cbo_zoed_batch_size.SetSelection(3)
+        self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Stereo") + " " + T("Batch Size"))
+        self.cbo_batch_size = wx.ComboBox(self.grp_processor,
+                                          choices=[str(n) for n in (64, 32, 16, 8, 4)],
+                                          style=wx.CB_READONLY, name="cbo_batch_size")
         self.cbo_batch_size.SetSelection(1)
 
         self.chk_low_vram = wx.CheckBox(self.grp_processor, label=T("Low VRAM"), name="chk_low_vram")
@@ -323,10 +295,12 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_batch_size, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (2, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_batch_size, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_batch_size, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (3, 1), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -376,6 +350,12 @@ class MainFrame(wx.Frame):
         self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
+        self.SetDropTarget(FileDropCallback(self.on_drop_files))
+        # Disable default drop target
+        for control in (self.txt_input, self.txt_output, self.txt_vf,
+                        self.cbo_divergence, self.cbo_convergence, self.cbo_pad):
+            control.SetDropTarget(FileDropCallback(self.on_drop_files))
+
         # Fix Frame and Panel background colors are different in windows
         self.SetBackgroundColour(self.pnl_file.GetBackgroundColour())
 
@@ -395,6 +375,13 @@ class MainFrame(wx.Frame):
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
         event.Skip()
+
+    def on_drop_files(self, x, y, filenames):
+        if filenames:
+            self.txt_input.SetValue(filenames[0])
+            if not self.txt_output.GetValue():
+                self.set_same_output_dir()
+        return True
 
     def update_start_button_state(self):
         if not self.processing:
@@ -480,21 +467,20 @@ class MainFrame(wx.Frame):
             output_path = output_path
 
         if path.exists(output_path):
-            ret = wx.MessageDialog(
-                None,
-                message=output_path + "\n" + T("already exists. Overwrite?"),
-                caption=T("Confirm"),
-                style=wx.YES_NO).ShowModal()
-            return ret == wx.ID_YES
+            with wx.MessageDialog(None,
+                                  message=output_path + "\n" + T("already exists. Overwrite?"),
+                                  caption=T("Confirm"), style=wx.YES_NO) as dlg:
+                return dlg.ShowModal() == wx.ID_YES
         else:
             return True
 
     def show_validation_error_message(self, name, min_value, max_value):
-        wx.MessageDialog(
-            None,
-            message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
-            caption=T("Error"),
-            style=wx.OK).ShowModal()
+        with wx.MessageDialog(
+                None,
+                message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
+                caption=T("Error"),
+                style=wx.OK) as dlg:
+            dlg.ShowModal()
 
     def on_click_btn_start(self, event):
         if not validate_number(self.cbo_divergence.GetValue(), 0.0, 2.5):
@@ -542,6 +528,27 @@ class MainFrame(wx.Frame):
             vf += [self.txt_vf.GetValue()]
         vf = ",".join(vf)
 
+        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        depth_model_type = self.cbo_depth_model.GetValue()
+        if (self.depth_model is None or (self.depth_model_type != depth_model_type or
+                                         self.depth_model_device_id != device_id)):
+            self.depth_model = None
+            self.depth_model_type = None
+            self.depth_model_device_id = None
+            gc.collect()
+            torch.cuda.empty_cache()
+            if has_depth_model(depth_model_type):
+                # Realod depth model
+                self.SetStatusText(f"Loading {depth_model_type}...")
+            else:
+                # Need to download the model
+                self.SetStatusText(f"Downloading {depth_model_type}...")
+
+        remove_bg = self.chk_rembg.GetValue()
+        bg_model_type = self.cbo_bg_model.GetValue()
+        if remove_bg and not has_rembg_model(bg_model_type):
+            self.SetStatusText(f"Downloading {bg_model_type}...")
+
         parser.set_defaults(
             input=self.txt_input.GetValue(),
             output=self.txt_output.GetValue(),
@@ -550,7 +557,7 @@ class MainFrame(wx.Frame):
             divergence=float(self.cbo_divergence.GetValue()),
             convergence=float(self.cbo_convergence.GetValue()),
             method=self.cbo_method.GetValue(),
-            depth_model=self.cbo_depth_model.GetValue(),
+            depth_model=depth_model_type,
             mapper=self.cbo_mapper.GetValue(),
             vr180=vr180,
 
@@ -559,41 +566,47 @@ class MainFrame(wx.Frame):
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
 
-            remove_bg=self.chk_rembg.GetValue(),
-            bg_model=self.cbo_bg_model.GetValue(),
+            remove_bg=remove_bg,
+            bg_model=bg_model_type,
 
             pad=pad,
             rotate_right=rotate_right,
             rotate_left=rotate_left,
             vf=vf,
 
-            gpu=int(self.cbo_device.GetClientData(self.cbo_device.GetSelection())),
+            gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
+            zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
             tta=self.chk_tta.GetValue(),
-            disable_zoedepth_batch=self.chk_low_vram.GetValue(),
+            low_vram=self.chk_low_vram.GetValue(),
         )
         args = parser.parse_args()
         set_state_args(
             args,
             stop_event=self.stop_event,
-            tqdm_fn=functools.partial(TQDMGUI, self))
+            tqdm_fn=functools.partial(TQDMGUI, self),
+            depth_model=self.depth_model,
+        )
         startWorker(self.on_exit_worker, iw3_main, wargs=(args,))
         self.processing = True
 
     def on_exit_worker(self, result):
         try:
-            ret = result.get()  # noqa
+            args = result.get()
+            self.depth_model = args.state["depth_model"]
+            self.depth_model_type = args.depth_model
+            self.depth_model_device_id = args.gpu
+
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
                 self.SetStatusText(T("Finished"))
             else:
                 self.SetStatusText(T("Cancelled"))
-        except:  # noqa
+        except: # noqa
             self.SetStatusText(T("Error"))
-            message = traceback.format_exc()
-            if len(message) > 1024:
-                message = "..." + message[-1024:]
-            wx.MessageBox(message, T("Error"), wx.OK | wx.ICON_ERROR)
+            e_type, e, stacktrace = sys.exc_info()
+            message = getattr(e, "message", str(e))
+            wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
         self.processing = False
         self.btn_cancel.Disable()
@@ -651,9 +664,7 @@ def main():
         LOCALE_DICT = LOCALES.get(args.lang, {})
     sys.argv = [sys.argv[0]]  # clear command arguments
 
-    app = wx.App()
-    main = MainFrame()
-    main.Show()
+    app = IW3App()
     app.MainLoop()
 
 

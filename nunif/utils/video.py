@@ -2,6 +2,25 @@ import av
 import math
 from tqdm import tqdm
 from PIL import Image
+import mimetypes
+
+
+# Add video mimetypes that does not exist in mimetypes
+mimetypes.add_type("video/x-ms-asf", ".asf")
+mimetypes.add_type("video/x-ms-vob", ".vob")
+mimetypes.add_type("video/divx", ".divx")
+mimetypes.add_type("video/3gpp", ".3gp")
+mimetypes.add_type("video/ogg", ".ogg")
+mimetypes.add_type("video/3gpp2", ".3g2")
+mimetypes.add_type("video/m2ts", ".m2ts")
+mimetypes.add_type("video/m2ts", ".ts")
+mimetypes.add_type("video/vnd.rn-realmedia", ".rm")  # fake
+
+
+VIDEO_EXTENSIONS = [
+    ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".mp2", ".avi", ".wmv", ".mov", ".flv", ".webm",
+    ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
+]
 
 
 def get_fps(stream):
@@ -23,6 +42,10 @@ def get_frames(stream):
     else:
         # frames is unknown
         return guess_frames(stream)
+
+
+def from_image(im):
+    return av.video.frame.VideoFrame.from_image(im)
 
 
 def _print_len(stream):
@@ -103,8 +126,21 @@ def test_output_size(frame_callback, input_width, input_height):
     # TODO: video filter
     empty_image = Image.new("RGB", (input_width, input_height), (128, 128, 128))
     test_frame = av.video.frame.VideoFrame.from_image(empty_image)
-    output_frame = frame_callback(test_frame)
+    while True:
+        output_frame = get_new_frames(frame_callback(test_frame))
+        if output_frame:
+            output_frame = output_frame[0]
+            break
     return output_frame.width, output_frame.height
+
+
+def get_new_frames(frame_or_frames_or_none):
+    if frame_or_frames_or_none is None:
+        return []
+    elif isinstance(frame_or_frames_or_none, (list, tuple)):
+        return frame_or_frames_or_none
+    else:
+        return [frame_or_frames_or_none]
 
 
 # TODO: correct colorspace transform
@@ -164,11 +200,11 @@ def process_video(input_path, output_path,
             for frame in packet.decode():
                 frame = fps_filter.update(frame)
                 if frame is not None:
-                    new_frame = frame_callback(frame)
-                    enc_packet = video_output_stream.encode(new_frame)
-                    if enc_packet:
-                        output_container.mux(enc_packet)
-                    pbar.update(1)
+                    for new_frame in get_new_frames(frame_callback(frame)):
+                        enc_packet = video_output_stream.encode(new_frame)
+                        if enc_packet:
+                            output_container.mux(enc_packet)
+                        pbar.update(1)
 
         elif packet.stream.type == "audio":
             if packet.dts is not None:
@@ -183,16 +219,25 @@ def process_video(input_path, output_path,
                             output_container.mux(enc_packet)
         if stop_event is not None and stop_event.is_set():
             break
-    pbar.close()
+
     frame = fps_filter.update(None)
     if frame is not None:
-        new_frame = frame_callback(frame)
+        for new_frame in get_new_frames(frame_callback(frame)):
+            enc_packet = video_output_stream.encode(new_frame)
+            if enc_packet:
+                output_container.mux(enc_packet)
+                pbar.update(1)
+
+    for new_frame in get_new_frames(frame_callback(None)):
         enc_packet = video_output_stream.encode(new_frame)
         if enc_packet:
             output_container.mux(enc_packet)
+            pbar.update(1)
+
     packet = video_output_stream.encode(None)
     if packet:
         output_container.mux(packet)
+    pbar.close()
     output_container.close()
     input_container.close()
 
@@ -244,6 +289,8 @@ if __name__ == "__main__":
         )
 
     def process_image(frame):
+        if frame is None:
+            return None
         im = frame.to_image()
         mirror = ImageOps.mirror(im)
         new_im = Image.new("RGB", (im.width * 2, im.height))

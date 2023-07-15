@@ -6,18 +6,6 @@ from .stereoimage_generation import create_stereoimages
 from ... utils import batch_infer
 
 
-def force_update_midas_model():
-    # Triggers fresh download of MiDaS repo
-    torch.hub.help("isl-org/MiDaS", "DPT_BEiT_L_384", force_reload=True)
-
-
-def load_zoed_model(device, model_type="ZoeD_N"):
-    model = torch.hub.load("isl-org/ZoeDepth:main", model_type, pretrained=True)
-    model = model.to(device)
-    model.eval()
-    return model
-
-
 def normalize_depth(depth):
     depth_min = depth.min()
     depth_max = depth.max()

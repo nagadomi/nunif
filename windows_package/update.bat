@@ -40,7 +40,8 @@ if not exist %NUNIF_DIR% (
   )
 )
 
-@rem install packages
+
+echo Install Python Packages...
 python -m pip install --upgrade pip
 if %ERRORLEVEL% neq 0 goto :on_error
 python -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
@@ -48,6 +49,14 @@ if %ERRORLEVEL% neq 0 goto :on_error
 python -m pip install --upgrade -r %NUNIF_DIR%\requirements.txt
 if %ERRORLEVEL% neq 0 goto :on_error
 python -m pip install --upgrade -r %NUNIF_DIR%\requirements-gui.txt
+if %ERRORLEVEL% neq 0 goto :on_error
+
+
+echo Download Models...
+if not exist %NUNIF_DIR%\waifu2x\pretrained_models pushd %NUNIF_DIR% && python -m waifu2x.download_models && popd
+if %ERRORLEVEL% neq 0 goto :on_error
+
+if not exist %NUNIF_DIR%\iw3\pretrained_models\hub pushd %NUNIF_DIR% && python -m iw3.download_models && popd
 if %ERRORLEVEL% neq 0 goto :on_error
 
 

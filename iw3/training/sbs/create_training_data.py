@@ -117,15 +117,15 @@ def gen_convergence():
 
 def main(args):
     import numba
-    from .depthmap_utils import force_update_midas_model, load_zoed_model, generate_sbs
+    from .depthmap_utils import generate_sbs
+    from ... utils import force_update_midas_model, load_depth_model
     # force_update_midas_model()
 
     max_workers = cpu_count() // 2 or 1
     numba.set_num_threads(max_workers)
 
     filename_prefix = args.prefix + "_" if args.prefix else ""
-    device = f"cuda:{args.gpu}" if args.gpu >= 0 else "cpu"
-    model = load_zoed_model(model_type="ZoeD_N", device=device)
+    model = load_depth_model(model_type="ZoeD_N", gpu=args.gpu)
 
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)

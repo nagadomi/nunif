@@ -1,6 +1,5 @@
 @echo off
 
 call %~dp0setenv.bat
-cd %NUNIF_DIR%
-start "" pythonw -m waifu2x.gui
-exit 0
+pushd %NUNIF_DIR% && start "" pythonw -m waifu2x.gui && popd
+exit /b 0
