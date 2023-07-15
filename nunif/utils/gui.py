@@ -1,6 +1,6 @@
 import wx
 from os import path
-import platform
+import sys
 
 
 myEVT_TQDM = wx.NewEventType()
@@ -69,7 +69,25 @@ def resolve_default_dir(src):
 
 def extension_list_to_wildcard(extensions):
     extensions = list(extensions)
-    if platform.system() != "Windows":
+    if sys.platform != "win32":
         # wx.FileDialog does not find uppercase extensions on Linux so add them
         extensions = extensions + [ext.upper() for ext in extensions]
     return ";".join(["*" + ext for ext in extensions])
+
+
+def set_icon_ex(main_frame, icon_path, app_id):
+    icons = wx.IconBundle(icon_path)
+    main_frame.SetIcons(icons)
+    if sys.platform == "win32":
+        # Set AppUserModelID to show correct icon on Taskbar
+        try:
+            from ctypes import windll
+            from win32com.propsys import propsys, pscon
+            import pythoncom
+            windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+            hwnd = main_frame.GetHandle()
+            propStore = propsys.SHGetPropertyStoreForWindow(hwnd, propsys.IID_IPropertyStore)
+            propStore.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(app_id, pythoncom.VT_ILLEGAL))
+            propStore.Commit()
+        except: # noqa
+            pass
