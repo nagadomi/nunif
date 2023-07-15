@@ -2,7 +2,6 @@ import nunif.pythonw_fix  # noqa
 import locale
 import os
 from os import path
-import platform
 import gc
 import traceback
 import functools
@@ -18,80 +17,18 @@ from .utils import (
 )
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
+from nunif.utils.gui import (
+    TQDMGUI, FileDropCallback, EVT_TQDM,
+    resolve_default_dir, extension_list_to_wildcard, validate_number)
 from .locales import LOCALES
 from . import models # noqa
 import torch
 
 
-if platform.system() != "Windows":
-    # wx.FileDialog does not find uppercase extensions on Linux so add them
-    LOADER_SUPPORTED_EXTENSIONS = list(LOADER_SUPPORTED_EXTENSIONS) + [ext.upper() for ext in LOADER_SUPPORTED_EXTENSIONS]
-    KNOWN_VIDEO_EXTENSIONS = list(KNOWN_VIDEO_EXTENSIONS) + [ext.upper() for ext in KNOWN_VIDEO_EXTENSIONS]
-IMAGE_EXTENSIONS = ";".join(["*" + ext for ext in LOADER_SUPPORTED_EXTENSIONS])
-VIDEO_EXTENSIONS = ";".join(["*" + ext for ext in KNOWN_VIDEO_EXTENSIONS])
-VIDEO_EXTENSIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
+IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
+VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "iw3-gui.cfg")
 os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
-
-
-def resolve_default_dir(src):
-    if src:
-        if "." in path.basename(src):
-            default_dir = path.dirname(src)
-        else:
-            default_dir = src
-    else:
-        default_dir = ""
-    return default_dir
-
-
-def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):
-    if allow_empty and (s is None or s == ""):
-        return True
-    try:
-        if is_int:
-            v = int(s)
-        else:
-            v = float(s)
-        return min_value <= v and v <= max_value
-    except ValueError:
-        return False
-
-
-myEVT_TQDM = wx.NewEventType()
-EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
-
-
-class TQDMEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, type=None, value=None):
-        super(TQDMEvent, self).__init__(etype, eid)
-        self.type = type
-        self.value = value
-
-    def GetValue(self):
-        return (self.type, self.value)
-
-
-class TQDMGUI():
-    def __init__(self, parent, **kwargs):
-        self.parent = parent
-        total = kwargs["total"]
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 0, total))
-
-    def update(self, n=1):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, n))
-
-    def close(self):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0))
-
-
-class FileDropCallback(wx.FileDropTarget):
-    def __init__(self, callback):
-        super(FileDropCallback, self).__init__()
-        self.callback = callback
-
-    def OnDropFiles(self, x, y, filenames):
-        return self.callback(x, y, filenames)
 
 
 LAYOUT_DEBUG = False
