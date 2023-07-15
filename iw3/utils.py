@@ -7,15 +7,16 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import math
 from tqdm import tqdm
-import mimetypes
 from PIL import Image, ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
-from nunif.models import load_model, get_model_device
+from nunif.models import load_model
 from nunif.device import create_device
 import nunif.utils.video as VU
-from nunif.utils.ui import HiddenPrints, TorchHubDir
+from nunif.utils.ui import (
+    HiddenPrints, TorchHubDir,
+    is_image, is_video, is_text, is_output_dir, make_parent_dir)
 
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_fp32.pth")
@@ -176,31 +177,6 @@ def equirectangular_projection(c, device="cpu"):
     return z
 
 
-def is_image(filename):
-    mime = mimetypes.guess_type(filename)[0]
-    return mime and mime.startswith("image")
-
-
-def is_video(filename):
-    mime = mimetypes.guess_type(filename)[0]
-    return mime and mime.startswith("video")
-
-
-def is_text(filename):
-    mime = mimetypes.guess_type(filename)[0]
-    return mime and mime.startswith("text")
-
-
-def is_output_dir(filename):
-    return path.isdir(filename) or "." not in path.basename(filename)
-
-
-def make_parent_dir(filename):
-    parent_dir = path.dirname(filename)
-    if not path.exists(parent_dir):
-        os.makedirs(parent_dir, exist_ok=True)
-
-
 def apply_divergence_grid_sample(c, depth, divergence, convergence,
                                  shift, device="cpu"):
     depth = depth.to(device)
@@ -223,7 +199,6 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence,
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
                         mapper, shift, batch_size=64):
-    device = get_model_device(model)
     image_width = c.shape[2]
     depth_min, depth_max = depth.min(), depth.max()
     if shift > 0:

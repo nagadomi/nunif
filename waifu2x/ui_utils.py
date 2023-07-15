@@ -8,13 +8,14 @@ from PIL import Image
 import argparse
 import csv
 from tqdm import tqdm
-import mimetypes
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from nunif.logger import logger
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
 from nunif.utils import video as VU
+from nunif.utils.ui import (
+    is_image, is_video, is_text, is_output_dir, make_parent_dir)
 from .utils import Waifu2x
 from .download_models import main as download_main
 
@@ -30,31 +31,6 @@ def find_subdir(dirname):
     for dirname in list(subdirs):
         subdirs.extend(find_subdir(dirname))
     return subdirs
-
-
-def is_image(filename, mime=None):
-    mime = mime or mimetypes.guess_type(filename)[0]
-    return mime and mime.startswith("image")
-
-
-def is_video(filename, mime=None):
-    mime = mime or mimetypes.guess_type(filename)[0]
-    return mime and mime.startswith("video")
-
-
-def is_text(filename, mime=None):
-    mime = mime or mimetypes.guess_type(filename)[0]
-    return mime and mime.startswith("text")
-
-
-def is_output_dir(filename):
-    return path.isdir(filename) or "." not in path.basename(filename)
-
-
-def make_parent_dir(filename):
-    parent_dir = path.dirname(filename)
-    if not path.exists(parent_dir):
-        os.makedirs(parent_dir, exist_ok=True)
 
 
 @torch.inference_mode()
