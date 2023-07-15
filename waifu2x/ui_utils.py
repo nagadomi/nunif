@@ -51,6 +51,12 @@ def is_output_dir(filename):
     return path.isdir(filename) or "." not in path.basename(filename)
 
 
+def make_parent_dir(filename):
+    parent_dir = path.dirname(filename)
+    if not path.exists(parent_dir):
+        os.makedirs(parent_dir, exist_ok=True)
+
+
 @torch.inference_mode()
 def process_image(ctx, im, meta, args):
     rgb, alpha = IL.to_tensor(im, return_alpha=True)
@@ -156,6 +162,7 @@ def process_video(ctx, input_filename, args):
         if y not in {"y", "ye", "yes"}:
             return
 
+    make_parent_dir(output_filename)
     VU.process_video(input_filename, output_filename,
                      config_callback=config_callback,
                      frame_callback=frame_callback,
@@ -184,6 +191,7 @@ def process_file(ctx, input_filename, args):
             return
         im, meta = IL.load_image(input_filename, color="rgb", keep_alpha=True)
         output = process_image(ctx, im, meta, args)
+        make_parent_dir(output_filename)
         IL.save_image(output, filename=output_filename, meta=meta, format=fmt)
     elif is_text(input_filename):
         files = load_files(input_filename)

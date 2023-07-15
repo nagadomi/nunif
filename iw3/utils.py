@@ -195,6 +195,12 @@ def is_output_dir(filename):
     return path.isdir(filename) or "." not in path.basename(filename)
 
 
+def make_parent_dir(filename):
+    parent_dir = path.dirname(filename)
+    if not path.exists(parent_dir):
+        os.makedirs(parent_dir, exist_ok=True)
+
+
 def apply_divergence_grid_sample(c, depth, divergence, convergence,
                                  shift, device="cpu"):
     depth = depth.to(device)
@@ -494,6 +500,7 @@ def process_video_full(args, depth_model, side_model):
         if y not in {"y", "ye", "yes"}:
             return
 
+    make_parent_dir(output_filename)
     VU.process_video(args.input, output_filename,
                      config_callback=config_callback,
                      frame_callback=frame_callback,
@@ -678,6 +685,7 @@ def iw3_main(args):
                         output_filename = args.output
                     im, _ = load_image_simple(input_file, color="rgb")
                     output = process_image(im, args, depth_model, side_model)
+                    make_parent_dir(output_filename)
                     output.save(output_filename)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     break
