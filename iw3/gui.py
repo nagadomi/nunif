@@ -38,6 +38,8 @@ LAYOUT_DEBUG = False
 class IW3App(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
+        icon = wx.Icon(path.join(path.dirname(__file__), "icon.ico"), wx.BITMAP_TYPE_ICO)
+        main_frame.SetIcon(icon)
         self.SetAppName(main_frame.GetTitle())
         main_frame.Show()
         self.SetTopWindow(main_frame)
