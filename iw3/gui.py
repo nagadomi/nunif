@@ -1,5 +1,6 @@
 import nunif.pythonw_fix  # noqa
 import locale
+import sys
 import os
 from os import path
 import gc
@@ -466,21 +467,20 @@ class MainFrame(wx.Frame):
             output_path = output_path
 
         if path.exists(output_path):
-            ret = wx.MessageDialog(
-                None,
-                message=output_path + "\n" + T("already exists. Overwrite?"),
-                caption=T("Confirm"),
-                style=wx.YES_NO).ShowModal()
-            return ret == wx.ID_YES
+            with wx.MessageDialog(None,
+                                  message=output_path + "\n" + T("already exists. Overwrite?"),
+                                  caption=T("Confirm"), style=wx.YES_NO) as dlg:
+                return dlg.ShowModal() == wx.ID_YES
         else:
             return True
 
     def show_validation_error_message(self, name, min_value, max_value):
-        wx.MessageDialog(
-            None,
-            message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
-            caption=T("Error"),
-            style=wx.OK).ShowModal()
+        with wx.MessageDialog(
+                None,
+                message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
+                caption=T("Error"),
+                style=wx.OK) as dlg:
+            dlg.ShowModal()
 
     def on_click_btn_start(self, event):
         if not validate_number(self.cbo_divergence.GetValue(), 0.0, 2.5):
@@ -604,10 +604,9 @@ class MainFrame(wx.Frame):
                 self.SetStatusText(T("Cancelled"))
         except: # noqa
             self.SetStatusText(T("Error"))
-            message = traceback.format_exc()
-            if len(message) > 1024:
-                message = "..." + message[-1024:]
-            wx.MessageBox(message, T("Error"), wx.OK | wx.ICON_ERROR)
+            e_type, e, stacktrace = sys.exc_info()
+            message = getattr(e, "message", str(e))
+            wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
         self.processing = False
         self.btn_cancel.Disable()

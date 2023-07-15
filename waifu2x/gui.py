@@ -1,5 +1,6 @@
 import nunif.pythonw_fix  # noqa
 import locale
+import sys
 import os
 from os import path
 import gc
@@ -465,12 +466,10 @@ class MainFrame(wx.Frame):
             output_path = output_path
 
         if path.exists(output_path) and is_video(output_path):
-            ret = wx.MessageDialog(
-                None,
-                message=output_path + "\n" + T("already exists. Overwrite?"),
-                caption=T("Confirm"),
-                style=wx.YES_NO).ShowModal()
-            return ret == wx.ID_YES
+            with wx.MessageDialog(None,
+                                  message=output_path + "\n" + T("already exists. Overwrite?"),
+                                  caption=T("Confirm"), style=wx.YES_NO) as dlg:
+                return dlg.ShowModal() == wx.ID_YES
         else:
             return True
 
@@ -551,7 +550,6 @@ class MainFrame(wx.Frame):
             disable_amp=not self.chk_amp.GetValue(),
         )
         args = parser.parse_args()
-        pprint(vars(args))
         set_state_args(
             args,
             stop_event=self.stop_event,
@@ -569,10 +567,9 @@ class MainFrame(wx.Frame):
                 self.SetStatusText(T("Cancelled"))
         except:  # noqa
             self.SetStatusText(T("Error"))
-            message = traceback.format_exc()
-            if len(message) > 1024:
-                message = "..." + message[-1024:]
-            wx.MessageBox(message, T("Error"), wx.OK | wx.ICON_ERROR)
+            e_type, e, stacktrace = sys.exc_info()
+            message = getattr(e, "message", str(e))
+            wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
         self.processing = False
         self.btn_cancel.Disable()
