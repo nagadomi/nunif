@@ -2,6 +2,7 @@ import nunif.pythonw_fix  # noqa
 import locale
 import os
 from os import path
+import platform
 import gc
 import traceback
 import functools
@@ -22,6 +23,10 @@ from . import models # noqa
 import torch
 
 
+if platform.system() != "Windows":
+    # wx.FileDialog does not find uppercase extensions on Linux so add them
+    LOADER_SUPPORTED_EXTENSIONS = list(LOADER_SUPPORTED_EXTENSIONS) + [ext.upper() for ext in LOADER_SUPPORTED_EXTENSIONS]
+    KNOWN_VIDEO_EXTENSIONS = list(KNOWN_VIDEO_EXTENSIONS) + [ext.upper() for ext in KNOWN_VIDEO_EXTENSIONS]
 IMAGE_EXTENSIONS = ";".join(["*" + ext for ext in LOADER_SUPPORTED_EXTENSIONS])
 VIDEO_EXTENSIONS = ";".join(["*" + ext for ext in KNOWN_VIDEO_EXTENSIONS])
 VIDEO_EXTENSIONS = "*.mp4;*.mkv;*.mpeg;*.mpg;*.avi;*.wmv;*.ogg;*.ts;*.mov;*.flv;*.webm"
