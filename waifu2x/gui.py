@@ -330,6 +330,8 @@ class MainFrame(wx.Frame):
         self.cbo_batch_size.SetSelection(4)
 
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
+        self.chk_amp = wx.CheckBox(self.grp_processor, label=T("FP16 (fast)"), name="chk_amp")
+        self.chk_amp.SetValue(True)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -339,6 +341,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_batch_size, (2, 1), flag=wx.EXPAND)
         layout.Add(self.chk_tta, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_amp, (3, 1), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -601,6 +604,7 @@ class MainFrame(wx.Frame):
             batch_size=int(self.cbo_batch_size.GetValue()),
             tile_size=int(self.cbo_tile_size.GetValue()),
             tta=self.chk_tta.GetValue(),
+            disable_amp=not self.chk_amp.GetValue(),
         )
         args = parser.parse_args()
         pprint(vars(args))
