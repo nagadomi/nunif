@@ -1,1 +1,2 @@
 wxpython >= 4.0.0
+pywin32; sys_platform == 'win32'

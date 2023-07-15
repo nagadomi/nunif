@@ -61,6 +61,7 @@ if %ERRORLEVEL% neq 0 goto :on_error
 
 
 @rem all succeeded
+echo Successfully installed nunif
 pause
 exit /b 0
 

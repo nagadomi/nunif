@@ -1,6 +1,8 @@
 import os
+from os import path
 import sys
 import torch
+import mimetypes
 
 
 class HiddenPrints:
@@ -28,3 +30,28 @@ class TorchHubDir:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         torch.hub.set_dir(self.original_hub_dir)
+
+
+def is_image(filename):
+    mime = mimetypes.guess_type(filename)[0]
+    return mime and mime.startswith("image")
+
+
+def is_video(filename):
+    mime = mimetypes.guess_type(filename)[0]
+    return mime and mime.startswith("video")
+
+
+def is_text(filename):
+    mime = mimetypes.guess_type(filename)[0]
+    return mime and mime.startswith("text")
+
+
+def is_output_dir(filename):
+    return path.isdir(filename) or "." not in path.basename(filename)
+
+
+def make_parent_dir(filename):
+    parent_dir = path.dirname(filename)
+    if not path.exists(parent_dir):
+        os.makedirs(parent_dir, exist_ok=True)

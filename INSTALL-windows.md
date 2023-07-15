@@ -12,15 +12,18 @@ Install Python 3.10 from Windows Store.
 
 ### 2. Run installer
 
-- If you have NVIDIA GPU, run `Installer for Windows CUDA.bat`
-- If you do not have NVIDIA GPU, run `Installer for Windows CPU.bat`
+Run `Installer for Windows.bat`.
 
 If you want to reinstall, delete `venv` folder and run it again.
 
-( If you have Anaconda installed, make sure you have added `python` to PATH.
-If `python` command opens Windows Store, see https://stackoverflow.com/questions/58754860/cmd-opens-windows-store-when-i-type-python. )
+If you have Anaconda installed, make sure you have added `python` to PATH.
+If `python` command opens Windows Store, see https://stackoverflow.com/questions/58754860/cmd-opens-windows-store-when-i-type-python.
 
-### 3.1 Run waifu2x web interface
+### 3.2 Run waifu2x GUI
+
+Run `Run waifu2x GUI.bat`.
+
+### 3.2 Run waifu2x web interface
 
 Run `Run waifu2x Web.bat`.
 
@@ -29,7 +32,6 @@ Open http://localhost:8812/
 ### 3.2 Open CLI Prompt
 
 Run `Open Prompt.bat`.
-
 
 ## Manually install
 

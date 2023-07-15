@@ -4,7 +4,6 @@ import sys
 import os
 from os import path
 import gc
-import traceback
 import functools
 from time import time
 import threading
@@ -20,7 +19,9 @@ from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIO
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM,
-    resolve_default_dir, extension_list_to_wildcard, validate_number)
+    resolve_default_dir, extension_list_to_wildcard, validate_number,
+    set_icon_ex)
+
 from .locales import LOCALES
 from . import models # noqa
 import torch
@@ -38,6 +39,7 @@ LAYOUT_DEBUG = False
 class IW3App(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
+        set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), main_frame.GetTitle())
         self.SetAppName(main_frame.GetTitle())
         main_frame.Show()
         self.SetTopWindow(main_frame)
