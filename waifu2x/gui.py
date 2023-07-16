@@ -89,8 +89,11 @@ class MainFrame(wx.Frame):
         self.btn_output_dir = wx.Button(self.pnl_file, label=T("..."),
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
+        self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
+        self.chk_resume.SetToolTip(T("Skip processing of files that already exist"))
+        self.chk_resume.SetValue(True)
 
-        layout = wx.FlexGridSizer(rows=2, cols=4, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=3, cols=4, vgap=4, hgap=4)
         layout.Add(self.lbl_input, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_input, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_input_file, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
@@ -100,6 +103,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_output, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_same_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(wx.StaticText(self.pnl_file, label=""), 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_resume, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -360,6 +365,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_upscaling_state()
         self.update_noise_level_state()
+        self.update_resume_state()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -395,6 +401,13 @@ class MainFrame(wx.Frame):
                 self.btn_start.Enable()
             else:
                 self.btn_start.Disable()
+
+    def update_resume_state(self):
+        input_path = self.txt_input.GetValue()
+        if path.isdir(input_path) or is_text(input_path):
+            self.chk_resume.Enable()
+        else:
+            self.chk_resume.Disable()
 
     def on_selected_index_changed_opt_model(self, event):
         self.update_upscaling_state()
@@ -453,6 +466,7 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
+        self.update_resume_state()
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
@@ -525,8 +539,11 @@ class MainFrame(wx.Frame):
             else:
                 method = f"scale{scale}x"
 
+        input_path = self.txt_input.GetValue()
+        resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+
         parser.set_defaults(
-            input=self.txt_input.GetValue(),
+            input=input_path,
             output=self.txt_output.GetValue(),
             model_dir=self.model_dirs[self.opt_model.GetSelection()],
             noise_level=noise_level,
@@ -549,6 +566,8 @@ class MainFrame(wx.Frame):
             tile_size=int(self.cbo_tile_size.GetValue()),
             tta=self.chk_tta.GetValue(),
             disable_amp=not self.chk_amp.GetValue(),
+
+            resume=resume,
         )
         args = parser.parse_args()
         set_state_args(
