@@ -1,3 +1,4 @@
 *.icc binary
 *.pth binary
 *.ico binary
+*.bat eol=crlf
