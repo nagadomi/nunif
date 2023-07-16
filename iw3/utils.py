@@ -198,7 +198,7 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence,
 
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
-                        mapper, shift, batch_size=64):
+                        mapper, shift, batch_size, enable_amp):
     image_width = c.shape[2]
     depth_min, depth_max = depth.min(), depth.max()
     if shift > 0:
@@ -224,7 +224,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
             mapper=mapper)
 
     z = SeamBlending.tiled_render(
-        c, model, tile_size=256, batch_size=batch_size, enable_amp=False,
+        c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
         config_callback=config_callback,
         preprocess_callback=preprocess_callback,
         input_callback=input_callback)
@@ -305,6 +305,18 @@ def preprocess_image(im, args):
         im = im.transpose(Image.Transpose.ROTATE_90)
     elif args.rotate_right:
         im = im.transpose(Image.Transpose.ROTATE_270)
+
+    w, h = im.size
+    new_w, new_h = w, h
+    if args.max_output_height is not None and new_h > args.max_output_height:
+        new_w = int(args.max_output_height / new_h * new_w)
+        new_h = args.max_output_height
+        # only apply max height
+    if new_w != w or new_h != h:
+        new_h -= new_h % 2
+        new_w -= new_w % 2
+        im = im.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+
     im_org = TF.to_tensor(im)
     if args.bg_session is not None:
         im = remove_bg_from_image(im, args.bg_session)
@@ -327,10 +339,12 @@ def postprocess_image(depth, im_org, args, side_model, device):
     else:
         left_eye = apply_divergence_nn(side_model, im_org, depth,
                                        args.divergence, args.convergence,
-                                       args.mapper, shift=-1, batch_size=args.batch_size)
+                                       args.mapper, shift=-1,
+                                       batch_size=args.batch_size, enable_amp=not args.disable_amp)
         right_eye = apply_divergence_nn(side_model, im_org, depth,
                                         args.divergence, args.convergence,
-                                        args.mapper, shift=1, batch_size=args.batch_size)
+                                        args.mapper, shift=1,
+                                        batch_size=args.batch_size, enable_amp=not args.disable_amp)
     if args.pad is not None:
         pad_h = int(left_eye.shape[1] * args.pad) // 2
         pad_w = int(left_eye.shape[2] * args.pad) // 2
@@ -341,6 +355,22 @@ def postprocess_image(depth, im_org, args, side_model, device):
         right_eye = equirectangular_projection(right_eye, device=device)
     sbs = torch.cat([left_eye, right_eye], dim=2)
     sbs = TF.to_pil_image(sbs)
+
+    w, h = sbs.size
+    new_w, new_h = w, h
+    if args.max_output_height is not None and new_h > args.max_output_height:
+        if args.keep_aspect_ratio:
+            new_w = int(args.max_output_height / new_h * new_w)
+        new_h = args.max_output_height
+    if args.max_output_width is not None and new_w > args.max_output_width:
+        if args.keep_aspect_ratio:
+            new_h = int(args.max_output_width / new_w * new_h)
+        new_w = args.max_output_width
+    if new_w != w or new_h != h:
+        new_h -= new_h % 2
+        new_w -= new_w % 2
+        sbs = sbs.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+
     return sbs
 
 
@@ -381,16 +411,15 @@ def process_image(im, args, depth_model, side_model):
         return process_image_impl(im, args, depth_model, side_model)
 
 
-def process_images(args, depth_model, side_model):
+def process_images(files, args, depth_model, side_model, title=None):
     os.makedirs(args.output, exist_ok=True)
-    files = ImageLoader.listdir(args.input)
     loader = ImageLoader(
         files=files,
         load_func=load_image_simple,
         load_func_kwargs={"color": "rgb"})
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
-    pbar = tqdm_fn(ncols=80, total=len(files))
+    pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
     with PoolExecutor(max_workers=4) as pool:
         for im, meta in loader:
             filename = meta["filename"]
@@ -409,7 +438,7 @@ def process_images(args, depth_model, side_model):
     pbar.close()
 
 
-def process_video_full(args, depth_model, side_model):
+def process_video_full(input_filename, args, depth_model, side_model):
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -428,6 +457,7 @@ def process_video_full(args, depth_model, side_model):
         )
 
     minibatch_queue = []
+    minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
 
     @torch.inference_mode()
     def run_minibatch():
@@ -450,7 +480,7 @@ def process_video_full(args, depth_model, side_model):
             if frame is None:
                 return run_minibatch()
             minibatch_queue.append(frame.to_image())
-            if len(minibatch_queue) >= args.zoed_batch_size:
+            if len(minibatch_queue) >= minibatch_size:
                 return run_minibatch()
             else:
                 return None
@@ -463,7 +493,7 @@ def process_video_full(args, depth_model, side_model):
         os.makedirs(args.output, exist_ok=True)
         output_filename = path.join(
             args.output,
-            make_output_filename(path.basename(args.input), video=True, vr180=args.vr180))
+            make_output_filename(path.basename(input_filename), video=True, vr180=args.vr180))
     else:
         output_filename = args.output
 
@@ -476,18 +506,19 @@ def process_video_full(args, depth_model, side_model):
             return
 
     make_parent_dir(output_filename)
-    VU.process_video(args.input, output_filename,
+    VU.process_video(input_filename, output_filename,
                      config_callback=config_callback,
                      frame_callback=frame_callback,
                      vf=args.vf,
                      stop_event=args.state["stop_event"],
-                     tqdm_fn=args.state["tqdm_fn"])
+                     tqdm_fn=args.state["tqdm_fn"],
+                     title=path.basename(input_filename))
 
 
-def process_video_keyframes(args, depth_model, side_model):
+def process_video_keyframes(input_filename, args, depth_model, side_model):
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
-        output_dir = path.join(args.output, make_output_filename(path.basename(args.input), video=True))
+        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True))
     else:
         output_dir = args.output
     output_dir = path.join(path.dirname(output_dir), path.splitext(path.basename(output_dir))[0])
@@ -504,18 +535,19 @@ def process_video_keyframes(args, depth_model, side_model):
                 path.basename(output_dir) + "_" + str(frame.index).zfill(8) + SBS_SUFFIX + ".png")
             f = pool.submit(save_image, output, output_filename)
             futures.append(f)
-        VU.process_video_keyframes(args.input, frame_callback=frame_callback,
+        VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
                                    min_interval_sec=args.keyframe_interval,
-                                   stop_event=args.state["stop_event"])
+                                   stop_event=args.state["stop_event"],
+                                   title=path.basename(input_filename))
         for f in futures:
             f.result()
 
 
-def process_video(args, depth_model, side_model):
+def process_video(input_filename, args, depth_model, side_model):
     if args.keyframe:
-        process_video_keyframes(args, depth_model, side_model)
+        process_video_keyframes(input_filename, args, depth_model, side_model)
     else:
-        process_video_full(args, depth_model, side_model)
+        process_video_full(input_filename, args, depth_model, side_model)
 
 
 def create_parser(required_true=True):
@@ -552,7 +584,7 @@ def create_parser(required_true=True):
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
     parser.add_argument("--resume", action="store_true",
-                        help="skip processing when output file is already exist")
+                        help="skip processing when the output file already exists")
     parser.add_argument("--batch-size", type=int, default=64, choices=[Range(1, 256)],
                         help="batch size for RowFlow model, 256x256 tiled input")
     parser.add_argument("--zoed-batch-size", type=int, default=2, choices=[Range(1, 64)],
@@ -600,6 +632,14 @@ def create_parser(required_true=True):
                         help="output in VR180 format")
     parser.add_argument("--tta", action="store_true",
                         help="Use flip augmentation on depth model")
+    parser.add_argument("--disable-amp", action="store_true",
+                        help="disable AMP for some special reason")
+    parser.add_argument("--max-output-width", type=int,
+                        help="limit output width for cardboard players")
+    parser.add_argument("--max-output-height", type=int,
+                        help="limit output height for cardboard players")
+    parser.add_argument("--keep-aspect-ratio", action="store_true",
+                        help="keep aspect ratio when resizing")
     return parser
 
 
@@ -636,33 +676,39 @@ def iw3_main(args):
         side_model = None
 
     if path.isdir(args.input):
-        process_images(args, depth_model, side_model)
-    else:
-        if is_video(args.input):
-            process_video(args, depth_model, side_model)
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
+        image_files = ImageLoader.listdir(args.input)
+        process_images(image_files, args, depth_model, side_model, title="Images")
+        for video_file in VU.list_videos(args.input):
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                return args
+            process_video(video_file, args, depth_model, side_model)
+    elif is_text(args.input):
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
+        files = []
+        with open(args.input, mode="r", encoding="utf-8") as f:
+            for line in f.readlines():
+                files.append(line.strip())
+        image_files = [f for f in files if is_image(f)]
+        process_images(image_files, args, depth_model, side_model, title="Images")
+        video_files = [f for f in files if is_video(f)]
+        for video_file in video_files:
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                return args
+            process_video(video_file, args, depth_model, side_model)
+    elif is_video(args.input):
+        process_video(args.input, args, depth_model, side_model)
+    elif is_image(args.input):
+        if is_output_dir(args.output):
+            os.makedirs(args.output, exist_ok=True)
+            output_filename = path.join(args.output, make_output_filename(args.input))
         else:
-            if is_text(args.input):
-                files = []
-                with open(args.input, mode="r", encoding="utf-8") as f:
-                    for line in f.readlines():
-                        files.append(line.strip())
-            else:
-                files = [args.input]
-            for input_file in files:
-                if is_video(input_file):
-                    args.input = input_file
-                    process_video(args, depth_model, side_model)
-                elif is_image(input_file):
-                    if is_output_dir(args.output):
-                        os.makedirs(args.output, exist_ok=True)
-                        output_filename = path.join(args.output, make_output_filename(input_file))
-                    else:
-                        output_filename = args.output
-                    im, _ = load_image_simple(input_file, color="rgb")
-                    output = process_image(im, args, depth_model, side_model)
-                    make_parent_dir(output_filename)
-                    output.save(output_filename)
-                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                    break
+            output_filename = args.output
+        im, _ = load_image_simple(args.input, color="rgb")
+        output = process_image(im, args, depth_model, side_model)
+        make_parent_dir(output_filename)
+        output.save(output_filename)
 
     return args

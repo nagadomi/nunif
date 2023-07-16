@@ -14,7 +14,7 @@ from nunif.utils.image_loader import list_images
 class ConvertWebP(Dataset):
     def __init__(self, input_dir):
         super().__init__()
-        self.files = list_images(input_dir, extentions=[".png"])
+        self.files = list_images(input_dir, extensions=[".png"])
 
     def __len__(self):
         return len(self.files)

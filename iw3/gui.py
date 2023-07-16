@@ -12,7 +12,7 @@ from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
 from .utils import (
     create_parser, set_state_args, iw3_main,
-    is_video, is_output_dir, make_output_filename,
+    is_text, is_video, is_output_dir, make_output_filename,
     has_depth_model, has_rembg_model,
 )
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
@@ -22,7 +22,7 @@ from nunif.utils.gui import (
     resolve_default_dir, extension_list_to_wildcard, validate_number,
     set_icon_ex)
 
-from .locales import LOCALES
+from .locale import LOCALES
 from . import models # noqa
 import torch
 
@@ -52,7 +52,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(1000, 620),
+            size=(1000, 660),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -91,8 +91,11 @@ class MainFrame(wx.Frame):
         self.btn_output_dir = wx.Button(self.pnl_file, label=T("..."),
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
+        self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
+        self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
+        self.chk_resume.SetValue(True)
 
-        layout = wx.FlexGridSizer(rows=2, cols=4, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=3, cols=4, vgap=4, hgap=4)
         layout.Add(self.lbl_input, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_input, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_input_file, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
@@ -102,6 +105,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_output, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_same_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(wx.StaticText(self.pnl_file, label=""), 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_resume, 0, wx.ALIGN_CENTER_VERTICAL)
+
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -232,6 +238,14 @@ class MainFrame(wx.Frame):
         # input video filter
         # deinterlace, rotate, vf
         self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video Filter"))
+        self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
+        self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
+                                           style=wx.CB_READONLY, name="cbo_deinterlace")
+        self.cbo_deinterlace.SetSelection(0)
+
+        self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
+        self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
+
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
         self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
                                       style=wx.CB_READONLY, name="cbo_rotate")
@@ -239,34 +253,39 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.Append(T("Left 90 (counterclockwise)"), "left")
         self.cbo_rotate.Append(T("Right 90 (clockwise)"), "right")
         self.cbo_rotate.SetSelection(0)
-        self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
-        self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
-                                           style=wx.CB_READONLY, name="cbo_deinterlace")
-        self.cbo_deinterlace.SetSelection(0)
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
         self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "1", "2"],
                                    style=wx.CB_DROPDOWN, name="cbo_pad")
         self.cbo_pad.SetSelection(0)
 
-        self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
-        self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
+        self.lbl_max_output_size = wx.StaticText(self.grp_video_filter, label=T("Output Size Limit"))
+        self.cbo_max_output_size = wx.ComboBox(self.grp_video_filter,
+                                               choices=["", "3840x2160", "1920x1080", "1280x720", "640x360"],
+                                               style=wx.CB_READONLY, name="cbo_max_output_size")
+        self.cbo_max_output_size.SetSelection(0)
+
+        self.chk_keep_aspect_ratio = wx.CheckBox(self.grp_video_filter, label=T("Keep Aspect Ratio"), name="chk_keep_aspect_ratio")
+        self.chk_keep_aspect_ratio.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_deinterlace, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_deinterlace, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_rotate, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_rotate, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_pad, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pad, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_vf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_vf, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_vf, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_vf, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_rotate, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_rotate, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_pad, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pad, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_max_output_size, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_max_output_size, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_keep_aspect_ratio, (5, 1), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # processor settings
-        # device, batch-size, TTA, Low VRAM
+        # device, batch-size, TTA, Low VRAM, fp16
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
         self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), style=wx.CB_READONLY,
@@ -293,16 +312,21 @@ class MainFrame(wx.Frame):
 
         self.chk_low_vram = wx.CheckBox(self.grp_processor, label=T("Low VRAM"), name="chk_low_vram")
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
+        self.chk_tta.SetToolTip(T("Use flip augmentation to improve depth quality (slow)"))
+        self.chk_fp16 = wx.CheckBox(self.grp_processor, label=T("FP16"), name="chk_fp16")
+        self.chk_fp16.SetToolTip(T("Use FP16 for stereo generation models (fast)"))
+        self.chk_fp16.SetValue(True)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_device, (0, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_batch_size, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_zoed_batch_size, (1, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_batch_size, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (3, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -373,6 +397,7 @@ class MainFrame(wx.Frame):
 
         self.update_start_button_state()
         self.update_rembg_state()
+        self.update_resume_state()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -400,6 +425,13 @@ class MainFrame(wx.Frame):
         else:
             self.chk_rembg.Enable()
             self.cbo_bg_model.Enable()
+
+    def update_resume_state(self):
+        input_path = self.txt_input.GetValue()
+        if path.isdir(input_path) or is_text(input_path):
+            self.chk_resume.Enable()
+        else:
+            self.chk_resume.Disable()
 
     def set_same_output_dir(self):
         selected_path = self.txt_input.GetValue()
@@ -453,6 +485,7 @@ class MainFrame(wx.Frame):
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
         self.update_rembg_state()
+        self.update_resume_state()
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
@@ -551,8 +584,16 @@ class MainFrame(wx.Frame):
         if remove_bg and not has_rembg_model(bg_model_type):
             self.SetStatusText(f"Downloading {bg_model_type}...")
 
+        max_output_width = max_output_height = None
+        max_output_size = self.cbo_max_output_size.GetValue()
+        if max_output_size:
+            max_output_width, max_output_height = [int(s) for s in max_output_size.split("x")]
+
+        input_path = self.txt_input.GetValue()
+        resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+
         parser.set_defaults(
-            input=self.txt_input.GetValue(),
+            input=input_path,
             output=self.txt_output.GetValue(),
             yes=True,  # TODO: remove this
 
@@ -575,20 +616,25 @@ class MainFrame(wx.Frame):
             rotate_right=rotate_right,
             rotate_left=rotate_left,
             vf=vf,
+            max_output_width=max_output_width,
+            max_output_height=max_output_height,
+            keep_aspect_ratio=self.chk_keep_aspect_ratio.GetValue(),
 
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
             tta=self.chk_tta.GetValue(),
+            disable_amp=not self.chk_fp16.GetValue(),
             low_vram=self.chk_low_vram.GetValue(),
+
+            resume=resume,
         )
         args = parser.parse_args()
         set_state_args(
             args,
             stop_event=self.stop_event,
             tqdm_fn=functools.partial(TQDMGUI, self),
-            depth_model=self.depth_model,
-        )
+            depth_model=self.depth_model)
         startWorker(self.on_exit_worker, iw3_main, wargs=(args,))
         self.processing = True
 
@@ -622,13 +668,14 @@ class MainFrame(wx.Frame):
         self.stop_event.set()
 
     def on_tqdm(self, event):
-        type, value = event.GetValue()
+        type, value, desc = event.GetValue()
+        desc = desc if desc else ""
         if type == 0:
             # initialize
             self.prg_tqdm.SetRange(value)
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
-            self.SetStatusText(f"{0}/{value}")
+            self.SetStatusText(f"{0}/{value} {desc}")
         elif type == 1:
             # update
             self.prg_tqdm.SetValue(self.prg_tqdm.GetValue() + value)
@@ -641,7 +688,7 @@ class MainFrame(wx.Frame):
             m = (remaining_time - h * 3600) // 60
             s = (remaining_time - h * 3600 - m * 60)
             t = f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
-            self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ]")
+            self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ] {desc}")
         elif type == 2:
             # close
             pass

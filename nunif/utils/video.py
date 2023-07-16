@@ -1,8 +1,11 @@
 import av
+import os
+from os import path
 import math
 from tqdm import tqdm
 from PIL import Image
 import mimetypes
+import re
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -21,6 +24,14 @@ VIDEO_EXTENSIONS = [
     ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".mp2", ".avi", ".wmv", ".mov", ".flv", ".webm",
     ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
 ]
+
+
+def list_videos(directory, extensions=VIDEO_EXTENSIONS):
+    return sorted(
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if os.path.splitext(f)[-1].lower() in extensions
+    )
 
 
 def get_fps(stream):
@@ -64,10 +75,11 @@ class FixedFPSFilter():
         vf = vf.strip()
         if not vf:
             return video_filters
-        for line in vf.split(","):
+
+        for line in re.split(r'(?<!\\),', vf):
             line = line.strip()
             if line:
-                col = line.split("=", 1)
+                col = re.split(r'(?<!\\)=', line, 1)
                 if len(col) == 2:
                     filter_name, filter_option = col
                 else:
@@ -88,10 +100,11 @@ class FixedFPSFilter():
         prev_filter.link_to(buffersink)
         graph.configure()
 
-    def __init__(self, video_stream, fps, vf=""):
+    def __init__(self, video_stream, fps, vf="", deny_filters=[]):
         self.graph = av.filter.Graph()
         video_filters = self.parse_vf_option(vf)
         video_filters.append(("fps", str(fps)))
+        video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
         self.build_graph(self.graph, video_stream, video_filters)
 
     def update(self, frame):
@@ -122,12 +135,26 @@ def default_config_callback(stream):
     )
 
 
-def test_output_size(frame_callback, input_width, input_height):
-    # TODO: video filter
-    empty_image = Image.new("RGB", (input_width, input_height), (128, 128, 128))
+SIZE_SAFE_FILTERS = [
+    "fps", "yadif", "bwdif", "nnedi", "w3fdif", "kerndeint",
+    "hflip", "vflip",
+]
+
+
+def test_output_size(frame_callback, video_stream, vf):
+    video_filter = FixedFPSFilter(video_stream, fps=60, vf=vf, deny_filters=SIZE_SAFE_FILTERS)
+    empty_image = Image.new("RGB", (video_stream.codec_context.width,
+                                    video_stream.codec_context.height), (128, 128, 128))
     test_frame = av.video.frame.VideoFrame.from_image(empty_image)
+    pts_step = int((1. / video_stream.time_base) / 30) or 1
+    test_frame.pts = pts_step
     while True:
-        output_frame = get_new_frames(frame_callback(test_frame))
+        while True:
+            frame = video_filter.update(test_frame)
+            test_frame.pts = (test_frame.pts + pts_step)
+            if frame is not None:
+                break
+        output_frame = get_new_frames(frame_callback(frame))
         if output_frame:
             output_frame = output_frame[0]
             break
@@ -152,6 +179,7 @@ def process_video(input_path, output_path,
                   title=None,
                   vf="",
                   stop_event=None, tqdm_fn=None):
+    output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -165,13 +193,10 @@ def process_video(input_path, output_path,
         audio_input_stream = input_container.streams.audio[0]
 
     config = config_callback(video_input_stream)
-    output_container = av.open(output_path, 'w')
+    output_container = av.open(output_path_tmp, 'w')
 
     fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
-    output_size = test_output_size(
-        frame_callback,
-        video_input_stream.codec_context.width,
-        video_input_stream.codec_context.height)
+    output_size = test_output_size(frame_callback, video_input_stream, vf)
     video_output_stream = output_container.add_stream("libx264", config.fps)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
@@ -190,7 +215,7 @@ def process_video(input_path, output_path,
                 audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
                 audio_copy = False
 
-    desc = (title if title else output_path)
+    desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     pbar = tqdm_fn(desc=desc, total=guess_frames(video_input_stream, config.fps), ncols=ncols)
@@ -240,6 +265,10 @@ def process_video(input_path, output_path,
     pbar.close()
     output_container.close()
     input_container.close()
+
+    if not(stop_event is not None and stop_event.is_set()):
+        # success
+        os.replace(output_path_tmp, output_path)
 
 
 def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None):
