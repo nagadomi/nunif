@@ -37,28 +37,28 @@ def image_load_task(q, stop_flag, files, max_queue_size, load_func):
     q.put(None)
 
 
-def list_images(directory, extentions=IMG_EXTENSIONS):
+def list_images(directory, extensions=IMG_EXTENSIONS):
     return sorted(
         os.path.join(directory, f)
         for f in os.listdir(directory)
-        if os.path.splitext(f)[-1].lower() in extentions
+        if os.path.splitext(f)[-1].lower() in extensions
     )
 
 
 class ImageLoader():
     @classmethod
-    def listdir(cls, directory, extentions=IMG_EXTENSIONS):
-        return list_images(directory, extentions=IMG_EXTENSIONS)
+    def listdir(cls, directory, extensions=IMG_EXTENSIONS):
+        return list_images(directory, extensions=IMG_EXTENSIONS)
 
     def __init__(self, directory=None, files=None, max_queue_size=256,
                  load_func=pil_io.load_image,
                  load_func_kwargs=None,
-                 extentions=IMG_EXTENSIONS):
+                 extensions=IMG_EXTENSIONS):
         assert (directory is not None or files is not None)
         if files is not None:
             self.files = files
         else:
-            self.files = ImageLoader.listdir(directory, extentions=extentions)
+            self.files = ImageLoader.listdir(directory, extensions=extensions)
         self.max_queue_size = max_queue_size
         self.load_func = lambda x: load_func(x, **(load_func_kwargs or {}))
         self.proc = None
