@@ -3,6 +3,7 @@ import math
 from tqdm import tqdm
 from PIL import Image
 import mimetypes
+import re
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -64,10 +65,11 @@ class FixedFPSFilter():
         vf = vf.strip()
         if not vf:
             return video_filters
-        for line in vf.split(","):
+
+        for line in re.split(r'(?<!\\),', vf):
             line = line.strip()
             if line:
-                col = line.split("=", 1)
+                col = re.split(r'(?<!\\)=', line, 1)
                 if len(col) == 2:
                     filter_name, filter_option = col
                 else:
