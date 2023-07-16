@@ -213,7 +213,7 @@ def process_video(input_path, output_path,
                 audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
                 audio_copy = False
 
-    desc = (title if title else output_path)
+    desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     pbar = tqdm_fn(desc=desc, total=guess_frames(video_input_stream, config.fps), ncols=ncols)
