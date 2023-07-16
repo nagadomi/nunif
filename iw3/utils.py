@@ -411,7 +411,7 @@ def process_image(im, args, depth_model, side_model):
         return process_image_impl(im, args, depth_model, side_model)
 
 
-def process_images(files, args, depth_model, side_model):
+def process_images(files, args, depth_model, side_model, title=None):
     os.makedirs(args.output, exist_ok=True)
     loader = ImageLoader(
         files=files,
@@ -419,7 +419,7 @@ def process_images(files, args, depth_model, side_model):
         load_func_kwargs={"color": "rgb"})
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
-    pbar = tqdm_fn(ncols=80, total=len(files))
+    pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
     with PoolExecutor(max_workers=4) as pool:
         for im, meta in loader:
             filename = meta["filename"]
@@ -511,7 +511,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
                      frame_callback=frame_callback,
                      vf=args.vf,
                      stop_event=args.state["stop_event"],
-                     tqdm_fn=args.state["tqdm_fn"])
+                     tqdm_fn=args.state["tqdm_fn"],
+                     title=path.basename(input_filename))
 
 
 def process_video_keyframes(input_filename, args, depth_model, side_model):
@@ -536,7 +537,8 @@ def process_video_keyframes(input_filename, args, depth_model, side_model):
             futures.append(f)
         VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
                                    min_interval_sec=args.keyframe_interval,
-                                   stop_event=args.state["stop_event"])
+                                   stop_event=args.state["stop_event"],
+                                   title=path.basename(input_filename))
         for f in futures:
             f.result()
 
@@ -675,8 +677,12 @@ def iw3_main(args):
 
     if path.isdir(args.input):
         image_files = ImageLoader.listdir(args.input)
-        process_images(image_files, args, depth_model, side_model)
+        process_images(image_files, args, depth_model, side_model, title="Images")
+        if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+            return args
         for video_file in VU.list_videos(args.input):
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                return args
             process_video(video_file, args, depth_model, side_model)
     else:
         if is_video(args.input):

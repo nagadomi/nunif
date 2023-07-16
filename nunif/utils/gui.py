@@ -8,26 +8,28 @@ EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
 
 
 class TQDMEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, type=None, value=None):
+    def __init__(self, etype, eid, type=None, value=None, desc=None):
         super(TQDMEvent, self).__init__(etype, eid)
         self.type = type
         self.value = value
+        self.desc = desc
 
     def GetValue(self):
-        return (self.type, self.value)
+        return (self.type, self.value, self.desc)
 
 
 class TQDMGUI():
     def __init__(self, parent, **kwargs):
         self.parent = parent
         total = kwargs["total"]
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 0, total))
+        self.desc = kwargs.get("desc", "")
+        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 0, total, self.desc))
 
     def update(self, n=1):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, n))
+        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, n, self.desc))
 
     def close(self):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0))
+        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0, self.desc))
 
 
 class FileDropCallback(wx.FileDropTarget):

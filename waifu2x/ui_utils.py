@@ -49,7 +49,7 @@ def process_image(ctx, im, meta, args):
     return IL.to_image(rgb, alpha, depth=depth)
 
 
-def process_images(ctx, files, output_dir, args):
+def process_images(ctx, files, output_dir, args, title=None):
     os.makedirs(output_dir, exist_ok=True)
     loader = ImageLoader(files=files, max_queue_size=128,
                          load_func=IL.load_image,
@@ -57,7 +57,7 @@ def process_images(ctx, files, output_dir, args):
     futures = []
     with PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         tqdm_fn = args.state["tqdm_fn"] or tqdm
-        pbar = tqdm_fn(ncols=80, total=len(files))
+        pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
         for im, meta in loader:
             output_filename = path.join(
                 output_dir,
@@ -144,7 +144,8 @@ def process_video(ctx, input_filename, args):
                      frame_callback=frame_callback,
                      vf=args.vf,
                      stop_event=args.state["stop_event"],
-                     tqdm_fn=args.state["tqdm_fn"])
+                     tqdm_fn=args.state["tqdm_fn"],
+                     title=path.basename(input_filename))
 
 
 def process_file(ctx, input_filename, args):
@@ -173,7 +174,7 @@ def process_file(ctx, input_filename, args):
         files = load_files(input_filename)
         image_files = [f for f in files if is_image(f)]
         if image_files:
-            process_images(ctx, image_files, args.output, args)
+            process_images(ctx, image_files, args.output, args, title=path.basename(input_filename))
         video_files = [f for f in files if is_video(f)]
         for video_file in video_files:
             process_video(ctx, video_file, args)
@@ -301,10 +302,9 @@ def waifu2x_main(args):
                 files = ImageLoader.listdir(input_dir)
                 if not files:
                     continue
-                print(f"* {input_dir}")
                 output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
-                process_images(ctx, files, output_dir, args)
+                process_images(ctx, files, output_dir, args, title=path.relpath(input_dir, args.input))
         else:
-            process_images(ctx, ImageLoader.listdir(args.input), args.output, args)
+            process_images(ctx, ImageLoader.listdir(args.input), args.output, args, title="Images")
     else:
         process_file(ctx, args.input, args)

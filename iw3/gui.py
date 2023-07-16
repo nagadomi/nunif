@@ -648,13 +648,14 @@ class MainFrame(wx.Frame):
         self.stop_event.set()
 
     def on_tqdm(self, event):
-        type, value = event.GetValue()
+        type, value, desc = event.GetValue()
+        desc = desc if desc else ""
         if type == 0:
             # initialize
             self.prg_tqdm.SetRange(value)
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
-            self.SetStatusText(f"{0}/{value}")
+            self.SetStatusText(f"{0}/{value} {desc}")
         elif type == 1:
             # update
             self.prg_tqdm.SetValue(self.prg_tqdm.GetValue() + value)
@@ -667,7 +668,7 @@ class MainFrame(wx.Frame):
             m = (remaining_time - h * 3600) // 60
             s = (remaining_time - h * 3600 - m * 60)
             t = f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
-            self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ]")
+            self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ] {desc}")
         elif type == 2:
             # close
             pass
