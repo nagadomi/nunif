@@ -14,7 +14,7 @@ from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
 from .ui_utils import (
     create_parser, set_state_args, waifu2x_main,
-    is_video, is_output_dir,
+    is_video, is_output_dir, is_text,
     MODEL_DIR, DEFAULT_ART_MODEL_DIR,
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
