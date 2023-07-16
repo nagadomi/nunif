@@ -364,7 +364,7 @@ def postprocess_image(depth, im_org, args, side_model, device):
         new_h = args.max_output_height
     if args.max_output_width is not None and new_w > args.max_output_width:
         if args.keep_aspect_ratio:
-            new_h = int(args.max_output_width / new_w  * new_h)
+            new_h = int(args.max_output_width / new_w * new_h)
         new_w = args.max_output_width
     if new_w != w or new_h != h:
         new_h -= new_h % 2
@@ -411,9 +411,8 @@ def process_image(im, args, depth_model, side_model):
         return process_image_impl(im, args, depth_model, side_model)
 
 
-def process_images(args, depth_model, side_model):
+def process_images(files, args, depth_model, side_model):
     os.makedirs(args.output, exist_ok=True)
-    files = ImageLoader.listdir(args.input)
     loader = ImageLoader(
         files=files,
         load_func=load_image_simple,
@@ -439,7 +438,7 @@ def process_images(args, depth_model, side_model):
     pbar.close()
 
 
-def process_video_full(args, depth_model, side_model):
+def process_video_full(input_filename, args, depth_model, side_model):
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -494,7 +493,7 @@ def process_video_full(args, depth_model, side_model):
         os.makedirs(args.output, exist_ok=True)
         output_filename = path.join(
             args.output,
-            make_output_filename(path.basename(args.input), video=True, vr180=args.vr180))
+            make_output_filename(path.basename(input_filename), video=True, vr180=args.vr180))
     else:
         output_filename = args.output
 
@@ -507,7 +506,7 @@ def process_video_full(args, depth_model, side_model):
             return
 
     make_parent_dir(output_filename)
-    VU.process_video(args.input, output_filename,
+    VU.process_video(input_filename, output_filename,
                      config_callback=config_callback,
                      frame_callback=frame_callback,
                      vf=args.vf,
@@ -515,10 +514,10 @@ def process_video_full(args, depth_model, side_model):
                      tqdm_fn=args.state["tqdm_fn"])
 
 
-def process_video_keyframes(args, depth_model, side_model):
+def process_video_keyframes(input_filename, args, depth_model, side_model):
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
-        output_dir = path.join(args.output, make_output_filename(path.basename(args.input), video=True))
+        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True))
     else:
         output_dir = args.output
     output_dir = path.join(path.dirname(output_dir), path.splitext(path.basename(output_dir))[0])
@@ -535,18 +534,18 @@ def process_video_keyframes(args, depth_model, side_model):
                 path.basename(output_dir) + "_" + str(frame.index).zfill(8) + SBS_SUFFIX + ".png")
             f = pool.submit(save_image, output, output_filename)
             futures.append(f)
-        VU.process_video_keyframes(args.input, frame_callback=frame_callback,
+        VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
                                    min_interval_sec=args.keyframe_interval,
                                    stop_event=args.state["stop_event"])
         for f in futures:
             f.result()
 
 
-def process_video(args, depth_model, side_model):
+def process_video(input_filename, args, depth_model, side_model):
     if args.keyframe:
-        process_video_keyframes(args, depth_model, side_model)
+        process_video_keyframes(input_filename, args, depth_model, side_model)
     else:
-        process_video_full(args, depth_model, side_model)
+        process_video_full(input_filename, args, depth_model, side_model)
 
 
 def create_parser(required_true=True):
@@ -675,10 +674,13 @@ def iw3_main(args):
         side_model = None
 
     if path.isdir(args.input):
-        process_images(args, depth_model, side_model)
+        image_files = ImageLoader.listdir(args.input)
+        process_images(image_files, args, depth_model, side_model)
+        for video_file in VU.list_videos(args.input):
+            process_video(video_file, args, depth_model, side_model)
     else:
         if is_video(args.input):
-            process_video(args, depth_model, side_model)
+            process_video(args.input, args, depth_model, side_model)
         else:
             if is_text(args.input):
                 files = []
@@ -689,8 +691,7 @@ def iw3_main(args):
                 files = [args.input]
             for input_file in files:
                 if is_video(input_file):
-                    args.input = input_file
-                    process_video(args, depth_model, side_model)
+                    process_video(input_file, args, depth_model, side_model)
                 elif is_image(input_file):
                     if is_output_dir(args.output):
                         os.makedirs(args.output, exist_ok=True)

@@ -1,4 +1,5 @@
 import av
+import os
 import math
 from tqdm import tqdm
 from PIL import Image
@@ -22,6 +23,14 @@ VIDEO_EXTENSIONS = [
     ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".mp2", ".avi", ".wmv", ".mov", ".flv", ".webm",
     ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
 ]
+
+
+def list_videos(directory, extensions=VIDEO_EXTENSIONS):
+    return sorted(
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if os.path.splitext(f)[-1].lower() in extensions
+    )
 
 
 def get_fps(stream):
