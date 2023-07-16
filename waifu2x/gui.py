@@ -23,7 +23,7 @@ from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM,
     resolve_default_dir, extension_list_to_wildcard,
     set_icon_ex)
-from .locales import LOCALES
+from .locale import LOCALES
 from . import models # noqa
 import torch
 

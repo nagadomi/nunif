@@ -22,7 +22,7 @@ from nunif.utils.gui import (
     resolve_default_dir, extension_list_to_wildcard, validate_number,
     set_icon_ex)
 
-from .locales import LOCALES
+from .locale import LOCALES
 from . import models # noqa
 import torch
 

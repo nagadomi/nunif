@@ -1,0 +1,50 @@
+---
+"_LOCALE_LINUX": "ja_JP"
+"_LOCALE_WINDOWS": "Japanese_Japan"
+
+"Input": "入力"
+"Output": "出力"
+"Choose a file": "ファイルを選択"
+"Choose a directory": "フォルダを選択"
+"Set the same directory": "同じフォルダを設定"
+"Resume": "処理を再開"
+"Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップする"
+
+"Error": "エラー"
+"Initializing": "初期化中"
+"Cancelled": "キャンセル済み"
+"Finished": "完了"
+"Confirm": "確認"
+"already exists. Overwrite?": "すでに存在します。上書きしますか？"
+
+"Superresolution": "超解像"
+"Model": "モデル"
+"Anime Style Art, Cliparts": "アニメスタイルアート、クリップアート"
+"Manga, Anime Screencaps, Anime Style Art for more clear results": "漫画, アニメキャプチャ, イラスト, よりくっきりした結果"
+"Photograph": "写真・実写"
+"Old version, Art model, fast": "旧バージョン, イラストモデル, 速い"
+"Old version, Art model, veryfast": "旧バージョン, イラストモデル, とても速い"
+"Old version, Photo model, veryfast": "旧バージョン, 写真モデル, とても速い"
+
+"Video Encoding": "動画圧縮"
+
+"Max FPS": "最大フレームレート"
+"Pixel Format": "ピクセルフォーマット"
+"CRF": "CRF(固定品質)"
+"Preset": "プリセット"
+"Tune": "チューニング"
+
+"Video Filter": "ビデオフィルタ"
+"Deinterlace": "デインターレース"
+"Rotate": "回転"
+"Left 90 (counterclockwise)": "左に90°回転 (半時計回り)"
+"Right 90 (clockwise)": "右に90°回転 (時計回り)"
+"Add grain noise": "ノイズを追加"
+
+"Processor": "プロセッサ"
+"Device": "デバイス"
+"Batch Size": "バッチサイズ"
+"Tile Size": "分割サイズ"
+
+"Start": "開始"
+"Cancel": "キャンセル"
