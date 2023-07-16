@@ -122,12 +122,20 @@ def default_config_callback(stream):
     )
 
 
-def test_output_size(frame_callback, input_width, input_height):
-    # TODO: video filter
-    empty_image = Image.new("RGB", (input_width, input_height), (128, 128, 128))
+def test_output_size(frame_callback, video_stream, vf):
+    video_filter = FixedFPSFilter(video_stream, fps=60, vf=vf)
+    empty_image = Image.new("RGB", (video_stream.codec_context.width,
+                                    video_stream.codec_context.height), (128, 128, 128))
     test_frame = av.video.frame.VideoFrame.from_image(empty_image)
+    pts_step = int((1. / video_stream.time_base) / 30) or 1
+    test_frame.pts = pts_step
     while True:
-        output_frame = get_new_frames(frame_callback(test_frame))
+        while True:
+            frame = video_filter.update(test_frame)
+            test_frame.pts = (test_frame.pts + pts_step)
+            if frame is not None:
+                break
+        output_frame = get_new_frames(frame_callback(frame))
         if output_frame:
             output_frame = output_frame[0]
             break
@@ -168,10 +176,7 @@ def process_video(input_path, output_path,
     output_container = av.open(output_path, 'w')
 
     fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
-    output_size = test_output_size(
-        frame_callback,
-        video_input_stream.codec_context.width,
-        video_input_stream.codec_context.height)
+    output_size = test_output_size(frame_callback, video_input_stream, vf)
     video_output_stream = output_container.add_stream("libx264", config.fps)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
