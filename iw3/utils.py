@@ -585,7 +585,7 @@ def create_parser(required_true=True):
                         help="force update midas models from torch hub")
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
-    parser.add_argument("--batch-size", type=int, default=64, choices=[Range(1, 256)],
+    parser.add_argument("--batch-size", type=int, default=16, choices=[Range(1, 256)],
                         help="batch size for RowFlow model, 256x256 tiled input")
     parser.add_argument("--zoed-batch-size", type=int, default=2, choices=[Range(1, 64)],
                         help="batch size for ZoeDepth model. ignored when --low-vram")
