@@ -1,5 +1,6 @@
 import av
 import os
+from os import path
 import math
 from tqdm import tqdm
 from PIL import Image
@@ -178,6 +179,7 @@ def process_video(input_path, output_path,
                   title=None,
                   vf="",
                   stop_event=None, tqdm_fn=None):
+    output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -191,7 +193,7 @@ def process_video(input_path, output_path,
         audio_input_stream = input_container.streams.audio[0]
 
     config = config_callback(video_input_stream)
-    output_container = av.open(output_path, 'w')
+    output_container = av.open(output_path_tmp, 'w')
 
     fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
     output_size = test_output_size(frame_callback, video_input_stream, vf)
@@ -263,6 +265,10 @@ def process_video(input_path, output_path,
     pbar.close()
     output_container.close()
     input_container.close()
+
+    if not(stop_event is not None and stop_event.is_set()):
+        # success
+        os.replace(output_path_tmp, output_path)
 
 
 def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None):
