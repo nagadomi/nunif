@@ -38,6 +38,8 @@ LOCALES = {
         "Rotate": "回転",
         "Left 90 (counterclockwise)": "左に90°回転 (半時計回り)",
         "Right 90 (clockwise)": "右に90°回転 (時計回り)",
+        "Output Size Limit": "出力サイズ制限",
+        "Keep Aspect Ratio": "アスペクト比を維持",
 
         "Processor": "プロセッサ",
         "Device": "デバイス",

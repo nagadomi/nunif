@@ -232,6 +232,14 @@ class MainFrame(wx.Frame):
         # input video filter
         # deinterlace, rotate, vf
         self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video Filter"))
+        self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
+        self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
+                                           style=wx.CB_READONLY, name="cbo_deinterlace")
+        self.cbo_deinterlace.SetSelection(0)
+
+        self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
+        self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
+
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
         self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
                                       style=wx.CB_READONLY, name="cbo_rotate")
@@ -239,28 +247,33 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.Append(T("Left 90 (counterclockwise)"), "left")
         self.cbo_rotate.Append(T("Right 90 (clockwise)"), "right")
         self.cbo_rotate.SetSelection(0)
-        self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
-        self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
-                                           style=wx.CB_READONLY, name="cbo_deinterlace")
-        self.cbo_deinterlace.SetSelection(0)
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
         self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "1", "2"],
                                    style=wx.CB_DROPDOWN, name="cbo_pad")
         self.cbo_pad.SetSelection(0)
 
-        self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
-        self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
+        self.lbl_max_output_size = wx.StaticText(self.grp_video_filter, label=T("Output Size Limit"))
+        self.cbo_max_output_size = wx.ComboBox(self.grp_video_filter,
+                                               choices=["", "3840x2160", "1920x1080", "1280x720", "640x360"],
+                                               style=wx.CB_READONLY, name="cbo_max_output_size")
+        self.cbo_max_output_size.SetSelection(0)
+
+        self.chk_keep_aspect_ratio = wx.CheckBox(self.grp_video_filter, label=T("Keep Aspect Ratio"), name="chk_keep_aspect_ratio")
+        self.chk_keep_aspect_ratio.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_deinterlace, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_deinterlace, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_rotate, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_rotate, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_pad, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pad, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_vf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_vf, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_vf, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_vf, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_rotate, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_rotate, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_pad, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pad, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_max_output_size, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_max_output_size, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_keep_aspect_ratio, (5, 1), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -556,6 +569,11 @@ class MainFrame(wx.Frame):
         if remove_bg and not has_rembg_model(bg_model_type):
             self.SetStatusText(f"Downloading {bg_model_type}...")
 
+        max_output_width = max_output_height = None
+        max_output_size = self.cbo_max_output_size.GetValue()
+        if max_output_size:
+            max_output_width, max_output_height = [int(s) for s in max_output_size.split("x")]
+
         parser.set_defaults(
             input=self.txt_input.GetValue(),
             output=self.txt_output.GetValue(),
@@ -580,6 +598,9 @@ class MainFrame(wx.Frame):
             rotate_right=rotate_right,
             rotate_left=rotate_left,
             vf=vf,
+            max_output_width=max_output_width,
+            max_output_height=max_output_height,
+            keep_aspect_ratio=self.chk_keep_aspect_ratio.GetValue(),
 
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
@@ -593,8 +614,7 @@ class MainFrame(wx.Frame):
             args,
             stop_event=self.stop_event,
             tqdm_fn=functools.partial(TQDMGUI, self),
-            depth_model=self.depth_model,
-        )
+            depth_model=self.depth_model)
         startWorker(self.on_exit_worker, iw3_main, wargs=(args,))
         self.processing = True
 

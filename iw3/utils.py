@@ -305,6 +305,18 @@ def preprocess_image(im, args):
         im = im.transpose(Image.Transpose.ROTATE_90)
     elif args.rotate_right:
         im = im.transpose(Image.Transpose.ROTATE_270)
+
+    w, h = im.size
+    new_w, new_h = w, h
+    if args.max_output_height is not None and new_h > args.max_output_height:
+        new_w = int(args.max_output_height / new_h * new_w)
+        new_h = args.max_output_height
+        # only apply max height
+    if new_w != w or new_h != h:
+        new_h -= new_h % 2
+        new_w -= new_w % 2
+        im = im.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+
     im_org = TF.to_tensor(im)
     if args.bg_session is not None:
         im = remove_bg_from_image(im, args.bg_session)
@@ -343,6 +355,22 @@ def postprocess_image(depth, im_org, args, side_model, device):
         right_eye = equirectangular_projection(right_eye, device=device)
     sbs = torch.cat([left_eye, right_eye], dim=2)
     sbs = TF.to_pil_image(sbs)
+
+    w, h = sbs.size
+    new_w, new_h = w, h
+    if args.max_output_height is not None and new_h > args.max_output_height:
+        if args.keep_aspect_ratio:
+            new_w = int(args.max_output_height / new_h * new_w)
+        new_h = args.max_output_height
+    if args.max_output_width is not None and new_w > args.max_output_width:
+        if args.keep_aspect_ratio:
+            new_h = int(args.max_output_width / new_w  * new_h)
+        new_w = args.max_output_width
+    if new_w != w or new_h != h:
+        new_h -= new_h % 2
+        new_w -= new_w % 2
+        sbs = sbs.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+
     return sbs
 
 
@@ -605,6 +633,12 @@ def create_parser(required_true=True):
                         help="Use flip augmentation on depth model")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
+    parser.add_argument("--max-output-width", type=int,
+                        help="limit output width for cardboard players")
+    parser.add_argument("--max-output-height", type=int,
+                        help="limit output height for cardboard players")
+    parser.add_argument("--keep-aspect-ratio", action="store_true",
+                        help="keep aspect ratio when resizing")
     return parser
 
 
