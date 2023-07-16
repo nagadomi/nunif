@@ -193,7 +193,7 @@ def create_parser(required_true=True):
     parser.add_argument("--recursive", "-r", action="store_true",
                         help="process all subdirectories")
     parser.add_argument("--resume", action="store_true",
-                        help="skip processing when output file is already exist")
+                        help="skip processing when the output file already exists")
     parser.add_argument("--max-fps", type=float, default=128,
                         help="max framerate. output fps = min(fps, --max-fps) (video only)")
     parser.add_argument("--crf", type=int, default=20,

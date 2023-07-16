@@ -92,7 +92,7 @@ class MainFrame(wx.Frame):
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
         self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
-        self.chk_resume.SetToolTip(T("Skip processing of files that already exist"))
+        self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
 
         layout = wx.FlexGridSizer(rows=3, cols=4, vgap=4, hgap=4)

@@ -30,7 +30,8 @@ LOCALES = {
         "Choose a directory": "フォルダを選択",
         "Set the same directory": "同じフォルダを設定",
         "Resume": "処理を再開",
-        "Skip processing of files that already exist": "すでに存在するファイルの処理をスキップする",
+        "Skip processing when the output file already exists":
+        "出力ファイルが存在する場合に処理をスキップする",
 
         "Error": "エラー",
         "Initializing": "初期化中",
