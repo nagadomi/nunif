@@ -676,39 +676,39 @@ def iw3_main(args):
         side_model = None
 
     if path.isdir(args.input):
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
         image_files = ImageLoader.listdir(args.input)
         process_images(image_files, args, depth_model, side_model, title="Images")
-        if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-            return args
         for video_file in VU.list_videos(args.input):
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return args
             process_video(video_file, args, depth_model, side_model)
-    else:
-        if is_video(args.input):
-            process_video(args.input, args, depth_model, side_model)
+    elif is_text(args.input):
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
+        files = []
+        with open(args.input, mode="r", encoding="utf-8") as f:
+            for line in f.readlines():
+                files.append(line.strip())
+        image_files = [f for f in files if is_image(f)]
+        process_images(image_files, args, depth_model, side_model, title="Images")
+        video_files = [f for f in files if is_video(f)]
+        for video_file in video_files:
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                return args
+            process_video(video_file, args, depth_model, side_model)
+    elif is_video(args.input):
+        process_video(args.input, args, depth_model, side_model)
+    elif is_image(args.input):
+        if is_output_dir(args.output):
+            os.makedirs(args.output, exist_ok=True)
+            output_filename = path.join(args.output, make_output_filename(args.input))
         else:
-            if is_text(args.input):
-                files = []
-                with open(args.input, mode="r", encoding="utf-8") as f:
-                    for line in f.readlines():
-                        files.append(line.strip())
-            else:
-                files = [args.input]
-            for input_file in files:
-                if is_video(input_file):
-                    process_video(input_file, args, depth_model, side_model)
-                elif is_image(input_file):
-                    if is_output_dir(args.output):
-                        os.makedirs(args.output, exist_ok=True)
-                        output_filename = path.join(args.output, make_output_filename(input_file))
-                    else:
-                        output_filename = args.output
-                    im, _ = load_image_simple(input_file, color="rgb")
-                    output = process_image(im, args, depth_model, side_model)
-                    make_parent_dir(output_filename)
-                    output.save(output_filename)
-                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                    break
+            output_filename = args.output
+        im, _ = load_image_simple(args.input, color="rgb")
+        output = process_image(im, args, depth_model, side_model)
+        make_parent_dir(output_filename)
+        output.save(output_filename)
 
     return args
