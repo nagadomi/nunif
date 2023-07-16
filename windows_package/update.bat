@@ -60,6 +60,13 @@ if not exist %NUNIF_DIR%\iw3\pretrained_models\hub pushd %NUNIF_DIR% && python -
 if %ERRORLEVEL% neq 0 goto :on_error
 
 
+@rem warmup, create pyc
+pushd %NUNIF_DIR% && python -m iw3.gui --help > nul && popd
+if %ERRORLEVEL% neq 0 goto :on_error
+pushd %NUNIF_DIR% && python -m waifu2x.gui --help > nul && popd
+if %ERRORLEVEL% neq 0 goto :on_error
+
+
 @rem all succeeded
 echo Successfully installed nunif
 pause
