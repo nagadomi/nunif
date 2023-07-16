@@ -42,13 +42,13 @@ if not exist %NUNIF_DIR% (
 
 
 echo Install Python Packages...
-python -m pip install --upgrade pip
+python -m pip install --no-cache-dir --upgrade pip
 if %ERRORLEVEL% neq 0 goto :on_error
-python -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+python -m pip install --no-cache-dir --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 if %ERRORLEVEL% neq 0 goto :on_error
-python -m pip install --upgrade -r %NUNIF_DIR%\requirements.txt
+python -m pip install --no-cache-dir --upgrade -r %NUNIF_DIR%\requirements.txt
 if %ERRORLEVEL% neq 0 goto :on_error
-python -m pip install --upgrade -r %NUNIF_DIR%\requirements-gui.txt
+python -m pip install --no-cache-dir --upgrade -r %NUNIF_DIR%\requirements-gui.txt
 if %ERRORLEVEL% neq 0 goto :on_error
 
 
