@@ -90,10 +90,11 @@ class FixedFPSFilter():
         prev_filter.link_to(buffersink)
         graph.configure()
 
-    def __init__(self, video_stream, fps, vf=""):
+    def __init__(self, video_stream, fps, vf="", deny_filters=[]):
         self.graph = av.filter.Graph()
         video_filters = self.parse_vf_option(vf)
         video_filters.append(("fps", str(fps)))
+        video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
         self.build_graph(self.graph, video_stream, video_filters)
 
     def update(self, frame):
@@ -124,8 +125,14 @@ def default_config_callback(stream):
     )
 
 
+SIZE_SAFE_FILTERS = [
+    "fps", "yadif", "bwdif", "nnedi", "w3fdif", "kerndeint",
+    "hflip", "vflip",
+]
+
+
 def test_output_size(frame_callback, video_stream, vf):
-    video_filter = FixedFPSFilter(video_stream, fps=60, vf=vf)
+    video_filter = FixedFPSFilter(video_stream, fps=60, vf=vf, deny_filters=SIZE_SAFE_FILTERS)
     empty_image = Image.new("RGB", (video_stream.codec_context.width,
                                     video_stream.codec_context.height), (128, 128, 128))
     test_frame = av.video.frame.VideoFrame.from_image(empty_image)
