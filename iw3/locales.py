@@ -5,6 +5,8 @@ LOCALES = {
         "Choose a file": "ファイルを選択",
         "Choose a directory": "フォルダを選択",
         "Set the same directory": "同じフォルダを設定",
+        "Resume": "処理を再開",
+        "Skip processing of files that already exist": "すでに存在するファイルの処理をスキップする",
 
         "Error": "エラー",
         "Initializing": "初期化中",

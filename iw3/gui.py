@@ -12,7 +12,7 @@ from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
 from .utils import (
     create_parser, set_state_args, iw3_main,
-    is_video, is_output_dir, make_output_filename,
+    is_text, is_video, is_output_dir, make_output_filename,
     has_depth_model, has_rembg_model,
 )
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
@@ -52,7 +52,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(1000, 620),
+            size=(1000, 660),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -91,8 +91,11 @@ class MainFrame(wx.Frame):
         self.btn_output_dir = wx.Button(self.pnl_file, label=T("..."),
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
+        self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
+        self.chk_resume.SetToolTip(T("Skip processing of files that already exist"))
+        self.chk_resume.SetValue(True)
 
-        layout = wx.FlexGridSizer(rows=2, cols=4, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=3, cols=4, vgap=4, hgap=4)
         layout.Add(self.lbl_input, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_input, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_input_file, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
@@ -102,6 +105,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_output, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_same_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(wx.StaticText(self.pnl_file, label=""), 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_resume, 0, wx.ALIGN_CENTER_VERTICAL)
+
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -391,6 +397,7 @@ class MainFrame(wx.Frame):
 
         self.update_start_button_state()
         self.update_rembg_state()
+        self.update_resume_state()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -418,6 +425,13 @@ class MainFrame(wx.Frame):
         else:
             self.chk_rembg.Enable()
             self.cbo_bg_model.Enable()
+
+    def update_resume_state(self):
+        input_path = self.txt_input.GetValue()
+        if path.isdir(input_path) or is_text(input_path):
+            self.chk_resume.Enable()
+        else:
+            self.chk_resume.Disable()
 
     def set_same_output_dir(self):
         selected_path = self.txt_input.GetValue()
@@ -471,6 +485,7 @@ class MainFrame(wx.Frame):
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
         self.update_rembg_state()
+        self.update_resume_state()
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
@@ -574,8 +589,11 @@ class MainFrame(wx.Frame):
         if max_output_size:
             max_output_width, max_output_height = [int(s) for s in max_output_size.split("x")]
 
+        input_path = self.txt_input.GetValue()
+        resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+
         parser.set_defaults(
-            input=self.txt_input.GetValue(),
+            input=input_path,
             output=self.txt_output.GetValue(),
             yes=True,  # TODO: remove this
 
@@ -608,6 +626,8 @@ class MainFrame(wx.Frame):
             tta=self.chk_tta.GetValue(),
             disable_amp=not self.chk_fp16.GetValue(),
             low_vram=self.chk_low_vram.GetValue(),
+
+            resume=resume,
         )
         args = parser.parse_args()
         set_state_args(
