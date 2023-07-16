@@ -148,38 +148,6 @@ def process_video(ctx, input_filename, args):
                      title=path.basename(input_filename))
 
 
-def process_file(ctx, input_filename, args):
-    if is_video(input_filename):
-        process_video(ctx, input_filename, args)
-    elif is_image(input_filename):
-        if is_output_dir(args.output):
-            os.makedirs(args.output, exist_ok=True)
-            fmt = args.format
-            output_filename = path.join(
-                args.output,
-                set_image_ext(path.basename(args.input), format=fmt))
-        else:
-            _, ext = path.splitext(input_filename)
-            fmt = ext.lower()[1:]
-            if fmt not in {"png", "webp", "jpeg", "jpg"}:
-                raise ValueError(f"Unable to recognize image extension: {fmt}")
-            output_filename = args.output
-        if args.resume and path.exists(output_filename):
-            return
-        im, meta = IL.load_image(input_filename, color="rgb", keep_alpha=True)
-        output = process_image(ctx, im, meta, args)
-        make_parent_dir(output_filename)
-        IL.save_image(output, filename=output_filename, meta=meta, format=fmt)
-    elif is_text(input_filename):
-        files = load_files(input_filename)
-        image_files = [f for f in files if is_image(f)]
-        if image_files:
-            process_images(ctx, image_files, args.output, args, title=path.basename(input_filename))
-        video_files = [f for f in files if is_video(f)]
-        for video_file in video_files:
-            process_video(ctx, video_file, args)
-
-
 def load_files(txt):
     files = []
     with open(txt, "r") as f:
@@ -299,12 +267,49 @@ def waifu2x_main(args):
         if args.recursive:
             subdirs = sorted([args.input] + find_subdir(args.input))
             for input_dir in subdirs:
-                files = ImageLoader.listdir(input_dir)
-                if not files:
-                    continue
+                image_files = ImageLoader.listdir(input_dir)
                 output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
-                process_images(ctx, files, output_dir, args, title=path.relpath(input_dir, args.input))
+                if image_files:
+                    process_images(ctx, image_files, output_dir, args,
+                                   title=path.relpath(input_dir, args.input))
+                for video_file in VU.list_videos(args.input):
+                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                        return
+                    process_video(ctx, video_file, args)
         else:
-            process_images(ctx, ImageLoader.listdir(args.input), args.output, args, title="Images")
-    else:
-        process_file(ctx, args.input, args)
+            image_files = ImageLoader.listdir(args.input)
+            if image_files:
+                process_images(ctx, image_files, args.output, args, title="Images")
+            for video_file in VU.list_videos(args.input):
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return
+                process_video(ctx, video_file, args)
+    elif is_text(args.input):
+        files = load_files(args.input)
+        image_files = [f for f in files if is_image(f)]
+        if image_files:
+            process_images(ctx, image_files, args.output, args, title="Images")
+        video_files = [f for f in files if is_video(f)]
+        for video_file in video_files:
+            process_video(ctx, video_file, args)
+    elif is_video(args.input):
+        process_video(ctx, args.input, args)
+    elif is_image(args.input):
+        if is_output_dir(args.output):
+            os.makedirs(args.output, exist_ok=True)
+            fmt = args.format
+            output_filename = path.join(
+                args.output,
+                set_image_ext(path.basename(args.input), format=fmt))
+        else:
+            _, ext = path.splitext(args.output)
+            fmt = ext.lower()[1:]
+            if fmt not in {"png", "webp", "jpeg", "jpg"}:
+                raise ValueError(f"Unable to recognize image extension: {fmt}")
+            output_filename = args.output
+        if args.resume and path.exists(output_filename):
+            return
+        im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
+        output = process_image(ctx, im, meta, args)
+        make_parent_dir(output_filename)
+        IL.save_image(output, filename=output_filename, meta=meta, format=fmt)
