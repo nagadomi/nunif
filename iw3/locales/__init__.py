@@ -22,4 +22,4 @@ def load_locales(locale_dir):
     return locales
 
 
-LOCALES = load_locales(path.join(path.dirname(__file__), "locales"))
+LOCALES = load_locales(path.dirname(__file__))
