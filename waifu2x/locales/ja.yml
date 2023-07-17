@@ -45,6 +45,7 @@
 "Device": "デバイス"
 "Batch Size": "バッチサイズ"
 "Tile Size": "分割サイズ"
-
+"Use flip augmentation to improve quality (veryslow)": "反転画像を使って品質を改善する (とても遅い)"
+"Ignored in some models": "いくつかのモデルでは無視される"
 "Start": "開始"
 "Cancel": "キャンセル"

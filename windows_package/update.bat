@@ -42,13 +42,13 @@ if not exist %NUNIF_DIR% (
 
 
 echo Install Python Packages...
-python -m pip install --upgrade pip
+python -m pip install --no-cache-dir --upgrade pip
 if %ERRORLEVEL% neq 0 goto :on_error
-python -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+python -m pip install --no-cache-dir --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 if %ERRORLEVEL% neq 0 goto :on_error
-python -m pip install --upgrade -r %NUNIF_DIR%\requirements.txt
+python -m pip install --no-cache-dir --upgrade -r %NUNIF_DIR%\requirements.txt
 if %ERRORLEVEL% neq 0 goto :on_error
-python -m pip install --upgrade -r %NUNIF_DIR%\requirements-gui.txt
+python -m pip install --no-cache-dir --upgrade -r %NUNIF_DIR%\requirements-gui.txt
 if %ERRORLEVEL% neq 0 goto :on_error
 
 
@@ -57,6 +57,13 @@ if not exist %NUNIF_DIR%\waifu2x\pretrained_models pushd %NUNIF_DIR% && python -
 if %ERRORLEVEL% neq 0 goto :on_error
 
 if not exist %NUNIF_DIR%\iw3\pretrained_models\hub pushd %NUNIF_DIR% && python -m iw3.download_models && popd
+if %ERRORLEVEL% neq 0 goto :on_error
+
+
+@rem warmup, create pyc
+pushd %NUNIF_DIR% && python -m iw3.gui --help > nul && popd
+if %ERRORLEVEL% neq 0 goto :on_error
+pushd %NUNIF_DIR% && python -m waifu2x.gui --help > nul && popd
 if %ERRORLEVEL% neq 0 goto :on_error
 
 

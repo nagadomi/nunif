@@ -1,7 +1,7 @@
 import os
 from os import path
 import yaml
-from . web.webgen.gen import load_locales as load_webgen_locales
+from .. web.webgen.gen import load_locales as load_webgen_locales
 
 
 WEBGEN_TERMS = [
@@ -46,5 +46,5 @@ def load_locales(locale_dir, webgen_locale_dir):
     return locales
 
 
-LOCALES = load_locales(path.join(path.dirname(__file__), "locales"),
-                       path.join(path.dirname(__file__), "web", "webgen", "locales"))
+LOCALES = load_locales(path.dirname(__file__),
+                       path.join(path.dirname(__file__), "..", "web", "webgen", "locales"))

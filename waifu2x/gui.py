@@ -23,7 +23,7 @@ from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM,
     resolve_default_dir, extension_list_to_wildcard,
     set_icon_ex)
-from .locale import LOCALES
+from .locales import LOCALES
 from . import models # noqa
 import torch
 
@@ -128,6 +128,7 @@ class MainFrame(wx.Frame):
             path.join(MODEL_DIR, "upconv_7", "art"),
             path.join(MODEL_DIR, "upconv_7", "photo"),
         ]
+        self.model_tta_support = [True, False, False, True, True, True]
         self.model_4x_support = [True, True, True, False, False, False]
 
         self.opt_model.SetSelection(0)
@@ -281,6 +282,8 @@ class MainFrame(wx.Frame):
         self.cbo_batch_size.SetSelection(4)
 
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
+        self.chk_tta.SetToolTip(T("Use flip augmentation to improve quality (veryslow)") + "\n" +
+                                T("Ignored in some models"))
         self.chk_amp = wx.CheckBox(self.grp_processor, label=T("FP16 (fast)"), name="chk_amp")
         self.chk_amp.SetValue(True)
 
@@ -541,6 +544,7 @@ class MainFrame(wx.Frame):
 
         input_path = self.txt_input.GetValue()
         resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+        tta = self.chk_tta.GetValue() and self.model_tta_support[self.opt_model.GetSelection()]
 
         parser.set_defaults(
             input=input_path,
@@ -564,7 +568,7 @@ class MainFrame(wx.Frame):
             gpu=gpus,
             batch_size=int(self.cbo_batch_size.GetValue()),
             tile_size=int(self.cbo_tile_size.GetValue()),
-            tta=self.chk_tta.GetValue(),
+            tta=tta,
             disable_amp=not self.chk_amp.GetValue(),
 
             resume=resume,
