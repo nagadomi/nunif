@@ -8,7 +8,7 @@
 "Choose a directory": "フォルダを選択"
 "Set the same directory": "同じフォルダを設定"
 "Resume": "処理を再開"
-"Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップする"
+"Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップ"
 
 "Error": "エラー"
 "Initializing": "初期化中"
@@ -45,7 +45,7 @@
 "Device": "デバイス"
 "Batch Size": "バッチサイズ"
 "Tile Size": "分割サイズ"
-"Use flip augmentation to improve quality (veryslow)": "反転画像を使って品質を改善する (とても遅い)"
-"Ignored in some models": "いくつかのモデルでは無視される"
+"Use flip augmentation to improve quality (veryslow)": "反転画像を使って品質を改善 (とても遅い)"
+"Ignored in some models": "いくつかのモデルでは無視"
 "Start": "開始"
 "Cancel": "キャンセル"

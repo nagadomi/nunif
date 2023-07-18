@@ -8,7 +8,7 @@
 "Choose a directory": "フォルダを選択"
 "Set the same directory": "同じフォルダを設定"
 "Resume": "処理を再開"
-"Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップする"
+"Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップ"
 
 "Error": "エラー"
 "Initializing": "初期化中"
@@ -51,8 +51,8 @@
 "Depth": "深度"
 "Stereo": "ステレオ"
 "Low VRAM": "低ビデオメモリ"
-"Use flip augmentation to improve depth quality (slow)": "左右反転画像を使って深度の品質を改善する (遅い)"
-"Use FP16 for stereo generation models (fast)": "ステレオ生成モデルにFP16を使う (速い)"
+"Use flip augmentation to improve depth quality (slow)": "左右反転画像を使って深度の品質を改善 (遅い)"
+"Use FP16 for stereo generation models (fast)": "ステレオ生成モデルにFP16を使用 (速い)"
 
 "Start": "開始"
 "Cancel": "キャンセル"
