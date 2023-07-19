@@ -10,18 +10,17 @@ import threading
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
+from wx.lib.buttons import GenBitmapButton
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, make_output_filename,
-    has_depth_model, has_rembg_model,
-)
+    has_depth_model, has_rembg_model)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
-    TQDMGUI, FileDropCallback, EVT_TQDM,
+    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     resolve_default_dir, extension_list_to_wildcard, validate_number,
-    set_icon_ex)
-
+    set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
 import torch
@@ -52,7 +51,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(1000, 660),
+            size=(1000, 720),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -65,7 +64,6 @@ class MainFrame(wx.Frame):
         self.initialize_component()
 
     def initialize_component(self):
-        ICON_BUTTON_SIZE = (-1, -1)
         self.SetFont(wx.Font(10, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
         self.CreateStatusBar()
 
@@ -76,38 +74,37 @@ class MainFrame(wx.Frame):
             self.pnl_file.SetBackgroundColour("#ccf")
 
         self.lbl_input = wx.StaticText(self.pnl_file, label=T("Input"))
-        self.lbl_output = wx.StaticText(self.pnl_file, label=T("Output"))
         self.txt_input = wx.TextCtrl(self.pnl_file, name="txt_input")
-        self.txt_output = wx.TextCtrl(self.pnl_file, name="txt_output")
-        self.btn_input_file = wx.Button(self.pnl_file, label=T("..."),
-                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_file = GenBitmapButton(self.pnl_file, bitmap=load_icon("image-open.png"))
         self.btn_input_file.SetToolTip(T("Choose a file"))
-        self.btn_input_dir = wx.Button(self.pnl_file, label=T("..."),
-                                       size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
         self.btn_input_dir.SetToolTip(T("Choose a directory"))
-        self.btn_same_output_dir = wx.Button(self.pnl_file, label=T("<<<"),
-                                             size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_play = GenBitmapButton(self.pnl_file, bitmap=load_icon("media-playback-start.png"))
+        self.btn_input_play.SetToolTip(T("Play"))
+
+        self.lbl_output = wx.StaticText(self.pnl_file, label=T("Output"))
+        self.txt_output = wx.TextCtrl(self.pnl_file, name="txt_output")
+        self.btn_same_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("emblem-symbolic-link.png"))
         self.btn_same_output_dir.SetToolTip(T("Set the same directory"))
-        self.btn_output_dir = wx.Button(self.pnl_file, label=T("..."),
-                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
+
         self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
 
-        layout = wx.FlexGridSizer(rows=3, cols=4, vgap=4, hgap=4)
-        layout.Add(self.lbl_input, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_input, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
-        layout.Add(self.btn_input_file, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_input_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout = wx.GridBagSizer(vgap=4, hgap=4)
+        layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_input, (0, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
+        layout.Add(self.btn_input_file, (0, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_input_dir, (0, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_input_play, (0, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
 
-        layout.Add(self.lbl_output, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_output, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
-        layout.Add(self.btn_same_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(wx.StaticText(self.pnl_file, label=""), 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_resume, 0, wx.ALIGN_CENTER_VERTICAL)
-
+        layout.Add(self.lbl_output, (1, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_output, (1, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
+        layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_resume, (2, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -238,6 +235,14 @@ class MainFrame(wx.Frame):
         # input video filter
         # deinterlace, rotate, vf
         self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video Filter"))
+        self.chk_start_time = wx.CheckBox(self.grp_video_filter, label=T("Start Time"),
+                                          name="chk_start_time")
+        self.txt_start_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
+                                       name="txt_start_time")
+        self.chk_end_time = wx.CheckBox(self.grp_video_filter, label=T("End Time"), name="chk_end_time")
+        self.txt_end_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
+                                     name="txt_end_time")
+
         self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
         self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
                                            style=wx.CB_READONLY, name="cbo_deinterlace")
@@ -265,21 +270,27 @@ class MainFrame(wx.Frame):
                                                style=wx.CB_READONLY, name="cbo_max_output_size")
         self.cbo_max_output_size.SetSelection(0)
 
-        self.chk_keep_aspect_ratio = wx.CheckBox(self.grp_video_filter, label=T("Keep Aspect Ratio"), name="chk_keep_aspect_ratio")
+        self.chk_keep_aspect_ratio = wx.CheckBox(self.grp_video_filter, label=T("Keep Aspect Ratio"),
+                                                 name="chk_keep_aspect_ratio")
         self.chk_keep_aspect_ratio.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.lbl_deinterlace, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_deinterlace, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_vf, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_vf, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_rotate, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_rotate, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_pad, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pad, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_max_output_size, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_max_output_size, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_keep_aspect_ratio, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_start_time, (0, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_end_time, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_end_time, (1, 1), flag=wx.EXPAND)
+
+        layout.Add(self.lbl_deinterlace, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_deinterlace, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_vf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_vf, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_rotate, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_rotate, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_pad, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pad, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_max_output_size, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_max_output_size, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_keep_aspect_ratio, (7, 1), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -364,6 +375,7 @@ class MainFrame(wx.Frame):
         # bind
         self.btn_input_file.Bind(wx.EVT_BUTTON, self.on_click_btn_input_file)
         self.btn_input_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_input_dir)
+        self.btn_input_play.Bind(wx.EVT_BUTTON, self.on_click_btn_input_play)
         self.btn_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_output_dir)
         self.btn_same_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_same_output_dir)
 
@@ -433,6 +445,12 @@ class MainFrame(wx.Frame):
         else:
             self.chk_resume.Disable()
 
+    def reset_time_range(self):
+        self.chk_start_time.SetValue(False)
+        self.chk_end_time.SetValue(False)
+        self.txt_start_time.SetValue("00:00:00")
+        self.txt_end_time.SetValue("00:00:00")
+
     def set_same_output_dir(self):
         selected_path = self.txt_input.GetValue()
         if path.isdir(selected_path):
@@ -468,6 +486,9 @@ class MainFrame(wx.Frame):
             if not self.txt_output.GetValue():
                 self.set_same_output_dir()
 
+    def on_click_btn_input_play(self, event):
+        start_file(self.txt_input.GetValue())
+
     def on_click_btn_same_output_dir(self, event):
         self.set_same_output_dir()
 
@@ -486,6 +507,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_rembg_state()
         self.update_resume_state()
+        self.reset_time_range()
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
@@ -591,6 +613,8 @@ class MainFrame(wx.Frame):
 
         input_path = self.txt_input.GetValue()
         resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+        start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
+        end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
 
         parser.set_defaults(
             input=input_path,
@@ -628,6 +652,8 @@ class MainFrame(wx.Frame):
             low_vram=self.chk_low_vram.GetValue(),
 
             resume=resume,
+            start_time=start_time,
+            end_time=end_time,
         )
         args = parser.parse_args()
         set_state_args(

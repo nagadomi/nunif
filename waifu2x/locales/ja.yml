@@ -8,7 +8,8 @@
 "Choose a directory": "フォルダを選択"
 "Set the same directory": "同じフォルダを設定"
 "Resume": "処理を再開"
-"Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップする"
+"Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップ"
+"Play": "再生"
 
 "Error": "エラー"
 "Initializing": "初期化中"
@@ -35,6 +36,8 @@
 "Tune": "チューニング"
 
 "Video Filter": "ビデオフィルタ"
+"Start Time": "開始時間"
+"End Time": "終了時間"
 "Deinterlace": "デインターレース"
 "Rotate": "回転"
 "Left 90 (counterclockwise)": "左に90°回転 (半時計回り)"
@@ -45,7 +48,7 @@
 "Device": "デバイス"
 "Batch Size": "バッチサイズ"
 "Tile Size": "分割サイズ"
-"Use flip augmentation to improve quality (veryslow)": "反転画像を使って品質を改善する (とても遅い)"
-"Ignored in some models": "いくつかのモデルでは無視される"
+"Use flip augmentation to improve quality (veryslow)": "反転画像を使って品質を改善 (とても遅い)"
+"Ignored in some models": "いくつかのモデルでは無視"
 "Start": "開始"
 "Cancel": "キャンセル"

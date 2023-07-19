@@ -1,6 +1,9 @@
 import wx
+from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
+import os
 from os import path
 import sys
+import subprocess
 
 
 myEVT_TQDM = wx.NewEventType()
@@ -39,6 +42,16 @@ class FileDropCallback(wx.FileDropTarget):
 
     def OnDropFiles(self, x, y, filenames):
         return self.callback(x, y, filenames)
+
+
+# Fix TimeCtrl
+# ref: https://github.com/wxWidgets/Phoenix/issues/639#issuecomment-356129566
+class TimeCtrl(_TimeCtrl):
+    def __init__(self, parent, **kwargs):
+        super(TimeCtrl, self).__init__(parent, **kwargs)
+        if sys.platform != "win32":
+            self.Unbind(wx.EVT_CHAR)
+            self.Bind(wx.EVT_CHAR_HOOK, self._OnChar)
 
 
 def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):
@@ -89,7 +102,32 @@ def set_icon_ex(main_frame, icon_path, app_id):
             windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
             hwnd = main_frame.GetHandle()
             propStore = propsys.SHGetPropertyStoreForWindow(hwnd, propsys.IID_IPropertyStore)
-            propStore.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(app_id, pythoncom.VT_ILLEGAL))
+            propStore.SetValue(pscon.PKEY_AppUserModel_ID,
+                               propsys.PROPVARIANTType(app_id, pythoncom.VT_ILLEGAL))
             propStore.Commit()
         except: # noqa
             pass
+
+
+def start_file(file_path):
+    if not path.exists(file_path):
+        return
+
+    fd = open(os.devnull, "w")
+    options = {"stderr": fd, "stdout": fd}
+    if sys.platform == "win32":
+        if path.isdir(file_path):
+            subprocess.Popen(["explorer", file_path], shell=True, **options)
+        else:
+            subprocess.Popen(["start", file_path], shell=True, **options)
+    elif sys.platform == "linux":
+        subprocess.Popen(["xdg-open", file_path], start_new_session=True, **options)
+    elif sys.platform == "darwin":
+        # Not tested
+        subprocess.Popen(["open", file_path], **options)
+    else:
+        print("start_file: unknown platform", file=sys.stderr)
+
+
+def load_icon(name):
+    return wx.Bitmap(path.join(path.dirname(__file__), "..", "rc", "icons", name))
