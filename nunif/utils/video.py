@@ -41,7 +41,7 @@ def get_fps(stream):
 def guess_frames(stream, fps=None, start_time=None, end_time=None):
     fps = fps or get_fps(stream)
     if start_time is not None and end_time is not None:
-        duration = end_time - start_time
+        duration = min(end_time, float(stream.duration * stream.time_base)) - start_time
     elif start_time is not None:
         duration = max(float(stream.duration * stream.time_base) - start_time, 0)
     elif end_time is not None:
