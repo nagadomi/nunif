@@ -1,7 +1,9 @@
 import wx
 from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
+import os
 from os import path
 import sys
+import subprocess
 
 
 myEVT_TQDM = wx.NewEventType()
@@ -100,7 +102,28 @@ def set_icon_ex(main_frame, icon_path, app_id):
             windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
             hwnd = main_frame.GetHandle()
             propStore = propsys.SHGetPropertyStoreForWindow(hwnd, propsys.IID_IPropertyStore)
-            propStore.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(app_id, pythoncom.VT_ILLEGAL))
+            propStore.SetValue(pscon.PKEY_AppUserModel_ID,
+                               propsys.PROPVARIANTType(app_id, pythoncom.VT_ILLEGAL))
             propStore.Commit()
         except: # noqa
             pass
+
+
+def start_file(file_path):
+    if not path.exists(file_path):
+        return
+
+    fd = open(os.devnull, "w")
+    options = {"stderr": fd, "stdout": fd}
+    if sys.platform == "win32":
+        if path.isdir(file_path):
+            subprocess.Popen(["explorer", file_path], shell=True, **options)
+        else:
+            subprocess.Popen(["start", file_path], shell=True, **options)
+    elif sys.platform == "linux":
+        subprocess.Popen(["xdg-open", file_path], start_new_session=True, **options)
+    elif sys.platform == "darwin":
+        # Not tested
+        subprocess.Popen(["open", file_path], **options)
+    else:
+        print("start_file: unknown platform", file=sys.stderr)

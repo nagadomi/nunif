@@ -20,7 +20,7 @@ from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     resolve_default_dir, extension_list_to_wildcard, validate_number,
-    set_icon_ex)
+    set_icon_ex, start_file)
 
 from .locales import LOCALES
 from . import models # noqa
@@ -52,7 +52,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(1000, 660),
+            size=(1000, 720),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -76,38 +76,42 @@ class MainFrame(wx.Frame):
             self.pnl_file.SetBackgroundColour("#ccf")
 
         self.lbl_input = wx.StaticText(self.pnl_file, label=T("Input"))
-        self.lbl_output = wx.StaticText(self.pnl_file, label=T("Output"))
         self.txt_input = wx.TextCtrl(self.pnl_file, name="txt_input")
-        self.txt_output = wx.TextCtrl(self.pnl_file, name="txt_output")
         self.btn_input_file = wx.Button(self.pnl_file, label=T("..."),
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_input_file.SetToolTip(T("Choose a file"))
         self.btn_input_dir = wx.Button(self.pnl_file, label=T("..."),
                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_input_dir.SetToolTip(T("Choose a directory"))
+        self.btn_input_play = wx.Button(self.pnl_file, label=T(">"),
+                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_play.SetToolTip(T("Play"))
+
+        self.lbl_output = wx.StaticText(self.pnl_file, label=T("Output"))
+        self.txt_output = wx.TextCtrl(self.pnl_file, name="txt_output")
         self.btn_same_output_dir = wx.Button(self.pnl_file, label=T("<<<"),
                                              size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_same_output_dir.SetToolTip(T("Set the same directory"))
         self.btn_output_dir = wx.Button(self.pnl_file, label=T("..."),
                                         size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
+
         self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
 
-        layout = wx.FlexGridSizer(rows=3, cols=4, vgap=4, hgap=4)
-        layout.Add(self.lbl_input, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_input, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
-        layout.Add(self.btn_input_file, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_input_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout = wx.GridBagSizer(vgap=4, hgap=4)
+        layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_input, (0, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
+        layout.Add(self.btn_input_file, (0, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_input_dir, (0, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_input_play, (0, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
 
-        layout.Add(self.lbl_output, 0, wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_output, 1, wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
-        layout.Add(self.btn_same_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_output_dir, 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(wx.StaticText(self.pnl_file, label=""), 0, wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_resume, 0, wx.ALIGN_CENTER_VERTICAL)
-
+        layout.Add(self.lbl_output, (1, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_output, (1, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
+        layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_resume, (2, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -378,6 +382,7 @@ class MainFrame(wx.Frame):
         # bind
         self.btn_input_file.Bind(wx.EVT_BUTTON, self.on_click_btn_input_file)
         self.btn_input_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_input_dir)
+        self.btn_input_play.Bind(wx.EVT_BUTTON, self.on_click_btn_input_play)
         self.btn_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_output_dir)
         self.btn_same_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_same_output_dir)
 
@@ -487,6 +492,9 @@ class MainFrame(wx.Frame):
             self.txt_input.SetValue(selected_path)
             if not self.txt_output.GetValue():
                 self.set_same_output_dir()
+
+    def on_click_btn_input_play(self, event):
+        start_file(self.txt_input.GetValue())
 
     def on_click_btn_same_output_dir(self, event):
         self.set_same_output_dir()
