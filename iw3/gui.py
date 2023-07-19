@@ -10,18 +10,17 @@ import threading
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
+from wx.lib.buttons import GenBitmapButton
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, make_output_filename,
-    has_depth_model, has_rembg_model,
-)
+    has_depth_model, has_rembg_model)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     resolve_default_dir, extension_list_to_wildcard, validate_number,
-    set_icon_ex, start_file)
-
+    set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
 import torch
@@ -65,7 +64,6 @@ class MainFrame(wx.Frame):
         self.initialize_component()
 
     def initialize_component(self):
-        ICON_BUTTON_SIZE = (-1, -1)
         self.SetFont(wx.Font(10, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
         self.CreateStatusBar()
 
@@ -77,23 +75,18 @@ class MainFrame(wx.Frame):
 
         self.lbl_input = wx.StaticText(self.pnl_file, label=T("Input"))
         self.txt_input = wx.TextCtrl(self.pnl_file, name="txt_input")
-        self.btn_input_file = wx.Button(self.pnl_file, label=T("..."),
-                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_file = GenBitmapButton(self.pnl_file, bitmap=load_icon("image-open.png"))
         self.btn_input_file.SetToolTip(T("Choose a file"))
-        self.btn_input_dir = wx.Button(self.pnl_file, label=T("..."),
-                                       size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
         self.btn_input_dir.SetToolTip(T("Choose a directory"))
-        self.btn_input_play = wx.Button(self.pnl_file, label=T(">"),
-                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_input_play = GenBitmapButton(self.pnl_file, bitmap=load_icon("media-playback-start.png"))
         self.btn_input_play.SetToolTip(T("Play"))
 
         self.lbl_output = wx.StaticText(self.pnl_file, label=T("Output"))
         self.txt_output = wx.TextCtrl(self.pnl_file, name="txt_output")
-        self.btn_same_output_dir = wx.Button(self.pnl_file, label=T("<<<"),
-                                             size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_same_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("emblem-symbolic-link.png"))
         self.btn_same_output_dir.SetToolTip(T("Set the same directory"))
-        self.btn_output_dir = wx.Button(self.pnl_file, label=T("..."),
-                                        size=ICON_BUTTON_SIZE, style=wx.BU_EXACTFIT)
+        self.btn_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
 
         self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")

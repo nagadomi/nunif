@@ -127,3 +127,7 @@ def start_file(file_path):
         subprocess.Popen(["open", file_path], **options)
     else:
         print("start_file: unknown platform", file=sys.stderr)
+
+
+def load_icon(name):
+    return wx.Bitmap(path.join(path.dirname(__file__), "..", "rc", "icons", name))
