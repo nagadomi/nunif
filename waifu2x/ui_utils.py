@@ -145,7 +145,9 @@ def process_video(ctx, input_filename, args):
                      vf=args.vf,
                      stop_event=args.state["stop_event"],
                      tqdm_fn=args.state["tqdm_fn"],
-                     title=path.basename(input_filename))
+                     title=path.basename(input_filename),
+                     start_time=args.start_time,
+                     end_time=args.end_time)
 
 
 def load_files(txt):
@@ -220,6 +222,10 @@ def create_parser(required_true=True):
                         help=("noise strength  (video only)"))
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p"],
                         help=("pixel format (video only)"))
+    parser.add_argument("--start-time", type=str,
+                        help="set the start time offset for video. hh:mm:ss or mm:ss format")
+    parser.add_argument("--end-time", type=str,
+                        help="set the end time offset for video. hh:mm:ss or mm:ss format")
 
     return parser
 

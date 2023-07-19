@@ -512,7 +512,9 @@ def process_video_full(input_filename, args, depth_model, side_model):
                      vf=args.vf,
                      stop_event=args.state["stop_event"],
                      tqdm_fn=args.state["tqdm_fn"],
-                     title=path.basename(input_filename))
+                     title=path.basename(input_filename),
+                     start_time=args.start_time,
+                     end_time=args.end_time)
 
 
 def process_video_keyframes(input_filename, args, depth_model, side_model):
@@ -640,6 +642,10 @@ def create_parser(required_true=True):
                         help="limit output height for cardboard players")
     parser.add_argument("--keep-aspect-ratio", action="store_true",
                         help="keep aspect ratio when resizing")
+    parser.add_argument("--start-time", type=str,
+                        help="set the start time offset for video. hh:mm:ss or mm:ss format")
+    parser.add_argument("--end-time", type=str,
+                        help="set the end time offset for video. hh:mm:ss or mm:ss format")
     return parser
 
 

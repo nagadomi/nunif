@@ -1,4 +1,5 @@
 import wx
+from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
 from os import path
 import sys
 
@@ -39,6 +40,16 @@ class FileDropCallback(wx.FileDropTarget):
 
     def OnDropFiles(self, x, y, filenames):
         return self.callback(x, y, filenames)
+
+
+# Fix TimeCtrl
+# ref: https://github.com/wxWidgets/Phoenix/issues/639#issuecomment-356129566
+class TimeCtrl(_TimeCtrl):
+    def __init__(self, parent, **kwargs):
+        super(TimeCtrl, self).__init__(parent, **kwargs)
+        if sys.platform != "win32":
+            self.Unbind(wx.EVT_CHAR)
+            self.Bind(wx.EVT_CHAR_HOOK, self._OnChar)
 
 
 def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):

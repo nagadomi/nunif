@@ -20,7 +20,7 @@ from .ui_utils import (
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
-    TQDMGUI, FileDropCallback, EVT_TQDM,
+    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     resolve_default_dir, extension_list_to_wildcard,
     set_icon_ex)
 from .locales import LOCALES
@@ -216,6 +216,19 @@ class MainFrame(wx.Frame):
         # input video filter
         # deinterlace, rotate, vf
         self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video Filter"))
+        self.chk_start_time = wx.CheckBox(self.grp_video_filter, label=T("Start Time"),
+                                          name="chk_start_time")
+        self.txt_start_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
+                                       name="txt_start_time")
+        self.chk_end_time = wx.CheckBox(self.grp_video_filter, label=T("End Time"), name="chk_end_time")
+        self.txt_end_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
+                                     name="txt_end_time")
+
+        self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
+        self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
+                                           style=wx.CB_READONLY, name="cbo_deinterlace")
+        self.cbo_deinterlace.SetSelection(0)
+
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
         self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
                                       style=wx.CB_READONLY, name="cbo_rotate")
@@ -223,10 +236,6 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.Append(T("Left 90 (counterclockwise)"), "left")
         self.cbo_rotate.Append(T("Right 90 (clockwise)"), "right")
         self.cbo_rotate.SetSelection(0)
-        self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
-        self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
-                                           style=wx.CB_READONLY, name="cbo_deinterlace")
-        self.cbo_deinterlace.SetSelection(0)
 
         self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
         self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
@@ -241,14 +250,18 @@ class MainFrame(wx.Frame):
         """
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.lbl_deinterlace, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_deinterlace, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_rotate, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_rotate, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_vf, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_vf, (2, 1), flag=wx.EXPAND)
-        # layout.Add(self.chk_grain_noise, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        # layout.Add(self.txt_grain_noise, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_start_time, (0, 1))
+        layout.Add(self.chk_end_time, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_end_time, (1, 1))
+        layout.Add(self.lbl_deinterlace, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_deinterlace, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_rotate, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_rotate, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_vf, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_vf, (4, 1), flag=wx.EXPAND)
+        # layout.Add(self.chk_grain_noise, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        # layout.Add(self.txt_grain_noise, (5, 1), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -412,6 +425,12 @@ class MainFrame(wx.Frame):
         else:
             self.chk_resume.Disable()
 
+    def reset_time_range(self):
+        self.chk_start_time.SetValue(False)
+        self.chk_end_time.SetValue(False)
+        self.txt_start_time.SetValue("00:00:00")
+        self.txt_end_time.SetValue("00:00:00")
+
     def on_selected_index_changed_opt_model(self, event):
         self.update_upscaling_state()
 
@@ -470,6 +489,7 @@ class MainFrame(wx.Frame):
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
         self.update_resume_state()
+        self.reset_time_range()
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
@@ -544,6 +564,8 @@ class MainFrame(wx.Frame):
 
         input_path = self.txt_input.GetValue()
         resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+        start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
+        end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
         tta = self.chk_tta.GetValue() and self.model_tta_support[self.opt_model.GetSelection()]
 
         parser.set_defaults(
@@ -572,6 +594,8 @@ class MainFrame(wx.Frame):
             disable_amp=not self.chk_amp.GetValue(),
 
             resume=resume,
+            start_time=start_time,
+            end_time=end_time,
         )
         args = parser.parse_args()
         set_state_args(

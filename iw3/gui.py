@@ -18,7 +18,7 @@ from .utils import (
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
-    TQDMGUI, FileDropCallback, EVT_TQDM,
+    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     resolve_default_dir, extension_list_to_wildcard, validate_number,
     set_icon_ex)
 
@@ -238,6 +238,14 @@ class MainFrame(wx.Frame):
         # input video filter
         # deinterlace, rotate, vf
         self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video Filter"))
+        self.chk_start_time = wx.CheckBox(self.grp_video_filter, label=T("Start Time"),
+                                          name="chk_start_time")
+        self.txt_start_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
+                                       name="txt_start_time")
+        self.chk_end_time = wx.CheckBox(self.grp_video_filter, label=T("End Time"), name="chk_end_time")
+        self.txt_end_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
+                                     name="txt_end_time")
+
         self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
         self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
                                            style=wx.CB_READONLY, name="cbo_deinterlace")
@@ -265,21 +273,27 @@ class MainFrame(wx.Frame):
                                                style=wx.CB_READONLY, name="cbo_max_output_size")
         self.cbo_max_output_size.SetSelection(0)
 
-        self.chk_keep_aspect_ratio = wx.CheckBox(self.grp_video_filter, label=T("Keep Aspect Ratio"), name="chk_keep_aspect_ratio")
+        self.chk_keep_aspect_ratio = wx.CheckBox(self.grp_video_filter, label=T("Keep Aspect Ratio"),
+                                                 name="chk_keep_aspect_ratio")
         self.chk_keep_aspect_ratio.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.lbl_deinterlace, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_deinterlace, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_vf, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_vf, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_rotate, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_rotate, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_pad, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pad, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_max_output_size, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_max_output_size, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_keep_aspect_ratio, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_start_time, (0, 1))
+        layout.Add(self.chk_end_time, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_end_time, (1, 1))
+
+        layout.Add(self.lbl_deinterlace, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_deinterlace, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_vf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_vf, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_rotate, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_rotate, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_pad, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pad, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_max_output_size, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_max_output_size, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_keep_aspect_ratio, (7, 1), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -433,6 +447,12 @@ class MainFrame(wx.Frame):
         else:
             self.chk_resume.Disable()
 
+    def reset_time_range(self):
+        self.chk_start_time.SetValue(False)
+        self.chk_end_time.SetValue(False)
+        self.txt_start_time.SetValue("00:00:00")
+        self.txt_end_time.SetValue("00:00:00")
+
     def set_same_output_dir(self):
         selected_path = self.txt_input.GetValue()
         if path.isdir(selected_path):
@@ -486,6 +506,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_rembg_state()
         self.update_resume_state()
+        self.reset_time_range()
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
@@ -591,6 +612,8 @@ class MainFrame(wx.Frame):
 
         input_path = self.txt_input.GetValue()
         resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+        start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
+        end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
 
         parser.set_defaults(
             input=input_path,
@@ -628,6 +651,8 @@ class MainFrame(wx.Frame):
             low_vram=self.chk_low_vram.GetValue(),
 
             resume=resume,
+            start_time=start_time,
+            end_time=end_time,
         )
         args = parser.parse_args()
         set_state_args(
