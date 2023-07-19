@@ -38,9 +38,19 @@ def get_fps(stream):
     return stream.guessed_rate
 
 
-def guess_frames(stream, fps=None):
+def guess_frames(stream, fps=None, start_time=None, end_time=None):
     fps = fps or get_fps(stream)
-    return math.ceil(float(stream.duration * stream.time_base) * fps)
+    if start_time is not None and end_time is not None:
+        duration = end_time - start_time
+    elif start_time is not None:
+        duration = max(float(stream.duration * stream.time_base) - start_time, 0)
+    elif end_time is not None:
+        duration = min(end_time, float(stream.duration * stream.time_base))
+    else:
+        # TODO: stream.duration is None or 0 case (flv)
+        duration = float(stream.duration * stream.time_base)
+
+    return math.ceil(duration * fps)
 
 
 def get_duration(stream):
@@ -170,6 +180,26 @@ def get_new_frames(frame_or_frames_or_none):
         return [frame_or_frames_or_none]
 
 
+def parse_time(s):
+    try:
+        cols = s.split(":")
+        if len(cols) == 1:
+            return max(int(cols[0], 10), 0)
+        elif len(cols) == 2:
+            m = int(cols[0], 10)
+            s = int(cols[1], 10)
+            return max(m * 60 + s, 0)
+        elif len(cols) == 3:
+            h = int(cols[0], 10)
+            m = int(cols[1], 10)
+            s = int(cols[2], 10)
+            return max(h * 3600 + m * 60 + s, 0)
+        else:
+            raise ValueError("time must be hh:mm:ss, mm:ss or sec format")
+    except ValueError:
+        raise ValueError("time must be hh:mm:ss, mm:ss or sec format")
+
+
 # TODO: correct colorspace transform
 
 
@@ -178,11 +208,22 @@ def process_video(input_path, output_path,
                   config_callback=default_config_callback,
                   title=None,
                   vf="",
-                  stop_event=None, tqdm_fn=None):
+                  stop_event=None, tqdm_fn=None,
+                  start_time=None, end_time=None):
+    if isinstance(start_time, str):
+        start_time = parse_time(start_time)
+    if isinstance(end_time, str):
+        end_time = parse_time(end_time)
+        if start_time is not None and not (start_time < end_time):
+            raise ValueError("end_time must be greater than start_time")
+
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
+
+    if start_time is not None:
+        input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
@@ -207,6 +248,9 @@ def process_video(input_path, output_path,
         if audio_input_stream.rate < 16000:
             audio_output_stream = output_container.add_stream("aac", 16000)
             audio_copy = False
+        elif start_time is not None:
+            audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+            audio_copy = False
         else:
             try:
                 audio_output_stream = output_container.add_stream(template=audio_input_stream)
@@ -218,9 +262,15 @@ def process_video(input_path, output_path,
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
-    pbar = tqdm_fn(desc=desc, total=guess_frames(video_input_stream, config.fps), ncols=ncols)
+    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time)
+    pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     for packet in input_container.demux(streams):
+        if packet.pts is not None:
+            if start_time is not None and start_time > packet.pts * packet.time_base:
+                continue
+            if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+                break
         if packet.stream.type == "video":
             for frame in packet.decode():
                 frame = fps_filter.update(frame)
@@ -230,7 +280,6 @@ def process_video(input_path, output_path,
                         if enc_packet:
                             output_container.mux(enc_packet)
                         pbar.update(1)
-
         elif packet.stream.type == "audio":
             if packet.dts is not None:
                 if audio_copy:
@@ -251,13 +300,13 @@ def process_video(input_path, output_path,
             enc_packet = video_output_stream.encode(new_frame)
             if enc_packet:
                 output_container.mux(enc_packet)
-                pbar.update(1)
+            pbar.update(1)
 
     for new_frame in get_new_frames(frame_callback(None)):
         enc_packet = video_output_stream.encode(new_frame)
         if enc_packet:
             output_container.mux(enc_packet)
-            pbar.update(1)
+        pbar.update(1)
 
     packet = video_output_stream.encode(None)
     if packet:
@@ -266,9 +315,10 @@ def process_video(input_path, output_path,
     output_container.close()
     input_container.close()
 
-    if not(stop_event is not None and stop_event.is_set()):
+    if not (stop_event is not None and stop_event.is_set()):
         # success
-        os.replace(output_path_tmp, output_path)
+        if path.exists(output_path_tmp):
+            os.replace(output_path_tmp, output_path)
 
 
 def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None):
