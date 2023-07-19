@@ -255,9 +255,9 @@ class MainFrame(wx.Frame):
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_start_time, (0, 1))
+        layout.Add(self.txt_start_time, (0, 1), flag=wx.EXPAND)
         layout.Add(self.chk_end_time, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_end_time, (1, 1))
+        layout.Add(self.txt_end_time, (1, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_deinterlace, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_deinterlace, (2, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_rotate, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
