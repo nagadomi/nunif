@@ -374,41 +374,28 @@ def postprocess_image(depth, im_org, args, side_model, device):
     return sbs
 
 
-def process_image_impl(im, args, depth_model, side_model):
-    with torch.inference_mode():
-        im_org, im = preprocess_image(im, args)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
-        sbs = postprocess_image(depth, im_org, args, side_model, depth_model.device)
-        return sbs
+def debug_depth_image(depth, args):
+    depth = depth.float()
+    min_depth, max_depth = depth.min(), depth.max()
+    mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
+    depth = normalize_depth(depth)
+    depth2 = get_mapper(args.mapper)(depth)
+    out = torch.cat([depth, depth2], dim=2)
+    out = TF.to_pil_image(out)
+    gc = ImageDraw.Draw(out)
+    gc.text((16, 16), f"min={min_depth}\nmax={max_depth}\nmean={mean_depth}\nstd={std_depth}", "gray")
 
-
-def generate_depth_debug(im, args, depth_model, side_model):
-    with torch.inference_mode():
-        if args.rotate_left:
-            im = im.transpose(Image.Transpose.ROTATE_90)
-        elif args.rotate_right:
-            im = im.transpose(Image.Transpose.ROTATE_270)
-        if args.bg_session is not None:
-            im = remove_bg_from_image(im, args.bg_session)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
-        depth = depth.float()
-        min_depth, max_depth = depth.min(), depth.max()
-        mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
-        depth = normalize_depth(depth)
-        depth2 = depth ** 2
-        out = torch.cat([depth, depth2], dim=2)
-        out = TF.to_pil_image(out)
-        gc = ImageDraw.Draw(out)
-        gc.text((16, 16), f"min={min_depth}\nmax={max_depth}\nmean={mean_depth}\nstd={std_depth}", "gray")
-
-        return out
+    return out
 
 
 def process_image(im, args, depth_model, side_model):
-    if args.debug_depth:
-        return generate_depth_debug(im, args, depth_model, side_model)
-    else:
-        return process_image_impl(im, args, depth_model, side_model)
+    with torch.inference_mode():
+        im_org, im = preprocess_image(im, args)
+        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
+        if not args.debug_depth:
+            return postprocess_image(depth, im_org, args, side_model, depth_model.device)
+        else:
+            return debug_depth_image(depth, args)
 
 
 def process_images(files, args, depth_model, side_model, title=None):
@@ -458,6 +445,10 @@ def process_video_full(input_filename, args, depth_model, side_model):
 
     minibatch_queue = []
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+    if args.debug_depth:
+        postprocess = lambda depth, x_org, args, side_model, device: debug_depth_image(depth, args)
+    else:
+        postprocess = postprocess_image
 
     @torch.inference_mode()
     def run_minibatch():
@@ -472,7 +463,7 @@ def process_video_full(input_filename, args, depth_model, side_model):
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
         depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram)
-        return [VU.from_image(postprocess_image(depth, x_org, args, side_model, depth_model.device))
+        return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device))
                 for depth, x_org in zip(depths, x_orgs)]
 
     def frame_callback(frame):
