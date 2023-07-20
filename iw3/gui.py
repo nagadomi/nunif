@@ -61,6 +61,7 @@ class MainFrame(wx.Frame):
         self.depth_model = None
         self.depth_model_type = None
         self.depth_model_device_id = None
+        self.depth_model_height = None
         self.initialize_component()
 
     def initialize_component(self):
@@ -310,6 +311,12 @@ class MainFrame(wx.Frame):
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
 
+        self.lbl_zoed_resolution = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Resolution"))
+        self.cbo_zoed_resolution = wx.ComboBox(self.grp_processor,
+                                               choices=["Default", "512", "768"],
+                                               style=wx.CB_READONLY, name="cbo_zoed_resolution")
+        self.cbo_zoed_resolution.SetSelection(0)
+        self.zoed_resolution = [None, 512, 768]
         self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
         self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
                                                choices=[str(n) for n in (16, 8, 4, 2, 1)],
@@ -331,13 +338,15 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_batch_size, (1, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (3, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_zoed_resolution, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_resolution, (1, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_zoed_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_batch_size, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_batch_size, (3, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (4, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_fp16, (4, 2), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -587,13 +596,16 @@ class MainFrame(wx.Frame):
 
         device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
         depth_model_type = self.cbo_depth_model.GetValue()
+        zoed_height = self.zoed_resolution[self.cbo_zoed_resolution.GetSelection()]
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
-                                         self.depth_model_device_id != device_id)):
+                                         self.depth_model_device_id != device_id or
+                                         self.depth_model_height != zoed_height)):
             self.depth_model = None
             self.depth_model_type = None
             self.depth_model_device_id = None
             gc.collect()
-            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             if has_depth_model(depth_model_type):
                 # Realod depth model
                 self.SetStatusText(f"Loading {depth_model_type}...")
@@ -647,6 +659,7 @@ class MainFrame(wx.Frame):
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
+            zoed_height=zoed_height,
             tta=self.chk_tta.GetValue(),
             disable_amp=not self.chk_fp16.GetValue(),
             low_vram=self.chk_low_vram.GetValue(),
@@ -670,6 +683,7 @@ class MainFrame(wx.Frame):
             self.depth_model = args.state["depth_model"]
             self.depth_model_type = args.depth_model
             self.depth_model_device_id = args.gpu
+            self.depth_model_height = args.zoed_height
 
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
@@ -688,7 +702,8 @@ class MainFrame(wx.Frame):
 
         # free vram
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available:
+            torch.cuda.empty_cache()
 
     def on_click_btn_cancel(self, event):
         self.stop_event.set()
