@@ -69,8 +69,26 @@ def make_input_tensor(c, depth16, divergence, convergence,
     ], dim=0)
 
 
+def _patch_resize_debug(model):
+    resizer = model.core.prep.resizer
+    print("Resize",
+          resizer._Resize__width,
+          resizer._Resize__height,
+          resizer._Resize__resize_method,
+          resizer._Resize__keep_aspect_ratio,
+          resizer._Resize__multiple_of)
+    get_size = resizer.get_size
+
+    def get_size_wrap(width, height):
+        new_size = get_size(width, height)
+        print("resize", (width, height), new_size)
+        return new_size
+    resizer.get_size = get_size_wrap
+
+
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False):
+    _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
         assert im.ndim == 3 or im.ndim == 4
@@ -83,33 +101,45 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(model.device)
 
+    def get_pad(x):
+        pad_base_h = 16
+        pad_base_w = 16
+        if x.shape[2] > x.shape[3]:
+            diff = (x.shape[2] - x.shape[3])
+            pad_w1 = diff // 2
+            pad_w2 = diff - pad_w1
+            pad_w1 += pad_base_w
+            pad_w2 += pad_base_w
+            pad_h1 = pad_h2 = pad_base_h
+        else:
+            pad_w1 = pad_w2 = pad_base_w
+            pad_h1 = pad_h2 = pad_base_h
+
+        return pad_w1, pad_w2, pad_h1, pad_h2
+
     if not low_vram:
         if flip_aug:
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
-        pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-        pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
+        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
         out = model(x)['metric_depth']
     else:
         x_org = x
-        pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-        pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
+        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
         out = model(x)['metric_depth']
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
-            pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-            pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-            x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+            pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
+            x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
             out = torch.cat([out, model(x)['metric_depth']], dim=0)
 
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
                             mode="bicubic", align_corners=False)
-    if pad_h > 0:
-        out = out[:, :, pad_h:-pad_h, :]
-    if pad_w > 0:
-        out = out[:, :, :, pad_w:-pad_w]
+
+    out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
+
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
