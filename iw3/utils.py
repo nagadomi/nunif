@@ -71,12 +71,15 @@ def make_input_tensor(c, depth16, divergence, convergence,
 
 def _patch_resize_debug(model):
     resizer = model.core.prep.resizer
-    print("Resize",
-          resizer._Resize__width,
-          resizer._Resize__height,
-          resizer._Resize__resize_method,
-          resizer._Resize__keep_aspect_ratio,
-          resizer._Resize__multiple_of)
+    if isinstance(resizer, HeightResizer):
+        print("HeightResizer", resizer.height)
+    else:
+        print("Resizer",
+              resizer._Resize__width,
+              resizer._Resize__height,
+              resizer._Resize__resize_method,
+              resizer._Resize__keep_aspect_ratio,
+              resizer._Resize__multiple_of)
     get_size = resizer.get_size
 
     def get_size_wrap(width, height):
@@ -88,7 +91,7 @@ def _patch_resize_debug(model):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False):
-    _patch_resize_debug(model)
+    # _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
         assert im.ndim == 3 or im.ndim == 4
@@ -263,12 +266,42 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
     return z
 
 
-def load_depth_model(model_type="ZoeD_N", gpu=0):
+class HeightResizer():
+    def __init__(self, height):
+        assert height % 32 == 0
+        self.height = height
+
+    def get_size(self, width, height):
+        if self.height < height:
+            new_h = self.height
+            new_w = int((self.height / height) * width)
+            if new_w % 32 != 0:
+                new_w += (32 - new_w % 32)
+            return new_w, new_h
+        else:
+            new_h = height
+            new_w = width
+            if new_h % 32 != 0:
+                new_h -= new_h % 32
+            if new_w % 32 != 0:
+                new_w -= new_w % 32
+            return new_w, new_h
+
+    def __call__(self, x):
+        new_w, new_h = self.get_size(*x.shape[-2:][::-1])
+        return F.interpolate(x, size=(new_h, new_w),
+                             mode="bilinear", align_corners=True, antialias=True)
+
+
+def load_depth_model(model_type="ZoeD_N", gpu=0, height=None):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         model = torch.hub.load("isl-org/ZoeDepth:main", model_type, config_mode="infer",
                                pretrained=True, verbose=False, trust_repo=True)
     device = create_device(gpu)
     model = model.to(device).eval()
+    if height is not None:
+        model.core.prep.resizer = HeightResizer(height)
+
     return model
 
 
@@ -667,6 +700,8 @@ def create_parser(required_true=True):
                         help="set the start time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--end-time", type=str,
                         help="set the end time offset for video. hh:mm:ss or mm:ss format")
+    parser.add_argument("--zoed-height", type=int,
+                        help="input height for ZoeDepth model")
     return parser
 
 
@@ -694,7 +729,7 @@ def iw3_main(args):
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]
     else:
-        depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
+        depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu, height=args.zoed_height)
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
