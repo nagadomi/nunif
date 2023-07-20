@@ -136,7 +136,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
 
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
-                            mode="bicubic", align_corners=False)
+                            mode="bicubic", align_corners=True)
 
     out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
 
