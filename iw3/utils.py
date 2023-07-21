@@ -408,6 +408,14 @@ def postprocess_image(depth, im_org, args, side_model, device):
                                         args.divergence, args.convergence,
                                         args.mapper, shift=1,
                                         batch_size=args.batch_size, enable_amp=not args.disable_amp)
+
+    ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
+    ipd_pad -= ipd_pad % 2
+    if ipd_pad > 0:
+        pad_o, pad_i = (ipd_pad * 2, ipd_pad) if args.ipd_offset > 0 else (ipd_pad, ipd_pad * 2)
+        left_eye = TF.pad(left_eye, (pad_o, 0, pad_i, 0), padding_mode="constant")
+        right_eye = TF.pad(right_eye, (pad_i, 0, pad_o, 0), padding_mode="constant")
+
     if args.pad is not None:
         pad_h = int(left_eye.shape[1] * args.pad) // 2
         pad_w = int(left_eye.shape[2] * args.pad) // 2
@@ -702,6 +710,9 @@ def create_parser(required_true=True):
                         help="set the end time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--zoed-height", type=int,
                         help="input height for ZoeDepth model")
+    parser.add_argument("--ipd-offset", type=float, default=0,
+                        help="IPD Offset (width scale %). 0-10 is reasonable value for Full SBS")
+
     return parser
 
 

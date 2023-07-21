@@ -123,12 +123,19 @@ class MainFrame(wx.Frame):
         self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
         self.cbo_divergence = wx.ComboBox(self.grp_stereo, choices=["2.5", "2.0", "1.0"],
                                           style=wx.CB_DROPDOWN, name="cbo_divergence")
+        self.cbo_divergence.SetToolTip("Divergence")
         self.cbo_divergence.SetSelection(1)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
         self.cbo_convergence = wx.ComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
                                            style=wx.CB_DROPDOWN, name="cbo_convergence")
         self.cbo_convergence.SetSelection(1)
+        self.cbo_convergence.SetToolTip("Convergence")
+
+        self.lbl_ipd_offset = wx.StaticText(self.grp_stereo, label=T("Your Own Size"))
+        # SpinCtrlDouble is better, but cannot save with PersistenceManager
+        self.sld_ipd_offset = wx.SpinCtrl(self.grp_stereo, value="0", min=0, max=20, name="sld_ipd_offset")
+        self.sld_ipd_offset.SetToolTip("IPD Offset")
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo, choices=["row_flow", "grid_sample"],
@@ -141,7 +148,8 @@ class MainFrame(wx.Frame):
         self.cbo_depth_model.SetSelection(0)
 
         self.lbl_mapper = wx.StaticText(self.grp_stereo, label=T("Depth Mapping"))
-        self.cbo_mapper = wx.ComboBox(self.grp_stereo, choices=["pow2", "softplus", "softplus2", "none"],
+        self.cbo_mapper = wx.ComboBox(self.grp_stereo,
+                                      choices=["pow2", "softplus", "softplus2", "none"],
                                       style=wx.CB_READONLY, name="cbo_mapper")
         self.cbo_mapper.SetSelection(0)
 
@@ -150,11 +158,13 @@ class MainFrame(wx.Frame):
                                              style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
-        layout = wx.FlexGridSizer(rows=6, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=7, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_convergence, 1, wx.EXPAND)
+        layout.Add(self.lbl_ipd_offset, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sld_ipd_offset, 1, wx.EXPAND)
         layout.Add(self.lbl_method, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_method, 1, wx.EXPAND)
         layout.Add(self.lbl_depth_model, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -635,6 +645,7 @@ class MainFrame(wx.Frame):
 
             divergence=float(self.cbo_divergence.GetValue()),
             convergence=float(self.cbo_convergence.GetValue()),
+            ipd_offset=float(self.sld_ipd_offset.GetValue()),
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
             mapper=self.cbo_mapper.GetValue(),
