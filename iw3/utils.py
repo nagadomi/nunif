@@ -2,7 +2,7 @@ import os
 from os import path
 import torch
 import torch.nn.functional as F
-import torchvision.transforms.functional as TF
+from torchvision.transforms import functional as TF, InterpolationMode
 import argparse
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import math
@@ -327,7 +327,8 @@ def force_update_midas_model():
 
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
-SBS_SUFFIX = "_LRF"
+FULL_SBS_SUFFIX = "_LRF"
+HALF_SBS_SUFFIX = "_LR"
 VR180_SUFFIX = "_180x180_LR"
 
 
@@ -337,10 +338,16 @@ VR180_SUFFIX = "_180x180_LR"
 SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
-def make_output_filename(input_filename, video=False, vr180=False):
+def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False):
     basename = path.splitext(path.basename(input_filename))[0]
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
-    auto_detect_suffix = VR180_SUFFIX if vr180 else SBS_SUFFIX
+    if vr180:
+        auto_detect_suffix = VR180_SUFFIX
+    elif half_sbs:
+        auto_detect_suffix = HALF_SBS_SUFFIX
+    else:
+        auto_detect_suffix = FULL_SBS_SUFFIX
+
     return basename + auto_detect_suffix + (".mp4" if video else ".png")
 
 
@@ -374,7 +381,8 @@ def preprocess_image(im, args):
     if new_w != w or new_h != h:
         new_h -= new_h % 2
         new_w -= new_w % 2
-        im = im.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+        im = TF.resize(im, (new_h, new_w),
+                       interpolation=InterpolationMode.BICUBIC, antialias=True)
 
     im_org = TF.to_tensor(im)
     if args.bg_session is not None:
@@ -420,6 +428,12 @@ def postprocess_image(depth, im_org, args, side_model, device):
     if args.vr180:
         left_eye = equirectangular_projection(left_eye, device=device)
         right_eye = equirectangular_projection(right_eye, device=device)
+    elif args.half_sbs:
+        left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
+                             interpolation=InterpolationMode.BICUBIC, antialias=True)
+        right_eye = TF.resize(right_eye, (right_eye.shape[1], right_eye.shape[2] // 2),
+                              interpolation=InterpolationMode.BICUBIC, antialias=True)
+
     sbs = torch.cat([left_eye, right_eye], dim=2)
     sbs = TF.to_pil_image(sbs)
 
@@ -436,7 +450,8 @@ def postprocess_image(depth, im_org, args, side_model, device):
     if new_w != w or new_h != h:
         new_h -= new_h % 2
         new_w -= new_w % 2
-        sbs = sbs.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+        sbs = TF.resize(sbs, (new_h, new_w),
+                        interpolation=InterpolationMode.BICUBIC, antialias=True)
 
     return sbs
 
@@ -551,7 +566,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
         os.makedirs(args.output, exist_ok=True)
         output_filename = path.join(
             args.output,
-            make_output_filename(path.basename(input_filename), video=True, vr180=args.vr180))
+            make_output_filename(path.basename(input_filename), video=True,
+                                 vr180=args.vr180, half_sbs=args.half_sbs))
     else:
         output_filename = args.output
 
@@ -592,7 +608,7 @@ def process_video_keyframes(input_filename, args, depth_model, side_model):
             output = process_image(frame.to_image(), args, depth_model, side_model)
             output_filename = path.join(
                 output_dir,
-                path.basename(output_dir) + "_" + str(frame.index).zfill(8) + SBS_SUFFIX + ".png")
+                path.basename(output_dir) + "_" + str(frame.index).zfill(8) + FULL_SBS_SUFFIX + ".png")
             f = pool.submit(save_image, output, output_filename)
             futures.append(f)
         VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
@@ -690,6 +706,8 @@ def create_parser(required_true=True):
                         help="(re-)mapper function for depth")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
+    parser.add_argument("--half-sbs", action="store_true",
+                        help="output in Half SBS")
     parser.add_argument("--tta", action="store_true",
                         help="Use flip augmentation on depth model")
     parser.add_argument("--disable-amp", action="store_true",
@@ -723,6 +741,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
 
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
+    assert not (args.half_sbs and args.vr180)
 
     if args.update:
         force_update_midas_model()

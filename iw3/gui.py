@@ -154,7 +154,7 @@ class MainFrame(wx.Frame):
         self.cbo_mapper.SetSelection(0)
 
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
-        self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["3D SBS", "VR90"],
+        self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["Full SBS", "Half SBS", "VR90"],
                                              style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
@@ -535,10 +535,13 @@ class MainFrame(wx.Frame):
         input_path = self.txt_input.GetValue()
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
+        half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         video = is_video(input_path)
 
         if is_output_dir(output_path):
-            output_path = path.join(output_path, make_output_filename(input_path, video=video, vr180=vr180))
+            output_path = path.join(
+                output_path,
+                make_output_filename(input_path, video=video, vr180=vr180, half_sbs=half_sbs))
         else:
             output_path = output_path
 
@@ -578,7 +581,9 @@ class MainFrame(wx.Frame):
         self.SetStatusText("...")
 
         parser = create_parser(required_true=False)
+
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
+        half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         tune = set()
         if self.chk_tune_zerolatency.GetValue():
             tune.add("zerolatency")
@@ -650,6 +655,7 @@ class MainFrame(wx.Frame):
             depth_model=depth_model_type,
             mapper=self.cbo_mapper.GetValue(),
             vr180=vr180,
+            half_sbs=half_sbs,
 
             max_fps=float(self.cbo_fps.GetValue()),
             crf=int(self.cbo_crf.GetValue()),
