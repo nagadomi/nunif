@@ -72,7 +72,7 @@ def make_input_tensor(c, depth16, divergence, convergence,
 def _patch_resize_debug(model):
     resizer = model.core.prep.resizer
     if isinstance(resizer, HeightResizer):
-        print("HeightResizer", resizer.height)
+        print("HeightResizer", resizer.v_height, resizer.h_height)
     else:
         print("Resizer",
               resizer._Resize__width,
@@ -86,7 +86,9 @@ def _patch_resize_debug(model):
         new_size = get_size(width, height)
         print("resize", (width, height), new_size)
         return new_size
-    resizer.get_size = get_size_wrap
+
+    if resizer.get_size.__code__.co_code != get_size_wrap.__code__.co_code:
+        resizer.get_size = get_size_wrap
 
 
 @torch.inference_mode()
@@ -105,20 +107,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
         x = TF.to_tensor(im).unsqueeze(0).to(model.device)
 
     def get_pad(x):
-        pad_base_h = 16
-        pad_base_w = 16
-        if x.shape[2] > x.shape[3]:
-            diff = (x.shape[2] - x.shape[3])
-            pad_w1 = diff // 2
-            pad_w2 = diff - pad_w1
-            pad_w1 += pad_base_w
-            pad_w2 += pad_base_w
-            pad_h1 = pad_h2 = pad_base_h
-        else:
-            pad_w1 = pad_w2 = pad_base_w
-            pad_h1 = pad_h2 = pad_base_h
-
-        return pad_w1, pad_w2, pad_h1, pad_h2
+        return 16, 16, 16, 16
 
     if not low_vram:
         if flip_aug:
@@ -267,30 +256,35 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
 
 
 class HeightResizer():
-    def __init__(self, height):
-        assert height % 32 == 0
-        self.height = height
+    def __init__(self, h_height=384, v_height=512):
+        self.h_height = h_height
+        self.v_height = v_height
 
     def get_size(self, width, height):
-        if self.height < height:
-            new_h = self.height
-            new_w = int((self.height / height) * width)
+        target_height = self.h_height if width > height else self.v_height
+        if target_height < height:
+            new_h = self.h_height
+            new_w = int(new_h / height * width)
             if new_w % 32 != 0:
                 new_w += (32 - new_w % 32)
-            return new_w, new_h
-        else:
-            new_h = height
-            new_w = width
             if new_h % 32 != 0:
-                new_h -= new_h % 32
+                new_h += (32 - new_h % 32)
+        else:
+            new_h, new_w = height, width
             if new_w % 32 != 0:
                 new_w -= new_w % 32
-            return new_w, new_h
+            if new_h % 32 != 0:
+                new_h -= new_h % 32
+
+        return new_w, new_h
 
     def __call__(self, x):
-        new_w, new_h = self.get_size(*x.shape[-2:][::-1])
-        return F.interpolate(x, size=(new_h, new_w),
-                             mode="bilinear", align_corners=True, antialias=True)
+        width, height = x.shape[-2:][::-1]
+        new_w, new_h = self.get_size(width, height)
+        if new_w != width or new_h != height:
+            x = F.interpolate(x, size=(new_h, new_w),
+                              mode="bilinear", align_corners=True, antialias=True)
+        return x
 
 
 def load_depth_model(model_type="ZoeD_N", gpu=0, height=None):
@@ -300,7 +294,9 @@ def load_depth_model(model_type="ZoeD_N", gpu=0, height=None):
     device = create_device(gpu)
     model = model.to(device).eval()
     if height is not None:
-        model.core.prep.resizer = HeightResizer(height)
+        model.core.prep.resizer = HeightResizer(height, height)
+    else:
+        model.core.prep.resizer = HeightResizer()
 
     return model
 

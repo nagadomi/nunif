@@ -323,10 +323,10 @@ class MainFrame(wx.Frame):
 
         self.lbl_zoed_resolution = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Resolution"))
         self.cbo_zoed_resolution = wx.ComboBox(self.grp_processor,
-                                               choices=["Default", "512", "768"],
+                                               choices=["Default", "512"],
                                                style=wx.CB_READONLY, name="cbo_zoed_resolution")
         self.cbo_zoed_resolution.SetSelection(0)
-        self.zoed_resolution = [None, 512, 768]
+        self.zoed_resolution = [None, 512]
         self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
         self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
                                                choices=[str(n) for n in (16, 8, 4, 2, 1)],
