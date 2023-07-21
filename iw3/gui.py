@@ -277,7 +277,9 @@ class MainFrame(wx.Frame):
 
         self.lbl_max_output_size = wx.StaticText(self.grp_video_filter, label=T("Output Size Limit"))
         self.cbo_max_output_size = wx.ComboBox(self.grp_video_filter,
-                                               choices=["", "3840x2160", "1920x1080", "1280x720", "640x360"],
+                                               choices=["",
+                                                        "1920x1080", "1280x720", "640x360",
+                                                        "1080x1920", "720x1280", "360x640"],
                                                style=wx.CB_READONLY, name="cbo_max_output_size")
         self.cbo_max_output_size.SetSelection(0)
 
