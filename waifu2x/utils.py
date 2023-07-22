@@ -7,11 +7,18 @@ from nunif.utils.alpha import AlphaBorderPadding
 from nunif.models import (
     load_model, get_model_config,
     data_parallel_model, call_model_method,
-    compile_model,
+    compile_model, is_compiled_model,
 )
 from nunif.device import create_device
 from nunif.logger import logger
 from nunif.utils.ui import HiddenPrints
+
+
+def can_compile(model):
+    return (model is not None and
+            (not is_compiled_model(model)) and
+            # swin_unet model is buggy with torch.compile() in torch 2.0.1, so disable
+            "swin_unet" not in model.name)
 
 
 class Waifu2x():
@@ -26,31 +33,42 @@ class Waifu2x():
         self.model_dir = model_dir
         self.alpha_pad = AlphaBorderPadding()
 
-    def _compile_model(self, model):
-        # currently disabled
-        # very slow and low accuracy.
-        if False:
-            return compile_model(model)
-        else:
-            return model
+    def compile(self):
+        if can_compile(self.scale_model):
+            logger.debug("compile scale_model")
+            self.scale_model = compile_model(self.scale_model)
+        if can_compile(self.scale4x_model):
+            logger.debug("compile scale4x_model")
+            self.scale4x_model = compile_model(self.scale4x_model)
+
+        for i in range(len(self.noise_models)):
+            if can_compile(self.noise_models[i]):
+                logger.debug(f"compile noise_models[{i}]")
+                self.noise_models[i] = compile_model(self.noise_models[i])
+
+            if can_compile(self.noise_scale_models[i]):
+                logger.debug(f"compile noise_scale_models[{i}]")
+                self.noise_scale_models[i] = compile_model(self.noise_scale_models[i])
+
+            if can_compile(self.noise_scale4x_models[i]):
+                logger.debug(f"compile noise_scale4x_models[{i}]")
+                self.noise_scale4x_models[i] = compile_model(self.noise_scale4x_models[i])
 
     def _setup(self):
         if self.scale_model is not None:
-            self.scale_model = self._compile_model(self.scale_model.to(self.device).eval())
+            self.scale_model = self.scale_model.to(self.device).eval()
         if self.scale4x_model is not None:
-            self.scale4x_model = self._compile_model(self.scale4x_model.to(self.device).eval())
+            self.scale4x_model = self.scale4x_model.to(self.device).eval()
 
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
-                self.noise_models[i] = self._compile_model(self.noise_models[i].to(self.device).eval())
+                self.noise_models[i] = self.noise_models[i].to(self.device).eval()
 
             if self.noise_scale_models[i] is not None:
-                self.noise_scale_models[i] = self._compile_model(
-                    self.noise_scale_models[i].to(self.device).eval())
+                self.noise_scale_models[i] = self.noise_scale_models[i].to(self.device).eval()
 
             if self.noise_scale4x_models[i] is not None:
-                self.noise_scale4x_models[i] = self._compile_model(
-                    self.noise_scale4x_models[i].to(self.device).eval())
+                self.noise_scale4x_models[i] = self.noise_scale4x_models[i].to(self.device).eval()
 
     def load_model_by_name(self, filename):
         with HiddenPrints():
