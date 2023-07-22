@@ -259,7 +259,7 @@ class HeightResizer():
     def get_size(self, width, height):
         target_height = self.h_height if width > height else self.v_height
         if target_height < height:
-            new_h = self.h_height
+            new_h = target_height
             new_w = int(new_h / height * width)
             if new_w % 32 != 0:
                 new_w += (32 - new_w % 32)
