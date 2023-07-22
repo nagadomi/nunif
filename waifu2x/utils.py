@@ -1,4 +1,5 @@
 from os import path
+from packaging import version as packaging_version
 import torch
 import torch.nn.functional as F
 from nunif.transforms.tta import tta_merge, tta_split
@@ -14,11 +15,14 @@ from nunif.logger import logger
 from nunif.utils.ui import HiddenPrints
 
 
+# compling swin_unet model only works with torch >= 2.1.0
+CAN_COMPILE_SWIN_UNET = packaging_version.parse(torch.__version__).release >= (2, 1, 0)
+
+
 def can_compile(model):
     return (model is not None and
             (not is_compiled_model(model)) and
-            # swin_unet model is buggy with torch.compile() in torch 2.0.1, so disable
-            "swin_unet" not in model.name)
+            (CAN_COMPILE_SWIN_UNET or ("swin_unet" not in model.name)))
 
 
 class Waifu2x():
