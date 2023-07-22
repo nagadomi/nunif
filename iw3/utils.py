@@ -183,12 +183,8 @@ def equirectangular_projection(c, device="cpu"):
 
     azimuth = x * (math.pi * 0.5)
     elevation = y * (math.pi * 0.5)
-    cos_elevation = torch.cos(elevation)
-    x = cos_elevation * torch.sin(azimuth)
-    y = torch.sin(elevation)
-    z = cos_elevation * torch.cos(azimuth)
-    mesh_x = 0.6666 * x / z
-    mesh_y = 0.6666 * y / z
+    mesh_x = (max_edge / output_size) * torch.tan(azimuth)
+    mesh_y = (max_edge / output_size) * (torch.tan(elevation) / torch.cos(azimuth))
     grid = torch.stack((mesh_x, mesh_y), 2)
     z = F.grid_sample(c.unsqueeze(0),
                       grid.unsqueeze(0),
