@@ -112,6 +112,10 @@ def compile_model(model, **kwargs):
     return model
 
 
+def is_compiled_model(model):
+    return not isinstance(model, Model)
+
+
 def merge_state_dict(a, b, alpha=0.5):
     """
     NOTE: This only works when `a` and `b` are finetuned models of the same original model.
