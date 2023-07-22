@@ -15,7 +15,7 @@ from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as wxpm
 from .ui_utils import (
     create_parser, set_state_args, waifu2x_main,
-    is_video, is_output_dir, is_text,
+    is_video, is_output_dir, is_text, is_image,
     MODEL_DIR, DEFAULT_ART_MODEL_DIR,
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
@@ -88,6 +88,9 @@ class MainFrame(wx.Frame):
         self.btn_same_output_dir.SetToolTip(T("Set the same directory"))
         self.btn_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
+        self.btn_output_play = GenBitmapButton(self.pnl_file, bitmap=load_icon("media-playback-start.png"))
+        self.btn_output_play.SetToolTip(T("Play"))
+
         self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
@@ -103,6 +106,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_output, (1, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_output_play, (1, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_resume, (2, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
@@ -347,6 +351,7 @@ class MainFrame(wx.Frame):
         self.btn_input_play.Bind(wx.EVT_BUTTON, self.on_click_btn_input_play)
         self.btn_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_output_dir)
         self.btn_same_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_same_output_dir)
+        self.btn_output_play.Bind(wx.EVT_BUTTON, self.on_click_btn_output_play)
 
         self.txt_input.Bind(wx.EVT_TEXT, self.on_text_changed_txt_input)
         self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
@@ -474,6 +479,25 @@ class MainFrame(wx.Frame):
 
     def on_click_btn_input_play(self, event):
         start_file(self.txt_input.GetValue())
+
+    def on_click_btn_output_play(self, event):
+        input_path = self.txt_input.GetValue()
+        output_path = self.txt_output.GetValue()
+
+        if is_output_dir(output_path):
+            if is_video(input_path):
+                output_path = path.join(
+                    output_path,
+                    path.splitext(path.basename(input_path))[0] + ".mp4")
+            elif is_image(input_path):
+                output_path = path.join(
+                    output_path,
+                    path.splitext(path.basename(input_path))[0] + ".png")
+
+        if path.exists(output_path):
+            start_file(output_path)
+        elif path.exists(path.dirname(output_path)):
+            start_file(path.dirname(output_path))
 
     def on_click_btn_same_output_dir(self, event):
         self.set_same_output_dir()

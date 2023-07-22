@@ -125,7 +125,7 @@ def main(args):
     numba.set_num_threads(max_workers)
 
     filename_prefix = args.prefix + "_" if args.prefix else ""
-    model = load_depth_model(model_type="ZoeD_N", gpu=args.gpu)
+    model = load_depth_model(model_type="ZoeD_N", gpu=args.gpu, height=args.zoed_height)
 
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
@@ -158,7 +158,8 @@ def main(args):
                     convergence = gen_convergence()
                     sbs, depth = generate_sbs(
                         model, im_s,
-                        divergence=divergence, convergence=convergence)
+                        divergence=divergence, convergence=convergence,
+                        flip_aug=random.choice([True,False]))
                     f = pool.submit(save_images, im_s, sbs, depth,
                                     divergence, convergence,
                                     output_base, args.size, args.num_samples)
@@ -183,6 +184,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--times", type=int, default=4,
                         help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
+    parser.add_argument("--zoed-height", type=int, help="input height for ZoeDepth model")
 
     parser.set_defaults(handler=main)
 

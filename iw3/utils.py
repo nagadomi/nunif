@@ -2,7 +2,7 @@ import os
 from os import path
 import torch
 import torch.nn.functional as F
-import torchvision.transforms.functional as TF
+from torchvision.transforms import functional as TF, InterpolationMode
 import argparse
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import math
@@ -69,8 +69,31 @@ def make_input_tensor(c, depth16, divergence, convergence,
     ], dim=0)
 
 
+def _patch_resize_debug(model):
+    resizer = model.core.prep.resizer
+    if isinstance(resizer, HeightResizer):
+        print("HeightResizer", resizer.v_height, resizer.h_height)
+    else:
+        print("Resizer",
+              resizer._Resize__width,
+              resizer._Resize__height,
+              resizer._Resize__resize_method,
+              resizer._Resize__keep_aspect_ratio,
+              resizer._Resize__multiple_of)
+    get_size = resizer.get_size
+
+    def get_size_wrap(width, height):
+        new_size = get_size(width, height)
+        print("resize", (width, height), new_size)
+        return new_size
+
+    if resizer.get_size.__code__.co_code != get_size_wrap.__code__.co_code:
+        resizer.get_size = get_size_wrap
+
+
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False):
+    # _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
         assert im.ndim == 3 or im.ndim == 4
@@ -83,33 +106,32 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(model.device)
 
+    def get_pad(x):
+        return 16, 16, 16, 16
+
     if not low_vram:
         if flip_aug:
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
-        pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-        pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
+        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
         out = model(x)['metric_depth']
     else:
         x_org = x
-        pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-        pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
+        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
         out = model(x)['metric_depth']
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
-            pad_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-            pad_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-            x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+            pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
+            x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
             out = torch.cat([out, model(x)['metric_depth']], dim=0)
 
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
-                            mode="bicubic", align_corners=False)
-    if pad_h > 0:
-        out = out[:, :, pad_h:-pad_h, :]
-    if pad_w > 0:
-        out = out[:, :, :, pad_w:-pad_w]
+                            mode="bicubic", align_corners=True)
+
+    out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
+
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
@@ -161,12 +183,8 @@ def equirectangular_projection(c, device="cpu"):
 
     azimuth = x * (math.pi * 0.5)
     elevation = y * (math.pi * 0.5)
-    cos_elevation = torch.cos(elevation)
-    x = cos_elevation * torch.sin(azimuth)
-    y = torch.sin(elevation)
-    z = cos_elevation * torch.cos(azimuth)
-    mesh_x = 0.6666 * x / z
-    mesh_y = 0.6666 * y / z
+    mesh_x = (max_edge / output_size) * torch.tan(azimuth)
+    mesh_y = (max_edge / output_size) * (torch.tan(elevation) / torch.cos(azimuth))
     grid = torch.stack((mesh_x, mesh_y), 2)
     z = F.grid_sample(c.unsqueeze(0),
                       grid.unsqueeze(0),
@@ -233,12 +251,49 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
     return z
 
 
-def load_depth_model(model_type="ZoeD_N", gpu=0):
+class HeightResizer():
+    def __init__(self, h_height=384, v_height=512):
+        self.h_height = h_height
+        self.v_height = v_height
+
+    def get_size(self, width, height):
+        target_height = self.h_height if width > height else self.v_height
+        if target_height < height:
+            new_h = target_height
+            new_w = int(new_h / height * width)
+            if new_w % 32 != 0:
+                new_w += (32 - new_w % 32)
+            if new_h % 32 != 0:
+                new_h += (32 - new_h % 32)
+        else:
+            new_h, new_w = height, width
+            if new_w % 32 != 0:
+                new_w -= new_w % 32
+            if new_h % 32 != 0:
+                new_h -= new_h % 32
+
+        return new_w, new_h
+
+    def __call__(self, x):
+        width, height = x.shape[-2:][::-1]
+        new_w, new_h = self.get_size(width, height)
+        if new_w != width or new_h != height:
+            x = F.interpolate(x, size=(new_h, new_w),
+                              mode="bilinear", align_corners=True, antialias=True)
+        return x
+
+
+def load_depth_model(model_type="ZoeD_N", gpu=0, height=None):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         model = torch.hub.load("isl-org/ZoeDepth:main", model_type, config_mode="infer",
                                pretrained=True, verbose=False, trust_repo=True)
     device = create_device(gpu)
     model = model.to(device).eval()
+    if height is not None:
+        model.core.prep.resizer = HeightResizer(height, height)
+    else:
+        model.core.prep.resizer = HeightResizer()
+
     return model
 
 
@@ -268,7 +323,8 @@ def force_update_midas_model():
 
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
-SBS_SUFFIX = "_LRF"
+FULL_SBS_SUFFIX = "_LRF"
+HALF_SBS_SUFFIX = "_LR"
 VR180_SUFFIX = "_180x180_LR"
 
 
@@ -278,10 +334,16 @@ VR180_SUFFIX = "_180x180_LR"
 SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
-def make_output_filename(input_filename, video=False, vr180=False):
+def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False):
     basename = path.splitext(path.basename(input_filename))[0]
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
-    auto_detect_suffix = VR180_SUFFIX if vr180 else SBS_SUFFIX
+    if vr180:
+        auto_detect_suffix = VR180_SUFFIX
+    elif half_sbs:
+        auto_detect_suffix = HALF_SBS_SUFFIX
+    else:
+        auto_detect_suffix = FULL_SBS_SUFFIX
+
     return basename + auto_detect_suffix + (".mp4" if video else ".png")
 
 
@@ -315,7 +377,8 @@ def preprocess_image(im, args):
     if new_w != w or new_h != h:
         new_h -= new_h % 2
         new_w -= new_w % 2
-        im = im.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+        im = TF.resize(im, (new_h, new_w),
+                       interpolation=InterpolationMode.BICUBIC, antialias=True)
 
     im_org = TF.to_tensor(im)
     if args.bg_session is not None:
@@ -345,6 +408,14 @@ def postprocess_image(depth, im_org, args, side_model, device):
                                         args.divergence, args.convergence,
                                         args.mapper, shift=1,
                                         batch_size=args.batch_size, enable_amp=not args.disable_amp)
+
+    ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
+    ipd_pad -= ipd_pad % 2
+    if ipd_pad > 0:
+        pad_o, pad_i = (ipd_pad * 2, ipd_pad) if args.ipd_offset > 0 else (ipd_pad, ipd_pad * 2)
+        left_eye = TF.pad(left_eye, (pad_o, 0, pad_i, 0), padding_mode="constant")
+        right_eye = TF.pad(right_eye, (pad_i, 0, pad_o, 0), padding_mode="constant")
+
     if args.pad is not None:
         pad_h = int(left_eye.shape[1] * args.pad) // 2
         pad_w = int(left_eye.shape[2] * args.pad) // 2
@@ -353,7 +424,14 @@ def postprocess_image(depth, im_org, args, side_model, device):
     if args.vr180:
         left_eye = equirectangular_projection(left_eye, device=device)
         right_eye = equirectangular_projection(right_eye, device=device)
+    elif args.half_sbs:
+        left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
+                             interpolation=InterpolationMode.BICUBIC, antialias=True)
+        right_eye = TF.resize(right_eye, (right_eye.shape[1], right_eye.shape[2] // 2),
+                              interpolation=InterpolationMode.BICUBIC, antialias=True)
+
     sbs = torch.cat([left_eye, right_eye], dim=2)
+    sbs = torch.clamp(sbs, 0., 1.)
     sbs = TF.to_pil_image(sbs)
 
     w, h = sbs.size
@@ -369,46 +447,34 @@ def postprocess_image(depth, im_org, args, side_model, device):
     if new_w != w or new_h != h:
         new_h -= new_h % 2
         new_w -= new_w % 2
-        sbs = sbs.resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+        sbs = TF.resize(sbs, (new_h, new_w),
+                        interpolation=InterpolationMode.BICUBIC, antialias=True)
 
     return sbs
 
 
-def process_image_impl(im, args, depth_model, side_model):
-    with torch.inference_mode():
-        im_org, im = preprocess_image(im, args)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
-        sbs = postprocess_image(depth, im_org, args, side_model, depth_model.device)
-        return sbs
+def debug_depth_image(depth, args):
+    depth = depth.float()
+    min_depth, max_depth = depth.min(), depth.max()
+    mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
+    depth = normalize_depth(depth)
+    depth2 = get_mapper(args.mapper)(depth)
+    out = torch.cat([depth, depth2], dim=2)
+    out = TF.to_pil_image(out)
+    gc = ImageDraw.Draw(out)
+    gc.text((16, 16), f"min={min_depth}\nmax={max_depth}\nmean={mean_depth}\nstd={std_depth}", "gray")
 
-
-def generate_depth_debug(im, args, depth_model, side_model):
-    with torch.inference_mode():
-        if args.rotate_left:
-            im = im.transpose(Image.Transpose.ROTATE_90)
-        elif args.rotate_right:
-            im = im.transpose(Image.Transpose.ROTATE_270)
-        if args.bg_session is not None:
-            im = remove_bg_from_image(im, args.bg_session)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
-        depth = depth.float()
-        min_depth, max_depth = depth.min(), depth.max()
-        mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
-        depth = normalize_depth(depth)
-        depth2 = depth ** 2
-        out = torch.cat([depth, depth2], dim=2)
-        out = TF.to_pil_image(out)
-        gc = ImageDraw.Draw(out)
-        gc.text((16, 16), f"min={min_depth}\nmax={max_depth}\nmean={mean_depth}\nstd={std_depth}", "gray")
-
-        return out
+    return out
 
 
 def process_image(im, args, depth_model, side_model):
-    if args.debug_depth:
-        return generate_depth_debug(im, args, depth_model, side_model)
-    else:
-        return process_image_impl(im, args, depth_model, side_model)
+    with torch.inference_mode():
+        im_org, im = preprocess_image(im, args)
+        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
+        if not args.debug_depth:
+            return postprocess_image(depth, im_org, args, side_model, depth_model.device)
+        else:
+            return debug_depth_image(depth, args)
 
 
 def process_images(files, args, depth_model, side_model, title=None):
@@ -423,7 +489,9 @@ def process_images(files, args, depth_model, side_model, title=None):
     with PoolExecutor(max_workers=4) as pool:
         for im, meta in loader:
             filename = meta["filename"]
-            output_filename = path.join(args.output, make_output_filename(filename))
+            output_filename = path.join(
+                args.output,
+                make_output_filename(filename, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
             if im is None or (args.resume and path.exists(output_filename)):
                 continue
             output = process_image(im, args, depth_model, side_model)
@@ -458,6 +526,10 @@ def process_video_full(input_filename, args, depth_model, side_model):
 
     minibatch_queue = []
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+    if args.debug_depth:
+        postprocess = lambda depth, x_org, args, side_model, device: debug_depth_image(depth, args)
+    else:
+        postprocess = postprocess_image
 
     @torch.inference_mode()
     def run_minibatch():
@@ -472,7 +544,7 @@ def process_video_full(input_filename, args, depth_model, side_model):
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
         depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram)
-        return [VU.from_image(postprocess_image(depth, x_org, args, side_model, depth_model.device))
+        return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device))
                 for depth, x_org in zip(depths, x_orgs)]
 
     def frame_callback(frame):
@@ -493,7 +565,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
         os.makedirs(args.output, exist_ok=True)
         output_filename = path.join(
             args.output,
-            make_output_filename(path.basename(input_filename), video=True, vr180=args.vr180))
+            make_output_filename(path.basename(input_filename), video=True,
+                                 vr180=args.vr180, half_sbs=args.half_sbs))
     else:
         output_filename = args.output
 
@@ -520,7 +593,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
 def process_video_keyframes(input_filename, args, depth_model, side_model):
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
-        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True))
+        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True,
+                                                                 vr180=args.vr180, half_sbs=args.half_sbs))
     else:
         output_dir = args.output
     output_dir = path.join(path.dirname(output_dir), path.splitext(path.basename(output_dir))[0])
@@ -534,7 +608,7 @@ def process_video_keyframes(input_filename, args, depth_model, side_model):
             output = process_image(frame.to_image(), args, depth_model, side_model)
             output_filename = path.join(
                 output_dir,
-                path.basename(output_dir) + "_" + str(frame.index).zfill(8) + SBS_SUFFIX + ".png")
+                path.basename(output_dir) + "_" + str(frame.index).zfill(8) + FULL_SBS_SUFFIX + ".png")
             f = pool.submit(save_image, output, output_filename)
             futures.append(f)
         VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
@@ -632,6 +706,8 @@ def create_parser(required_true=True):
                         help="(re-)mapper function for depth")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
+    parser.add_argument("--half-sbs", action="store_true",
+                        help="output in Half SBS")
     parser.add_argument("--tta", action="store_true",
                         help="Use flip augmentation on depth model")
     parser.add_argument("--disable-amp", action="store_true",
@@ -646,6 +722,11 @@ def create_parser(required_true=True):
                         help="set the start time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--end-time", type=str,
                         help="set the end time offset for video. hh:mm:ss or mm:ss format")
+    parser.add_argument("--zoed-height", type=int,
+                        help="input height for ZoeDepth model")
+    parser.add_argument("--ipd-offset", type=float, default=0,
+                        help="IPD Offset (width scale %). 0-10 is reasonable value for Full SBS")
+
     return parser
 
 
@@ -660,6 +741,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
 
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
+    assert not (args.half_sbs and args.vr180)
 
     if args.update:
         force_update_midas_model()
@@ -673,7 +755,7 @@ def iw3_main(args):
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]
     else:
-        depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu)
+        depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu, height=args.zoed_height)
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
@@ -709,7 +791,9 @@ def iw3_main(args):
     elif is_image(args.input):
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
-            output_filename = path.join(args.output, make_output_filename(args.input))
+            output_filename = path.join(
+                args.output,
+                make_output_filename(args.input, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")

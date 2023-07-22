@@ -23,10 +23,10 @@ def to_input_depth(im_depth):
     return normalize_depth(TF.to_tensor(im_depth).squeeze(0).cpu().numpy())
 
 
-def generate_sbs(model, im, divergence=2, convergence=1):
+def generate_sbs(model, im, divergence=2, convergence=1, flip_aug=True):
     im_org = im
     with torch.inference_mode():
-        depth = batch_infer(model, im)
+        depth = batch_infer(model, im, flip_aug=flip_aug)
         im_depth = Image.fromarray(depth.squeeze(0).numpy().astype(np.uint16))
     sbs = create_stereoimages(
         np.array(im_org, dtype=np.uint8),

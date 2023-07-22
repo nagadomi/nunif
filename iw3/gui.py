@@ -61,6 +61,7 @@ class MainFrame(wx.Frame):
         self.depth_model = None
         self.depth_model_type = None
         self.depth_model_device_id = None
+        self.depth_model_height = None
         self.initialize_component()
 
     def initialize_component(self):
@@ -88,6 +89,8 @@ class MainFrame(wx.Frame):
         self.btn_same_output_dir.SetToolTip(T("Set the same directory"))
         self.btn_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
         self.btn_output_dir.SetToolTip(T("Choose a directory"))
+        self.btn_output_play = GenBitmapButton(self.pnl_file, bitmap=load_icon("media-playback-start.png"))
+        self.btn_output_play.SetToolTip(T("Play"))
 
         self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
@@ -104,6 +107,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_output, (1, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.btn_output_play, (1, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_resume, (2, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
@@ -122,12 +126,19 @@ class MainFrame(wx.Frame):
         self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
         self.cbo_divergence = wx.ComboBox(self.grp_stereo, choices=["2.5", "2.0", "1.0"],
                                           style=wx.CB_DROPDOWN, name="cbo_divergence")
+        self.cbo_divergence.SetToolTip("Divergence")
         self.cbo_divergence.SetSelection(1)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
         self.cbo_convergence = wx.ComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
                                            style=wx.CB_DROPDOWN, name="cbo_convergence")
         self.cbo_convergence.SetSelection(1)
+        self.cbo_convergence.SetToolTip("Convergence")
+
+        self.lbl_ipd_offset = wx.StaticText(self.grp_stereo, label=T("Your Own Size"))
+        # SpinCtrlDouble is better, but cannot save with PersistenceManager
+        self.sld_ipd_offset = wx.SpinCtrl(self.grp_stereo, value="0", min=0, max=20, name="sld_ipd_offset")
+        self.sld_ipd_offset.SetToolTip("IPD Offset")
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo, choices=["row_flow", "grid_sample"],
@@ -140,20 +151,23 @@ class MainFrame(wx.Frame):
         self.cbo_depth_model.SetSelection(0)
 
         self.lbl_mapper = wx.StaticText(self.grp_stereo, label=T("Depth Mapping"))
-        self.cbo_mapper = wx.ComboBox(self.grp_stereo, choices=["pow2", "softplus", "softplus2", "none"],
+        self.cbo_mapper = wx.ComboBox(self.grp_stereo,
+                                      choices=["pow2", "softplus", "softplus2", "none"],
                                       style=wx.CB_READONLY, name="cbo_mapper")
         self.cbo_mapper.SetSelection(0)
 
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
-        self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["3D SBS", "VR90"],
+        self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["Full SBS", "Half SBS", "VR90"],
                                              style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
-        layout = wx.FlexGridSizer(rows=6, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=7, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_convergence, 1, wx.EXPAND)
+        layout.Add(self.lbl_ipd_offset, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sld_ipd_offset, 1, wx.EXPAND)
         layout.Add(self.lbl_method, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_method, 1, wx.EXPAND)
         layout.Add(self.lbl_depth_model, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -266,7 +280,9 @@ class MainFrame(wx.Frame):
 
         self.lbl_max_output_size = wx.StaticText(self.grp_video_filter, label=T("Output Size Limit"))
         self.cbo_max_output_size = wx.ComboBox(self.grp_video_filter,
-                                               choices=["", "3840x2160", "1920x1080", "1280x720", "640x360"],
+                                               choices=["",
+                                                        "1920x1080", "1280x720", "640x360",
+                                                        "1080x1920", "720x1280", "360x640"],
                                                style=wx.CB_READONLY, name="cbo_max_output_size")
         self.cbo_max_output_size.SetSelection(0)
 
@@ -310,6 +326,12 @@ class MainFrame(wx.Frame):
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
 
+        self.lbl_zoed_resolution = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Resolution"))
+        self.cbo_zoed_resolution = wx.ComboBox(self.grp_processor,
+                                               choices=["Default", "512"],
+                                               style=wx.CB_READONLY, name="cbo_zoed_resolution")
+        self.cbo_zoed_resolution.SetSelection(0)
+        self.zoed_resolution = [None, 512]
         self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
         self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
                                                choices=[str(n) for n in (16, 8, 4, 2, 1)],
@@ -331,13 +353,15 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_batch_size, (1, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (3, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_zoed_resolution, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_resolution, (1, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_zoed_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_batch_size, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_batch_size, (3, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (4, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_fp16, (4, 2), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -378,6 +402,7 @@ class MainFrame(wx.Frame):
         self.btn_input_play.Bind(wx.EVT_BUTTON, self.on_click_btn_input_play)
         self.btn_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_output_dir)
         self.btn_same_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_same_output_dir)
+        self.btn_output_play.Bind(wx.EVT_BUTTON, self.on_click_btn_output_play)
 
         self.txt_input.Bind(wx.EVT_TEXT, self.on_text_changed_txt_input)
         self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
@@ -489,6 +514,23 @@ class MainFrame(wx.Frame):
     def on_click_btn_input_play(self, event):
         start_file(self.txt_input.GetValue())
 
+    def on_click_btn_output_play(self, event):
+        input_path = self.txt_input.GetValue()
+        output_path = self.txt_output.GetValue()
+        vr180 = self.cbo_stereo_format.GetValue() == "VR90"
+        half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        video = is_video(input_path)
+
+        if is_output_dir(output_path):
+            output_path = path.join(
+                output_path,
+                make_output_filename(input_path, video=video, vr180=vr180, half_sbs=half_sbs))
+
+        if path.exists(output_path):
+            start_file(output_path)
+        elif path.exists(path.dirname(output_path)):
+            start_file(path.dirname(output_path))
+
     def on_click_btn_same_output_dir(self, event):
         self.set_same_output_dir()
 
@@ -516,10 +558,13 @@ class MainFrame(wx.Frame):
         input_path = self.txt_input.GetValue()
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
+        half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         video = is_video(input_path)
 
         if is_output_dir(output_path):
-            output_path = path.join(output_path, make_output_filename(input_path, video=video, vr180=vr180))
+            output_path = path.join(
+                output_path,
+                make_output_filename(input_path, video=video, vr180=vr180, half_sbs=half_sbs))
         else:
             output_path = output_path
 
@@ -559,7 +604,9 @@ class MainFrame(wx.Frame):
         self.SetStatusText("...")
 
         parser = create_parser(required_true=False)
+
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
+        half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         tune = set()
         if self.chk_tune_zerolatency.GetValue():
             tune.add("zerolatency")
@@ -587,13 +634,16 @@ class MainFrame(wx.Frame):
 
         device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
         depth_model_type = self.cbo_depth_model.GetValue()
+        zoed_height = self.zoed_resolution[self.cbo_zoed_resolution.GetSelection()]
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
-                                         self.depth_model_device_id != device_id)):
+                                         self.depth_model_device_id != device_id or
+                                         self.depth_model_height != zoed_height)):
             self.depth_model = None
             self.depth_model_type = None
             self.depth_model_device_id = None
             gc.collect()
-            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             if has_depth_model(depth_model_type):
                 # Realod depth model
                 self.SetStatusText(f"Loading {depth_model_type}...")
@@ -623,10 +673,12 @@ class MainFrame(wx.Frame):
 
             divergence=float(self.cbo_divergence.GetValue()),
             convergence=float(self.cbo_convergence.GetValue()),
+            ipd_offset=float(self.sld_ipd_offset.GetValue()),
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
             mapper=self.cbo_mapper.GetValue(),
             vr180=vr180,
+            half_sbs=half_sbs,
 
             max_fps=float(self.cbo_fps.GetValue()),
             crf=int(self.cbo_crf.GetValue()),
@@ -647,6 +699,7 @@ class MainFrame(wx.Frame):
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
+            zoed_height=zoed_height,
             tta=self.chk_tta.GetValue(),
             disable_amp=not self.chk_fp16.GetValue(),
             low_vram=self.chk_low_vram.GetValue(),
@@ -670,6 +723,7 @@ class MainFrame(wx.Frame):
             self.depth_model = args.state["depth_model"]
             self.depth_model_type = args.depth_model
             self.depth_model_device_id = args.gpu
+            self.depth_model_height = args.zoed_height
 
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
@@ -688,7 +742,8 @@ class MainFrame(wx.Frame):
 
         # free vram
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available:
+            torch.cuda.empty_cache()
 
     def on_click_btn_cancel(self, event):
         self.stop_event.set()
