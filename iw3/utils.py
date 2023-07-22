@@ -488,7 +488,9 @@ def process_images(files, args, depth_model, side_model, title=None):
     with PoolExecutor(max_workers=4) as pool:
         for im, meta in loader:
             filename = meta["filename"]
-            output_filename = path.join(args.output, make_output_filename(filename))
+            output_filename = path.join(
+                args.output,
+                make_output_filename(filename, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
             if im is None or (args.resume and path.exists(output_filename)):
                 continue
             output = process_image(im, args, depth_model, side_model)
@@ -590,7 +592,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
 def process_video_keyframes(input_filename, args, depth_model, side_model):
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
-        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True))
+        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True,
+                                                                 vr180=args.vr180, half_sbs=args.half_sbs))
     else:
         output_dir = args.output
     output_dir = path.join(path.dirname(output_dir), path.splitext(path.basename(output_dir))[0])
@@ -787,7 +790,9 @@ def iw3_main(args):
     elif is_image(args.input):
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
-            output_filename = path.join(args.output, make_output_filename(args.input))
+            output_filename = path.join(
+                args.output,
+                make_output_filename(args.input, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")
