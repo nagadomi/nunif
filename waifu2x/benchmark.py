@@ -157,6 +157,7 @@ def main():
     model_method = args.model_method if args.model_method is not None else args.method
 
     ctx.load_model(model_method, args.noise_level)
+    ctx.compile()
 
     if path.isdir(args.input):
         files = ImageLoader.listdir(args.input)
