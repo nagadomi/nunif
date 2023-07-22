@@ -119,6 +119,8 @@ def setup():
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch size for tiled render")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
+    parser.add_argument("--compile", action="store_true", help="Use torch.compile()")
+    parser.add_argument("--warmup", action="store_true", help="warmup at startup")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
@@ -137,6 +139,23 @@ def setup():
     art_ctx.load_model_all(load_4x=False)
     art_scan_ctx.load_model_all(load_4x=False)
     photo_ctx.load_model_all(load_4x=False)
+
+    if args.compile:
+        logger.info("Compiling models...")
+        art_ctx.compile()
+        art_scan_ctx.compile()
+        photo_ctx.compile()
+        if args.warmup:
+            if args.batch_size != 1:
+                logger.warning(("`--batch-size 1` is recommended."
+                                "large batch size makes startup very slow."))
+            art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                           enable_amp=not args.disable_amp)
+            art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                                enable_amp=not args.disable_amp)
+            photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                             enable_amp=not args.disable_amp)
+        logger.info("Done")
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
     cache_gc = CacheGC(cache, args.cache_ttl * 60)
