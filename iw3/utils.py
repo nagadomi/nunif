@@ -431,6 +431,7 @@ def postprocess_image(depth, im_org, args, side_model, device):
                               interpolation=InterpolationMode.BICUBIC, antialias=True)
 
     sbs = torch.cat([left_eye, right_eye], dim=2)
+    sbs = torch.clamp(sbs, 0., 1.)
     sbs = TF.to_pil_image(sbs)
 
     w, h = sbs.size
