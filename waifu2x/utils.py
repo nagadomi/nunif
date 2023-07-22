@@ -10,7 +10,7 @@ from nunif.models import (
     data_parallel_model, call_model_method,
     compile_model, is_compiled_model,
 )
-from nunif.device import create_device
+from nunif.device import create_device, autocast
 from nunif.logger import logger
 from nunif.utils.ui import HiddenPrints
 
@@ -38,6 +38,8 @@ class Waifu2x():
         self.alpha_pad = AlphaBorderPadding()
 
     def compile(self):
+        # TODO: If dynamic tracing works well in the future,
+        #       it is better to add `dynamic=True` for variable batch sizes.
         if can_compile(self.scale_model):
             logger.debug("compile scale_model")
             self.scale_model = compile_model(self.scale_model)
@@ -57,6 +59,18 @@ class Waifu2x():
             if can_compile(self.noise_scale4x_models[i]):
                 logger.debug(f"compile noise_scale4x_models[{i}]")
                 self.noise_scale4x_models[i] = compile_model(self.noise_scale4x_models[i])
+
+    @torch.inference_mode()
+    def warmup(self, tile_size, batch_size, enable_amp):
+        models = [model for model in (self.scale_model, self.scale4x_model,
+                                      *self.noise_models, *self.noise_scale_models,
+                                      *self.noise_scale4x_models) if model is not None]
+        for i, model in enumerate(models):
+            for j, bs in enumerate(reversed(range(1, batch_size + 1))):
+                x = torch.zeros((bs, 3, tile_size, tile_size)).to(self.device)
+                logger.debug(f"warmup {i * batch_size + j + 1}/{len(models) * batch_size}: {x.shape}")
+                with autocast(device=self.device, enabled=enable_amp):
+                    model(x)
 
     def _setup(self):
         if self.scale_model is not None:
