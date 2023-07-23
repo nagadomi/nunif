@@ -4,6 +4,7 @@ import sys
 import os
 from os import path
 import gc
+import traceback
 import functools
 from time import time
 import threading
@@ -732,8 +733,9 @@ class MainFrame(wx.Frame):
                 self.SetStatusText(T("Cancelled"))
         except: # noqa
             self.SetStatusText(T("Error"))
-            e_type, e, stacktrace = sys.exc_info()
+            e_type, e, tb = sys.exc_info()
             message = getattr(e, "message", str(e))
+            traceback.print_tb(tb)
             wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
         self.processing = False
