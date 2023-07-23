@@ -279,7 +279,7 @@ class HeightResizer():
         new_w, new_h = self.get_size(width, height)
         if new_w != width or new_h != height:
             x = F.interpolate(x, size=(new_h, new_w),
-                              mode="bilinear", align_corners=False, antialias=True)
+                              mode="bilinear", align_corners=True, antialias=False)
         return x
 
 
