@@ -128,7 +128,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
 
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
-                            mode="bicubic", align_corners=True)
+                            mode="bicubic", align_corners=False)
 
     out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
 
@@ -279,7 +279,7 @@ class HeightResizer():
         new_w, new_h = self.get_size(width, height)
         if new_w != width or new_h != height:
             x = F.interpolate(x, size=(new_h, new_w),
-                              mode="bilinear", align_corners=True, antialias=True)
+                              mode="bilinear", align_corners=False, antialias=True)
         return x
 
 
