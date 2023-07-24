@@ -138,7 +138,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_ipd_offset = wx.StaticText(self.grp_stereo, label=T("Your Own Size"))
         # SpinCtrlDouble is better, but cannot save with PersistenceManager
-        self.sld_ipd_offset = wx.SpinCtrl(self.grp_stereo, value="0", min=0, max=20, name="sld_ipd_offset")
+        self.sld_ipd_offset = wx.SpinCtrl(self.grp_stereo, value="0", min=-10, max=20, name="sld_ipd_offset")
         self.sld_ipd_offset.SetToolTip("IPD Offset")
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
@@ -586,8 +586,8 @@ class MainFrame(wx.Frame):
             dlg.ShowModal()
 
     def on_click_btn_start(self, event):
-        if not validate_number(self.cbo_divergence.GetValue(), 0.0, 2.5):
-            self.show_validation_error_message(T("3D Strength"), 0.0, 2.5)
+        if not validate_number(self.cbo_divergence.GetValue(), 0.0, 6.0):
+            self.show_validation_error_message(T("3D Strength"), 0.0, 6.0)
             return
         if not validate_number(self.cbo_convergence.GetValue(), 0.0, 1.0):
             self.show_validation_error_message(T("Convergence Plane"), 0.0, 1.0)

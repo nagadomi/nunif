@@ -666,7 +666,7 @@ def create_parser(required_true=True):
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
                         help="left-right divergence method")
-    parser.add_argument("--divergence", "-d", type=float, default=2.0, choices=[Range(0.0, 2.5)],
+    parser.add_argument("--divergence", "-d", type=float, default=2.0, choices=[Range(0.0, 6.0)],
                         help=("strength of 3D effect"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5, choices=[Range(0.0, 1.0)],
                         help=("(normalized) distance of convergence plane(screen position)"))
