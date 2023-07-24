@@ -107,10 +107,10 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
         x = TF.to_tensor(im).unsqueeze(0).to(model.device)
 
     def get_pad(x):
-        pad_base_h = 16
-        pad_base_w = 16
+        pad_base_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
+        pad_base_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
         if x.shape[2] > x.shape[3]:
-            diff = (x.shape[2] - x.shape[3])
+            diff = (x.shape[2] + pad_base_h * 2 - x.shape[3] + pad_base_w * 2)
             pad_w1 = diff // 2
             pad_w2 = diff - pad_w1
             pad_w1 += pad_base_w
