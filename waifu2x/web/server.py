@@ -119,6 +119,8 @@ def setup():
     parser.add_argument("--batch-size", type=int, default=4, help="minibatch size for tiled render")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
+    parser.add_argument("--compile", action="store_true", help="Use torch.compile()")
+    parser.add_argument("--warmup", action="store_true", help="warmup at startup")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
@@ -128,6 +130,7 @@ def setup():
     parser.add_argument("--config", type=str, help="config file for API tokens")
     parser.add_argument("--no-size-limit", action="store_true", help="No file/image size limits for private server")
     parser.add_argument("--torch-threads", type=int, help="The number of threads used for intraop parallelism on CPU")
+    parser.add_argument("--exit", action="store_true", help="run setup() and exit")
 
     args = parser.parse_args()
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
@@ -137,6 +140,23 @@ def setup():
     art_ctx.load_model_all(load_4x=False)
     art_scan_ctx.load_model_all(load_4x=False)
     photo_ctx.load_model_all(load_4x=False)
+
+    if args.compile:
+        logger.info("Compiling models...")
+        art_ctx.compile()
+        art_scan_ctx.compile()
+        photo_ctx.compile()
+        if args.warmup:
+            if args.batch_size != 1:
+                logger.warning(("`--batch-size 1` is recommended."
+                                "large batch size makes startup very slow."))
+            art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                           enable_amp=not args.disable_amp)
+            art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                                enable_amp=not args.disable_amp)
+            photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                             enable_amp=not args.disable_amp)
+        logger.info("Done")
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
     cache_gc = CacheGC(cache, args.cache_ttl * 60)
@@ -150,26 +170,6 @@ def setup():
             config["recaptcha"] = {"site_key": "", "secret_key": ""}
 
     return args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc
-
-
-global_lock = threading.RLock()
-command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc = setup()
-# HACK: Avoid unintended argparse in the backend(gunicorn).
-sys.argv = [sys.argv[0]]
-
-if command_args.image_lib == "wand":
-    # 2x slow than pil_io but it supports 16bit output and various formats
-    from nunif.utils import wand_io as IL
-else:
-    from nunif.utils import pil_io as IL
-if not command_args.no_size_limit:
-    MAX_NOISE_PIXELS = command_args.max_pixels
-    MAX_SCALE_PIXELS = (math.sqrt(command_args.max_pixels) / 2) ** 2
-    MAX_BODY_SIZE = command_args.max_body_size
-else:
-    MAX_NOISE_PIXELS = float("inf")
-    MAX_SCALE_PIXELS = float("inf")
-    MAX_BODY_SIZE = float("inf")
 
 
 def fetch_uploaded_file(upload_file):
@@ -477,11 +477,37 @@ def main():
 
     faulthandler.enable()
 
+    global global_lock, command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc
+    global_lock = threading.RLock()
+    command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc = setup()
+    # HACK: Avoid unintended argparse in the backend(gunicorn).
+    sys.argv = [sys.argv[0]]
+
+    global IL
+    if command_args.image_lib == "wand":
+        # 2x slow than pil_io but it supports 16bit output and various formats
+        from nunif.utils import wand_io as IL
+    else:
+        from nunif.utils import pil_io as IL
+
+    global MAX_NOISE_PIXELS, MAX_SCALE_PIXELS, MAX_BODY_SIZE
+    if not command_args.no_size_limit:
+        MAX_NOISE_PIXELS = command_args.max_pixels
+        MAX_SCALE_PIXELS = (math.sqrt(command_args.max_pixels) / 2) ** 2
+        MAX_BODY_SIZE = command_args.max_body_size
+    else:
+        MAX_NOISE_PIXELS = float("inf")
+        MAX_SCALE_PIXELS = float("inf")
+        MAX_BODY_SIZE = float("inf")
+
     if command_args.debug:
         set_log_level(logging.DEBUG)
     if command_args.torch_threads is not None:
         torch.set_num_threads(command_args.torch_threads)
         torch.set_num_interop_threads(command_args.torch_threads)
+
+    if command_args.exit:
+        return
 
     backend_kwargs = {}
     if command_args.backend == "waitress":

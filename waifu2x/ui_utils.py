@@ -78,6 +78,9 @@ def process_images(ctx, files, output_dir, args, title=None):
 
 
 def process_video(ctx, input_filename, args):
+    if not args.disable_compile:
+        ctx.compile()
+
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -181,6 +184,7 @@ def create_parser(required_true=True):
                         help="input file or directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
+    parser.add_argument("--disable-compile", action="store_true", help="disable torch.compile()")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--depth", type=int,

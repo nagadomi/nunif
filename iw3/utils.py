@@ -107,7 +107,20 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
         x = TF.to_tensor(im).unsqueeze(0).to(model.device)
 
     def get_pad(x):
-        return 16, 16, 16, 16
+        pad_base_h = 16
+        pad_base_w = 16
+        if x.shape[2] > x.shape[3]:
+            diff = (x.shape[2] - x.shape[3])
+            pad_w1 = diff // 2
+            pad_w2 = diff - pad_w1
+            pad_w1 += pad_base_w
+            pad_w2 += pad_base_w
+            pad_h1 = pad_h2 = pad_base_h
+        else:
+            pad_w1 = pad_w2 = pad_base_w
+            pad_h1 = pad_h2 = pad_base_h
+        return (min(pad_w1, x.shape[3] - 1), min(pad_w2, x.shape[3] - 1),
+                min(pad_h1, x.shape[2] - 1), min(pad_h2, x.shape[2] - 1))
 
     if not low_vram:
         if flip_aug:
@@ -128,7 +141,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
 
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
-                            mode="bicubic", align_corners=True)
+                            mode="bicubic", align_corners=False)
 
     out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
 
@@ -279,7 +292,7 @@ class HeightResizer():
         new_w, new_h = self.get_size(width, height)
         if new_w != width or new_h != height:
             x = F.interpolate(x, size=(new_h, new_w),
-                              mode="bilinear", align_corners=True, antialias=True)
+                              mode="bilinear", align_corners=True, antialias=False)
         return x
 
 
@@ -653,7 +666,7 @@ def create_parser(required_true=True):
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
                         help="left-right divergence method")
-    parser.add_argument("--divergence", "-d", type=float, default=2.0, choices=[Range(0.0, 2.5)],
+    parser.add_argument("--divergence", "-d", type=float, default=2.0, choices=[Range(0.0, 6.0)],
                         help=("strength of 3D effect"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5, choices=[Range(0.0, 1.0)],
                         help=("(normalized) distance of convergence plane(screen position)"))
