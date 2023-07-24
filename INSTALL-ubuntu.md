@@ -40,10 +40,8 @@ deactivate
 
 ## 4. Install Pytorch
 
-See [Pytorch](https://pytorch.org/get-started/locally/)
-
 ```
-pip3 install torch torchvision torchaudio torchtext
+pip3 install -r requirements-torch.txt
 ```
 
 ## 5. Install pip packages

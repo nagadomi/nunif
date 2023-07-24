@@ -77,10 +77,8 @@ python -m venv venv
 
 ### 4. Install Pytorch
 
-See [Pytorch](https://pytorch.org/get-started/locally/)
-
 ```
-pip install pytorch torchvision torchaudio torchtext pytorch-cuda=11.6 -c pytorch -c nvidia
+pip install -r requirements-torch.txt
 ```
 
 ### 5. Install pip packages
