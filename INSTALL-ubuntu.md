@@ -1,19 +1,8 @@
 ## 1. Install dependencies packages
 
 ```
-apt-get install git-core libmagickwand-dev libsnappy-dev libraqm-dev
+sudo apt-get install git-core libmagickwand-dev libraqm-dev
 ```
-
-If using GUI, install wxpython >= 4.0.0
-```
-apt-get install python3-wxgtk4.0
-```
-or 
-```
-apt-get install libwxgtk3.0-gtk3-dev 
-pip3 install -r requirements-gui.txt
-```
-or install wheel package from https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04/
 
 ## 2. Clone
 
@@ -51,16 +40,28 @@ deactivate
 
 ## 4. Install Pytorch
 
-See [Pytorch](https://pytorch.org/get-started/locally/)
-
 ```
-pip3 install torch torchvision torchaudio torchtext
+pip3 install -r requirements-torch.txt
 ```
 
 ## 5. Install pip packages
 
 ```
 pip3 install -r requirements.txt
+```
+
+If you want to use GUI, install wxpython >= 4.0.0
+```
+sudo apt-get install python3-wxgtk4.0
+```
+or install wheel package from https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ .
+```
+pip install -f https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04/ wxpython
+```
+or build from source. See [Prerequisites](https://github.com/wxWidgets/Phoenix#prerequisites) first.
+```
+sudo apt-get install libgtk-3-dev
+pip3 install -r requirements-gui.txt
 ```
 
 ## 6. Run waifu2x.web

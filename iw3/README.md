@@ -13,7 +13,7 @@ This project is under construction.
 
 ## Usage
 
-### GUI (experimental)
+### GUI
 
 Run `iw3.gui` module from the root directory of nunif.
 
@@ -23,25 +23,17 @@ python -m iw3.gui
 
 On Windows, run `Run iw3 GUI.bat`.
 
-![gui](https://github.com/nagadomi/nunif/assets/287255/8f6c20e2-0898-4b13-87bd-1e57f3ddf41b)
+![iw3-gui](https://github.com/nagadomi/nunif/assets/287255/294a3f70-257f-442d-b79b-be169cd5e2cc)
 
 ### CLI
 
-Run `iw3` module from the root directory of nunif.
+Run `iw3` or `iw3.cli` module from the root directory of nunif.
 
 ```
 python -m iw3 -i <input file or directory> -o <output file or directory>
 ```
 
-When specifying a directory with the `-i` option, only image files within that directory will be processed.
-
-If you want to process multiple video files, create a text file (e.g., `video_list.txt`) and list the file names inside it, with each file name on a new line. Then, specify the the text file, such as `-i video_list.txt`. Note that the text file is assumed to be in UTF-8 encoding.
-
-```
-python -m iw3 -i video_list.txt -o output_dir
-```
-
-The following command shows all available options:
+The following command shows all available options.
 ```
 python -m iw3 -h
 ```
@@ -50,17 +42,27 @@ Also, when running `iw3` for the first time, it may take some time as it needs t
 
 ### What is `--divergence`(`-d`) option?
 
-![divergence option](figure/divergence.png)
+(`3D Strength` in GUI)
+
+![divergence](https://github.com/nagadomi/nunif/assets/287255/814e34ff-88bc-4d55-8f53-921a698bc8c5)
 
 `2.0` by default. You can also specify `2.5`.
 
 ### What is `--convergence`(`-c`) option?
 
-![convergence option](figure/convergence.png)
+![convergence](https://github.com/nagadomi/nunif/assets/287255/ca8ce084-e02f-4098-8f4b-726bd6505f60)
 
 - `0` is good, but screen edge areas are hard to see.
 - `1` is the most friendly for curved display setting.
 - `0.5` by default.
+
+### What is `--ipd-offset` option?
+
+(`Your Own Size` in GUI)
+
+![ipd-offset](https://github.com/nagadomi/nunif/assets/287255/9ae7c504-08eb-4105-af36-b5a9da5b5ed8)
+
+This may be adjustable on the VR Player. If so, set it to 0 (by default).
 
 ## About VR Player
 
@@ -78,17 +80,19 @@ If you can only choose one software, I would recommend this one.
 I like this user interface, but 
 
 - Loading image files from Samba drive is not supported (from the internal drive is supported)
-- SBS 3D videos do not play with correct aspect ratio (See https://forum.skybox.xyz/d/407-full-sbs-3d , if the aspect ratio is a typical aspect ratio such as 4:3 or 16:9, you can manually fix it)
+- Full SBS videos do not play with the correct aspect ratio (See https://forum.skybox.xyz/d/407-full-sbs-3d )
 - Low FPS videos do not seek correctly (maybe FPS < 15)
 
-Summary: If you want to play SBS videos with typical aspect ratio and fps, this software works.
+Regarding the problem of Full SBS format,
+If the aspect ratio is a typical aspect ratio such as 4:3 or 16:9, you can manually fix it on VR Player.
+Also you can use `--half-sbs` option to output in Half SBS format which works with SKYBOX Player.
 
 ## About file naming rule
 
 VR Player detects media format by filename.
 Adding `_LRF` suffix to the filename will identify the file as full side-by-side 3D media.
 
-When specifying a directory with the `-o` option, it is automatically output as a filename with `{original_filename}_LRF.(png|mp4)`.
+When specifying a directory with `-o` option, it is automatically output as a filename with `{original_filename}_LRF.(png|mp4)`.
 
 ## VR180 format
 
@@ -96,7 +100,13 @@ When `--vr180` option is specified, the video is output in VR180 format (equirec
 
 This is usually not recommended because of poor usability during playback.
 
-This is useful if your video player does not have the ability to play SBS 3D videos or if you want to post the video on Youtube.
+This is useful if your video player does not have the ability to play Full SBS 3D videos or if you want to post the video on Youtube.
+
+## Half SBS format
+
+When `--half-sbs` option is specified, the video is output in Half SBS format (subsampled at half resolution).
+
+Older VR devices may only support this format. Also, you may need to add `_3dh_` to the filename to play it.
 
 ## Trouble shooting
 
@@ -104,9 +114,11 @@ This is useful if your video player does not have the ability to play SBS 3D vid
 
 This tends to happen with outdoor scene photos.
 
-There are some ways.
+There are several ways to fight this problem.
+
 - Try `--mapper softplus2` option
 - Try`--remove-bg` option
+- Try combined option `--divergence 4 --convergence 0 --mapper softplus2 --remove-bg`
 
 When `--mapper softplus2` is specified, the depthmap is remapped to see big differences on the foreground side. [mapper functions](https://github.com/nagadomi/nunif/assets/287255/0071a65a-62ff-4928-850c-0ad22bceba41)
 
@@ -118,7 +130,7 @@ Please post to the issue about the format of the video.
 
 ### 60fps video drops to 30fps
 
-By default, it is limited to 30fps.
+By default, FPS is limited to 30fps.
 Use `--max-fps 128` option.
 
 ### It's a giant!
@@ -127,8 +139,10 @@ This is a problem with SBS 3D video that it cannot be rendered in actual size sc
 
 You can try adjusting scale manually.
 
-1. Use `--pad` option to adjust the frame scale
-2. Adjust IPD scale 
+- Adjust IPD offset on VR Player
+- Use `--ipd-offset` option(`You own size` in GUI) to adjust IPD offset
+
+It is better to adjust IPD offset on VR Player, but you can also apply IPD offset to the output image.
 
 On SKYBOX Player, set the 3D effect slider to around < -0.3.
 
@@ -140,7 +154,7 @@ Also, on Pigasus, you can zoom and pan the image by double-clicking the trigger 
 
 Use `--low-vram` option.
 
-I tested this program on RTX 3070 Ti (8GB VRAM) and GTX 1050 Ti (4GB VRAM, Laptop).
+I tested this program on RTX 3070 Ti (8GB VRAM, Linux) and GTX 1050 Ti (4GB VRAM, Laptop, Windows).
 Both work with the default option.
 
 ### How to convert rotated(height width swapped) video correctly

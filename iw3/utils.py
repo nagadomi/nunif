@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
-from nunif.models import load_model
+from nunif.models import load_model, compile_model
 from nunif.device import create_device
 import nunif.utils.video as VU
 from nunif.utils.ui import (
@@ -92,7 +92,7 @@ def _patch_resize_debug(model):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False):
+def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True):
     # _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
@@ -144,7 +144,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
                             mode="bicubic", align_corners=False)
 
     out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
-
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
@@ -158,7 +157,12 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
     if not batch:
         assert z.shape[0] == 1
         z = z.squeeze(0)
-    return z.cpu().to(torch.int16)
+
+    z = z.cpu()
+    if int16:
+        z = z.to(torch.int16)
+
+    return z
 
 
 def softplus01(depth):
@@ -229,9 +233,9 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence,
 
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
+                        depth_min, depth_max,
                         mapper, shift, batch_size, enable_amp):
     image_width = c.shape[2]
-    depth_min, depth_max = depth.min(), depth.max()
     if shift > 0:
         c = torch.flip(c, (2,))
         depth = torch.flip(depth, (2,))
@@ -400,9 +404,13 @@ def preprocess_image(im, args):
     return im_org, TF.to_tensor(im)
 
 
-def postprocess_image(depth, im_org, args, side_model, device):
+def postprocess_image(depth, im_org, args, side_model, device, ema=False):
+    depth_min, depth_max = depth.min(), depth.max()
+    if ema:
+        depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
+
     if args.method == "grid_sample":
-        depth = normalize_depth(depth.squeeze(0))
+        depth = normalize_depth(depth.squeeze(0), depth_min=depth_min, depth_max=depth_max)
         depth = get_mapper(args.mapper)(depth)
         left_eye = apply_divergence_grid_sample(
             im_org, depth,
@@ -415,11 +423,13 @@ def postprocess_image(depth, im_org, args, side_model, device):
     else:
         left_eye = apply_divergence_nn(side_model, im_org, depth,
                                        args.divergence, args.convergence,
-                                       args.mapper, shift=-1,
+                                       depth_min=depth_min, depth_max=depth_max,
+                                       mapper=args.mapper, shift=-1,
                                        batch_size=args.batch_size, enable_amp=not args.disable_amp)
         right_eye = apply_divergence_nn(side_model, im_org, depth,
                                         args.divergence, args.convergence,
-                                        args.mapper, shift=1,
+                                        depth_min=depth_min, depth_max=depth_max,
+                                        mapper=args.mapper, shift=1,
                                         batch_size=args.batch_size, enable_amp=not args.disable_amp)
 
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
@@ -466,16 +476,18 @@ def postprocess_image(depth, im_org, args, side_model, device):
     return sbs
 
 
-def debug_depth_image(depth, args):
+def debug_depth_image(depth, args, ema=False):
     depth = depth.float()
-    min_depth, max_depth = depth.min(), depth.max()
+    depth_min, depth_max = depth.min(), depth.max()
+    if ema:
+        depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
     mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
-    depth = normalize_depth(depth)
+    depth = normalize_depth(depth, depth_min=depth_min, depth_max=depth_max)
     depth2 = get_mapper(args.mapper)(depth)
     out = torch.cat([depth, depth2], dim=2)
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
-    gc.text((16, 16), f"min={min_depth}\nmax={max_depth}\nmean={mean_depth}\nstd={std_depth}", "gray")
+    gc.text((16, 16), f"min={depth_min}\nmax={depth_min}\nmean={mean_depth}\nstd={std_depth}", "gray")
 
     return out
 
@@ -483,7 +495,7 @@ def debug_depth_image(depth, args):
 def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
+        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram, int16=False)
         if not args.debug_depth:
             return postprocess_image(depth, im_org, args, side_model, depth_model.device)
         else:
@@ -520,6 +532,10 @@ def process_images(files, args, depth_model, side_model, title=None):
 
 
 def process_video_full(input_filename, args, depth_model, side_model):
+    ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if side_model is not None:
+        side_model = compile_model(side_model)
+
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -540,7 +556,7 @@ def process_video_full(input_filename, args, depth_model, side_model):
     minibatch_queue = []
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
     if args.debug_depth:
-        postprocess = lambda depth, x_org, args, side_model, device: debug_depth_image(depth, args)
+        postprocess = lambda depth, x_org, args, side_model, device, ema: debug_depth_image(depth, args, ema)
     else:
         postprocess = postprocess_image
 
@@ -556,8 +572,9 @@ def process_video_full(input_filename, args, depth_model, side_model):
             xs.append(x.unsqueeze(0))
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
-        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram)
-        return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device))
+        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram, int16=False)
+        return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device,
+                                          ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
 
     def frame_callback(frame):
@@ -591,6 +608,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
         if y not in {"y", "ye", "yes"}:
             return
 
+    if ema_normalize:
+        args.state["ema"].clear()
     make_parent_dir(output_filename)
     VU.process_video(input_filename, output_filename,
                      config_callback=config_callback,
@@ -739,8 +758,30 @@ def create_parser(required_true=True):
                         help="input height for ZoeDepth model")
     parser.add_argument("--ipd-offset", type=float, default=0,
                         help="IPD Offset (width scale %). 0-10 is reasonable value for Full SBS")
+    parser.add_argument("--ema-normalize", action="store_true",
+                        help="use min/max moving average to normalize video depth")
 
     return parser
+
+
+class EMAMinMax():
+    def __init__(self, alpha=0.25):
+        self.min = None
+        self.max = None
+        self.alpha = alpha
+
+    def update(self, min_value, max_value):
+        if self.min is None:
+            self.min = float(min_value)
+            self.max = float(max_value)
+        else:
+            self.min += (float(min_value) - self.min) * self.alpha
+            self.max += (float(max_value) - self.max) * self.alpha
+
+        return self.min, self.max
+
+    def clear(self):
+        self.min = self.max = None
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
@@ -748,6 +789,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
         "stop_event": stop_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
+        "ema": EMAMinMax()
     }
     return args
 

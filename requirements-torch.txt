@@ -1,0 +1,16 @@
+# macOS
+torch; sys_platform == "darwin"
+torchvision; sys_platform == "darwin"
+torchtext; sys_platform == "darwin"
+
+# Linux
+--index-url https://download.pytorch.org/whl/cu118 ; sys_platform == "linux"
+torch; sys_platform == "linux"
+torchvision; sys_platform == "linux"
+torchtext; sys_platform == "linux"
+
+# Windows
+--index-url https://download.pytorch.org/whl/cu118 ; sys_platform == "win32"
+torch; sys_platform == "win32"
+torchvision; sys_platform == "win32"
+torchtext; sys_platform == "win32"
