@@ -53,5 +53,5 @@ def is_output_dir(filename):
 
 def make_parent_dir(filename):
     parent_dir = path.dirname(filename)
-    if not path.exists(parent_dir):
+    if parent_dir and not path.exists(parent_dir):
         os.makedirs(parent_dir, exist_ok=True)
