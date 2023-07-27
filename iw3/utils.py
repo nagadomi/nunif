@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
-from nunif.models import load_model
+from nunif.models import load_model, compile_model
 from nunif.device import create_device
 import nunif.utils.video as VU
 from nunif.utils.ui import (
@@ -529,6 +529,8 @@ def process_images(files, args, depth_model, side_model, title=None):
 
 def process_video_full(input_filename, args, depth_model, side_model):
     ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if side_model is not None:
+        side_model = compile_model(side_model)
 
     def config_callback(stream):
         fps = VU.get_fps(stream)
