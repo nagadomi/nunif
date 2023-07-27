@@ -107,7 +107,7 @@ def call_model_method(model, name, **kwargs):
 
 
 def compile_model(model, **kwargs):
-    if PYTORCH2:
+    if PYTORCH2 and not is_compiled_model(model):
         model = torch.compile(model, **kwargs)
     return model
 
