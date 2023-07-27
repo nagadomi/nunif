@@ -302,8 +302,13 @@ class HeightResizer():
 
 def load_depth_model(model_type="ZoeD_N", gpu=0, height=None):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
-        model = torch.hub.load("isl-org/ZoeDepth:main", model_type, config_mode="infer",
-                               pretrained=True, verbose=False, trust_repo=True)
+        if not os.getenv("IW3_DEBUG"):
+            model = torch.hub.load("nagadomi/ZoeDepth_iw3:main", model_type, config_mode="infer",
+                                   pretrained=True, verbose=False, trust_repo=True)
+        else:
+            assert path.exists("../ZoeDepth_iw3/hubconf.py")
+            model = torch.hub.load("../ZoeDepth_iw3", model_type, source="local", config_mode="infer",
+                                   pretrained=True, verbose=False, trust_repo=True)
     device = create_device(gpu)
     model = model.to(device).eval()
     if height is not None:
@@ -335,7 +340,7 @@ def force_update_midas_model():
     # See https://github.com/isl-org/ZoeDepth/blob/main/hubconf.py
     # Triggers fresh download of MiDaS repo
     with TorchHubDir(HUB_MODEL_DIR):
-        torch.hub.help("isl-org/MiDaS", "DPT_BEiT_L_384", force_reload=True, trust_repo=True)
+        torch.hub.help("nagadomi/MiDaS_iw3", "DPT_BEiT_L_384", force_reload=True, trust_repo=True)
 
 
 # Filename suffix for VR Player's video format detection
