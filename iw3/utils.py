@@ -92,7 +92,7 @@ def _patch_resize_debug(model):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False):
+def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True):
     # _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
@@ -144,7 +144,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
                             mode="bicubic", align_corners=False)
 
     out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
-
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
@@ -158,7 +157,12 @@ def batch_infer(model, im, flip_aug=True, low_vram=False):
     if not batch:
         assert z.shape[0] == 1
         z = z.squeeze(0)
-    return z.cpu().to(torch.int16)
+
+    z = z.cpu()
+    if int16:
+        z = z.to(torch.int16)
+
+    return z
 
 
 def softplus01(depth):
@@ -491,7 +495,7 @@ def debug_depth_image(depth, args, ema=False):
 def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram)
+        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram, int16=False)
         if not args.debug_depth:
             return postprocess_image(depth, im_org, args, side_model, depth_model.device)
         else:
@@ -568,7 +572,7 @@ def process_video_full(input_filename, args, depth_model, side_model):
             xs.append(x.unsqueeze(0))
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
-        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram)
+        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram, int16=False)
         return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device,
                                           ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
