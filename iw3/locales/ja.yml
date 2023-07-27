@@ -57,7 +57,7 @@
 "Stereo": "ステレオ"
 "Low VRAM": "低ビデオメモリ"
 "Use flip augmentation to improve depth quality (slow)": "左右反転画像を使って深度の品質を改善 (遅い)"
-"Use FP16 for stereo generation models (fast)": "ステレオ生成モデルにFP16を使用 (速い)"
-
+"Use FP16 (fast)": "FP16を使用 (速い)"
+"Video Only": "動画のみ"
 "Start": "開始"
 "Cancel": "キャンセル"

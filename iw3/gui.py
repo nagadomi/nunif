@@ -337,6 +337,7 @@ class MainFrame(wx.Frame):
         self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
                                                choices=[str(n) for n in (16, 8, 4, 2, 1)],
                                                style=wx.CB_READONLY, name="cbo_zoed_batch_size")
+        self.cbo_zoed_batch_size.SetToolTip(T("Video Only"))
         self.cbo_zoed_batch_size.SetSelection(3)
         self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Stereo") + " " + T("Batch Size"))
         self.cbo_batch_size = wx.ComboBox(self.grp_processor,
@@ -348,7 +349,7 @@ class MainFrame(wx.Frame):
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
         self.chk_tta.SetToolTip(T("Use flip augmentation to improve depth quality (slow)"))
         self.chk_fp16 = wx.CheckBox(self.grp_processor, label=T("FP16"), name="chk_fp16")
-        self.chk_fp16.SetToolTip(T("Use FP16 for stereo generation models (fast)"))
+        self.chk_fp16.SetToolTip(T("Use FP16 (fast)"))
         self.chk_fp16.SetValue(True)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)

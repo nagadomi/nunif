@@ -12,7 +12,7 @@ from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, compile_model
-from nunif.device import create_device
+from nunif.device import create_device, autocast
 import nunif.utils.video as VU
 from nunif.utils.ui import (
     HiddenPrints, TorchHubDir,
@@ -92,7 +92,7 @@ def _patch_resize_debug(model):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True):
+def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False):
     # _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
@@ -127,22 +127,25 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True):
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
         pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
         x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-        out = model(x)['metric_depth']
+        with autocast(device=model.device, enabled=enable_amp):
+            out = model(x)['metric_depth']
     else:
         x_org = x
         pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
         x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-        out = model(x)['metric_depth']
+        with autocast(device=model.device, enabled=enable_amp):
+            out = model(x)['metric_depth']
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
             pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
             x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-            out = torch.cat([out, model(x)['metric_depth']], dim=0)
+            with autocast(device=model.device, enabled=enable_amp):
+                out2 = model(x)['metric_depth']
+            out = torch.cat([out, out2], dim=0)
 
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
                             mode="bicubic", align_corners=False)
-
     out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
     if flip_aug:
         if batch:
@@ -337,10 +340,13 @@ def has_rembg_model(model_type):
 
 
 def force_update_midas_model():
-    # See https://github.com/isl-org/ZoeDepth/blob/main/hubconf.py
-    # Triggers fresh download of MiDaS repo
     with TorchHubDir(HUB_MODEL_DIR):
-        torch.hub.help("nagadomi/MiDaS_iw3", "DPT_BEiT_L_384", force_reload=True, trust_repo=True)
+        torch.hub.help("nagadomi/MiDaS_iw3:master", "DPT_BEiT_L_384", force_reload=True, trust_repo=True)
+
+
+def force_update_zoedepth_model():
+    with TorchHubDir(HUB_MODEL_DIR):
+        torch.hub.help("nagadomi/ZoeDepth_iw3:main", "ZoeD_N", force_reload=True, trust_repo=True)
 
 
 # Filename suffix for VR Player's video format detection
@@ -500,7 +506,8 @@ def debug_depth_image(depth, args, ema=False):
 def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram, int16=False)
+        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
+                            int16=False, enable_amp=not args.disable_amp)
         if not args.debug_depth:
             return postprocess_image(depth, im_org, args, side_model, depth_model.device)
         else:
@@ -577,7 +584,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
             xs.append(x.unsqueeze(0))
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
-        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram, int16=False)
+        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
+                             int16=False, enable_amp=not args.disable_amp)
         return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device,
                                           ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
