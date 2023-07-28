@@ -1,4 +1,5 @@
 from packaging import version as packaging_version
+import sys
 import torch
 from datetime import datetime, timezone
 from collections import OrderedDict
@@ -107,6 +108,9 @@ def call_model_method(model, name, **kwargs):
 
 
 def compile_model(model, **kwargs):
+    if sys.platform == "win32":
+        # Windows not yet supported for torch.compile
+        return model
     if PYTORCH2 and not is_compiled_model(model):
         model = torch.compile(model, **kwargs)
     return model
