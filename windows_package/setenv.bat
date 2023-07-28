@@ -16,4 +16,3 @@ set PIP_TARGET=
 
 @rem git env
 set GIT_CONFIG_NOSYSTEM=1
-set GIT_PAGER=more.com
