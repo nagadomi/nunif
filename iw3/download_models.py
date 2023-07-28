@@ -1,10 +1,10 @@
-from .utils import load_depth_model, force_update_midas_model, force_update_zoedepth_model
+from . import zoedepth_model as ZU
 
 
 def main():
-    force_update_midas_model()
-    force_update_zoedepth_model()
-    load_depth_model(gpu=-1)
+    ZU.force_update_midas()
+    ZU.force_update_zoedepth()
+    ZU.load_model(gpu=-1)
 
 
 if __name__ == "__main__":

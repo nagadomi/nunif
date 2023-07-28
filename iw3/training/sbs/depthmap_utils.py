@@ -3,7 +3,7 @@ import torchvision.transforms.functional as TF
 import numpy as np
 from PIL import Image
 from .stereoimage_generation import create_stereoimages
-from ... utils import batch_infer
+from ... import zoedepth_model as ZU
 
 
 def normalize_depth(depth):
@@ -23,10 +23,10 @@ def to_input_depth(im_depth):
     return normalize_depth(TF.to_tensor(im_depth).squeeze(0).cpu().numpy())
 
 
-def generate_sbs(model, im, divergence=2, convergence=1, flip_aug=True):
+def generate_sbs(model, im, divergence=2, convergence=1, flip_aug=True, enable_amp=False):
     im_org = im
     with torch.inference_mode():
-        depth = batch_infer(model, im, flip_aug=flip_aug)
+        depth = ZU.batch_infer(model, im, flip_aug=flip_aug, enable_amp=enable_amp)
         im_depth = Image.fromarray(depth.squeeze(0).numpy().astype(np.uint16))
     sbs = create_stereoimages(
         np.array(im_org, dtype=np.uint8),

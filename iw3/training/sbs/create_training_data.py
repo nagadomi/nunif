@@ -118,14 +118,15 @@ def gen_convergence():
 def main(args):
     import numba
     from .depthmap_utils import generate_sbs
-    from ... utils import force_update_midas_model, load_depth_model
-    # force_update_midas_model()
+    from ... import zoedepth_model as ZU
+    # force_update_midas()
+    # force_update_zoedepth()
 
     max_workers = cpu_count() // 2 or 1
     numba.set_num_threads(max_workers)
 
     filename_prefix = args.prefix + "_" if args.prefix else ""
-    model = load_depth_model(model_type="ZoeD_N", gpu=args.gpu, height=args.zoed_height)
+    model = ZU.load_model(model_type="ZoeD_N", gpu=args.gpu, height=args.zoed_height)
 
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
@@ -159,7 +160,8 @@ def main(args):
                     sbs, depth = generate_sbs(
                         model, im_s,
                         divergence=divergence, convergence=convergence,
-                        flip_aug=random.choice([True,False]))
+                        flip_aug=random.choice([True, False]),
+                        enable_amp=random.choice([True, False]))
                     f = pool.submit(save_images, im_s, sbs, depth,
                                     divergence, convergence,
                                     output_base, args.size, args.num_samples)

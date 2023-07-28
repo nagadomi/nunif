@@ -15,7 +15,8 @@ from wx.lib.buttons import GenBitmapButton
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, make_output_filename,
-    has_depth_model, has_rembg_model)
+    has_rembg_model)
+from . import zoedepth_model as ZU
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
@@ -646,7 +647,7 @@ class MainFrame(wx.Frame):
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            if has_depth_model(depth_model_type):
+            if ZU.has_model(depth_model_type):
                 # Realod depth model
                 self.SetStatusText(f"Loading {depth_model_type}...")
             else:

@@ -12,15 +12,12 @@ from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, compile_model
-from nunif.device import create_device, autocast
 import nunif.utils.video as VU
-from nunif.utils.ui import (
-    HiddenPrints, TorchHubDir,
-    is_image, is_video, is_text, is_output_dir, make_parent_dir)
+from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir
+from . import zoedepth_model as ZU
 
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_fp32.pth")
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 REMBG_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "rembg")
 os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
 
@@ -67,105 +64,6 @@ def make_input_tensor(c, depth16, divergence, convergence,
         convergence_feat.unsqueeze(0),
         grid,
     ], dim=0)
-
-
-def _patch_resize_debug(model):
-    resizer = model.core.prep.resizer
-    if isinstance(resizer, HeightResizer):
-        print("HeightResizer", resizer.v_height, resizer.h_height)
-    else:
-        print("Resizer",
-              resizer._Resize__width,
-              resizer._Resize__height,
-              resizer._Resize__resize_method,
-              resizer._Resize__keep_aspect_ratio,
-              resizer._Resize__multiple_of)
-    get_size = resizer.get_size
-
-    def get_size_wrap(width, height):
-        new_size = get_size(width, height)
-        print("resize", (width, height), new_size)
-        return new_size
-
-    if resizer.get_size.__code__.co_code != get_size_wrap.__code__.co_code:
-        resizer.get_size = get_size_wrap
-
-
-@torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False):
-    # _patch_resize_debug(model)
-    batch = False
-    if torch.is_tensor(im):
-        assert im.ndim == 3 or im.ndim == 4
-        if im.ndim == 3:
-            im = im.unsqueeze(0)
-        else:
-            batch = True
-        x = im.to(model.device)
-    else:
-        # PIL
-        x = TF.to_tensor(im).unsqueeze(0).to(model.device)
-
-    def get_pad(x):
-        pad_base_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-        pad_base_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-        if x.shape[2] > x.shape[3]:
-            diff = (x.shape[2] + pad_base_h * 2 - x.shape[3] + pad_base_w * 2)
-            pad_w1 = diff // 2
-            pad_w2 = diff - pad_w1
-            pad_w1 += pad_base_w
-            pad_w2 += pad_base_w
-            pad_h1 = pad_h2 = pad_base_h
-        else:
-            pad_w1 = pad_w2 = pad_base_w
-            pad_h1 = pad_h2 = pad_base_h
-        return (min(pad_w1, x.shape[3] - 1), min(pad_w2, x.shape[3] - 1),
-                min(pad_h1, x.shape[2] - 1), min(pad_h2, x.shape[2] - 1))
-
-    if not low_vram:
-        if flip_aug:
-            x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
-        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
-        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-        with autocast(device=model.device, enabled=enable_amp):
-            out = model(x)['metric_depth']
-    else:
-        x_org = x
-        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
-        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-        with autocast(device=model.device, enabled=enable_amp):
-            out = model(x)['metric_depth']
-        if flip_aug:
-            x = torch.flip(x_org, dims=[3])
-            pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
-            x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-            with autocast(device=model.device, enabled=enable_amp):
-                out2 = model(x)['metric_depth']
-            out = torch.cat([out, out2], dim=0)
-
-    if out.shape[-2:] != x.shape[-2:]:
-        out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
-                            mode="bicubic", align_corners=False)
-    out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
-    if flip_aug:
-        if batch:
-            n = out.shape[0] // 2
-            z = torch.empty((n, *out.shape[1:]), device=out.device)
-            for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 128
-        else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 128
-    else:
-        z = out * 256
-    if not batch:
-        assert z.shape[0] == 1
-        z = z.squeeze(0)
-
-    z = z.cpu()
-    if int16:
-        z = z.to(torch.int16)
-
-    return z
 
 
 def softplus01(depth):
@@ -271,82 +169,8 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
     return z
 
 
-class HeightResizer():
-    def __init__(self, h_height=384, v_height=512):
-        self.h_height = h_height
-        self.v_height = v_height
-
-    def get_size(self, width, height):
-        target_height = self.h_height if width > height else self.v_height
-        if target_height < height:
-            new_h = target_height
-            new_w = int(new_h / height * width)
-            if new_w % 32 != 0:
-                new_w += (32 - new_w % 32)
-            if new_h % 32 != 0:
-                new_h += (32 - new_h % 32)
-        else:
-            new_h, new_w = height, width
-            if new_w % 32 != 0:
-                new_w -= new_w % 32
-            if new_h % 32 != 0:
-                new_h -= new_h % 32
-
-        return new_w, new_h
-
-    def __call__(self, x):
-        width, height = x.shape[-2:][::-1]
-        new_w, new_h = self.get_size(width, height)
-        if new_w != width or new_h != height:
-            x = F.interpolate(x, size=(new_h, new_w),
-                              mode="bilinear", align_corners=True, antialias=False)
-        return x
-
-
-def load_depth_model(model_type="ZoeD_N", gpu=0, height=None):
-    with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
-        if not os.getenv("IW3_DEBUG"):
-            model = torch.hub.load("nagadomi/ZoeDepth_iw3:main", model_type, config_mode="infer",
-                                   pretrained=True, verbose=False, trust_repo=True)
-        else:
-            assert path.exists("../ZoeDepth_iw3/hubconf.py")
-            model = torch.hub.load("../ZoeDepth_iw3", model_type, source="local", config_mode="infer",
-                                   pretrained=True, verbose=False, trust_repo=True)
-    device = create_device(gpu)
-    model = model.to(device).eval()
-    if height is not None:
-        model.core.prep.resizer = HeightResizer(height, height)
-    else:
-        model.core.prep.resizer = HeightResizer()
-
-    return model
-
-
-ZOED_MIDAS_MODEL_FILE = path.join(HUB_MODEL_DIR, "checkpoints", "dpt_beit_large_384.pt")
-ZOED_MODEL_FILES = {
-    "ZoeD_N": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_N.pt"),
-    "ZoeD_K": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_K.pt"),
-    "ZoeD_NK": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_NK.pt"),
-}
-
-
-def has_depth_model(model_type):
-    assert model_type in ZOED_MODEL_FILES
-    return path.exists(ZOED_MODEL_FILES[model_type])
-
-
 def has_rembg_model(model_type):
     return path.exists(path.join(REMBG_MODEL_DIR, f"{model_type}.onnx"))
-
-
-def force_update_midas_model():
-    with TorchHubDir(HUB_MODEL_DIR):
-        torch.hub.help("nagadomi/MiDaS_iw3:master", "DPT_BEiT_L_384", force_reload=True, trust_repo=True)
-
-
-def force_update_zoedepth_model():
-    with TorchHubDir(HUB_MODEL_DIR):
-        torch.hub.help("nagadomi/ZoeDepth_iw3:main", "ZoeD_N", force_reload=True, trust_repo=True)
 
 
 # Filename suffix for VR Player's video format detection
@@ -506,8 +330,8 @@ def debug_depth_image(depth, args, ema=False):
 def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-                            int16=False, enable_amp=not args.disable_amp)
+        depth = ZU.batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
+                               int16=False, enable_amp=not args.disable_amp)
         if not args.debug_depth:
             return postprocess_image(depth, im_org, args, side_model, depth_model.device)
         else:
@@ -584,8 +408,8 @@ def process_video_full(input_filename, args, depth_model, side_model):
             xs.append(x.unsqueeze(0))
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
-        depths = batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-                             int16=False, enable_amp=not args.disable_amp)
+        depths = ZU.batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
+                                int16=False, enable_amp=not args.disable_amp)
         return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device,
                                           ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
@@ -812,7 +636,9 @@ def iw3_main(args):
     assert not (args.half_sbs and args.vr180)
 
     if args.update:
-        force_update_midas_model()
+        ZU.force_update_midas()
+        ZU.force_update_zoedepth()
+
     if args.remove_bg:
         global rembg
         import rembg
@@ -823,7 +649,7 @@ def iw3_main(args):
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]
     else:
-        depth_model = load_depth_model(model_type=args.depth_model, gpu=args.gpu, height=args.zoed_height)
+        depth_model = ZU.load_model(model_type=args.depth_model, gpu=args.gpu, height=args.zoed_height)
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
