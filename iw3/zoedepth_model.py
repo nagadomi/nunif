@@ -36,7 +36,7 @@ ZOED_MODEL_FILES = {
 }
 
 
-def has_model(model_type):
+def has_model(model_type="ZoeD_N"):
     assert model_type in ZOED_MODEL_FILES
     return path.exists(ZOED_MODEL_FILES[model_type])
 
