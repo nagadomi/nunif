@@ -1,4 +1,7 @@
+* text=auto
+
 *.icc binary
 *.pth binary
 *.ico binary
-*.bat eol=crlf
+*.bat text eol=crlf
+*.sh text eol=lf
