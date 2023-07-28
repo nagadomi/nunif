@@ -31,11 +31,11 @@ if not exist %NUNIF_DIR% (
   git clone https://github.com/nagadomi/nunif.git %NUNIF_DIR%
   if !ERRORLEVEL! neq 0 goto :on_error
 ) else (
-  git -C %NUNIF_DIR% pull
+  git -C %NUNIF_DIR% pull --ff
   if !ERRORLEVEL! neq 0 (
     git -C %NUNIF_DIR% reset --hard
     if !ERRORLEVEL! neq 0 goto :on_error
-    git -C %NUNIF_DIR% pull
+    git -C %NUNIF_DIR% pull --ff
     if !ERRORLEVEL! neq 0 goto :on_error
   )
 )
