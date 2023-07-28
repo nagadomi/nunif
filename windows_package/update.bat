@@ -53,7 +53,7 @@ if %ERRORLEVEL% neq 0 goto :on_error
 
 
 echo Download Models...
-if not exist %NUNIF_DIR%\waifu2x\pretrained_models pushd %NUNIF_DIR% && python -m waifu2x.download_models && popd
+pushd %NUNIF_DIR% && python -m waifu2x.download_models && popd
 if %ERRORLEVEL% neq 0 goto :on_error
 
 pushd %NUNIF_DIR% && python -m iw3.download_models && popd
