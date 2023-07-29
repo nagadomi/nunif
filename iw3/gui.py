@@ -163,7 +163,12 @@ class MainFrame(wx.Frame):
                                              style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
-        layout = wx.FlexGridSizer(rows=7, cols=2, vgap=4, hgap=4)
+        self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
+                                             label=T("Flicker Reduction") + " " + T("(experimental)"),
+                                             name="chk_ema_normalize")
+        self.chk_ema_normalize.SetToolTip(T("Video Only"))
+
+        layout = wx.FlexGridSizer(rows=8, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -178,6 +183,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_mapper, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
+        layout.Add(self.chk_ema_normalize, 1, wx.EXPAND)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -682,6 +688,7 @@ class MainFrame(wx.Frame):
             mapper=self.cbo_mapper.GetValue(),
             vr180=vr180,
             half_sbs=half_sbs,
+            ema_normalize=self.chk_ema_normalize.GetValue(),
 
             max_fps=float(self.cbo_fps.GetValue()),
             crf=int(self.cbo_crf.GetValue()),
