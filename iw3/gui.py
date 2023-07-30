@@ -489,6 +489,7 @@ class MainFrame(wx.Frame):
         else:
             self.chk_resume.Disable()
             self.chk_recursive.Disable()
+        self.chk_recursive.SetValue(False)
 
     def reset_time_range(self):
         self.chk_start_time.SetValue(False)
