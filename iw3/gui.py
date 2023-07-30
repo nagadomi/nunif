@@ -98,6 +98,14 @@ class MainFrame(wx.Frame):
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
 
+        self.chk_recursive = wx.CheckBox(self.pnl_file, label=T("Process all subfolders"),
+                                         name="chk_recursive")
+        self.chk_recursive.SetValue(False)
+
+        sublayout = wx.BoxSizer(wx.HORIZONTAL)
+        sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_input, (0, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
@@ -110,7 +118,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_play, (1, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_resume, (2, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(sublayout, (2, 1), flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -443,7 +452,7 @@ class MainFrame(wx.Frame):
 
         self.update_start_button_state()
         self.update_rembg_state()
-        self.update_resume_state()
+        self.update_input_option_state()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -472,12 +481,14 @@ class MainFrame(wx.Frame):
             self.chk_rembg.Enable()
             self.cbo_bg_model.Enable()
 
-    def update_resume_state(self):
+    def update_input_option_state(self):
         input_path = self.txt_input.GetValue()
         if path.isdir(input_path) or is_text(input_path):
             self.chk_resume.Enable()
+            self.chk_recursive.Enable()
         else:
             self.chk_resume.Disable()
+            self.chk_recursive.Disable()
 
     def reset_time_range(self):
         self.chk_start_time.SetValue(False)
@@ -557,7 +568,7 @@ class MainFrame(wx.Frame):
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
         self.update_rembg_state()
-        self.update_resume_state()
+        self.update_input_option_state()
         self.reset_time_range()
 
     def on_text_changed_txt_output(self, event):
@@ -672,6 +683,7 @@ class MainFrame(wx.Frame):
 
         input_path = self.txt_input.GetValue()
         resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+        recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
 
@@ -715,6 +727,7 @@ class MainFrame(wx.Frame):
             low_vram=self.chk_low_vram.GetValue(),
 
             resume=resume,
+            recursive=recursive,
             start_time=start_time,
             end_time=end_time,
         )
