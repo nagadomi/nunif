@@ -278,7 +278,7 @@ def waifu2x_main(args):
                     return
                 process_video(ctx, video_file, args.output, args)
         else:
-            subdirs = sorted([args.input] + list_subdir(args.input))
+            subdirs = list_subdir(args.input, include_root=True, excludes=args.output)
             for input_dir in subdirs:
                 output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
                 image_files = ImageLoader.listdir(input_dir)
