@@ -41,7 +41,11 @@ LAYOUT_DEBUG = False
 class Waifu2xApp(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), "nunif.waifu2x.gui")
+        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        if self.instance.IsAnotherRunning():
+            wx.MessageBox(T("Another instance is running"), T("Error"), style=wx.ICON_ERROR)
+            return False
+        set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), main_frame.GetTitle())
         self.SetAppName(main_frame.GetTitle())
         main_frame.Show()
         self.SetTopWindow(main_frame)

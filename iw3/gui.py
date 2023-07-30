@@ -40,6 +40,10 @@ LAYOUT_DEBUG = False
 class IW3App(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
+        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        if self.instance.IsAnotherRunning():
+            wx.MessageBox(T("Another instance is running"), T("Error"), style=wx.ICON_ERROR)
+            return False
         set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), main_frame.GetTitle())
         self.SetAppName(main_frame.GetTitle())
         main_frame.Show()
