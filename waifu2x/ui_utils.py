@@ -15,7 +15,7 @@ from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
 from nunif.utils import video as VU
 from nunif.utils.ui import (
-    is_image, is_video, is_text, is_output_dir, make_parent_dir)
+    is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir)
 from .utils import Waifu2x
 from .download_models import main as download_main
 
@@ -24,13 +24,6 @@ MODEL_DIR = path.join(path.dirname(path.abspath(__file__)), "pretrained_models")
 DEFAULT_ART_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art")
 DEFAULT_ART_SCAN_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art_scan")
 DEFAULT_PHOTO_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "photo")
-
-
-def find_subdir(dirname):
-    subdirs = [f.path for f in os.scandir(dirname) if f.is_dir()]
-    for dirname in list(subdirs):
-        subdirs.extend(find_subdir(dirname))
-    return subdirs
 
 
 @torch.inference_mode()
@@ -77,7 +70,7 @@ def process_images(ctx, files, output_dir, args, title=None):
         pbar.close()
 
 
-def process_video(ctx, input_filename, args):
+def process_video(ctx, input_filename, output_path, args):
     if not args.disable_compile:
         ctx.compile()
 
@@ -125,13 +118,13 @@ def process_video(ctx, input_filename, args):
             output = torch.clamp(output, 0, 1)
         return frame.from_image(TF.to_pil_image(output))
 
-    if is_output_dir(args.output):
-        os.makedirs(args.output, exist_ok=True)
+    if is_output_dir(output_path):
+        os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
-            args.output,
+            output_path,
             path.splitext(path.basename(input_filename))[0] + ".mp4")
     else:
-        output_filename = args.output
+        output_filename = output_path
 
     if args.resume and path.exists(output_filename):
         return
@@ -274,36 +267,40 @@ def waifu2x_main(args):
     ctx.load_model(args.method, args.noise_level)
 
     if path.isdir(args.input):
-        if args.recursive:
-            subdirs = sorted([args.input] + find_subdir(args.input))
-            for input_dir in subdirs:
-                image_files = ImageLoader.listdir(input_dir)
-                output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
-                if image_files:
-                    process_images(ctx, image_files, output_dir, args,
-                                   title=path.relpath(input_dir, args.input))
-                for video_file in VU.list_videos(args.input):
-                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                        return
-                    process_video(ctx, video_file, args)
-        else:
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
+        if not args.recursive:
             image_files = ImageLoader.listdir(args.input)
             if image_files:
                 process_images(ctx, image_files, args.output, args, title="Images")
             for video_file in VU.list_videos(args.input):
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     return
-                process_video(ctx, video_file, args)
+                process_video(ctx, video_file, args.output, args)
+        else:
+            subdirs = sorted([args.input] + list_subdir(args.input))
+            for input_dir in subdirs:
+                output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
+                image_files = ImageLoader.listdir(input_dir)
+                if image_files:
+                    process_images(ctx, image_files, output_dir, args,
+                                   title=path.relpath(input_dir, args.input))
+                for video_file in VU.list_videos(input_dir):
+                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                        return
+                    process_video(ctx, video_file, output_dir, args)
     elif is_text(args.input):
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
         files = load_files(args.input)
         image_files = [f for f in files if is_image(f)]
         if image_files:
             process_images(ctx, image_files, args.output, args, title="Images")
         video_files = [f for f in files if is_video(f)]
         for video_file in video_files:
-            process_video(ctx, video_file, args)
+            process_video(ctx, video_file, args.output, args)
     elif is_video(args.input):
-        process_video(ctx, args.input, args)
+        process_video(ctx, args.input, args.output, args)
     elif is_image(args.input):
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)

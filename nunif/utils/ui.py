@@ -55,3 +55,10 @@ def make_parent_dir(filename):
     parent_dir = path.dirname(filename)
     if parent_dir and not path.exists(parent_dir):
         os.makedirs(parent_dir, exist_ok=True)
+
+
+def list_subdir(dirname):
+    subdirs = [f.path for f in os.scandir(dirname) if f.is_dir()]
+    for dirname in list(subdirs):
+        subdirs.extend(list_subdir(dirname))
+    return subdirs

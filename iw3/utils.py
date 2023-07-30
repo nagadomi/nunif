@@ -13,7 +13,7 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
-from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir
+from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
 from . import zoedepth_model as ZU
 
 
@@ -338,8 +338,8 @@ def process_image(im, args, depth_model, side_model):
             return debug_depth_image(depth, args)
 
 
-def process_images(files, args, depth_model, side_model, title=None):
-    os.makedirs(args.output, exist_ok=True)
+def process_images(files, output_dir, args, depth_model, side_model, title=None):
+    os.makedirs(output_dir, exist_ok=True)
     loader = ImageLoader(
         files=files,
         load_func=load_image_simple,
@@ -351,7 +351,7 @@ def process_images(files, args, depth_model, side_model, title=None):
         for im, meta in loader:
             filename = meta["filename"]
             output_filename = path.join(
-                args.output,
+                output_dir,
                 make_output_filename(filename, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
             if im is None or (args.resume and path.exists(output_filename)):
                 continue
@@ -367,7 +367,7 @@ def process_images(files, args, depth_model, side_model, title=None):
     pbar.close()
 
 
-def process_video_full(input_filename, args, depth_model, side_model):
+def process_video_full(input_filename, output_path, args, depth_model, side_model):
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if side_model is not None:
         side_model = compile_model(side_model)
@@ -428,14 +428,14 @@ def process_video_full(input_filename, args, depth_model, side_model):
                 return None
             return VU.from_image(process_image(frame.to_image(), args, depth_model, side_model))
 
-    if is_output_dir(args.output):
-        os.makedirs(args.output, exist_ok=True)
+    if is_output_dir(output_path):
+        os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
-            args.output,
+            output_path,
             make_output_filename(path.basename(input_filename), video=True,
                                  vr180=args.vr180, half_sbs=args.half_sbs))
     else:
-        output_filename = args.output
+        output_filename = output_path
 
     if args.resume and path.exists(output_filename):
         return
@@ -459,14 +459,16 @@ def process_video_full(input_filename, args, depth_model, side_model):
                      end_time=args.end_time)
 
 
-def process_video_keyframes(input_filename, args, depth_model, side_model):
-    if is_output_dir(args.output):
-        os.makedirs(args.output, exist_ok=True)
-        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True,
-                                                                 vr180=args.vr180, half_sbs=args.half_sbs))
+def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
+    if is_output_dir(output_path):
+        os.makedirs(output_path, exist_ok=True)
+        output_filename = path.join(output_path,
+                                    make_output_filename(path.basename(input_filename),
+                                                         video=True, vr180=args.vr180, half_sbs=args.half_sbs))
     else:
-        output_dir = args.output
-    output_dir = path.join(path.dirname(output_dir), path.splitext(path.basename(output_dir))[0])
+        output_filename = output_path
+
+    output_dir = path.join(path.dirname(output_filename), path.splitext(path.basename(output_filename))[0])
     if output_dir.endswith("_LRF"):
         output_dir = output_dir[:-4]
     os.makedirs(output_dir, exist_ok=True)
@@ -488,11 +490,11 @@ def process_video_keyframes(input_filename, args, depth_model, side_model):
             f.result()
 
 
-def process_video(input_filename, args, depth_model, side_model):
+def process_video(input_filename, output_path, args, depth_model, side_model):
     if args.keyframe:
-        process_video_keyframes(input_filename, args, depth_model, side_model)
+        process_video_keyframes(input_filename, output_path, args, depth_model, side_model)
     else:
-        process_video_full(input_filename, args, depth_model, side_model)
+        process_video_full(input_filename, output_path, args, depth_model, side_model)
 
 
 def create_parser(required_true=True):
@@ -528,6 +530,8 @@ def create_parser(required_true=True):
                         help=("(normalized) distance of convergence plane(screen position)"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
+    parser.add_argument("--recursive", "-r", action="store_true",
+                        help="process all subdirectories")
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
     parser.add_argument("--batch-size", type=int, default=16, choices=[Range(1, 256)],
@@ -660,12 +664,26 @@ def iw3_main(args):
     if path.isdir(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
-        image_files = ImageLoader.listdir(args.input)
-        process_images(image_files, args, depth_model, side_model, title="Images")
-        for video_file in VU.list_videos(args.input):
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                return args
-            process_video(video_file, args, depth_model, side_model)
+        if not args.recursive:
+            image_files = ImageLoader.listdir(args.input)
+            process_images(image_files, args.output, args, depth_model, side_model, title="Images")
+            for video_file in VU.list_videos(args.input):
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return args
+                process_video(video_file, args.output, args, depth_model, side_model)
+        else:
+            subdirs = sorted([args.input] + list_subdir(args.input))
+            for input_dir in subdirs:
+                output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
+                image_files = ImageLoader.listdir(input_dir)
+                if image_files:
+                    process_images(image_files, output_dir, args, depth_model, side_model,
+                                   title=path.relpath(input_dir, args.input))
+                for video_file in VU.list_videos(input_dir):
+                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                        return args
+                    process_video(video_file, output_dir, args, depth_model, side_model)
+
     elif is_text(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
@@ -674,14 +692,14 @@ def iw3_main(args):
             for line in f.readlines():
                 files.append(line.strip())
         image_files = [f for f in files if is_image(f)]
-        process_images(image_files, args, depth_model, side_model, title="Images")
+        process_images(image_files, args.output, args, depth_model, side_model, title="Images")
         video_files = [f for f in files if is_video(f)]
         for video_file in video_files:
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return args
-            process_video(video_file, args, depth_model, side_model)
+            process_video(video_file, args.output, args, depth_model, side_model)
     elif is_video(args.input):
-        process_video(args.input, args, depth_model, side_model)
+        process_video(args.input, args.output, args, depth_model, side_model)
     elif is_image(args.input):
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
