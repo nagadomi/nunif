@@ -13,7 +13,7 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
-from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir
+from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
 from . import zoedepth_model as ZU
 
 
@@ -51,9 +51,10 @@ def make_input_tensor(c, depth16, divergence, convergence,
     depth = normalize_depth(depth16.squeeze(0), depth_min, depth_max)
     depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
-    divergence_feat = torch.full_like(depth, divergence_value)
-    convergence_feat = torch.full_like(depth, convergence_value)
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w), indexing="ij")
+    divergence_feat = torch.full_like(depth, divergence_value, device=c.device)
+    convergence_feat = torch.full_like(depth, convergence_value, device=c.device)
+    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h, device=c.device),
+                                    torch.linspace(-1, 1, w, device=c.device), indexing="ij")
     grid = torch.stack((mesh_x, mesh_y), 2)
     grid = grid.permute(2, 0, 1)  # CHW
 
@@ -113,16 +114,13 @@ def equirectangular_projection(c, device="cpu"):
     return z
 
 
-def apply_divergence_grid_sample(c, depth, divergence, convergence,
-                                 shift, device="cpu"):
-    depth = depth.to(device)
-    c = c.to(device)
+def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
     w, h = c.shape[2], c.shape[1]
     shift_size = (-shift * divergence * 0.01)
     index_shift = depth * shift_size - (shift_size * convergence)
     mesh_y, mesh_x = torch.meshgrid(
-        torch.linspace(-1, 1, h, device=device),
-        torch.linspace(-1, 1, w, device=device),
+        torch.linspace(-1, 1, h, device=c.device),
+        torch.linspace(-1, 1, w, device=c.device),
         indexing="ij")
     mesh_x = mesh_x - index_shift
     grid = torch.stack((mesh_x, mesh_y), 2)
@@ -239,7 +237,7 @@ def preprocess_image(im, args):
     return im_org, TF.to_tensor(im)
 
 
-def postprocess_image(depth, im_org, args, side_model, device, ema=False):
+def postprocess_image(depth, im_org, args, side_model, ema=False):
     depth_min, depth_max = depth.min(), depth.max()
     if ema:
         depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
@@ -249,12 +247,10 @@ def postprocess_image(depth, im_org, args, side_model, device, ema=False):
         depth = get_mapper(args.mapper)(depth)
         left_eye = apply_divergence_grid_sample(
             im_org, depth,
-            args.divergence, convergence=args.convergence, shift=-1,
-            device=device)
+            args.divergence, convergence=args.convergence, shift=-1)
         right_eye = apply_divergence_grid_sample(
             im_org, depth,
-            args.divergence, convergence=args.convergence, shift=1,
-            device=device)
+            args.divergence, convergence=args.convergence, shift=1)
     else:
         left_eye = apply_divergence_nn(side_model, im_org, depth,
                                        args.divergence, args.convergence,
@@ -280,8 +276,8 @@ def postprocess_image(depth, im_org, args, side_model, device, ema=False):
         left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
     if args.vr180:
-        left_eye = equirectangular_projection(left_eye, device=device)
-        right_eye = equirectangular_projection(right_eye, device=device)
+        left_eye = equirectangular_projection(left_eye, device=depth.device)
+        right_eye = equirectangular_projection(right_eye, device=depth.device)
     elif args.half_sbs:
         left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
                              interpolation=InterpolationMode.BICUBIC, antialias=True)
@@ -319,7 +315,7 @@ def debug_depth_image(depth, args, ema=False):
     mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
     depth = normalize_depth(depth, depth_min=depth_min, depth_max=depth_max)
     depth2 = get_mapper(args.mapper)(depth)
-    out = torch.cat([depth, depth2], dim=2)
+    out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
     gc.text((16, 16), f"min={depth_min}\nmax={depth_min}\nmean={mean_depth}\nstd={std_depth}", "gray")
@@ -331,15 +327,17 @@ def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
         depth = ZU.batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-                               int16=False, enable_amp=not args.disable_amp)
+                               int16=False, enable_amp=not args.disable_amp,
+                               output_device=depth_model.device)
         if not args.debug_depth:
-            return postprocess_image(depth, im_org, args, side_model, depth_model.device)
+            return postprocess_image(depth, im_org.to(depth_model.device),
+                                     args, side_model)
         else:
             return debug_depth_image(depth, args)
 
 
-def process_images(files, args, depth_model, side_model, title=None):
-    os.makedirs(args.output, exist_ok=True)
+def process_images(files, output_dir, args, depth_model, side_model, title=None):
+    os.makedirs(output_dir, exist_ok=True)
     loader = ImageLoader(
         files=files,
         load_func=load_image_simple,
@@ -351,7 +349,7 @@ def process_images(files, args, depth_model, side_model, title=None):
         for im, meta in loader:
             filename = meta["filename"]
             output_filename = path.join(
-                args.output,
+                output_dir,
                 make_output_filename(filename, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
             if im is None or (args.resume and path.exists(output_filename)):
                 continue
@@ -367,7 +365,7 @@ def process_images(files, args, depth_model, side_model, title=None):
     pbar.close()
 
 
-def process_video_full(input_filename, args, depth_model, side_model):
+def process_video_full(input_filename, output_path, args, depth_model, side_model):
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if side_model is not None:
         side_model = compile_model(side_model)
@@ -392,7 +390,7 @@ def process_video_full(input_filename, args, depth_model, side_model):
     minibatch_queue = []
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
     if args.debug_depth:
-        postprocess = lambda depth, x_org, args, side_model, device, ema: debug_depth_image(depth, args, ema)
+        postprocess = lambda depth, x_org, args, side_model, ema: debug_depth_image(depth, args, ema)
     else:
         postprocess = postprocess_image
 
@@ -409,9 +407,10 @@ def process_video_full(input_filename, args, depth_model, side_model):
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
         depths = ZU.batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-                                int16=False, enable_amp=not args.disable_amp)
-        return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device,
-                                          ema_normalize))
+                                int16=False, enable_amp=not args.disable_amp,
+                                output_device=depth_model.device)
+        return [VU.from_image(postprocess(depth, x_org.to(depth_model.device),
+                                          args, side_model, ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
 
     def frame_callback(frame):
@@ -428,14 +427,14 @@ def process_video_full(input_filename, args, depth_model, side_model):
                 return None
             return VU.from_image(process_image(frame.to_image(), args, depth_model, side_model))
 
-    if is_output_dir(args.output):
-        os.makedirs(args.output, exist_ok=True)
+    if is_output_dir(output_path):
+        os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
-            args.output,
+            output_path,
             make_output_filename(path.basename(input_filename), video=True,
                                  vr180=args.vr180, half_sbs=args.half_sbs))
     else:
-        output_filename = args.output
+        output_filename = output_path
 
     if args.resume and path.exists(output_filename):
         return
@@ -459,14 +458,16 @@ def process_video_full(input_filename, args, depth_model, side_model):
                      end_time=args.end_time)
 
 
-def process_video_keyframes(input_filename, args, depth_model, side_model):
-    if is_output_dir(args.output):
-        os.makedirs(args.output, exist_ok=True)
-        output_dir = path.join(args.output, make_output_filename(path.basename(input_filename), video=True,
-                                                                 vr180=args.vr180, half_sbs=args.half_sbs))
+def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
+    if is_output_dir(output_path):
+        os.makedirs(output_path, exist_ok=True)
+        output_filename = path.join(output_path,
+                                    make_output_filename(path.basename(input_filename),
+                                                         video=True, vr180=args.vr180, half_sbs=args.half_sbs))
     else:
-        output_dir = args.output
-    output_dir = path.join(path.dirname(output_dir), path.splitext(path.basename(output_dir))[0])
+        output_filename = output_path
+
+    output_dir = path.join(path.dirname(output_filename), path.splitext(path.basename(output_filename))[0])
     if output_dir.endswith("_LRF"):
         output_dir = output_dir[:-4]
     os.makedirs(output_dir, exist_ok=True)
@@ -488,11 +489,11 @@ def process_video_keyframes(input_filename, args, depth_model, side_model):
             f.result()
 
 
-def process_video(input_filename, args, depth_model, side_model):
+def process_video(input_filename, output_path, args, depth_model, side_model):
     if args.keyframe:
-        process_video_keyframes(input_filename, args, depth_model, side_model)
+        process_video_keyframes(input_filename, output_path, args, depth_model, side_model)
     else:
-        process_video_full(input_filename, args, depth_model, side_model)
+        process_video_full(input_filename, output_path, args, depth_model, side_model)
 
 
 def create_parser(required_true=True):
@@ -528,6 +529,8 @@ def create_parser(required_true=True):
                         help=("(normalized) distance of convergence plane(screen position)"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
+    parser.add_argument("--recursive", "-r", action="store_true",
+                        help="process all subdirectories")
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
     parser.add_argument("--batch-size", type=int, default=16, choices=[Range(1, 256)],
@@ -660,12 +663,26 @@ def iw3_main(args):
     if path.isdir(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
-        image_files = ImageLoader.listdir(args.input)
-        process_images(image_files, args, depth_model, side_model, title="Images")
-        for video_file in VU.list_videos(args.input):
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                return args
-            process_video(video_file, args, depth_model, side_model)
+        if not args.recursive:
+            image_files = ImageLoader.listdir(args.input)
+            process_images(image_files, args.output, args, depth_model, side_model, title="Images")
+            for video_file in VU.list_videos(args.input):
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return args
+                process_video(video_file, args.output, args, depth_model, side_model)
+        else:
+            subdirs = list_subdir(args.input, include_root=True, excludes=args.output)
+            for input_dir in subdirs:
+                output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
+                image_files = ImageLoader.listdir(input_dir)
+                if image_files:
+                    process_images(image_files, output_dir, args, depth_model, side_model,
+                                   title=path.relpath(input_dir, args.input))
+                for video_file in VU.list_videos(input_dir):
+                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                        return args
+                    process_video(video_file, output_dir, args, depth_model, side_model)
+
     elif is_text(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
@@ -674,14 +691,14 @@ def iw3_main(args):
             for line in f.readlines():
                 files.append(line.strip())
         image_files = [f for f in files if is_image(f)]
-        process_images(image_files, args, depth_model, side_model, title="Images")
+        process_images(image_files, args.output, args, depth_model, side_model, title="Images")
         video_files = [f for f in files if is_video(f)]
         for video_file in video_files:
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return args
-            process_video(video_file, args, depth_model, side_model)
+            process_video(video_file, args.output, args, depth_model, side_model)
     elif is_video(args.input):
-        process_video(args.input, args, depth_model, side_model)
+        process_video(args.input, args.output, args, depth_model, side_model)
     elif is_image(args.input):
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)

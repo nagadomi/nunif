@@ -55,3 +55,27 @@ def make_parent_dir(filename):
     parent_dir = path.dirname(filename)
     if parent_dir and not path.exists(parent_dir):
         os.makedirs(parent_dir, exist_ok=True)
+
+
+def _list_subdir(dirname):
+    subdirs = [f.path for f in os.scandir(dirname) if f.is_dir()]
+    for dirname in list(subdirs):
+        subdirs.extend(_list_subdir(dirname))
+    return subdirs
+
+
+def list_subdir(root_dir, include_root=False, excludes=None):
+    subdirs = set(path.normpath(dirname) for dirname in _list_subdir(root_dir))
+    if include_root:
+        subdirs.add(path.normpath(root_dir))
+    if excludes is not None:
+        if not isinstance(excludes, (list, tuple)):
+            excludes = [excludes]
+        remove_dirs = set()
+        for exclude_path in excludes:
+            exclude_path = path.normpath(exclude_path)
+            for dirname in subdirs:
+                if path.commonprefix([exclude_path, dirname]) == exclude_path:
+                    remove_dirs.add(dirname)
+        subdirs -= remove_dirs
+    return sorted(list(subdirs))

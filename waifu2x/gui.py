@@ -41,7 +41,11 @@ LAYOUT_DEBUG = False
 class Waifu2xApp(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), "nunif.waifu2x.gui")
+        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        if self.instance.IsAnotherRunning():
+            wx.MessageBox(T("Another instance is running"), T("Error"), style=wx.ICON_ERROR)
+            return False
+        set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), main_frame.GetTitle())
         self.SetAppName(main_frame.GetTitle())
         main_frame.Show()
         self.SetTopWindow(main_frame)
@@ -94,6 +98,13 @@ class MainFrame(wx.Frame):
         self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
+        self.chk_recursive = wx.CheckBox(self.pnl_file, label=T("Process all subfolders"),
+                                         name="chk_recursive")
+        self.chk_recursive.SetValue(False)
+
+        sublayout = wx.BoxSizer(wx.HORIZONTAL)
+        sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
@@ -101,13 +112,13 @@ class MainFrame(wx.Frame):
         layout.Add(self.btn_input_file, (0, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_input_dir, (0, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_input_play, (0, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-
         layout.Add(self.lbl_output, (1, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_output, (1, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
         layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_play, (1, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_resume, (2, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(sublayout, (2, 1), flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
 
@@ -386,7 +397,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_upscaling_state()
         self.update_noise_level_state()
-        self.update_resume_state()
+        self.update_input_option_state()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -423,12 +434,15 @@ class MainFrame(wx.Frame):
             else:
                 self.btn_start.Disable()
 
-    def update_resume_state(self):
+    def update_input_option_state(self):
         input_path = self.txt_input.GetValue()
         if path.isdir(input_path) or is_text(input_path):
             self.chk_resume.Enable()
+            self.chk_recursive.Enable()
         else:
             self.chk_resume.Disable()
+            self.chk_recursive.Disable()
+        self.chk_recursive.SetValue(False)
 
     def reset_time_range(self):
         self.chk_start_time.SetValue(False)
@@ -515,7 +529,7 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
-        self.update_resume_state()
+        self.update_input_option_state()
         self.reset_time_range()
 
     def on_text_changed_txt_output(self, event):
@@ -591,6 +605,7 @@ class MainFrame(wx.Frame):
 
         input_path = self.txt_input.GetValue()
         resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+        recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
         tta = self.chk_tta.GetValue() and self.model_tta_support[self.opt_model.GetSelection()]
@@ -621,6 +636,7 @@ class MainFrame(wx.Frame):
             disable_amp=not self.chk_amp.GetValue(),
 
             resume=resume,
+            recursive=recursive,
             start_time=start_time,
             end_time=end_time,
         )

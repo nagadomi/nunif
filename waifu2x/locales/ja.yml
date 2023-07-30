@@ -9,9 +9,11 @@
 "Set the same directory": "同じフォルダを設定"
 "Resume": "処理を再開"
 "Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップ"
+"Process all subfolders": "すべてのサブフォルダを処理"
 "Play": "再生"
 
 "Error": "エラー"
+"Another instance is running": "他のインスタンスが実行中です"
 "Initializing": "初期化中"
 "Cancelled": "キャンセル済み"
 "Finished": "完了"

@@ -27,7 +27,7 @@ https://github.com/CompVis/taming-transformers
 ----
 nunif/module/_lpips_1.pth
 nunif/module/_lpips_2.pth
-are trained with the internal forked version of LPIPS.
+are trained with the private forked version of LPIPS.
 https://github.com/richzhang/PerceptualSimilarity
 
 ---
@@ -41,6 +41,13 @@ Lu Chi / Apache License Version 2.0
 iw3/training/sbs/stereoimage_generation.py
 is copied from https://github.com/thygate/stable-diffusion-webui-depthmap-script/blob/2838dc5fa24ac9f9e24b34ff61f2d2c169b634a1/scripts/stereoimage_generation.py
 Bob Thiry / MIT License
+And contributors https://github.com/thygate/stable-diffusion-webui-depthmap-script/graphs/contributors
+
+---
+iw3 uses forked version of ZoeDepth and MiDaS as its core logic
+https://github.com/isl-org/MiDaS
+https://github.com/isl-org/ZoeDepth
+Intelligent Systems Lab Org / MIT License
 
 ----
 Other libraries used are listed in `requirements.txt`.

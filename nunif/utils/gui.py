@@ -113,8 +113,8 @@ def start_file(file_path):
     if not path.exists(file_path):
         return
 
-    fd = open(os.devnull, "w")
-    options = {"stderr": fd, "stdout": fd}
+    fd = subprocess.DEVNULL
+    options = {"stderr": fd, "stdout": fd, "stdin": fd}
     if sys.platform == "win32":
         if path.isdir(file_path):
             subprocess.Popen(["explorer", file_path], shell=True, **options)

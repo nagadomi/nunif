@@ -51,8 +51,14 @@ def force_update_zoedepth():
         torch.hub.help("nagadomi/ZoeDepth_iw3:main", "ZoeD_N", force_reload=True, trust_repo=True)
 
 
+def _forward(model, x, enable_amp):
+    with autocast(device=x.device, enabled=enable_amp):
+        out = model(x)['metric_depth']
+    return out
+
+
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False):
+def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False, output_device="cpu"):
     # _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
@@ -87,20 +93,17 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
         pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
         x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-        with autocast(device=model.device, enabled=enable_amp):
-            out = model(x)['metric_depth']
+        out = _forward(model, x, enable_amp)
     else:
         x_org = x
         pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
         x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-        with autocast(device=model.device, enabled=enable_amp):
-            out = model(x)['metric_depth']
+        out = _forward(model, x, enable_amp)
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
             pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
             x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
-            with autocast(device=model.device, enabled=enable_amp):
-                out2 = model(x)['metric_depth']
+            out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
 
     if out.shape[-2:] != x.shape[-2:]:
@@ -121,7 +124,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         assert z.shape[0] == 1
         z = z.squeeze(0)
 
-    z = z.cpu()
+    z = z.to(output_device)
     if int16:
         z = z.to(torch.int16)
 
