@@ -51,9 +51,10 @@ def make_input_tensor(c, depth16, divergence, convergence,
     depth = normalize_depth(depth16.squeeze(0), depth_min, depth_max)
     depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
-    divergence_feat = torch.full_like(depth, divergence_value)
-    convergence_feat = torch.full_like(depth, convergence_value)
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w), indexing="ij")
+    divergence_feat = torch.full_like(depth, divergence_value, device=c.device)
+    convergence_feat = torch.full_like(depth, convergence_value, device=c.device)
+    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h, device=c.device),
+                                    torch.linspace(-1, 1, w, device=c.device), indexing="ij")
     grid = torch.stack((mesh_x, mesh_y), 2)
     grid = grid.permute(2, 0, 1)  # CHW
 
@@ -113,16 +114,13 @@ def equirectangular_projection(c, device="cpu"):
     return z
 
 
-def apply_divergence_grid_sample(c, depth, divergence, convergence,
-                                 shift, device="cpu"):
-    depth = depth.to(device)
-    c = c.to(device)
+def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
     w, h = c.shape[2], c.shape[1]
     shift_size = (-shift * divergence * 0.01)
     index_shift = depth * shift_size - (shift_size * convergence)
     mesh_y, mesh_x = torch.meshgrid(
-        torch.linspace(-1, 1, h, device=device),
-        torch.linspace(-1, 1, w, device=device),
+        torch.linspace(-1, 1, h, device=c.device),
+        torch.linspace(-1, 1, w, device=c.device),
         indexing="ij")
     mesh_x = mesh_x - index_shift
     grid = torch.stack((mesh_x, mesh_y), 2)
@@ -239,7 +237,7 @@ def preprocess_image(im, args):
     return im_org, TF.to_tensor(im)
 
 
-def postprocess_image(depth, im_org, args, side_model, device, ema=False):
+def postprocess_image(depth, im_org, args, side_model, ema=False):
     depth_min, depth_max = depth.min(), depth.max()
     if ema:
         depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
@@ -249,12 +247,10 @@ def postprocess_image(depth, im_org, args, side_model, device, ema=False):
         depth = get_mapper(args.mapper)(depth)
         left_eye = apply_divergence_grid_sample(
             im_org, depth,
-            args.divergence, convergence=args.convergence, shift=-1,
-            device=device)
+            args.divergence, convergence=args.convergence, shift=-1)
         right_eye = apply_divergence_grid_sample(
             im_org, depth,
-            args.divergence, convergence=args.convergence, shift=1,
-            device=device)
+            args.divergence, convergence=args.convergence, shift=1)
     else:
         left_eye = apply_divergence_nn(side_model, im_org, depth,
                                        args.divergence, args.convergence,
@@ -280,8 +276,8 @@ def postprocess_image(depth, im_org, args, side_model, device, ema=False):
         left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
     if args.vr180:
-        left_eye = equirectangular_projection(left_eye, device=device)
-        right_eye = equirectangular_projection(right_eye, device=device)
+        left_eye = equirectangular_projection(left_eye, device=depth.device)
+        right_eye = equirectangular_projection(right_eye, device=depth.device)
     elif args.half_sbs:
         left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
                              interpolation=InterpolationMode.BICUBIC, antialias=True)
@@ -319,7 +315,7 @@ def debug_depth_image(depth, args, ema=False):
     mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
     depth = normalize_depth(depth, depth_min=depth_min, depth_max=depth_max)
     depth2 = get_mapper(args.mapper)(depth)
-    out = torch.cat([depth, depth2], dim=2)
+    out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
     gc.text((16, 16), f"min={depth_min}\nmax={depth_min}\nmean={mean_depth}\nstd={std_depth}", "gray")
@@ -331,9 +327,11 @@ def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
         depth = ZU.batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-                               int16=False, enable_amp=not args.disable_amp)
+                               int16=False, enable_amp=not args.disable_amp,
+                               output_device=depth_model.device)
         if not args.debug_depth:
-            return postprocess_image(depth, im_org, args, side_model, depth_model.device)
+            return postprocess_image(depth, im_org.to(depth_model.device),
+                                     args, side_model)
         else:
             return debug_depth_image(depth, args)
 
@@ -392,7 +390,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     minibatch_queue = []
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
     if args.debug_depth:
-        postprocess = lambda depth, x_org, args, side_model, device, ema: debug_depth_image(depth, args, ema)
+        postprocess = lambda depth, x_org, args, side_model, ema: debug_depth_image(depth, args, ema)
     else:
         postprocess = postprocess_image
 
@@ -409,9 +407,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         minibatch_queue.clear()
         x = torch.cat(xs, dim=0)
         depths = ZU.batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-                                int16=False, enable_amp=not args.disable_amp)
-        return [VU.from_image(postprocess(depth, x_org, args, side_model, depth_model.device,
-                                          ema_normalize))
+                                int16=False, enable_amp=not args.disable_amp,
+                                output_device=depth_model.device)
+        return [VU.from_image(postprocess(depth, x_org.to(depth_model.device),
+                                          args, side_model, ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
 
     def frame_callback(frame):

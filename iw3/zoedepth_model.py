@@ -58,7 +58,7 @@ def _forward(model, x, enable_amp):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False):
+def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False, output_device="cpu"):
     # _patch_resize_debug(model)
     batch = False
     if torch.is_tensor(im):
@@ -124,7 +124,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         assert z.shape[0] == 1
         z = z.squeeze(0)
 
-    z = z.cpu()
+    z = z.to(output_device)
     if int16:
         z = z.to(torch.int16)
 
