@@ -241,6 +241,9 @@ def waifu2x_main(args):
         global IL
         from nunif.utils import pil_io as IL
 
+    if path.normpath(args.input) == path.normpath(args.output):
+        raise ValueError("input and output must be different file")
+
     # alias for typo
     if args.method == "scale2x":
         args.method = "scale"
