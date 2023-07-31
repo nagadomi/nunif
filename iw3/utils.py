@@ -642,6 +642,9 @@ def iw3_main(args):
         ZU.force_update_midas()
         ZU.force_update_zoedepth()
 
+    if path.normpath(args.input) == path.normpath(args.output):
+        raise ValueError("input and output must be different file")
+
     if args.remove_bg:
         global rembg
         import rembg
