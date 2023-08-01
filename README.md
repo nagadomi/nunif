@@ -39,10 +39,12 @@ CLI tools are also available to filter out low quality images using these result
 
 ## Installer for non-developer Windows users
 
-- nunif windows package (Engrish, TODO)
+- [nunif windows package](windows_package/docs/README.md)
 - [nunif windows package (日本語)](windows_package/docs/README_ja.md)
 
-## Dependencies
+## For developer
+
+### Dependencies
 
 - Python 3 (Probably works with Python 3.9 or later, developed with 3.10)
 - [PyTorch](https://pytorch.org/get-started/locally/)
