@@ -2,25 +2,6 @@ My playground.
 
 For the time being, I will make incompatible changes.
 
-## Dependencies
-
-- Python 3 (Probably works with Python 3.9 or later, developed with 3.10)
-- [PyTorch](https://pytorch.org/get-started/locally/)
-- See requirements.txt
-
-We usually support the latest version. If there are bugs or compatibility issues, we will specify the version.
-
-- [INSTALL-ubuntu](INSTALL-ubuntu.md)
-- [INSTALL-windows](INSTALL-windows.md)
-
-## iw3
-
-[iw3/README.md](./iw3/README.md)
-
-I want to watch any 2D video as 3D video on my VR device, so I developed this very personal tool.
-
-iw3 provides the ability to convert any 2D image/video into side-by-side 3D image/video. However, it does not support Anime.
-
 ## waifu2x
 
 [waifu2x/README.md](./waifu2x/README.md)
@@ -32,6 +13,14 @@ The repository contains waifu2x pytorch implementation and pretrained models, st
 The demo application can be found at
 - https://waifu2x.udp.jp/ (Cloud version)
 - https://unlimited.waifu2x.net/ (In-Browser version).
+
+## iw3
+
+[iw3/README.md](./iw3/README.md)
+
+I want to watch any 2D video as 3D video on my VR device, so I developed this very personal tool.
+
+iw3 provides the ability to convert any 2D image/video into side-by-side 3D image/video. However, it does not support Anime.
 
 ## cliqa
 
@@ -47,3 +36,19 @@ Currently, the following two models are supported.
 - GrainNoiseLeve: Predicts Noise Level related to photograph and PSNR degraded by that noise
 
 CLI tools are also available to filter out low quality images using these results.
+
+## Installer for non-developer Windows users
+
+- nunif windows package (Engrish, TODO)
+- [nunif windows package (日本語)](windows_package/docs/README_ja.md)
+
+## Dependencies
+
+- Python 3 (Probably works with Python 3.9 or later, developed with 3.10)
+- [PyTorch](https://pytorch.org/get-started/locally/)
+- See requirements.txt
+
+We usually support the latest version. If there are bugs or compatibility issues, we will specify the version.
+
+- [INSTALL-ubuntu](INSTALL-ubuntu.md)
+- [INSTALL-windows](INSTALL-windows.md)

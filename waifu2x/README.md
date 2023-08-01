@@ -1,5 +1,11 @@
 # Waifu2x
 
+waifu2x: Image Super-Resolution for Anime-Style Art. Also it supports photo models (GAN based models)
+
+[日本語の説明](docs/gui_ja.md)
+
+## Setup
+
 Download pre-trained models.
 ```
 python -m waifu2x.download_models

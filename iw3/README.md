@@ -6,6 +6,8 @@ iw3 provides the ability to convert any 2D image/video into side-by-side 3D imag
 
 This project is under construction.
 
+[日本語の説明](docs/gui_ja.md)
+
 ## Overview
 
 - Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth)
