@@ -38,31 +38,38 @@ def get_fps(stream):
     return stream.guessed_rate
 
 
-def guess_frames(stream, fps=None, start_time=None, end_time=None):
+def guess_frames(stream, fps=None, start_time=None, end_time=None, container_duration=None):
     fps = fps or get_fps(stream)
+    duration = get_duration(stream, container_duration, to_int=False)
     if start_time is not None and end_time is not None:
-        duration = min(end_time, float(stream.duration * stream.time_base)) - start_time
+        duration = min(end_time, duration) - start_time
     elif start_time is not None:
-        duration = max(float(stream.duration * stream.time_base) - start_time, 0)
+        duration = max(duration - start_time, 0)
     elif end_time is not None:
-        duration = min(end_time, float(stream.duration * stream.time_base))
+        duration = min(end_time, duration)
     else:
-        # TODO: stream.duration is None or 0 case (flv)
-        duration = float(stream.duration * stream.time_base)
+        pass
 
     return math.ceil(duration * fps)
 
 
-def get_duration(stream):
-    return math.ceil(float(stream.duration * stream.time_base))
+def get_duration(stream, container_duration=None, to_int=True):
+    if stream.duration:
+        duration = float(stream.duration * stream.time_base)
+    else:
+        duration = container_duration
+    if to_int:
+        return math.ceil(duration)
+    else:
+        return duration
 
 
-def get_frames(stream):
+def get_frames(stream, container_duration=None):
     if stream.frames > 0:
         return stream.frames
     else:
         # frames is unknown
-        return guess_frames(stream)
+        return guess_frames(stream, container_duration=container_duration)
 
 
 def from_image(im):
@@ -219,6 +226,11 @@ def process_video(input_path, output_path,
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     input_container = av.open(input_path)
+    if input_container.duration:
+        container_duration = float(input_container.duration / av.time_base)
+    else:
+        container_duration = None
+
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
 
@@ -262,7 +274,8 @@ def process_video(input_path, output_path,
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
-    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time)
+    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time,
+                         container_duration=container_duration)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     for packet in input_container.demux(streams):
@@ -325,12 +338,16 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
+    if input_container.duration:
+        container_duration = float(input_container.duration * av.time_base)
+    else:
+        container_duration = None
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
     video_input_stream.codec_context.skip_frame = "NONKEY"
 
-    max_progress = get_duration(video_input_stream)
+    max_progress = get_duration(video_input_stream, container_duration=container_duration)
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     pbar = tqdm(desc=desc, total=max_progress, ncols=ncols)
