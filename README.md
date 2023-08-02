@@ -42,7 +42,7 @@ CLI tools are also available to filter out low quality images using these result
 - [nunif windows package](windows_package/docs/README.md)
 - [nunif windows package (日本語)](windows_package/docs/README_ja.md)
 
-## For developer
+## For developers
 
 ### Dependencies
 
