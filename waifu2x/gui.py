@@ -717,7 +717,7 @@ def main():
     import sys
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--lang", type=str, help="lang, ja_JP, en_US")
+    parser.add_argument("--lang", type=str, help="lang, ja_JP, en_US, ko_KR")
     args = parser.parse_args()
     if args.lang:
         global LOCALE_DICT
