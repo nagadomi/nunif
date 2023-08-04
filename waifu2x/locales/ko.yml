@@ -20,7 +20,7 @@
 "Confirm": "확인"
 "already exists. Overwrite?": "이미 존재합니다. 덮어쓰시겠습니까?"
 
-"Superresolution": "초해상도"
+"Superresolution": "초고해상도"
 "Model": "모델"
 "Anime Style Art, Cliparts": "애니메이션 스타일 아트、클립아트"
 "Manga, Anime Screencaps, Anime Style Art for more clear results": "만화, 애니메이션, 보다 명확한 결과를 위한 애니메이션 스타일 아트"
@@ -29,11 +29,11 @@
 "Old version, Art model, veryfast": "이전 버전, 일러스트 모델, 매우 빠른"
 "Old version, Photo model, veryfast": "이전 버전, 사진 모델, 매우 빠른"
 
-"Video Encoding": "動画圧縮"
+"Video Encoding": "비디오 인코딩"
 
-"Max FPS": "最大フレームレート"
-"Pixel Format": "ピクセルフォーマット"
-"CRF": "CRF(固定品質)"
+"Max FPS": "최대 프레임 속도"
+"Pixel Format": "픽셀 포맷"
+"CRF": "CRF(일정한 품질)"
 "Preset": "プリセット"
 "Tune": "チューニング"
 
