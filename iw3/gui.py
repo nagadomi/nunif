@@ -788,7 +788,11 @@ class MainFrame(wx.Frame):
             self.SetStatusText(f"{0}/{value} {desc}")
         elif type == 1:
             # update
-            self.prg_tqdm.SetValue(self.prg_tqdm.GetValue() + value)
+            if self.prg_tqdm.GetValue() + value <= self.prg_tqdm.GetRange():
+                self.prg_tqdm.SetValue(self.prg_tqdm.GetValue() + value)
+            else:
+                self.prg_tqdm.SetRange(self.prg_tqdm.GetValue() + value)
+                self.prg_tqdm.SetValue(self.prg_tqdm.GetValue() + value)
             now = time()
             pos = self.prg_tqdm.GetValue()
             end_pos = self.prg_tqdm.GetRange()

@@ -274,14 +274,14 @@ def process_video(input_path, output_path,
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
+    # TODO: `total` may be less when start_time is specified
     total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time,
                          container_duration=container_duration)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
+
     for packet in input_container.demux(streams):
         if packet.pts is not None:
-            if start_time is not None and start_time > packet.pts * packet.time_base:
-                continue
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
         if packet.stream.type == "video":
