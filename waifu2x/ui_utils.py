@@ -89,7 +89,8 @@ def process_video(ctx, input_filename, output_path, args):
         return VU.VideoOutputConfig(
             fps=fps,
             pix_fmt=args.pix_fmt,
-            options=options
+            options=options,
+            container_options={"movflags": "+faststart"}
         )
 
     def frame_callback(frame):
