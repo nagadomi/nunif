@@ -384,7 +384,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             options["tune"] = ",".join(tune)
         return VU.VideoOutputConfig(
             fps=fps,
-            options=options
+            options=options,
+            container_options={"movflags": "+faststart"}
         )
 
     minibatch_queue = []

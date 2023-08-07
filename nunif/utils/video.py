@@ -136,10 +136,11 @@ class FixedFPSFilter():
 
 
 class VideoOutputConfig():
-    def __init__(self, pix_fmt="yuv420p", fps=30, options={}):
+    def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={}):
         self.pix_fmt = pix_fmt
         self.fps = fps
         self.options = options
+        self.container_options = container_options
 
 
 def default_config_callback(stream):
@@ -246,7 +247,7 @@ def process_video(input_path, output_path,
         audio_input_stream = input_container.streams.audio[0]
 
     config = config_callback(video_input_stream)
-    output_container = av.open(output_path_tmp, 'w')
+    output_container = av.open(output_path_tmp, 'w', options=config.container_options)
 
     fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
     output_size = test_output_size(frame_callback, video_input_stream, vf)
