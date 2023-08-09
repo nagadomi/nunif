@@ -15,7 +15,7 @@ The images and videos you really wanted to watch in VR can be watched on VR devi
 | ------------------------------------------------------------------------------| ----------------------------------------------------------------------------------------------- 
 | 1. Download the ZIP file and place it anywhere you choose. In this example, choose `Document\software`| https://github.com/nagadomi/nunif/releases/download/0.0.0/nunif-windows.zip
 | 2. Right-click on the downloaded ZIP file to show its file properties.        | ![zip menu](https://github.com/nagadomi/nunif/assets/287255/244b4617-9926-4cf1-941f-dd1d44fe2e28)
-| 3. Check the `Security > Unlock` and click `Apply`.                           | ![unlock zip](https://github.com/nagadomi/nunif/assets/287255/dcace34c-8783-44b8-a3fc-953724d4dceb)
+| 3. Check the `Security > Unblock` and click `Apply`.                           | ![unblock zip](https://github.com/nagadomi/nunif/assets/287255/dcace34c-8783-44b8-a3fc-953724d4dceb)
 | 4. Right-click on the ZIP file and `Extract All`.                             | ![zip_extract](https://github.com/nagadomi/nunif/assets/287255/6c1d167c-8d36-4ba1-aef1-d08b6e153a04)
 | 5. Run `install.bat` found in the extracted files.                            | ![file list](https://github.com/nagadomi/nunif/assets/287255/aa4eeafc-7627-4b6f-9964-bd37bef73652)
 | 6. A black window will appear and installation will be performed.             | ![install cmd](https://github.com/nagadomi/nunif/assets/287255/c919987b-3cbc-4c89-985b-64e4b8506df7)
@@ -60,7 +60,7 @@ Delete the entire folder.
 If the alert is raised by Windows, click on **Details** to display the `Run` button. If you run it once, the alert will not appear the next time.
 
 This alert seems to be displayed for batch files downloaded from the Internet. 
-The zip file security unlock step above is an operation to grant this permission in advance.
+The zip file security unblock step above is an operation to grant this permission in advance.
 
 The batch file is a text file, so you can view its contents in notepad or other editor to verify its safety.
 `update.bat`(`install.bat`) does the following.
