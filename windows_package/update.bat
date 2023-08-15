@@ -114,8 +114,9 @@ exit /b 0
              "Expand-Archive -Force $env:TMP_DIR\python.zip $env:PYTHON_DIR"
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
-  @rem delete pth file to disable isolated mode
-  del /q %PTH_PATH%
+  @rem setup pth file to work isolated mode
+  echo ..\nunif>> %PTH_PATH%
+  echo import site>> %PTH_PATH%
 
   echo Successfully installed Python
 
