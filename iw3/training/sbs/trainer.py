@@ -11,6 +11,21 @@ from .dataset import SBSDataset
 from ... import models # noqa
 
 
+class SBSEnv(RGBPSNREnv):
+    def __init__(self, model, criterion, sampler):
+        super().__init__(model, criterion)
+        self.sampler = sampler
+
+    def train_loss_hook(self, data, loss):
+        super().train_loss_hook(data, loss)
+        index = data[-1]
+        self.sampler.update_losses(index, loss.item())
+
+    def train_end(self):
+        self.sampler.update_weights()
+        return super().train_end()
+
+
 class SBSTrainer(Trainer):
     def create_model(self):
         kwargs = {}
@@ -23,10 +38,11 @@ class SBSTrainer(Trainer):
         model_offset = get_model_config(self.model, "i2i_offset")
         if type == "train":
             dataset = SBSDataset(path.join(self.args.data_dir, "train"), model_offset, training=True)
+            self.sampler = dataset.create_sampler(self.args.num_samples)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
-                sampler=dataset.create_sampler(self.args.num_samples),
+                sampler=self.sampler,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
@@ -54,7 +70,7 @@ class SBSTrainer(Trainer):
             criterion = ClampLoss(nn.L1Loss()).to(self.device)
         elif self.args.loss == "lbp":
             criterion = YLBP().to(self.device)
-        return RGBPSNREnv(self.model, criterion)
+        return SBSEnv(self.model, criterion, self.sampler)
 
 
 def train(args):
