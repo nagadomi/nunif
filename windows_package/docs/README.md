@@ -57,7 +57,7 @@ Delete the entire folder.
 
 ![smart screen 2](https://github.com/nagadomi/nunif/assets/287255/55fb415e-49c5-440d-977a-a98b2be9e453)
 
-If the alert is raised by Windows, click on **Details** to display the `Run` button. If you run it once, the alert will not appear the next time.
+If the alert is raised by Windows, click on **More Info** to display the `Run` button. If you run it once, the alert will not appear the next time.
 
 This alert seems to be displayed for batch files downloaded from the Internet. 
 The zip file security unblock step above is an operation to grant this permission in advance.
