@@ -22,6 +22,8 @@ class RowFlow(I2IBaseModel):
             nn.ReLU(inplace=True),
             nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
         )
+        self.register_buffer("delta_scale", torch.tensor(1.0 / 127.0))
+
         for m in self.modules():
             if isinstance(m, (nn.Conv2d,)):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -32,8 +34,7 @@ class RowFlow(I2IBaseModel):
         rgb = x[:, 0:3, :, ]
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
-
-        delta = self.conv(x)
+        delta = self.conv(x) * self.delta_scale
         grid = grid + torch.cat([delta, torch.zeros_like(delta)], dim=1)
         grid = grid.permute(0, 2, 3, 1)
         z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)

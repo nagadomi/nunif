@@ -5,6 +5,7 @@ from torchvision.transforms import (
 )
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils import pil_io
+from nunif.training.sampler import HardExampleSampler, MiningMethod
 from os import path
 import random
 from PIL import Image
@@ -46,10 +47,13 @@ class SBSDataset(Dataset):
         pass
 
     def create_sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
+        return HardExampleSampler(
+            torch.ones((len(self),), dtype=torch.double),
             num_samples=num_samples,
-            replacement=True)
+            method=MiningMethod.LINEAR,
+            history_size=4,
+            scale_factor=4.,
+        )
 
     def __len__(self):
         return len(self.files)
@@ -81,4 +85,4 @@ class SBSDataset(Dataset):
                                  im_side.height - self.model_offset * 2,
                                  im_side.width - self.model_offset * 2))
 
-        return x, y
+        return x, y, index
