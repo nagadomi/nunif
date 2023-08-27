@@ -2,13 +2,15 @@
 ignore = E501 W504 E731
 max_line_length = 128
 exclude =
-        .env/
-        .venv/
-        env/
-        venv/
-        ENV/
+        .env*/
+        .venv*/
+        env*/
+        venv*/
+        ENV*/
         tmp/
         data/
         models/
-        font_resource/fonts
+        font_resource/fonts/
         font_resource/font_map.py
+        iw3/pretrained_models/
+        text_resource/aozora/data/
