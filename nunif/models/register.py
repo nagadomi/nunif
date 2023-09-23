@@ -19,6 +19,12 @@ def register_model(cls):
     return cls
 
 
+def register_model_builder(name, func):
+    global _models
+    _models[name] = func
+    logger.debug("register %s -> %s()", name, func.__name__)
+
+
 def data_parallel_model(model, device_ids):
     if len(device_ids) > 1 and not isinstance(model, nn.DataParallel):
         name = model.name
