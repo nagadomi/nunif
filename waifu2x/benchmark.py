@@ -143,6 +143,8 @@ def parse_args():
                         help="TTA mode (aka geometric self-ensemble)")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
+    parser.add_argument("--compile", action="store_true",
+                        help="Use torch.compile if possible")
     args = parser.parse_args()
     logger.debug(vars(args))
 
@@ -157,7 +159,8 @@ def main():
     model_method = args.model_method if args.model_method is not None else args.method
 
     ctx.load_model(model_method, args.noise_level)
-    ctx.compile()
+    if args.compile:
+        ctx.compile()
 
     if path.isdir(args.input):
         files = ImageLoader.listdir(args.input)
