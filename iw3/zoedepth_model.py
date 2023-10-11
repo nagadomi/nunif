@@ -61,8 +61,10 @@ def _forward(model, x, enable_amp):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False, output_device="cpu"):
+def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
+                output_device="cpu", device=None):
     # _patch_resize_debug(model)
+    device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
         assert im.ndim == 3 or im.ndim == 4
@@ -70,10 +72,10 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             im = im.unsqueeze(0)
         else:
             batch = True
-        x = im.to(model.device)
+        x = im.to(device)
     else:
         # PIL
-        x = TF.to_tensor(im).unsqueeze(0).to(model.device)
+        x = TF.to_tensor(im).unsqueeze(0).to(device)
 
     def get_pad(x):
         pad_base_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
