@@ -143,3 +143,15 @@ def mean_state_dict(dicts):
             else:
                 mean[k] += d[k] * scale
     return mean
+
+
+class DataParallelWrapper(nn.DataParallel):
+    # ref: https://discuss.pytorch.org/t/making-a-wrapper-around-nn-dataparallel-to-access-module-attributes-is-safe/79124
+    def __init__(self, module, device_ids=None):
+        super().__init__(module, device_ids=device_ids)
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
