@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast
+from nunif.models import DataParallelWrapper
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -21,6 +22,8 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
                                    pretrained=True, verbose=False, trust_repo=True)
     device = create_device(gpu)
     model = model.to(device).eval()
+    if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
+        model = DataParallelWrapper(model, device_ids=gpu)
     if height is not None:
         model.core.prep.resizer = HeightResizer(height, height)
     else:

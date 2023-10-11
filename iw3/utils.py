@@ -519,7 +519,7 @@ def create_parser(required_true=True):
                         help="input file or directory")
     parser.add_argument("--output", "-o", type=str, required=required_true,
                         help="output file or directory")
-    parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
+    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
@@ -660,7 +660,7 @@ def iw3_main(args):
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
-        side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu])[0].eval()
+        side_model = load_model(FLOW_MODEL_PATH, device_ids=args.gpu)[0].eval()
     else:
         side_model = None
 
