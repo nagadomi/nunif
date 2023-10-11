@@ -598,7 +598,7 @@ def create_parser(required_true=True):
     parser.add_argument("--zoed-height", type=int,
                         help="input height for ZoeDepth model")
     parser.add_argument("--ipd-offset", type=float, default=0,
-                        help="IPD Offset (width scale %). 0-10 is reasonable value for Full SBS")
+                        help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
                         help="use min/max moving average to normalize video depth")
 
