@@ -110,7 +110,9 @@ def call_model_method(model, name, **kwargs):
 def compile_model(model, **kwargs):
     # Windows not yet supported for torch.compile
     if PYTORCH2 and sys.platform == "linux" and not is_compiled_model(model):
-        model = torch.compile(model, **kwargs)
+        # only cuda
+        if get_model_device(model).type == "cuda":
+            model = torch.compile(model, **kwargs)
     return model
 
 
@@ -143,3 +145,15 @@ def mean_state_dict(dicts):
             else:
                 mean[k] += d[k] * scale
     return mean
+
+
+class DataParallelWrapper(nn.DataParallel):
+    # ref: https://discuss.pytorch.org/t/making-a-wrapper-around-nn-dataparallel-to-access-module-attributes-is-safe/79124
+    def __init__(self, module, device_ids=None):
+        super().__init__(module, device_ids=device_ids)
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)

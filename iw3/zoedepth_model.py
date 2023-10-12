@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast
+from nunif.models import DataParallelWrapper
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -21,6 +22,8 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
                                    pretrained=True, verbose=False, trust_repo=True)
     device = create_device(gpu)
     model = model.to(device).eval()
+    if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
+        model = DataParallelWrapper(model, device_ids=gpu)
     if height is not None:
         model.core.prep.resizer = HeightResizer(height, height)
     else:
@@ -58,8 +61,10 @@ def _forward(model, x, enable_amp):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False, output_device="cpu"):
+def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
+                output_device="cpu", device=None):
     # _patch_resize_debug(model)
+    device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
         assert im.ndim == 3 or im.ndim == 4
@@ -67,10 +72,10 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             im = im.unsqueeze(0)
         else:
             batch = True
-        x = im.to(model.device)
+        x = im.to(device)
     else:
         # PIL
-        x = TF.to_tensor(im).unsqueeze(0).to(model.device)
+        x = TF.to_tensor(im).unsqueeze(0).to(device)
 
     def get_pad(x):
         pad_base_h = int((x.shape[2] * 0.5) ** 0.5 * 3)

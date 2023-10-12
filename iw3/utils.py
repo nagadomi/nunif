@@ -14,6 +14,7 @@ from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
+from nunif.device import create_device
 from . import zoedepth_model as ZU
 
 
@@ -276,8 +277,8 @@ def postprocess_image(depth, im_org, args, side_model, ema=False):
         left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
     if args.vr180:
-        left_eye = equirectangular_projection(left_eye, device=depth.device)
-        right_eye = equirectangular_projection(right_eye, device=depth.device)
+        left_eye = equirectangular_projection(left_eye, device=args.state["device"])
+        right_eye = equirectangular_projection(right_eye, device=args.state["device"])
     elif args.half_sbs:
         left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
                              interpolation=InterpolationMode.BICUBIC, antialias=True)
@@ -328,9 +329,10 @@ def process_image(im, args, depth_model, side_model):
         im_org, im = preprocess_image(im, args)
         depth = ZU.batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
                                int16=False, enable_amp=not args.disable_amp,
-                               output_device=depth_model.device)
+                               output_device=args.state["device"],
+                               device=args.state["device"])
         if not args.debug_depth:
-            return postprocess_image(depth, im_org.to(depth_model.device),
+            return postprocess_image(depth, im_org.to(args.state["device"]),
                                      args, side_model)
         else:
             return debug_depth_image(depth, args)
@@ -409,8 +411,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         x = torch.cat(xs, dim=0)
         depths = ZU.batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
                                 int16=False, enable_amp=not args.disable_amp,
-                                output_device=depth_model.device)
-        return [VU.from_image(postprocess(depth, x_org.to(depth_model.device),
+                                output_device=args.state["device"],
+                                device=args.state["device"])
+        return [VU.from_image(postprocess(depth, x_org.to(args.state["device"]),
                                           args, side_model, ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
 
@@ -519,7 +522,7 @@ def create_parser(required_true=True):
                         help="input file or directory")
     parser.add_argument("--output", "-o", type=str, required=required_true,
                         help="output file or directory")
-    parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
+    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
@@ -598,7 +601,7 @@ def create_parser(required_true=True):
     parser.add_argument("--zoed-height", type=int,
                         help="input height for ZoeDepth model")
     parser.add_argument("--ipd-offset", type=float, default=0,
-                        help="IPD Offset (width scale %). 0-10 is reasonable value for Full SBS")
+                        help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
                         help="use min/max moving average to normalize video depth")
 
@@ -630,7 +633,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
         "stop_event": stop_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
-        "ema": EMAMinMax()
+        "ema": EMAMinMax(),
+        "device": create_device(args.gpu),
     }
     return args
 
@@ -660,7 +664,7 @@ def iw3_main(args):
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
-        side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu])[0].eval()
+        side_model = load_model(FLOW_MODEL_PATH, device_ids=args.gpu)[0].eval()
     else:
         side_model = None
 

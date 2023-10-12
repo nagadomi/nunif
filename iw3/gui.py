@@ -342,6 +342,8 @@ class MainFrame(wx.Frame):
             for i in range(torch.cuda.device_count()):
                 device_name = torch.cuda.get_device_properties(i).name
                 self.cbo_device.Append(device_name, i)
+            if torch.cuda.device_count() > 0:
+                 self.cbo_device.Append(T("All CUDA Device"), -2)
         elif torch.backends.mps.is_available():
             self.cbo_device.Append("MPS", 0)
         self.cbo_device.Append("CPU", -1)
@@ -658,6 +660,12 @@ class MainFrame(wx.Frame):
         vf = ",".join(vf)
 
         device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        if device_id == -2:
+            # All CUDA
+            device_id = list(range(torch.cuda.device_count()))
+        else:
+            device_id = [device_id]
+
         depth_model_type = self.cbo_depth_model.GetValue()
         zoed_height = self.zoed_resolution[self.cbo_zoed_resolution.GetSelection()]
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
