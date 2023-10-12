@@ -342,9 +342,8 @@ class MainFrame(wx.Frame):
             for i in range(torch.cuda.device_count()):
                 device_name = torch.cuda.get_device_properties(i).name
                 self.cbo_device.Append(device_name, i)
-            # TODO: multi GPU
-            # if torch.cuda.device_count() > 0:
-            #     self.cbo_device.Append(T("All CUDA Device"), -2)
+            if torch.cuda.device_count() > 0:
+                 self.cbo_device.Append(T("All CUDA Device"), -2)
         elif torch.backends.mps.is_available():
             self.cbo_device.Append("MPS", 0)
         self.cbo_device.Append("CPU", -1)
