@@ -664,7 +664,7 @@ def iw3_main(args):
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
-        side_model = load_model(FLOW_MODEL_PATH, device_ids=args.gpu)[0].eval()
+        side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu[0]])[0].eval()
     else:
         side_model = None
 
