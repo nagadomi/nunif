@@ -9,6 +9,11 @@ waifu2x-gui is a super-resolution software. It provides a good-looking upscaling
 iw3-gui is a software to convert images and videos into 3D images and 3D video, for photograph (non-anime).
 The images and videos you really wanted to watch in VR can be watched on VR device as 3D media.
 
+# Prerequisites
+
+- Windows 7 and greater; Windows 10 or greater recommended. Windows Server 2008 r2 and greater
+- Microsoft Visual C++ Redistributable Packages https://aka.ms/vs/16/release/vc_redist.x64.exe
+
 # Download and Install
 
 | Steps                                                                         | Material
