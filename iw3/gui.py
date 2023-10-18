@@ -357,13 +357,13 @@ class MainFrame(wx.Frame):
         self.zoed_resolution = [None, 512]
         self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
         self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
-                                               choices=[str(n) for n in (16, 8, 4, 2, 1)],
+                                               choices=[str(n) for n in (64, 32, 16, 8, 4, 2, 1)],
                                                style=wx.CB_READONLY, name="cbo_zoed_batch_size")
         self.cbo_zoed_batch_size.SetToolTip(T("Video Only"))
         self.cbo_zoed_batch_size.SetSelection(3)
         self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Stereo") + " " + T("Batch Size"))
         self.cbo_batch_size = wx.ComboBox(self.grp_processor,
-                                          choices=[str(n) for n in (64, 32, 16, 8, 4)],
+                                          choices=[str(n) for n in (128, 64, 32, 16, 8, 4)],
                                           style=wx.CB_READONLY, name="cbo_batch_size")
         self.cbo_batch_size.SetSelection(2)
 
