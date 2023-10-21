@@ -159,10 +159,12 @@ def _test():
     # model_type
     for model_type in MODEL_TYPES.keys():
         for method in ("scale2x", "scale4x"):
+            if method == "scale4x" and model_type in NO_4X_MODELS:
+                continue
             # Load a model with fixed method and noise_level
             model = torch.hub.load(
                 ROOT_DIR, "waifu2x", keep_alpha=False,
-                model_type="art", method=method, noise_level=3,
+                model_type=model_type, method=method, noise_level=3,
                 source="local", trust_repo=True)
             model = model.to("cuda")
             out = model.infer(im)
