@@ -19,7 +19,7 @@ result.show() # result is PIL.Image.Image
 
 ## `torch.hub.load("nagadomi/nunif:master", "waifu2x", ...)`
 
-```
+```python
 def waifu2x(model_type="art",
             method=None, noise_level=-1,
             device_ids=[-1], tile_size=256, batch_size=4, keep_alpha=True, amp=True,
@@ -40,7 +40,7 @@ def waifu2x(model_type="art",
 When `method` are not specified(None), models of all `method` and `noise_level` are loaded.
 In this case, you must specify `method` and `noise_level` using `model.set_mode(method, noise_level)` before executing `model.infer()`.
 example,
-```
+```python
 import torch
 from PIL import Image
 import threading
