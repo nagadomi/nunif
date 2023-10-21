@@ -45,6 +45,10 @@ See [waifu2x Web Application](docs/web.md)
 
 See [unlimited:waifu2x](unlimited_waifu2x/README.md)
 
+# Python API (torch.hub)
+
+See [Python API](docs/python_api.md)
+
 # Training
 
 See [waifu2x Model Training](docs/training.md)

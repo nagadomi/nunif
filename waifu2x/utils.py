@@ -72,6 +72,11 @@ class Waifu2x():
                 with autocast(device=self.device, enabled=enable_amp):
                     model(x)
 
+    def to(self, device):
+        self.device = device
+        self._setup()
+        return self
+
     def _setup(self):
         if self.scale_model is not None:
             self.scale_model = self.scale_model.to(self.device).eval()
