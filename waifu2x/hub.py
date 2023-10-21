@@ -102,7 +102,7 @@ class Waifu2xImageModel():
         else:
             rgb = pil_io.to_tensor(pil_image, return_alpha=self.keep_alpha)
             alpha = None
-        return self.infer_tensor(rgb, alpha, tta=False, output_type=output_type)
+        return self.infer_tensor(rgb, alpha, tta=tta, output_type=output_type)
 
     def infer_tensor(self, rgb, alpha=None, tta=False, output_type="pil"):
         if self.method is None:
