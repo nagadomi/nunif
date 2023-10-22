@@ -42,8 +42,12 @@ class IW3App(wx.App):
         main_frame = MainFrame()
         self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
         if self.instance.IsAnotherRunning():
-            wx.MessageBox(T("Another instance is running"), T("Error"), style=wx.ICON_ERROR)
-            return False
+            with wx.MessageDialog(None,
+                                  message=(T("Another instance is running") + "\n"
+                                           + T("Are you sure you want to do this?")),
+                                  caption=T("Confirm"), style=wx.YES_NO) as dlg:
+                if dlg.ShowModal() == wx.ID_NO:
+                    return False
         set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), main_frame.GetTitle())
         self.SetAppName(main_frame.GetTitle())
         main_frame.Show()
