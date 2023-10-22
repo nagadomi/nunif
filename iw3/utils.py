@@ -234,8 +234,10 @@ def preprocess_image(im, args):
     im_org = TF.to_tensor(im)
     if args.bg_session is not None:
         im = remove_bg_from_image(im, args.bg_session)
-
-    return im_org, TF.to_tensor(im)
+        im = TF.to_tensor(im)
+    else:
+        im = im_org
+    return im_org, im
 
 
 def postprocess_image(depth, im_org, args, side_model, ema=False):
@@ -408,12 +410,16 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             x_orgs.append(x_org)
             xs.append(x.unsqueeze(0))
         minibatch_queue.clear()
-        x = torch.cat(xs, dim=0)
+        x = torch.cat(xs, dim=0).to(args.state["device"])
+        if args.bg_session is None:
+            x_orgs = x
+        else:
+            x_orgs = torch.cat(x_orgs, dim=0).to(args.state["device"])
         depths = ZU.batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
                                 int16=False, enable_amp=not args.disable_amp,
                                 output_device=args.state["device"],
                                 device=args.state["device"])
-        return [VU.from_image(postprocess(depth, x_org.to(args.state["device"]),
+        return [VU.from_image(postprocess(depth, x_org,
                                           args, side_model, ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
 
