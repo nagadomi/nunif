@@ -31,30 +31,33 @@ def waifu2x(model_type="art",
 | `model_type` | `art`, `art_scan`, `photo`, see `MODEL_TYPES` in [../hub.py](../hub.py)
 | `method`     | `noise`: 1x denoising, `scale` or `scale2x`: 2x, `scale4x`: 4x.
 | `noise_level`| -1: none, 0-3: denoising level.
-| `device_ids` | When specified, load the model into the specified CUDA device. If you want to use multiple GPUs, specify multiple GPU id. When not specified, the model is loaded into CPU. After loading, it should be loaded into CUDA using `model.to(device)`.
+| `device_ids` | When specified, the model will be loaded into the specified CUDA device. If you want to use multiple GPUs, specify multiple GPU id. When not specified, the model will be loaded into CPU. After loading, it should be loaded into CUDA using `model.to(device)`.
 | `tile_size`    | tile size
 | `batch_size`   | batch size
-| `keep_alpha`   | When `False` is specified, the alpha channel is dropped.
-| `amp`          | When `False` is specified, Performs in FP32 mode. FP16 by defualt.
+| `keep_alpha`   | When `False` is specified, the alpha channel will be dropped.
+| `amp`          | When `False` is specified, performs in FP32 mode. FP16 by defualt.
 
-When `method` are not specified(None), models of all `method` and `noise_level` are loaded.
-In this case, you must specify `method` and `noise_level` using `model.set_mode(method, noise_level)` before executing `model.infer()`.
+When `method` is not specified(None), models of all `method` and `noise_level` will be loaded.
+In this case, you must specify `method` and `noise_level` using `model.set_mode(method, noise_level)` before executing `model.infer()` or specify `method` and `noise_level` argument for `infer()`.
 example,
 ```python
 import torch
 from PIL import Image
 import threading
 
-lock = threading.RLock()
+lock = threading.Lock()
 im = Image.open("input.jpg")
 model = torch.hub.load("nagadomi/nunif:master", "waifu2x",
                        model_type="art_scan", trust_repo=True).to("cuda")
 for noise_level in (-1, 0, 1, 2, 3):
-    with lock: # model.set_mode -> model.infer block is not thread-safe, so lock
+    with lock: # Note model.set_mode -> model.infer block is not thread-safe
         # Select method and noise_level
         model.set_mode("scale", noise_level)
         out = model.infer(im)
     out.save(f"noise_scale_{noise_level}.png")
+    # or specify method and noise_level arguments
+    out = model.infer(im, method="noise", noise_level=noise_level)
+    out.save(f"noise_{noise_level}.png")
 ```
 
 ## `model.convert(input_filepath, output_filepath, tta=False, format="png")`
