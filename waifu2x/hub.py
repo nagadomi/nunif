@@ -87,29 +87,32 @@ class Waifu2xImageModel():
     def cuda(self):
         return self.to("cuda")
 
-    def convert(self, input_filepath, output_filepath, tta=False, format="png"):
+    def convert(self, input_filepath, output_filepath, tta=False, format="png", **kwargs):
         im, meta = pil_io.load_image(input_filepath, keep_alpha=self.keep_alpha)
-        new_im = self.infer_pil(im, tta=tta)
+        new_im = self.infer_pil(im, tta=tta, **kwargs)
         pil_io.save_image(new_im, output_filepath, meta=meta, format=format)
 
-    def infer_file(self, filepath, tta=False, output_type="pil"):
+    def infer_file(self, filepath, tta=False, output_type="pil", **kwargs):
         im, meta = pil_io.load_image(filepath, keep_alpha=self.keep_alpha)
-        return self.infer_pil(im, tta=tta, output_type=output_type)
+        return self.infer_pil(im, tta=tta, output_type=output_type, **kwargs)
 
-    def infer_pil(self, pil_image, tta=False, output_type="pil"):
+    def infer_pil(self, pil_image, tta=False, output_type="pil", **kwargs):
         if self.keep_alpha:
             rgb, alpha = pil_io.to_tensor(pil_image, return_alpha=self.keep_alpha)
         else:
             rgb = pil_io.to_tensor(pil_image, return_alpha=self.keep_alpha)
             alpha = None
-        return self.infer_tensor(rgb, alpha, tta=tta, output_type=output_type)
+        return self.infer_tensor(rgb, alpha, tta=tta, output_type=output_type, **kwargs)
 
-    def infer_tensor(self, rgb, alpha=None, tta=False, output_type="pil"):
-        if self.method is None:
-            raise ValueError("method is None. Call `model.set_mode(method, noise_level)` first")
+    def infer_tensor(self, rgb, alpha=None, tta=False, output_type="pil", **kwargs):
+        method = kwargs.get("method", self.method)
+        noise_level = kwargs.get("noise_level", self.noise_level)
+        if method is None:
+            raise ValueError(("method is None. Call `model.set_mode(method, noise_level)`"
+                              " or use method and noise_level kwargs"))
         with torch.inference_mode():
             rgb, alpha = self.ctx.convert(
-                rgb, alpha, self.method, self.noise_level,
+                rgb, alpha, method, noise_level,
                 tile_size=self.tile_size, batch_size=self.batch_size,
                 tta=tta, enable_amp=self.amp)
         if output_type == "tensor":
@@ -117,13 +120,13 @@ class Waifu2xImageModel():
         else:
             return pil_io.to_image(rgb, alpha)
 
-    def infer(self, x, tta=False, output_type="pil"):
+    def infer(self, x, tta=False, output_type="pil", **kwargs):
         if isinstance(x, str):
-            return self.infer_file(x, tta=tta, output_type=output_type)
+            return self.infer_file(x, tta=tta, output_type=output_type, **kwargs)
         if isinstance(x, PIL.Image.Image):
-            return self.infer_pil(x, tta=tta, output_type=output_type)
+            return self.infer_pil(x, tta=tta, output_type=output_type, **kwargs)
         elif torch.is_tensor(x):
-            return self.infer_tensor(x, tta=tta, output_type=output_type)
+            return self.infer_tensor(x, tta=tta, output_type=output_type, **kwargs)
         else:
             raise ValueError("Unsupported input format")
 
@@ -177,15 +180,13 @@ def _test():
         model_type="art_scan",
         source="local", trust_repo=True).to("cuda")
     for noise_level in (0, 1, 2, 3):
-        with lock: # model.set_mode -> model.infer block is not thread-safe, so lock
+        with lock:  # model.set_mode -> model.infer block is not thread-safe, so lock
             # Select method and noise_level
             model.set_mode("scale", noise_level)
             out = model.infer(im)
         out.save(path.join(args.output, f"noise_scale_{noise_level}.png"))
     for noise_level in (0, 1, 2, 3):
-        with lock:
-            model.set_mode("noise", noise_level)
-            out = model.infer(im)
+        out = model.infer(im, method="noise", noise_level=noise_level)
         out.save(path.join(args.output, f"noise_{noise_level}.png"))
 
 
