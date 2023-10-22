@@ -364,12 +364,12 @@ class MainFrame(wx.Frame):
                                                choices=[str(n) for n in (64, 32, 16, 8, 4, 2, 1)],
                                                style=wx.CB_READONLY, name="cbo_zoed_batch_size")
         self.cbo_zoed_batch_size.SetToolTip(T("Video Only"))
-        self.cbo_zoed_batch_size.SetSelection(3)
+        self.cbo_zoed_batch_size.SetSelection(5)
         self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Stereo") + " " + T("Batch Size"))
         self.cbo_batch_size = wx.ComboBox(self.grp_processor,
                                           choices=[str(n) for n in (128, 64, 32, 16, 8, 4)],
                                           style=wx.CB_READONLY, name="cbo_batch_size")
-        self.cbo_batch_size.SetSelection(2)
+        self.cbo_batch_size.SetSelection(3)
 
         self.chk_low_vram = wx.CheckBox(self.grp_processor, label=T("Low VRAM"), name="chk_low_vram")
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
