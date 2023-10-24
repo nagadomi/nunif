@@ -45,29 +45,14 @@ class Waifu2xImageModel():
 
         self.ctx = Waifu2x(MODEL_TYPES[model_type], device_ids)
         if method is not None:
-            if method == "scale2x":
-                method = "scale"
-            if method == "noise_scale2x":
-                method = "noise_scale"
-            if method == "scale" and noise_level >= 0:
-                method = "noise_scale"
-            if method == "scale4x" and noise_level >= 0:
-                method = "noise_scale4x"
+            method = self.normalize_method(method, noise_level)
             self.ctx.load_model(method, noise_level)
             self.set_mode(method, noise_level)
         else:
             self.ctx.load_model_all(load_4x=(model_type not in NO_4X_MODELS))
 
     def set_mode(self, method, noise_level=-1):
-        if method == "scale2x":
-            method = "scale"
-        if method == "noise_scale2x":
-            method = "noise_scale"
-        if method == "scale" and noise_level >= 0:
-            method = "noise_scale"
-        if method == "scale4x" and noise_level >= 0:
-            method = "noise_scale4x"
-
+        method = self.normalize_method(method, noise_level)
         if self.model_type in NO_4X_MODELS and method in {"scale4x", "noise_scale4x"}:
             raise ValueError(f"method: {self.model_type} does not support {method}")
         if (method in {"noise", "noise_scale4x", "noise_scale", "noise_scale2x"} and
@@ -129,6 +114,20 @@ class Waifu2xImageModel():
             return self.infer_tensor(x, tta=tta, output_type=output_type, **kwargs)
         else:
             raise ValueError("Unsupported input format")
+
+    @staticmethod
+    def normalize_method(method, noise_level):
+        if method is None:
+            return None
+        if method == "scale2x":
+            method = "scale"
+        if method == "noise_scale2x":
+            method = "noise_scale"
+        if method == "scale" and noise_level >= 0:
+            method = "noise_scale"
+        if method == "scale4x" and noise_level >= 0:
+            method = "noise_scale4x"
+        return method
 
 
 def waifu2x(model_type="art",
