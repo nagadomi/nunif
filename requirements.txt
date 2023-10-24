@@ -19,8 +19,8 @@ lpips
 # opencv-python
 packaging
 
-# iww3
+# iw3
 timm>=0.6,<0.7 # 0.6 is required for zoedepth, it does not work in latest version
 numba # only for iww3 sbs training
-av
+av >= 9.0.0
 rembg # for --remove-bg
