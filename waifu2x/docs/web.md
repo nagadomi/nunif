@@ -54,3 +54,22 @@ Run
 ```
 python -m waifu2x.web --enable-recaptcha --config waifu2x/web/config.ini
 ```
+
+## How to publish waifu2x.web instance
+
+#### --bind-addr 0.0.0.0 option
+
+`--bind-addr 0.0.0.0` option will allow requests from all IP addresses.
+```
+python -m waifu2x.web --bind-addr 0.0.0.0 --port 8812
+```
+However, this method is not suitable for large scale access. It is suitable for small-scale public access, such as Local Area Network.
+
+#### nginx reverse proxy
+
+`waifu2x.udp.jp` is deployed using nginx reverse proxy.
+The advantage of this method is that static files can be served directly from `public_html/` file system.
+
+Examples of configuration files can be found in https://github.com/nagadomi/nunif/tree/master/waifu2x/web/appendix .
+
+Also, in most cases, `/recaptcha_state.json` can be a static file. You can reduce the load on your application server if you download `/recaptcha_state.json` and place it in `public_html/`.
