@@ -79,15 +79,12 @@ If you can only choose one software, I would recommend this one.
 
 ### SKYBOX VR Video Player
 
-I like this user interface, but 
+With recent updates(v1.1.5), most features of 3D Full SBS are now working.
+However, the following features have not yet been implemented.
 
-- Loading image files from Samba drive is not supported (from the internal drive is supported)
-- Full SBS videos do not play with the correct aspect ratio (See https://forum.skybox.xyz/d/407-full-sbs-3d )
-- Low FPS videos do not seek correctly (maybe FPS < 15)
-
-Regarding the problem of Full SBS format,
-If the aspect ratio is a typical aspect ratio such as 4:3 or 16:9, you can manually fix it on VR Player.
-Also you can use `--half-sbs` option to output in Half SBS format which works with SKYBOX Player.
+- File naming rule for Full SBS is not supported. You should manually enable `3D Full-SBS Matching` feature for each video/images
+- No ability to navigate prev/next images with joystick
+- Screen height position is not adjustable
 
 ## About file naming rule
 
@@ -192,3 +189,11 @@ If the results are acceptable, process the full video.
 ## Limitation
 
 `--method row_flow`(by default) is currently only supports (`0 <= divergence <= 2.5` and `input width <= 1920`).
+
+
+## About row_flow model and its training
+
+See https://github.com/nagadomi/nunif/issues/60 .
+
+Basically, fine tuning for this model is not necessary.
+Perhaps what is needed is fine tuning for ZoeDepth.
