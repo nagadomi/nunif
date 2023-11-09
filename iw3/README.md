@@ -189,3 +189,11 @@ If the results are acceptable, process the full video.
 ## Limitation
 
 `--method row_flow`(by default) is currently only supports (`0 <= divergence <= 2.5` and `input width <= 1920`).
+
+
+## About row_flow model and its training
+
+See https://github.com/nagadomi/nunif/issues/60 .
+
+Basically, fine tuning for this model is not necessary.
+Perhaps what is needed is fine tuning for ZoeDepth.
