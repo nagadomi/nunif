@@ -117,6 +117,9 @@ class Waifu2xImageModel():
         else:
             raise ValueError("Unsupported input format")
 
+    def __call__(self, x, tta=False, output_type="pil", **kwargs):
+        return self.infer(x, tta=tta, output_type=output_type, **kwargs)
+
     @staticmethod
     def normalize_method(method, noise_level):
         if method is None:
@@ -171,7 +174,7 @@ def _test():
                 model_type=model_type, method=method, noise_level=3,
                 source="local", trust_repo=True)
             model = model.to("cuda")
-            out = model.infer(im)
+            out = model(im)
             out.save(path.join(args.output, f"{model_type.replace('/', '-')}_{method}.png"))
 
     # Load all method and noise_level models
@@ -184,10 +187,10 @@ def _test():
         with lock:  # model.set_mode -> model.infer block is not thread-safe, so lock
             # Select method and noise_level
             model.set_mode("scale", noise_level)
-            out = model.infer(im)
+            out = model(im)
         out.save(path.join(args.output, f"noise_scale_{noise_level}.png"))
     for noise_level in (0, 1, 2, 3):
-        out = model.infer(im, method="noise", noise_level=noise_level)
+        out = model(im, method="noise", noise_level=noise_level)
         out.save(path.join(args.output, f"noise_{noise_level}.png"))
 
 
