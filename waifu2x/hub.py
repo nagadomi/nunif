@@ -74,6 +74,9 @@ class Waifu2xImageModel():
     def cuda(self):
         return self.to("cuda")
 
+    def cpu(self):
+        return self.to("cpu")
+
     def convert(self, input_filepath, output_filepath, tta=False, format="png", **kwargs):
         im, meta = pil_io.load_image(input_filepath, keep_alpha=self.keep_alpha)
         new_im = self.infer_pil(im, tta=tta, **kwargs)
@@ -194,5 +197,34 @@ def _test():
         out.save(path.join(args.output, f"noise_{noise_level}.png"))
 
 
+def _test_device_memory():
+    from time import time
+
+    ROOT_DIR = path.join(path.dirname(__file__), "..")
+    model = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art",
+        source="local", trust_repo=True)
+
+    # load model to gpu memory
+    t = time()
+    model = model.cuda()
+    print("* load", round(time() - t, 4))
+    print(torch.cuda.memory_summary())
+
+    # release gpu memory
+    t = time()
+    model = model.cpu()
+    torch.cuda.empty_cache()
+    print("* release", round(time() - t, 4))
+    print(torch.cuda.memory_summary())
+
+    # reload model to gpu memory
+    t = time()
+    model = model.cuda()
+    print("* reload", round(time() - t, 4))
+    print(torch.cuda.memory_summary())
+
+
 if __name__ == "__main__":
     _test()
+    # _test_device_memory()
