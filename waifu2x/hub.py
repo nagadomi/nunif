@@ -49,6 +49,8 @@ class Waifu2xImageModel():
             self.ctx.load_model(method, noise_level)
             self.set_mode(method, noise_level)
         else:
+            self.method = None
+            self.noise_level = None
             self.ctx.load_model_all(load_4x=(model_type not in NO_4X_MODELS))
 
     def set_mode(self, method, noise_level=-1):
@@ -71,6 +73,9 @@ class Waifu2xImageModel():
 
     def cuda(self):
         return self.to("cuda")
+
+    def cpu(self):
+        return self.to("cpu")
 
     def convert(self, input_filepath, output_filepath, tta=False, format="png", **kwargs):
         im, meta = pil_io.load_image(input_filepath, keep_alpha=self.keep_alpha)
@@ -114,6 +119,9 @@ class Waifu2xImageModel():
             return self.infer_tensor(x, tta=tta, output_type=output_type, **kwargs)
         else:
             raise ValueError("Unsupported input format")
+
+    def __call__(self, x, tta=False, output_type="pil", **kwargs):
+        return self.infer(x, tta=tta, output_type=output_type, **kwargs)
 
     @staticmethod
     def normalize_method(method, noise_level):
@@ -169,7 +177,7 @@ def _test():
                 model_type=model_type, method=method, noise_level=3,
                 source="local", trust_repo=True)
             model = model.to("cuda")
-            out = model.infer(im)
+            out = model(im)
             out.save(path.join(args.output, f"{model_type.replace('/', '-')}_{method}.png"))
 
     # Load all method and noise_level models
@@ -182,12 +190,41 @@ def _test():
         with lock:  # model.set_mode -> model.infer block is not thread-safe, so lock
             # Select method and noise_level
             model.set_mode("scale", noise_level)
-            out = model.infer(im)
+            out = model(im)
         out.save(path.join(args.output, f"noise_scale_{noise_level}.png"))
     for noise_level in (0, 1, 2, 3):
-        out = model.infer(im, method="noise", noise_level=noise_level)
+        out = model(im, method="noise", noise_level=noise_level)
         out.save(path.join(args.output, f"noise_{noise_level}.png"))
+
+
+def _test_device_memory():
+    from time import time
+
+    ROOT_DIR = path.join(path.dirname(__file__), "..")
+    model = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art",
+        source="local", trust_repo=True)
+
+    # load model to gpu memory
+    t = time()
+    model = model.cuda()
+    print("* load", round(time() - t, 4))
+    print(torch.cuda.memory_summary())
+
+    # release gpu memory
+    t = time()
+    model = model.cpu()
+    torch.cuda.empty_cache()
+    print("* release", round(time() - t, 4))
+    print(torch.cuda.memory_summary())
+
+    # reload model to gpu memory
+    t = time()
+    model = model.cuda()
+    print("* reload", round(time() - t, 4))
+    print(torch.cuda.memory_summary())
 
 
 if __name__ == "__main__":
     _test()
+    # _test_device_memory()
