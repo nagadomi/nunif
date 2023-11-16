@@ -49,6 +49,8 @@ class Waifu2xImageModel():
             self.ctx.load_model(method, noise_level)
             self.set_mode(method, noise_level)
         else:
+            self.method = None
+            self.noise_level = None
             self.ctx.load_model_all(load_4x=(model_type not in NO_4X_MODELS))
 
     def set_mode(self, method, noise_level=-1):
