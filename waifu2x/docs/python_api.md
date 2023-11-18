@@ -7,9 +7,12 @@
 ## Overview
 
 ```python
+import torch
+from PIL import Image
+
 model = torch.hub.load("nagadomi/nunif:master", "waifu2x",
                        method="scale", noise_level=3, trust_repo=True).to("cuda")
-input_image = PIL.Image.open("input.jpg")
+input_image = Image.open("input.jpg")
 result = model.infer(input_image)
 result.show() # result is PIL.Image.Image
 ```
@@ -60,6 +63,23 @@ for noise_level in (-1, 0, 1, 2, 3):
     out.save(f"noise_{noise_level}.png")
 ```
 
+### troch.hub.load from local source
+
+Specify `source="local"` option. And specify the nunif directory(this repository) for the first argument.
+```
+model = torch.hub.load("./nunif", "waifu2x",
+                       method="scale", noise_level=3, source="local", trust_repo=True).cuda()
+```
+
+Also you can directly import `waifu2x/hub.py:waifu2x()`.
+```
+import sys
+sys.path.append("./nunif")
+from waifu2x.hub import waifu2x
+
+model = waifu2x(model_type="art").cuda()
+```
+
 ## `model.convert(input_filepath, output_filepath, tta=False, format="png")`
 
 This is the only method that preserves the ICC Profile.
@@ -69,9 +89,15 @@ This is the only method that preserves the ICC Profile.
 `x` can accept the following 3 data types.
 - `PIL.Image.Image`
 - `str`: Handled as a image file path
-- `torch.Tensor`: Handles as float32 CHW RGB image
+- `torch.Tensor`: Handled as a float32 CHW RGB image
 
 When `output_type="tensor"` is specified, returns a tuple of tensor `(rgb, alpha)`.
 
+When specifying x as a tensor, it is safe to convert it to float32 and transfer it to `model.device` in advance.
+The following method works when x in (cuda float32 tensor, cuda float16 tensor, cpu float16 tensor, cuda float32 tensor).
+
+```
+ret = model.infer(x.float().to(model.device))
+```
 
 For more details, see [../hub.py](../hub.py).

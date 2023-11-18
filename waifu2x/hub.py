@@ -77,6 +77,10 @@ class Waifu2xImageModel():
     def cpu(self):
         return self.to("cpu")
 
+    @property
+    def device(self):
+        return self.ctx.device
+
     def convert(self, input_filepath, output_filepath, tta=False, format="png", **kwargs):
         im, meta = pil_io.load_image(input_filepath, keep_alpha=self.keep_alpha)
         new_im = self.infer_pil(im, tta=tta, **kwargs)
@@ -153,7 +157,6 @@ def waifu2x(model_type="art",
 def _test():
     import os
     import argparse
-    from PIL import Image
     import threading
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
@@ -165,7 +168,7 @@ def _test():
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
-    im = Image.open(args.input)
+    im = PIL.Image.open(args.input)
     # model_type
     for model_type in MODEL_TYPES.keys():
         for method in ("scale2x", "scale4x"):
@@ -225,6 +228,34 @@ def _test_device_memory():
     print(torch.cuda.memory_summary())
 
 
+def _test_tensor_input():
+    import argparse
+    import torchvision.transforms.functional as TF
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input file")
+    args = parser.parse_args()
+
+    im = PIL.Image.open(args.input)
+    x = TF.to_tensor(im)
+
+    ROOT_DIR = path.join(path.dirname(__file__), "..")
+    model = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3,
+        source="local", trust_repo=True)
+
+    model = model.cuda()
+    gt = model.infer(x.cuda())
+    for device in ("cpu", "cuda"):
+        model = model.to(device)
+        for tensor in (x.cuda(), x.cpu(), x.half().cuda(), x.half().cpu()):
+            ret = model.infer(tensor.float().to(model.device))
+            mean_diff = (TF.to_tensor(gt) - TF.to_tensor(ret)).abs().mean()
+            print(model.device, tensor.dtype, tensor.device, mean_diff)
+
+
 if __name__ == "__main__":
     _test()
     # _test_device_memory()
+    # _test_tensor_input()
