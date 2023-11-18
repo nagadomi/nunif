@@ -260,7 +260,38 @@ def _test_tensor_input():
             print(model.device, tensor.dtype, tensor.device, mean_diff)
 
 
+def _test_amp():
+    import argparse
+    from time import time
+
+    ROOT_DIR = path.join(path.dirname(__file__), "..")
+    LOOP_N = 10
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input file")
+    args = parser.parse_args()
+    im = PIL.Image.open(args.input)
+
+    model = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3,
+        source="local", trust_repo=True).cuda()
+    t = time()
+    for i in range(LOOP_N):
+        model(im)
+    print("amp = True", round((time() - t) / LOOP_N, 4), "sec / image")
+
+    model = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
+        source="local", trust_repo=True).cuda()
+    t = time()
+    for i in range(LOOP_N):
+        model(im)
+    print("amp = False", round((time() - t) / LOOP_N, 4), "sec / image")
+
+
 if __name__ == "__main__":
     _test()
     # _test_device_memory()
     # _test_tensor_input()
+    # _test_amp()
