@@ -77,6 +77,22 @@ class Waifu2x():
         self._setup()
         return self
 
+    def half(self):
+        if self.scale_model is not None:
+            self.scale_model = self.scale_model.half()
+        if self.scale4x_model is not None:
+            self.scale4x_model = self.scale4x_model.half()
+
+        for i in range(len(self.noise_models)):
+            if self.noise_models[i] is not None:
+                self.noise_models[i] = self.noise_models[i].half()
+
+            if self.noise_scale_models[i] is not None:
+                self.noise_scale_models[i] = self.noise_scale_models[i].half()
+
+            if self.noise_scale4x_models[i] is not None:
+                self.noise_scale4x_models[i] = self.noise_scale4x_models[i].half()
+
     def _setup(self):
         if self.scale_model is not None:
             self.scale_model = self.scale_model.to(self.device).eval()

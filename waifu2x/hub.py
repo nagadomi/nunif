@@ -77,6 +77,10 @@ class Waifu2xImageModel():
     def cpu(self):
         return self.to("cpu")
 
+    def half(self):
+        self.ctx.half()
+        return self
+
     @property
     def device(self):
         return self.ctx.device
@@ -247,7 +251,7 @@ def _test_tensor_input():
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3,
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=True,
         source="local", trust_repo=True)
 
     model = model.cuda()
@@ -259,10 +263,20 @@ def _test_tensor_input():
             mean_diff = (TF.to_tensor(gt) - TF.to_tensor(ret)).abs().mean()
             print(model.device, tensor.dtype, tensor.device, mean_diff)
 
+    model = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
+        source="local", trust_repo=True)
+    model = model.cuda().half()
+    for tensor in (x.cuda(), x.cuda().half()):
+        ret = model.infer(tensor.to(model.device).half())
+        mean_diff = (TF.to_tensor(gt) - TF.to_tensor(ret)).abs().mean()
+        print(model.device, tensor.dtype, tensor.device, mean_diff)
+
 
 def _test_amp():
     import argparse
     from time import time
+    import torchvision.transforms.functional as TF
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
     LOOP_N = 10
@@ -273,21 +287,38 @@ def _test_amp():
     args = parser.parse_args()
     im = PIL.Image.open(args.input)
 
+    # AMP=True
     model = torch.hub.load(
         ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3,
         source="local", trust_repo=True).cuda()
     t = time()
     for i in range(LOOP_N):
-        model(im)
-    print("amp = True", round((time() - t) / LOOP_N, 4), "sec / image")
+        amp_t_im = model(im)
+    print("amp=True", round((time() - t) / LOOP_N, 4), "sec / image")
 
+    # AMP=False
     model = torch.hub.load(
         ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
         source="local", trust_repo=True).cuda()
     t = time()
     for i in range(LOOP_N):
-        model(im)
-    print("amp = False", round((time() - t) / LOOP_N, 4), "sec / image")
+        amp_f_im =model(im)
+    print("amp=False", round((time() - t) / LOOP_N, 4), "sec / image")
+
+    # AMP=False, manual setting float16
+    # NOTE: `torch.set_default_dtype(torch.float16)` does not work when `torch.hub.load`
+    torch.set_default_dtype(torch.float16)
+    model = model.half()
+    t = time()
+    for i in range(LOOP_N):
+        amp_f_half_im = model(im)
+    print("amp=False half()", round((time() - t) / LOOP_N, 4), "sec / image")
+
+    def image_diff(a, b):
+        return (TF.to_tensor(a) - TF.to_tensor(b)).abs().mean()
+
+    print("image_diff(amp=True, amp=False)", image_diff(amp_t_im, amp_f_im))
+    print("image_diff(amp=True, amp=False half())", image_diff(amp_t_im, amp_f_half_im))
 
 
 if __name__ == "__main__":
