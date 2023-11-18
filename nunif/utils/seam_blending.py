@@ -58,10 +58,12 @@ class SeamBlending(torch.nn.Module):
 
         seam_blending = SeamBlending(x.shape, scale=scale,
                                      offset=offset, tile_size=tile_size,
-                                     blend_size=blend_size).to(device)
-        seam_blending.eval()
+                                     blend_size=blend_size).to(device).eval()
+        if x.dtype == torch.float16:
+            seam_blending = seam_blending.half()
+
         minibatch_index = 0
-        minibatch = torch.zeros((batch_size, C, tile_size, tile_size), device=x.device)
+        minibatch = torch.zeros((batch_size, C, tile_size, tile_size), device=x.device, dtype=x.dtype)
         output_indexes = [None] * batch_size
 
         if preprocess_callback is not None:
