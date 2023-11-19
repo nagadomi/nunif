@@ -81,6 +81,14 @@ class Waifu2xImageModel():
         self.ctx.half()
         return self
 
+    def float(self):
+        self.ctx.float()
+        return self
+
+    @property
+    def is_half(self):
+        return self.ctx.is_half
+
     @property
     def device(self):
         return self.ctx.device
@@ -102,8 +110,12 @@ class Waifu2xImageModel():
             alpha = None
 
         rgb = rgb.to(self.device)
+        if self.is_half:
+            rgb = rgb.half()
         if alpha is not None:
             alpha = alpha.to(self.device)
+            if self.is_half:
+                alpha = alpha.half()
 
         return self.infer_tensor(rgb, alpha, tta=tta, output_type=output_type, **kwargs)
 
@@ -307,7 +319,8 @@ def _test_amp():
 
     # AMP=False, manual setting float16
     # NOTE: `torch.set_default_dtype(torch.float16)` does not work when `torch.hub.load`
-    torch.set_default_dtype(torch.float16)
+    if False:
+        torch.set_default_dtype(torch.float16)
     model = model.half()
     t = time()
     for i in range(LOOP_N):
@@ -321,8 +334,33 @@ def _test_amp():
     print("image_diff(amp=True, amp=False half())", image_diff(amp_t_im, amp_f_half_im))
 
 
+def _test_half():
+    import argparse
+    from time import time
+    import torchvision.transforms.functional as TF
+
+    ROOT_DIR = path.join(path.dirname(__file__), "..")
+    LOOP_N = 10
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input file")
+    args = parser.parse_args()
+    im = PIL.Image.open(args.input)
+
+    model = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
+        source="local", trust_repo=True).cuda()
+    ret = model(im)
+
+    model = model.half()
+    ret_half = model(im)
+    print((TF.to_tensor(ret) - TF.to_tensor(ret_half)).abs().mean())
+
+
 if __name__ == "__main__":
-    _test()
+     _test()
     # _test_device_memory()
     # _test_tensor_input()
     # _test_amp()
+    # _test_half()
