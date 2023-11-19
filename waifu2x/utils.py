@@ -78,36 +78,31 @@ class Waifu2x():
         return self
 
     def half(self):
-        if self.scale_model is not None:
-            self.scale_model = self.scale_model.half()
-        if self.scale4x_model is not None:
-            self.scale4x_model = self.scale4x_model.half()
+        self._apply(lambda model: model.half())
+        return self
 
-        for i in range(len(self.noise_models)):
-            if self.noise_models[i] is not None:
-                self.noise_models[i] = self.noise_models[i].half()
-
-            if self.noise_scale_models[i] is not None:
-                self.noise_scale_models[i] = self.noise_scale_models[i].half()
-
-            if self.noise_scale4x_models[i] is not None:
-                self.noise_scale4x_models[i] = self.noise_scale4x_models[i].half()
+    def float(self):
+        self._apply(lambda model: model.float())
+        return self
 
     def _setup(self):
+        self._apply(lambda model: model.to(self.device).eval())
+
+    def _apply(self, func):
         if self.scale_model is not None:
-            self.scale_model = self.scale_model.to(self.device).eval()
+            self.scale_model = func(self.scale_model)
         if self.scale4x_model is not None:
-            self.scale4x_model = self.scale4x_model.to(self.device).eval()
+            self.scale4x_model = func(self.scale4x_model)
 
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
-                self.noise_models[i] = self.noise_models[i].to(self.device).eval()
+                self.noise_models[i] = func(self.noise_models[i])
 
             if self.noise_scale_models[i] is not None:
-                self.noise_scale_models[i] = self.noise_scale_models[i].to(self.device).eval()
+                self.noise_scale_models[i] = func(self.noise_scale_models[i])
 
             if self.noise_scale4x_models[i] is not None:
-                self.noise_scale4x_models[i] = self.noise_scale4x_models[i].to(self.device).eval()
+                self.noise_scale4x_models[i] = func(self.noise_scale4x_models[i])
 
     def load_model_by_name(self, filename):
         with HiddenPrints():

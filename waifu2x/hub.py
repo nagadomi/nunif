@@ -81,6 +81,10 @@ class Waifu2xImageModel():
         self.ctx.half()
         return self
 
+    def float(self):
+        self.ctx.float()
+        return self
+
     @property
     def device(self):
         return self.ctx.device
