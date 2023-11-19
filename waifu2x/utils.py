@@ -36,6 +36,7 @@ class Waifu2x():
         self.gpus = gpus
         self.model_dir = model_dir
         self.alpha_pad = AlphaBorderPadding()
+        self.is_half = False
 
     def compile(self):
         # TODO: If dynamic tracing works well in the future,
@@ -78,10 +79,12 @@ class Waifu2x():
         return self
 
     def half(self):
+        self.is_half = True
         self._apply(lambda model: model.half())
         return self
 
     def float(self):
+        self.is_half = False
         self._apply(lambda model: model.float())
         return self
 
