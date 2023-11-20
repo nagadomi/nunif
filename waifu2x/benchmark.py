@@ -143,6 +143,8 @@ def parse_args():
                         help="TTA mode (aka geometric self-ensemble)")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
+    parser.add_argument("--half", action="store_true",
+                        help="Use float16 model. AMP will be disabled.")
     parser.add_argument("--compile", action="store_true",
                         help="Use torch.compile if possible")
     args = parser.parse_args()
@@ -159,8 +161,12 @@ def main():
     model_method = args.model_method if args.model_method is not None else args.method
 
     ctx.load_model(model_method, args.noise_level)
+    if args.half:
+        ctx.half()
+        args.disable_amp = True
     if args.compile:
         ctx.compile()
+        ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size, enable_amp=not args.disable_amp)
 
     if path.isdir(args.input):
         files = ImageLoader.listdir(args.input)
@@ -182,9 +188,14 @@ def main():
             groundtruth = NF.crop_mod(x, 4)
             x, groundtruth = make_input_waifu2x(groundtruth, args)
             t = time.time()
+            if args.half:
+                x = x.half().to(ctx.device)
             z, _ = ctx.convert(x, None, model_method, args.noise_level,
                                args.tile_size, args.batch_size,
                                tta=args.tta, enable_amp=not args.disable_amp)
+            if z.dtype == torch.float16:
+                z = z.float()
+
             time_sum += time.time() - t
             if args.border > 0:
                 psnr, mse = psnr256(remove_border(groundtruth, args.border),
