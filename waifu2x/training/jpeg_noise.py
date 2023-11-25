@@ -57,7 +57,18 @@ def choose_validation_jpeg_quality(index, style, noise_level):
         subsampling = "4:2:0"
     else:
         subsampling = "4:4:4"
-    return EVAL_QUALITY[style][noise_level], subsampling
+
+    qualities = EVAL_QUALITY[style][noise_level]
+    if noise_level in {2, 3}:
+        if index % 5 == 0:
+            if index % 10 == 0:
+                qualities = EVAL_QUALITY[style][0]
+            else:
+                qualities = EVAL_QUALITY[style][1]
+        if index % 2 == 0:
+            qualities = [qualities[0]]
+
+    return qualities, subsampling
 
 
 def add_jpeg_noise(x, quality, subsampling):
