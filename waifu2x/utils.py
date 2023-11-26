@@ -69,7 +69,7 @@ class Waifu2x():
         for i, model in enumerate(models):
             for j, bs in enumerate(reversed(range(1, batch_size + 1))):
                 x = torch.zeros((bs, 3, tile_size, tile_size),
-                                device=self.device, dtype=torch.float16 if self.half else torch.float32)
+                                device=self.device, dtype=torch.float16 if self.is_half else torch.float32)
                 logger.debug(f"warmup {i * batch_size + j + 1}/{len(models) * batch_size}: {x.shape}")
                 with autocast(device=self.device, enabled=enable_amp):
                     model(x)
