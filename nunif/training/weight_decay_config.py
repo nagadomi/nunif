@@ -63,6 +63,15 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
             elif m.__class__.__name__ in {"ParametrizedConv2d", "ParametrizedLinear",
                                           "ParametrizedConvTranspose2d"}:
                 no_decay.add(fpn)
+            elif hasattr(m, "weight_decay_config"):
+                ret = m.weight_decay_config(pn)
+                if ret is None:
+                    pass
+                else:
+                    if ret:
+                        decay.add(fpn)
+                    else:
+                        no_decay.add(fpn)
             else:
                 pass
 
