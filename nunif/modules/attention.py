@@ -23,6 +23,20 @@ class SEBlock(nn.Module):
         return x * z.expand(x.shape)
 
 
+class SEBlockNHWC(nn.Module):
+    def __init__(self, in_channels, reduction=8, bias=False):
+        super().__init__()
+        self.lin1 = nn.Linear(in_channels, in_channels // reduction, bias=bias)
+        self.lin2 = nn.Linear(in_channels // reduction, in_channels, bias=bias)
+
+    def forward(self, x):
+        B, H, W, C = x.size()
+        z = x.mean(dim=[1, 2], keepdim=True)
+        z = F.relu(self.lin1(z), inplace=True)
+        z = torch.sigmoid(self.lin2(z))
+        return x * z
+
+
 class SNSEBlock(nn.Module):
     def __init__(self, in_channels, reduction=8, bias=True):
         super().__init__()
