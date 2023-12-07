@@ -71,16 +71,6 @@ def load_model(model_path, model=None, device_ids=None,
     return model, data
 
 
-def get_model_config(model, key=None):
-    if isinstance(model, nn.DataParallel):
-        model = model.module
-    config = model.get_config()
-    if key is None:
-        return config
-    else:
-        return config[key]
-
-
 def get_model_kwargs(model, key=None):
     if isinstance(model, nn.DataParallel):
         model = model.module

@@ -23,9 +23,6 @@ class Model(nn.Module):
     def get_kwargs(self):
         return self.kwargs
 
-    def get_config(self):
-        return {}
-
     def __repr__(self):
         return (f"name: {self.name}\nkwargs: {self.kwargs}\n" +
                 super(Model, self).__repr__())
@@ -54,17 +51,6 @@ class I2IBaseModel(Model):
         self.i2i_in_size = in_size
         self.i2i_blend_size = blend_size
 
-    def get_config(self):
-        config = dict(super().get_config())
-        config.update({
-            "i2i_scale": self.i2i_scale,
-            "i2i_offset": self.i2i_offset,
-            "i2i_in_channels": self.i2i_in_channels,
-            "i2i_in_size": self.i2i_in_size,
-            "i2i_blend_size": self.i2i_blend_size,
-        })
-        return config
-
     def export_onnx(self, f, **kwargs):
         x = torch.rand([1, self.i2i_in_channels, 256, 256], dtype=torch.float32)
         model = self.to_inference_model()
@@ -86,10 +72,3 @@ class SoftmaxBaseModel(Model):
     def __init__(self, kwargs, class_names):
         super().__init__(kwargs)
         self.softmax_class_names = class_names
-
-    def get_config(self):
-        config = dict(super().get_config())
-        config.update({
-            "softmax_class_names": self.softmax_class_names
-        })
-        return config

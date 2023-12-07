@@ -6,7 +6,7 @@ from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
 from nunif.utils.alpha import AlphaBorderPadding
 from nunif.models import (
-    load_model, get_model_config,
+    load_model,
     data_parallel_model,
     compile_model, is_compiled_model,
 )
@@ -234,15 +234,15 @@ class Waifu2x():
 
     def _model_offset(self, method, noise_level):
         if method == "scale":
-            return get_model_config(self.scale_model, "i2i_offset")
+            return self.scale_model.i2i_offset
         elif method == "scale4x":
-            return get_model_config(self.scale4x_model, "i2i_offset")
+            return self.scale4x_model.i2i_offset
         elif method == "noise":
-            return get_model_config(self.noise_models[noise_level], "i2i_offset")
+            return self.noise_models[noise_level].i2i_offset
         elif method == "noise_scale":
-            return get_model_config(self.noise_scale_models[noise_level], "i2i_offset")
+            return self.noise_scale_models[noise_level].i2i_offset
         elif method == "noise_scale4x":
-            return get_model_config(self.noise_scale4x_models[noise_level], "i2i_offset")
+            return self.noise_scale4x_models[noise_level].i2i_offset
 
     def convert(self, x, alpha, method, noise_level,
                 tile_size=256, batch_size=4,

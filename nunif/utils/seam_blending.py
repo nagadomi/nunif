@@ -1,7 +1,7 @@
 import math
 import torch
 import torch.nn.functional as F
-from .. models import get_model_config, get_model_device
+from .. models import get_model_device
 from .. device import autocast
 
 
@@ -49,9 +49,9 @@ class SeamBlending(torch.nn.Module):
                      config_callback=None, preprocess_callback=None, input_callback=None):
         assert not torch.is_grad_enabled()
         C, H, W = x.shape if config_callback is None else config_callback(x)
-        scale = get_model_config(model, "i2i_scale")
-        offset = get_model_config(model, "i2i_offset")
-        blend_size = get_model_config(model, "i2i_blend_size")
+        scale = model.i2i_scale
+        offset = model.i2i_offset
+        blend_size = model.i2i_blend_size
         if blend_size is None:
             blend_size = 0
         device = get_model_device(model)

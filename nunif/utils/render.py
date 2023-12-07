@@ -1,6 +1,6 @@
 import math
 import torch.nn.functional as F
-from .. models import get_model_config, get_model_device
+from .. models import get_model_device
 from .. device import autocast
 from .seam_blending import SeamBlending
 
@@ -12,9 +12,9 @@ def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=False):
 
 
 def simple_render(x, model, enable_amp=False, offset=None):
-    scale = get_model_config(model, "i2i_scale")
+    scale = model.i2i_scale
     if offset is None:
-        offset = get_model_config(model, "i2i_offset")
+        offset = model.i2i_offset
     device = get_model_device(model)
     minibatch = True
     if x.dim() == 3:

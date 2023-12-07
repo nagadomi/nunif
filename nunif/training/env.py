@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from . confusion_matrix import SoftmaxConfusionMatrix
-from .. models.utils import get_model_config, get_model_device
+from .. models.utils import get_model_device
 from .. modules import ClampLoss, LuminanceWeightedLoss, LuminancePSNR, PSNR
 from .. device import autocast
 from abc import ABC, abstractmethod
@@ -165,7 +165,7 @@ class SoftmaxEnv(BaseEnv):
         self.criterion = criterion
         if self.criterion is None:
             self.criterion = nn.NLLLoss().to(self.device)
-        self.class_names = get_model_config(model, "softmax_class_names")
+        self.class_names = model.softmax_class_names
         self.confusion_matrix = SoftmaxConfusionMatrix(self.class_names, max_print_class=max_print_class)
 
     def train_begin(self):
