@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.nn.parallel import gather, replicate, parallel_apply
 from torch.nn.parallel.scatter_gather import scatter_kwargs
 
@@ -28,6 +29,18 @@ class DataParallelInference():
         replicas = self.replicas[:len(inputs)]
         outputs = parallel_apply(replicas, inputs, module_kwargs, used_device_ids)
         return gather(outputs, self.output_device, self.dim)
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+
+class DataParallelWrapper(nn.DataParallel):
+    # ref: https://discuss.pytorch.org/t/making-a-wrapper-around-nn-dataparallel-to-access-module-attributes-is-safe/79124
+    def __init__(self, module, device_ids=None):
+        super().__init__(module, device_ids=device_ids)
 
     def __getattr__(self, name):
         try:
