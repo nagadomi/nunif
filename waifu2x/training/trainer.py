@@ -9,7 +9,7 @@ from nunif.training.sampler import MiningMethod
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import (
-    create_model, get_model_config, call_model_method,
+    create_model, get_model_config,
     load_model, save_model,
     get_model_names
 )
@@ -398,7 +398,7 @@ class Waifu2xTrainer(Trainer):
             _ = self.discriminator(y, y, scale_factor)
 
         if self.args.freeze and hasattr(self.model, "freeze"):
-            call_model_method(self.model, "freeze")
+            self.model.freeze()
             logger.debug("call model.freeze()")
 
     def create_model(self):

@@ -7,7 +7,7 @@ from nunif.utils.render import tiled_render
 from nunif.utils.alpha import AlphaBorderPadding
 from nunif.models import (
     load_model, get_model_config,
-    data_parallel_model, call_model_method,
+    data_parallel_model,
     compile_model, is_compiled_model,
 )
 from nunif.device import create_device, autocast
@@ -133,8 +133,7 @@ class Waifu2x():
             else:
                 if self.scale4x_model is None:
                     self._load_model("scale4x", noise_level)
-                self.scale_model = data_parallel_model(call_model_method(self.scale4x_model, "to_2x"),
-                                                       device_ids=self.gpus)
+                self.scale_model = data_parallel_model(self.scale4x_model.to_2x(), device_ids=self.gpus)
         elif method == "noise_scale4x":
             if self.noise_scale4x_models[noise_level] is not None:
                 return
@@ -152,7 +151,7 @@ class Waifu2x():
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)
                 self.noise_scale_models[noise_level] = data_parallel_model(
-                    call_model_method(self.noise_scale4x_models[noise_level], "to_2x"),
+                    self.noise_scale4x_models[noise_level].to_2x(),
                     device_ids=self.gpus)
         elif method == "noise":
             if self.noise_models[noise_level] is not None:
@@ -163,7 +162,7 @@ class Waifu2x():
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)
                 self.noise_models[noise_level] = data_parallel_model(
-                    call_model_method(self.noise_scale4x_models[noise_level], "to_1x"),
+                    self.noise_scale4x_models[noise_level].to_1x(),
                     device_ids=self.gpus)
         else:
             raise ValueError(method)
