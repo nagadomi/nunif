@@ -2,7 +2,7 @@ from os import path
 import argparse
 import torch
 import torch.nn as nn
-from nunif.models import create_model, get_model_config
+from nunif.models import create_model
 from nunif.training.env import RGBPSNREnv
 from nunif.training.trainer import Trainer
 from nunif.modules.lbp_loss import YLBP
@@ -35,7 +35,7 @@ class SBSTrainer(Trainer):
 
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
-        model_offset = get_model_config(self.model, "i2i_offset")
+        model_offset = self.model.i2i_offset
         if type == "train":
             dataset = SBSDataset(path.join(self.args.data_dir, "train"), model_offset, training=True)
             self.sampler = dataset.create_sampler(self.args.num_samples)

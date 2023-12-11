@@ -3,6 +3,7 @@ from torch import nn
 from . model import Model
 from .. logger import logger
 from .. device import create_device
+from . data_parallel import DataParallelWrapper
 
 
 _models = {}
@@ -27,11 +28,7 @@ def register_model_builder(name, func):
 
 def data_parallel_model(model, device_ids):
     if len(device_ids) > 1 and not isinstance(model, nn.DataParallel):
-        name = model.name
-        model = nn.DataParallel(model, device_ids=device_ids)
-        # Set model name
-        # TODO: this is a bad practice.
-        setattr(model, "name", name)
+        model = DataParallelWrapper(model, device_ids=device_ids)
         return model
     else:
         return model

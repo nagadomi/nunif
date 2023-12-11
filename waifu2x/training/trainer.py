@@ -9,7 +9,7 @@ from nunif.training.sampler import MiningMethod
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import (
-    create_model, get_model_config, call_model_method,
+    create_model,
     load_model, save_model,
     get_model_names
 )
@@ -152,7 +152,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.sampler.update_losses(index, recon_loss.item())
 
     def get_scale_factor(self):
-        scale_factor = get_model_config(self.model, "i2i_scale")
+        scale_factor = self.model.i2i_scale
         return scale_factor
 
     def calc_discriminator_skip_prob(self, d_loss):
@@ -367,8 +367,7 @@ class Waifu2xTrainer(Trainer):
     def create_env(self):
         criterion = create_criterion(self.args.loss).to(self.device)
         if self.discriminator is not None:
-            conf = get_model_config(self.discriminator)
-            loss_weights = conf.get("loss_weights", (1.0,))
+            loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
             discriminator_criterion = DiscriminatorHingeLoss(loss_weights=loss_weights).to(self.device)
         else:
             discriminator_criterion = None
@@ -391,14 +390,14 @@ class Waifu2xTrainer(Trainer):
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
         if self.discriminator is not None:
             # initialize lazy modules
-            model_offset = get_model_config(self.model, "i2i_offset")
-            scale_factor = get_model_config(self.model, "i2i_scale")
+            model_offset = self.model.i2i_offset
+            scale_factor = self.model.i2i_scale
             output_size = self.args.size * scale_factor - model_offset * 2
             y = torch.zeros((1, 3, output_size, output_size)).to(self.device)
             _ = self.discriminator(y, y, scale_factor)
 
         if self.args.freeze and hasattr(self.model, "freeze"):
-            call_model_method(self.model, "freeze")
+            self.model.freeze()
             logger.debug("call model.freeze()")
 
     def create_model(self):
@@ -423,7 +422,7 @@ class Waifu2xTrainer(Trainer):
 
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
-        model_offset = get_model_config(self.model, "i2i_offset")
+        model_offset = self.model.i2i_offset
         if self.args.method in {"scale", "noise_scale"}:
             scale_factor = 2
         elif self.args.method in {"scale4x", "noise_scale4x"}:

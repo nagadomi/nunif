@@ -6,13 +6,24 @@ import mimetypes
 
 
 class HiddenPrints:
+    def __init__(self):
+        debug = os.getenv("DEBUG")
+        if debug is not None and debug.isdigit():
+            self.debug = int(debug)
+        else:
+            self.debug = 0
+
     def __enter__(self):
+        if self.debug:
+            return
         self._original_stdout = sys.stdout
         self._original_stderr = sys.stderr
         sys.stdout = open(os.devnull, 'w')
         sys.stderr = open(os.devnull, 'w')
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.debug:
+            return
         sys.stdout.close()
         sys.stderr.close()
         sys.stdout = self._original_stdout
