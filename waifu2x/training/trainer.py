@@ -22,6 +22,7 @@ from nunif.modules import (
     MultiscaleLoss,
 )
 from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
+from nunif.modules.fft_loss import L1FFTLoss, MultiscaleL1FFTLoss
 from nunif.logger import logger
 import random
 
@@ -82,6 +83,10 @@ def create_criterion(loss):
         criterion = L1LBP(kernel_size=5, weight=0.4)
     elif loss == "rgb_l1lbp":
         criterion = L1LBP(kernel_size=3, weight=0.4)
+    elif loss == "l1fft":
+        criterion = L1FFTLoss()
+    elif loss == "l1fftm":
+        criterion = MultiscaleL1FFTLoss()
     else:
         raise NotImplementedError(loss)
 
@@ -615,7 +620,8 @@ def register(subparsers, default_parser):
                                  "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
-                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp"],
+                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp",
+                                 "l1fft", "l1fftm"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")
