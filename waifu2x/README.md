@@ -6,6 +6,8 @@ waifu2x: Image Super-Resolution for Anime-Style Art. Also it supports photo mode
 
 ## Setup
 
+First see the [installation section](../README.md#install).
+
 Download pre-trained models.
 ```
 python -m waifu2x.download_models

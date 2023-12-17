@@ -15,6 +15,8 @@ This project is under construction.
 
 ## Usage
 
+First see the [installation section](../README.md#install).
+
 ### GUI
 
 Run `iw3.gui` module from the root directory of nunif.
