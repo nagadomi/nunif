@@ -211,11 +211,11 @@ def sharpen_noise_all(x, strength=0.1):
 
 
 class RandomJPEGNoiseX():
-    def __init__(self, style, noise_level, random_crop=False):
+    def __init__(self, style, noise_level, random_crop_p=0.):
         assert noise_level in {0, 1, 2, 3} and style in {"art", "photo"}
         self.noise_level = noise_level
         self.style = style
-        self.random_crop = random_crop
+        self.random_crop_p = random_crop_p
 
     def __call__(self, x, y):
         original_x = x
@@ -259,10 +259,6 @@ class RandomJPEGNoiseX():
         y_scale = y.size[0] / x.size[0]
         assert y_scale in {1, 2, 4}
         y_scale = int(y_scale)
-        if self.random_crop and len(qualities) > 1:
-            random_crop = True
-        else:
-            random_crop = False
 
         for i, quality in enumerate(qualities):
             x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
@@ -271,7 +267,7 @@ class RandomJPEGNoiseX():
                     x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2))
                 else:
                     x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.3))
-            if random_crop and i != len(qualities) - 1:
+            if (len(qualities) > 1 and i != len(qualities) - 1) and random.uniform(0, 1) < self.random_crop_p:
                 x, y = shift_jpeg_block(x, y)
         return x, y
 

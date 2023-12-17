@@ -192,7 +192,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         self.noise_level = noise_level
         if self.training:
             if noise_level >= 0:
-                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop=True)
+                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop_p=0.07)
             else:
                 jpeg_transform = TP.Identity()
 
@@ -284,7 +284,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             self.transforms_nearest = TP.Compose([
                 downscale_x_nearest,
             ])
-            self.x_jpeg_shift = [0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7]
+            self.x_jpeg_shift = [1, 2, 3, 4, 5, 6, 7] + [0] * (100 - 7)
             self.center_crop = TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset)
 
     def __getitem__(self, index):
