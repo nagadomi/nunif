@@ -8,19 +8,23 @@ from . multiscale_loss import MultiscaleLoss
 # https://arxiv.org/abs/2108.05054
 
 
+fp16_max_value = torch.finfo(torch.float16).max - 1
+
+
 def fft_loss(input, target, norm="backward"):
     if input.dtype == torch.float16:
         input = torch.fft.fft2(input.to(torch.float32), norm=norm, dim=(-2, -1))
         target = torch.fft.fft2(target.to(torch.float32), norm=norm, dim=(-2, -1))
-        input = torch.stack([input.real, input.imag], dim=-1).to(torch.float16)
-        target = torch.stack([target.real, target.imag], dim=-1).to(torch.float16)
+        input = torch.stack([input.real, input.imag], dim=-1)
+        target = torch.stack([target.real, target.imag], dim=-1)
+        loss = torch.clamp(F.l1_loss(input, target), -fp16_max_value, fp16_max_value).to(torch.float16)
     else:
         input = torch.fft.fft2(input, norm=norm, dim=(-2, -1))
         target = torch.fft.fft2(target, norm=norm, dim=(-2, -1))
         input = torch.stack([input.real, input.imag], dim=-1)
         target = torch.stack([target.real, target.imag], dim=-1)
-
-    return F.l1_loss(input, target)
+        loss = F.l1_loss(input, target)
+    return loss
 
 
 class FFTLoss(nn.Module):
