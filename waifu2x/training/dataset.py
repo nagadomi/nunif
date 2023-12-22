@@ -64,8 +64,6 @@ def pil_resize(im, size, filter_type):
         resample = Resampling.BOX
     elif filter_type == "catrom":
         resample = Resampling.BICUBIC
-    elif filter_type == "catrom":
-        resample = Resampling.BICUBIC
     elif filter_type in {"sinc", "lanczos"}:
         resample = Resampling.LANCZOS
     elif filter_type == "triangle":
