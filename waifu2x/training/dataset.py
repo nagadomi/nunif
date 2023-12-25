@@ -46,8 +46,8 @@ def _resize(im, size, filter_type, blur):
         raise ValueError(filter_type)
 
 
-def resize(im, size, filter_type, blur, enable_step=False):
-    if enable_step and filter_type != INTERPOLATION_NEAREST and random.uniform(0, 1) < 0.1:
+def resize(im, size, filter_type, blur, enable_step=False, step_p=0.):
+    if enable_step and filter_type != INTERPOLATION_NEAREST and step_p > 0 and random.uniform(0, 1) < step_p:
         h, w = im.shape[1:]
         scale = h / size[0]
         step1_scale = random.uniform(1, scale)
@@ -75,13 +75,16 @@ def pil_resize(im, size, filter_type):
 
 
 class RandomDownscaleX():
-    def __init__(self, scale_factor, blur_shift=0, resize_blur_p=0.1, interpolation=None, training=True):
+    def __init__(self, scale_factor,
+                 blur_shift=0, resize_blur_p=0.1, resize_step_p=0,
+                 interpolation=None, training=True):
         assert scale_factor in {2, 4, 8}
         self.interpolation = interpolation
         self.scale_factor = scale_factor
         self.blur_shift = blur_shift
         self.training = training
         self.resize_blur_p = resize_blur_p
+        self.resize_step_p = resize_step_p
 
     def __call__(self, x, y):
         w, h = x.size
@@ -103,7 +106,9 @@ class RandomDownscaleX():
             else:
                 blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                       filter_type=interpolation, blur=blur, enable_step=self.training or fixed_interpolation)
+                       filter_type=interpolation, blur=blur,
+                       enable_step=self.training or fixed_interpolation,
+                       step_p=self.resize_step_p)
             x = pil_io.to_image(x)
         elif self.scale_factor == 8:
             # wand 8x downscale is very slow for some reason
@@ -177,7 +182,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
                  da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
-                 deblur=0, resize_blur_p=0.1,
+                 deblur=0, resize_blur_p=0.1, resize_step_p=0,
                  noise_level=-1, style=None,
                  training=True):
         assert scale_factor in {1, 2, 4, 8}
@@ -222,7 +227,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                     interpolation = None  # random
                 random_downscale_x = RandomDownscaleX(scale_factor=scale_factor,
                                                       interpolation=interpolation,
-                                                      blur_shift=deblur, resize_blur_p=resize_blur_p)
+                                                      blur_shift=deblur, resize_blur_p=resize_blur_p,
+                                                      resize_step_p=resize_step_p)
                 random_downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
                                                               interpolation=INTERPOLATION_NEAREST)
             else:
