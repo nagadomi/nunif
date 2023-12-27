@@ -105,27 +105,29 @@ class Trainer(ABC):
 
     def fit(self):
         self.initialize()
-        for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
-            print("-" * 64)
-            print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
-            print("--\n train")
-            self.env.train(
-                loader=self.train_loader,
-                optimizers=self.optimizers,
-                schedulers=self.schedulers,
-                grad_scaler=self.grad_scaler,
-                backward_step=self.args.backward_step,
-            )
-            print("--\n eval")
-            loss = self.env.eval(self.eval_loader)
-            if loss is None:
-                self.save_best_model()
-            elif loss < self.best_loss:
-                print("* best model updated")
-                self.best_loss = loss
-                self.save_best_model()
-            self.save_checkpoint()
-        self.shutdown()
+        try:
+            for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
+                print("-" * 64)
+                print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
+                print("--\n train")
+                self.env.train(
+                    loader=self.train_loader,
+                    optimizers=self.optimizers,
+                    schedulers=self.schedulers,
+                    grad_scaler=self.grad_scaler,
+                    backward_step=self.args.backward_step,
+                )
+                print("--\n eval")
+                loss = self.env.eval(self.eval_loader)
+                if loss is None:
+                    self.save_best_model()
+                elif loss < self.best_loss:
+                    print("* best model updated")
+                    self.best_loss = loss
+                    self.save_best_model()
+                self.save_checkpoint()
+        finally:
+            self.shutdown()
 
     def create_model(self):
         return create_model(self.args.arch, device_ids=self.args.gpu)
