@@ -1,4 +1,3 @@
-import sys
 from os import path
 import argparse
 import random
@@ -13,10 +12,9 @@ from torchvision.transforms import (
 )
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils import pil_io
-from nunif.models import create_model as nunif_create_model
 from nunif.modules import ClampLoss
 from nunif.transforms.std import add_jpeg_noise, RandomFlip
-from nunif.training.env import BaseEnv
+from nunif.training.env import RegressionEnv
 from nunif.training.trainer import Trainer
 from waifu2x.training.photo_noise import gaussian_noise_variants, grain_noise1, grain_noise2, structured_noise
 
@@ -155,54 +153,7 @@ class GrainNoiseDataset(Dataset):
             return self.get_item_eval(x, index)
 
 
-class GrainNoiseEnv(BaseEnv):
-    def __init__(self, model, criterion, device):
-        super().__init__()
-        self.model = model
-        self.device = torch.device(device)
-        self.criterion = criterion
-
-    def clear_loss(self):
-        self.sum_loss = 0
-        self.sum_step = 0
-
-    def train_begin(self):
-        self.model.train()
-        self.clear_loss()
-
-    def train_step(self, data):
-        x, y, *_ = data
-        x, y = self.to_device(x), self.to_device(y)
-        with self.autocast():
-            z = self.model(x)
-            loss = self.criterion(z, y)
-        self.sum_loss += loss.item()
-        self.sum_step += 1
-
-        return loss
-
-    def train_end(self):
-        loss = self.sum_loss / self.sum_step
-        print(f"loss: {loss}")
-        return loss
-
-    def eval_begin(self):
-        self.model.eval()
-        self.clear_loss()
-
-    def eval_step(self, data):
-        return self.train_step(data)
-
-    def eval_end(self, file=sys.stdout):
-        return self.train_end()
-
-
 class GrainNoiseTrainer(Trainer):
-    def create_model(self):
-        model = nunif_create_model(self.args.arch, device_ids=self.args.gpu)
-        model = model.to(self.device)
-        return model
-
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
         if type == "train":
@@ -229,7 +180,7 @@ class GrainNoiseTrainer(Trainer):
 
     def create_env(self):
         criterion = ClampLoss(nn.L1Loss(), 0, 50).to(self.device)
-        return GrainNoiseEnv(self.model, criterion, self.device)
+        return RegressionEnv(self.model, criterion)
 
 
 def train(args):
