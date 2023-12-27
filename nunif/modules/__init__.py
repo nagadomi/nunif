@@ -9,7 +9,7 @@ from . channel_weighted_loss import (
 from . jaccard import JaccardIndex
 from . psnr import PSNR, LuminancePSNR
 from . charbonnier_loss import CharbonnierLoss
-from . norm import FRN2d, TLU2d, L2Normalize
+from . norm import L2Normalize
 from . pad import Pad
 from . discriminator_loss import DiscriminatorBCELoss, DiscriminatorHingeLoss
 from . multiscale_loss import MultiscaleLoss
@@ -19,7 +19,7 @@ __all__ = [
     "ClampLoss", "AuxiliaryLoss",
     "ChannelWeightedLoss", "LuminanceWeightedLoss", "AverageWeightedLoss",
     "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11Loss",
-    "FRN2d", "TLU2d", "L2Normalize", "Pad",
+    "L2Normalize", "Pad",
     "DiscriminatorBCELoss", "DiscriminatorHingeLoss",
     "MultiscaleLoss"
 ]

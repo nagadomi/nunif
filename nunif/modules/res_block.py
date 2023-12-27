@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from .norm import FRN2d, TLU2d
 from .attention import SEBlock
 from torch.nn.utils.parametrizations import spectral_norm
 
@@ -157,16 +156,6 @@ def ResBlockBNLReLU(in_channels, out_channels, stride=1, bias=False,
         valid_stride=valid_stride, dilation=dilation)
 
 
-def ResBlockFRN(in_channels, out_channels, stride=1, bias=False,
-                padding_mode="zeros", valid_stride=False, dilation=1):
-    return ResBlock(
-        in_channels, out_channels, stride, bias,
-        padding_mode=padding_mode,
-        norm_layer=lambda dim: FRN2d(dim),
-        activation_layer=lambda dim: TLU2d(dim),
-        valid_stride=valid_stride, dilation=dilation)
-
-
 class ResGroup(nn.Module):
     def __init__(self, in_channels, out_channels, num_layers, stride=1, layer=None, **layer_kwargs):
         super().__init__()
@@ -208,7 +197,6 @@ def _spec():
         ResGroup(64, 64, num_layers=3, stride=2, layer=ResBlockLReLU),
         ResGroup(64, 128, num_layers=3, stride=2, layer=ResBlockBNLReLU),
         ResGroup(128, 256, num_layers=3, stride=2, layer=ResBlockSELReLU),
-        ResGroup(256, 512, num_layers=3, stride=2, layer=ResBlockFRN),
     ).to(device)
     x = torch.rand((8, 1, 256, 256)).to(device)
     z = resnet(x)

@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 from torch.nn.utils.parametrizations import spectral_norm
 
 
@@ -104,14 +103,6 @@ class AdaptiveSEBlock(nn.Module):
         return x * F.interpolate(z, size=(h, w), mode='nearest')
 
 
-class EmptySEBlock(nn.Module):
-    def __init__(self, *args):
-        super().__init__()
-
-    def forward(self, x):
-        return x
-
-
 class SelfWeightedAvgPool2d(nn.Module):
     """
     self weighted average pooling
@@ -147,31 +138,6 @@ class SelfWeightedAvgPool2d(nn.Module):
         return z
 
 
-class SelfAttention2d(nn.Module):
-    def __init__(self, in_channels, out_channels=None, bias=True):
-        super().__init__()
-        if out_channels is None:
-            out_channels = in_channels
-        self.q = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
-        self.k = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
-        self.v = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
-        if in_channels != out_channels:
-            self.proj_x = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=bias)
-        else:
-            self.proj_x = nn.Identity()
-        self.proj = nn.Conv2d(out_channels, out_channels, 1, 1, 0, bias=bias)
-
-    def forward(self, x):
-        q, k, v = self.q(x), self.k(x), self.v(x)
-        b, c, h, w = q.shape
-        z = torch.bmm(q.view(b, c, h * w).permute(0, 2, 1),
-                      k.view(b, c, h * w)) * math.sqrt(1 / c)
-        z = F.softmax(z, dim=2)
-        z = torch.bmm(v.view(b, c, h * w), z.permute(0, 2, 1)).view(b, c, h, w)
-        z = self.proj(z) + self.proj_x(x)
-        return z
-
-
 def _spec():
     device = "cuda:0"
     x = torch.rand((4, 128, 32, 32)).to(device)
@@ -182,9 +148,6 @@ def _spec():
 
     awvavg = SelfWeightedAvgPool2d(c, 2).to(device)
     print(awvavg(x).shape)
-
-    sa2 = SelfAttention2d(c).to(device)
-    print(sa2(x).shape)
 
 
 if __name__ == "__main__":
