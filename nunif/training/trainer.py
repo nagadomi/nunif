@@ -130,6 +130,9 @@ class Trainer(ABC):
             self.shutdown()
 
     def create_model(self):
+        if not hasattr(self.args, "arch"):
+            raise NotImplementedError("--arch option is not implemented."
+                                      " Add --arch option or override create_model()")
         return create_model(self.args.arch, device_ids=self.args.gpu)
 
     def create_optimizers(self):
