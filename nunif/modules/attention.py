@@ -54,29 +54,32 @@ class SNSEBlock(nn.Module):
 
 
 class MHA(nn.Module):
-    def __init__(self, embed_dim, num_heads):
+    def __init__(self, embed_dim, num_heads, qkv_dim=None):
         super().__init__()
         # require torch >= 2.0 (recommend torch >= 2.1.2)
         # nn.MultiheadAttention also has a bug with float attn_mask, so PyTorch 2.1 is required anyway.
         assert hasattr(F, "scaled_dot_product_attention"), "torch version does not support F.scaled_dot_product_attention"
 
-        assert embed_dim % num_heads == 0
+        if qkv_dim is None:
+            assert embed_dim % num_heads == 0
+            qkv_dim = embed_dim // num_heads
+        self.qkv_dim = qkv_dim
         self.num_heads = num_heads
-        self.qkv_proj = nn.Linear(embed_dim, embed_dim * 3)
-        self.head_proj = nn.Linear(embed_dim, embed_dim)
+        self.qkv_proj = nn.Linear(embed_dim, qkv_dim * num_heads * 3)
+        self.head_proj = nn.Linear(qkv_dim * num_heads, embed_dim)
 
     def forward(self, x, attn_mask=None, dropout_p=0.0, is_causal=False):
         B, N, C = x.shape  # batch, sequence, feature
-        q, k, v = self.qkv_proj(x).split(C, dim=-1)
+        q, k, v = self.qkv_proj(x).split(self.qkv_dim * self.num_heads, dim=-1)
         # B, H, N, C // H
-        q = q.view(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
-        k = k.view(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
-        v = v.view(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        q = q.view(B, N, self.num_heads, self.qkv_dim).permute(0, 2, 1, 3)
+        k = k.view(B, N, self.num_heads, self.qkv_dim).permute(0, 2, 1, 3)
+        v = v.view(B, N, self.num_heads, self.qkv_dim).permute(0, 2, 1, 3)
         x = F.scaled_dot_product_attention(q, k, v,
                                            attn_mask=attn_mask, dropout_p=dropout_p,
                                            is_causal=is_causal)
         # B, N, (H, C // H)
-        x = x.permute(0, 2, 1, 3).reshape(B, N, C)
+        x = x.permute(0, 2, 1, 3).reshape(B, N, self.qkv_dim * self.num_heads)
         x = self.head_proj(x)
         return x
 
@@ -85,12 +88,12 @@ class WindowMHA2d(nn.Module):
     """ WindowMHA
     BCHW input/output
     """
-    def __init__(self, in_channels, num_heads, window_size=(4, 4)):
+    def __init__(self, in_channels, num_heads, window_size=(4, 4), qkv_dim=None):
         super().__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
         self.num_heads = num_heads
-        self.mha = MHA(in_channels, num_heads)
+        self.mha = MHA(in_channels, num_heads, qkv_dim)
 
     def forward(self, x, attn_mask=None):
         src = x
