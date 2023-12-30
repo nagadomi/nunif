@@ -178,7 +178,7 @@ def main():
     loader = ImageLoader(files=files, max_queue_size=128, load_func_kwargs={"color": "rgb"})
     if args.output is not None:
         os.makedirs(args.output, exist_ok=True)
-    with torch.no_grad():
+    with torch.inference_mode():
         mse_sum = psnr_sum = time_sum = 0
         baseline_mse_sum = baseline_psnr_sum = baseline_time_sum = 0
         count = 0
