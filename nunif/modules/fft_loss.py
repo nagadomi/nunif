@@ -47,6 +47,22 @@ class L1FFTLoss(nn.Module):
         return F.l1_loss(input, target) + fft_loss(input, target, norm=self.norm) * self.weight
 
 
+class YRGBL1FFTLoss(nn.Module):
+    def __init__(self, weight=0.1, norm="backward"):
+        super().__init__()
+        self.weight = weight
+        self.norm = norm
+
+    def forward(self, input, target):
+        assert input.shape[1] == 3
+        def to_yrgb(rgb):
+            y = rgb[:, 0:1, :, :] * 0.299 + rgb[:, 1:2, :, :] * 0.587 + rgb[:, 2:3, :, :] * 0.114
+            return torch.cat([y, rgb], dim=1)
+        input = to_yrgb(input)
+        target = to_yrgb(target)
+        return F.l1_loss(input, target) + fft_loss(input, target, norm=self.norm) * self.weight
+
+
 class MultiscaleL1FFTLoss(nn.Module):
     def __init__(self, scale_factors=(1, 2), weights=(0.5, 0.5),
                  mode="bilinear",
