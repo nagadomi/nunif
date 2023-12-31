@@ -35,7 +35,7 @@ def convert_with_tiled_render(model, args):
 
     if is_dir:
         os.makedirs(args.output, exist_ok=True)
-    with torch.no_grad(), PoolExecutor() as pool:
+    with torch.inference_mode(), PoolExecutor() as pool:
         for im, meta in tqdm(loader, ncols=60):
             if in_grayscale:
                 im = TF.to_grayscale(im)
@@ -53,7 +53,7 @@ def convert_with_simple_render_single(model, args):
 
     if is_dir:
         os.makedirs(args.output, exist_ok=True)
-    with torch.no_grad(), PoolExecutor() as pool:
+    with torch.inference_mode(), PoolExecutor() as pool:
         for im, meta in tqdm(loader, ncols=60):
             if in_grayscale:
                 im = TF.to_grayscale(im)
@@ -73,7 +73,7 @@ def convert_with_simple_render_batch(model, args):
     if is_dir:
         os.makedirs(args.output, exist_ok=True)
 
-    with torch.no_grad(), PoolExecutor() as pool:
+    with torch.inference_mode(), PoolExecutor() as pool:
         output_paths = [None] * args.batch_size
         minibatch = torch.zeros((args.batch_size, in_channels,
                                  in_size, in_size))

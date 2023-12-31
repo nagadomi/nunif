@@ -45,7 +45,7 @@ def main():
     model, _ = load_model(args.checkpoint, device_ids=args.gpu, weights_only=True)
     model.eval()
     loader = create_patch_loader(args.input, num_patches=args.num_patches, num_workers=cpu_count())
-    with torch.no_grad(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
+    with torch.inference_mode(), PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         futures = []
         for x, filename in tqdm(loader, ncols=80):
             x, filename = x[0], filename[0]

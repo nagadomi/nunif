@@ -50,7 +50,7 @@ def calibrate_output():
                             input_size * scale - offset * 2,
                             input_size * scale - offset * 2)).clone().to(device)
             with torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=amp):
-                with torch.no_grad():
+                with torch.inference_mode():
                     z = model.unet(x)
                 z = cal(z)
                 loss = criterion(z, y)

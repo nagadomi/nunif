@@ -224,7 +224,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     # (gradient norm of generator_loss is 10-100x larger than recon_loss)
                     recon_loss = recon_loss * 10
                 else:
-                    with torch.no_grad():
+                    with torch.inference_mode():
                         z = self.model(x)
                         fake = z[0] if isinstance(z, (list, tuple)) else z
                     recon_loss = generator_loss = torch.zeros(1, dtype=x.dtype, device=x.device)

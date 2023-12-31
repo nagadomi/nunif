@@ -151,7 +151,7 @@ class BaseEnv(ABC):
         self.eval_begin()
         if loader is not None:
             for data in tqdm(loader, ncols=80):
-                with torch.no_grad():
+                with torch.inference_mode():
                     self.eval_step(data)
         return self.eval_end()
 

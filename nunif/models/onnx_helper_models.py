@@ -335,16 +335,14 @@ def _test_alpha_border():
     y = cv2.cvtColor(y, cv2.COLOR_RGB2BGR)
     print(y.shape)
 
-    cv2.imshow("onnx", y)
+    pil_io.cv2_to_pil(y).show()
 
     im, _ = pil_io.load_image("./tmp/alpha2.png", keep_alpha=True)
     pad = AlphaBorderPadding()
     t, alpha = pil_io.to_tensor(im, return_alpha=True)
-    with torch.no_grad():
+    with torch.inference_mode():
         y = pad(t, alpha, offset=16)
-    cv2.imshow("nunif", pil_io.to_cv2(pil_io.to_image(y)))
-
-    cv2.waitKey(0)
+    pil_io.to_image(y).show()
 
 
 if __name__ == "__main__":
