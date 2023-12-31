@@ -8,7 +8,7 @@ import PIL
 
 MODEL_DIR = path.join(path.dirname(path.abspath(__file__)), "pretrained_models")
 MODEL_TYPES = {
-    # default models
+    # default models.
     "art": path.join(MODEL_DIR, "swin_unet", "art"),
     "art_scan": path.join(MODEL_DIR, "swin_unet", "art_scan"),
     "photo": path.join(MODEL_DIR, "swin_unet", "photo"),
@@ -314,7 +314,7 @@ def _test_amp():
         source="local", trust_repo=True).cuda()
     t = time()
     for i in range(LOOP_N):
-        amp_f_im =model(im)
+        amp_f_im = model(im)
     print("amp=False", round((time() - t) / LOOP_N, 4), "sec / image")
 
     # AMP=False, manual setting float16
@@ -336,11 +336,9 @@ def _test_amp():
 
 def _test_half():
     import argparse
-    from time import time
     import torchvision.transforms.functional as TF
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
-    LOOP_N = 10
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True,
@@ -358,9 +356,33 @@ def _test_half():
     print((TF.to_tensor(ret) - TF.to_tensor(ret_half)).abs().mean())
 
 
+def _test_alias():
+    import argparse
+    import torchvision.transforms.functional as TF
+
+    ROOT_DIR = path.join(path.dirname(__file__), "..")
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input file")
+    args = parser.parse_args()
+    im = PIL.Image.open(args.input)
+
+    model1 = torch.hub.load(
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
+        source="local", trust_repo=True).cuda()
+    ret1 = model1(im)
+    model2 = torch.hub.load(
+        ROOT_DIR, "superresolution", model_type="art", method="scale", noise_level=3, amp=False,
+        source="local", trust_repo=True).cuda()
+    ret2 = model2(im)
+    print((TF.to_tensor(ret1) - TF.to_tensor(ret2)).abs().sum())
+
+
 if __name__ == "__main__":
-     _test()
+    _test()
     # _test_device_memory()
     # _test_tensor_input()
     # _test_amp()
     # _test_half()
+    # _test_alias()

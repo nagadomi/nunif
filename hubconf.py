@@ -14,3 +14,6 @@ def waifu2x(model_type="art",
     return _waifu2x(model_type=model_type, method=method, noise_level=noise_level, device_ids=device_ids,
                     tile_size=tile_size, batch_size=batch_size, keep_alpha=keep_alpha, amp=amp,
                     **kwargs)
+
+
+superresolution = waifu2x

@@ -63,6 +63,12 @@ for noise_level in (-1, 0, 1, 2, 3):
     out.save(f"noise_{noise_level}.png")
 ```
 
+Also, you can use the alias `superresolution` instead of `waifu2x`. For some policy reason.
+```
+model = torch.hub.load("nagadomi/nunif:master", "superresolution",
+                       model_type="art_scan", trust_repo=True).to("cuda")
+```
+
 ### troch.hub.load from local source
 
 Specify `source="local"` option. And specify the nunif directory(this repository) for the first argument.
