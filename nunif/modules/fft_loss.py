@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from . multiscale_loss import MultiscaleLoss
-
+from . clamp_loss import ClampLoss
 
 # ref. Rethinking Coarse-to-Fine Approach in Single Image Deblurring
 # https://arxiv.org/abs/2108.05054
@@ -52,6 +52,7 @@ class YRGBL1FFTLoss(nn.Module):
         super().__init__()
         self.weight = weight
         self.norm = norm
+        self.l1_loss = ClampLoss(nn.L1Loss())
 
     def forward(self, input, target):
         assert input.shape[1] == 3
@@ -60,7 +61,7 @@ class YRGBL1FFTLoss(nn.Module):
             return torch.cat([y, rgb], dim=1)
         input = to_yrgb(input)
         target = to_yrgb(target)
-        return F.l1_loss(input, target) + fft_loss(input, target, norm=self.norm) * self.weight
+        return self.l1_loss(input, target) + fft_loss(input, target, norm=self.norm) * self.weight
 
 
 class MultiscaleL1FFTLoss(nn.Module):
