@@ -14,15 +14,11 @@ class L2Normalize(nn.Module):
         return F.normalize(x, p=2., dim=self.dim, eps=self.eps)
 
 
-class LayerNormNoBias(nn.Module):
-    def __init__(self, normalized_shape):
-        super().__init__()
-        if isinstance(normalized_shape, int):
-            normalized_shape = (normalized_shape,)
-        self.weight = nn.Parameter(torch.ones(normalized_shape))
-
-    def forward(self, x):
-        return F.layer_norm(x, self.weight.shape, self.weight)
+def LayerNormNoBias(normalized_shape, eps=1e-5, elementwise_affine=True, device=None, dtype=None):
+    # bias=False, requires pytorch 2.1
+    return nn.LayerNorm(normalized_shape, eps=eps, elementwise_affine=elementwise_affine,
+                        bias=False,
+                        device=device, dtype=dtype)
 
 
 class LayerNormNoBias2d(nn.Module):
