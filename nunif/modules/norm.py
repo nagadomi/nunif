@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .permute import bchw_to_bhwc, bhwc_to_bchw
 
 
 class L2Normalize(nn.Module):
@@ -27,10 +28,27 @@ class LayerNormNoBias(nn.Module):
 class LayerNormNoBias2d(nn.Module):
     def __init__(self, dim):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones((dim,)))
+        self.norm = LayerNormNoBias(dim)
 
     def forward(self, x):
-        x = F.group_norm(x, num_groups=1, weight=self.weight, bias=None)
+        x = bhwc_to_bchw(self.norm(bchw_to_bhwc(x)))
+        return x
+
+
+class GroupNormNoBias(nn.Module):
+    def __init__(self, num_groups, num_channels, eps=1e-05, affine=True, device=None, dtype=None):
+        super().__init__()
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.eps = eps
+        self.affine = affine
+        if self.affine:
+            self.weight = nn.Parameter(torch.ones(num_channels, device=device, dtype=dtype))
+        else:
+            self.weight = self.register_parameter("weight", None)
+
+    def forward(self, x):
+        x = F.group_norm(x, num_groups=self.num_groups, weight=self.weight, bias=None, eps=self.eps)
         return x
 
 
@@ -54,9 +72,11 @@ def _test_l2norm():
 
 def _test_layer_norm():
     print(LayerNormNoBias(4)(torch.zeros((1, 2, 2, 4))).shape)
+    print(GroupNormNoBias(1, 4)(torch.zeros((1, 4, 2, 2))).shape)
+    print(GroupNormNoBias(1, 4, affine=False)(torch.zeros((1, 4, 2, 2))).shape)
+    print(LayerNormNoBias2d(4)(torch.zeros((1, 4, 2, 2))).shape)
 
 
 if __name__ == "__main__":
-    # _test_frn()
     # _test_l2norm()
     _test_layer_norm()
