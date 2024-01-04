@@ -95,10 +95,12 @@ class WindowMHA2d(nn.Module):
         self.num_heads = num_heads
         self.mha = MHA(in_channels, num_heads, qkv_dim)
 
-    def forward(self, x, attn_mask=None):
+    def forward(self, x, attn_mask=None, layer_norm=None):
         src = x
         out_shape = src.shape
         x = bchw_to_bnc(x, self.window_size)
+        if layer_norm is not None:
+            x = layer_norm(x)
         x = self.mha(x, attn_mask=attn_mask)
         x = bnc_to_bchw(x, out_shape, self.window_size)
 
