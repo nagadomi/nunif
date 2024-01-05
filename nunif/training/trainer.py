@@ -53,6 +53,7 @@ class Trainer(ABC):
         if self.amp_is_enabled():
             self.env.enable_amp()
         self.env.set_amp_dtype(torch.bfloat16 if (self.args.amp_float == "bfloat16" or self.args.gpu[0] < 0) else torch.float16)
+        self.log_fp = open(path.join(self.args.model_dir, f"loss_{self.runtime_id}.csv"), mode="w")
         self.setup()
 
     def shutdown(self):
@@ -63,6 +64,10 @@ class Trainer(ABC):
         if self.eval_loader is not None:
             del self.eval_loader
             self.eval_loader = None
+
+        if self.log_fp is not None:
+            self.log_fp.close()
+            self.log_fp = None
 
     def setup(self):
         pass
@@ -110,7 +115,7 @@ class Trainer(ABC):
                 print("-" * 64)
                 print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
                 print("--\n train")
-                self.env.train(
+                train_loss = self.env.train(
                     loader=self.train_loader,
                     optimizers=self.optimizers,
                     schedulers=self.schedulers,
@@ -126,6 +131,10 @@ class Trainer(ABC):
                     self.best_loss = loss
                     self.save_best_model()
                 self.save_checkpoint()
+                try:
+                    self.write_log(self.epoch, train_loss, loss)
+                except:  # noqa
+                    pass
         finally:
             self.shutdown()
 
@@ -230,6 +239,25 @@ class Trainer(ABC):
             # backup file per runtime
             backup_file = f"{path.splitext(self.best_model_filename)[0]}.{self.runtime_id}.pth.bk"
             save_model(self.model, backup_file)
+
+    def write_log(self, epoch, train_loss, eval_loss):
+        def to_float(loss):
+            if loss is None:
+                return 0
+            elif isinstance(loss, (list, tuple)):
+                return sum([to_float(v) for v in loss]) / (len(loss) + 1e-6)
+            elif torch.is_tensor(loss):
+                return loss.detach().float().mean().item()
+            else:
+                try:
+                    return float(loss)
+                except ValueError:
+                    return 0
+
+        train_loss = to_float(train_loss)
+        eval_loss = to_float(eval_loss)
+        self.log_fp.write(f"{epoch},{train_loss},{eval_loss}\n")
+        self.log_fp.flush()
 
     @abstractmethod
     def create_dataloader(self, type):

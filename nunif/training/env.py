@@ -145,7 +145,7 @@ class BaseEnv(ABC):
         for scheduler in schedulers:
             scheduler.step()
 
-        self.train_end()
+        return self.train_end()
 
     def eval(self, loader):
         self.eval_begin()
