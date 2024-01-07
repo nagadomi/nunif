@@ -23,6 +23,7 @@ from PIL.Image import Resampling
 
 
 NEAREST_PREFIX = "__NEAREST_"
+SCREENTONE_PREFIX = "__SCREENTONE_"
 INTERPOLATION_MODES = (
     "box",
     "sinc",
@@ -298,6 +299,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             raise RuntimeError(f"Unable to load image: {filename}")
         if NEAREST_PREFIX in filename:
             x, y = self.transforms_nearest(im, im)
+        elif SCREENTONE_PREFIX in filename:
+            x, y = self.transforms(im, im)
         else:
             im = self.gt_transforms(im)
             x, y = self.transforms(im, im)
