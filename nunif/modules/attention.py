@@ -53,6 +53,21 @@ class SNSEBlock(nn.Module):
         return x * z.expand(x.shape)
 
 
+def sliced_sdp(q, k, v, num_heads, attn_mask=None, dropout_p=0.0, is_causal=False):
+    B, N, C = q.shape  # batch, sequence, feature
+    assert C % num_heads == 0
+    qkv_dim = C // num_heads
+    # B, H, N, C // H
+    q = q.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
+    k = k.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
+    v = v.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
+    x = F.scaled_dot_product_attention(q, k, v,
+                                       attn_mask=attn_mask, dropout_p=dropout_p,
+                                       is_causal=is_causal)
+    # B, N, (H, C // H)
+    return x.permute(0, 2, 1, 3).reshape(B, N, qkv_dim * num_heads)
+
+
 class MHA(nn.Module):
     def __init__(self, embed_dim, num_heads, qkv_dim=None):
         super().__init__()
@@ -71,15 +86,7 @@ class MHA(nn.Module):
     def forward(self, x, attn_mask=None, dropout_p=0.0, is_causal=False):
         B, N, C = x.shape  # batch, sequence, feature
         q, k, v = self.qkv_proj(x).split(self.qkv_dim * self.num_heads, dim=-1)
-        # B, H, N, C // H
-        q = q.view(B, N, self.num_heads, self.qkv_dim).permute(0, 2, 1, 3)
-        k = k.view(B, N, self.num_heads, self.qkv_dim).permute(0, 2, 1, 3)
-        v = v.view(B, N, self.num_heads, self.qkv_dim).permute(0, 2, 1, 3)
-        x = F.scaled_dot_product_attention(q, k, v,
-                                           attn_mask=attn_mask, dropout_p=dropout_p,
-                                           is_causal=is_causal)
-        # B, N, (H, C // H)
-        x = x.permute(0, 2, 1, 3).reshape(B, N, self.qkv_dim * self.num_heads)
+        x = sliced_sdp(q, k, v, self.num_heads, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal)
         x = self.head_proj(x)
         return x
 
@@ -107,9 +114,51 @@ class WindowMHA2d(nn.Module):
         return x
 
 
-def _test():
-    pass
+class CrossMHA(nn.Module):
+    def __init__(self, embed_dim, num_heads, qkv_dim=None):
+        super().__init__()
+        assert hasattr(F, "scaled_dot_product_attention"), "torch version does not support F.scaled_dot_product_attention"
+
+        if qkv_dim is None:
+            assert embed_dim % num_heads == 0
+            qkv_dim = embed_dim // num_heads
+        self.qkv_dim = qkv_dim
+        self.num_heads = num_heads
+        self.q_proj = nn.Linear(embed_dim, qkv_dim * num_heads)
+        self.kv_proj = nn.Linear(embed_dim, qkv_dim * num_heads * 2)
+        self.head_proj = nn.Linear(qkv_dim * num_heads, embed_dim)
+
+    def forward(self, q, kv, attn_mask=None, dropout_p=0.0, is_causal=False):
+        assert q.shape == kv.shape
+        B, N, C = q.shape
+        q = self.q_proj(q)
+        k, v = self.kv_proj(kv).split(self.qkv_dim * self.num_heads, dim=-1)
+        x = sliced_sdp(q, k, v, self.num_heads, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal)
+        x = self.head_proj(x)
+        return x
+
+
+class WindowCrossMHA2d(nn.Module):
+    def __init__(self, in_channels, num_heads, window_size=(4, 4), qkv_dim=None):
+        super().__init__()
+        self.window_size = (window_size if isinstance(window_size, (tuple, list))
+                            else (window_size, window_size))
+        self.num_heads = num_heads
+        self.mha = CrossMHA(in_channels, num_heads, qkv_dim)
+
+    def forward(self, x1, x2, attn_mask=None, layer_norm1=None, layer_norm2=None):
+        out_shape = x1.shape
+        x1 = bchw_to_bnc(x1, self.window_size)
+        x2 = bchw_to_bnc(x2, self.window_size)
+        if layer_norm1 is not None:
+            x1 = layer_norm1(x1)
+        if layer_norm2 is not None:
+            x2 = layer_norm2(x2)
+        x = self.mha(x1, x2, attn_mask=attn_mask)
+        x = bnc_to_bchw(x, out_shape, self.window_size)
+
+        return x
 
 
 if __name__ == "__main__":
-    _test()
+    pass
