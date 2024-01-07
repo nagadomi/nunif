@@ -8,6 +8,7 @@ from torchvision.transforms import functional as TF
 from nunif.transforms import functional as NF
 import nunif.transforms.image_magick as IM
 from nunif.logger import logger
+from nunif.device import device_is_cuda
 from nunif.utils.image_loader import ImageLoader
 from tqdm import tqdm
 import time
@@ -239,7 +240,8 @@ def main():
             elif args.method == "noise":
                 print("* jpeg")
             print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(baseline_time_sum, 4)} ({fps} FPS)")
-
+        if device_is_cuda(ctx.device):
+            print("GPU Max Memory Allocated", int(torch.cuda.max_memory_allocated(ctx.device) / (1024*1024)), "MB")
 
 if __name__ == "__main__":
     main()
