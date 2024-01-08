@@ -1,19 +1,21 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class WeightedLoss(nn.Module):
     """ Wrapper Module for `loss(x, y) * w1 + loss2(x, y) * w2, ...`
     """
-    def __init__(self, modules, weights):
+    def __init__(self, modules, weights, preprocess=None):
         super().__init__()
         assert len(modules) == len(weights)
         self.modules = modules
         self.weights = weights
+        self.preprocess = nn.Identity() if preprocess is None else preprocess
 
     def forward(self, input, target):
         loss = 0.0
+        input = self.preprocess(input)
+        target = self.preprocess(target)
         for module, weight in zip(self.modules, self.weights):
             if weight == 1.0:
                 loss = loss + module(input, target)
