@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from . multiscale_loss import MultiscaleLoss
 from . clamp_loss import ClampLoss
+from . weighted_loss import WeightedLoss
+from . color import RGBToYRGB
+
 
 # ref. Rethinking Coarse-to-Fine Approach in Single Image Deblurring
 # https://arxiv.org/abs/2108.05054
@@ -37,31 +40,13 @@ class FFTLoss(nn.Module):
         return fft_loss(input, target, norm=self.norm)
 
 
-class L1FFTLoss(nn.Module):
-    def __init__(self, weight=0.1, norm="backward"):
-        super().__init__()
-        self.weight = weight
-        self.norm = norm
-
-    def forward(self, input, target):
-        return F.l1_loss(input, target) + fft_loss(input, target, norm=self.norm) * self.weight
+def L1FFTLoss(weight=0.1, norm="backward"):
+    return WeightedLoss((nn.L1Loss(), FFTLoss(norm=norm)), weights=(1.0, weight))
 
 
-class YRGBL1FFTLoss(nn.Module):
-    def __init__(self, weight=0.1, norm="backward"):
-        super().__init__()
-        self.weight = weight
-        self.norm = norm
-        self.l1_loss = ClampLoss(nn.L1Loss())
-
-    def forward(self, input, target):
-        assert input.shape[1] == 3
-        def to_yrgb(rgb):
-            y = rgb[:, 0:1, :, :] * 0.299 + rgb[:, 1:2, :, :] * 0.587 + rgb[:, 2:3, :, :] * 0.114
-            return torch.cat([y, rgb], dim=1)
-        input = to_yrgb(input)
-        target = to_yrgb(target)
-        return self.l1_loss(input, target) + fft_loss(input, target, norm=self.norm) * self.weight
+def YRGBL1FFTLoss(weight=0.1, norm="backward"):
+    return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm)),
+                        weights=(1.0, weight), preprocess=RGBToYRGB())
 
 
 class MultiscaleL1FFTLoss(nn.Module):
