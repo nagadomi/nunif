@@ -6,7 +6,7 @@ from . weighted_loss import WeightedLoss
 
 def gradient(x):
     B, C, H, W = x.shape
-    return x[:, :, 1:, :] - x[:, :, :-1, :], x[:, :, :, 1:] - x[:, :, :, :-1]
+    return x[:, :, 1:, :] - x[:, :, :-1, :].detach(), x[:, :, :, 1:] - x[:, :, :, :-1].detach()
 
 
 def gradient_loss(input, target, loss_fn=F.l1_loss):
@@ -24,7 +24,7 @@ class GradientLoss(nn.Module):
         return gradient_loss(input, target, self.loss_fn)
 
 
-def L1GradientLoss(weight=0.0315):
+def L1GradientLoss(weight=1.0):
     return WeightedLoss((nn.L1Loss(), GradientLoss()), (1.0, weight))
 
 
