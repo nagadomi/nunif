@@ -4,28 +4,36 @@ import torch.nn.functional as F
 from . weighted_loss import WeightedLoss
 
 
-def gradient(x):
+def gradient(x, diag=False):
     B, C, H, W = x.shape
-    return x[:, :, 1:, :] - x[:, :, :-1, :].detach(), x[:, :, :, 1:] - x[:, :, :, :-1].detach()
+    y_grad = x[:, :, 1:, :] - x[:, :, :-1, :].detach()
+    x_grad = x[:, :, :, 1:] - x[:, :, :, :-1].detach()
+    if not diag:
+        return y_grad, x_grad
+    else:
+        diag1_grad = x[:, :, 1:, 1:] - x[:, :, :-1, :-1].detach()
+        diag2_grad = x[:, :, 1:, :-1] - x[:, :, :-1, 1:].detach()
+        return y_grad, x_grad, diag1_grad, diag2_grad
 
 
-def gradient_loss(input, target, loss_fn=F.l1_loss):
-    input_v, input_h = gradient(input)
-    target_v, target_h = gradient(target)
-    return (loss_fn(input_v, target_v) + loss_fn(input_h, target_h)) * 0.5
+def gradient_loss(input, target, diag=False, loss_fn=F.l1_loss):
+    input_grads = gradient(input, diag=diag)
+    target_grads = gradient(target, diag=diag)
+    return sum(loss_fn(ig, tg) for ig, tg in zip(input_grads, target_grads)) / len(input_grads)
 
 
 class GradientLoss(nn.Module):
-    def __init__(self, loss_fn=F.l1_loss):
+    def __init__(self, diag=False, loss_fn=F.l1_loss):
         super().__init__()
         self.loss_fn = loss_fn
+        self.diag = diag
 
     def forward(self, input, target):
-        return gradient_loss(input, target, self.loss_fn)
+        return gradient_loss(input, target, self.diag, self.loss_fn)
 
 
-def L1GradientLoss(weight=1.0):
-    return WeightedLoss((nn.L1Loss(), GradientLoss()), (1.0, weight))
+def L1GradientLoss(weight=1.0, diag=False):
+    return WeightedLoss((nn.L1Loss(), GradientLoss(diag=diag)), (1.0, weight))
 
 
 if __name__ == "__main__":
