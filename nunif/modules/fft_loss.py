@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from . multiscale_loss import MultiscaleLoss
 from . clamp_loss import ClampLoss
 from . weighted_loss import WeightedLoss
+from . gradient_loss import GradientLoss
 from . color import RGBToYRGB
 
 
@@ -47,6 +48,11 @@ def L1FFTLoss(weight=0.1, norm="backward"):
 def YRGBL1FFTLoss(weight=0.1, norm="backward"):
     return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm)),
                         weights=(1.0, weight), preprocess=RGBToYRGB())
+
+
+def YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, norm="backward"):
+    return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm), ClampLoss(GradientLoss())),
+                        weights=(1.0, fft_weight, grad_weight), preprocess=RGBToYRGB())
 
 
 class MultiscaleL1FFTLoss(nn.Module):
