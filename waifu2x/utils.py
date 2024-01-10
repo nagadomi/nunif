@@ -17,12 +17,20 @@ from nunif.utils.ui import HiddenPrints
 
 # compling swin_unet model only works with torch >= 2.1.0
 CAN_COMPILE_SWIN_UNET = packaging_version.parse(torch.__version__).release >= (2, 1, 0)
+# torch 2.1.2 has a bug in F.scaled_dot_product_attention(mem efficient attention with mask)
+CAN_COMPILE_WINC_UNET = False
 
 
 def can_compile(model):
-    return (model is not None and
-            (not is_compiled_model(model)) and
-            (CAN_COMPILE_SWIN_UNET or ("swin_unet" not in model.name)))
+    if model is not None and not is_compiled_model(model):
+        if model.name.startswith("waifu2x.swin_unet"):
+            return CAN_COMPILE_SWIN_UNET
+        elif model.name.startswith("waifu2x.winc_unet"):
+            return CAN_COMPILE_WINC_UNET
+        else:
+            return True
+    else:
+        return False
 
 
 class Waifu2x():
@@ -73,6 +81,8 @@ class Waifu2x():
                 logger.debug(f"warmup {i * batch_size + j + 1}/{len(models) * batch_size}: {x.shape}")
                 with autocast(device=self.device, enabled=enable_amp):
                     model(x)
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
 
     def to(self, device):
         self.device = device

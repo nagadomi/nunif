@@ -1,5 +1,6 @@
 from .cunet import CUNet, UpCUNet
 from .swin_unet import SwinUNet, SwinUNet2x, SwinUNet4x, SwinUNetDownscaled
+from .winc_unet import WincUNet4x, WincUNet2x
 from .vgg_7 import VGG7
 from .upconv_7 import UpConv7
 from .json_model import load_state_from_waifu2x_json
