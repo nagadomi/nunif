@@ -22,7 +22,8 @@ from nunif.modules import (
     MultiscaleLoss,
 )
 from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
-from nunif.modules.fft_loss import YRGBL1FFTLoss, L1FFTLoss, MultiscaleL1FFTLoss
+from nunif.modules.fft_loss import YRGBL1FFTLoss, YRGBL1FFTGradientLoss, L1FFTLoss, MultiscaleL1FFTLoss
+from nunif.modules.gradient_loss import YRGBL1GradientLoss
 from nunif.logger import logger
 import random
 
@@ -89,6 +90,15 @@ def create_criterion(loss):
         criterion = YRGBL1FFTLoss()
     elif loss == "l1fftm":
         criterion = MultiscaleL1FFTLoss()
+    elif loss == "y_l1fftgrad":
+        criterion = YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False)
+    elif loss == "aux_y_l1fftgrad":
+        criterion = AuxiliaryLoss([
+            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
+            torch.nn.L1Loss(),
+        ], weight=(1.0, 0.5))
+    elif loss == "y_l1grad":
+        criterion = YRGBL1GradientLoss(diag=False)
     else:
         raise NotImplementedError(loss)
 
@@ -624,7 +634,8 @@ def register(subparsers, default_parser):
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
                                  "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp",
-                                 "l1fft", "l1fftm", "y_l1fft"],
+                                 "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad", "aux_y_l1fftgrad",
+                                 "y_l1grad"],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")
