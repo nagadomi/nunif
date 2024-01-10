@@ -8,13 +8,21 @@ from . color import RGBToYRGB
 
 def gradient(x, diag=False):
     B, C, H, W = x.shape
-    y_grad = x[:, :, 1:, :] - x[:, :, :-1, :].detach()
-    x_grad = x[:, :, :, 1:] - x[:, :, :, :-1].detach()
+
+    # [A B E]
+    # [C D _]
+
+    # D - B
+    y_grad = x[:, :, 1:, 1:] - x[:, :, :-1, 1:].detach()
+    # D - C
+    x_grad = x[:, :, 1:, 1:] - x[:, :, 1:, :-1].detach()
     if not diag:
         return y_grad, x_grad
     else:
+        # D - A
         diag1_grad = x[:, :, 1:, 1:] - x[:, :, :-1, :-1].detach()
-        diag2_grad = x[:, :, 1:, :-1] - x[:, :, :-1, 1:].detach()
+        # D - E
+        diag2_grad = x[:, :, 1:, 1:-1] - x[:, :, :-1, 2:].detach()
         return y_grad, x_grad, diag1_grad, diag2_grad
 
 
