@@ -1,4 +1,7 @@
+import os
+from os import path
 import sys
+import shutil
 from PIL import Image
 import torch
 import torchvision.transforms.functional as TF
@@ -20,7 +23,17 @@ def safe_pad(im, min_size):
     return im
 
 
-def extract_patches(im, num_patches, patch_size=PATCH_SIZE):
+def std_score(patches):
+    return torch.std(patches, dim=[2, 3]).mean(dim=1)
+
+
+def tv_score(patches):
+    y_grad = x[:, :, 1:, :] - x[:, :, :-1, :]
+    x_grad = x[:, :, :, 1:] - x[:, :, :, :-1]
+    return (y_grad.mean(dim=[1, 2, 3]) + x_grad.mean(dim=[1, 2, 3])) * 0.5
+
+
+def extract_patches(im, num_patches, patch_size=PATCH_SIZE, score_fn=std_score):
     stride = patch_size
     im = safe_pad(im, patch_size)
     im = TF.to_tensor(im)
@@ -38,8 +51,8 @@ def extract_patches(im, num_patches, patch_size=PATCH_SIZE):
     # BCHW
     patches = torch.stack(patches)
     # select top-k high variance patch
-    color_stdv = torch.std(patches, dim=[2, 3]).mean(dim=1)
-    _, indexes = torch.topk(color_stdv, min(num_patches, color_stdv.shape[0]))
+    scores = score_fn(patches)
+    _, indexes = torch.topk(scores, min(num_patches, scores.shape[0]))
     patches = patches[indexes]
     return patches
 
@@ -68,6 +81,21 @@ def predict_grain_noise_psnr(model, x, num_patches=8, patch_size=PATCH_SIZE):
     psnr = 50. - noise_level
 
     return psnr
+
+
+def predict_resize_quality(model, x, num_patches=8, patch_size=PATCH_SIZE):
+    device = get_model_device(model)
+    if isinstance(x, Image.Image):
+        x = extract_patches(x, num_patches, patch_size, score_fn=tv_score)
+    x = x.to(device)
+    with autocast(device):
+        # output: 1.0 - 2.0
+        scale_factor = model(x)
+    # select min
+    scale_factor = scale_factor.min().item()
+    resize_quality = 100 - int((scale_factor - 1.0) * 100)
+
+    return resize_quality
 
 
 class PatchDataset(Dataset):
@@ -99,3 +127,12 @@ def create_patch_loader(input_dir, num_patches=8, num_workers=4):
         drop_last=False
     )
     return loader
+
+
+def copyfile(src, dst, symlink):
+    if symlink:
+        if path.exists(dst):
+            os.unlink(dst)
+        os.symlink(src, dst)
+    else:
+        shutil.copyfile(src, dst)

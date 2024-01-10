@@ -3,7 +3,7 @@ from . import models # noqa
 
 
 def addon_config():
-    return [CLIQAJPEGNoiseAddon(), CLIQAGrainNoiseAddon()]
+    return [CLIQAJPEGNoiseAddon(), CLIQAGrainNoiseAddon(), CLIQAResizeAddon()]
 
 
 class CLIQAJPEGNoiseAddon(Addon):
@@ -21,4 +21,13 @@ class CLIQAGrainNoiseAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.grain_noise_trainer import register
+        return register(subparsers, default_parser)
+
+
+class CLIQAResizeAddon(Addon):
+    def __init__(self):
+        super().__init__("cliqa.resize")
+
+    def register_train(self, subparsers, default_parser):
+        from .training.resize_trainer import register
         return register(subparsers, default_parser)
