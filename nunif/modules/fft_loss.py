@@ -50,8 +50,8 @@ def YRGBL1FFTLoss(weight=0.1, norm="backward"):
                         weights=(1.0, weight), preprocess=RGBToYRGB())
 
 
-def YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, norm="backward"):
-    return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm), ClampLoss(GradientLoss())),
+def YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, norm="backward", diag=False):
+    return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm), ClampLoss(GradientLoss(diag=diag))),
                         weights=(1.0, fft_weight, grad_weight), preprocess=RGBToYRGB())
 
 
