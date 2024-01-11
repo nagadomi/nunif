@@ -323,7 +323,7 @@ def create_trainer_default_parser():
     parser.add_argument("--reset-state", action="store_true",
                         help="do not load best_score, optimizer and scheduler state when --resume")
     parser.add_argument("--seed", type=int, default=71,
-                        help="random seed")
+                        help="random seed. if -1 is specified, a random number seed is used")
     parser.add_argument("--checkpoint-file", type=str,
                         help="checkpoint file for initializing model parameters. ignored when --resume is specified")
     parser.add_argument("--disable-backup", action="store_true",
