@@ -70,7 +70,7 @@ class WincBlocks(nn.Module):
             window_sizes = [window_size] * num_layers
         self.blocks = nn.Sequential(
             *[WincBlock(in_channels if i == 0 else out_channels, out_channels,
-                        window_size=window_sizes[i], num_heads=num_heads,
+                        window_size=window_sizes[i], num_heads=num_heads, qkv_dim=qkv_dim,
                         norm_layer=norm_layer)
               for i in range(num_layers)])
 
