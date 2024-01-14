@@ -266,12 +266,11 @@ class WincUNetDownscaled(I2IBaseModel):
                                  out_channels=unet_4x.unet.out_channels)
         return net
 
-
-if __name__ == "__main__":
+def _bench(name):
     from nunif.models import create_model
     import time
     device = "cuda:0"
-    model = create_model(WincUNet2x.name, in_channels=3, out_channels=3).to(device).eval()
+    model = create_model(name, in_channels=3, out_channels=3).to(device).eval()
     x = torch.zeros((4, 3, 256, 256)).to(device)
     with torch.inference_mode():
         z, *_ = model(x)
@@ -280,7 +279,12 @@ if __name__ == "__main__":
 
     # benchmark
     t = time.time()
-    with torch.inference_mode():
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(100):
             z = model(x)
     print(time.time() - t)
+
+
+if __name__ == "__main__":
+    _bench("waifu2x.winc_unet_2x")
+    _bench("waifu2x.winc_unet_4x")

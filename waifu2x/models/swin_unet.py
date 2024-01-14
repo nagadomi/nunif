@@ -404,8 +404,30 @@ def _convert_tool_main():
     save_model(model, args.output)
 
 
+def _bench(name):
+    import torch
+    from nunif.models import create_model
+    import time
+    device = "cuda:0"
+    model = create_model(name, in_channels=3, out_channels=3).to(device).eval()
+    x = torch.rand((4, 3, 256, 256)).to(device)
+    with torch.inference_mode():
+        z = model(x)
+        print(z.shape)
+        print(model.name, model.i2i_offset, model.i2i_scale)
+
+    t = time.time()
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
+        for _ in range(100):
+            z = model(x)
+    print(time.time() - t)
+
+
+
 if __name__ == "__main__":
     if False:
-        _test()
+        # _test()
+        _bench("waifu2x.swin_unet_2x")
+        _bench("waifu2x.swin_unet_4x")
     else:
         _convert_tool_main()
