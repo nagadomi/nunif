@@ -238,7 +238,11 @@ class RandomJPEGNoiseX():
                     if random.uniform(0, 1) < 0.25:
                         x = add_jpeg_noise(x, quality=random.randint(80, 95), subsampling="4:2:0")
             return x, y
-        if (self.noise_level == 3 and random.uniform(0, 1) < 0.95) or random.uniform(0, 1) < 0.75:
+        if self.noise_level == 3:
+            use_noise_level_noise = random.uniform(0, 1) < 0.95
+        else:
+            use_noise_level_noise = random.uniform(0, 1) < 0.75
+        if use_noise_level_noise:
             # use noise_level noise
             qualities = choose_jpeg_quality(self.style, self.noise_level)
         else:
