@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import copy
-from nunif.models import I2IBaseModel, register_model, register_model_builder
+from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.norm import LayerNormNoBias
 from torchvision.models.swin_transformer import (
     # use SwinTransformer V1
@@ -361,7 +361,7 @@ def swin_unet_4xl(**kwargs):
     return SwinUNet4x(base_dim=192, layer_norm=True, **kwargs)
 
 
-register_model_builder("waifu2x.swin_unet_4xl", swin_unet_4xl)
+register_model_factory("waifu2x.swin_unet_4xl", swin_unet_4xl)
 
 
 def _test():
@@ -421,7 +421,6 @@ def _bench(name):
         for _ in range(100):
             z = model(x)
     print(time.time() - t)
-
 
 
 if __name__ == "__main__":

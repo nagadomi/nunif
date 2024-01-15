@@ -5,7 +5,7 @@ from . utils import (
     compile_model, is_compiled_model,
 )
 from . register import (
-    register_model, create_model, register_models, register_model_builder, get_model_names,
+    register_model, create_model, register_models, register_model_factory, get_model_names,
     data_parallel_model
 )
 from . data_parallel import (
@@ -16,7 +16,7 @@ __all__ = [
     "Model", "I2IBaseModel", "SoftmaxBaseModel",
     "load_model", "save_model",
     "get_model_kwargs", "get_model_device",
-    "register_model", "register_model_builder", "register_models", "create_model",
+    "register_model", "register_model_factory", "register_models", "create_model",
     "get_model_names", "data_parallel_model",
     "compile_model", "is_compiled_model",
     "DataParallelWrapper",
