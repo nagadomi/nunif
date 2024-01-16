@@ -20,7 +20,9 @@ class AuxiliaryLoss(nn.Module):
         self.weight = weight
 
     def forward(self, inputs, targets):
-        assert (isinstance(inputs, (list, tuple)))
-        if not isinstance(targets, (list, tuple)):
-            targets = [targets] * len(inputs)
-        return auxiliary_loss(inputs, targets, self.losses, self.weight)
+        if isinstance(inputs, (list, tuple)):
+            if not isinstance(targets, (list, tuple)):
+                targets = [targets] * len(inputs)
+            return auxiliary_loss(inputs, targets, self.losses, self.weight)
+        else:
+            return self.losses[0](inputs, targets)
