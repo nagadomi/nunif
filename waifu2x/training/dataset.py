@@ -185,7 +185,9 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  bicubic_only=False,
                  deblur=0, resize_blur_p=0.1, resize_step_p=0,
                  noise_level=-1, style=None,
-                 training=True):
+                 return_no_offset_y=False,
+                 training=True,
+                 ):
         assert scale_factor in {1, 2, 4, 8}
         assert noise_level in {-1, 0, 1, 2, 3}
         assert style in {None, "art", "photo"}
@@ -194,6 +196,9 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         self.training = training
         self.style = style
         self.noise_level = noise_level
+        self.model_offset = model_offset
+        self.return_no_offset_y = return_no_offset_y
+
         if self.training:
             if noise_level >= 0:
                 jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop_p=0.07)
@@ -256,14 +261,13 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 antialias,
                 jpeg_transform,
                 TP.RandomFlip(),
-                TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
+                TP.RandomCrop(size=tile_size, y_scale=scale_factor),
             ])
             self.transforms_nearest = TP.Compose([
                 random_downscale_x_nearest,
                 jpeg_transform,
                 TP.RandomHardExampleCrop(size=tile_size,
                                          y_scale=scale_factor,
-                                         y_offset=model_offset,
                                          samples=4),
                 TP.RandomFlip(),
             ])
@@ -290,7 +294,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 downscale_x_nearest,
             ])
             self.x_jpeg_shift = [1, 2, 3, 4, 5, 6, 7] + [0] * (100 - 7)
-            self.center_crop = TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset)
+            self.center_crop = TP.CenterCrop(size=tile_size, y_scale=scale_factor)
 
     def __getitem__(self, index):
         filename = super().__getitem__(index)
@@ -315,9 +319,15 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                     x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
                     if len(qualities) > 1 and i != len(qualities) - 1:
                         x, y = shift_jpeg_block(x, y, self.x_jpeg_shift[index % len(self.x_jpeg_shift)])
+            y_org = y
             x, y = self.center_crop(x, y)
 
-        return TF.to_tensor(x), TF.to_tensor(y), index
+        y_org = y
+        y = TF.pad(y, [-self.model_offset] * 4)
+        if not self.return_no_offset_y:
+            return TF.to_tensor(x), TF.to_tensor(y), index
+        else:
+            return TF.to_tensor(x), TF.to_tensor(y), TF.to_tensor(y_org), index
 
 
 def _test():

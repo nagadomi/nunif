@@ -24,6 +24,7 @@ from nunif.modules import (
 from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
 from nunif.modules.fft_loss import YRGBL1FFTLoss, YRGBL1FFTGradientLoss, L1FFTLoss, MultiscaleL1FFTLoss
 from nunif.modules.gradient_loss import YRGBL1GradientLoss
+from nunif.modules.identity_loss import IdentityLoss
 from nunif.logger import logger
 import random
 
@@ -99,6 +100,16 @@ def create_criterion(loss):
         ], weight=(1.0, 0.5))
     elif loss == "y_l1grad":
         criterion = YRGBL1GradientLoss(diag=False)
+    elif loss == "aux_l1fftgrad_ident":
+        criterion = AuxiliaryLoss([
+            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
+    elif loss == "aux_lbp_ident":
+        criterion = AuxiliaryLoss([
+            YLBP(),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
     else:
         raise NotImplementedError(loss)
 
@@ -200,20 +211,31 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.model.eval()
 
     def train_step(self, data):
-        x, y, *_ = data
+        if not self.trainer.args.privilege:
+            x, y, *_ = data
+            privilege = None
+        else:
+            x, y, privilege, *_ = data
+
         x, y = self.to_device(x), self.to_device(y)
         scale_factor = self.get_scale_factor()
 
         with self.autocast():
             if self.discriminator is None:
-                z = self.model(x)
+                if not self.trainer.args.privilege:
+                    z = self.model(x)
+                else:
+                    z = self.model(x, self.to_device(privilege))
                 loss = self.criterion(z, y)
                 self.sum_loss += loss.item()
             else:
                 if not self.trainer.args.discriminator_only:
                     # generator (sr) step
                     self.discriminator.requires_grad_(False)
-                    z = self.model(x)
+                    if not self.trainer.args.privilege:
+                        z = self.model(x)
+                    else:
+                        z = self.model(x, self.to_device(privilege))
                     if isinstance(z, (list, tuple)):
                         # NOTE: models using auxiliary loss return tuple.
                         #       first element is SR result.
@@ -440,6 +462,7 @@ class Waifu2xTrainer(Trainer):
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
         model_offset = self.model.i2i_offset
+        return_no_offset_y = self.args.privilege
         if self.args.method in {"scale", "noise_scale"}:
             scale_factor = 2
         elif self.args.method in {"scale4x", "noise_scale4x"}:
@@ -478,6 +501,7 @@ class Waifu2xTrainer(Trainer):
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 resize_step_p=self.args.resize_step_p,
+                return_no_offset_y=return_no_offset_y,
                 training=True,
             )
             self.sampler = dataset.create_sampler()
@@ -500,6 +524,7 @@ class Waifu2xTrainer(Trainer):
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
                 deblur=self.args.deblur,
+                return_no_offset_y=False,
                 training=False)
             dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.args.batch_size,
@@ -635,7 +660,9 @@ def register(subparsers, default_parser):
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
                                  "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp",
                                  "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad", "aux_y_l1fftgrad",
-                                 "y_l1grad"],
+                                 "y_l1grad",
+                                 "aux_l1fftgrad_ident", "aux_lbp_ident",
+                                 ],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")
@@ -693,6 +720,8 @@ def register(subparsers, default_parser):
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--pre-antialias", action="store_true",
                         help=("Set `pre_antialias=True` for SwinUNet4x."))
+    parser.add_argument("--privilege", action="store_true",
+                        help=("Use model.forward(LR_image, HR_image)"))
 
     parser.set_defaults(
         batch_size=16,
