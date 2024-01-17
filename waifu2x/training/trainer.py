@@ -110,6 +110,9 @@ def create_criterion(loss):
             YLBP(),
             IdentityLoss(),
         ], weight=(1.0, 1.0))
+    elif loss == "ident":
+        # loss is computed in model.forward()
+        criterion = IdentityLoss()
     else:
         raise NotImplementedError(loss)
 
@@ -662,6 +665,7 @@ def register(subparsers, default_parser):
                                  "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad", "aux_y_l1fftgrad",
                                  "y_l1grad",
                                  "aux_l1fftgrad_ident", "aux_lbp_ident",
+                                 "ident",
                                  ],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
