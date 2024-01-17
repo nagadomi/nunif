@@ -198,7 +198,7 @@ class Trainer(ABC):
             # Adjust epoch to keep the final epoch to the minimum LR
             self.args.max_epoch -= (self.args.max_epoch % step) + 1
             print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
-            eta_min = self.args.learning_rate * 1e-3
+            eta_min = self.args.learning_rate * self.args.learning_rate_cosine_min_factor
             scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=t_0, eta_min=eta_min)
         if self.args.warmup_epoch > 0:
             # TODO: `total_iters=self.args.warmup_epoch` does not work correctly,
@@ -310,6 +310,8 @@ def create_trainer_default_parser():
                         help="learning rate decay step for StepLR/MultiStepLR")
     parser.add_argument("--learning-rate-cycles", type=int, default=5,
                         help="number of learning rate cycles for CosineAnnealingWarmRestarts")
+    parser.add_argument("--learning-rate-cosine-min-factor", type=float, default=1e-3,
+                        help="Minimum learning rate factor for --schedule cosine")
     parser.add_argument("--warmup-epoch", type=int, default=0,
                         help="warmup epochs with --warmup-learning-rate")
     parser.add_argument("--warmup-learning-rate", type=int, default=1e-6,
