@@ -2,8 +2,9 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nunif.models import I2IBaseModel, register_model
+from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d
+
 
 """
 TODO:
@@ -125,36 +126,44 @@ class ToImage(nn.Module):
 
 
 class WincUNetBase(nn.Module):
-    def __init__(self, in_channels, out_channels, base_dim=96, scale_factor=2, refiner=False, norm_layer=None):
+    def __init__(self, in_channels, out_channels, base_dim=96, last_dim_add=0, scale_factor=2,
+                 norm_layer=None, teacher_2x=False):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
         C = base_dim
         HEADS = C // 32
-        if scale_factor in {1, 2}:
-            FINAL_DIM_ADD = C // 4
-        elif scale_factor == 4:
-            FINAL_DIM_ADD = C
 
         # shallow feature extractor
-        self.patch = nn.Sequential(
-            nn.Conv2d(in_channels, C // 2, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
-        )
+        if not teacher_2x:
+            self.patch = nn.Sequential(
+                nn.Conv2d(in_channels, C // 2, kernel_size=3, stride=1, padding=0),
+                nn.LeakyReLU(0.1, inplace=True),
+                nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=0),
+                nn.LeakyReLU(0.1, inplace=True),
+            )
+        else:
+            self.patch = nn.Sequential(
+                nn.Conv2d(in_channels, C // 2, kernel_size=2, stride=2, padding=0),
+                nn.LeakyReLU(0.1, inplace=True),
+                nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
+                nn.LeakyReLU(0.1, inplace=True),
+                nn.ZeroPad2d((-2, -2, -2, -2)),
+            )
         # encoder
         self.wac1 = WincBlocks(C, C, num_heads=HEADS, norm_layer=norm_layer)
         self.down1 = PatchDown(C, C * 2)
         self.wac2 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, norm_layer=norm_layer)
         self.down2 = PatchDown(C * 2, C * 4)
-        self.wac3 = WincBlocks(C * 4, C * 4, window_size=4, num_heads=HEADS * 3, num_layers=4, norm_layer=norm_layer)
+        self.wac3 = WincBlocks(C * 4, C * 4, window_size=4, num_heads=HEADS * 3, num_layers=4,
+                               norm_layer=norm_layer)
         # decoder
         self.up2 = PatchUp(C * 4, C * 2)
         self.wac4 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, num_layers=3, norm_layer=norm_layer)
-        self.up1 = PatchUp(C * 2, C + FINAL_DIM_ADD)
-        self.wac1_proj = nn.Conv2d(C, C + FINAL_DIM_ADD, kernel_size=1, stride=1, padding=0)
-        self.wac5 = WincBlocks(C + FINAL_DIM_ADD, C + FINAL_DIM_ADD, num_heads=HEADS, num_layers=3, norm_layer=norm_layer)
-        self.to_image = ToImage(C + FINAL_DIM_ADD, out_channels, scale_factor=scale_factor)
+        self.up1 = PatchUp(C * 2, C + last_dim_add)
+        self.wac1_proj = nn.Conv2d(C, C + last_dim_add, kernel_size=1, stride=1, padding=0)
+        self.wac5 = WincBlocks(C + last_dim_add, C + last_dim_add, num_heads=HEADS, num_layers=3,
+                               norm_layer=norm_layer)
+        self.to_image = ToImage(C + last_dim_add, out_channels, scale_factor=scale_factor)
 
     def forward(self, x):
         x = self.patch(x)
@@ -178,14 +187,15 @@ class WincUNetBase(nn.Module):
 @register_model
 class WincUNet2x(I2IBaseModel):
     name = "waifu2x.winc_unet_2x"
-    name_alias = ("waifu2x.wac_unet_2x",)
+    name_alias = ("waifu2x.wac_unet_2x",)  # TODO: delete this
 
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96):
+    def __init__(self, in_channels=3, out_channels=3, base_dim=96, layer_norm=True):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
-        norm_layer = lambda ndim: nn.LayerNorm(ndim, bias=False)
+        norm_layer = lambda ndim: nn.LayerNorm(ndim, bias=False) if layer_norm else None
         self.unet = WincUNetBase(
             in_channels, out_channels,
-            base_dim=base_dim, scale_factor=2,
+            base_dim=base_dim, last_dim_add=base_dim // 4,
+            scale_factor=2,
             norm_layer=norm_layer)
 
     def forward(self, x):
@@ -199,16 +209,16 @@ class WincUNet2x(I2IBaseModel):
 @register_model
 class WincUNet4x(I2IBaseModel):
     name = "waifu2x.winc_unet_4x"
-    name_alias = ("waifu2x.wac_unet_4x",)
+    name_alias = ("waifu2x.wac_unet_4x",)  # TODO: delete this
 
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96):
+    def __init__(self, in_channels=3, out_channels=3, base_dim=96, layer_norm=True):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
         self.in_channels = in_channels
         self.out_channels = out_channels
-        norm_layer = lambda ndim: nn.LayerNorm(ndim, bias=False)
+        norm_layer = lambda ndim: nn.LayerNorm(ndim, bias=False) if layer_norm else None
         self.unet = WincUNetBase(
             in_channels, out_channels=out_channels,
-            base_dim=base_dim,
+            base_dim=base_dim, last_dim_add=base_dim,
             scale_factor=4,
             norm_layer=norm_layer)
 
@@ -229,6 +239,7 @@ class WincUNet4x(I2IBaseModel):
         return WincUNetDownscaled(unet=unet, downscale_factor=4,
                                   in_channels=self.i2i_in_channels, out_channels=self.out_channels)
 
+
 # TODO: Not tested
 @register_model
 class WincUNetDownscaled(I2IBaseModel):
@@ -239,6 +250,7 @@ class WincUNetDownscaled(I2IBaseModel):
         offset = 32 // downscale_factor
         scale = 4 // downscale_factor
         blend_size = 4 * downscale_factor
+        self.antialias = True
         super().__init__(dict(in_channels=in_channels, out_channels=out_channels,
                               downscale_factor=downscale_factor),
                          scale=scale, offset=offset, in_channels=in_channels, blend_size=blend_size)
@@ -248,12 +260,14 @@ class WincUNetDownscaled(I2IBaseModel):
     def forward(self, x):
         z = self.unet(x)
         if self.training:
-            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor,
+                                       z.shape[3] // self.downscale_factor),
                               mode="bicubic", align_corners=False, antialias=self.antialias)
             return z
         else:
             z = torch.clamp(z, 0., 1.)
-            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor,
+                                       z.shape[3] // self.downscale_factor),
                               mode="bicubic", align_corners=False, antialias=self.antialias)
             z = torch.clamp(z, 0., 1.)
             return z
@@ -265,6 +279,16 @@ class WincUNetDownscaled(I2IBaseModel):
                                  in_channels=unet_4x.unet.in_channels,
                                  out_channels=unet_4x.unet.out_channels)
         return net
+
+
+register_model_factory(
+    "waifu2x.winc_unet_2xl",
+    lambda **kwargs: WincUNet2x(base_dim=192, layer_norm=True, **kwargs))
+
+register_model_factory(
+    "waifu2x.winc_unet_4xl",
+    lambda **kwargs: WincUNet4x(base_dim=192, layer_norm=True, **kwargs))
+
 
 def _bench(name):
     from nunif.models import create_model
