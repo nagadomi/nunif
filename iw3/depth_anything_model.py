@@ -81,11 +81,8 @@ def batch_preprocess(x):
     return x
 
 
-_AMP_DTYPE = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
-
-
 def _forward(model, x, enable_amp):
-    with autocast(device=x.device, dtype=_AMP_DTYPE, enabled=enable_amp):
+    with autocast(device=x.device, enabled=enable_amp):
         out = model(x).unsqueeze(dim=1)
     return out
 
