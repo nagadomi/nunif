@@ -84,6 +84,8 @@ def batch_preprocess(x):
 def _forward(model, x, enable_amp):
     with autocast(device=x.device, enabled=enable_amp):
         out = model(x).unsqueeze(dim=1)
+    if out.dtype != torch.float32:
+        out = out.to(torch.float32)
     return out
 
 
