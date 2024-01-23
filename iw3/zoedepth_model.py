@@ -32,7 +32,7 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
     return model
 
 
-ZOED_MODEL_FILES = {
+MODEL_FILES = {
     "ZoeD_N": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_N.pt"),
     "ZoeD_K": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_K.pt"),
     "ZoeD_NK": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_NK.pt"),
@@ -40,8 +40,8 @@ ZOED_MODEL_FILES = {
 
 
 def has_model(model_type="ZoeD_N"):
-    assert model_type in ZOED_MODEL_FILES
-    return path.exists(ZOED_MODEL_FILES[model_type])
+    assert model_type in MODEL_FILES
+    return path.exists(MODEL_FILES[model_type])
 
 
 def force_update_midas():
@@ -52,6 +52,11 @@ def force_update_midas():
 def force_update_zoedepth():
     with TorchHubDir(HUB_MODEL_DIR):
         torch.hub.help("nagadomi/ZoeDepth_iw3:main", "ZoeD_N", force_reload=True, trust_repo=True)
+
+
+def force_update():
+    force_update_midas()
+    force_update_zoedepth()
 
 
 def _forward(model, x, enable_amp):

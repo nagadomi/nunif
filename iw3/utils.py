@@ -15,7 +15,6 @@ from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
 from nunif.device import create_device
-from . import zoedepth_model as ZU
 
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_fp32.pth")
@@ -329,10 +328,11 @@ def debug_depth_image(depth, args, ema=False):
 def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = ZU.batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-                               int16=False, enable_amp=not args.disable_amp,
-                               output_device=args.state["device"],
-                               device=args.state["device"])
+        depth = args.state["depth_utils"].batch_infer(
+            depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
+            int16=False, enable_amp=not args.disable_amp,
+            output_device=args.state["device"],
+            device=args.state["device"])
         if not args.debug_depth:
             return postprocess_image(depth, im_org.to(args.state["device"]),
                                      args, side_model)
@@ -415,10 +415,11 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             x_orgs = x
         else:
             x_orgs = torch.cat(x_orgs, dim=0).to(args.state["device"])
-        depths = ZU.batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-                                int16=False, enable_amp=not args.disable_amp,
-                                output_device=args.state["device"],
-                                device=args.state["device"])
+        depths = args.state["depth_utils"].batch_infer(
+            depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
+            int16=False, enable_amp=not args.disable_amp,
+            output_device=args.state["device"],
+            device=args.state["device"])
         return [VU.from_image(postprocess(depth, x_org,
                                           args, side_model, ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
@@ -563,7 +564,8 @@ def create_parser(required_true=True):
                         help="overwrite output files")
     parser.add_argument("--pad", type=float, help="pad_size = int(size * pad)")
     parser.add_argument("--depth-model", type=str, default="ZoeD_N",
-                        choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK"],
+                        choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
+                                 "Any_S", "Any_B", "Any_L"],
                         help="depth model name")
     parser.add_argument("--remove-bg", action="store_true",
                         help="remove background depth, not recommended for video")
@@ -635,12 +637,20 @@ class EMAMinMax():
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
+    from . import zoedepth_model as ZU
+    from . import depth_anything_model as DU
+    if args.depth_model in ZU.MODEL_FILES:
+        depth_utils = ZU
+    elif args.depth_model in DU.MODEL_FILES:
+        depth_utils = DU
+
     args.state = {
         "stop_event": stop_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
         "ema": EMAMinMax(),
         "device": create_device(args.gpu),
+        "depth_utils": depth_utils
     }
     return args
 
@@ -650,8 +660,7 @@ def iw3_main(args):
     assert not (args.half_sbs and args.vr180)
 
     if args.update:
-        ZU.force_update_midas()
-        ZU.force_update_zoedepth()
+        args.state["depth_utils"].force_update()
 
     if path.normpath(args.input) == path.normpath(args.output):
         raise ValueError("input and output must be different file")
@@ -666,7 +675,8 @@ def iw3_main(args):
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]
     else:
-        depth_model = ZU.load_model(model_type=args.depth_model, gpu=args.gpu, height=args.zoed_height)
+        depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
+                                                           height=args.zoed_height)
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":

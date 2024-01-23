@@ -16,7 +16,6 @@ from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, make_output_filename,
     has_rembg_model)
-from . import zoedepth_model as ZU
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
@@ -165,7 +164,9 @@ class MainFrame(wx.Frame):
         self.cbo_method.SetSelection(0)
 
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK"],
+        self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
+                                           choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
+                                                    "Any_S", "Any_B", "Any_L"],
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(0)
 
@@ -347,7 +348,7 @@ class MainFrame(wx.Frame):
                 device_name = torch.cuda.get_device_properties(i).name
                 self.cbo_device.Append(device_name, i)
             if torch.cuda.device_count() > 0:
-                 self.cbo_device.Append(T("All CUDA Device"), -2)
+                self.cbo_device.Append(T("All CUDA Device"), -2)
         elif torch.backends.mps.is_available():
             self.cbo_device.Append("MPS", 0)
         self.cbo_device.Append("CPU", -1)
@@ -681,17 +682,9 @@ class MainFrame(wx.Frame):
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            if ZU.has_model(depth_model_type):
-                # Realod depth model
-                self.SetStatusText(f"Loading {depth_model_type}...")
-            else:
-                # Need to download the model
-                self.SetStatusText(f"Downloading {depth_model_type}...")
 
         remove_bg = self.chk_rembg.GetValue()
         bg_model_type = self.cbo_bg_model.GetValue()
-        if remove_bg and not has_rembg_model(bg_model_type):
-            self.SetStatusText(f"Downloading {bg_model_type}...")
 
         max_output_width = max_output_height = None
         max_output_size = self.cbo_max_output_size.GetValue()
@@ -754,6 +747,16 @@ class MainFrame(wx.Frame):
             stop_event=self.stop_event,
             tqdm_fn=functools.partial(TQDMGUI, self),
             depth_model=self.depth_model)
+
+        if args.state["depth_utils"].has_model(depth_model_type):
+            # Realod depth model
+            self.SetStatusText(f"Loading {depth_model_type}...")
+            if remove_bg and not has_rembg_model(bg_model_type):
+                self.SetStatusText(f"Downloading {bg_model_type}...")
+        else:
+            # Need to download the model
+            self.SetStatusText(f"Downloading {depth_model_type}...")
+
         startWorker(self.on_exit_worker, iw3_main, wargs=(args,))
         self.processing = True
 
