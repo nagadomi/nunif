@@ -50,6 +50,11 @@ https://github.com/isl-org/ZoeDepth
 Intelligent Systems Lab Org / MIT License
 
 ---
+iw3 uses forked version of Depth-Anything
+https://github.com/LiheYoung/Depth-Anything
+Lihe Yang / Apache License Version 2.0
+
+---
 iw3 can use U-2-Net's pretrained model via rembg module.
 https://github.com/xuebinqin/U-2-Net
 xuebinqin / Apache License Version 2.0
@@ -63,6 +68,8 @@ xuebinqin / Apache License Version 2.0
 iw3 can anime-segmentation's pretrained model via rembg module.
 https://github.com/SkyTNT/anime-segmentation
 SkyTNT / Apache License Version 2.0
+
+
 
 ----
 Other libraries used are listed in `requirements.txt`.
