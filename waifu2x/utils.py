@@ -49,25 +49,7 @@ class Waifu2x():
     def compile(self):
         # TODO: If dynamic tracing works well in the future,
         #       it is better to add `dynamic=True` for variable batch sizes.
-        if can_compile(self.scale_model):
-            logger.debug("compile scale_model")
-            self.scale_model = compile_model(self.scale_model)
-        if can_compile(self.scale4x_model):
-            logger.debug("compile scale4x_model")
-            self.scale4x_model = compile_model(self.scale4x_model)
-
-        for i in range(len(self.noise_models)):
-            if can_compile(self.noise_models[i]):
-                logger.debug(f"compile noise_models[{i}]")
-                self.noise_models[i] = compile_model(self.noise_models[i])
-
-            if can_compile(self.noise_scale_models[i]):
-                logger.debug(f"compile noise_scale_models[{i}]")
-                self.noise_scale_models[i] = compile_model(self.noise_scale_models[i])
-
-            if can_compile(self.noise_scale4x_models[i]):
-                logger.debug(f"compile noise_scale4x_models[{i}]")
-                self.noise_scale4x_models[i] = compile_model(self.noise_scale4x_models[i])
+        self._apply(lambda model: compile_model(model) if can_compile(model) else model)
 
     @torch.inference_mode()
     def warmup(self, tile_size, batch_size, enable_amp):
