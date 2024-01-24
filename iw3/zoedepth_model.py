@@ -11,6 +11,10 @@ from nunif.models.data_parallel import DataParallelInference
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 
 
+def get_name():
+    return "ZoeDepth"
+
+
 def load_model(model_type="ZoeD_N", gpu=0, height=None):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         if not os.getenv("IW3_DEBUG"):

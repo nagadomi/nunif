@@ -585,8 +585,8 @@ def create_parser(required_true=True):
                         help="video filter options for ffmpeg.")
     parser.add_argument("--debug-depth", action="store_true",
                         help="debug output normalized depthmap, info and preprocessed depth")
-    parser.add_argument("--mapper", type=str, default="pow2",
-                        choices=["pow2", "softplus", "softplus2", "none"],
+    parser.add_argument("--mapper", type=str, default="auto",
+                        choices=["auto", "pow2", "softplus", "softplus2", "none"],
                         help="(re-)mapper function for depth")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
@@ -671,6 +671,12 @@ def iw3_main(args):
         args.bg_session = rembg.new_session(model_name=args.bg_model)
     else:
         args.bg_session = None
+
+    if args.mapper == "auto":
+        if args.state["depth_utils"].get_name() == "DepthAnything":
+            args.mapper = "none"
+        else:
+            args.mapper = "pow2"
 
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]

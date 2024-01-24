@@ -21,6 +21,10 @@ MODEL_FILES = {
 }
 
 
+def get_name():
+    return "DepthAnything"
+
+
 def load_model(model_type="Any_B", gpu=0, **kwargs):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         encoder = NAME_MAP[model_type]
