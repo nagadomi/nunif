@@ -87,6 +87,11 @@ pip install -r requirements-torch.txt
 pip install -r requirements.txt
 ```
 
+If you want to use GUI,
+```
+pip install -r requirements-gui.txt
+```
+
 ### 6. Run waifu2x.web
 
 Download pre-trained models.
