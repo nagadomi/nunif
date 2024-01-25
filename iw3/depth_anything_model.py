@@ -127,9 +127,9 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
     if out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bicubic", align_corners=False, antialias=True)
-    # inverse depth
-    max_v = out.max()
-    out = max_v - out
+
+    # invert for zoedepth compatibility
+    out.neg_()
 
     if flip_aug:
         if batch:
