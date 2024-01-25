@@ -252,10 +252,37 @@ class ONNXAntialias(I2IBaseModel):
                           'y': {0: 'batch_size', 2: "height", 3: "width"}},
             **kwargs
         )
-        patch_resize_antialias(f, "/Resize_1")
+        patch_resize_antialias(f, index=1)
 
 
-def patch_resize_antialias(onnx_path, name=None):
+class ONNXResizeBicubic(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, scale_factor: float):
+        x = F.interpolate(x, scale_factor=scale_factor,
+                          mode="bicubic", align_corners=False, antialias=False)
+        return x
+
+    def export_onnx(self, f, **kwargs):
+        kwargs["opset_version"] = 18
+        x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
+        model = torch.jit.script(self.eval())
+        scale_factor = float(0.75)
+        torch.onnx.export(
+            model,
+            [x, scale_factor],
+            f,
+            input_names=["x", "scale_factor"],
+            output_names=["y"],
+            dynamic_axes={'x': {0: 'batch_size', 1: "channels", 2: "height", 3: "width"},
+                          'y': {0: 'batch_size', 1: "channels", 2: "height", 3: "width"}},
+            **kwargs
+        )
+        patch_resize_antialias(f, index=0)
+
+
+def patch_resize_antialias(onnx_path, name=None, index=None):
     """
     PyTorch's onnx exporter does not support bicubic downscaling with antialias=True.
     However, it is supported in ONNX optset 18.
@@ -266,16 +293,41 @@ def patch_resize_antialias(onnx_path, name=None):
     onnx.checker.check_model(model)
     assert model.opset_import[0].version >= 18
     hit = False
+    resize_count = 0
     for node in model.graph.node:
         if node.op_type == "Resize":
-            if name is None or name == node.name:
+            do_patch = False
+            if name is None and index is None:
+                do_patch = True
+            elif name is not None and name == node.name:
+                do_patch = True
+            elif index is not None and index == resize_count:
+                do_patch = True
+            if do_patch:
                 antialias = onnx.helper.make_attribute("antialias", 1)
                 node.attribute.extend([antialias])
                 hit = True
+            resize_count += 1
     onnx.checker.check_model(model)
     onnx.save(model, onnx_path)
     if not hit:
-        logger.warning(f"patch_resize_antialias: No Resize node: {onnx_path}: name={name}")
+        logger.warning(f"patch_resize_antialias: No Resize node: {onnx_path}: name={name}, index={index}")
+
+
+def _test_resize():
+    import onnx
+    resize = ONNXResizeBicubic()
+    resize.export_onnx("./tmp/resize_bicubic.onnx")
+    model = onnx.load("./tmp/resize_bicubic.onnx")
+    print(model.graph)
+
+
+def _test_antialias():
+    import onnx
+    resize = ONNXAntialias()
+    resize.export_onnx("./tmp/antialias.onnx")
+    model = onnx.load("./tmp/antialias.onnx")
+    print(model.graph)
 
 
 def _test_pad():
@@ -346,5 +398,8 @@ def _test_alpha_border():
 
 
 if __name__ == "__main__":
-    _test_blend_filter()
-    #_test_alpha_border()
+    # _test_blend_filter()
+    # _test_alpha_border()
+    # _test_resize()
+    # _test_antialias()
+    pass
