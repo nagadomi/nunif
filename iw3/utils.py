@@ -320,7 +320,7 @@ def debug_depth_image(depth, args, ema=False):
     out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
-    gc.text((16, 16), f"min={depth_min}\nmax={depth_min}\nmean={mean_depth}\nstd={std_depth}", "gray")
+    gc.text((16, 16), f"min={depth_min}\nmax={depth_max}\nmean={mean_depth}\nstd={std_depth}", "gray")
 
     return out
 
