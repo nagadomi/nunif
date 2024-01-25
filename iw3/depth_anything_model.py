@@ -145,8 +145,37 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         assert z.shape[0] == 1
         z = z.squeeze(0)
 
-    z = z.to(output_device)
     if int16:
+        # DepthAnything output is relative depth so normalize
+        # TODO: torch.uint16 will be implemented.
+        #       For now, use numpy to save uint16 png.
+        #  torch.tensor([0, 1, 65534], dtype=torch.float32).to(torch.int16).numpy().astype(np.uint16)
+        # >array([    0,     1, 65534], dtype=uint16)
+        max_v, min_v = z.max(), z.min()
+        uint16_max = 0xffff
+        if max_v - min_v > 0:
+            z = uint16_max * ((z - min_v) / (max_v - min_v))
+        else:
+            z = torch.zeros_like(z)
         z = z.to(torch.int16)
 
+    z = z.to(output_device)
+
     return z
+
+
+def _test():
+    from PIL import Image
+    import cv2
+    import numpy as np
+
+    model = load_model()
+    im = Image.open("waifu2x/docs/images/miku_128.png").convert("RGB")
+    out = batch_infer(model, im, flip_aug=False, int16=True,
+                      enable_amp=True, output_device="cpu", device="cuda")
+    out = out.squeeze(0).numpy().astype(np.uint16)
+    cv2.imwrite("./tmp/depth_anything_out.png", out)
+
+
+if __name__ == "__main__":
+    _test()
