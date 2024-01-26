@@ -1,5 +1,6 @@
 import os
 from os import path
+import pickle
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
@@ -16,14 +17,35 @@ def get_name():
 
 
 def load_model(model_type="ZoeD_N", gpu=0, height=None):
+    assert model_type in MODEL_FILES
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
-        if not os.getenv("IW3_DEBUG"):
-            model = torch.hub.load("nagadomi/ZoeDepth_iw3:main", model_type, config_mode="infer",
-                                   pretrained=True, verbose=False, trust_repo=True)
-        else:
-            assert path.exists("../ZoeDepth_iw3/hubconf.py")
-            model = torch.hub.load("../ZoeDepth_iw3", model_type, source="local", config_mode="infer",
-                                   pretrained=True, verbose=False, trust_repo=True)
+        try:
+            if not os.getenv("IW3_DEBUG"):
+                model = torch.hub.load("nagadomi/ZoeDepth_iw3:main", model_type, config_mode="infer",
+                                       pretrained=True, verbose=False, trust_repo=True)
+            else:
+                assert path.exists("../ZoeDepth_iw3/hubconf.py")
+                model = torch.hub.load("../ZoeDepth_iw3", model_type, source="local", config_mode="infer",
+                                       pretrained=True, verbose=False, trust_repo=True)
+        except (RuntimeError, pickle.PickleError) as e:
+            if isinstance(e, RuntimeError):
+                do_handle = "PytorchStreamReader" in repr(e)
+            else:
+                do_handle = True
+            if do_handle:
+                try:
+                    # delete corrupted file
+                    os.unlink(MODEL_FILES[model_type])
+                except:  # noqa
+                    pass
+                raise RuntimeError(
+                    f"File `{MODEL_FILES[model_type]}` is corrupted. "
+                    "This error may occur when the network is unstable or the disk is full. "
+                    "Try again."
+                )
+            else:
+                raise
+
     device = create_device(gpu)
     model = model.to(device).eval()
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
