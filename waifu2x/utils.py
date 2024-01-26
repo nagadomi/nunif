@@ -10,6 +10,7 @@ from nunif.models import (
     data_parallel_model,
     compile_model, is_compiled_model,
 )
+from nunif.models.data_parallel import DataParallelInference
 from nunif.device import create_device, autocast
 from nunif.logger import logger
 from nunif.utils.ui import HiddenPrints
@@ -22,7 +23,11 @@ CAN_COMPILE_WINC_UNET = False
 
 
 def can_compile(model):
-    if model is not None and not is_compiled_model(model):
+    if model is None:
+        return False
+    if isinstance(model, (torch.nn.DataParalle, DataParallelInference)):
+        return False
+    if not is_compiled_model(model):
         if model.name.startswith("waifu2x.swin_unet"):
             return CAN_COMPILE_SWIN_UNET
         elif model.name.startswith("waifu2x.winc_unet"):
