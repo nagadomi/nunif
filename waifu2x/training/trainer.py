@@ -40,11 +40,11 @@ def create_criterion(loss):
     elif loss == "lbp":
         criterion = YLBP()
     elif loss == "lbpm":
-        criterion = MultiscaleLoss(YLBP())
+        criterion = MultiscaleLoss(YLBP(), mode="avg")
     elif loss == "lbp5":
         criterion = YLBP(kernel_size=5)
     elif loss == "lbp5m":
-        criterion = MultiscaleLoss(YLBP(kernel_size=5))
+        criterion = MultiscaleLoss(YLBP(kernel_size=5), mode="avg")
     elif loss == "rgb_lbp":
         criterion = RGBLBP()
     elif loss == "rgb_lbp5":
@@ -93,6 +93,11 @@ def create_criterion(loss):
         criterion = MultiscaleL1FFTLoss()
     elif loss == "y_l1fftgrad":
         criterion = YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False)
+    elif loss == "y_l1fftgradm":
+        # for 4x
+        criterion = MultiscaleLoss(
+            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
+            scale_factors=(1, 2), weights=(0.75, 0.25), mode="avg")
     elif loss == "aux_y_l1fftgrad":
         criterion = AuxiliaryLoss([
             YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
@@ -662,7 +667,8 @@ def register(subparsers, default_parser):
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
                                  "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp",
-                                 "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad", "aux_y_l1fftgrad",
+                                 "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad",
+                                 "y_l1fftgradm", "aux_y_l1fftgrad",
                                  "y_l1grad",
                                  "aux_l1fftgrad_ident", "aux_lbp_ident",
                                  "ident",
