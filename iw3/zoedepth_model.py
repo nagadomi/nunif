@@ -93,7 +93,7 @@ def _forward(model, x, enable_amp):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None):
+                output_device="cpu", device=None, normalize_int16=False):
     # _patch_resize_debug(model)
     device = device if device is not None else model.device
     batch = False
@@ -162,6 +162,13 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
     z = z.to(output_device)
     if int16:
+        if normalize_int16:
+            max_v, min_v = z.max(), z.min()
+            uint16_max = 0xffff
+            if max_v - min_v > 0:
+                z = uint16_max * ((z - min_v) / (max_v - min_v))
+            else:
+                z = torch.zeros_like(z)
         z = z.to(torch.int16)
 
     return z

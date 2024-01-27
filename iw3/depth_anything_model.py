@@ -61,6 +61,7 @@ def load_model(model_type="Any_B", gpu=0, **kwargs):
 
     device = create_device(gpu)
     model = model.to(device).eval()
+    model.device = device
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
         model = DataParallelInference(model, device_ids=gpu)
 
@@ -117,7 +118,7 @@ def _forward(model, x, enable_amp):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None):
+                output_device="cpu", device=None, normalize_int16=True):
     device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
@@ -168,7 +169,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         z = z.squeeze(0)
 
     if int16:
-        # DepthAnything output is relative depth so normalize
+        # 1. ignore normalize_int16
+        # 2. DepthAnything output is relative depth so normalize
         # TODO: torch.uint16 will be implemented.
         #       For now, use numpy to save uint16 png.
         #  torch.tensor([0, 1, 65534], dtype=torch.float32).to(torch.int16).numpy().astype(np.uint16)
