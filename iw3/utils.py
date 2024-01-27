@@ -131,6 +131,26 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
     return z.cpu()
 
 
+def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
+                           depth_min, depth_max,
+                           mapper, batch_size, enable_amp):
+    if not model.sbs_output:
+        left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                       depth_min, depth_max,
+                                       mapper, -1, batch_size, enable_amp)
+        right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                        depth_min, depth_max,
+                                        mapper, 1, batch_size, enable_amp)
+        return left_eye, right_eye
+    else:
+        lr = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                 depth_min, depth_max,
+                                 mapper, -1, batch_size, enable_amp)
+        left_eye = lr[0:3, :, :]
+        right_eye = lr[3:6, :, :]
+        return left_eye, right_eye
+
+
 def apply_divergence_nn(model, c, depth, divergence, convergence,
                         depth_min, depth_max,
                         mapper, shift, batch_size, enable_amp):
@@ -140,7 +160,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
         depth = torch.flip(depth, (2,))
 
     def config_callback(x):
-        return 8, x.shape[1], x.shape[2]
+        return 8, x.shape[1], x.shape[2], x.shape[0] * (2 if model.sbs_output else 1)
 
     def preprocess_callback(_, pad):
         xx = F.pad(c.unsqueeze(0), pad, mode="replicate").squeeze(0)
@@ -254,16 +274,12 @@ def postprocess_image(depth, im_org, args, side_model, ema=False):
             im_org, depth,
             args.divergence, convergence=args.convergence, shift=1)
     else:
-        left_eye = apply_divergence_nn(side_model, im_org, depth,
-                                       args.divergence, args.convergence,
-                                       depth_min=depth_min, depth_max=depth_max,
-                                       mapper=args.mapper, shift=-1,
-                                       batch_size=args.batch_size, enable_amp=not args.disable_amp)
-        right_eye = apply_divergence_nn(side_model, im_org, depth,
-                                        args.divergence, args.convergence,
-                                        depth_min=depth_min, depth_max=depth_max,
-                                        mapper=args.mapper, shift=1,
-                                        batch_size=args.batch_size, enable_amp=not args.disable_amp)
+        left_eye, right_eye = apply_divergence_nn_LR(
+            side_model, im_org, depth,
+            args.divergence, args.convergence,
+            depth_min=depth_min, depth_max=depth_max,
+            mapper=args.mapper,
+            batch_size=args.batch_size, enable_amp=not args.disable_amp)
 
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
     ipd_pad -= ipd_pad % 2
@@ -687,6 +703,7 @@ def iw3_main(args):
 
     if args.method == "row_flow":
         side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu[0]])[0].eval()
+        # side_model.sbs_output = True  # TODO: Fast, but causing ghost artifacts
     else:
         side_model = None
 

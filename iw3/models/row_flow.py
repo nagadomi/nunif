@@ -23,6 +23,7 @@ class RowFlow(I2IBaseModel):
             nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
         )
         self.register_buffer("delta_scale", torch.tensor(1.0 / 127.0))
+        self.sbs_output = False
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d,)):
@@ -35,15 +36,29 @@ class RowFlow(I2IBaseModel):
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
         delta = self.conv(x) * self.delta_scale
-        grid = grid + torch.cat([delta, torch.zeros_like(delta)], dim=1)
-        grid = grid.permute(0, 2, 3, 1)
-        z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
-
-        z = F.pad(z, (-28, -28, -28, -28))
-        if self.training:
-            return z
+        delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
+        if not self.sbs_output:
+            grid = grid + delta
+            grid = grid.permute(0, 2, 3, 1)
+            z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
+            z = F.pad(z, (-28, -28, -28, -28))
+            if self.training:
+                return z
+            else:
+                return torch.clamp(z, 0., 1.)
         else:
-            return torch.clamp(z, 0., 1.)
+            # Generate LR
+            grid_l = (grid + delta).permute(0, 2, 3, 1)
+            grid_r = (grid - delta).permute(0, 2, 3, 1)
+            z_l = F.grid_sample(rgb, grid_l, mode="bilinear", padding_mode="border", align_corners=True)
+            z_r = F.grid_sample(rgb, grid_r, mode="bilinear", padding_mode="border", align_corners=True)
+            # concat channels
+            z = torch.cat([z_l, z_r], dim=1)
+            z = F.pad(z, (-28, -28, -28, -28))
+            if self.training:
+                return z
+            else:
+                return torch.clamp(z, 0., 1.)
 
 
 if __name__ == "__main__":
