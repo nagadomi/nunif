@@ -18,7 +18,7 @@ from multiprocessing import cpu_count
 from .stereoimage_generation import create_stereoimages
 
 
-def save_images(im_org, im_sbs, im_depth, divergence, convergence, filename_base, size, num_samples):
+def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filename_base, size, num_samples):
     im_l = TF.crop(im_sbs, 0, 0, im_org.height, im_org.width)
     im_r = TF.crop(im_sbs, 0, im_org.width, im_org.height, im_org.width)
     assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size
@@ -31,6 +31,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, filename_base
     metadata.add_text("sbs_convergence", str(round(convergence, 6)))
     metadata.add_text("sbs_depth_max", str(max_v))
     metadata.add_text("sbs_depth_min", str(min_v))
+    metadata.add_text("sbs_mapper", mapper)
 
     # im_sbs.save(filename_base + "_LRF.png")
 
@@ -163,6 +164,7 @@ def main(args):
                 if min(im.size) < args.min_size:
                     continue
                 for _ in range(args.times):
+                    mapper = random.choice(["pow2", "none"]) if args.mapper == "random" else args.mapper
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
                     divergence = gen_divergence()
@@ -177,9 +179,11 @@ def main(args):
                         np.array(im_s, dtype=np.uint8),
                         0xffff - np_depth,
                         divergence, modes=["left-right"],
-                        convergence=convergence)[0]
+                        convergence=convergence,
+                        mapper=mapper)[0]
                     f = pool.submit(save_images, im_s, sbs, Image.fromarray(np_depth),
                                     divergence, convergence,
+                                    mapper,
                                     output_base, args.size, args.num_samples)
                     # f.result() # debug
                     futures.append(f)
@@ -204,6 +208,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
     parser.add_argument("--zoed-height", type=int, help="input height for ZoeDepth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
+    parser.add_argument("--mapper", type=str, default="pow2", choices=["pow2", "none", "random"], help="depth mapper function")
 
     parser.set_defaults(handler=main)
 

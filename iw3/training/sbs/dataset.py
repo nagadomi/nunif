@@ -69,6 +69,11 @@ class SBSDataset(Dataset):
         original_image_width = int(im_depth.text["sbs_width"])
         divergence = float(im_depth.text["sbs_divergence"])
         convergence = float(im_depth.text["sbs_convergence"])
+        if "sbs_mapper" in im_depth.text:
+            mapper = im_depth.text["sbs_mapper"]
+        else:
+            mapper = "pow2"
+
         if side == "right":
             im_org = TF.hflip(im_org)
             im_depth = TF.hflip(im_depth)
@@ -79,7 +84,8 @@ class SBSDataset(Dataset):
             TF.to_tensor(im_depth),
             divergence, convergence,
             original_image_width,
-            depth_min=depth_min, depth_max=depth_max
+            depth_min=depth_min, depth_max=depth_max,
+            mapper=mapper,
         )
         y = TF.to_tensor(TF.crop(im_side, self.model_offset, self.model_offset,
                                  im_side.height - self.model_offset * 2,
