@@ -15,6 +15,7 @@ flake8
 psutil
 pyyaml
 onnx
+onnxconverter_common
 lpips
 # opencv-python
 packaging
