@@ -5,15 +5,16 @@ from nunif.models import I2IBaseModel, register_model
 
 
 @register_model
-class RowFlow(I2IBaseModel):
-    name = "sbs.row_flow"
+class RowFlowV2(I2IBaseModel):
+    name = "sbs.row_flow_v2"
 
     def __init__(self):
-        # from diverdence==2.5, (0.5 * 2.5) / 100 * 2048 = 24, so offset must be > 24
-        super(RowFlow, self).__init__(locals(), scale=1, offset=28, in_channels=8, blend_size=4)
-        self.conv = nn.Sequential(
+        super(RowFlowV2, self).__init__(locals(), scale=1, offset=28, in_channels=8, blend_size=4)
+        self.feature = nn.Sequential(
             nn.Conv2d(3, 16, kernel_size=(1, 3), stride=1, padding=(0, 1), padding_mode="replicate"),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=True))
+        self.non_overlap = nn.Conv2d(16, 1, kernel_size=1, stride=1, padding=0)
+        self.overlap_residual = nn.Sequential(
             nn.Conv2d(16, 16, kernel_size=(1, 9), stride=1, padding=(0, 4), padding_mode="replicate"),
             nn.ReLU(inplace=True),
             nn.Conv2d(16, 32, kernel_size=(1, 9), stride=1, padding=(0, 4), padding_mode="replicate"),
@@ -31,33 +32,43 @@ class RowFlow(I2IBaseModel):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
+    def _forward(self, x):
+        x = self.feature(x)
+        non_overlap = self.non_overlap(x)
+        overlap_residual = self.overlap_residual(x)
+        return non_overlap, non_overlap + overlap_residual
+
+    def _warp(self, rgb, grid, delta):
+        delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
+        grid = grid + delta
+        grid = grid.permute(0, 2, 3, 1)
+        z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
+        return z
+
     def forward(self, x):
         rgb = x[:, 0:3, :, ]
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
-        delta = self.conv(x) * self.delta_scale
-        delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
-        if not self.sbs_output:
-            grid = grid + delta
-            grid = grid.permute(0, 2, 3, 1)
-            z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
-            z = F.pad(z, (-28, -28, -28, -28))
-            if self.training:
-                return z
-            else:
-                return torch.clamp(z, 0., 1.)
+        if self.training:
+            delta1, delta2 = self._forward(x)
+            delta1 = delta1 * self.delta_scale
+            delta2 = delta2 * self.delta_scale
+            z1 = self._warp(rgb, grid, delta1)
+            z2 = self._warp(rgb, grid, delta2)
+            z1 = F.pad(z1, (-28, -28, -28, -28))
+            z2 = F.pad(z2, (-28, -28, -28, -28))
+            return z2, z1, (grid[:, 0:1, :, :] + delta2) / self.delta_scale
         else:
-            # Generate LR
-            grid_l = (grid + delta).permute(0, 2, 3, 1)
-            grid_r = (grid - delta).permute(0, 2, 3, 1)
-            z_l = F.grid_sample(rgb, grid_l, mode="bilinear", padding_mode="border", align_corners=True)
-            z_r = F.grid_sample(rgb, grid_r, mode="bilinear", padding_mode="border", align_corners=True)
-            # concat channels
-            z = torch.cat([z_l, z_r], dim=1)
-            z = F.pad(z, (-28, -28, -28, -28))
-            if self.training:
-                return z
+            delta = self._forward(x)[1] * self.delta_scale
+            if not self.sbs_output:
+                z = self._warp(rgb, grid, delta)
+                z = F.pad(z, (-28, -28, -28, -28))
+                return torch.clamp(z, 0., 1.)
             else:
+                z_l = self._warp(rgb, grid, delta)
+                z_r = self._warp(rgb, grid, -delta)
+                z = torch.cat([z_l, z_r], dim=1)
+                z = F.pad(z, (-28, -28, -28, -28))
                 return torch.clamp(z, 0., 1.)
 
 
@@ -81,4 +92,4 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    _bench("sbs.row_flow")
+    _bench("sbs.row_flow_v2")

@@ -17,7 +17,7 @@ from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_pare
 from nunif.device import create_device
 
 
-FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_fp32.pth")
+FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_v2.pth")
 REMBG_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "rembg")
 os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
 

@@ -10,7 +10,7 @@ This project is under construction.
 
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth)
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything)
 - Generating side-by-side image using grid_sample based lightweight model that is trained with [stable-diffusion-webui-depthmap-script](https://github.com/thygate/stable-diffusion-webui-depthmap-script) 's method
 
 ## Usage
@@ -174,7 +174,7 @@ See https://ffmpeg.org/ffmpeg-filters.html
 
 ### Recommended workflow for slow processor or very large video
 
-1. First check the results with a few samples. There are two ways.
+First check the results with a few samples. There are two ways.
 
 The following command processes video keyframes about every 4 seconds and outputs the result as 3D photos (image files).
 ```
@@ -199,3 +199,16 @@ See https://github.com/nagadomi/nunif/issues/60 .
 
 Basically, fine tuning for this model is not necessary.
 Perhaps what is needed is fine tuning for ZoeDepth.
+
+## Monocular Depth Estimation Models
+
+| Short Name  |                   |
+|-------------|-------------------|
+| `ZoeD_N`    | ZoeDepth model NYUv2. Tuned for indoor scenes.
+| `ZoeD_K`    | ZoeDepth model KITTI. Tuned for outdoor scenes (dashboard camera view).
+| `ZoeD_NK`   | ZoeDepth model NYUv2 and KITTI.
+| `Any_S`     | DepthAnything model small. The most efficient model, with promising performance.
+| `Any_B`     | DepthAnything model base.
+| `Any_L`     | DepthAnything model large. This model gives high quality, but is also heavy in terms of computation.
+
+Personally, I recommend `ZoeD_N` or `Any_B`.

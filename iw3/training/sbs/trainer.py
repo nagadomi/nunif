@@ -2,13 +2,24 @@ from os import path
 import argparse
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from nunif.models import create_model
 from nunif.training.env import RGBPSNREnv
 from nunif.training.trainer import Trainer
-from nunif.modules.lbp_loss import YLBP
+from nunif.modules.auxiliary_loss import AuxiliaryLoss
 from nunif.modules.clamp_loss import ClampLoss
 from .dataset import SBSDataset
 from ... import models # noqa
+
+
+class DeltaPenalty(nn.Module):
+    def forward(self, input, dummy):
+        # warp points(grid + delta) should be monotonically increasing
+        N = 3
+        penalty = 0
+        for i in range(1, N):
+            penalty = penalty + F.relu(input[:, :, :, :-i] - input[:, :, :, i:], inplace=True).mean()
+        return penalty / N
 
 
 class SBSEnv(RGBPSNREnv):
@@ -68,8 +79,10 @@ class SBSTrainer(Trainer):
     def create_env(self):
         if self.args.loss == "l1":
             criterion = ClampLoss(nn.L1Loss()).to(self.device)
-        elif self.args.loss == "lbp":
-            criterion = YLBP().to(self.device)
+        elif self.args.loss == "aux_l1":
+            criterion = AuxiliaryLoss(
+                (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()),
+                (1.0, 0.5, 1.0)).to(self.device)
         return SBSEnv(self.model, criterion, self.sampler)
 
 
@@ -84,10 +97,10 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="sbs.row_flow", help="network arch")
+    parser.add_argument("--arch", type=str, default="sbs.row_flow_v2", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="l1", choices=["l1", "lbp"],
+    parser.add_argument("--loss", type=str, default="aux_l1", choices=["l1", "aux_l1"],
                         help="loss")
 
     parser.set_defaults(
