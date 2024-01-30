@@ -18,8 +18,8 @@ from nunif.utils.ui import HiddenPrints
 
 # compling swin_unet model only works with torch >= 2.1.0
 CAN_COMPILE_SWIN_UNET = packaging_version.parse(torch.__version__).release >= (2, 1, 0)
-# torch 2.1.2 has a bug in F.scaled_dot_product_attention(mem efficient attention with mask)
-CAN_COMPILE_WINC_UNET = False
+# compling winc_unet model only works with torch >= 2.2.0
+CAN_COMPILE_WINC_UNET = packaging_version.parse(torch.__version__).release >= (2, 2, 0)
 
 
 def can_compile(model):

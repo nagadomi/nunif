@@ -6,14 +6,6 @@ from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d
 
 
-"""
-TODO:
-  When this model is compiled, it does not work correctly.
-  Probably due to a bug of memory effecient attention in torch 2.1.2.
-  I have confirmed that it works correctly with `sdp_kernel({enable_math=True, enable_mem_efficient=False})`.
-"""
-
-
 class WincBlock(nn.Module):
     """ Window MHA + Multi Layer Conv2d
     """
