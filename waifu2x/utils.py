@@ -25,7 +25,7 @@ CAN_COMPILE_WINC_UNET = False
 def can_compile(model):
     if model is None:
         return False
-    if isinstance(model, (torch.nn.DataParalle, DataParallelInference)):
+    if isinstance(model, (torch.nn.DataParallel, DataParallelInference)):
         return False
     if not is_compiled_model(model):
         if model.name.startswith("waifu2x.swin_unet"):
