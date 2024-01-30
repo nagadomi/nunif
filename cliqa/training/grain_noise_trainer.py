@@ -203,7 +203,7 @@ def register(subparsers, default_parser):
         optimizer="adam",
         learning_rate=0.00005,
         scheduler="cosine",
-        learning_rate_cycles=12,
+        learning_rate_cycles=10,
         learning_rate_decay=0.98,
         learning_rate_decay_step=[1],
         max_epoch=400,
