@@ -14,6 +14,7 @@ from os import path
 # File name prefix for specifying the downsampling filter
 # This used in dataset.py
 NEAREST_PREFIX = "__NEAREST_"
+DOT_SCALE_PREFIX = {2: "_DOT_2x_", 4: "_DOT_4x_"}
 
 
 def exec_prob(prob):
@@ -113,9 +114,13 @@ def gen_dot_grid(block_size, scale, cols, rotate=False):
 COLS_MAP = {2: 4, 4: 2, 8: 1}
 
 
-def gen(cell=40, cols_scale=1, rotate=False):
+def gen(cell=40, cols_scale=1, rotate=False, dot_scale=2):
     assert isinstance(cols_scale, int)
-    scale = random.choices((2, 4, 8), weights=(0.25, 1, 1), k=1)[0]
+    assert dot_scale in {2, 4}
+    if dot_scale == 2:
+        scale = random.choices((2, 4, 8), weights=(0.25, 1, 1), k=1)[0]
+    elif dot_scale == 4:
+        scale = random.choices((4, 8), weights=(1, 1), k=1)[0]
     cols = COLS_MAP[scale]
     return gen_dot_grid(cell, scale, cols * cols_scale, rotate=rotate)
 
@@ -143,6 +148,8 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--size", "-s", type=int, default=640, choices=[320, 640, 1280],
                         help="image size")
+    parser.add_argument("--dot-scale", type=int, default=2, choices=[2, 4],
+                        help="minimum dot size")
     parser.add_argument("--num-samples", "-n", type=int, default=200,
                         help="number of images to generate")
     parser.add_argument("--rotate", action="store_true",
@@ -160,11 +167,12 @@ def main():
 
     for i in tqdm(range(args.num_samples), ncols=80):
         rotate = random.choice([True, False]) if args.rotate else False
-        dot = gen(cols_scale=cols_scale, rotate=rotate)
+        dot = gen(cols_scale=cols_scale, rotate=rotate, dot_scale=args.dot_scale)
+        dot_prefix = DOT_SCALE_PREFIX[args.dot_scale]
         if rotate:
-            output_filename = path.join(args.output_dir, f"__DOT_ROTATE_{i}{postfix}.png")
+            output_filename = path.join(args.output_dir, f"_{dot_prefix}ROTATE_{i}{postfix}.png")
         else:
-            output_filename = path.join(args.output_dir, f"{NEAREST_PREFIX}_DOT_{i}{postfix}.png")
+            output_filename = path.join(args.output_dir, f"{NEAREST_PREFIX}{dot_prefix}{i}{postfix}.png")
 
         dot.save(output_filename)
 

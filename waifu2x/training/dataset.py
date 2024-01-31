@@ -23,6 +23,8 @@ from PIL.Image import Resampling
 
 
 NEAREST_PREFIX = "__NEAREST_"
+DOT_SCALE2X_PREFIX = "_DOT_2x_"
+DOT_SCALE4X_PREFIX = "_DOT_4x_"
 SCREENTONE_PREFIX = "__SCREENTONE_"
 INTERPOLATION_MODES = (
     "box",
@@ -148,9 +150,12 @@ class AntialiasX():
 
 class Waifu2xDatasetBase(Dataset):
     def __init__(self, input_dir, num_samples,
-                 hard_example_history_size=6):
+                 hard_example_history_size=6,
+                 exclude_filter=None):
         super().__init__()
         self.files = ImageLoader.listdir(input_dir)
+        if exclude_filter is not None:
+            self.files = list(filter(exclude_filter, self.files))
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
         self.num_samples = num_samples
@@ -191,8 +196,12 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         assert scale_factor in {1, 2, 4, 8}
         assert noise_level in {-1, 0, 1, 2, 3}
         assert style in {None, "art", "photo"}
+        if scale_factor in {1, 2}:
+            exclude_filter = lambda fn: DOT_SCALE4X_PREFIX not in fn
+        else:
+            exclude_filter = lambda fn: DOT_SCALE2X_PREFIX not in fn
 
-        super().__init__(input_dir, num_samples=num_samples)
+        super().__init__(input_dir, num_samples=num_samples, exclude_filter=exclude_filter)
         self.training = training
         self.style = style
         self.noise_level = noise_level
