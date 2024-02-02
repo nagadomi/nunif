@@ -31,6 +31,7 @@ class LBPLoss(nn.Module):
     def conv(self, x):
         return F.conv2d(x, weight=self.kernel, bias=None, stride=1, padding=0, groups=self.groups)
 
+    @torch.compile
     def forward(self, input, target):
         b, ch, *_ = input.shape
         return self.loss(self.conv(input), self.conv(target))
@@ -46,6 +47,7 @@ class YLBP(nn.Module):
     def conv(self, x):
         return F.conv2d(x, weight=self.kernel, bias=None, stride=1, padding=0)
 
+    @torch.compile
     def forward(self, input, target):
         B, C, *_ = input.shape
         target = torch.clamp(target, 0, 1)
@@ -69,6 +71,7 @@ class YL1LBP(nn.Module):
         self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
         self.weight = weight
 
+    @torch.compile
     def forward(self, input, target):
         lbp_loss = self.lbp(input, target)
         l1_loss = self.l1(input, target)
@@ -82,6 +85,7 @@ class L1LBP(nn.Module):
         self.l1 = ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3))
         self.weight = weight
 
+    @torch.compile
     def forward(self, input, target):
         lbp_loss = self.lbp(input, target)
         l1_loss = self.l1(input, target)
