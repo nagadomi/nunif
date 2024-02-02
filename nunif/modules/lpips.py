@@ -20,6 +20,9 @@ class LPIPSWith(nn.Module):
         # TODO: NeuralCompression devs pointed out that LPIPS loss has a problem with gradient propagation.
         #       https://github.com/facebookresearch/NeuralCompression/blob/main/neuralcompression/loss_fn/_normfix_lpips.py
 
+    def train(mode=True):
+        super().train(False)
+
     def forward(self, input, target):
         base_loss = self.base_loss(input, target)
         lpips_loss = self.lpips(input, target, normalize=True).mean()

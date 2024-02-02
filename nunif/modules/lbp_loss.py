@@ -56,6 +56,9 @@ class RandomBinaryConvolution(nn.Module):
         self.conv.weight.data.copy_(generate_lbcnn_filters(self.conv.weight.data.shape, sparcity, seed=seed))
         self.conv.weight.requires_grad_(False)
 
+    def train(mode=True):
+        super().train(False)
+
     def forward(self, x):
         return self.conv(x)
 
@@ -71,6 +74,9 @@ class RandomFilterConvolution(nn.Module):
             bias=False)
         self.conv.weight.data.copy_(generate_random_filters(self.conv.weight.data.shape, sparcity))
         self.conv.weight.requires_grad_(False)
+
+    def train(mode=True):
+        super().train(False)
 
     def forward(self, x):
         return self.conv(x)
@@ -90,6 +96,9 @@ class LBPLoss(nn.Module):
         # [0] = identity filter
         self.conv.conv.weight.data[0] = 0
         self.conv.conv.weight.data[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
+
+    def train(mode=True):
+        super().train(False)
 
     def forward(self, input, target):
         b, ch, *_ = input.shape
@@ -112,6 +121,9 @@ class YL1LBP(nn.Module):
         self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
         self.weight = weight
 
+    def train(mode=True):
+        super().train(False)
+
     def forward(self, input, target):
         lbp_loss = self.lbp(input, target)
         l1_loss = self.l1(input, target)
@@ -124,6 +136,9 @@ class L1LBP(nn.Module):
         self.lbp = RGBLBP(kernel_size=kernel_size)
         self.l1 = ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3))
         self.weight = weight
+
+    def train(mode=True):
+        super().train(False)
 
     def forward(self, input, target):
         lbp_loss = self.lbp(input, target)
