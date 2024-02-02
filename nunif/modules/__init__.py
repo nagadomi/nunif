@@ -1,5 +1,6 @@
 from . attention import SEBlock
-from . lbp_loss import LBPLoss, RandomBinaryConvolution
+from . lbp_loss import LBPLoss
+from . lbcnn import RandomBinaryConvolution
 from . alex11_loss import Alex11Loss
 from . clamp_loss import ClampLoss
 from . auxiliary_loss import AuxiliaryLoss
