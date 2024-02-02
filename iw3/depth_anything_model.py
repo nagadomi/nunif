@@ -92,8 +92,8 @@ def batch_preprocess(x):
         scale_factor = lower_bound / H
     new_h = int(H * scale_factor)
     new_w = int(W * scale_factor)
-    new_h += (ensure_multiple_of - new_h % ensure_multiple_of)
-    new_w += (ensure_multiple_of - new_w % ensure_multiple_of)
+    new_h -= new_h % ensure_multiple_of
+    new_w -= new_w % ensure_multiple_of
     if new_h < lower_bound:
         new_h = lower_bound
     if new_w < lower_bound:
@@ -188,6 +188,24 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
     return z
 
 
+def _bench():
+    from PIL import Image
+    import cv2
+    import numpy as np
+    import time
+
+    N = 100
+
+    model = load_model(model_type="Any_L", gpu=0)
+    x = torch.randn((1, 3, 518, 784)).cuda()
+    with torch.no_grad():
+        t = time.time()
+        for _ in range(N):
+            z = model(x)
+            torch.cuda.synchronize()
+        print(round((time.time() - t) / N, 4))
+
+
 def _test():
     from PIL import Image
     import cv2
@@ -202,4 +220,5 @@ def _test():
 
 
 if __name__ == "__main__":
-    _test()
+    #_test()
+    _bench()
