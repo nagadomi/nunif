@@ -172,7 +172,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_mapper = wx.StaticText(self.grp_stereo, label=T("Depth Mapping"))
         self.cbo_mapper = wx.ComboBox(self.grp_stereo,
-                                      choices=["auto", "pow2", "softplus", "softplus2", "none"],
+                                      choices=["auto", "pow2", "softplus", "softplus2", "none", "div_2", "div_1", "div_05"],
                                       style=wx.CB_READONLY, name="cbo_mapper")
         self.cbo_mapper.SetSelection(0)
 

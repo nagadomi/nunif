@@ -82,6 +82,12 @@ def get_mapper(name):
         return softplus01
     elif name == "softplus2":
         return lambda x: softplus01(x) ** 2
+    elif name == "div_2":
+        return lambda x: 0.2 / (1.2 - x)
+    elif name == "div_1":
+        return lambda x: 0.1 / (1.1 - x)
+    elif name == "div_05":
+        return lambda x: 0.05 / (1.05 - x)
     else:
         raise NotImplementedError()
 
@@ -602,8 +608,9 @@ def create_parser(required_true=True):
     parser.add_argument("--debug-depth", action="store_true",
                         help="debug output normalized depthmap, info and preprocessed depth")
     parser.add_argument("--mapper", type=str, default="auto",
-                        choices=["auto", "pow2", "softplus", "softplus2", "none"],
-                        help="(re-)mapper function for depth")
+                        choices=["auto", "pow2", "softplus", "softplus2", "none", "div_2", "div_1", "div_05"],
+                        help=("(re-)mapper function for depth. "
+                              "if auto, pow2 for ZoeDepth model, none for DepthAnything model"))
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
     parser.add_argument("--half-sbs", action="store_true",
