@@ -10,6 +10,15 @@ from nunif.models.data_parallel import DataParallelInference
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+MODEL_FILES = {
+    "ZoeD_N": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_N.pt"),
+    "ZoeD_K": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_K.pt"),
+    "ZoeD_NK": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_NK.pt"),
+    # DepthAnything backbone
+    "ZoeD_Any_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_metric_depth_indoor.pt"),
+    "ZoeD_Any_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_metric_depth_outdoor.pt"),
+}
+DEPTH_ANYTHING_MODELS = {"ZoeD_Any_N": "indoor", "ZoeD_Any_K": "outdoor"}
 
 
 def get_name():
@@ -21,12 +30,25 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         try:
             if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/ZoeDepth_iw3:main", model_type, config_mode="infer",
-                                       pretrained=True, verbose=False, trust_repo=True)
+                if model_type not in DEPTH_ANYTHING_MODELS:
+                    model = torch.hub.load("nagadomi/ZoeDepth_iw3:main", model_type, config_mode="infer",
+                                           pretrained=True, verbose=False, trust_repo=True)
+                else:
+                    model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
+                                           "DepthAnythingMetricDepth",
+                                           model_type=DEPTH_ANYTHING_MODELS[model_type], remove_prep=False,
+                                           verbose=False, trust_repo=True)
             else:
-                assert path.exists("../ZoeDepth_iw3/hubconf.py")
-                model = torch.hub.load("../ZoeDepth_iw3", model_type, source="local", config_mode="infer",
-                                       pretrained=True, verbose=False, trust_repo=True)
+                if model_type not in DEPTH_ANYTHING_MODELS:
+                    assert path.exists("../ZoeDepth_iw3/hubconf.py")
+                    model = torch.hub.load("../ZoeDepth_iw3", model_type, source="local", config_mode="infer",
+                                           pretrained=True, verbose=False, trust_repo=True)
+                else:
+                    assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                    model = torch.hub.load("../DepthAnything_iw3",
+                                           "DepthAnythingMetricDepth",
+                                           model_type=DEPTH_ANYTHING_MODELS[model_type], remove_prep=False,
+                                           source="local", verbose=False, trust_repo=True)
         except (RuntimeError, pickle.PickleError) as e:
             if isinstance(e, RuntimeError):
                 do_handle = "PytorchStreamReader" in repr(e)
@@ -46,23 +68,24 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
             else:
                 raise
 
+    if model_type not in DEPTH_ANYTHING_MODELS:
+        if height is not None:
+            model.core.prep.resizer = HeightResizer(height, height)
+        else:
+            model.core.prep.resizer = HeightResizer()
+    else:
+        if height is not None:
+            height += (14 - height % 14)
+            model.core.prep.resizer = HeightResizer(height, height, mod=14)
+        else:
+            model.core.prep.resizer = HeightResizer(h_height=518, v_height=392, mod=14)
+
     device = create_device(gpu)
     model = model.to(device).eval()
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
         model = DataParallelInference(model, device_ids=gpu)
-    if height is not None:
-        model.core.prep.resizer = HeightResizer(height, height)
-    else:
-        model.core.prep.resizer = HeightResizer()
 
     return model
-
-
-MODEL_FILES = {
-    "ZoeD_N": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_N.pt"),
-    "ZoeD_K": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_K.pt"),
-    "ZoeD_NK": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_NK.pt"),
-}
 
 
 def has_model(model_type="ZoeD_N"):
@@ -80,9 +103,15 @@ def force_update_zoedepth():
         torch.hub.help("nagadomi/ZoeDepth_iw3:main", "ZoeD_N", force_reload=True, trust_repo=True)
 
 
+def force_update_depth_anything():
+    with TorchHubDir(HUB_MODEL_DIR):
+        torch.hub.help("nagadomi/Depth-Anything_iw3:main", "DepthAnythingMetricDepth", force_reload=True, trust_repo=True)
+
+
 def force_update():
     force_update_midas()
     force_update_zoedepth()
+    force_update_depth_anything()
 
 
 def _forward(model, x, enable_amp):
@@ -175,25 +204,26 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
 
 class HeightResizer():
-    def __init__(self, h_height=384, v_height=512):
+    def __init__(self, h_height=384, v_height=512, mod=32):
         self.h_height = h_height
         self.v_height = v_height
+        self.mod = mod
 
     def get_size(self, width, height):
         target_height = self.h_height if width > height else self.v_height
         if target_height < height:
             new_h = target_height
             new_w = int(new_h / height * width)
-            if new_w % 32 != 0:
-                new_w += (32 - new_w % 32)
-            if new_h % 32 != 0:
-                new_h += (32 - new_h % 32)
+            if new_w % self.mod != 0:
+                new_w += (self.mod - new_w % self.mod)
+            if new_h % self.mod != 0:
+                new_h += (self.mod - new_h % self.mod)
         else:
             new_h, new_w = height, width
-            if new_w % 32 != 0:
-                new_w -= new_w % 32
-            if new_h % 32 != 0:
-                new_h -= new_h % 32
+            if new_w % self.mod != 0:
+                new_w -= new_w % self.mod
+            if new_h % self.mod != 0:
+                new_h -= new_h % self.mod
 
         return new_w, new_h
 
