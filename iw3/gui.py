@@ -166,6 +166,7 @@ class MainFrame(wx.Frame):
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
                                            choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
+                                                    "ZoeD_Any_N", "ZoeD_Any_K",
                                                     "Any_S", "Any_B", "Any_L"],
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(0)
