@@ -207,8 +207,25 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `ZoeD_N`    | ZoeDepth model NYUv2. Tuned for indoor scenes.
 | `ZoeD_K`    | ZoeDepth model KITTI. Tuned for outdoor scenes (dashboard camera view).
 | `ZoeD_NK`   | ZoeDepth model NYUv2 and KITTI.
+| `ZoeD_Any_N`| DepthAnything metric depth model NYUv2. Tuned for indoor scenes.
+| `ZoeD_Any_K`| DepthAnything metric depth model KITTI. Tuned for outdoor scenes (dashboard camera view).
 | `Any_S`     | DepthAnything model small. The most efficient model, with promising performance.
 | `Any_B`     | DepthAnything model base.
 | `Any_L`     | DepthAnything model large. This model gives high quality, but is also heavy in terms of computation.
 
 Personally, I recommend `ZoeD_N` or `Any_B`.
+
+## Updating torch.hub modules (ZoeDepth, DepthAnything)
+
+When you manually update the code, run the following command.
+```
+python -m iw3.download_models
+```
+
+The command syncs the following repositories.
+
+- https://github.com/nagadomi/ZoeDepth_iw3
+- https://github.com/nagadomi/MiDaS_iw3
+- https://github.com/nagadomi/Depth-Anything_iw3
+
+If you already downloaded the model files (checkpoint filess), downloading model files will be skipped.
