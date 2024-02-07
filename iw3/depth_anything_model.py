@@ -7,6 +7,7 @@ from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast
 from nunif.models.data_parallel import DataParallelInference
+from .dilation import dilate_edge
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -78,13 +79,12 @@ def force_update():
         torch.hub.help("nagadomi/Depth-Anything_iw3:main", "DepthAnything",
                        force_reload=True, trust_repo=True)
 
-
 def batch_preprocess(x):
     # x: BCHW float32 0-1
     B, C, H, W = x.shape
 
     # resize
-    lower_bound = 518
+    lower_bound = 392
     ensure_multiple_of = 14
     if W < H:
         scale_factor = lower_bound / W
@@ -147,6 +147,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
 
+    out = dilate_edge(out, 2)
     if out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bicubic", align_corners=False, antialias=True)
