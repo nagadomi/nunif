@@ -117,11 +117,11 @@ This tends to happen with outdoor scene photos.
 
 There are several ways to fight this problem.
 
-- Try `--mapper softplus2` option
+- Try `--foreground-scale 3` option
 - Try`--remove-bg` option
-- Try combined option `--divergence 4 --convergence 0 --mapper softplus2 --remove-bg`
+- Try combined option `--divergence 4 --convergence 0 --foreground-scale 3 --remove-bg`
 
-When `--mapper softplus2` is specified, the depthmap is remapped to see big differences on the foreground side. [mapper functions](https://github.com/nagadomi/nunif/assets/287255/0071a65a-62ff-4928-850c-0ad22bceba41)
+When `--foreground-scale 3` is specified, the depthmap is remapped to see big differences on the foreground side. You can choose a value from 0 to 3. 0 by default.
 
 When `--remove-bg` is specified, the background area is removed using [rembg](https://github.com/danielgatis/rembg) with [U2-net](https://github.com/xuebinqin/U-2-Net)'s human segmentation model, before estimating depthmap.
 
