@@ -28,6 +28,7 @@
 "Method": "メソッド"
 "Depth Model": "深度推定モデル"
 "Depth Mapping": "深度の割当"
+"Foreground Scale": "前景拡大"
 "Stereo Format": "フォーマット"
 "Flicker Reduction": "ちらつき軽減"
 "(experimental)": "(実験的)"

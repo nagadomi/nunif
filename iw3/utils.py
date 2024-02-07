@@ -67,9 +67,17 @@ def make_input_tensor(c, depth16, divergence, convergence,
     ], dim=0)
 
 
-def softplus01(depth):
-    # smooth function of `(depth - 0.5) * 2 if depth > 0.5 else 0`
-    return torch.log(1. + torch.exp(depth * 12.0 - 6.)) / 6.0
+def softplus01(depth, c=6):
+    min_v = math.log(1 + math.exp(0 * 12.0 - c)) / (12 - c)
+    max_v = math.log(1 + math.exp(1 * 12.0 - c)) / (12 - c)
+    v = torch.log(1. + torch.exp(depth * 12.0 - c)) / (12 - c)
+    return (v - min_v) / (max_v - min_v)
+
+
+def distance_to_dispary(x, c):
+    c1 = 1.0 + c
+    min_v = c / c1
+    return ((c / (c1 - x)) - min_v) / (1.0 - min_v)
 
 
 def get_mapper(name):
@@ -82,12 +90,24 @@ def get_mapper(name):
         return softplus01
     elif name == "softplus2":
         return lambda x: softplus01(x) ** 2
-    elif name == "div_2":
-        return lambda x: 0.2 / (1.2 - x)
-    elif name == "div_1":
-        return lambda x: 0.1 / (1.1 - x)
-    elif name == "div_05":
-        return lambda x: 0.05 / (1.05 - x)
+    elif name in {"mul_1", "mul_2", "mul_3"}:
+        # for DepthAnything
+        param = {
+            # none 1x
+            "mul_1": 4,    # smooth 1.5x
+            "mul_2": 6,    # smooth 2x
+            "mul_3": 8.4,  # smooth 3x
+        }[name]
+        return lambda x: softplus01(x, param)
+    elif name in {"div_6", "div_4", "div_2", "div_1"}:
+        # for ZoeDepth
+        param = {
+            "div_6": 0.6,
+            "div_4": 0.4,
+            "div_2": 0.2,
+            "div_1": 0.1,
+        }[name]
+        return lambda x: distance_to_dispary(x, param)
     else:
         raise NotImplementedError()
 
@@ -608,10 +628,16 @@ def create_parser(required_true=True):
                         help="video filter options for ffmpeg.")
     parser.add_argument("--debug-depth", action="store_true",
                         help="debug output normalized depthmap, info and preprocessed depth")
-    parser.add_argument("--mapper", type=str, default="auto",
-                        choices=["auto", "pow2", "softplus", "softplus2", "none", "div_2", "div_1", "div_05"],
+    parser.add_argument("--mapper", type=str,
+                        choices=["auto", "pow2", "softplus", "softplus2",
+                                 "div_6", "div_4", "div_2", "div_1",
+                                 "none", "mul_1", "mul_2", "mul_3"],
                         help=("(re-)mapper function for depth. "
-                              "if auto, pow2 for ZoeDepth model, none for DepthAnything model"))
+                              "if auto, div_6 for ZoeDepth model, none for DepthAnything model. "
+                              "directly using this option is deprecated. "
+                              "use --foreground-scale instead."))
+    parser.add_argument("--foreground-scale", type=int, choices=[0, 1, 2, 3], default=0,
+                        help="foreground scaling level. 0 is disabled")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
     parser.add_argument("--half-sbs", action="store_true",
@@ -696,11 +722,19 @@ def iw3_main(args):
     else:
         args.bg_session = None
 
-    if args.mapper == "auto":
-        if args.state["depth_utils"].get_name() == "DepthAnything":
-            args.mapper = "none"
+    if args.mapper is not None:
+        if args.mapper == "auto":
+            if args.state["depth_utils"].get_name() == "DepthAnything":
+                args.mapper = "none"
+            else:
+                args.mapper = "div_6"
         else:
-            args.mapper = "pow2"
+            pass
+    else:
+        if args.state["depth_utils"].get_name() == "DepthAnything":
+            args.mapper = ["none", "mul_1", "mul_2", "mul_3"][args.foreground_scale]
+        elif args.state["depth_utils"].get_name() == "ZoeDepth":
+            args.mapper = ["div_6", "div_4", "div_2", "div_1"][args.foreground_scale]
 
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]

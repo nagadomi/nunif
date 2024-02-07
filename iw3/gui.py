@@ -171,11 +171,11 @@ class MainFrame(wx.Frame):
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(0)
 
-        self.lbl_mapper = wx.StaticText(self.grp_stereo, label=T("Depth Mapping"))
-        self.cbo_mapper = wx.ComboBox(self.grp_stereo,
-                                      choices=["auto", "pow2", "softplus", "softplus2", "none", "div_2", "div_1", "div_05"],
-                                      style=wx.CB_READONLY, name="cbo_mapper")
-        self.cbo_mapper.SetSelection(0)
+        self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
+        self.cbo_foreground_scale = wx.ComboBox(self.grp_stereo,
+                                           choices=["0", "1", "2", "3"],
+                                           style=wx.CB_READONLY, name="cbo_foreground_scale")
+        self.cbo_foreground_scale.SetSelection(0)
 
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
         self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["Full SBS", "Half SBS", "VR90"],
@@ -198,8 +198,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_method, 1, wx.EXPAND)
         layout.Add(self.lbl_depth_model, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_depth_model, 1, wx.EXPAND)
-        layout.Add(self.lbl_mapper, 0, wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_mapper, 1, wx.EXPAND)
+        layout.Add(self.lbl_foreground_scale, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_foreground_scale, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
         layout.Add(self.chk_ema_normalize, 1, wx.EXPAND)
@@ -708,7 +708,7 @@ class MainFrame(wx.Frame):
             ipd_offset=float(self.sld_ipd_offset.GetValue()),
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
-            mapper=self.cbo_mapper.GetValue(),
+            foreground_scale=int(self.cbo_foreground_scale.GetValue()),
             vr180=vr180,
             half_sbs=half_sbs,
             ema_normalize=self.chk_ema_normalize.GetValue(),
