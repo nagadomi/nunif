@@ -374,7 +374,8 @@ def process_image(im, args, depth_model, side_model):
             depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
             int16=False, enable_amp=not args.disable_amp,
             output_device=args.state["device"],
-            device=args.state["device"])
+            device=args.state["device"],
+            edge_dilation=args.edge_dilation)
         if not args.debug_depth:
             return postprocess_image(depth, im_org.to(args.state["device"]),
                                      args, side_model)
@@ -461,7 +462,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
             int16=False, enable_amp=not args.disable_amp,
             output_device=args.state["device"],
-            device=args.state["device"])
+            device=args.state["device"],
+            edge_dilation=args.edge_dilation)
         return [VU.from_image(postprocess(depth, x_org,
                                           args, side_model, ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
@@ -662,6 +664,8 @@ def create_parser(required_true=True):
                         help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
                         help="use min/max moving average to normalize video depth")
+    parser.add_argument("--edge-dilation", type=int, default=2,
+                        help="loop count of edge dilation. only used for DepthAnything model")
 
     return parser
 

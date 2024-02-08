@@ -24,6 +24,7 @@ from nunif.utils.gui import (
     set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
+from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS
 import torch
 
 
@@ -177,6 +178,13 @@ class MainFrame(wx.Frame):
                                            style=wx.CB_READONLY, name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(0)
 
+        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"))
+        self.cbo_edge_dilation = wx.ComboBox(self.grp_stereo,
+                                             choices=["0", "1", "2", "3", "4"],
+                                             style=wx.CB_READONLY, name="cbo_edge_dilation")
+        self.cbo_edge_dilation.SetSelection(2)
+        self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
         self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["Full SBS", "Half SBS", "VR90"],
                                              style=wx.CB_READONLY, name="cbo_stereo_format")
@@ -187,7 +195,7 @@ class MainFrame(wx.Frame):
                                              name="chk_ema_normalize")
         self.chk_ema_normalize.SetToolTip(T("Video Only"))
 
-        layout = wx.FlexGridSizer(rows=8, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=9, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -200,6 +208,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_depth_model, 1, wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, 1, wx.EXPAND)
+        layout.Add(self.lbl_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_edge_dilation, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
         layout.Add(self.chk_ema_normalize, 1, wx.EXPAND)
@@ -437,6 +447,8 @@ class MainFrame(wx.Frame):
         self.txt_input.Bind(wx.EVT_TEXT, self.on_text_changed_txt_input)
         self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
 
+        self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
+
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
 
@@ -465,6 +477,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_rembg_state()
         self.update_input_option_state()
+        self.update_model_selection()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -586,6 +599,16 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
+
+    def update_model_selection(self):
+        name = self.cbo_depth_model.GetValue()
+        if name in DEPTH_ANYTHING_MODELS:
+            self.cbo_edge_dilation.Enable()
+        else:
+            self.cbo_edge_dilation.Disable()
+
+    def on_selected_index_changed_cbo_depth_model(self, event):
+        self.update_model_selection()
 
     def confirm_overwrite(self):
         input_path = self.txt_input.GetValue()
@@ -709,6 +732,7 @@ class MainFrame(wx.Frame):
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
             foreground_scale=int(self.cbo_foreground_scale.GetValue()),
+            edge_dilation=int(self.cbo_edge_dilation.GetValue()),
             vr180=vr180,
             half_sbs=half_sbs,
             ema_normalize=self.chk_ema_normalize.GetValue(),

@@ -122,7 +122,7 @@ def _forward(model, x, enable_amp):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=False):
+                output_device="cpu", device=None, normalize_int16=False, **kwargs):
     # _patch_resize_debug(model)
     device = device if device is not None else model.device
     batch = False
