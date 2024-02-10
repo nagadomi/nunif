@@ -103,6 +103,13 @@ def bchw_to_bnc(x, window_size):
     return x
 
 
+def bhwc_to_bnc(x, window_size):
+    # NOTE: not optimized
+    x = bhwc_to_bchw(x)
+    x = bchw_to_bnc(x, window_size=window_size)
+    return x
+
+
 def bnc_to_bchw(x, out_shape, window_size):
     # reverse bchw_to_bnc
     B, N, C = x.shape
