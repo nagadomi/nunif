@@ -27,7 +27,7 @@ python -m iw3.gui
 
 On Windows, run `Run iw3 GUI.bat`.
 
-![iw3-gui](https://github.com/nagadomi/nunif/assets/287255/294a3f70-257f-442d-b79b-be169cd5e2cc)
+![iw3-gui](https://github.com/nagadomi/nunif/assets/287255/3dba4f23-395d-48eb-afb6-819c332a93ac)
 
 ### CLI
 
@@ -67,6 +67,30 @@ Also, when running `iw3` for the first time, it may take some time as it needs t
 ![ipd-offset](https://github.com/nagadomi/nunif/assets/287255/9ae7c504-08eb-4105-af36-b5a9da5b5ed8)
 
 This may be adjustable on the VR Player. If so, set it to 0 (by default).
+
+### What is `--foreground-scale` option?
+
+When specifying a high value (1-3), foreground depth is scaled up and background depth is scaled down.
+
+![foreground-scale](https://github.com/nagadomi/nunif/assets/287255/5664ea7a-bcf8-4430-b490-7f2bcf1a81c4)
+
+To be used for outdoor photos where foreground(people) look very flat. For videos, `0`(by default) is recommended.
+
+Note that the transformation formula is different for ZoeDepth models(`ZoeD_N`, `ZoeD_Any_N`) and DepthAnything models(`Any_S`, `Any_B`, `Any_L`), even for the same value.
+
+### What is `--edge-dilation` option?
+
+(`Edge Fix` in GUI)
+
+This parameter is used only for DepthAnything models (`Any_S`, `Any_B`, `ANY_L`).
+
+DepthAnything model outputs very accurate depth, but in stereo generation, it causes artifacts at foreground and background edges.
+
+This approach reduces artifacts by dilating foreground segments (high value area).
+
+![edge-dilation](https://github.com/nagadomi/nunif/assets/287255/cb67b93a-bf26-4ea2-ac8b-418d5dc716c3)
+
+`0` is disabled. `2` by default. `4` is the most eye-friendly, but it degrades depth accuracy.
 
 ## About VR Player
 
@@ -120,8 +144,6 @@ There are several ways to fight this problem.
 - Try `--foreground-scale 3` option
 - Try`--remove-bg` option
 - Try combined option `--divergence 4 --convergence 0 --foreground-scale 3 --remove-bg`
-
-When `--foreground-scale 3` is specified, the depthmap is remapped to see big differences on the foreground side. You can choose a value from 0 to 3. 0 by default.
 
 When `--remove-bg` is specified, the background area is removed using [rembg](https://github.com/danielgatis/rembg) with [U2-net](https://github.com/xuebinqin/U-2-Net)'s human segmentation model, before estimating depthmap.
 
