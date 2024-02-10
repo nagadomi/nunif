@@ -166,7 +166,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         out = _forward(model, x, enable_amp)
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
-            pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
             x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
             out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
