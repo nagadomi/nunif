@@ -119,37 +119,29 @@ class ToImage(nn.Module):
 
 class WincUNetBase(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96, last_dim_add=0, scale_factor=2,
-                 norm_layer=None, teacher_2x=False):
+                 norm_layer=None):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
         C = base_dim
         HEADS = C // 32
 
         # shallow feature extractor
-        if not teacher_2x:
-            self.patch = nn.Sequential(
-                nn.Conv2d(in_channels, C // 2, kernel_size=3, stride=1, padding=0),
-                nn.LeakyReLU(0.1, inplace=True),
-                nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=0),
-                nn.LeakyReLU(0.1, inplace=True),
-            )
-        else:
-            self.patch = nn.Sequential(
-                nn.Conv2d(in_channels, C // 2, kernel_size=2, stride=2, padding=0),
-                nn.LeakyReLU(0.1, inplace=True),
-                nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
-                nn.LeakyReLU(0.1, inplace=True),
-                nn.ZeroPad2d((-2, -2, -2, -2)),
-            )
+        self.patch = nn.Sequential(
+            nn.Conv2d(in_channels, C // 2, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(0.1, inplace=True),
+        )
+
         # encoder
         self.wac1 = WincBlocks(C, C, num_heads=HEADS, norm_layer=norm_layer)
         self.down1 = PatchDown(C, C * 2)
         self.wac2 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, norm_layer=norm_layer)
-        self.down2 = PatchDown(C * 2, C * 4)
-        self.wac3 = WincBlocks(C * 4, C * 4, window_size=4, num_heads=HEADS * 3, num_layers=4,
+        self.down2 = PatchDown(C * 2, C * 2)
+        self.wac3 = WincBlocks(C * 2, C * 2, window_size=4, num_heads=HEADS * 3, num_layers=4,
                                norm_layer=norm_layer)
         # decoder
-        self.up2 = PatchUp(C * 4, C * 2)
+        self.up2 = PatchUp(C * 2, C * 2)
         self.wac4 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, num_layers=3, norm_layer=norm_layer)
         self.up1 = PatchUp(C * 2, C + last_dim_add)
         self.wac1_proj = nn.Conv2d(C, C + last_dim_add, kernel_size=1, stride=1, padding=0)
