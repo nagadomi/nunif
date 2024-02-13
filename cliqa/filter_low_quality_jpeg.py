@@ -9,20 +9,11 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import torch
 from nunif.models import load_model
 from nunif.logger import logger
-from .utils import predict_jpeg_quality, create_patch_loader
+from .utils import predict_jpeg_quality, create_patch_loader, copyfile
 from .models import jpeg_quality  # noqa
 
 
 DEFAULT_CHECKPOINT_FILE = path.join(path.dirname(__file__), "pretrained_models", "jpeg_quality.pth")
-
-
-def copyfile(src, dst, symlink):
-    if symlink:
-        if path.exists(dst):
-            os.unlink(dst)
-        os.symlink(src, dst)
-    else:
-        shutil.copyfile(src, dst)
 
 
 def main():

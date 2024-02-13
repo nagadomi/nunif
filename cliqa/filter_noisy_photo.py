@@ -9,20 +9,11 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import torch
 from nunif.models import load_model
 from nunif.logger import logger
-from .utils import predict_grain_noise_psnr, create_patch_loader
+from .utils import predict_grain_noise_psnr, create_patch_loader, copyfile
 from .models import grain_noise_level  # noqa
 
 
 DEFAULT_CHECKPOINT_FILE = path.join(path.dirname(__file__), "pretrained_models", "grain_noise_level.pth")
-
-
-def copyfile(src, dst, symlink):
-    if symlink:
-        if path.exists(dst):
-            os.unlink(dst)
-        os.symlink(src, dst)
-    else:
-        shutil.copyfile(src, dst)
 
 
 def main():
