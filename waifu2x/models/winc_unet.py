@@ -274,16 +274,18 @@ register_model_factory(
     lambda **kwargs: WincUNet4x(base_dim=192, layer_norm=True, **kwargs))
 
 
-def _bench(name):
+def _bench(name, compile):
     from nunif.models import create_model
     import time
     device = "cuda:0"
     model = create_model(name, in_channels=3, out_channels=3).to(device).eval()
+    if compile:
+        model = torch.compile(model)
     x = torch.zeros((4, 3, 256, 256)).to(device)
-    with torch.inference_mode():
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z, *_ = model(x)
         print(z.shape)
-        print(model.name, model.i2i_offset, model.i2i_scale)
+        print(model.name, model.i2i_offset, model.i2i_scale, f"compile={compile}")
 
     # benchmark
     t = time.time()
@@ -294,5 +296,7 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    _bench("waifu2x.winc_unet_2x")
-    _bench("waifu2x.winc_unet_4x")
+    _bench("waifu2x.winc_unet_2x", False)
+    _bench("waifu2x.winc_unet_4x", False)
+    _bench("waifu2x.winc_unet_2x", True)
+    _bench("waifu2x.winc_unet_4x", True)
