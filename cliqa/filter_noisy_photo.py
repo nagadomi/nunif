@@ -72,9 +72,5 @@ def main():
 if __name__ == "__main__":
     from .download_models import main as download_main
 
-    # download models
-    pretrained_model_dir = path.join(path.dirname(__file__), "pretrained_models")
-    if not path.exists(pretrained_model_dir):
-        download_main()
-
+    download_main()
     main()
