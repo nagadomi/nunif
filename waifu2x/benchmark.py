@@ -97,7 +97,7 @@ def psnr256(x1, x2, color):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model-dir", type=str, required=True,
                         help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3],
@@ -124,10 +124,9 @@ def parse_args():
                         default="catrom", help="downscaling filter for generate LR image")
     parser.add_argument("--blur", type=float,
                         default=1, help="resize blur. 0.95: shapen, 1.05: blur")
-    parser.add_argument("--baseline", action="store_true", help="use baseline score by image resize")
+    parser.add_argument("--baseline", action="store_true", help="show the score of --baseline-filter")
     parser.add_argument("--baseline-filter", type=str, default="catrom",
-                        choices=["catrom", "box", "lanczos", "sinc", "triangle"],
-                        help="baseline filter for 2x")
+                        choices=["catrom", "box", "lanczos", "sinc", "triangle"], help="baseline filter")
     parser.add_argument("--border", type=int, default=0,
                         help="border px removed from the result image")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0],
