@@ -63,6 +63,11 @@ def load_model(model_type="Any_B", gpu=0, **kwargs):
     device = create_device(gpu)
     model = model.to(device).eval()
     model.device = device
+    model.prep_lower_bound = kwargs.get("height", None) or 392
+    if model.prep_lower_bound % 14 != 0:
+        # From GUI, 512 -> 518
+        model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
+
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
         model = DataParallelInference(model, device_ids=gpu)
 
@@ -79,12 +84,12 @@ def force_update():
         torch.hub.help("nagadomi/Depth-Anything_iw3:main", "DepthAnything",
                        force_reload=True, trust_repo=True)
 
-def batch_preprocess(x):
+
+def batch_preprocess(x, lower_bound=392):
     # x: BCHW float32 0-1
     B, C, H, W = x.shape
 
     # resize
-    lower_bound = 392
     ensure_multiple_of = 14
     if W < H:
         scale_factor = lower_bound / W
@@ -134,7 +139,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
     org_size = x.shape[-2:]
-    x = batch_preprocess(x)
+    x = batch_preprocess(x, model.prep_lower_bound)
 
     if not low_vram:
         if flip_aug:
