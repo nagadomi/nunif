@@ -15,7 +15,10 @@ def main():
     assert (args.handler is not None)
 
     pprint(vars(args))
-    args.handler(args)
+    try:
+        args.handler(args)
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

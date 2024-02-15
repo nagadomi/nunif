@@ -9,19 +9,22 @@ from nunif.training.sampler import MiningMethod
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
 from nunif.models import (
-    create_model, get_model_config, call_model_method,
+    create_model,
     load_model, save_model,
     get_model_names
 )
 from nunif.modules import (
     ClampLoss, LuminanceWeightedLoss, AverageWeightedLoss,
     AuxiliaryLoss,
-    LBPLoss, CharbonnierLoss,
+    CharbonnierLoss,
     Alex11Loss,
     DiscriminatorHingeLoss,
     MultiscaleLoss,
 )
 from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
+from nunif.modules.fft_loss import YRGBL1FFTLoss, YRGBL1FFTGradientLoss, L1FFTLoss, MultiscaleL1FFTLoss
+from nunif.modules.gradient_loss import YRGBL1GradientLoss
+from nunif.modules.identity_loss import IdentityLoss
 from nunif.logger import logger
 import random
 
@@ -37,11 +40,11 @@ def create_criterion(loss):
     elif loss == "lbp":
         criterion = YLBP()
     elif loss == "lbpm":
-        criterion = MultiscaleLoss(YLBP())
+        criterion = MultiscaleLoss(YLBP(), mode="avg")
     elif loss == "lbp5":
         criterion = YLBP(kernel_size=5)
     elif loss == "lbp5m":
-        criterion = MultiscaleLoss(YLBP(kernel_size=5))
+        criterion = MultiscaleLoss(YLBP(kernel_size=5), mode="avg")
     elif loss == "rgb_lbp":
         criterion = RGBLBP()
     elif loss == "rgb_lbp5":
@@ -82,6 +85,39 @@ def create_criterion(loss):
         criterion = L1LBP(kernel_size=5, weight=0.4)
     elif loss == "rgb_l1lbp":
         criterion = L1LBP(kernel_size=3, weight=0.4)
+    elif loss == "l1fft":
+        criterion = L1FFTLoss()
+    elif loss == "y_l1fft":
+        criterion = YRGBL1FFTLoss()
+    elif loss == "l1fftm":
+        criterion = MultiscaleL1FFTLoss()
+    elif loss == "y_l1fftgrad":
+        criterion = YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False)
+    elif loss == "y_l1fftgradm":
+        # for 4x
+        criterion = MultiscaleLoss(
+            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
+            scale_factors=(1, 2), weights=(0.75, 0.25), mode="avg")
+    elif loss == "aux_y_l1fftgrad":
+        criterion = AuxiliaryLoss([
+            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
+            torch.nn.L1Loss(),
+        ], weight=(1.0, 0.5))
+    elif loss == "y_l1grad":
+        criterion = YRGBL1GradientLoss(diag=False)
+    elif loss == "aux_l1fftgrad_ident":
+        criterion = AuxiliaryLoss([
+            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
+    elif loss == "aux_lbp_ident":
+        criterion = AuxiliaryLoss([
+            YLBP(),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
+    elif loss == "ident":
+        # loss is computed in model.forward()
+        criterion = IdentityLoss()
     else:
         raise NotImplementedError(loss)
 
@@ -152,7 +188,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.sampler.update_losses(index, recon_loss.item())
 
     def get_scale_factor(self):
-        scale_factor = get_model_config(self.model, "i2i_scale")
+        scale_factor = self.model.i2i_scale
         return scale_factor
 
     def calc_discriminator_skip_prob(self, d_loss):
@@ -183,20 +219,31 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.model.eval()
 
     def train_step(self, data):
-        x, y, *_ = data
+        if not self.trainer.args.privilege:
+            x, y, *_ = data
+            privilege = None
+        else:
+            x, y, privilege, *_ = data
+
         x, y = self.to_device(x), self.to_device(y)
         scale_factor = self.get_scale_factor()
 
         with self.autocast():
             if self.discriminator is None:
-                z = self.model(x)
+                if not self.trainer.args.privilege:
+                    z = self.model(x)
+                else:
+                    z = self.model(x, self.to_device(privilege))
                 loss = self.criterion(z, y)
                 self.sum_loss += loss.item()
             else:
                 if not self.trainer.args.discriminator_only:
                     # generator (sr) step
                     self.discriminator.requires_grad_(False)
-                    z = self.model(x)
+                    if not self.trainer.args.privilege:
+                        z = self.model(x)
+                    else:
+                        z = self.model(x, self.to_device(privilege))
                     if isinstance(z, (list, tuple)):
                         # NOTE: models using auxiliary loss return tuple.
                         #       first element is SR result.
@@ -219,7 +266,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     # (gradient norm of generator_loss is 10-100x larger than recon_loss)
                     recon_loss = recon_loss * 10
                 else:
-                    with torch.no_grad():
+                    with torch.inference_mode():
                         z = self.model(x)
                         fake = z[0] if isinstance(z, (list, tuple)) else z
                     recon_loss = generator_loss = torch.zeros(1, dtype=x.dtype, device=x.device)
@@ -367,8 +414,7 @@ class Waifu2xTrainer(Trainer):
     def create_env(self):
         criterion = create_criterion(self.args.loss).to(self.device)
         if self.discriminator is not None:
-            conf = get_model_config(self.discriminator)
-            loss_weights = conf.get("loss_weights", (1.0,))
+            loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
             discriminator_criterion = DiscriminatorHingeLoss(loss_weights=loss_weights).to(self.device)
         else:
             discriminator_criterion = None
@@ -391,14 +437,14 @@ class Waifu2xTrainer(Trainer):
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
         if self.discriminator is not None:
             # initialize lazy modules
-            model_offset = get_model_config(self.model, "i2i_offset")
-            scale_factor = get_model_config(self.model, "i2i_scale")
+            model_offset = self.model.i2i_offset
+            scale_factor = self.model.i2i_scale
             output_size = self.args.size * scale_factor - model_offset * 2
             y = torch.zeros((1, 3, output_size, output_size)).to(self.device)
             _ = self.discriminator(y, y, scale_factor)
 
         if self.args.freeze and hasattr(self.model, "freeze"):
-            call_model_method(self.model, "freeze")
+            self.model.freeze()
             logger.debug("call model.freeze()")
 
     def create_model(self):
@@ -423,7 +469,8 @@ class Waifu2xTrainer(Trainer):
 
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
-        model_offset = get_model_config(self.model, "i2i_offset")
+        model_offset = self.model.i2i_offset
+        return_no_offset_y = self.args.privilege
         if self.args.method in {"scale", "noise_scale"}:
             scale_factor = 2
         elif self.args.method in {"scale4x", "noise_scale4x"}:
@@ -461,6 +508,8 @@ class Waifu2xTrainer(Trainer):
                 da_antialias_p=self.args.da_antialias_p,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
+                resize_step_p=self.args.resize_step_p,
+                return_no_offset_y=return_no_offset_y,
                 training=True,
             )
             self.sampler = dataset.create_sampler()
@@ -483,6 +532,7 @@ class Waifu2xTrainer(Trainer):
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
                 deblur=self.args.deblur,
+                return_no_offset_y=False,
                 training=False)
             dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.args.batch_size,
@@ -616,7 +666,13 @@ def register(subparsers, default_parser):
                                  "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
-                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp"],
+                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp",
+                                 "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad",
+                                 "y_l1fftgradm", "aux_y_l1fftgrad",
+                                 "y_l1grad",
+                                 "aux_l1fftgrad_ident", "aux_lbp_ident",
+                                 "ident",
+                                 ],
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")
@@ -639,6 +695,8 @@ def register(subparsers, default_parser):
                               " blur >= 1 is blur, blur <= 1 is sharpen. mean 1 by default"))
     parser.add_argument("--resize-blur-p", type=float, default=0.1,
                         help=("probability that resize blur should be used"))
+    parser.add_argument("--resize-step-p", type=float, default=0.,
+                        help=("probability that 2 step downscaling should be used"))
     parser.add_argument("--hard-example", type=str, default="linear",
                         choices=["none", "linear", "top10", "top20"],
                         help="hard example mining for training data sampleing")
@@ -672,6 +730,8 @@ def register(subparsers, default_parser):
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--pre-antialias", action="store_true",
                         help=("Set `pre_antialias=True` for SwinUNet4x."))
+    parser.add_argument("--privilege", action="store_true",
+                        help=("Use model.forward(LR_image, HR_image)"))
 
     parser.set_defaults(
         batch_size=16,

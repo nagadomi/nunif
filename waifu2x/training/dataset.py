@@ -23,6 +23,9 @@ from PIL.Image import Resampling
 
 
 NEAREST_PREFIX = "__NEAREST_"
+DOT_SCALE2X_PREFIX = "__NEAREST__DOT_2x_"
+DOT_SCALE4X_PREFIX = "__NEAREST__DOT_4x_"
+SCREENTONE_PREFIX = "__SCREENTONE_"
 INTERPOLATION_MODES = (
     "box",
     "sinc",
@@ -46,8 +49,8 @@ def _resize(im, size, filter_type, blur):
         raise ValueError(filter_type)
 
 
-def resize(im, size, filter_type, blur, enable_step=False):
-    if enable_step and filter_type != INTERPOLATION_NEAREST and random.uniform(0, 1) < 0.1:
+def resize(im, size, filter_type, blur, enable_step=False, step_p=0.):
+    if enable_step and filter_type != INTERPOLATION_NEAREST and step_p > 0 and random.uniform(0, 1) < step_p:
         h, w = im.shape[1:]
         scale = h / size[0]
         step1_scale = random.uniform(1, scale)
@@ -64,8 +67,6 @@ def pil_resize(im, size, filter_type):
         resample = Resampling.BOX
     elif filter_type == "catrom":
         resample = Resampling.BICUBIC
-    elif filter_type == "catrom":
-        resample = Resampling.BICUBIC
     elif filter_type in {"sinc", "lanczos"}:
         resample = Resampling.LANCZOS
     elif filter_type == "triangle":
@@ -77,13 +78,16 @@ def pil_resize(im, size, filter_type):
 
 
 class RandomDownscaleX():
-    def __init__(self, scale_factor, blur_shift=0, resize_blur_p=0.1, interpolation=None, training=True):
+    def __init__(self, scale_factor,
+                 blur_shift=0, resize_blur_p=0.1, resize_step_p=0,
+                 interpolation=None, training=True):
         assert scale_factor in {2, 4, 8}
         self.interpolation = interpolation
         self.scale_factor = scale_factor
         self.blur_shift = blur_shift
         self.training = training
         self.resize_blur_p = resize_blur_p
+        self.resize_step_p = resize_step_p
 
     def __call__(self, x, y):
         w, h = x.size
@@ -105,7 +109,9 @@ class RandomDownscaleX():
             else:
                 blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
-                       filter_type=interpolation, blur=blur, enable_step=self.training or fixed_interpolation)
+                       filter_type=interpolation, blur=blur,
+                       enable_step=self.training or fixed_interpolation,
+                       step_p=self.resize_step_p)
             x = pil_io.to_image(x)
         elif self.scale_factor == 8:
             # wand 8x downscale is very slow for some reason
@@ -144,9 +150,12 @@ class AntialiasX():
 
 class Waifu2xDatasetBase(Dataset):
     def __init__(self, input_dir, num_samples,
-                 hard_example_history_size=6):
+                 hard_example_history_size=6,
+                 exclude_filter=None):
         super().__init__()
         self.files = ImageLoader.listdir(input_dir)
+        if exclude_filter is not None:
+            self.files = list(filter(exclude_filter, self.files))
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
         self.num_samples = num_samples
@@ -179,20 +188,29 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
                  da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
-                 deblur=0, resize_blur_p=0.1,
+                 deblur=0, resize_blur_p=0.1, resize_step_p=0,
                  noise_level=-1, style=None,
-                 training=True):
+                 return_no_offset_y=False,
+                 training=True,
+                 ):
         assert scale_factor in {1, 2, 4, 8}
         assert noise_level in {-1, 0, 1, 2, 3}
         assert style in {None, "art", "photo"}
+        if scale_factor in {1, 2}:
+            exclude_filter = lambda fn: DOT_SCALE4X_PREFIX not in fn
+        else:
+            exclude_filter = lambda fn: DOT_SCALE2X_PREFIX not in fn
 
-        super().__init__(input_dir, num_samples=num_samples)
+        super().__init__(input_dir, num_samples=num_samples, exclude_filter=exclude_filter)
         self.training = training
         self.style = style
         self.noise_level = noise_level
+        self.model_offset = model_offset
+        self.return_no_offset_y = return_no_offset_y
+
         if self.training:
             if noise_level >= 0:
-                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop=True)
+                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop_p=0.07)
             else:
                 jpeg_transform = TP.Identity()
 
@@ -224,7 +242,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                     interpolation = None  # random
                 random_downscale_x = RandomDownscaleX(scale_factor=scale_factor,
                                                       interpolation=interpolation,
-                                                      blur_shift=deblur, resize_blur_p=resize_blur_p)
+                                                      blur_shift=deblur, resize_blur_p=resize_blur_p,
+                                                      resize_step_p=resize_step_p)
                 random_downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
                                                               interpolation=INTERPOLATION_NEAREST)
             else:
@@ -251,14 +270,13 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 antialias,
                 jpeg_transform,
                 TP.RandomFlip(),
-                TP.RandomCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset),
+                TP.RandomCrop(size=tile_size, y_scale=scale_factor),
             ])
             self.transforms_nearest = TP.Compose([
                 random_downscale_x_nearest,
                 jpeg_transform,
                 TP.RandomHardExampleCrop(size=tile_size,
                                          y_scale=scale_factor,
-                                         y_offset=model_offset,
                                          samples=4),
                 TP.RandomFlip(),
             ])
@@ -284,8 +302,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             self.transforms_nearest = TP.Compose([
                 downscale_x_nearest,
             ])
-            self.x_jpeg_shift = [0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7]
-            self.center_crop = TP.CenterCrop(size=tile_size, y_scale=scale_factor, y_offset=model_offset)
+            self.x_jpeg_shift = [1, 2, 3, 4, 5, 6, 7] + [0] * (100 - 7)
+            self.center_crop = TP.CenterCrop(size=tile_size, y_scale=scale_factor)
 
     def __getitem__(self, index):
         filename = super().__getitem__(index)
@@ -294,6 +312,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             raise RuntimeError(f"Unable to load image: {filename}")
         if NEAREST_PREFIX in filename:
             x, y = self.transforms_nearest(im, im)
+        elif SCREENTONE_PREFIX in filename:
+            x, y = self.transforms(im, im)
         else:
             im = self.gt_transforms(im)
             x, y = self.transforms(im, im)
@@ -308,9 +328,15 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                     x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
                     if len(qualities) > 1 and i != len(qualities) - 1:
                         x, y = shift_jpeg_block(x, y, self.x_jpeg_shift[index % len(self.x_jpeg_shift)])
+            y_org = y
             x, y = self.center_crop(x, y)
 
-        return TF.to_tensor(x), TF.to_tensor(y), index
+        y_org = y
+        y = TF.pad(y, [-self.model_offset] * 4)
+        if not self.return_no_offset_y:
+            return TF.to_tensor(x), TF.to_tensor(y), index
+        else:
+            return TF.to_tensor(x), TF.to_tensor(y), TF.to_tensor(y_org), index
 
 
 def _test():

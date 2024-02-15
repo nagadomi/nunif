@@ -1,9 +1,10 @@
 from . import zoedepth_model as ZU
+from . import depth_anything_model as DU
 
 
 def main():
-    ZU.force_update_midas()
-    ZU.force_update_zoedepth()
+    ZU.force_update()
+    DU.force_update()
     if not ZU.has_model():
         ZU.load_model(gpu=-1)
 

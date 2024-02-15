@@ -1,45 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-class TLU2d(nn.Module):
-    """
-    from Filter Response Normalization Layer
-    """
-    def __init__(self, num_features, eps=1e-06, channel_last=False):
-        super().__init__()
-        if channel_last:
-            self.tau = nn.Parameter(torch.zeros((1, 1, 1, num_features)))
-        else:
-            self.tau = nn.Parameter(torch.zeros((1, num_features, 1, 1)))
-
-    def forward(self, x):
-        return torch.max(x, self.tau)
-
-
-class FRN2d(nn.Module):
-    """
-    from Filter Response Normalization Layer
-    """
-    def __init__(self, num_features, eps=1e-06, channel_last=False):
-        super().__init__()
-        if channel_last:
-            self.gamma = nn.Parameter(torch.ones((1, 1, 1, num_features)))
-            self.beta = nn.Parameter(torch.zeros((1, 1, 1, num_features)))
-            self.mean_dim = (1, 2)
-        else:
-            self.gamma = nn.Parameter(torch.ones((1, num_features, 1, 1)))
-            self.beta = nn.Parameter(torch.zeros((1, num_features, 1, 1)))
-            self.mean_dim = (2, 3)
-
-        self.register_buffer("eps", torch.tensor(eps))
-
-    def forward(self, x):
-        nu2 = torch.mean(x**2, dim=self.mean_dim, keepdim=True)
-        x = x * torch.rsqrt(nu2 + self.eps)
-        x = x * self.gamma + self.beta
-        return x
+from .permute import bchw_to_bhwc, bhwc_to_bchw
 
 
 class L2Normalize(nn.Module):
@@ -52,35 +14,38 @@ class L2Normalize(nn.Module):
         return F.normalize(x, p=2., dim=self.dim, eps=self.eps)
 
 
-class LayerNormNoBias(nn.Module):
-    def __init__(self, normalized_shape):
-        super().__init__()
-        if isinstance(normalized_shape, int):
-            normalized_shape = (normalized_shape,)
-        self.weight = nn.Parameter(torch.ones(normalized_shape))
-
-    def forward(self, x):
-        return F.layer_norm(x, self.weight.shape, self.weight)
+def LayerNormNoBias(normalized_shape, eps=1e-5, elementwise_affine=True, device=None, dtype=None):
+    # bias=False, requires pytorch 2.1
+    return nn.LayerNorm(normalized_shape, eps=eps, elementwise_affine=elementwise_affine,
+                        bias=False,
+                        device=device, dtype=dtype)
 
 
 class LayerNormNoBias2d(nn.Module):
     def __init__(self, dim):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones((dim,)))
+        self.norm = LayerNormNoBias(dim)
 
     def forward(self, x):
-        x = F.group_norm(x, num_groups=1, weight=self.weight, bias=None)
+        x = bhwc_to_bchw(self.norm(bchw_to_bhwc(x)))
         return x
 
 
-def _test_frn():
-    x = torch.zeros((1, 32, 4, 4))
-    model = nn.Sequential(FRN2d(32), TLU2d(32))
-    print(model(x).shape)
+class GroupNormNoBias(nn.Module):
+    def __init__(self, num_groups, num_channels, eps=1e-05, affine=True, device=None, dtype=None):
+        super().__init__()
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.eps = eps
+        self.affine = affine
+        if self.affine:
+            self.weight = nn.Parameter(torch.ones(num_channels, device=device, dtype=dtype))
+        else:
+            self.weight = self.register_parameter("weight", None)
 
-    x = torch.zeros((1, 4, 4, 32))
-    model = nn.Sequential(FRN2d(32, channel_last=True), TLU2d(32, channel_last=True))
-    print(model(x).shape)
+    def forward(self, x):
+        x = F.group_norm(x, num_groups=self.num_groups, weight=self.weight, bias=None, eps=self.eps)
+        return x
 
 
 def _test_l2norm():
@@ -103,9 +68,11 @@ def _test_l2norm():
 
 def _test_layer_norm():
     print(LayerNormNoBias(4)(torch.zeros((1, 2, 2, 4))).shape)
+    print(GroupNormNoBias(1, 4)(torch.zeros((1, 4, 2, 2))).shape)
+    print(GroupNormNoBias(1, 4, affine=False)(torch.zeros((1, 4, 2, 2))).shape)
+    print(LayerNormNoBias2d(4)(torch.zeros((1, 4, 2, 2))).shape)
 
 
 if __name__ == "__main__":
-    # _test_frn()
     # _test_l2norm()
     _test_layer_norm()

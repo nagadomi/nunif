@@ -1,6 +1,9 @@
 import os
 import sys
 import argparse
+import torch
+from PIL import Image
+import numpy as np
 from os import path
 from tqdm import tqdm
 import random
@@ -12,9 +15,10 @@ from PIL.PngImagePlugin import PngInfo
 from nunif.utils.image_loader import ImageLoader, list_images
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
+from .stereoimage_generation import create_stereoimages
 
 
-def save_images(im_org, im_sbs, im_depth, divergence, convergence, filename_base, size, num_samples):
+def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filename_base, size, num_samples):
     im_l = TF.crop(im_sbs, 0, 0, im_org.height, im_org.width)
     im_r = TF.crop(im_sbs, 0, im_org.width, im_org.height, im_org.width)
     assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size
@@ -27,6 +31,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, filename_base
     metadata.add_text("sbs_convergence", str(round(convergence, 6)))
     metadata.add_text("sbs_depth_max", str(max_v))
     metadata.add_text("sbs_depth_min", str(min_v))
+    metadata.add_text("sbs_mapper", mapper)
 
     # im_sbs.save(filename_base + "_LRF.png")
 
@@ -117,17 +122,23 @@ def gen_convergence():
 
 def main(args):
     import numba
-    from .depthmap_utils import generate_sbs
     from ... import zoedepth_model as ZU
+    from ... import depth_anything_model as DU
     # force_update_midas()
     # force_update_zoedepth()
 
     max_workers = cpu_count() // 2 or 1
     numba.set_num_threads(max_workers)
 
-    filename_prefix = args.prefix + "_" if args.prefix else ""
-    model = ZU.load_model(model_type="ZoeD_N", gpu=args.gpu, height=args.zoed_height)
+    filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
+    if args.model_type in ZU.MODEL_FILES:
+        depth_utils = ZU
+    elif args.model_type in DU.MODEL_FILES:
+        depth_utils = DU
+    else:
+        raise ValueError(f"unknown model_type = {args.model_type}")
 
+    model = depth_utils.load_model(model_type=args.model_type, gpu=args.gpu, height=args.zoed_height)
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)
@@ -153,17 +164,26 @@ def main(args):
                 if min(im.size) < args.min_size:
                     continue
                 for _ in range(args.times):
+                    mapper = random.choice(["pow2", "none"]) if args.mapper == "random" else args.mapper
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
                     divergence = gen_divergence()
                     convergence = gen_convergence()
-                    sbs, depth = generate_sbs(
-                        model, im_s,
-                        divergence=divergence, convergence=convergence,
-                        flip_aug=random.choice([True, False]),
-                        enable_amp=random.choice([True, False]))
-                    f = pool.submit(save_images, im_s, sbs, depth,
+                    with torch.inference_mode():
+                        flip_aug = random.choice([True, False]),
+                        enable_amp = True  # random.choice([True, False])
+                        depth = depth_utils.batch_infer(model, im_s, int16=True, normalize_int16=True,
+                                                        flip_aug=flip_aug, enable_amp=enable_amp)
+                        np_depth = depth.squeeze(0).numpy().astype(np.uint16)
+                    sbs = create_stereoimages(
+                        np.array(im_s, dtype=np.uint8),
+                        0xffff - np_depth,
+                        divergence, modes=["left-right"],
+                        convergence=convergence,
+                        mapper=mapper)[0]
+                    f = pool.submit(save_images, im_s, sbs, Image.fromarray(np_depth),
                                     divergence, convergence,
+                                    mapper,
                                     output_base, args.size, args.num_samples)
                     # f.result() # debug
                     futures.append(f)
@@ -187,6 +207,8 @@ def register(subparsers, default_parser):
                         help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
     parser.add_argument("--zoed-height", type=int, help="input height for ZoeDepth model")
+    parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
+    parser.add_argument("--mapper", type=str, default="pow2", choices=["pow2", "none", "random"], help="depth mapper function")
 
     parser.set_defaults(handler=main)
 

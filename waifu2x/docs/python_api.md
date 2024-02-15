@@ -18,7 +18,7 @@ result.show() # result is PIL.Image.Image
 ```
 
 1. loading model with `torch.hub.load()`
-2. converting image with `model.infer()`
+2. converting image with `model.infer(x)` or `model(x)`
 
 ## `torch.hub.load("nagadomi/nunif:master", "waifu2x", ...)`
 
@@ -63,6 +63,12 @@ for noise_level in (-1, 0, 1, 2, 3):
     out.save(f"noise_{noise_level}.png")
 ```
 
+Also, you can use the alias `superresolution` instead of `waifu2x`. For some policy reason.
+```
+model = torch.hub.load("nagadomi/nunif:master", "superresolution",
+                       model_type="art_scan", trust_repo=True).to("cuda")
+```
+
 ### troch.hub.load from local source
 
 Specify `source="local"` option. And specify the nunif directory(this repository) for the first argument.
@@ -79,6 +85,21 @@ from waifu2x.hub import waifu2x
 
 model = waifu2x(model_type="art").cuda()
 ```
+
+### Using fp16 model manually without AMP
+
+You can convert the model to fp16 by using `half()` method.
+
+```
+model = torch.hub.load("nagadomi/nunif:master", "waifu2x",
+                       method="scale", noise_level=3, amp=False, trust_repo=True).cuda().half()
+```
+
+If you pass a Tensor as input, call `cuda().half()` manually.
+```
+z = model(x.cuda().half())
+```
+Note that the fp16 model does not currently work with CPU device.
 
 ## `model.convert(input_filepath, output_filepath, tta=False, format="png")`
 
@@ -99,5 +120,17 @@ The following method works when x in (cuda float32 tensor, cuda float16 tensor, 
 ```
 ret = model.infer(x.float().to(model.device))
 ```
+
+## Reloading source code
+
+When specifying a remote repository with `torch.hub.load`, the source code and pretrained models are stored in `~/.cache/torch/hub`.
+(You can change the directory with `torch.hub.set_dir()`.)
+
+You can use the following method (`force_reload=True` option) to force update to the latest source code.
+```
+torch.hub.help("nagadomi/nunif:master", "waifu2x", force_reload=True, trust_repo=True)
+```
+Note that `force_reload=True` will also re-download the pretrained models. This option is not recommended except for maintenance purposes.
+
 
 For more details, see [../hub.py](../hub.py).

@@ -53,6 +53,7 @@ class Trainer(ABC):
         if self.amp_is_enabled():
             self.env.enable_amp()
         self.env.set_amp_dtype(torch.bfloat16 if (self.args.amp_float == "bfloat16" or self.args.gpu[0] < 0) else torch.float16)
+        self.log_fp = open(path.join(self.args.model_dir, f"loss_{self.runtime_id}.csv"), mode="w")
         self.setup()
 
     def shutdown(self):
@@ -63,6 +64,10 @@ class Trainer(ABC):
         if self.eval_loader is not None:
             del self.eval_loader
             self.eval_loader = None
+
+        if self.log_fp is not None:
+            self.log_fp.close()
+            self.log_fp = None
 
     def setup(self):
         pass
@@ -105,29 +110,38 @@ class Trainer(ABC):
 
     def fit(self):
         self.initialize()
-        for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
-            print("-" * 64)
-            print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
-            print("--\n train")
-            self.env.train(
-                loader=self.train_loader,
-                optimizers=self.optimizers,
-                schedulers=self.schedulers,
-                grad_scaler=self.grad_scaler,
-                backward_step=self.args.backward_step,
-            )
-            print("--\n eval")
-            loss = self.env.eval(self.eval_loader)
-            if loss is None:
-                self.save_best_model()
-            elif loss < self.best_loss:
-                print("* best model updated")
-                self.best_loss = loss
-                self.save_best_model()
-            self.save_checkpoint()
-        self.shutdown()
+        try:
+            for self.epoch in range(self.start_epoch, self.args.max_epoch + 1):
+                print("-" * 64)
+                print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
+                print("--\n train")
+                train_loss = self.env.train(
+                    loader=self.train_loader,
+                    optimizers=self.optimizers,
+                    schedulers=self.schedulers,
+                    grad_scaler=self.grad_scaler,
+                    backward_step=self.args.backward_step,
+                )
+                print("--\n eval")
+                loss = self.env.eval(self.eval_loader)
+                if loss is None:
+                    self.save_best_model()
+                elif loss < self.best_loss:
+                    print("* best model updated")
+                    self.best_loss = loss
+                    self.save_best_model()
+                self.save_checkpoint()
+                try:
+                    self.write_log(self.epoch, train_loss, loss)
+                except:  # noqa
+                    pass
+        finally:
+            self.shutdown()
 
     def create_model(self):
+        if not hasattr(self.args, "arch"):
+            raise NotImplementedError("--arch option is not implemented."
+                                      " Add --arch option or override create_model()")
         return create_model(self.args.arch, device_ids=self.args.gpu)
 
     def create_optimizers(self):
@@ -184,7 +198,7 @@ class Trainer(ABC):
             # Adjust epoch to keep the final epoch to the minimum LR
             self.args.max_epoch -= (self.args.max_epoch % step) + 1
             print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
-            eta_min = self.args.learning_rate * 1e-3
+            eta_min = self.args.learning_rate * self.args.learning_rate_cosine_min_factor
             scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=t_0, eta_min=eta_min)
         if self.args.warmup_epoch > 0:
             # TODO: `total_iters=self.args.warmup_epoch` does not work correctly,
@@ -225,6 +239,25 @@ class Trainer(ABC):
             # backup file per runtime
             backup_file = f"{path.splitext(self.best_model_filename)[0]}.{self.runtime_id}.pth.bk"
             save_model(self.model, backup_file)
+
+    def write_log(self, epoch, train_loss, eval_loss):
+        def to_float(loss):
+            if loss is None:
+                return 0
+            elif isinstance(loss, (list, tuple)):
+                return sum([to_float(v) for v in loss]) / (len(loss) + 1e-6)
+            elif torch.is_tensor(loss):
+                return loss.detach().float().mean().item()
+            else:
+                try:
+                    return float(loss)
+                except ValueError:
+                    return 0
+
+        train_loss = to_float(train_loss)
+        eval_loss = to_float(eval_loss)
+        self.log_fp.write(f"{epoch},{train_loss},{eval_loss}\n")
+        self.log_fp.flush()
 
     @abstractmethod
     def create_dataloader(self, type):
@@ -277,6 +310,8 @@ def create_trainer_default_parser():
                         help="learning rate decay step for StepLR/MultiStepLR")
     parser.add_argument("--learning-rate-cycles", type=int, default=5,
                         help="number of learning rate cycles for CosineAnnealingWarmRestarts")
+    parser.add_argument("--learning-rate-cosine-min-factor", type=float, default=1e-3,
+                        help="Minimum learning rate factor for --schedule cosine")
     parser.add_argument("--warmup-epoch", type=int, default=0,
                         help="warmup epochs with --warmup-learning-rate")
     parser.add_argument("--warmup-learning-rate", type=int, default=1e-6,
@@ -290,7 +325,7 @@ def create_trainer_default_parser():
     parser.add_argument("--reset-state", action="store_true",
                         help="do not load best_score, optimizer and scheduler state when --resume")
     parser.add_argument("--seed", type=int, default=71,
-                        help="random seed")
+                        help="random seed. if -1 is specified, a random number seed is used")
     parser.add_argument("--checkpoint-file", type=str,
                         help="checkpoint file for initializing model parameters. ignored when --resume is specified")
     parser.add_argument("--disable-backup", action="store_true",

@@ -23,7 +23,7 @@ class RandomSRHardExampleCrop():
 
     def __call__(self, x):
         rects = []
-        xt = TF.to_tensor(x)
+        xt = TF.to_tensor(x) if isinstance(x, Image.Image) else x
         for _ in range(self.samples):
             i, j, h, w = T.RandomCrop.get_params(x, self.size)
             rect = TF.crop(xt, i, j, h, w)

@@ -15,7 +15,13 @@ class LPIPSWith(nn.Module):
         self.base_loss = base_loss
         self.weight = weight
         self.lpips = lpips.LPIPS(net='vgg', model_path=MODEL_PATH).eval()
+        # This needed because LPIPS has duplicate parameter references problem
         self.lpips.requires_grad_(False)
+        # TODO: NeuralCompression devs pointed out that LPIPS loss has a problem with gradient propagation.
+        #       https://github.com/facebookresearch/NeuralCompression/blob/main/neuralcompression/loss_fn/_normfix_lpips.py
+
+    def train(mode=True):
+        super().train(False)
 
     def forward(self, input, target):
         base_loss = self.base_loss(input, target)

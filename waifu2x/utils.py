@@ -6,10 +6,11 @@ from nunif.transforms.tta import tta_merge, tta_split
 from nunif.utils.render import tiled_render
 from nunif.utils.alpha import AlphaBorderPadding
 from nunif.models import (
-    load_model, get_model_config,
-    data_parallel_model, call_model_method,
+    load_model,
+    data_parallel_model,
     compile_model, is_compiled_model,
 )
+from nunif.models.data_parallel import DataParallelInference
 from nunif.device import create_device, autocast
 from nunif.logger import logger
 from nunif.utils.ui import HiddenPrints
@@ -17,12 +18,24 @@ from nunif.utils.ui import HiddenPrints
 
 # compling swin_unet model only works with torch >= 2.1.0
 CAN_COMPILE_SWIN_UNET = packaging_version.parse(torch.__version__).release >= (2, 1, 0)
+# compling winc_unet model only works with torch >= 2.2.0
+CAN_COMPILE_WINC_UNET = packaging_version.parse(torch.__version__).release >= (2, 2, 0)
 
 
 def can_compile(model):
-    return (model is not None and
-            (not is_compiled_model(model)) and
-            (CAN_COMPILE_SWIN_UNET or ("swin_unet" not in model.name)))
+    if model is None:
+        return False
+    if isinstance(model, (torch.nn.DataParallel, DataParallelInference)):
+        return False
+    if not is_compiled_model(model):
+        if model.name.startswith("waifu2x.swin_unet"):
+            return CAN_COMPILE_SWIN_UNET
+        elif model.name.startswith("waifu2x.winc_unet"):
+            return CAN_COMPILE_WINC_UNET
+        else:
+            return True
+    else:
+        return False
 
 
 class Waifu2x():
@@ -41,25 +54,7 @@ class Waifu2x():
     def compile(self):
         # TODO: If dynamic tracing works well in the future,
         #       it is better to add `dynamic=True` for variable batch sizes.
-        if can_compile(self.scale_model):
-            logger.debug("compile scale_model")
-            self.scale_model = compile_model(self.scale_model)
-        if can_compile(self.scale4x_model):
-            logger.debug("compile scale4x_model")
-            self.scale4x_model = compile_model(self.scale4x_model)
-
-        for i in range(len(self.noise_models)):
-            if can_compile(self.noise_models[i]):
-                logger.debug(f"compile noise_models[{i}]")
-                self.noise_models[i] = compile_model(self.noise_models[i])
-
-            if can_compile(self.noise_scale_models[i]):
-                logger.debug(f"compile noise_scale_models[{i}]")
-                self.noise_scale_models[i] = compile_model(self.noise_scale_models[i])
-
-            if can_compile(self.noise_scale4x_models[i]):
-                logger.debug(f"compile noise_scale4x_models[{i}]")
-                self.noise_scale4x_models[i] = compile_model(self.noise_scale4x_models[i])
+        self._apply(lambda model: compile_model(model) if can_compile(model) else model)
 
     @torch.inference_mode()
     def warmup(self, tile_size, batch_size, enable_amp):
@@ -68,10 +63,13 @@ class Waifu2x():
                                       *self.noise_scale4x_models) if model is not None]
         for i, model in enumerate(models):
             for j, bs in enumerate(reversed(range(1, batch_size + 1))):
-                x = torch.zeros((bs, 3, tile_size, tile_size)).to(self.device)
+                x = torch.zeros((bs, 3, tile_size, tile_size),
+                                device=self.device, dtype=torch.float16 if self.is_half else torch.float32)
                 logger.debug(f"warmup {i * batch_size + j + 1}/{len(models) * batch_size}: {x.shape}")
                 with autocast(device=self.device, enabled=enable_amp):
                     model(x)
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
 
     def to(self, device):
         self.device = device
@@ -132,8 +130,7 @@ class Waifu2x():
             else:
                 if self.scale4x_model is None:
                     self._load_model("scale4x", noise_level)
-                self.scale_model = data_parallel_model(call_model_method(self.scale4x_model, "to_2x"),
-                                                       device_ids=self.gpus)
+                self.scale_model = data_parallel_model(self.scale4x_model.to_2x(), device_ids=self.gpus)
         elif method == "noise_scale4x":
             if self.noise_scale4x_models[noise_level] is not None:
                 return
@@ -151,7 +148,7 @@ class Waifu2x():
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)
                 self.noise_scale_models[noise_level] = data_parallel_model(
-                    call_model_method(self.noise_scale4x_models[noise_level], "to_2x"),
+                    self.noise_scale4x_models[noise_level].to_2x(),
                     device_ids=self.gpus)
         elif method == "noise":
             if self.noise_models[noise_level] is not None:
@@ -162,7 +159,7 @@ class Waifu2x():
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)
                 self.noise_models[noise_level] = data_parallel_model(
-                    call_model_method(self.noise_scale4x_models[noise_level], "to_1x"),
+                    self.noise_scale4x_models[noise_level].to_1x(),
                     device_ids=self.gpus)
         else:
             raise ValueError(method)
@@ -234,15 +231,15 @@ class Waifu2x():
 
     def _model_offset(self, method, noise_level):
         if method == "scale":
-            return get_model_config(self.scale_model, "i2i_offset")
+            return self.scale_model.i2i_offset
         elif method == "scale4x":
-            return get_model_config(self.scale4x_model, "i2i_offset")
+            return self.scale4x_model.i2i_offset
         elif method == "noise":
-            return get_model_config(self.noise_models[noise_level], "i2i_offset")
+            return self.noise_models[noise_level].i2i_offset
         elif method == "noise_scale":
-            return get_model_config(self.noise_scale_models[noise_level], "i2i_offset")
+            return self.noise_scale_models[noise_level].i2i_offset
         elif method == "noise_scale4x":
-            return get_model_config(self.noise_scale4x_models[noise_level], "i2i_offset")
+            return self.noise_scale4x_models[noise_level].i2i_offset
 
     def convert(self, x, alpha, method, noise_level,
                 tile_size=256, batch_size=4,

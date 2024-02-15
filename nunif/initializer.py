@@ -2,6 +2,7 @@ import os
 import torch
 import random
 import numpy as np
+import secrets
 
 
 def disable_image_lib_threads():
@@ -27,6 +28,8 @@ def disable_image_lib_threads():
 
 
 def set_seed(seed):
+    if seed is None or seed < 0:
+        seed = secrets.randbelow(1_000_000_000)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)

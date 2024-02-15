@@ -44,6 +44,9 @@ class Alex11Loss(nn.Module):
             m.requires_grad_(False)
         return conv
 
+    def train(mode=True):
+        super().train(False)
+
     def forward(self, input, target):
         y = self.conv(input * 2. - 1.)
         t = self.conv(target * 2. - 1.)

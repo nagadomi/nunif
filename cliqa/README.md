@@ -16,7 +16,7 @@ This can detect low-quality JPEG images even in the following cases.
 The current pre-trained model can predict JPEG quality value around an average error of 3/100 on clean validation data.
 In real world data it should be much worse. However, I feel that it has achieved a practical level.
 
-## cliqa.filter_low_quality_jpeg
+## `cliqa.filter_low_quality_jpeg`
 
 This tool copies only high quality images in the directory specified with `-i` to the directory specified with `-o`.
 ```
@@ -59,7 +59,7 @@ The predicted value is `noise_level = 50 - min(PSNR(original_image, noise_added_
 
 Note that this model is trained with not very perfected synthetic noise. May not work well in some real world noise cases.
 
-## cliqa.filter_noisy_photo
+## `cliqa.filter_noisy_photo`
 
 This tool copies only non-noisy images in the directory specified with `-i` to the directory specified with `-o`.
 ```
@@ -110,4 +110,39 @@ pytyon -m cliqa.filter_low_quality_jpeg -i ./data/images_original -o ./data/imag
 pytyon -m cliqa.filter_noisy_photo -i ./data/images_filter_jpeg -o ./data/images_filter_noisy --symlink
 # Make the original `images` directory link to the cleaned directory. (replace)
 ln -s `realpath ./data/images_filter_noisy` ./data/images
+```
+
+# ScaleFactor
+
+Content-based upscaling factor predictor. This can detect upscaled images with interpolation filter.
+
+The predicted value is `quality = 100 - (predicted_scaler_factor - 1) * 100`. `predicted_scale_factor` ranges from 1.0 to 2.0.
+100 means the image is original scale or downscaled. 80 means the image is upscaled by 1.2x.
+
+Note that this model is trained with very simple synthetic data. This can false positive detect blurs other than upscaling, such as depth of field effect or interpolation of rotation.
+
+## `cliqa.filter_low_quality_resize`
+
+This tool copies only non-upscaled images in the directory specified with `-i` to the directory specified with `-o`.
+```
+pytyon -m cliqa.filter_low_quality_resize -i /path_to_input_dir -o /path_to_output_dir
+```
+
+options.
+```
+  -h, --help            show this help message and exit
+  --input INPUT, -i INPUT
+                        input image directory (default: None)
+  --output OUTPUT, -o OUTPUT
+                        output image directory (default: None)
+  --checkpoint CHECKPOINT
+                        model parameter file (default: ./cliqa/pretrained_models/scale_factor.pth)
+  --gpu GPU [GPU ...], -g GPU [GPU ...]
+                        GPU device ids. -1 for CPU (default: [0])
+  --num-patches NUM_PATCHES
+                        number of 128x128 patches used per image (default: 8)
+  --quality QUALITY     quality threshold (default: 95)
+  --invert              extract low quality resized images (default: False)
+  --symlink             create symbolic links, instead of copying the real files (recommended on linux) (default: False)
+  --score-prefix        add score prefix to the output filename (default: False)
 ```

@@ -77,11 +77,6 @@ class Discriminator(Model):
         super().__init__(kwargs)
         self.loss_weights = loss_weights
 
-    def get_config(self):
-        config = dict(super().get_config())
-        config.update({"loss_weights": self.loss_weights})
-        return config
-
 
 @register_model
 class L3Discriminator(Discriminator):

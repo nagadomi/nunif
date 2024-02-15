@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from . confusion_matrix import SoftmaxConfusionMatrix
-from .. models.utils import get_model_config, get_model_device
+from .. models.utils import get_model_device
 from .. modules import ClampLoss, LuminanceWeightedLoss, LuminancePSNR, PSNR
 from .. device import autocast
 from abc import ABC, abstractmethod
@@ -145,13 +145,13 @@ class BaseEnv(ABC):
         for scheduler in schedulers:
             scheduler.step()
 
-        self.train_end()
+        return self.train_end()
 
     def eval(self, loader):
         self.eval_begin()
         if loader is not None:
             for data in tqdm(loader, ncols=80):
-                with torch.no_grad():
+                with torch.inference_mode():
                     self.eval_step(data)
         return self.eval_end()
 
@@ -165,7 +165,7 @@ class SoftmaxEnv(BaseEnv):
         self.criterion = criterion
         if self.criterion is None:
             self.criterion = nn.NLLLoss().to(self.device)
-        self.class_names = get_model_config(model, "softmax_class_names")
+        self.class_names = model.softmax_class_names
         self.confusion_matrix = SoftmaxConfusionMatrix(self.class_names, max_print_class=max_print_class)
 
     def train_begin(self):
@@ -335,3 +335,56 @@ class UnsupervisedEnv(BaseEnv):
 
     def eval_end(self):
         return None
+
+
+class RegressionEnv(BaseEnv):
+    def __init__(self, model, criterion):
+        super().__init__()
+        self.model = model
+        self.criterion = criterion
+        self.device = get_model_device(self.model)
+
+    def clear_loss(self):
+        self.sum_loss = 0
+        self.sum_step = 0
+
+    def train_begin(self):
+        self.model.train()
+        self.clear_loss()
+
+    def train_step(self, data):
+        x, y, *_ = data
+        x, y = self.to_device(x), self.to_device(y)
+        with self.autocast():
+            z = self.model(x)
+            loss = self.criterion(z, y)
+        self.sum_loss += loss.item()
+        self.sum_step += 1
+
+        return loss
+
+    def train_end(self):
+        loss = self.sum_loss / self.sum_step
+        print(f"loss: {loss}")
+        return loss
+
+    def eval_begin(self):
+        self.model.eval()
+        self.clear_loss()
+
+    def eval_step(self, data):
+        # same as train_step but duplicated for when train_step is specialized
+        x, y, *_ = data
+        x, y = self.to_device(x), self.to_device(y)
+        with self.autocast():
+            z = self.model(x)
+            loss = self.criterion(z, y)
+        self.sum_loss += loss.item()
+        self.sum_step += 1
+
+        return loss
+
+    def eval_end(self):
+        loss = self.sum_loss / self.sum_step
+        print(f"loss: {loss}")
+        return loss

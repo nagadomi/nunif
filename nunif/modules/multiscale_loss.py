@@ -6,23 +6,32 @@ import torch.nn.functional as F
 class MultiscaleLoss(nn.Module):
     """ Wrapper Module for `(loss(x, y) * w1 + loss(downscale(x), downscale(y)) * w2 ..`
     """
-    def __init__(self, module, scale_factors=(1, 2), weights=(0.8, 0.2), mode="bicubic"):
+    def __init__(self, module, scale_factors=(1, 2), weights=(0.8, 0.2), mode="bicubic", antialias=False):
         super().__init__()
         assert len(scale_factors) == len(weights)
+        assert mode in {"bicubic", "bilinear", "avg"}
         self.module = module
         self.scale_factors = scale_factors
         self.weights = weights
         self.mode = mode
+        self.antialias = antialias
 
     def forward(self, input, target):
         loss = 0
+        antialias = self.mode in {"bicubic", "bilinear"} and self.antialias
         for scale_factor, weight in zip(self.scale_factors, self.weights):
             if scale_factor == 1:
                 x = input
                 t = target
             else:
-                x = F.interpolate(input, scale_factor=1.0 / scale_factor, mode=self.mode)
-                t = F.interpolate(target, scale_factor=1.0 / scale_factor, mode=self.mode)
+                if self.mode == "avg":
+                    x = F.avg_pool2d(input, scale_factor)
+                    t = F.avg_pool2d(target, scale_factor)
+                else:
+                    x = F.interpolate(input, scale_factor=1.0 / scale_factor,
+                                      mode=self.mode, antialias=antialias)
+                    t = F.interpolate(target, scale_factor=1.0 / scale_factor,
+                                      mode=self.mode, antialias=antialias)
             loss = loss + self.module(x, t) * weight
         return loss
 

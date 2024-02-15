@@ -8,6 +8,7 @@ from torchvision.transforms import functional as TF
 from nunif.transforms import functional as NF
 import nunif.transforms.image_magick as IM
 from nunif.logger import logger
+from nunif.device import device_is_cuda
 from nunif.utils.image_loader import ImageLoader
 from tqdm import tqdm
 import time
@@ -96,7 +97,7 @@ def psnr256(x1, x2, color):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model-dir", type=str, required=True,
                         help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3],
@@ -123,10 +124,9 @@ def parse_args():
                         default="catrom", help="downscaling filter for generate LR image")
     parser.add_argument("--blur", type=float,
                         default=1, help="resize blur. 0.95: shapen, 1.05: blur")
-    parser.add_argument("--baseline", action="store_true", help="use baseline score by image resize")
+    parser.add_argument("--baseline", action="store_true", help="show the score of --baseline-filter")
     parser.add_argument("--baseline-filter", type=str, default="catrom",
-                        choices=["catrom", "box", "lanczos", "sinc", "triangle"],
-                        help="baseline filter for 2x")
+                        choices=["catrom", "box", "lanczos", "sinc", "triangle"], help="baseline filter")
     parser.add_argument("--border", type=int, default=0,
                         help="border px removed from the result image")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0],
@@ -143,6 +143,8 @@ def parse_args():
                         help="TTA mode (aka geometric self-ensemble)")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
+    parser.add_argument("--half", action="store_true",
+                        help="Use float16 model. AMP will be disabled.")
     parser.add_argument("--compile", action="store_true",
                         help="Use torch.compile if possible")
     args = parser.parse_args()
@@ -159,8 +161,12 @@ def main():
     model_method = args.model_method if args.model_method is not None else args.method
 
     ctx.load_model(model_method, args.noise_level)
+    if args.half:
+        ctx.half()
+        args.disable_amp = True
     if args.compile:
         ctx.compile()
+        ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size, enable_amp=not args.disable_amp)
 
     if path.isdir(args.input):
         files = ImageLoader.listdir(args.input)
@@ -172,7 +178,7 @@ def main():
     loader = ImageLoader(files=files, max_queue_size=128, load_func_kwargs={"color": "rgb"})
     if args.output is not None:
         os.makedirs(args.output, exist_ok=True)
-    with torch.no_grad():
+    with torch.inference_mode():
         mse_sum = psnr_sum = time_sum = 0
         baseline_mse_sum = baseline_psnr_sum = baseline_time_sum = 0
         count = 0
@@ -182,9 +188,14 @@ def main():
             groundtruth = NF.crop_mod(x, 4)
             x, groundtruth = make_input_waifu2x(groundtruth, args)
             t = time.time()
+            if args.half:
+                x = x.half().to(ctx.device)
             z, _ = ctx.convert(x, None, model_method, args.noise_level,
                                args.tile_size, args.batch_size,
                                tta=args.tta, enable_amp=not args.disable_amp)
+            if z.dtype == torch.float16:
+                z = z.float()
+
             time_sum += time.time() - t
             if args.border > 0:
                 psnr, mse = psnr256(remove_border(groundtruth, args.border),
@@ -228,7 +239,8 @@ def main():
             elif args.method == "noise":
                 print("* jpeg")
             print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(baseline_time_sum, 4)} ({fps} FPS)")
-
+        if device_is_cuda(ctx.device):
+            print("GPU Max Memory Allocated", int(torch.cuda.max_memory_allocated(ctx.device) / (1024*1024)), "MB")
 
 if __name__ == "__main__":
     main()

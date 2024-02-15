@@ -365,6 +365,20 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
     input_container.close()
 
 
+def hook_frame(input_path, frame_callback, stop_event=None):
+    input_container = av.open(input_path)
+    if len(input_container.streams.video) == 0:
+        raise ValueError("No video stream")
+    video_input_stream = input_container.streams.video[0]
+    video_input_stream.thread_type = "AUTO"
+
+    for frame in input_container.decode(video_input_stream):
+        frame_callback(frame)
+        if stop_event is not None and stop_event.is_set():
+            break
+    input_container.close()
+
+
 if __name__ == "__main__":
     from PIL import ImageOps
     import argparse

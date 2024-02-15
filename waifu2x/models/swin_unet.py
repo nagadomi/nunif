@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import copy
-from nunif.models import I2IBaseModel, register_model, register_model_builder
+from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.norm import LayerNormNoBias
 from torchvision.models.swin_transformer import (
     # use SwinTransformer V1
@@ -361,7 +361,7 @@ def swin_unet_4xl(**kwargs):
     return SwinUNet4x(base_dim=192, layer_norm=True, **kwargs)
 
 
-register_model_builder("waifu2x.swin_unet_4xl", swin_unet_4xl)
+register_model_factory("waifu2x.swin_unet_4xl", swin_unet_4xl)
 
 
 def _test():
@@ -404,8 +404,33 @@ def _convert_tool_main():
     save_model(model, args.output)
 
 
+def _bench(name, compile):
+    import torch
+    from nunif.models import create_model
+    import time
+    device = "cuda:0"
+    model = create_model(name, in_channels=3, out_channels=3).to(device).eval()
+    if compile:
+        model = torch.compile(model)
+    x = torch.rand((4, 3, 256, 256)).to(device)
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
+        z = model(x)
+        print(z.shape)
+        print(model.name, model.i2i_offset, model.i2i_scale, f"compile={compile}")
+
+    t = time.time()
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
+        for _ in range(100):
+            z = model(x)
+    print(time.time() - t)
+
+
 if __name__ == "__main__":
-    if False:
-        _test()
+    if True:
+        # _test()
+        _bench("waifu2x.swin_unet_2x", False)
+        _bench("waifu2x.swin_unet_4x", False)
+        _bench("waifu2x.swin_unet_2x", True)
+        _bench("waifu2x.swin_unet_4x", True)
     else:
         _convert_tool_main()

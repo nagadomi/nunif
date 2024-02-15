@@ -2,7 +2,7 @@ import argparse
 from tqdm import tqdm
 import torch
 import torch.nn as nn
-from nunif.models import load_model, save_model, get_model_config
+from nunif.models import load_model, save_model
 
 
 def calibrate_output():
@@ -28,8 +28,8 @@ def calibrate_output():
     amp = False if device == "cpu" else True
     amp_device_type = "cuda" if "cuda" in device else "cpu"
     amp_dtype = torch.bfloat16 if amp_device_type == "cpu" else torch.float16
-    offset = get_model_config(model, "i2i_offset")
-    scale = get_model_config(model, "i2i_scale")
+    offset = model.i2i_offset
+    scale = model.i2i_scale
     acc = 8
     model = model.to(device).eval()
     criterion = nn.MSELoss().to(device)
@@ -50,7 +50,7 @@ def calibrate_output():
                             input_size * scale - offset * 2,
                             input_size * scale - offset * 2)).clone().to(device)
             with torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=amp):
-                with torch.no_grad():
+                with torch.inference_mode():
                     z = model.unet(x)
                 z = cal(z)
                 loss = criterion(z, y)

@@ -6,9 +6,9 @@ from collections import OrderedDict
 import torch.nn as nn
 from . register import create_model
 from . model import Model
+from . data_parallel import DataParallelInference
 from .. logger import logger
 from .. device import create_device
-
 
 PYTORCH2 = packaging_version.parse(torch.__version__).major >= 2
 
@@ -71,16 +71,6 @@ def load_model(model_path, model=None, device_ids=None,
     return model, data
 
 
-def get_model_config(model, key=None):
-    if isinstance(model, nn.DataParallel):
-        model = model.module
-    config = model.get_config()
-    if key is None:
-        return config
-    else:
-        return config[key]
-
-
 def get_model_kwargs(model, key=None):
     if isinstance(model, nn.DataParallel):
         model = model.module
@@ -97,27 +87,19 @@ def get_model_device(model):
     return model.get_device()
 
 
-def call_model_method(model, name, **kwargs):
-    if isinstance(model, nn.DataParallel):
-        model = model.model
-    func = getattr(model, name, None)
-    if not (func is not None and callable(func)):
-        raise ValueError(f"Unable to call {type(model)}.{name}")
-
-    return func(**kwargs)
-
-
 def compile_model(model, **kwargs):
     # Windows not yet supported for torch.compile
     if PYTORCH2 and sys.platform == "linux" and not is_compiled_model(model):
         # only cuda
         if get_model_device(model).type == "cuda":
+            logger.debug(f"compile {model.name}({model.__class__.__name__}), kwargs={kwargs}")
             model = torch.compile(model, **kwargs)
     return model
 
 
 def is_compiled_model(model):
-    return not isinstance(model, Model)
+    # TODO: class name of compiled model is unclear
+    return not isinstance(model, (Model, nn.DataParallel, DataParallelInference))
 
 
 def merge_state_dict(a, b, alpha=0.5):
@@ -145,15 +127,3 @@ def mean_state_dict(dicts):
             else:
                 mean[k] += d[k] * scale
     return mean
-
-
-class DataParallelWrapper(nn.DataParallel):
-    # ref: https://discuss.pytorch.org/t/making-a-wrapper-around-nn-dataparallel-to-access-module-attributes-is-safe/79124
-    def __init__(self, module, device_ids=None):
-        super().__init__(module, device_ids=device_ids)
-
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.module, name)

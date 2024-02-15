@@ -16,7 +16,6 @@ from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, make_output_filename,
     has_rembg_model)
-from . import zoedepth_model as ZU
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
@@ -25,6 +24,7 @@ from nunif.utils.gui import (
     set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
+from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS
 import torch
 
 
@@ -61,7 +61,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui"),
-            size=(1000, 720),
+            size=(1100, 720),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -165,15 +165,25 @@ class MainFrame(wx.Frame):
         self.cbo_method.SetSelection(0)
 
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK"],
+        self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
+                                           choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
+                                                    "ZoeD_Any_N", "ZoeD_Any_K",
+                                                    "Any_S", "Any_B", "Any_L"],
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(0)
 
-        self.lbl_mapper = wx.StaticText(self.grp_stereo, label=T("Depth Mapping"))
-        self.cbo_mapper = wx.ComboBox(self.grp_stereo,
-                                      choices=["pow2", "softplus", "softplus2", "none"],
-                                      style=wx.CB_READONLY, name="cbo_mapper")
-        self.cbo_mapper.SetSelection(0)
+        self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
+        self.cbo_foreground_scale = wx.ComboBox(self.grp_stereo,
+                                           choices=["0", "1", "2", "3"],
+                                           style=wx.CB_READONLY, name="cbo_foreground_scale")
+        self.cbo_foreground_scale.SetSelection(0)
+
+        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"))
+        self.cbo_edge_dilation = wx.ComboBox(self.grp_stereo,
+                                             choices=["0", "1", "2", "3", "4"],
+                                             style=wx.CB_READONLY, name="cbo_edge_dilation")
+        self.cbo_edge_dilation.SetSelection(2)
+        self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
 
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
         self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["Full SBS", "Half SBS", "VR90"],
@@ -185,7 +195,7 @@ class MainFrame(wx.Frame):
                                              name="chk_ema_normalize")
         self.chk_ema_normalize.SetToolTip(T("Video Only"))
 
-        layout = wx.FlexGridSizer(rows=8, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=9, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -196,8 +206,10 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_method, 1, wx.EXPAND)
         layout.Add(self.lbl_depth_model, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_depth_model, 1, wx.EXPAND)
-        layout.Add(self.lbl_mapper, 0, wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_mapper, 1, wx.EXPAND)
+        layout.Add(self.lbl_foreground_scale, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_foreground_scale, 1, wx.EXPAND)
+        layout.Add(self.lbl_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_edge_dilation, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
         layout.Add(self.chk_ema_normalize, 1, wx.EXPAND)
@@ -347,7 +359,7 @@ class MainFrame(wx.Frame):
                 device_name = torch.cuda.get_device_properties(i).name
                 self.cbo_device.Append(device_name, i)
             if torch.cuda.device_count() > 0:
-                 self.cbo_device.Append(T("All CUDA Device"), -2)
+                self.cbo_device.Append(T("All CUDA Device"), -2)
         elif torch.backends.mps.is_available():
             self.cbo_device.Append("MPS", 0)
         self.cbo_device.Append("CPU", -1)
@@ -435,6 +447,8 @@ class MainFrame(wx.Frame):
         self.txt_input.Bind(wx.EVT_TEXT, self.on_text_changed_txt_input)
         self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
 
+        self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
+
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
 
@@ -463,6 +477,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_rembg_state()
         self.update_input_option_state()
+        self.update_model_selection()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -585,6 +600,16 @@ class MainFrame(wx.Frame):
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
 
+    def update_model_selection(self):
+        name = self.cbo_depth_model.GetValue()
+        if name in DEPTH_ANYTHING_MODELS:
+            self.cbo_edge_dilation.Enable()
+        else:
+            self.cbo_edge_dilation.Disable()
+
+    def on_selected_index_changed_cbo_depth_model(self, event):
+        self.update_model_selection()
+
     def confirm_overwrite(self):
         input_path = self.txt_input.GetValue()
         output_path = self.txt_output.GetValue()
@@ -681,17 +706,9 @@ class MainFrame(wx.Frame):
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            if ZU.has_model(depth_model_type):
-                # Realod depth model
-                self.SetStatusText(f"Loading {depth_model_type}...")
-            else:
-                # Need to download the model
-                self.SetStatusText(f"Downloading {depth_model_type}...")
 
         remove_bg = self.chk_rembg.GetValue()
         bg_model_type = self.cbo_bg_model.GetValue()
-        if remove_bg and not has_rembg_model(bg_model_type):
-            self.SetStatusText(f"Downloading {bg_model_type}...")
 
         max_output_width = max_output_height = None
         max_output_size = self.cbo_max_output_size.GetValue()
@@ -714,7 +731,8 @@ class MainFrame(wx.Frame):
             ipd_offset=float(self.sld_ipd_offset.GetValue()),
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
-            mapper=self.cbo_mapper.GetValue(),
+            foreground_scale=int(self.cbo_foreground_scale.GetValue()),
+            edge_dilation=int(self.cbo_edge_dilation.GetValue()),
             vr180=vr180,
             half_sbs=half_sbs,
             ema_normalize=self.chk_ema_normalize.GetValue(),
@@ -754,6 +772,16 @@ class MainFrame(wx.Frame):
             stop_event=self.stop_event,
             tqdm_fn=functools.partial(TQDMGUI, self),
             depth_model=self.depth_model)
+
+        if args.state["depth_utils"].has_model(depth_model_type):
+            # Realod depth model
+            self.SetStatusText(f"Loading {depth_model_type}...")
+            if remove_bg and not has_rembg_model(bg_model_type):
+                self.SetStatusText(f"Downloading {bg_model_type}...")
+        else:
+            # Need to download the model
+            self.SetStatusText(f"Downloading {depth_model_type}...")
+
         startWorker(self.on_exit_worker, iw3_main, wargs=(args,))
         self.processing = True
 

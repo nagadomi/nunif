@@ -314,6 +314,11 @@ try:
             # RGBA
             cvim = cv2.cvtColor(cvim, cv2.COLOR_RGBA2BGRA)
         return cvim
+
+    def cv2_to_pil(cvim):
+        cvim = cv2.cvtColor(cvim, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(cvim)
+
 except ModuleNotFoundError:
     def to_cv2(im):
         raise NotImplementedError("opencv-python is not installed")

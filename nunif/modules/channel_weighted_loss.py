@@ -1,6 +1,11 @@
 from torch import nn
 
 
+def channel_weighted_loss(input, target, loss_func, weight):
+    return sum([loss_func(input[:, i:i + 1, :, :], target[:, i:i + 1, :, :]) * w
+                for i, w in enumerate(weight)])
+
+
 class ChannelWeightedLoss(nn.Module):
     """ Wrapper Module for channel weight
     """
@@ -12,8 +17,7 @@ class ChannelWeightedLoss(nn.Module):
     def forward(self, input, target):
         b, ch, *_ = input.shape
         assert (ch == len(self.weight))
-        return sum([self.module(input[:, i:i + 1, :, :], target[:, i:i + 1, :, :]) * self.weight[i]
-                    for i in range(ch)])
+        return channel_weighted_loss(input, target, self.module, self.weight)
 
 
 LUMINANCE_WEIGHT = [0.29891, 0.58661, 0.11448]

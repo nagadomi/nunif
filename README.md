@@ -37,14 +37,16 @@ Currently, the following two models are supported.
 
 CLI tools are also available to filter out low quality images using these results.
 
-## Installer for non-developer Windows users
+## Install
+
+### Installer for non-developer Windows users
 
 - [nunif windows package](windows_package/docs/README.md)
 - [nunif windows package (日本語)](windows_package/docs/README_ja.md)
 
-## For developers
+### For developers
 
-### Dependencies
+#### Dependencies
 
 - Python 3 (Probably works with Python 3.9 or later, developed with 3.10)
 - [PyTorch](https://pytorch.org/get-started/locally/)

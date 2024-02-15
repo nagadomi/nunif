@@ -6,8 +6,9 @@ import torchvision.transforms.functional as TF
 import argparse
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-from .. utils import tiled_render, simple_render, ImageLoader
-from .. models import load_model, get_model_config, I2IBaseModel
+from .. utils.render import tiled_render, simple_render
+from .. utils.image_loader import ImageLoader
+from .. models import load_model, I2IBaseModel
 from .. logger import logger
 from .. addon import load_addons
 
@@ -28,13 +29,13 @@ def make_loader(input_path):
 
 def convert_with_tiled_render(model, args):
     loader, is_dir = make_loader(args.input)
-    in_size = get_model_config(model, "i2i_in_size")
-    in_grayscale = get_model_config(model, "i2i_in_channels") == 1
+    in_size = model.i2i_in_size
+    in_grayscale = model.i2i_in_channels == 1
     tile_size = in_size if in_size is not None else args.tile_size
 
     if is_dir:
         os.makedirs(args.output, exist_ok=True)
-    with torch.no_grad(), PoolExecutor() as pool:
+    with torch.inference_mode(), PoolExecutor() as pool:
         for im, meta in tqdm(loader, ncols=60):
             if in_grayscale:
                 im = TF.to_grayscale(im)
@@ -48,11 +49,11 @@ def convert_with_tiled_render(model, args):
 
 def convert_with_simple_render_single(model, args):
     loader, is_dir = make_loader(args.input)
-    in_grayscale = get_model_config(model, "i2i_in_channels") == 1
+    in_grayscale = model.i2i_in_channels == 1
 
     if is_dir:
         os.makedirs(args.output, exist_ok=True)
-    with torch.no_grad(), PoolExecutor() as pool:
+    with torch.inference_mode(), PoolExecutor() as pool:
         for im, meta in tqdm(loader, ncols=60):
             if in_grayscale:
                 im = TF.to_grayscale(im)
@@ -67,12 +68,12 @@ def convert_with_simple_render_single(model, args):
 def convert_with_simple_render_batch(model, args):
     # TODO: not test
     loader, is_dir = make_loader(args.input)
-    in_size = get_model_config(model, "i2i_in_size")
-    in_channels = get_model_config(model, "i2i_in_channels")
+    in_size = model.i2i_in_size
+    in_channels = model.i2i_in_channels
     if is_dir:
         os.makedirs(args.output, exist_ok=True)
 
-    with torch.no_grad(), PoolExecutor() as pool:
+    with torch.inference_mode(), PoolExecutor() as pool:
         output_paths = [None] * args.batch_size
         minibatch = torch.zeros((args.batch_size, in_channels,
                                  in_size, in_size))
@@ -120,14 +121,14 @@ def main():
     load_addons(args.addon)
 
     model, _ = load_model(args.model_file, device_ids=args.gpu)
-    if not isinstance(model, I2IBaseModel):
+    if not (isinstance(model, I2IBaseModel) or isinstance(getattr(model, "module", None), I2IBaseModel)):
         raise ValueError("The model not a subclass of I2IBaseModel")
     model.eval()
 
     if args.tiled_render:
         convert_with_tiled_render(model, args)
     else:
-        if get_model_config(model, "i2i_in_size") is None:
+        if model.i2i_in_size is None:
             # variable input size
             convert_with_simple_render_single(model, args)
         else:

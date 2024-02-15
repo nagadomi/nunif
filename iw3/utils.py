@@ -15,10 +15,9 @@ from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
 from nunif.device import create_device
-from . import zoedepth_model as ZU
 
 
-FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_fp32.pth")
+FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_v2.pth")
 REMBG_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "rembg")
 os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
 
@@ -68,9 +67,17 @@ def make_input_tensor(c, depth16, divergence, convergence,
     ], dim=0)
 
 
-def softplus01(depth):
-    # smooth function of `(depth - 0.5) * 2 if depth > 0.5 else 0`
-    return torch.log(1. + torch.exp(depth * 12.0 - 6.)) / 6.0
+def softplus01(depth, c=6):
+    min_v = math.log(1 + math.exp(0 * 12.0 - c)) / (12 - c)
+    max_v = math.log(1 + math.exp(1 * 12.0 - c)) / (12 - c)
+    v = torch.log(1. + torch.exp(depth * 12.0 - c)) / (12 - c)
+    return (v - min_v) / (max_v - min_v)
+
+
+def distance_to_dispary(x, c):
+    c1 = 1.0 + c
+    min_v = c / c1
+    return ((c / (c1 - x)) - min_v) / (1.0 - min_v)
 
 
 def get_mapper(name):
@@ -83,6 +90,24 @@ def get_mapper(name):
         return softplus01
     elif name == "softplus2":
         return lambda x: softplus01(x) ** 2
+    elif name in {"mul_1", "mul_2", "mul_3"}:
+        # for DepthAnything
+        param = {
+            # none 1x
+            "mul_1": 4,    # smooth 1.5x
+            "mul_2": 6,    # smooth 2x
+            "mul_3": 8.4,  # smooth 3x
+        }[name]
+        return lambda x: softplus01(x, param)
+    elif name in {"div_6", "div_4", "div_2", "div_1"}:
+        # for ZoeDepth
+        param = {
+            "div_6": 0.6,
+            "div_4": 0.4,
+            "div_2": 0.2,
+            "div_1": 0.1,
+        }[name]
+        return lambda x: distance_to_dispary(x, param)
     else:
         raise NotImplementedError()
 
@@ -132,6 +157,26 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
     return z.cpu()
 
 
+def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
+                           depth_min, depth_max,
+                           mapper, batch_size, enable_amp):
+    if not model.sbs_output:
+        left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                       depth_min, depth_max,
+                                       mapper, -1, batch_size, enable_amp)
+        right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                        depth_min, depth_max,
+                                        mapper, 1, batch_size, enable_amp)
+        return left_eye, right_eye
+    else:
+        lr = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                 depth_min, depth_max,
+                                 mapper, -1, batch_size, enable_amp)
+        left_eye = lr[0:3, :, :]
+        right_eye = lr[3:6, :, :]
+        return left_eye, right_eye
+
+
 def apply_divergence_nn(model, c, depth, divergence, convergence,
                         depth_min, depth_max,
                         mapper, shift, batch_size, enable_amp):
@@ -141,7 +186,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
         depth = torch.flip(depth, (2,))
 
     def config_callback(x):
-        return 8, x.shape[1], x.shape[2]
+        return 8, x.shape[1], x.shape[2], x.shape[0] * (2 if model.sbs_output else 1)
 
     def preprocess_callback(_, pad):
         xx = F.pad(c.unsqueeze(0), pad, mode="replicate").squeeze(0)
@@ -255,16 +300,12 @@ def postprocess_image(depth, im_org, args, side_model, ema=False):
             im_org, depth,
             args.divergence, convergence=args.convergence, shift=1)
     else:
-        left_eye = apply_divergence_nn(side_model, im_org, depth,
-                                       args.divergence, args.convergence,
-                                       depth_min=depth_min, depth_max=depth_max,
-                                       mapper=args.mapper, shift=-1,
-                                       batch_size=args.batch_size, enable_amp=not args.disable_amp)
-        right_eye = apply_divergence_nn(side_model, im_org, depth,
-                                        args.divergence, args.convergence,
-                                        depth_min=depth_min, depth_max=depth_max,
-                                        mapper=args.mapper, shift=1,
-                                        batch_size=args.batch_size, enable_amp=not args.disable_amp)
+        left_eye, right_eye = apply_divergence_nn_LR(
+            side_model, im_org, depth,
+            args.divergence, args.convergence,
+            depth_min=depth_min, depth_max=depth_max,
+            mapper=args.mapper,
+            batch_size=args.batch_size, enable_amp=not args.disable_amp)
 
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
     ipd_pad -= ipd_pad % 2
@@ -321,7 +362,7 @@ def debug_depth_image(depth, args, ema=False):
     out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
-    gc.text((16, 16), f"min={depth_min}\nmax={depth_min}\nmean={mean_depth}\nstd={std_depth}", "gray")
+    gc.text((16, 16), f"min={depth_min}\nmax={depth_max}\nmean={mean_depth}\nstd={std_depth}", "gray")
 
     return out
 
@@ -329,10 +370,12 @@ def debug_depth_image(depth, args, ema=False):
 def process_image(im, args, depth_model, side_model):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = ZU.batch_infer(depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-                               int16=False, enable_amp=not args.disable_amp,
-                               output_device=args.state["device"],
-                               device=args.state["device"])
+        depth = args.state["depth_utils"].batch_infer(
+            depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
+            int16=False, enable_amp=not args.disable_amp,
+            output_device=args.state["device"],
+            device=args.state["device"],
+            edge_dilation=args.edge_dilation)
         if not args.debug_depth:
             return postprocess_image(depth, im_org.to(args.state["device"]),
                                      args, side_model)
@@ -415,10 +458,12 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             x_orgs = x
         else:
             x_orgs = torch.cat(x_orgs, dim=0).to(args.state["device"])
-        depths = ZU.batch_infer(depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-                                int16=False, enable_amp=not args.disable_amp,
-                                output_device=args.state["device"],
-                                device=args.state["device"])
+        depths = args.state["depth_utils"].batch_infer(
+            depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
+            int16=False, enable_amp=not args.disable_amp,
+            output_device=args.state["device"],
+            device=args.state["device"],
+            edge_dilation=args.edge_dilation)
         return [VU.from_image(postprocess(depth, x_org,
                                           args, side_model, ema_normalize))
                 for depth, x_org in zip(depths, x_orgs)]
@@ -563,7 +608,9 @@ def create_parser(required_true=True):
                         help="overwrite output files")
     parser.add_argument("--pad", type=float, help="pad_size = int(size * pad)")
     parser.add_argument("--depth-model", type=str, default="ZoeD_N",
-                        choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK"],
+                        choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
+                                 "Any_S", "Any_B", "Any_L",
+                                 "ZoeD_Any_N", "ZoeD_Any_K"],
                         help="depth model name")
     parser.add_argument("--remove-bg", action="store_true",
                         help="remove background depth, not recommended for video")
@@ -583,9 +630,16 @@ def create_parser(required_true=True):
                         help="video filter options for ffmpeg.")
     parser.add_argument("--debug-depth", action="store_true",
                         help="debug output normalized depthmap, info and preprocessed depth")
-    parser.add_argument("--mapper", type=str, default="pow2",
-                        choices=["pow2", "softplus", "softplus2", "none"],
-                        help="(re-)mapper function for depth")
+    parser.add_argument("--mapper", type=str,
+                        choices=["auto", "pow2", "softplus", "softplus2",
+                                 "div_6", "div_4", "div_2", "div_1",
+                                 "none", "mul_1", "mul_2", "mul_3"],
+                        help=("(re-)mapper function for depth. "
+                              "if auto, div_6 for ZoeDepth model, none for DepthAnything model. "
+                              "directly using this option is deprecated. "
+                              "use --foreground-scale instead."))
+    parser.add_argument("--foreground-scale", type=int, choices=[0, 1, 2, 3], default=0,
+                        help="foreground scaling level. 0 is disabled")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
     parser.add_argument("--half-sbs", action="store_true",
@@ -610,6 +664,8 @@ def create_parser(required_true=True):
                         help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
                         help="use min/max moving average to normalize video depth")
+    parser.add_argument("--edge-dilation", type=int, default=2,
+                        help="loop count of edge dilation. only used for DepthAnything model")
 
     return parser
 
@@ -635,12 +691,20 @@ class EMAMinMax():
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
+    from . import zoedepth_model as ZU
+    from . import depth_anything_model as DU
+    if args.depth_model in ZU.MODEL_FILES:
+        depth_utils = ZU
+    elif args.depth_model in DU.MODEL_FILES:
+        depth_utils = DU
+
     args.state = {
         "stop_event": stop_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
         "ema": EMAMinMax(),
         "device": create_device(args.gpu),
+        "depth_utils": depth_utils
     }
     return args
 
@@ -650,8 +714,7 @@ def iw3_main(args):
     assert not (args.half_sbs and args.vr180)
 
     if args.update:
-        ZU.force_update_midas()
-        ZU.force_update_zoedepth()
+        args.state["depth_utils"].force_update()
 
     if path.normpath(args.input) == path.normpath(args.output):
         raise ValueError("input and output must be different file")
@@ -663,14 +726,30 @@ def iw3_main(args):
     else:
         args.bg_session = None
 
+    if args.mapper is not None:
+        if args.mapper == "auto":
+            if args.state["depth_utils"].get_name() == "DepthAnything":
+                args.mapper = "none"
+            else:
+                args.mapper = "div_6"
+        else:
+            pass
+    else:
+        if args.state["depth_utils"].get_name() == "DepthAnything":
+            args.mapper = ["none", "mul_1", "mul_2", "mul_3"][args.foreground_scale]
+        elif args.state["depth_utils"].get_name() == "ZoeDepth":
+            args.mapper = ["div_6", "div_4", "div_2", "div_1"][args.foreground_scale]
+
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]
     else:
-        depth_model = ZU.load_model(model_type=args.depth_model, gpu=args.gpu, height=args.zoed_height)
+        depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
+                                                           height=args.zoed_height)
         args.state["depth_model"] = depth_model
 
     if args.method == "row_flow":
         side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu[0]])[0].eval()
+        # side_model.sbs_output = True  # TODO: Fast, but causing ghost artifacts
     else:
         side_model = None
 

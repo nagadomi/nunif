@@ -36,3 +36,13 @@ An example nginx config file is available at [waifu2x/web/unlimited_waifu2x/appe
 Note that the size of the onnx file is very large.
 It is recommended to use CDN to reduce transfer fees.
 
+# Converting models to fp16
+
+Converting models to fp16 reduces model file size and data transfer bytes down to half.
+This only converts the parameters to fp16, keeps fp32 for input and output.
+
+```
+python convert_fp16.py -i <input onnx models dir> -o <output onnx models dir>
+```
+
+I have checked in several samples that the output is practically the same(PSNR 65+) as fp32 on javascript/wasm backend.
