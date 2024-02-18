@@ -7,7 +7,7 @@ from nunif.modules.attention import WindowMHA2d
 
 
 class WindowBias(nn.Module):
-    def __init__(self, window_size):
+    def __init__(self, window_size, hidden_dim=None):
         super().__init__()
         if isinstance(window_size, int):
             window_size = [window_size, window_size]
@@ -16,12 +16,13 @@ class WindowBias(nn.Module):
         index, unique_delta = self._gen_input(self.window_size)
         self.register_buffer("index", index)
         self.register_buffer("delta", unique_delta)
+        if hidden_dim is None:
+            hidden_dim = int((self.window_size[0] * self.window_size[1]) ** 0.5) * 2
 
-        N = self.window_size[0] * self.window_size[1]
         self.to_bias = nn.Sequential(
-            nn.Linear(2, N, bias=True),
+            nn.Linear(2, hidden_dim, bias=True),
             nn.GELU(),
-            nn.Linear(N, 1, bias=True))
+            nn.Linear(hidden_dim, 1, bias=True))
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
