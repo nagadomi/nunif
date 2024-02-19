@@ -184,7 +184,8 @@ class WincUNetBase(nn.Module):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
         C = base_dim
-        HEADS = C // 32
+        HEADS = 3
+        QKV_DIM = C // 6
 
         # shallow feature extractor
         self.patch = nn.Sequential(
@@ -195,18 +196,21 @@ class WincUNetBase(nn.Module):
         )
 
         # encoder
-        self.wac1 = WincBlocks(C, C, num_heads=HEADS, norm_layer=norm_layer)
+        self.wac1 = WincBlocks(C, C, num_heads=HEADS, qkv_dim=QKV_DIM, norm_layer=norm_layer)
         self.down1 = PatchDown(C, C * 2)
-        self.wac2 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, norm_layer=norm_layer)
+        self.wac2 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, qkv_dim=QKV_DIM, norm_layer=norm_layer)
         self.down2 = PatchDown(C * 2, C * 2)
-        self.wac3 = WincBlocks(C * 2, C * 2, window_size=[6, 12, 12, 6], num_heads=HEADS * 2, qkv_dim=32,
-                               mlp_type="glu_conv_mlp", num_layers=4, norm_layer=norm_layer)
+        self.wac3 = WincBlocks(C * 2, C * 2, window_size=[6, 12, 12, 6], num_heads=HEADS * 2,
+                               qkv_dim=QKV_DIM * 2, mlp_type="glu_conv_mlp", num_layers=4,
+                               norm_layer=norm_layer)
         # decoder
         self.up2 = PatchUp(C * 2, C * 2)
-        self.wac4 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, num_layers=3, norm_layer=norm_layer)
+        self.wac4 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, num_layers=3, qkv_dim=QKV_DIM,
+                               norm_layer=norm_layer)
         self.up1 = PatchUp(C * 2, C + last_dim_add)
         self.wac1_proj = nn.Conv2d(C, C + last_dim_add, kernel_size=1, stride=1, padding=0)
-        self.wac5 = WincBlocks(C + last_dim_add, C + last_dim_add, num_heads=HEADS, num_layers=3,
+        self.wac5 = WincBlocks(C + last_dim_add, C + last_dim_add, num_heads=HEADS,
+                               qkv_dim=QKV_DIM, num_layers=3,
                                norm_layer=norm_layer)
         self.to_image = ToImage(C + last_dim_add, out_channels, scale_factor=scale_factor)
 
