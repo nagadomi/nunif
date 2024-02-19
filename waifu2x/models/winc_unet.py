@@ -54,11 +54,28 @@ class WindowBias(nn.Module):
         return bias
 
 
+class GLUConvMLP(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.in_channels = in_channels
+        self.w1 = nn.Conv2d(in_channels, in_channels * 2, kernel_size=1, stride=1, padding=0)
+        self.w2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1,
+                            padding=1, padding_mode="replicate")
+
+    def forward(self, x):
+        x = self.w1(x)
+        x1, x2 = x.split(self.in_channels, dim=1)
+        x = F.silu(x1) * x2
+        x = self.w2(x)
+        x = F.leaky_relu(x, 0.1, inplace=True)
+        return x
+
+
 class WincBlock(nn.Module):
     """ Window MHA + Multi Layer Conv2d
     """
     def __init__(self, in_channels, out_channels, num_heads=4, qkv_dim=16, window_size=8,
-                 conv_kernel_size=3, norm_layer=None):
+                 conv_kernel_size=3, norm_layer=None, mlp_type="conv_mlp"):
         super(WincBlock, self).__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
@@ -70,13 +87,18 @@ class WincBlock(nn.Module):
 
         self.relative_bias = WindowBias(self.window_size)
         padding = conv_kernel_size // 2
-        self.conv_mlp = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=conv_kernel_size, stride=1,
-                      padding=padding, padding_mode="replicate"),
-            nn.LeakyReLU(0.1, inplace=True),  # fine
-        )
+        assert mlp_type in {"conv_mlp", "glu_conv_mlp"}
+        if mlp_type == "conv_mlp":
+            self.conv_mlp = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0),
+                nn.LeakyReLU(0.1, inplace=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=conv_kernel_size, stride=1,
+                          padding=padding, padding_mode="replicate"),
+                nn.LeakyReLU(0.1, inplace=True),  # fine
+            )
+        elif mlp_type == "glu_conv_mlp":
+            self.conv_mlp = GLUConvMLP(in_channels)
+
         if in_channels != out_channels:
             self.proj = nn.Conv2d(in_channels, out_channels,
                                   kernel_size=1, stride=1, padding=0)
@@ -91,16 +113,19 @@ class WincBlock(nn.Module):
 
 class WincBlocks(nn.Module):
     def __init__(self, in_channels, out_channels, num_heads=4, qkv_dim=16,
-                 window_size=8, num_layers=2, norm_layer=None, conv_kernel_size=3):
+                 window_size=8, num_layers=2, norm_layer=None, conv_kernel_size=3,
+                 mlp_type="conv_mlp"):
         super(WincBlocks, self).__init__()
-        if isinstance(window_size, (list, tuple)):
-            window_sizes = window_size
-        else:
-            window_sizes = [window_size] * num_layers
+        if isinstance(window_size, int):
+            window_size = [window_size] * num_layers
+        if isinstance(mlp_type, str):
+            mlp_type = [mlp_type] * num_layers
+
         self.blocks = nn.Sequential(
             *[WincBlock(in_channels if i == 0 else out_channels, out_channels,
-                        window_size=window_sizes[i], num_heads=num_heads, qkv_dim=qkv_dim,
-                        norm_layer=norm_layer, conv_kernel_size=conv_kernel_size)
+                        window_size=window_size[i], num_heads=num_heads, qkv_dim=qkv_dim,
+                        norm_layer=norm_layer, conv_kernel_size=conv_kernel_size,
+                        mlp_type=mlp_type[i])
               for i in range(num_layers)])
 
     def forward(self, x):
@@ -174,8 +199,8 @@ class WincUNetBase(nn.Module):
         self.down1 = PatchDown(C, C * 2)
         self.wac2 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, norm_layer=norm_layer)
         self.down2 = PatchDown(C * 2, C * 2)
-        self.wac3 = WincBlocks(C * 2, C * 2, window_size=4, num_heads=HEADS * 3, num_layers=4,
-                               norm_layer=norm_layer)
+        self.wac3 = WincBlocks(C * 2, C * 2, window_size=[6, 12, 12, 6], num_heads=HEADS * 2, qkv_dim=32,
+                               mlp_type="glu_conv_mlp", num_layers=4, norm_layer=norm_layer)
         # decoder
         self.up2 = PatchUp(C * 2, C * 2)
         self.wac4 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, num_layers=3, norm_layer=norm_layer)
