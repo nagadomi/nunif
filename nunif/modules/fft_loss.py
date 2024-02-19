@@ -5,8 +5,8 @@ from . multiscale_loss import MultiscaleLoss
 from . clamp_loss import ClampLoss
 from . weighted_loss import WeightedLoss
 from . gradient_loss import GradientLoss
-from . color import RGBToYRGB
-
+from . color import RGBToYRGB, rgb_to_yrgb
+from . lbp_loss import YLBP
 
 # ref. Rethinking Coarse-to-Fine Approach in Single Image Deblurring
 # https://arxiv.org/abs/2108.05054
@@ -39,6 +39,19 @@ class FFTLoss(nn.Module):
 
     def forward(self, input, target):
         return fft_loss(input, target, norm=self.norm)
+
+
+class LBPFFTLoss(nn.Module):
+    def __init__(self, weight=0.1, norm="backward"):
+        super().__init__()
+        self.norm = norm
+        self.lbp = YLBP()
+        self.weight = weight
+
+    def forward(self, input, target):
+        lbp = self.lbp(input, target)
+        fft = fft_loss(rgb_to_yrgb(input), rgb_to_yrgb(target), norm=self.norm)
+        return lbp + fft * self.weight
 
 
 def L1FFTLoss(weight=0.1, norm="backward"):
