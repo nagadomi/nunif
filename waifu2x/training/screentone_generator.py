@@ -19,9 +19,30 @@ def ellipse_rect(center, size):
             center[0] + size // 2, center[1] + size // 2)
 
 
+def ellipse_rect_float(center, size):
+    return (center[0] - size / 2, center[1] - size / 2,
+            center[0] + size / 2, center[1] + size / 2)
+
+
 def random_crop(x, size):
     i, j, h, w = T.RandomCrop.get_params(x, size)
     x = TF.crop(x, i, j, h, w)
+    return x
+
+
+def random_downscale(x, min_size, max_size):
+    size = random.randint(min_size, max_size)
+    if size != x.width:
+        x = TF.resize(x, (size, size), interpolation=random_interpolation())
+    return x
+
+
+def random_flip(x):
+    if random.uniform(0, 1) > 0.5:
+        x = TF.rotate(x, 90, interpolation=InterpolationMode.NEAREST)
+    steps = random.choice([[], [TF.hflip], [TF.vflip], [TF.vflip, TF.hflip]])
+    for f in steps:
+        x = f(x)
     return x
 
 
@@ -143,6 +164,51 @@ def gen_mask(size=400):
     return grid
 
 
+def gen_gradient_mask(size=400):
+    max_dot_size = random.randint(10, 20)
+    min_dot_size = random.randint(2, max_dot_size)
+
+    margin = random.randint(1, max_dot_size)
+    cell_size = max_dot_size + margin
+    cell_size += (cell_size % 2 == 0) * 1
+    cell_n = (size * 2) // cell_size
+    offset = cell_n // 4
+    if random.uniform(0, 1) < 0.5:
+        step_size = random.randint(1, 2)
+    else:
+        step_size = random.uniform(0.25, 2)
+    dot_size = max_dot_size
+
+    grid = Image.new("L", (size * 2, size * 2), "black")
+    gc = ImageDraw.Draw(grid)
+    for y in range(cell_n):
+        if y < offset:
+            dot_size = max_dot_size
+        else:
+            dot_size = max_dot_size - step_size * (y - offset)
+        dot_size = max(dot_size, min_dot_size)
+        for x in range(cell_n):
+            center = ((x * cell_size) + cell_size // 2, (y * cell_size) + cell_size // 2)
+            gc.ellipse(ellipse_rect_float(center, dot_size), fill="white")
+    if random.uniform(0, 1) < 0.8:
+        grid = random_flip(grid)
+        if random.uniform(0, 1) < 0.5:
+            grid = random_downscale(grid, size, int(size * 2 * 0.75))
+        grid = random_crop(grid, (size, size))
+    else:
+        if random.uniform(0, 1) < 0.8:
+            angle = 45
+        else:
+            angle = random.uniform(-180, 180)
+        grid = TF.rotate(grid, angle=angle, interpolation=random_interpolation(rotate=True))
+        grid = TF.center_crop(grid, (size * 2, size * 2))
+        if random.uniform(0, 1) < 0.5:
+            grid = random_downscale(grid, size, int(size * 2 * 0.75))
+        grid = random_crop(grid, (size, size))
+
+    return grid
+
+
 def gen_line_overlay(size, line_scale=1):
     window = Image.new("L", (size * 2, size * 2), "black")
     if random.uniform(0, 1) < 0.5:
@@ -178,7 +244,10 @@ def gen(disable_color):
     fg_color, window_bg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
     bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), window_bg_color)
     fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), fg_color)
-    mask = gen_mask(WINDOW_SIZE * 2)
+    if random.uniform(0, 1) < 0.75:
+        mask = gen_mask(WINDOW_SIZE * 2)
+    else:
+        mask = gen_gradient_mask(WINDOW_SIZE * 2)
     bg.putalpha(255)
     fg.putalpha(mask)
     window = Image.alpha_composite(bg, fg)
