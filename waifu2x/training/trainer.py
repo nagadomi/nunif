@@ -27,6 +27,7 @@ from nunif.modules.gradient_loss import YRGBL1GradientLoss
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.logger import logger
 import random
+import math
 
 
 # basic training
@@ -176,6 +177,8 @@ class Waifu2xEnv(LuminancePSNREnv):
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
+        if math.isnan(loss):
+            return
         if self.trainer.args.hard_example == "none":
             return
 
