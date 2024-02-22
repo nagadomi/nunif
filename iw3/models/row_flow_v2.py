@@ -60,16 +60,9 @@ class RowFlowV2(I2IBaseModel):
             return z2, z1, (grid[:, 0:1, :, :] + delta2) / self.delta_scale
         else:
             delta = self._forward(x)[1] * self.delta_scale
-            if not self.sbs_output:
-                z = self._warp(rgb, grid, delta)
-                z = F.pad(z, (-28, -28, -28, -28))
-                return torch.clamp(z, 0., 1.)
-            else:
-                z_l = self._warp(rgb, grid, delta)
-                z_r = self._warp(rgb, grid, -delta)
-                z = torch.cat([z_l, z_r], dim=1)
-                z = F.pad(z, (-28, -28, -28, -28))
-                return torch.clamp(z, 0., 1.)
+            z = self._warp(rgb, grid, delta)
+            z = F.pad(z, (-28, -28, -28, -28))
+            return torch.clamp(z, 0., 1.)
 
 
 def _bench(name):

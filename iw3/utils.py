@@ -160,21 +160,13 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
 def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
                            depth_min, depth_max,
                            mapper, batch_size, enable_amp):
-    if not model.sbs_output:
-        left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                       depth_min, depth_max,
-                                       mapper, -1, batch_size, enable_amp)
-        right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                        depth_min, depth_max,
-                                        mapper, 1, batch_size, enable_amp)
-        return left_eye, right_eye
-    else:
-        lr = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                 depth_min, depth_max,
-                                 mapper, -1, batch_size, enable_amp)
-        left_eye = lr[0:3, :, :]
-        right_eye = lr[3:6, :, :]
-        return left_eye, right_eye
+    left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                   depth_min, depth_max,
+                                   mapper, -1, batch_size, enable_amp)
+    right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                    depth_min, depth_max,
+                                    mapper, 1, batch_size, enable_amp)
+    return left_eye, right_eye
 
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
@@ -186,7 +178,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
         depth = torch.flip(depth, (2,))
 
     def config_callback(x):
-        return 8, x.shape[1], x.shape[2], x.shape[0] * (2 if model.sbs_output else 1)
+        return 8, x.shape[1], x.shape[2], x.shape[0]
 
     def preprocess_callback(_, pad):
         xx = F.pad(c.unsqueeze(0), pad, mode="replicate").squeeze(0)
@@ -757,7 +749,6 @@ def iw3_main(args):
 
     if args.method == "row_flow":
         side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu[0]])[0].eval()
-        # side_model.sbs_output = True  # TODO: Fast, but causing ghost artifacts
     else:
         side_model = None
 
