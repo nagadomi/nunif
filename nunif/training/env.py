@@ -128,6 +128,7 @@ class BaseEnv(ABC):
     def train(self, loader, optimizers, schedulers, grad_scaler, backward_step=1):
         assert backward_step > 0
 
+        nan_count = 0
         self.train_begin()
         for optimizer in optimizers:
             optimizer.zero_grad()
@@ -145,6 +146,9 @@ class BaseEnv(ABC):
                     raise FloatingPointError("loss is NaN")
                 else:
                     logger.warn("loss is NaN")
+                    nan_count += 1
+                    if nan_count > 100:
+                        raise FloatingPointError("loss is NaN over 100 times")
             self.train_backward_step(loss, optimizers, grad_scaler,
                                      update=t % backward_step == 0)
             t += 1

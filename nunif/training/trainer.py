@@ -331,6 +331,5 @@ def create_trainer_default_parser():
     parser.add_argument("--disable-backup", action="store_true",
                         help="disable backup of the best model file for every runtime")
     parser.add_argument("--ignore-nan", action="store_true",
-                        help="do not raise NaN exception")
-
+                        help="do not raise NaN exception unless NaN occurs more than 100 times in one epoch")
     return parser
