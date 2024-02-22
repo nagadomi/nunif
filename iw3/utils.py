@@ -154,7 +154,7 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
                       mode="bicubic", padding_mode="border", align_corners=True)
     z = z.squeeze(0)
     z = torch.clamp(z, 0., 1.)
-    return z.cpu()
+    return z
 
 
 def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
