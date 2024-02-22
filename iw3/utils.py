@@ -285,7 +285,7 @@ def preprocess_image(im, args):
     return im_org, im
 
 
-def postprocess_image(depth, im_org, args, side_model, ema=False):
+def apply_divergence(depth, im_org, args, side_model, ema=False):
     depth_min, depth_max = depth.min(), depth.max()
     if ema:
         depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
@@ -306,7 +306,10 @@ def postprocess_image(depth, im_org, args, side_model, ema=False):
             depth_min=depth_min, depth_max=depth_max,
             mapper=args.mapper,
             batch_size=args.batch_size, enable_amp=not args.disable_amp)
+    return left_eye, right_eye
 
+
+def postprocess_image(left_eye, right_eye, args):
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
     ipd_pad -= ipd_pad % 2
     if ipd_pad > 0:
@@ -377,8 +380,9 @@ def process_image(im, args, depth_model, side_model):
             device=args.state["device"],
             edge_dilation=args.edge_dilation)
         if not args.debug_depth:
-            return postprocess_image(depth, im_org.to(args.state["device"]),
-                                     args, side_model)
+            left_eye, right_eye = apply_divergence(depth, im_org.to(args.state["device"]),
+                                                   args, side_model)
+            return postprocess_image(left_eye, right_eye, args)
         else:
             return debug_depth_image(depth, args)
 
@@ -437,10 +441,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     minibatch_queue = []
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
-    if args.debug_depth:
-        postprocess = lambda depth, x_org, args, side_model, ema: debug_depth_image(depth, args, ema)
-    else:
-        postprocess = postprocess_image
 
     @torch.inference_mode()
     def run_minibatch():
@@ -464,9 +464,17 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             output_device=args.state["device"],
             device=args.state["device"],
             edge_dilation=args.edge_dilation)
-        return [VU.from_image(postprocess(depth, x_org,
-                                          args, side_model, ema_normalize))
-                for depth, x_org in zip(depths, x_orgs)]
+
+        if args.debug_depth:
+            return [VU.from_image(debug_depth_image(depth, args, ema_normalize))
+                    for depth, x_org in zip(depths, x_orgs)]
+        else:
+            frames = []
+            for depth, x_org in zip(depths, x_orgs):
+                left_eye, right_eye = apply_divergence(depth, x_org, args, side_model, ema_normalize)
+                sbs = postprocess_image(left_eye, right_eye, args)
+                frames.append(VU.from_image(sbs))
+            return frames
 
     def frame_callback(frame):
         if not args.low_vram:
