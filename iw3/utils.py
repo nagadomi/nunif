@@ -7,7 +7,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import math
 from tqdm import tqdm
-from PIL import Image, ImageDraw
+from PIL import ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.seam_blending import SeamBlending
@@ -251,12 +251,15 @@ def remove_bg_from_image(im, bg_session):
 
 
 def preprocess_image(im, args):
-    if args.rotate_left:
-        im = im.transpose(Image.Transpose.ROTATE_90)
-    elif args.rotate_right:
-        im = im.transpose(Image.Transpose.ROTATE_270)
+    if not torch.is_tensor(im):
+        im = TF.to_tensor(im)
 
-    w, h = im.size
+    if args.rotate_left:
+        im = torch.rot90(im, 1, (1, 2))
+    elif args.rotate_right:
+        im = torch.rot90(im, 3, (1, 2))
+
+    h, w = im.shape[1:]
     new_w, new_h = w, h
     if args.max_output_height is not None and new_h > args.max_output_height:
         new_w = int(args.max_output_height / new_h * new_w)
@@ -267,13 +270,10 @@ def preprocess_image(im, args):
         new_w -= new_w % 2
         im = TF.resize(im, (new_h, new_w),
                        interpolation=InterpolationMode.BICUBIC, antialias=True)
-
-    im_org = TF.to_tensor(im)
+    im_org = im
     if args.bg_session is not None:
-        im = remove_bg_from_image(im, args.bg_session)
+        im = remove_bg_from_image(TF.to_pil_image(im), args.bg_session)
         im = TF.to_tensor(im)
-    else:
-        im = im_org
     return im_org, im
 
 
@@ -361,7 +361,7 @@ def debug_depth_image(depth, args, ema=False):
     return out
 
 
-def process_image(im, args, depth_model, side_model):
+def process_image(im, args, depth_model, side_model, return_tensor=False):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
         depth = args.state["depth_utils"].batch_infer(
@@ -374,7 +374,8 @@ def process_image(im, args, depth_model, side_model):
             left_eye, right_eye = apply_divergence(depth, im_org.to(args.state["device"]),
                                                    args, side_model)
             sbs = postprocess_image(left_eye, right_eye, args)
-            sbs = TF.to_pil_image(sbs)
+            if not return_tensor:
+                sbs = TF.to_pil_image(sbs)
             return sbs
         else:
             return debug_depth_image(depth, args)
@@ -459,7 +460,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             edge_dilation=args.edge_dilation)
 
         if args.debug_depth:
-            return [VU.from_image(debug_depth_image(depth, args, ema_normalize))
+            return [VU.to_frame(debug_depth_image(depth, args, ema_normalize))
                     for depth, x_org in zip(depths, x_orgs)]
         else:
             frames = []
@@ -467,13 +468,13 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 left_eye, right_eye = apply_divergence(depth, x_org, args, side_model, ema_normalize)
                 sbs = postprocess_image(left_eye, right_eye, args)
                 frames.append(sbs)
-            return [VU.from_image(TF.to_pil_image(frame)) for frame in frames]
+            return [VU.to_frame(frame) for frame in frames]
 
     def frame_callback(frame):
         if not args.low_vram:
             if frame is None:
                 return run_minibatch()
-            minibatch_queue.append(frame.to_image())
+            minibatch_queue.append(VU.to_tensor(frame))
             if len(minibatch_queue) >= minibatch_size:
                 return run_minibatch()
             else:
@@ -481,7 +482,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         else:
             if frame is None:
                 return None
-            return VU.from_image(process_image(frame.to_image(), args, depth_model, side_model))
+            return VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
+                                             return_tensor=True))
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -502,6 +504,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     if ema_normalize:
         args.state["ema"].clear()
+
     make_parent_dir(output_filename)
     VU.process_video(input_filename, output_filename,
                      config_callback=config_callback,
