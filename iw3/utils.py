@@ -325,9 +325,8 @@ def postprocess_image(left_eye, right_eye, args):
 
     sbs = torch.cat([left_eye, right_eye], dim=2)
     sbs = torch.clamp(sbs, 0., 1.)
-    sbs = TF.to_pil_image(sbs)
 
-    w, h = sbs.size
+    h, w = sbs.shape[1:]
     new_w, new_h = w, h
     if args.max_output_height is not None and new_h > args.max_output_height:
         if args.keep_aspect_ratio:
@@ -374,7 +373,9 @@ def process_image(im, args, depth_model, side_model):
         if not args.debug_depth:
             left_eye, right_eye = apply_divergence(depth, im_org.to(args.state["device"]),
                                                    args, side_model)
-            return postprocess_image(left_eye, right_eye, args)
+            sbs = postprocess_image(left_eye, right_eye, args)
+            sbs = TF.to_pil_image(sbs)
+            return sbs
         else:
             return debug_depth_image(depth, args)
 
@@ -465,8 +466,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             for depth, x_org in zip(depths, x_orgs):
                 left_eye, right_eye = apply_divergence(depth, x_org, args, side_model, ema_normalize)
                 sbs = postprocess_image(left_eye, right_eye, args)
-                frames.append(VU.from_image(sbs))
-            return frames
+                frames.append(sbs)
+            return [VU.from_image(TF.to_pil_image(frame)) for frame in frames]
 
     def frame_callback(frame):
         if not args.low_vram:
