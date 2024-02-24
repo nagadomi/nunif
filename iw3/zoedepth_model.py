@@ -160,7 +160,7 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
         frame_w = int(width * (frame_h / height))
         frame_w += frame_w % 2
         pad_w = (new_h - frame_w) // 2
-        x = F.interpolate(x, size=(frame_h, frame_w), mode="bicubic",
+        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear",
                           align_corners=False, antialias=True)
         x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
         # assert x.shape[2] == new_h and x.shape[3] == new_h
@@ -169,7 +169,7 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
         pad_w = round(new_w * pad_scale_w)
         frame_h = new_h - pad_h * 2
         frame_w = new_w - pad_w * 2
-        x = F.interpolate(x, size=(frame_h, frame_w), mode="bicubic",
+        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear",
                           align_corners=False, antialias=True)
         x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
         # assert x.shape[2] == new_h and x.shape[3] == new_w
@@ -221,7 +221,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
-                            mode="bicubic", align_corners=False)
+                            mode="bilinear", align_corners=False)
 
     if flip_aug:
         if batch:

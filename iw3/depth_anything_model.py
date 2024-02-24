@@ -103,7 +103,7 @@ def batch_preprocess(x, lower_bound=392):
         new_h = lower_bound
     if new_w < lower_bound:
         new_w = lower_bound
-    x = F.interpolate(x, size=(new_h, new_w), mode="bicubic", align_corners=False, antialias=True)
+    x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False, antialias=True)
     x.clamp_(0, 1)
 
     # normalize
@@ -158,7 +158,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         out = dilate_edge(out, edge_dilation)
     if resize_depth and out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
-                            mode="bicubic", align_corners=False, antialias=True)
+                            mode="bilinear", align_corners=False, antialias=True)
 
     # invert for zoedepth compatibility
     out.neg_()
