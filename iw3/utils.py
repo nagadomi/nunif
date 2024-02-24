@@ -10,11 +10,10 @@ from tqdm import tqdm
 from PIL import ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.utils.seam_blending import SeamBlending
 from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
-from nunif.device import create_device
+from nunif.device import create_device, autocast
 
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_v2.pth")
@@ -44,27 +43,37 @@ def make_divergence_feature_value(divergence, convergence, image_width):
     return divergence_feature_value, convergence_feature_value
 
 
-def make_input_tensor(c, depth16, divergence, convergence,
+def make_input_tensor(c, depth, divergence, convergence,
                       image_width, depth_min=None, depth_max=None,
-                      mapper="pow2"):
-    w, h = c.shape[2], c.shape[1]
-    depth = normalize_depth(depth16.squeeze(0), depth_min, depth_max)
+                      mapper="pow2", normalize=True):
+    if normalize:
+        depth = normalize_depth(depth.squeeze(0), depth_min, depth_max)
+    else:
+        depth = depth.squeeze(0) # CHW -> HW
     depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
-    divergence_feat = torch.full_like(depth, divergence_value, device=c.device)
-    convergence_feat = torch.full_like(depth, convergence_value, device=c.device)
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h, device=c.device),
-                                    torch.linspace(-1, 1, w, device=c.device), indexing="ij")
-    grid = torch.stack((mesh_x, mesh_y), 2)
-    grid = grid.permute(2, 0, 1)  # CHW
+    divergence_feat = torch.full_like(depth, divergence_value, device=depth.device)
+    convergence_feat = torch.full_like(depth, convergence_value, device=depth.device)
 
-    return torch.cat([
-        c,
-        depth.unsqueeze(0),
-        divergence_feat.unsqueeze(0),
-        convergence_feat.unsqueeze(0),
-        grid,
-    ], dim=0)
+    if c is not None:
+        w, h = c.shape[2], c.shape[1]
+        mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h, device=c.device),
+                                        torch.linspace(-1, 1, w, device=c.device), indexing="ij")
+        grid = torch.stack((mesh_x, mesh_y), 2)
+        grid = grid.permute(2, 0, 1)  # CHW
+        return torch.cat([
+            c,
+            depth.unsqueeze(0),
+            divergence_feat.unsqueeze(0),
+            convergence_feat.unsqueeze(0),
+            grid,
+        ], dim=0)
+    else:
+        return torch.cat([
+            depth.unsqueeze(0),
+            divergence_feat.unsqueeze(0),
+            convergence_feat.unsqueeze(0),
+        ], dim=0)
 
 
 def softplus01(depth, c=6):
@@ -141,67 +150,72 @@ def equirectangular_projection(c, device="cpu"):
 
 
 def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
-    w, h = c.shape[2], c.shape[1]
+    # BCHW
+    B, _, H, W = depth.shape
     shift_size = (-shift * divergence * 0.01)
     index_shift = depth * shift_size - (shift_size * convergence)
     mesh_y, mesh_x = torch.meshgrid(
-        torch.linspace(-1, 1, h, device=c.device),
-        torch.linspace(-1, 1, w, device=c.device),
+        torch.linspace(-1, 1, H, device=c.device),
+        torch.linspace(-1, 1, W, device=c.device),
         indexing="ij")
+    mesh_y = mesh_y.reshape(1, 1, H, W).expand(B, 1, H, W)
+    mesh_x = mesh_x.reshape(1, 1, H, W).expand(B, 1, H, W)
     mesh_x = mesh_x - index_shift
-    grid = torch.stack((mesh_x, mesh_y), 2)
-    z = F.grid_sample(c.unsqueeze(0), grid.unsqueeze(0),
+    grid = torch.cat((mesh_x, mesh_y), dim=1)
+    if c.shape[2] != H or c.shape[3] != W:
+        grid = F.interpolate(grid, size=c.shape[-2:],
+                             mode="bilinear", align_corners=True, antialias=False)
+    grid = grid.permute(0, 2, 3, 1)
+    z = F.grid_sample(c, grid,
                       mode="bicubic", padding_mode="border", align_corners=True)
-    z = z.squeeze(0)
     z = torch.clamp(z, 0., 1.)
     return z
 
 
 def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
-                           depth_min, depth_max,
-                           mapper, batch_size, enable_amp):
+                           mapper, enable_amp):
     left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                   depth_min, depth_max,
-                                   mapper, -1, batch_size, enable_amp)
+                                   mapper, -1, enable_amp)
     right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                    depth_min, depth_max,
-                                    mapper, 1, batch_size, enable_amp)
+                                    mapper, 1, enable_amp)
     return left_eye, right_eye
 
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
-                        depth_min, depth_max,
-                        mapper, shift, batch_size, enable_amp):
-    image_width = c.shape[2]
+                        mapper, shift, enable_amp):
+    # BCHW
+    assert model.delta_output
     if shift > 0:
-        c = torch.flip(c, (2,))
-        depth = torch.flip(depth, (2,))
+        c = torch.flip(c, (3,))
+        depth = torch.flip(depth, (3,))
+    B, _, H, W = depth.shape
 
-    def config_callback(x):
-        return 8, x.shape[1], x.shape[2], x.shape[0]
+    x = torch.stack([make_input_tensor(None, depth[i],
+                                       divergence=divergence,
+                                       convergence=convergence,
+                                       image_width=W,
+                                       mapper=mapper,
+                                       normalize=False) # already normalized
+                     for i in range(depth.shape[0])])
+    with autocast(device=depth.device, enabled=enable_amp):
+        delta = model(x)
+    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, H, device=c.device),
+                                    torch.linspace(-1, 1, W, device=c.device), indexing="ij")
+    mesh_y = mesh_y.reshape(1, 1, H, W).expand(B, 1, H, W)
+    mesh_x = mesh_x.reshape(1, 1, H, W).expand(B, 1, H, W)
+    grid = torch.cat((mesh_x, mesh_y), dim=1)
+    delta_scale = 1.0 / (W // 2 - 1)
+    grid = grid + delta * delta_scale
+    if c.shape[2] != H or c.shape[3] != W:
+        grid = F.interpolate(grid, size=c.shape[-2:],
+                             mode="bilinear", align_corners=True, antialias=False)
+    grid = grid.permute(0, 2, 3, 1)
+    z = F.grid_sample(c, grid, mode="bicubic", padding_mode="border", align_corners=True)
+    z = torch.clamp(z, 0, 1)
 
-    def preprocess_callback(_, pad):
-        xx = F.pad(c.unsqueeze(0), pad, mode="replicate").squeeze(0)
-        dd = F.pad(depth.float().unsqueeze(0), pad, mode="replicate").squeeze(0)
-        return (xx, dd)
-
-    def input_callback(p, i1, i2, j1, j2):
-        xx = p[0][:, i1:i2, j1:j2]
-        dd = p[1][:, i1:i2, j1:j2]
-        return make_input_tensor(
-            xx, dd,
-            divergence=divergence, convergence=convergence,
-            image_width=image_width,
-            depth_min=depth_min, depth_max=depth_max,
-            mapper=mapper)
-
-    z = SeamBlending.tiled_render(
-        c, model, tile_size=256, batch_size=batch_size, enable_amp=enable_amp,
-        config_callback=config_callback,
-        preprocess_callback=preprocess_callback,
-        input_callback=input_callback)
     if shift > 0:
-        z = torch.flip(z, (2,))
+        z = torch.flip(z, (3,))
+
     return z
 
 
@@ -278,12 +292,24 @@ def preprocess_image(im, args):
 
 
 def apply_divergence(depth, im_org, args, side_model, ema=False):
-    depth_min, depth_max = depth.min(), depth.max()
-    if ema:
-        depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
+    batch = True
+    if depth.ndim != 4:
+        # CHW
+        depth = depth.unsqueeze(0)
+        im_org = im_org.unsqueeze(0)
+        batch = False
+    else:
+        # BCHW
+        pass
+
+    for i in range(depth.shape[0]):
+        depth_min, depth_max = depth[i].min(), depth[i].max()
+        if ema:
+            depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
+        depth[i] = normalize_depth(depth[i], depth_min=depth_min, depth_max=depth_max)
+
 
     if args.method == "grid_sample":
-        depth = normalize_depth(depth.squeeze(0), depth_min=depth_min, depth_max=depth_max)
         depth = get_mapper(args.mapper)(depth)
         left_eye = apply_divergence_grid_sample(
             im_org, depth,
@@ -295,13 +321,18 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
         left_eye, right_eye = apply_divergence_nn_LR(
             side_model, im_org, depth,
             args.divergence, args.convergence,
-            depth_min=depth_min, depth_max=depth_max,
             mapper=args.mapper,
-            batch_size=args.batch_size, enable_amp=not args.disable_amp)
+            enable_amp=not args.disable_amp)
+
+    if not batch:
+        left_eye = left_eye.squeeze(0)
+        right_eye = right_eye.squeeze(0)
+
     return left_eye, right_eye
 
 
 def postprocess_image(left_eye, right_eye, args):
+    # CHW
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
     ipd_pad -= ipd_pad % 2
     if ipd_pad > 0:
@@ -369,7 +400,8 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
             int16=False, enable_amp=not args.disable_amp,
             output_device=args.state["device"],
             device=args.state["device"],
-            edge_dilation=args.edge_dilation)
+            edge_dilation=args.edge_dilation,
+            resize_depth=False)
         if not args.debug_depth:
             left_eye, right_eye = apply_divergence(depth, im_org.to(args.state["device"]),
                                                    args, side_model)
@@ -457,16 +489,17 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             int16=False, enable_amp=not args.disable_amp,
             output_device=args.state["device"],
             device=args.state["device"],
-            edge_dilation=args.edge_dilation)
+            edge_dilation=args.edge_dilation,
+            resize_depth=False)
 
         if args.debug_depth:
             return [VU.to_frame(debug_depth_image(depth, args, ema_normalize))
                     for depth, x_org in zip(depths, x_orgs)]
         else:
+            left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
             frames = []
-            for depth, x_org in zip(depths, x_orgs):
-                left_eye, right_eye = apply_divergence(depth, x_org, args, side_model, ema_normalize)
-                sbs = postprocess_image(left_eye, right_eye, args)
+            for i in range(left_eyes.shape[0]):
+                sbs = postprocess_image(left_eyes[i], right_eyes[i], args)
                 frames.append(sbs)
             return [VU.to_frame(frame) for frame in frames]
 
@@ -593,7 +626,7 @@ def create_parser(required_true=True):
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
     parser.add_argument("--batch-size", type=int, default=16, choices=[Range(1, 256)],
-                        help="batch size for RowFlow model, 256x256 tiled input")
+                        help="batch size for RowFlow model, 256x256 tiled input. !!DEPRECATED!!")
     parser.add_argument("--zoed-batch-size", type=int, default=2, choices=[Range(1, 64)],
                         help="batch size for ZoeDepth model. ignored when --low-vram")
     parser.add_argument("--max-fps", type=float, default=30,
@@ -753,6 +786,7 @@ def iw3_main(args):
 
     if args.method == "row_flow":
         side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu[0]])[0].eval()
+        side_model.delta_output = True
     else:
         side_model = None
 
