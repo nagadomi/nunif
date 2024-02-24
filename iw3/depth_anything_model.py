@@ -124,7 +124,8 @@ def _forward(model, x, enable_amp):
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
                 output_device="cpu", device=None, normalize_int16=True,
-                edge_dilation=2, **kwargs):
+                edge_dilation=2, resize_depth=True,
+                **kwargs):
     device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
@@ -155,7 +156,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
     if edge_dilation > 0:
         out = dilate_edge(out, edge_dilation)
-    if out.shape[-2:] != org_size:
+    if resize_depth and out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bicubic", align_corners=False, antialias=True)
 
