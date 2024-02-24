@@ -7,6 +7,7 @@ from .. models.utils import get_model_device
 from .. modules import ClampLoss, LuminanceWeightedLoss, LuminancePSNR, PSNR
 from .. device import autocast
 from abc import ABC, abstractmethod
+from .. logger import logger
 
 
 class BaseEnv(ABC):
@@ -121,11 +122,13 @@ class BaseEnv(ABC):
         losses = loss if isinstance(loss, (list, tuple)) else [loss]
         for loss in (losses):
             if torch.is_tensor(loss) and torch.isnan(loss).any().item():
-                raise FloatingPointError("loss is NaN")
+                return True
+        return False
 
     def train(self, loader, optimizers, schedulers, grad_scaler, backward_step=1):
         assert backward_step > 0
 
+        nan_count = 0
         self.train_begin()
         for optimizer in optimizers:
             optimizer.zero_grad()
@@ -138,7 +141,14 @@ class BaseEnv(ABC):
                 else:
                     loss = loss / backward_step
             self.train_loss_hook(data, loss)
-            self.check_nan(loss)
+            if self.check_nan(loss):
+                if not self.trainer.args.ignore_nan:
+                    raise FloatingPointError("loss is NaN")
+                else:
+                    logger.warn("loss is NaN")
+                    nan_count += 1
+                    if nan_count > 100:
+                        raise FloatingPointError("loss is NaN over 100 times")
             self.train_backward_step(loss, optimizers, grad_scaler,
                                      update=t % backward_step == 0)
             t += 1
@@ -240,8 +250,9 @@ class I2IEnv(BaseEnv):
         with self.autocast():
             z = self.model(x)
             loss = self.criterion(z, y)
-        self.sum_loss += loss.item()
-        self.sum_step += 1
+        if not torch.isnan(loss):
+            self.sum_loss += loss.item()
+            self.sum_step += 1
         return loss
 
     def train_end(self):

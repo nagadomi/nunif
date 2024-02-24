@@ -121,17 +121,6 @@ class RandomDownscaleX():
         return x, y
 
 
-class RandomUnsharpMask():
-    def __init__(self):
-        pass
-
-    def __call__(self, x):
-        x = pil_io.to_tensor(x)
-        x = IM.random_unsharp_mask(x)
-        x = pil_io.to_image(x)
-        return x
-
-
 class AntialiasX():
     def __init__(self):
         pass
@@ -257,7 +246,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)],
                               p=da_color_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
-                T.RandomApply([RandomUnsharpMask()], p=da_unsharpmask_p),
+                T.RandomApply([TS.RandomUnsharpMask()], p=da_unsharpmask_p),
                 # TODO: maybe need to prevent color noise for grayscale
                 T.RandomApply([T.RandomGrayscale(p=1)], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),

@@ -22,11 +22,14 @@ from nunif.modules import (
     MultiscaleLoss,
 )
 from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
-from nunif.modules.fft_loss import YRGBL1FFTLoss, YRGBL1FFTGradientLoss, L1FFTLoss, MultiscaleL1FFTLoss
+from nunif.modules.fft_loss import (
+    YRGBL1FFTLoss, YRGBL1FFTGradientLoss, L1FFTLoss, MultiscaleL1FFTLoss,
+    LBPFFTLoss)
 from nunif.modules.gradient_loss import YRGBL1GradientLoss
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.logger import logger
 import random
+import math
 
 
 # basic training
@@ -115,6 +118,8 @@ def create_criterion(loss):
             YLBP(),
             IdentityLoss(),
         ], weight=(1.0, 1.0))
+    elif loss == "lbpfft":
+        criterion = LBPFFTLoss()
     elif loss == "ident":
         # loss is computed in model.forward()
         criterion = IdentityLoss()
@@ -176,6 +181,8 @@ class Waifu2xEnv(LuminancePSNREnv):
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
+        if math.isnan(loss):
+            return
         if self.trainer.args.hard_example == "none":
             return
 
@@ -666,7 +673,7 @@ def register(subparsers, default_parser):
                                  "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
-                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp",
+                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp", "lbpfft",
                                  "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad",
                                  "y_l1fftgradm", "aux_y_l1fftgrad",
                                  "y_l1grad",

@@ -6,6 +6,7 @@ from tqdm import tqdm
 from PIL import Image
 import mimetypes
 import re
+import torch
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -74,6 +75,25 @@ def get_frames(stream, container_duration=None):
 
 def from_image(im):
     return av.video.frame.VideoFrame.from_image(im)
+
+
+def to_tensor(frame):
+    x = torch.from_numpy(frame.to_ndarray(format="rgb24"))
+    x = x.permute(2, 0, 1) / 255.0
+    # CHW float32
+    return x
+
+
+def from_tensor(x):
+    x = (x.permute(1, 2, 0) * 255.0).to(torch.uint8).detach().cpu().numpy()
+    return av.video.frame.VideoFrame.from_ndarray(x, format="rgb24")
+
+
+def to_frame(x):
+    if torch.is_tensor(x):
+        return from_tensor(x)
+    else:
+        return from_image(x)
 
 
 def _print_len(stream):
@@ -365,15 +385,22 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
     input_container.close()
 
 
-def hook_frame(input_path, frame_callback, stop_event=None):
+def hook_frame(input_path, frame_callback, stop_event=None, use_tqdm=False):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
 
+    if input_container.duration:
+        container_duration = float(input_container.duration * av.time_base)
+    else:
+        container_duration = None
+    total = guess_frames(video_input_stream, container_duration=container_duration)
+    pbar = tqdm(total=total, ncols=80, disable=not use_tqdm)
     for frame in input_container.decode(video_input_stream):
         frame_callback(frame)
+        pbar.update(1)
         if stop_event is not None and stop_event.is_set():
             break
     input_container.close()

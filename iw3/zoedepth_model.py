@@ -67,18 +67,26 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
                 )
             else:
                 raise
+    # remove prep
+    model.core.prep = lambda x: x
 
     if model_type not in DEPTH_ANYTHING_MODELS:
+        model.prep_mod = 32
         if height is not None:
-            model.core.prep.resizer = HeightResizer(height, height)
+            model.prep_h_height = height
+            model.prep_v_height = height
         else:
-            model.core.prep.resizer = HeightResizer()
+            model.prep_h_height = 384
+            model.prep_v_height = 512
     else:
+        model.prep_mod = 14
         if height is not None:
             height += (14 - height % 14)
-            model.core.prep.resizer = HeightResizer(height, height, mod=14)
+            model.prep_h_height = height
+            model.prep_v_height = height
         else:
-            model.core.prep.resizer = HeightResizer(h_height=518, v_height=392, mod=14)
+            model.prep_h_height = 392
+            model.prep_v_height = 518
 
     device = create_device(gpu)
     model = model.to(device).eval()
@@ -120,10 +128,65 @@ def _forward(model, x, enable_amp):
     return out
 
 
+def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
+    # x: BCHW float32 0-1
+    B, C, height, width = x.shape
+    mod = ensure_multiple_of
+
+    # resize + pad
+    target_height = h_height if width > height else v_height
+    if target_height < height:
+        new_h = target_height
+        new_w = int(new_h / height * width)
+        if new_w % mod != 0:
+            new_w += (mod - new_w % mod)
+        if new_h % mod != 0:
+            new_h += (mod - new_h % mod)
+    else:
+        new_h, new_w = height, width
+        if new_w % mod != 0:
+            new_w -= new_w % mod
+        if new_h % mod != 0:
+            new_h -= new_h % mod
+
+    pad_src_h = int((height * 0.5) ** 0.5 * 3)
+    pad_src_w = int((width * 0.5) ** 0.5 * 3)
+    pad_scale_h = pad_src_h / (height + pad_src_h * 2)
+    pad_scale_w = pad_src_w / (width + pad_src_w * 2)
+
+    if new_h > new_w:
+        pad_h = round(new_h * pad_scale_h)
+        frame_h = new_h - pad_h * 2
+        frame_w = int(width * (frame_h / height))
+        frame_w += frame_w % 2
+        pad_w = (new_h - frame_w) // 2
+        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear",
+                          align_corners=False, antialias=True)
+        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        # assert x.shape[2] == new_h and x.shape[3] == new_h
+    else:
+        pad_h = round(new_h * pad_scale_h)
+        pad_w = round(new_w * pad_scale_w)
+        frame_h = new_h - pad_h * 2
+        frame_w = new_w - pad_w * 2
+        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear",
+                          align_corners=False, antialias=True)
+        x = F.pad(x, [pad_w, pad_w, pad_h, pad_h], mode="reflect")
+        # assert x.shape[2] == new_h and x.shape[3] == new_w
+
+    x.clamp_(0, 1)
+
+    # normalize
+    mean = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
+    stdv = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
+    x.sub_(mean).div_(stdv)
+
+    return x, pad_h, pad_w
+
+
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=False, **kwargs):
-    # _patch_resize_debug(model)
+                output_device="cpu", device=None, normalize_int16=False, resize_depth=False, **kwargs):
     device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
@@ -137,43 +200,29 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
-    def get_pad(x):
-        pad_base_h = int((x.shape[2] * 0.5) ** 0.5 * 3)
-        pad_base_w = int((x.shape[3] * 0.5) ** 0.5 * 3)
-        if x.shape[2] > x.shape[3]:
-            diff = (x.shape[2] + pad_base_h * 2 - x.shape[3] + pad_base_w * 2)
-            pad_w1 = diff // 2
-            pad_w2 = diff - pad_w1
-            pad_w1 += pad_base_w
-            pad_w2 += pad_base_w
-            pad_h1 = pad_h2 = pad_base_h
-        else:
-            pad_w1 = pad_w2 = pad_base_w
-            pad_h1 = pad_h2 = pad_base_h
-        return (min(pad_w1, x.shape[3] - 1), min(pad_w2, x.shape[3] - 1),
-                min(pad_h1, x.shape[2] - 1), min(pad_h2, x.shape[2] - 1))
+    x, pad_h, pad_w = batch_preprocess(
+        x,
+        h_height=model.prep_h_height, v_height=model.prep_v_height,
+        ensure_multiple_of=model.prep_mod)
 
     if not low_vram:
         if flip_aug:
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
-        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
-        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
         out = _forward(model, x, enable_amp)
     else:
         x_org = x
-        pad_w1, pad_w2, pad_h1, pad_h2 = get_pad(x)
-        x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
         out = _forward(model, x, enable_amp)
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
-            x = F.pad(x, [pad_w1, pad_w2, pad_h1, pad_h2], mode="reflect")
             out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
 
+    out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
+
     if out.shape[-2:] != x.shape[-2:]:
         out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
-                            mode="bicubic", align_corners=False)
-    out = out[:, :, pad_h1:-pad_h2, pad_w1:-pad_w2]
+                            mode="bilinear", align_corners=False)
+
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
@@ -200,58 +249,3 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         z = z.to(torch.int16)
 
     return z
-
-
-class HeightResizer():
-    def __init__(self, h_height=384, v_height=512, mod=32):
-        self.h_height = h_height
-        self.v_height = v_height
-        self.mod = mod
-
-    def get_size(self, width, height):
-        target_height = self.h_height if width > height else self.v_height
-        if target_height < height:
-            new_h = target_height
-            new_w = int(new_h / height * width)
-            if new_w % self.mod != 0:
-                new_w += (self.mod - new_w % self.mod)
-            if new_h % self.mod != 0:
-                new_h += (self.mod - new_h % self.mod)
-        else:
-            new_h, new_w = height, width
-            if new_w % self.mod != 0:
-                new_w -= new_w % self.mod
-            if new_h % self.mod != 0:
-                new_h -= new_h % self.mod
-
-        return new_w, new_h
-
-    def __call__(self, x):
-        width, height = x.shape[-2:][::-1]
-        new_w, new_h = self.get_size(width, height)
-        if new_w != width or new_h != height:
-            x = F.interpolate(x, size=(new_h, new_w),
-                              mode="bilinear", align_corners=True, antialias=False)
-        return x
-
-
-def _patch_resize_debug(model):
-    resizer = model.core.prep.resizer
-    if isinstance(resizer, HeightResizer):
-        print("HeightResizer", resizer.v_height, resizer.h_height)
-    else:
-        print("Resizer",
-              resizer._Resize__width,
-              resizer._Resize__height,
-              resizer._Resize__resize_method,
-              resizer._Resize__keep_aspect_ratio,
-              resizer._Resize__multiple_of)
-    get_size = resizer.get_size
-
-    def get_size_wrap(width, height):
-        new_size = get_size(width, height)
-        print("resize", (width, height), new_size)
-        return new_size
-
-    if resizer.get_size.__code__.co_code != get_size_wrap.__code__.co_code:
-        resizer.get_size = get_size_wrap

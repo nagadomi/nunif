@@ -8,7 +8,7 @@ class WeightedLoss(nn.Module):
     def __init__(self, modules, weights, preprocess=None):
         super().__init__()
         assert len(modules) == len(weights)
-        self.modules = modules
+        self.losses = nn.ModuleList(modules)
         self.weights = weights
         self.preprocess = nn.Identity() if preprocess is None else preprocess
 
@@ -16,7 +16,7 @@ class WeightedLoss(nn.Module):
         loss = 0.0
         input = self.preprocess(input)
         target = self.preprocess(target)
-        for module, weight in zip(self.modules, self.weights):
+        for module, weight in zip(self.losses, self.weights):
             if weight == 1.0:
                 loss = loss + module(input, target)
             else:

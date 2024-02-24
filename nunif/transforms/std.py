@@ -1,4 +1,4 @@
-from PIL import Image
+from PIL import Image, ImageFilter
 from torchvision import transforms as T
 from torchvision.transforms import (
     functional as TF,
@@ -170,3 +170,16 @@ class ModCrop():
             x = TF.pad(x, (-pad_l, -pad_t, -pad_r, -pad_b), padding_mode="constant")
 
         return x
+
+
+class RandomUnsharpMask():
+    def __init__(self, radius=[0.75, 1.75], percent=[10, 90], threshold=[0, 5]):
+        self.radius = radius
+        self.percent = percent
+        self.threshold = threshold
+
+    def __call__(self, x):
+        radius = random.uniform(*self.radius)
+        percent = round(random.uniform(*self.percent))
+        threshold = round(random.uniform(*self.threshold))
+        return x.filter(ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=threshold))

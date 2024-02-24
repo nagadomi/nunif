@@ -6,65 +6,126 @@ from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d
 
 
+class WindowBias(nn.Module):
+    def __init__(self, window_size, hidden_dim=None):
+        super().__init__()
+        if isinstance(window_size, int):
+            window_size = [window_size, window_size]
+        self.window_size = window_size
+
+        index, unique_delta = self._gen_input(self.window_size)
+        self.register_buffer("index", index)
+        self.register_buffer("delta", unique_delta)
+        if hidden_dim is None:
+            hidden_dim = int((self.window_size[0] * self.window_size[1]) ** 0.5) * 2
+
+        self.to_bias = nn.Sequential(
+            nn.Linear(2, hidden_dim, bias=True),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1, bias=True))
+
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, 0, 0.02)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    @staticmethod
+    def _gen_input(window_size):
+        N = window_size[0] * window_size[1]
+        mesh_y, mesh_x = torch.meshgrid(torch.arange(0, window_size[0]),
+                                        torch.arange(0, window_size[1]), indexing="ij")
+        positions = torch.stack((mesh_y, mesh_x), dim=2).reshape(N, 2)
+        delta = torch.cat([positions[i].view(1, 2) - positions
+                           for i in range(positions.shape[0])], dim=0)
+        delta = [tuple(p) for p in delta.tolist()]
+        unique_delta = sorted(list(set(delta)))
+        index = [unique_delta.index(d) for d in delta]
+        index = torch.tensor(index, dtype=torch.int64)
+        unique_delta = torch.tensor(unique_delta, dtype=torch.float32)
+        unique_delta = unique_delta / unique_delta.abs().max()
+        return index, unique_delta
+
+    def forward(self):
+        N = self.window_size[0] * self.window_size[1]
+        bias = self.to_bias(self.delta)
+        # (N,N) float attention score bias
+        bias = bias[self.index].reshape(N, N)
+        return bias
+
+
+class GLUConvMLP(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.in_channels = in_channels
+        self.w1 = nn.Conv2d(in_channels, in_channels * 2, kernel_size=1, stride=1, padding=0)
+        self.w2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1,
+                            padding=1, padding_mode="replicate")
+
+    def forward(self, x):
+        x = self.w1(x)
+        x1, x2 = x.split(self.in_channels, dim=1)
+        x = F.silu(x1) * x2
+        x = self.w2(x)
+        x = F.leaky_relu(x, 0.1, inplace=True)
+        return x
+
+
 class WincBlock(nn.Module):
     """ Window MHA + Multi Layer Conv2d
     """
     def __init__(self, in_channels, out_channels, num_heads=4, qkv_dim=16, window_size=8,
-                 conv_kernel_size=3, norm_layer=None):
+                 conv_kernel_size=3, norm_layer=None, mlp_type="conv_mlp"):
         super(WincBlock, self).__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
-        N = self.window_size[0] * self.window_size[1]
         if norm_layer is None:
             self.norm1 = nn.Identity()
         else:
             self.norm1 = norm_layer(in_channels)
         self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size)
 
-        self.bias = nn.Parameter(torch.zeros((1, N), dtype=torch.float32))
-        self.bias_proj = nn.Linear(N, N * N, bias=False)
+        self.relative_bias = WindowBias(self.window_size)
         padding = conv_kernel_size // 2
-        self.conv_mlp = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=conv_kernel_size, stride=1,
-                      padding=padding, padding_mode="replicate"),
-            nn.LeakyReLU(0.1, inplace=True),  # fine
-        )
+        assert mlp_type in {"conv_mlp", "glu_conv_mlp"}
+        if mlp_type == "conv_mlp":
+            self.conv_mlp = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0),
+                nn.LeakyReLU(0.1, inplace=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=conv_kernel_size, stride=1,
+                          padding=padding, padding_mode="replicate"),
+                nn.LeakyReLU(0.1, inplace=True),  # fine
+            )
+        elif mlp_type == "glu_conv_mlp":
+            self.conv_mlp = GLUConvMLP(in_channels)
+
         if in_channels != out_channels:
             self.proj = nn.Conv2d(in_channels, out_channels,
                                   kernel_size=1, stride=1, padding=0)
         else:
             self.proj = nn.Identity()
 
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.trunc_normal_(self.bias, 0.02)
-
-    def forward_bias(self):
-        N = self.window_size[0] * self.window_size[1]
-        bias = self.bias_proj(self.bias)
-        return bias.view(N, N)
-
     def forward(self, x):
-        x = x + self.mha(x, attn_mask=self.forward_bias(), layer_norm=self.norm1)
+        x = x + self.mha(x, attn_mask=self.relative_bias(), layer_norm=self.norm1)
         x = self.proj(x) + self.conv_mlp(x)
         return x
 
 
 class WincBlocks(nn.Module):
     def __init__(self, in_channels, out_channels, num_heads=4, qkv_dim=16,
-                 window_size=8, num_layers=2, norm_layer=None):
+                 window_size=8, num_layers=2, norm_layer=None, conv_kernel_size=3,
+                 mlp_type="conv_mlp"):
         super(WincBlocks, self).__init__()
-        if isinstance(window_size, (list, tuple)):
-            window_sizes = window_size
-        else:
-            window_sizes = [window_size] * num_layers
+        if isinstance(window_size, int):
+            window_size = [window_size] * num_layers
+        if isinstance(mlp_type, str):
+            mlp_type = [mlp_type] * num_layers
+
         self.blocks = nn.Sequential(
             *[WincBlock(in_channels if i == 0 else out_channels, out_channels,
-                        window_size=window_sizes[i], num_heads=num_heads, qkv_dim=qkv_dim,
-                        norm_layer=norm_layer)
+                        window_size=window_size[i], num_heads=num_heads, qkv_dim=qkv_dim,
+                        norm_layer=norm_layer, conv_kernel_size=conv_kernel_size,
+                        mlp_type=mlp_type[i])
               for i in range(num_layers)])
 
     def forward(self, x):
@@ -123,7 +184,8 @@ class WincUNetBase(nn.Module):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
         C = base_dim
-        HEADS = C // 32
+        HEADS = 3
+        QKV_DIM = C // 6
 
         # shallow feature extractor
         self.patch = nn.Sequential(
@@ -134,18 +196,21 @@ class WincUNetBase(nn.Module):
         )
 
         # encoder
-        self.wac1 = WincBlocks(C, C, num_heads=HEADS, norm_layer=norm_layer)
+        self.wac1 = WincBlocks(C, C, num_heads=HEADS, qkv_dim=QKV_DIM, norm_layer=norm_layer)
         self.down1 = PatchDown(C, C * 2)
-        self.wac2 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, norm_layer=norm_layer)
+        self.wac2 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, qkv_dim=QKV_DIM, norm_layer=norm_layer)
         self.down2 = PatchDown(C * 2, C * 2)
-        self.wac3 = WincBlocks(C * 2, C * 2, window_size=4, num_heads=HEADS * 3, num_layers=4,
+        self.wac3 = WincBlocks(C * 2, C * 2, window_size=[6, 12, 12, 6], num_heads=HEADS * 2,
+                               qkv_dim=QKV_DIM * 2, mlp_type="glu_conv_mlp", num_layers=4,
                                norm_layer=norm_layer)
         # decoder
         self.up2 = PatchUp(C * 2, C * 2)
-        self.wac4 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, num_layers=3, norm_layer=norm_layer)
+        self.wac4 = WincBlocks(C * 2, C * 2, num_heads=HEADS * 2, num_layers=3, qkv_dim=QKV_DIM,
+                               norm_layer=norm_layer)
         self.up1 = PatchUp(C * 2, C + last_dim_add)
         self.wac1_proj = nn.Conv2d(C, C + last_dim_add, kernel_size=1, stride=1, padding=0)
-        self.wac5 = WincBlocks(C + last_dim_add, C + last_dim_add, num_heads=HEADS, num_layers=3,
+        self.wac5 = WincBlocks(C + last_dim_add, C + last_dim_add, num_heads=HEADS,
+                               qkv_dim=QKV_DIM, num_layers=3,
                                norm_layer=norm_layer)
         self.to_image = ToImage(C + last_dim_add, out_channels, scale_factor=scale_factor)
 
@@ -171,7 +236,6 @@ class WincUNetBase(nn.Module):
 @register_model
 class WincUNet2x(I2IBaseModel):
     name = "waifu2x.winc_unet_2x"
-    name_alias = ("waifu2x.wac_unet_2x",)  # TODO: delete this
 
     def __init__(self, in_channels=3, out_channels=3, base_dim=96, layer_norm=True):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
@@ -193,7 +257,6 @@ class WincUNet2x(I2IBaseModel):
 @register_model
 class WincUNet4x(I2IBaseModel):
     name = "waifu2x.winc_unet_4x"
-    name_alias = ("waifu2x.wac_unet_4x",)  # TODO: delete this
 
     def __init__(self, in_channels=3, out_channels=3, base_dim=96, layer_norm=True):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)

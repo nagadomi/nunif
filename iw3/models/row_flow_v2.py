@@ -24,7 +24,7 @@ class RowFlowV2(I2IBaseModel):
             nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
         )
         self.register_buffer("delta_scale", torch.tensor(1.0 / 127.0))
-        self.sbs_output = False
+        self.delta_output = False
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d,)):
@@ -45,7 +45,7 @@ class RowFlowV2(I2IBaseModel):
         z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
         return z
 
-    def forward(self, x):
+    def _forward_default(self, x):
         rgb = x[:, 0:3, :, ]
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
@@ -60,16 +60,23 @@ class RowFlowV2(I2IBaseModel):
             return z2, z1, (grid[:, 0:1, :, :] + delta2) / self.delta_scale
         else:
             delta = self._forward(x)[1] * self.delta_scale
-            if not self.sbs_output:
-                z = self._warp(rgb, grid, delta)
-                z = F.pad(z, (-28, -28, -28, -28))
-                return torch.clamp(z, 0., 1.)
-            else:
-                z_l = self._warp(rgb, grid, delta)
-                z_r = self._warp(rgb, grid, -delta)
-                z = torch.cat([z_l, z_r], dim=1)
-                z = F.pad(z, (-28, -28, -28, -28))
-                return torch.clamp(z, 0., 1.)
+            z = self._warp(rgb, grid, delta)
+            z = F.pad(z, (-28, -28, -28, -28))
+            return torch.clamp(z, 0., 1.)
+
+    def _forward_delta_only(self, x):
+        assert not self.training
+        x = F.pad(x, [28] * 4, mode="replicate")
+        delta = self._forward(x)[1]
+        delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
+        delta = F.pad(delta, [-28] * 4)
+        return delta
+
+    def forward(self, x):
+        if not self.delta_output:
+            return self._forward_default(x)
+        else:
+            return self._forward_delta_only(x)
 
 
 def _bench(name):
