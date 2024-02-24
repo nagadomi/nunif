@@ -377,11 +377,6 @@ class MainFrame(wx.Frame):
                                                style=wx.CB_READONLY, name="cbo_zoed_batch_size")
         self.cbo_zoed_batch_size.SetToolTip(T("Video Only"))
         self.cbo_zoed_batch_size.SetSelection(5)
-        self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Stereo") + " " + T("Batch Size"))
-        self.cbo_batch_size = wx.ComboBox(self.grp_processor,
-                                          choices=[str(n) for n in (128, 64, 32, 16, 8, 4)],
-                                          style=wx.CB_READONLY, name="cbo_batch_size")
-        self.cbo_batch_size.SetSelection(3)
 
         self.chk_low_vram = wx.CheckBox(self.grp_processor, label=T("Low VRAM"), name="chk_low_vram")
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
@@ -397,11 +392,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_zoed_resolution, (1, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_zoed_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_zoed_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_batch_size, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_batch_size, (3, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (4, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_fp16, (4, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -754,7 +747,6 @@ class MainFrame(wx.Frame):
             keep_aspect_ratio=self.chk_keep_aspect_ratio.GetValue(),
 
             gpu=device_id,
-            batch_size=int(self.cbo_batch_size.GetValue()),
             zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
             zoed_height=zoed_height,
             tta=self.chk_tta.GetValue(),

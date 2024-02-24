@@ -171,19 +171,19 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
 
 def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
                            depth_min, depth_max,
-                           mapper, batch_size, enable_amp):
+                           mapper, enable_amp):
     left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
                                    depth_min, depth_max,
-                                   mapper, -1, batch_size, enable_amp)
+                                   mapper, -1, enable_amp)
     right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
                                     depth_min, depth_max,
-                                    mapper, 1, batch_size, enable_amp)
+                                    mapper, 1, enable_amp)
     return left_eye, right_eye
 
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
                         depth_min, depth_max,
-                        mapper, shift, batch_size, enable_amp):
+                        mapper, shift, enable_amp):
     assert model.delta_output
     if shift > 0:
         c = torch.flip(c, (2,))
@@ -309,7 +309,7 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
             args.divergence, args.convergence,
             depth_min=depth_min, depth_max=depth_max,
             mapper=args.mapper,
-            batch_size=args.batch_size, enable_amp=not args.disable_amp)
+            enable_amp=not args.disable_amp)
     return left_eye, right_eye
 
 
@@ -607,7 +607,7 @@ def create_parser(required_true=True):
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
     parser.add_argument("--batch-size", type=int, default=16, choices=[Range(1, 256)],
-                        help="batch size for RowFlow model, 256x256 tiled input")
+                        help="batch size for RowFlow model, 256x256 tiled input. !!DEPRECATED!!")
     parser.add_argument("--zoed-batch-size", type=int, default=2, choices=[Range(1, 64)],
                         help="batch size for ZoeDepth model. ignored when --low-vram")
     parser.add_argument("--max-fps", type=float, default=30,
