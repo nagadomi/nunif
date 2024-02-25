@@ -505,7 +505,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 return run_minibatch()
             x = VU.to_tensor(frame)
             x_org, x = preprocess_image(x, args)
-            x_org = x_org.to(args.state["device"], non_blocking=True)
+            if args.bg_session is not None:
+                x_org = x_org.to(args.state["device"], non_blocking=True)
+            else:
+                x_org = None
             x = x.to(args.state["device"], non_blocking=True)
             minibatch_queue.append((x_org, x))
             if len(minibatch_queue) >= minibatch_size:
