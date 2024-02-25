@@ -49,7 +49,7 @@ def make_input_tensor(c, depth, divergence, convergence,
     if normalize:
         depth = normalize_depth(depth.squeeze(0), depth_min, depth_max)
     else:
-        depth = depth.squeeze(0) # CHW -> HW
+        depth = depth.squeeze(0)  # CHW -> HW
     depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
     divergence_feat = torch.full_like(depth, divergence_value, device=depth.device)
@@ -195,7 +195,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
                                        convergence=convergence,
                                        image_width=W,
                                        mapper=mapper,
-                                       normalize=False) # already normalized
+                                       normalize=False)  # already normalized
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
@@ -307,7 +307,6 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
         if ema:
             depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
         depth[i] = normalize_depth(depth[i], depth_min=depth_min, depth_max=depth_max)
-
 
     if args.method == "grid_sample":
         depth = get_mapper(args.mapper)(depth)
@@ -472,18 +471,15 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     def run_minibatch():
         if not minibatch_queue:
             return []
-        x_orgs = []
-        xs = []
-        for im in minibatch_queue:
-            x_org, x = preprocess_image(im, args)
-            x_orgs.append(x_org)
-            xs.append(x.unsqueeze(0))
-        minibatch_queue.clear()
-        x = torch.cat(xs, dim=0).to(args.state["device"])
         if args.bg_session is None:
+            x = torch.stack([x for x_org, x in minibatch_queue])
             x_orgs = x
         else:
-            x_orgs = torch.cat(x_orgs, dim=0).to(args.state["device"])
+            x = torch.stack([x for x_org, x in minibatch_queue])
+            x_orgs = torch.stack([x_org for x_org, x in minibatch_queue])
+
+        minibatch_queue.clear()
+
         depths = args.state["depth_utils"].batch_infer(
             depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
             int16=False, enable_amp=not args.disable_amp,
@@ -507,7 +503,11 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         if not args.low_vram:
             if frame is None:
                 return run_minibatch()
-            minibatch_queue.append(VU.to_tensor(frame))
+            x = VU.to_tensor(frame)
+            x_org, x = preprocess_image(x, args)
+            x_org = x_org.to(args.state["device"], non_blocking=True)
+            x = x.to(args.state["device"], non_blocking=True)
+            minibatch_queue.append((x_org, x))
             if len(minibatch_queue) >= minibatch_size:
                 return run_minibatch()
             else:
