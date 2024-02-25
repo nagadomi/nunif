@@ -447,7 +447,9 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if side_model is not None:
-        side_model = compile_model(side_model)
+        # TODO: sometimes ERROR RUNNING GUARDS forward error happen
+        #side_model = compile_model(side_model, dynamic=True)
+        pass
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
