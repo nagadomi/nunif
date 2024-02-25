@@ -7,6 +7,7 @@ from PIL import Image
 import mimetypes
 import re
 import torch
+from concurrent.futures import ThreadPoolExecutor
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -77,9 +78,12 @@ def from_image(im):
     return av.video.frame.VideoFrame.from_image(im)
 
 
-def to_tensor(frame):
+def to_tensor(frame, device=None):
     x = torch.from_numpy(frame.to_ndarray(format="rgb24"))
-    x = x.permute(2, 0, 1) / 255.0
+    if device is not None:
+        x = x.to(device).permute(2, 0, 1) / 255.0
+    else:
+        x = x.permute(2, 0, 1) / 255.0
     # CHW float32
     return x
 
@@ -156,11 +160,14 @@ class FixedFPSFilter():
 
 
 class VideoOutputConfig():
-    def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={}):
+    def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={},
+                 output_width=None, output_height=None):
         self.pix_fmt = pix_fmt
         self.fps = fps
         self.options = options
         self.container_options = container_options
+        self.output_width = output_width
+        self.output_height = output_height
 
 
 def default_config_callback(stream):
@@ -179,7 +186,7 @@ SIZE_SAFE_FILTERS = [
 ]
 
 
-def test_output_size(frame_callback, video_stream, vf):
+def test_output_size(test_callback, video_stream, vf):
     video_filter = FixedFPSFilter(video_stream, fps=60, vf=vf, deny_filters=SIZE_SAFE_FILTERS)
     empty_image = Image.new("RGB", (video_stream.codec_context.width,
                                     video_stream.codec_context.height), (128, 128, 128))
@@ -192,7 +199,7 @@ def test_output_size(frame_callback, video_stream, vf):
             test_frame.pts = (test_frame.pts + pts_step)
             if frame is not None:
                 break
-        output_frame = get_new_frames(frame_callback(frame))
+        output_frame = get_new_frames(test_callback(frame))
         if output_frame:
             output_frame = output_frame[0]
             break
@@ -237,7 +244,8 @@ def process_video(input_path, output_path,
                   title=None,
                   vf="",
                   stop_event=None, tqdm_fn=None,
-                  start_time=None, end_time=None):
+                  start_time=None, end_time=None,
+                  test_callback=None):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
     if isinstance(end_time, str):
@@ -270,7 +278,14 @@ def process_video(input_path, output_path,
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
 
     fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
-    output_size = test_output_size(frame_callback, video_input_stream, vf)
+    if config.output_width is not None and config.output_height is not None:
+        output_size = config.output_width, config.output_height
+    else:
+        if test_callback is None:
+            # TODO: warning
+            test_callback = frame_callback
+        output_size = test_output_size(test_callback, video_input_stream, vf)
+
     video_output_stream = output_container.add_stream("libx264", config.fps)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
@@ -404,6 +419,114 @@ def hook_frame(input_path, frame_callback, stop_event=None, use_tqdm=False):
         if stop_event is not None and stop_event.is_set():
             break
     input_container.close()
+
+
+class _DummyFuture():
+    def __init__(self, result):
+        self._result = result
+
+    def result(self):
+        return self._result
+
+    def done(self):
+        return True
+
+
+class _DummyThreadPool():
+    def __init__(self):
+        pass
+
+    def submit(self, func, *args, **kwargs):
+        result = func(*args, **kwargs)
+        return _DummyFuture(result)
+
+    def shutdown(self):
+        pass
+
+
+class FrameCallbackPool():
+    """
+    thread pool callback wrapper
+    """
+    def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2):
+        if max_workers > 0:
+            self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+        else:
+            self.thread_pool = _DummyThreadPool()
+        self.frame_callback = frame_callback
+        self.batch_size = batch_size
+        self.max_workers = max_workers
+        self.max_batch_queue = max_batch_queue
+        self.device = device
+        self.frame_queue = []
+        self.batch_queue = []
+        self.futures = []
+
+    def __call__(self, frame):
+        if False:
+            # for debug
+            print("\n__call__",
+                  "frame_queue", len(self.frame_queue),
+                  "batch_queue", len(self.batch_queue),
+                  "futures", len(self.futures))
+
+        if frame is None:
+            return self.finish()
+
+        frame = to_tensor(frame, device=self.device)
+        self.frame_queue.append(frame)
+        if len(self.frame_queue) == self.batch_size:
+            batch = torch.stack(self.frame_queue)
+            self.batch_queue.append(batch)
+            self.frame_queue.clear()
+
+        if self.batch_queue:
+            if len(self.futures) < self.max_workers or self.max_workers <= 0:
+                batch = self.batch_queue.pop(0)
+                future = self.thread_pool.submit(self.frame_callback, batch)
+                self.futures.append(future)
+            if len(self.batch_queue) >= self.max_batch_queue and self.futures:
+                future = self.futures.pop(0)
+                frames = future.result()
+                return [to_frame(frame) for frame in frames]
+        if self.futures:
+            if self.futures[0].done():
+                future = self.futures.pop(0)
+                frames = future.result()
+                return [to_frame(frame) for frame in frames]
+
+        return None
+
+    def finish(self):
+        if self.frame_queue:
+            batch = torch.stack(self.frame_queue)
+            self.batch_queue.append(batch)
+            self.frame_queue.clear()
+
+        frame_remains = []
+        while len(self.batch_queue) > 0:
+            if len(self.futures) < self.max_workers or self.max_workers <= 0:
+                batch = self.batch_queue.pop(0)
+                future = self.thread_pool.submit(self.frame_callback, batch)
+                self.futures.append(future)
+            else:
+                future = self.futures.pop(0)
+                frames = future.result()
+                frame_remains += [to_frame(frame) for frame in frames]
+        while len(self.futures) > 0:
+            future = self.futures.pop(0)
+            frames = future.result()
+            frame_remains += [to_frame(frame) for frame in frames]
+        return frame_remains
+
+    def shutdown(self):
+        pool = self.thread_pool
+        self.thread_pool = None
+        if pool is not None:
+            pool.shutdown()
+
+    def __del__(self):
+        self.shutdown()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torchvision.transforms import functional as TF, InterpolationMode
 import argparse
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
+import threading
 import math
 from tqdm import tqdm
 from PIL import ImageDraw
@@ -259,6 +260,7 @@ def remove_bg_from_image(im, bg_session):
     im = TF.to_tensor(im)
     bg_color = torch.tensor((0.4, 0.4, 0.2)).view(3, 1, 1)
     im = im * mask + bg_color * (1.0 - mask)
+    im = torch.clamp(im, 0, 1)
     im = TF.to_pil_image(im)
 
     return im
@@ -284,10 +286,11 @@ def preprocess_image(im, args):
         new_w -= new_w % 2
         im = TF.resize(im, (new_h, new_w),
                        interpolation=InterpolationMode.BICUBIC, antialias=True)
+        im = torch.clamp(im, 0, 1)
     im_org = im
     if args.bg_session is not None:
-        im = remove_bg_from_image(TF.to_pil_image(im), args.bg_session)
-        im = TF.to_tensor(im)
+        im2 = remove_bg_from_image(TF.to_pil_image(im), args.bg_session)
+        im = TF.to_tensor(im2).to(im.device)
     return im_org, im
 
 
@@ -444,7 +447,30 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if side_model is not None:
-        side_model = compile_model(side_model)
+        # TODO: sometimes ERROR RUNNING GUARDS forward error happen
+        #side_model = compile_model(side_model, dynamic=True)
+        pass
+
+    if is_output_dir(output_path):
+        os.makedirs(output_path, exist_ok=True)
+        output_filename = path.join(
+            output_path,
+            make_output_filename(path.basename(input_filename), video=True,
+                                 vr180=args.vr180, half_sbs=args.half_sbs))
+    else:
+        output_filename = output_path
+
+    if args.resume and path.exists(output_filename):
+        return
+
+    if not args.yes and path.exists(output_filename):
+        y = input(f"File '{output_filename}' already exists. Overwrite? [y/N]").lower()
+        if y not in {"y", "ye", "yes"}:
+            return
+
+    make_parent_dir(output_filename)
+    if ema_normalize:
+        args.state["ema"].clear()
 
     def config_callback(stream):
         fps = VU.get_fps(stream)
@@ -464,93 +490,78 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             container_options={"movflags": "+faststart"}
         )
 
-    minibatch_queue = []
-    minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
-
     @torch.inference_mode()
-    def run_minibatch():
-        if not minibatch_queue:
-            return []
-        if args.bg_session is None:
-            x = torch.stack([x for x_org, x in minibatch_queue])
-            x_orgs = x
-        else:
-            x = torch.stack([x for x_org, x in minibatch_queue])
-            x_orgs = torch.stack([x_org for x_org, x in minibatch_queue])
-
-        minibatch_queue.clear()
-
-        depths = args.state["depth_utils"].batch_infer(
-            depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-            int16=False, enable_amp=not args.disable_amp,
-            output_device=args.state["device"],
-            device=args.state["device"],
-            edge_dilation=args.edge_dilation,
-            resize_depth=False)
-
-        if args.debug_depth:
-            return [VU.to_frame(debug_depth_image(depth, args, ema_normalize))
-                    for depth, x_org in zip(depths, x_orgs)]
-        else:
-            left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
-            frames = []
-            for i in range(left_eyes.shape[0]):
-                sbs = postprocess_image(left_eyes[i], right_eyes[i], args)
-                frames.append(sbs)
-            return [VU.to_frame(frame) for frame in frames]
-
-    def frame_callback(frame):
-        if not args.low_vram:
-            if frame is None:
-                return run_minibatch()
-            x = VU.to_tensor(frame)
-            x_org, x = preprocess_image(x, args)
-            if args.bg_session is not None:
-                x_org = x_org.to(args.state["device"], non_blocking=True)
-            else:
-                x_org = None
-            x = x.to(args.state["device"], non_blocking=True)
-            minibatch_queue.append((x_org, x))
-            if len(minibatch_queue) >= minibatch_size:
-                return run_minibatch()
-            else:
-                return None
-        else:
+    def test_callback(frame):
+        return VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
+                                         return_tensor=True))
+    if args.low_vram or args.debug_depth:
+        @torch.inference_mode()
+        def frame_callback(frame):
             if frame is None:
                 return None
             return VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
                                              return_tensor=True))
 
-    if is_output_dir(output_path):
-        os.makedirs(output_path, exist_ok=True)
-        output_filename = path.join(
-            output_path,
-            make_output_filename(path.basename(input_filename), video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs))
+        VU.process_video(input_filename, output_filename,
+                         config_callback=config_callback,
+                         frame_callback=frame_callback,
+                         test_callback=test_callback,
+                         vf=args.vf,
+                         stop_event=args.state["stop_event"],
+                         tqdm_fn=args.state["tqdm_fn"],
+                         title=path.basename(input_filename),
+                         start_time=args.start_time,
+                         end_time=args.end_time)
     else:
-        output_filename = output_path
+        minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+        preprocess_lock = threading.Lock()
+        depth_lock = threading.Lock()
+        sbs_lock = threading.Lock()
 
-    if args.resume and path.exists(output_filename):
-        return
-
-    if not args.yes and path.exists(output_filename):
-        y = input(f"File '{output_filename}' already exists. Overwrite? [y/N]").lower()
-        if y not in {"y", "ye", "yes"}:
-            return
-
-    if ema_normalize:
-        args.state["ema"].clear()
-
-    make_parent_dir(output_filename)
-    VU.process_video(input_filename, output_filename,
-                     config_callback=config_callback,
-                     frame_callback=frame_callback,
-                     vf=args.vf,
-                     stop_event=args.state["stop_event"],
-                     tqdm_fn=args.state["tqdm_fn"],
-                     title=path.basename(input_filename),
-                     start_time=args.start_time,
-                     end_time=args.end_time)
+        @torch.inference_mode()
+        def _batch_callback(x):
+            if args.max_output_height is not None or args.bg_session is not None:
+                # TODO: batch preprocess_image
+                with preprocess_lock:
+                    xs = [preprocess_image(xx, args) for xx in x]
+                    x = torch.stack([x for x_org, x in xs])
+                    if args.bg_session is not None:
+                        x_orgs = torch.stack([x_org for x_org, x in xs])
+                    else:
+                        x_orgs = x
+            else:
+                x_orgs = x
+            with depth_lock:
+                depths = args.state["depth_utils"].batch_infer(
+                    depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
+                    int16=False, enable_amp=not args.disable_amp,
+                    output_device=args.state["device"],
+                    device=args.state["device"],
+                    edge_dilation=args.edge_dilation,
+                    resize_depth=False)
+            with sbs_lock:
+                left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
+            return torch.stack([
+                postprocess_image(left_eyes[i], right_eyes[i], args)
+                for i in range(left_eyes.shape[0])])
+        frame_callback = VU.FrameCallbackPool(
+            _batch_callback,
+            batch_size=minibatch_size,
+            device=args.state["device"],
+            max_workers=args.max_workers,
+            max_batch_queue=args.max_workers + 1,
+        )
+        VU.process_video(input_filename, output_filename,
+                         config_callback=config_callback,
+                         frame_callback=frame_callback,
+                         test_callback=test_callback,
+                         vf=args.vf,
+                         stop_event=args.state["stop_event"],
+                         tqdm_fn=args.state["tqdm_fn"],
+                         title=path.basename(input_filename),
+                         start_time=args.start_time,
+                         end_time=args.end_time)
+        frame_callback.shutdown()
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
@@ -706,6 +717,8 @@ def create_parser(required_true=True):
                         help="use min/max moving average to normalize video depth")
     parser.add_argument("--edge-dilation", type=int, default=2,
                         help="loop count of edge dilation. only used for DepthAnything model")
+    parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
+                        help="max inference worker threads for video processing. 0 is disabled")
 
     return parser
 
