@@ -63,6 +63,7 @@
 "Batch Size": "バッチサイズ"
 "Depth": "深度"
 "Stereo": "ステレオ"
+"Worker Threads": "ワーカースレッド"
 "Low VRAM": "低ビデオメモリ"
 "Use flip augmentation to improve depth quality (slow)": "左右反転画像を使って深度の品質を改善 (遅い)"
 "Use FP16 (fast)": "FP16を使用 (速い)"
