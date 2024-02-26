@@ -374,7 +374,7 @@ def postprocess_image(left_eye, right_eye, args):
         new_w -= new_w % 2
         sbs = TF.resize(sbs, (new_h, new_w),
                         interpolation=InterpolationMode.BICUBIC, antialias=True)
-
+        sbs = torch.clamp(sbs, 0, 1)
     return sbs
 
 
