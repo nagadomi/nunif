@@ -42,10 +42,10 @@ class FFTLoss(nn.Module):
 
 
 class LBPFFTLoss(nn.Module):
-    def __init__(self, weight=0.1, norm="backward"):
+    def __init__(self, kernel_size=3, weight=0.1, norm="backward"):
         super().__init__()
         self.norm = norm
-        self.lbp = YLBP()
+        self.lbp = YLBP(kernel_size=kernel_size)
         self.weight = weight
 
     def forward(self, input, target):
