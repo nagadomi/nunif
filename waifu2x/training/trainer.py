@@ -181,10 +181,14 @@ class Waifu2xEnv(LuminancePSNREnv):
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
-        if math.isnan(loss):
-            return
         if self.trainer.args.hard_example == "none":
             return
+        if isinstance(loss, (list, tuple)):
+            if any(math.isnan(val) for val in loss):
+                return
+        else:
+            if math.isnan(loss):
+                return
 
         index = data[-1]
         if self.discriminator is None:
