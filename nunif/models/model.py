@@ -60,7 +60,7 @@ class I2IBaseModel(Model):
             f,
             input_names=["x"],
             output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
+            dynamic_axes={'x': {0: 'batch_size', 2: "input_height", 3: "input_width"},
                           'y': {0: 'batch_size', 2: "height", 3: "width"}},
             **kwargs
         )
