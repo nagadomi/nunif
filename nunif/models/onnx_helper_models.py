@@ -239,7 +239,6 @@ class ONNXAntialias(I2IBaseModel):
         return x
 
     def export_onnx(self, f, **kwargs):
-        kwargs["opset_version"] = 18
         x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
         model = self.to_inference_model()
         torch.onnx.export(
@@ -290,8 +289,9 @@ def patch_resize_antialias(onnx_path, name=None, index=None):
     then fixed antialias=True with ONNX file patch.
     """
     model = onnx.load(onnx_path)
-    onnx.checker.check_model(model)
+    model = onnx.version_converter.convert_version(model, 18)
     assert model.opset_import[0].version >= 18
+    onnx.checker.check_model(model)
     hit = False
     resize_count = 0
     for node in model.graph.node:

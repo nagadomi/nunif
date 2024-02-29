@@ -81,7 +81,7 @@ def convert_swin_unet_downscaled4x(domain, model_dir, output_dir):
         model_4x, *_ = load_model(path.join(in_dir, f"noise{noise_level}_scale4x.pth"))
         """
         PyTorch's onnx exporter does not support bicubic downscaling with antialias=True.
-        However, it is supported in ONNX optset 18.
+        However, it is supported in ONNX opset 18.
         So once exported with antialias=False,
         then fixed antialias=True with ONNX file patch.
         """
@@ -90,22 +90,22 @@ def convert_swin_unet_downscaled4x(domain, model_dir, output_dir):
         model_1x = model_4x.to_1x()
         model_2x.antialias = False
         model_1x.antialias = False
-        model_4x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"), opset_version=18)
+        model_4x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
         if model_4x.pre_antialias:
             patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
-        model_2x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"), opset_version=18)
+        model_2x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
         patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
-        model_1x.export_onnx(path.join(out_dir, f"noise{noise_level}.onnx"), opset_version=18)
+        model_1x.export_onnx(path.join(out_dir, f"noise{noise_level}.onnx"))
         patch_resize_antialias(path.join(out_dir, f"noise{noise_level}.onnx"))
 
     model_4x, *_ = load_model(path.join(in_dir, "scale4x.pth"))
     model_4x.antialias = False
     model_2x = model_4x.to_2x()
     model_2x.antialias = False
-    model_4x.export_onnx(path.join(out_dir, "scale4x.onnx"), opset_version=18)
+    model_4x.export_onnx(path.join(out_dir, "scale4x.onnx"))
     if model_4x.pre_antialias:
         patch_resize_antialias(path.join(out_dir, "scale4x.onnx"))
-    model_2x.export_onnx(path.join(out_dir, "scale2x.onnx"), opset_version=18)
+    model_2x.export_onnx(path.join(out_dir, "scale2x.onnx"))
     patch_resize_antialias(path.join(out_dir, "scale2x.onnx"))
 
     scale1x = ONNXScale1x(offset=8)
