@@ -91,7 +91,8 @@ def convert_swin_unet_downscaled4x(domain, model_dir, output_dir):
         model_2x.antialias = False
         model_1x.antialias = False
         model_4x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"), opset_version=18)
-        patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
+        if model_4x.pre_antialias:
+            patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
         model_2x.export_onnx(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"), opset_version=18)
         patch_resize_antialias(path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
         model_1x.export_onnx(path.join(out_dir, f"noise{noise_level}.onnx"), opset_version=18)
@@ -102,7 +103,8 @@ def convert_swin_unet_downscaled4x(domain, model_dir, output_dir):
     model_2x = model_4x.to_2x()
     model_2x.antialias = False
     model_4x.export_onnx(path.join(out_dir, "scale4x.onnx"), opset_version=18)
-    patch_resize_antialias(path.join(out_dir, "scale4x.onnx"))
+    if model_4x.pre_antialias:
+        patch_resize_antialias(path.join(out_dir, "scale4x.onnx"))
     model_2x.export_onnx(path.join(out_dir, "scale2x.onnx"), opset_version=18)
     patch_resize_antialias(path.join(out_dir, "scale2x.onnx"))
 
