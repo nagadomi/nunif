@@ -508,6 +508,7 @@ class Waifu2xTrainer(Trainer):
                 model_offset=model_offset,
                 scale_factor=scale_factor,
                 bicubic_only=self.args.b4b,
+                skip_screentone=self.args.skip_screentone,
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
@@ -541,6 +542,7 @@ class Waifu2xTrainer(Trainer):
                 input_dir=path.join(self.args.data_dir, "eval"),
                 model_offset=model_offset,
                 scale_factor=scale_factor,
+                skip_screentone=self.args.skip_screentone,
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
@@ -719,6 +721,13 @@ def register(subparsers, default_parser):
                         help="use only bicubic downsampling for bicubic downsampling restoration")
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
+    parser.add_argument("--pre-antialias", action="store_true",
+                        help=("Set `pre_antialias=True` for SwinUNet4x."))
+    parser.add_argument("--privilege", action="store_true",
+                        help=("Use model.forward(LR_image, HR_image)"))
+    parser.add_argument("--skip-screentone", action="store_true",
+                        help=("Skip files containing '__SCREENTONE_' in the filename"))
+
     # GAN related options
     parser.add_argument("--discriminator", type=str,
                         help="discriminator name or .pth or [`l3`, `l3c`, `l3v1`, `l3v1`].")
@@ -741,10 +750,6 @@ def register(subparsers, default_parser):
                               " Also do not hit the newbie discriminator."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
-    parser.add_argument("--pre-antialias", action="store_true",
-                        help=("Set `pre_antialias=True` for SwinUNet4x."))
-    parser.add_argument("--privilege", action="store_true",
-                        help=("Use model.forward(LR_image, HR_image)"))
 
     parser.set_defaults(
         batch_size=16,

@@ -177,6 +177,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
                  da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
+                 skip_screentone=False,
                  deblur=0, resize_blur_p=0.1, resize_step_p=0,
                  noise_level=-1, style=None,
                  return_no_offset_y=False,
@@ -185,10 +186,17 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         assert scale_factor in {1, 2, 4, 8}
         assert noise_level in {-1, 0, 1, 2, 3}
         assert style in {None, "art", "photo"}
+        exclude_prefixes = []
         if scale_factor in {1, 2}:
-            exclude_filter = lambda fn: DOT_SCALE4X_PREFIX not in fn
+            exclude_prefixes.append(DOT_SCALE4X_PREFIX)
         else:
-            exclude_filter = lambda fn: DOT_SCALE2X_PREFIX not in fn
+            exclude_prefixes.append(DOT_SCALE2X_PREFIX)
+        if skip_screentone:
+            exclude_prefixes.append(SCREENTONE_PREFIX)
+        if exclude_prefixes:
+            exclude_filter = lambda fn: not any([prefix in fn for prefix in exclude_prefixes])
+        else:
+            exclude_filter = None
 
         super().__init__(input_dir, num_samples=num_samples, exclude_filter=exclude_filter)
         self.training = training
