@@ -26,6 +26,7 @@ NEAREST_PREFIX = "__NEAREST_"
 DOT_SCALE2X_PREFIX = "__NEAREST__DOT_2x_"
 DOT_SCALE4X_PREFIX = "__NEAREST__DOT_4x_"
 SCREENTONE_PREFIX = "__SCREENTONE_"
+DOT_PREFIX = "__DOT_"
 INTERPOLATION_MODES = (
     "box",
     "sinc",
@@ -259,6 +260,9 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([T.RandomGrayscale(p=1)], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
+            self.gt_gen_transforms = T.Compose([
+                T.RandomInvert(p=0.5),
+            ])
             self.transforms = TP.Compose([
                 TP.RandomHardExampleCrop(size=y_min_size, samples=4),
                 random_downscale_x,
@@ -279,6 +283,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             ])
         else:
             self.gt_transforms = TS.Identity()
+            self.gt_gen_transforms = TS.Identity()
             interpolation = INTERPOLATION_BICUBIC
             if scale_factor > 1:
                 downscale_x = RandomDownscaleX(scale_factor=scale_factor,
@@ -309,7 +314,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             raise RuntimeError(f"Unable to load image: {filename}")
         if NEAREST_PREFIX in filename:
             x, y = self.transforms_nearest(im, im)
-        elif SCREENTONE_PREFIX in filename:
+        elif SCREENTONE_PREFIX in filename or DOT_PREFIX in filename:
+            im = self.gt_gen_transforms(im)
             x, y = self.transforms(im, im)
         else:
             im = self.gt_transforms(im)
