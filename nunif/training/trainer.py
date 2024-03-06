@@ -122,13 +122,16 @@ class Trainer(ABC):
                     grad_scaler=self.grad_scaler,
                     backward_step=self.args.backward_step,
                 )
-                print("--\n eval")
-                loss = self.env.eval(self.eval_loader)
-                if loss is None:
-                    self.save_best_model()
-                elif loss < self.best_loss:
-                    print("* best model updated")
-                    self.best_loss = loss
+                if not self.args.skip_eval:
+                    print("--\n eval")
+                    loss = self.env.eval(self.eval_loader)
+                    if loss is None:
+                        self.save_best_model()
+                    elif loss < self.best_loss:
+                        print("* best model updated")
+                        self.best_loss = loss
+                        self.save_best_model()
+                else:
                     self.save_best_model()
                 self.save_checkpoint()
                 try:
@@ -332,4 +335,6 @@ def create_trainer_default_parser():
                         help="disable backup of the best model file for every runtime")
     parser.add_argument("--ignore-nan", action="store_true",
                         help="do not raise NaN exception unless NaN occurs more than 100 times in one epoch")
+    parser.add_argument("--skip-eval", action="store_true",
+                        help="Skip eval")
     return parser
