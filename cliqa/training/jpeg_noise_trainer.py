@@ -137,7 +137,7 @@ class JPEGEnv(BaseEnv):
         return quality_loss
 
     def eval_begin(self):
-        self.model.eval()
+        self.get_eval_model().eval()
         self.clear_loss()
 
     def eval_step(self, data):

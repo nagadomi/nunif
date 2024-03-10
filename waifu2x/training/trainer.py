@@ -384,19 +384,20 @@ class Waifu2xEnv(LuminancePSNREnv):
 
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
+        model = self.get_eval_model()
         scale_factor = self.get_scale_factor()
 
         psnr = 0
         with self.autocast():
             if self.trainer.args.update_criterion in {"psnr", "all"}:
-                z = self.model(x)
+                z = model(x)
                 psnr = self.eval_criterion(z, y)
                 if self.trainer.args.update_criterion == "psnr":
                     loss = psnr
                 else:
                     loss = torch.tensor(inf_loss())
             elif self.trainer.args.update_criterion == "loss":
-                z = self.model(x)
+                z = model(x)
                 # TODO: AuxiliaryLoss does not work
                 psnr = self.eval_criterion(z, y)
                 loss = self.criterion(z, y)

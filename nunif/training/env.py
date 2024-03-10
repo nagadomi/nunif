@@ -117,6 +117,9 @@ class BaseEnv(ABC):
         # unknown type
         return input
 
+    def get_eval_model(self):
+        return self.trainer.ema_model if self.trainer.args.ema_model else self.model
+
     @staticmethod
     def check_nan(loss):
         losses = loss if isinstance(loss, (list, tuple)) else [loss]
@@ -133,6 +136,7 @@ class BaseEnv(ABC):
         for optimizer in optimizers:
             optimizer.zero_grad()
         t = 1
+        ema_t = 1
         for data in tqdm(loader, ncols=80):
             loss = self.train_step(data)
             if backward_step > 1:
@@ -151,9 +155,16 @@ class BaseEnv(ABC):
                         raise FloatingPointError("loss is NaN over 100 times")
             self.train_backward_step(loss, optimizers, grad_scaler,
                                      update=t % backward_step == 0)
+            if self.trainer.args.ema_model:
+                if t % backward_step == 0:
+                    ema_t += 1
+                    if ema_t % self.trainer.args.ema_step == 0:
+                        self.trainer.ema_model.update_parameters(self.model)
             t += 1
         for scheduler in schedulers:
             scheduler.step()
+
+        # TODO: swa_utils.update_bn
 
         return self.train_end()
 
@@ -196,23 +207,25 @@ class SoftmaxEnv(BaseEnv):
         return 1 - self.confusion_matrix.average_row_correct()
 
     def eval_begin(self):
-        self.model.eval()
+        model = self.get_eval_model()
+        model.eval()
         self.confusion_matrix.clear()
 
     def eval_step(self, data):
         x, y, *_ = data
+        model = self.get_eval_model()
         if self.eval_tta:
             B, TTA, = x.shape[:2]
             x = self.to_device(x)
             x = x.reshape(B * TTA, *x.shape[2:])
             with self.autocast():
-                z = self.model(x)
+                z = model(x)
             z = z.reshape(B, TTA, *z.shape[1:]).mean(dim=1)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
         else:
             x = self.to_device(x)
             with self.autocast():
-                z = self.model(x)
+                z = model(x)
             self.confusion_matrix.update(torch.argmax(z, dim=1).cpu(), y)
 
     def eval_end(self):
@@ -261,14 +274,16 @@ class I2IEnv(BaseEnv):
         return mean_loss
 
     def eval_begin(self):
-        self.model.eval()
+        model = self.get_eval_model()
+        model.eval()
         self.clear_loss()
 
     def eval_step(self, data):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
+        model = self.get_eval_model()
         with self.autocast():
-            z = self.model(x)
+            z = model(x)
             loss = self.eval_criterion(z, y)
         self.sum_loss += loss.item()
         self.sum_step += 1
@@ -380,15 +395,17 @@ class RegressionEnv(BaseEnv):
         return loss
 
     def eval_begin(self):
-        self.model.eval()
+        model = self.get_eval_model()
+        model.eval()
         self.clear_loss()
 
     def eval_step(self, data):
         # same as train_step but duplicated for when train_step is specialized
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
+        model = self.get_eval_model()
         with self.autocast():
-            z = self.model(x)
+            z = model(x)
             loss = self.criterion(z, y)
         self.sum_loss += loss.item()
         self.sum_step += 1
