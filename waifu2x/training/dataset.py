@@ -179,6 +179,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
                  skip_screentone=False,
+                 crop_samples=4,
                  deblur=0, resize_blur_p=0.1, resize_step_p=0,
                  noise_level=-1, style=None,
                  return_no_offset_y=False,
@@ -264,7 +265,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomInvert(p=0.5),
             ])
             self.transforms = TP.Compose([
-                TP.RandomHardExampleCrop(size=y_min_size, samples=4),
+                TP.RandomHardExampleCrop(size=y_min_size, samples=crop_samples),
                 random_downscale_x,
                 photo_noise,
                 rotate_transform,
@@ -278,7 +279,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 jpeg_transform,
                 TP.RandomHardExampleCrop(size=tile_size,
                                          y_scale=scale_factor,
-                                         samples=4),
+                                         samples=crop_samples),
                 TP.RandomFlip(),
             ])
         else:

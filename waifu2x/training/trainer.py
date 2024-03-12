@@ -510,6 +510,7 @@ class Waifu2xTrainer(Trainer):
                 scale_factor=scale_factor,
                 bicubic_only=self.args.b4b,
                 skip_screentone=self.args.skip_screentone,
+                crop_samples=self.args.crop_samples,
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
@@ -728,6 +729,8 @@ def register(subparsers, default_parser):
                         help=("Use model.forward(LR_image, HR_image)"))
     parser.add_argument("--skip-screentone", action="store_true",
                         help=("Skip files containing '__SCREENTONE_' in the filename"))
+    parser.add_argument("--crop-samples", type=int, default=4,
+                        help=("number of samples for hard example cropping"))
 
     # GAN related options
     parser.add_argument("--discriminator", type=str,
