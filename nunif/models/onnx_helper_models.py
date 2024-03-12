@@ -72,7 +72,7 @@ class ONNXTTASplit(I2IBaseModel):
             f,
             input_names=["x", "tta_level"],
             output_names=["y"],
-            dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+            dynamic_axes={"x": {0: "input_batch_size", 2: "input_height", 3: "input_width"},
                           "y": {0: "batch_size", 2: "height", 3: "width"}},
             **kwargs
         )
@@ -108,7 +108,7 @@ class ONNXTTAMerge(I2IBaseModel):
             f,
             input_names=["x", "tta_level"],
             output_names=["y"],
-            dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+            dynamic_axes={"x": {0: "input_batch_size", 2: "input_height", 3: "input_width"},
                           "y": {0: "batch_size", 2: "height", 3: "width"}},
             **kwargs
         )
