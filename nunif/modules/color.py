@@ -1,8 +1,6 @@
 import torch
-from .compile_wrapper import compile
 
 
-@compile
 def rgb_to_ycbcr(x, yycbcr=False):
     # Bt.601, -1 .. 1 scale
     r = x[:, 0:1, :, :]
@@ -40,7 +38,6 @@ class RGBToYRGB(torch.nn.Module):
         return rgb_to_yrgb(x)
 
 
-@compile
 def ycbcr_to_rgb(x):
     # NOTE: `ycbcr_to_rgb(rgb_to_ycbcr(x))` has floating point arithmetic error. (around 1e-5)
     #       It is not corrected here, so `torch.clamp(rgb, 0, 1)` is needed somewhere
