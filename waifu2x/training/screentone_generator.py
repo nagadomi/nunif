@@ -305,7 +305,8 @@ def gen(disable_color):
         line_width = random.randint(4, 8) * 2
     else:
         line_width = random.randint(3, 12) * 2
-    gc.rectangle((pad, pad, pad + window.width, pad + window.height), outline=line_color, width=line_width)
+    if random.uniform(0, 1) < 0.5:
+        gc.rectangle((pad, pad, pad + window.width, pad + window.height), outline=line_color, width=line_width)
 
     screen = TF.resize(screen, (IMAGE_SIZE, IMAGE_SIZE), interpolation=random_interpolation(), antialias=True)
 
