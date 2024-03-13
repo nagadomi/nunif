@@ -5,8 +5,8 @@ import sys
 _DISABLE_COMPILE = sys.platform != "linux"
 
 
-def compile(*args):
+def compile(*args, **kwargs):
     if _DISABLE_COMPILE:
         return args[0]
     else:
-        return torch.compile(*args)
+        return torch.compile(*args, **kwargs)
