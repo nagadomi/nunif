@@ -258,10 +258,11 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
                 T.RandomApply([TS.RandomUnsharpMask()], p=da_unsharpmask_p),
                 # TODO: maybe need to prevent color noise for grayscale
-                T.RandomApply([T.RandomGrayscale(p=1)], p=da_grayscale_p),
+                T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
             self.gt_gen_transforms = T.Compose([
+                T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomInvert(p=0.5),
             ])
             self.transforms = TP.Compose([

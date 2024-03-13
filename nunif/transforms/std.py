@@ -4,6 +4,7 @@ from torchvision.transforms import (
     functional as TF,
     InterpolationMode
 )
+import torch
 import random
 from io import BytesIO
 
@@ -183,3 +184,28 @@ class RandomUnsharpMask():
         percent = round(random.uniform(*self.percent))
         threshold = round(random.uniform(*self.threshold))
         return x.filter(ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=threshold))
+
+
+class RandomGrayscale():
+    def __init__(self, full_grayscale_p=0.5, noise=[-0.03, 0.03], grayscale_weight=[1.0, 0.95]):
+        self.full_grayscale_p = full_grayscale_p
+        self.noise = noise
+        self.grayscale_weight = grayscale_weight
+
+    def __call__(self, x):
+        if random.uniform(0, 1) < self.full_grayscale_p:
+            gray = TF.rgb_to_grayscale(x, num_output_channels=3)
+            return gray
+        else:
+            rgb = TF.to_tensor(x) if isinstance(x, Image.Image) else x
+            gray = TF.rgb_to_grayscale(rgb, num_output_channels=3)
+            if random.uniform(0, 1) < 0.5:
+                shift_rgb = torch.tensor([random.uniform(*self.noise) for _ in range(3)],
+                                         device=rgb.device).view(3, 1, 1)
+                x = gray + shift_rgb
+            else:
+                w = random.uniform(*self.grayscale_weight)
+                x = rgb * (1.0 - w) + gray * w
+
+            x = x.clamp(0, 1)
+            return TF.to_pil_image(x)
