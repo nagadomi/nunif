@@ -269,6 +269,10 @@ def gen_line_overlay(size, line_scale=1):
     while x < window.width:
         gc.line(((x, 0), (x, window.height)), fill="white", width=line_width)
         x = x + line_width + margin
+    if random.uniform(0, 1) < 0.25:
+        x1 = TF.to_tensor(window)
+        x2 = TF.to_tensor(window.transpose(Image.ROTATE_90))
+        window = TF.to_pil_image((x1 + x2).clamp(0, 1))
 
     angle = random.uniform(-180, 180)
     window = TF.rotate(window, angle=angle, interpolation=random_interpolation(rotate=True))
