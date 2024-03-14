@@ -76,8 +76,8 @@ def gen_color(disable_color):
             fg = [fg_mean, fg_mean, fg_mean]
             bg = [bg_mean, bg_mean, bg_mean]
             line = fg
-        if random.uniform(0, 1) < 0.1:
-            if random.uniform(0, 1) < 0.5:
+        if random.uniform(0, 1) < 0.25:
+            if random.uniform(0, 1) < 0.75:
                 line_overlay = tuple(line)
             else:
                 line_masking = True
@@ -97,9 +97,12 @@ def gen_color(disable_color):
             c = random.randint(0, 16)
             fg = [c, c, c]
             line = fg
-            if random.uniform(0, 1) < 0.1:
-                line_masking = True
-                line_overlay = tuple(bg)
+            if random.uniform(0, 1) < 0.25:
+                if random.uniform(0, 1) < 0.75:
+                    line_overlay = tuple(line)
+                else:
+                    line_masking = True
+                    line_overlay = tuple(bg)
         else:
             # gray
             if random.uniform(0, 1) < 0.5:
@@ -109,9 +112,12 @@ def gen_color(disable_color):
             fg = [c, c, c]
             c = random.randint(0, 16)
             line = [c, c, c]
-            if random.uniform(0, 1) < 0.1:
-                # line overlay
-                line_overlay = tuple(line)
+            if random.uniform(0, 1) < 0.25:
+                if random.uniform(0, 1) < 0.75:
+                    line_overlay = tuple(line)
+                else:
+                    line_masking = True
+                    line_overlay = tuple(bg)
 
     if bg2 is None:
         bg2 = bg
@@ -247,13 +253,13 @@ def gen_sand_mask(size=400):
 def gen_line_overlay(size, line_scale=1):
     window = Image.new("L", (size * 2, size * 2), "black")
     if random.uniform(0, 1) < 0.5:
-        line_width = random.randint(3, 8) * 2
+        line_width = random.randint(1, 4) * 2
     else:
         line_width = random.randint(3, 16) * 2
     line_width *= line_scale
 
     if random.uniform(0, 1) < 0.5:
-        margin = random.randint(int(line_width * 0.75), line_width * 2)
+        margin = random.randint(int(line_width * 0.5), line_width * 2)
     else:
         margin = random.randint(2, line_width * 4)
     offset = random.randint(0, 20)
@@ -291,7 +297,7 @@ def gen(disable_color):
     fg.putalpha(mask)
     window = Image.alpha_composite(bg, fg)
     if line_overlay_color is not None:
-        mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=4 if line_masking else 1)
+        mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=(4 if line_masking else 1))
         fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), line_overlay_color)
         window.putalpha(255)
         fg.putalpha(mask)
