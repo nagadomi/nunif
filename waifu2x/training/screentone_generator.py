@@ -318,6 +318,9 @@ def gen(disable_color):
     if random.uniform(0, 1) < 0.5:
         gc.rectangle((pad, pad, pad + window.width, pad + window.height), outline=line_color, width=line_width)
 
+    if random.uniform(0, 1) < 0.5:
+        angle = random.uniform(-180, 180)
+        screen = TF.rotate(screen, angle=angle, interpolation=random_interpolation(rotate=True), fill=bg_color)
     screen = TF.resize(screen, (IMAGE_SIZE, IMAGE_SIZE), interpolation=random_interpolation(), antialias=True)
 
     return screen
