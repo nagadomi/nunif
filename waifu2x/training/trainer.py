@@ -119,9 +119,9 @@ def create_criterion(loss):
             IdentityLoss(),
         ], weight=(1.0, 1.0))
     elif loss == "lbpfft":
-        criterion = LBPFFTLoss()
+        criterion = LBPFFTLoss(kernel_size=3, weight=0.03)
     elif loss == "lbp5fft":
-        criterion = LBPFFTLoss(kernel_size=5)
+        criterion = LBPFFTLoss(kernel_size=5, weight=0.03)
     elif loss == "ident":
         # loss is computed in model.forward()
         criterion = IdentityLoss()
