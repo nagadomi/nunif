@@ -52,7 +52,7 @@ else:
 def choose_validation_jpeg_quality(index, style, noise_level):
     mod100 = index % 100
     if mod100 > int(NR_RATE[style][noise_level] * 100):
-        cand = list(range(-1, noise_level -1))
+        cand = list(range(-1, noise_level))
         noise_level = cand[index % len(cand)]
         if noise_level == -1:
             return [], None
