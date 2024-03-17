@@ -179,6 +179,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
                  skip_screentone=False,
+                 skip_dot=False,
                  crop_samples=4,
                  deblur=0, resize_blur_p=0.1, resize_step_p=0,
                  noise_level=-1, style=None,
@@ -195,6 +196,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             exclude_prefixes.append(DOT_SCALE2X_PREFIX)
         if skip_screentone:
             exclude_prefixes.append(SCREENTONE_PREFIX)
+        if skip_dot:
+            exclude_prefixes.append(DOT_PREFIX)
         if exclude_prefixes:
             exclude_filter = lambda fn: not any([prefix in fn for prefix in exclude_prefixes])
         else:
