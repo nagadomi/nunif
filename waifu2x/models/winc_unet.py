@@ -74,8 +74,9 @@ class GLUConvMLP(nn.Module):
 class WACBlock(nn.Module):
     """ Window MHA + Multi Layer Conv2d
     """
-    def __init__(self, in_channels, num_heads=4, qkv_dim=16, window_size=8):
+    def __init__(self, in_channels, num_heads=4, qkv_dim=16, window_size=8, padding=0):
         super(WACBlock, self).__init__()
+        self.padding = padding
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
         self.norm = nn.LayerNorm(in_channels, bias=False)
@@ -84,19 +85,27 @@ class WACBlock(nn.Module):
         self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3)
 
     def forward(self, x):
-        x = x + self.mha(x, attn_mask=self.relative_bias(), layer_norm=self.norm)
+        if self.padding > 0:
+            x1 = F.pad(x, [self.padding] * 4, mode="constant", value=0)
+            x1 = self.mha(x1, attn_mask=self.relative_bias(), layer_norm=self.norm)
+            x1 = F.pad(x1, [-self.padding] * 4)
+        else:
+            x1 = self.mha(x, attn_mask=self.relative_bias(), layer_norm=self.norm)
+        x = x + x1
         x = x + self.conv_mlp(x)
         return x
 
 
 class WACBlocks(nn.Module):
-    def __init__(self, in_channels, num_heads=4, qkv_dim=16, window_size=8, num_layers=2):
+    def __init__(self, in_channels, num_heads=4, qkv_dim=16, window_size=8, padding=0, num_layers=2):
         super(WACBlocks, self).__init__()
         if isinstance(window_size, int):
             window_size = [window_size] * num_layers
+        if isinstance(padding, int):
+            padding = [padding] * num_layers
 
         self.blocks = nn.Sequential(
-            *[WACBlock(in_channels, window_size=window_size[i], num_heads=num_heads, qkv_dim=qkv_dim)
+            *[WACBlock(in_channels, window_size=window_size[i], padding=padding[i], num_heads=num_heads, qkv_dim=qkv_dim)
               for i in range(num_layers)])
 
     def forward(self, x):
@@ -151,7 +160,7 @@ class ToImage(nn.Module):
 
 class WincUNetBase(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96, add_dim=0, scale_factor=2,
-                 lv3_window_size=[6, 12, 12, 6], lv3_dim_scale=2):
+                 lv3_window_size=[4, 12, 6, 4], lv3_padding=[2, 0, 0, 2], lv3_dim_scale=2):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
         C = base_dim
@@ -166,19 +175,26 @@ class WincUNetBase(nn.Module):
             nn.LeakyReLU(0.1, inplace=True),
         )
         # encoder
-        self.wac1 = WACBlocks(C, num_heads=HEADS, qkv_dim=QKV_DIM)
+        self.wac1 = WACBlocks(C, window_size=8, padding=[4, 0],
+                              num_heads=HEADS, qkv_dim=QKV_DIM)
         self.down1 = PatchDown(C, C * 2)
-        self.wac2 = WACBlocks(C * 2, num_heads=HEADS * 2, qkv_dim=QKV_DIM)
+        self.wac2 = WACBlocks(C * 2, window_size=8, padding=[4, 0],
+                              num_heads=HEADS * 2, qkv_dim=QKV_DIM)
         self.down2 = PatchDown(C * 2, C * lv3_dim_scale + add_dim)
-        self.wac3 = WACBlocks(C * lv3_dim_scale + add_dim, window_size=lv3_window_size, num_heads=HEADS * 2,
-                              qkv_dim=QKV_DIM, num_layers=4)
+        self.wac3 = WACBlocks(C * lv3_dim_scale + add_dim,
+                              window_size=lv3_window_size, padding=lv3_padding,
+                              num_heads=HEADS * 2, qkv_dim=QKV_DIM, num_layers=4)
         # decoder
         self.up2 = PatchUp(C * lv3_dim_scale + add_dim, C * 2 + add_dim)
         self.wac2_proj = nn.Conv2d(C * 2, C * 2 + add_dim, kernel_size=1, stride=1, padding=0)
-        self.wac4 = WACBlocks(C * 2 + add_dim, num_heads=HEADS * 2, qkv_dim=QKV_DIM, num_layers=3)
+        self.wac4 = WACBlocks(C * 2 + add_dim,
+                              window_size=8, padding=[4, 0, 4],
+                              num_heads=HEADS * 2, qkv_dim=QKV_DIM, num_layers=3)
         self.up1 = PatchUp(C * 2 + add_dim, C + add_dim)
         self.wac1_proj = nn.Conv2d(C, C + add_dim, kernel_size=1, stride=1, padding=0)
-        self.wac5 = WACBlocks(C + add_dim, num_heads=HEADS, qkv_dim=QKV_DIM, num_layers=3)
+        self.wac5 = WACBlocks(C + add_dim,
+                              window_size=8, padding=[0, 4, 0],
+                              num_heads=HEADS, qkv_dim=QKV_DIM, num_layers=3)
         self.to_image = ToImage(C + add_dim, out_channels, scale_factor=scale_factor)
 
     def forward(self, x):
@@ -204,7 +220,8 @@ class WincUNetBase(nn.Module):
 class WincUNet2x(I2IBaseModel):
     name = "waifu2x.winc_unet_2x"
 
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96, lv3_window_size=[6, 12, 12, 6], lv3_dim_scale=2):
+    def __init__(self, in_channels=3, out_channels=3, base_dim=96,
+                 lv3_window_size=[4, 12, 6, 4], lv3_padding=[2, 0, 0, 2], lv3_dim_scale=2):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
         self.unet = WincUNetBase(
             in_channels, out_channels,
@@ -225,7 +242,8 @@ class WincUNet2x(I2IBaseModel):
 class WincUNet4x(I2IBaseModel):
     name = "waifu2x.winc_unet_4x"
 
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96, lv3_window_size=[6, 6, 6, 6], lv3_dim_scale=2):
+    def __init__(self, in_channels=3, out_channels=3, base_dim=96,
+                 lv3_window_size=[4, 12, 6, 4], lv3_padding=[2, 0, 0, 2], lv3_dim_scale=2):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
         self.in_channels = in_channels
         self.out_channels = out_channels
