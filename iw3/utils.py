@@ -741,7 +741,7 @@ def create_parser(required_true=True):
     parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="half-color",
                         choices=["color", "gray", "half-color", "wimmer", "wimmer2"],
                         help="output in anaglyph 3d")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
                         help="pixel format (video only)")
     parser.add_argument("--tta", action="store_true",
                         help="Use flip augmentation on depth model")

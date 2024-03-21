@@ -218,7 +218,7 @@ def create_parser(required_true=True):
                         help=("add noise after denosing (video only)"))
     parser.add_argument("--grain-strength", type=float, default=0.05,
                         help=("noise strength  (video only)"))
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
                         help=("pixel format (video only)"))
     parser.add_argument("--start-time", type=str,
                         help="set the start time offset for video. hh:mm:ss or mm:ss format")

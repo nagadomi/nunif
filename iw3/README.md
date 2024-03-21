@@ -151,7 +151,7 @@ Currently, the following methods are supported.
 
 Reference: [Anaglyph Methods Comparison](https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx)
 
-For video, I recommend `--pix-fmt yuv444p` option. `yuv420p` (by default) uses 4:2:0 chroma subsampling, red colors are degraded and cause ghosting artifacts (crosstalk).
+For video, I recommend `--pix-fmt yuv444p` or `--pix-fmt rgb24` option. `yuv420p` (by default) uses 4:2:0 chroma subsampling, red colors are degraded and cause ghosting artifacts (crosstalk).
 
 JPEG have the same problem so I recommend using PNG (by default) instead.
 
