@@ -226,7 +226,7 @@ def has_rembg_model(model_type):
 
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
-FULL_SBS_SUFFIX = "_LRF"
+FULL_SBS_SUFFIX = "_LRF_Full_SBS"
 HALF_SBS_SUFFIX = "_LR"
 VR180_SUFFIX = "_180x180_LR"
 ANAGLYPH_SUFFIX = "_redcyan"  # temporary

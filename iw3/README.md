@@ -105,19 +105,25 @@ If you can only choose one software, I would recommend this one.
 
 ### SKYBOX VR Video Player
 
-With recent updates(v1.1.5), most features of 3D Full SBS are now working.
+With recent updates(v1.1.6), most features of 3D Full SBS are now working.
 However, the following features have not yet been implemented.
 
-- File naming rule for Full SBS is not supported. You should manually enable `3D Full-SBS Matching` feature for each video/images
 - No ability to navigate prev/next images with joystick
 - Screen height position is not adjustable
 
 ## About file naming rule
 
 VR Player detects media format by filename.
-Adding `_LRF` suffix to the filename will identify the file as full side-by-side 3D media.
+Adding `_LRF_Full_SBS` suffix to the filename will identify the file as full side-by-side 3D media.
 
-When specifying a directory with `-o` option, it is automatically output as a filename with `{original_filename}_LRF.(png|mp4)`.
+When specifying a directory with `-o` option, it is automatically output as a filename with `{original_filename}_LRF_Full_SBS.(png|mp4)`.
+
+Reference:
+- Pigasus requires `LRF` https://hanginghatstudios.com/pigasus-faq/#acc-tb_obg1300-0
+- SKYBOX requires `Full_SBS`, https://forum.skybox.xyz/d/2161-skybox-vr-quest-v116-added-multi-language-keyboard-and-casting
+- DeoVR requires `SBS` or `LR`(`LRF` seems to not work), https://deovr.com/app/doc#naming
+
+I confirmed that `_LRF_Full_SBS` works with all of the above software.
 
 ## VR180 format
 
