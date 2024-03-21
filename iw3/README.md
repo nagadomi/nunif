@@ -133,6 +133,28 @@ When `--half-sbs` option is specified, the video is output in Half SBS format (s
 
 Older VR devices may only support this format. Also, you may need to add `_3dh_` to the filename to play it.
 
+## Anaglyph 3D format
+
+When `--anaglyph` option is specified, the video is output in Red-Cyan Anaglyph 3D format.
+
+(On GUI, select `Anaglyph *` option in `Stereo Format`)
+
+Currently, the following methods are supported.
+
+| Method    |                        |
+|-----------|------------------------|
+| color     | Color anaglyphs. Partial color reproduction. Retinal rivalry.
+| half-color| Half-Color Anaglyphs. Partial color reproduction. Less retinal rivalry than color anaglyphs.
+| gray      | Grayscale Anaglyphs. No color reproduction.
+| wimmer    | Wimmer's Optimized Anaglyphs.
+| wimmer2   | Wimmer's improved method.
+
+Reference: [Anaglyph Methods Comparison](https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx)
+
+For video, I recommend `--pix-fmt yuv444p` option. `yuv420p` (by default) uses 4:2:0 chroma subsampling, red colors are degraded and cause ghosting artifacts (crosstalk).
+
+JPEG have the same problem so I recommend using PNG (by default) instead.
+
 ## Trouble shooting
 
 ### Very flat foreground

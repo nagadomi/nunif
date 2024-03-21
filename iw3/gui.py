@@ -174,8 +174,8 @@ class MainFrame(wx.Frame):
 
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
         self.cbo_foreground_scale = wx.ComboBox(self.grp_stereo,
-                                           choices=["0", "1", "2", "3"],
-                                           style=wx.CB_READONLY, name="cbo_foreground_scale")
+                                                choices=["0", "1", "2", "3"],
+                                                style=wx.CB_READONLY, name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(0)
 
         self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"))
@@ -186,8 +186,12 @@ class MainFrame(wx.Frame):
         self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
 
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
-        self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["Full SBS", "Half SBS", "VR90"],
-                                             style=wx.CB_READONLY, name="cbo_stereo_format")
+        self.cbo_stereo_format = wx.ComboBox(
+            self.grp_stereo,
+            choices=["Full SBS", "Half SBS", "VR90",
+                     "Anaglyph color", "Anaglyph gray",
+                     "Anaglyph half-color", "Anaglyph wimmer", "Anaglyph wimmer2"],
+            style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
@@ -227,6 +231,11 @@ class MainFrame(wx.Frame):
                                    style=wx.CB_READONLY, name="cbo_fps")
         self.cbo_fps.SetSelection(3)
 
+        self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
+        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=["yuv420p", "yuv444p"],
+                                       style=wx.CB_READONLY, name="cbo_pix_fmt")
+        self.cbo_pix_fmt.SetSelection(0)
+
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
         self.cbo_crf = wx.ComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
                                    style=wx.CB_READONLY, name="cbo_crf")
@@ -254,14 +263,16 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_fps, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_fps, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_crf, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_crf, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_preset, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_preset, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_tune, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_tune, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_fastdecode, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_zerolatency, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_pix_fmt, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pix_fmt, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_crf, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_crf, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_preset, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_preset, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_tune, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_tune, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_fastdecode, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_zerolatency, (6, 1), flag=wx.EXPAND)
 
         sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
         sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -567,12 +578,14 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        anaglyph = "Anaglyph" in self.cbo_stereo_format.GetValue()
         video = is_video(input_path)
 
         if is_output_dir(output_path):
             output_path = path.join(
                 output_path,
-                make_output_filename(input_path, video=video, vr180=vr180, half_sbs=half_sbs))
+                make_output_filename(input_path, video=video,
+                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
 
         if path.exists(output_path):
             start_file(output_path)
@@ -617,12 +630,14 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        anaglyph = "Anaglyph" in self.cbo_stereo_format.GetValue()
         video = is_video(input_path)
 
         if is_output_dir(output_path):
             output_path = path.join(
                 output_path,
-                make_output_filename(input_path, video=video, vr180=vr180, half_sbs=half_sbs))
+                make_output_filename(input_path, video=video,
+                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
         else:
             output_path = output_path
 
@@ -665,6 +680,11 @@ class MainFrame(wx.Frame):
 
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        if "Anaglyph" in self.cbo_stereo_format.GetValue():
+            anaglyph = self.cbo_stereo_format.GetValue().split(" ")[-1]
+        else:
+            anaglyph = None
+
         tune = set()
         if self.chk_tune_zerolatency.GetValue():
             tune.add("zerolatency")
@@ -737,9 +757,11 @@ class MainFrame(wx.Frame):
             edge_dilation=int(self.cbo_edge_dilation.GetValue()),
             vr180=vr180,
             half_sbs=half_sbs,
+            anaglyph=anaglyph,
             ema_normalize=self.chk_ema_normalize.GetValue(),
 
             max_fps=float(self.cbo_fps.GetValue()),
+            pix_fmt=self.cbo_pix_fmt.GetValue(),
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
