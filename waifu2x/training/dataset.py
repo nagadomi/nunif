@@ -265,6 +265,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
             self.gt_gen_transforms = T.Compose([
+                T.RandomApply([TS.RandomDownscale(min_size=y_min_size, min_scale=0.75)], p=da_scale_p),
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomInvert(p=0.5),
             ])
