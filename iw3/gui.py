@@ -189,8 +189,10 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format = wx.ComboBox(
             self.grp_stereo,
             choices=["Full SBS", "Half SBS", "VR90",
+                     "Anaglyph dubois",
                      "Anaglyph color", "Anaglyph gray",
-                     "Anaglyph half-color", "Anaglyph wimmer", "Anaglyph wimmer2"],
+                     "Anaglyph half-color",
+                     "Anaglyph wimmer", "Anaglyph wimmer2"],
             style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 

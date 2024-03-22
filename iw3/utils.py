@@ -358,13 +358,48 @@ def apply_anaglyph_redcyan(left_eye, right_eye, anaglyph_type):
     elif anaglyph_type == "wimmer2":
         # Wimmer's improved method
         # described in "Methods for computing color anaglyphs"
-        zero = torch.zeros_like(left_eye[0:1])
         g_l = left_eye[1:2] + 0.45 * torch.clamp(left_eye[0:1] - left_eye[1:2], min=0)
         b_l = left_eye[2:3] + 0.25 * torch.clamp(left_eye[0:1] - left_eye[2:3], min=0)
         g_r = right_eye[1:2] + 0.45 * torch.clamp(right_eye[0:1] - right_eye[1:2], min=0)
         b_r = right_eye[2:3] + 0.25 * torch.clamp(right_eye[0:1] - right_eye[2:3], min=0)
         l = (0.75 * g_l + 0.25 * b_l) ** (1.0 / 1.6)
         anaglyph = torch.cat((l, g_r, b_r), dim=0)
+    elif anaglyph_type == "dubois":
+        # Dubois method
+        # reference: https://www.site.uottawa.ca/~edubois/anaglyph/LeastSquaresHowToPhotoshop.pdf
+        def to_linear(x):
+            cond1 = x <= 0.04045
+            cond2 = torch.logical_not(cond1)
+            x[cond1] = x[cond1] / 12.92
+            x[cond2] = ((x[cond2] + 0.055) / 1.055) ** 2.4
+            return x
+
+        def to_nonlinear(x):
+            cond1 = x <= 0.0031308
+            cond2 = torch.logical_not(cond1)
+            x[cond1] = x[cond1] * 12.92
+            x[cond2] = 1.055 * x[cond2] ** (1.0 / 2.4) - 0.055
+            return x
+
+        def dot_clamp(x, vec):
+            return (x * vec).sum(dim=0, keepdim=True).clamp(0, 1)
+
+        left_eye = to_linear(left_eye.detach().clone())
+        right_eye = to_linear(right_eye.detach().clone())
+        l_mat = torch.tensor([[0.437, 0.449, 0.164],
+                              [-0.062, -0.062, -0.024],
+                              [-0.048, -0.050, -0.017]],
+                             device=left_eye.device, dtype=torch.float32).reshape(3, 3, 1, 1)
+        r_mat = torch.tensor([[-0.011, -0.032, -0.007],
+                              [0.377, 0.761, 0.009],
+                              [-0.026, -0.093, 1.234]],
+                             device=right_eye.device, dtype=torch.float32).reshape(3, 3, 1, 1)
+        anaglyph = torch.cat([
+            dot_clamp(left_eye, l_mat[0]) + dot_clamp(right_eye, r_mat[0]),
+            dot_clamp(left_eye, l_mat[1]) + dot_clamp(right_eye, r_mat[1]),
+            dot_clamp(left_eye, l_mat[2]) + dot_clamp(right_eye, r_mat[2]),
+        ], dim=0)
+        anaglyph = to_nonlinear(anaglyph)
 
     anaglyph = torch.clamp(anaglyph, 0, 1)
     return anaglyph
@@ -738,8 +773,8 @@ def create_parser(required_true=True):
                         help="output in VR180 format")
     parser.add_argument("--half-sbs", action="store_true",
                         help="output in Half SBS")
-    parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="half-color",
-                        choices=["color", "gray", "half-color", "wimmer", "wimmer2"],
+    parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="dubois",
+                        choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois"],
                         help="output in anaglyph 3d")
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
                         help="pixel format (video only)")

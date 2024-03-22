@@ -153,9 +153,12 @@ Currently, the following methods are supported.
 | half-color| Half-Color Anaglyphs. Partial color reproduction. Less retinal rivalry than color anaglyphs.
 | gray      | Grayscale Anaglyphs. No color reproduction.
 | wimmer    | Wimmer's Optimized Anaglyphs.
-| wimmer2   | Wimmer's improved method.
+| wimmer2   | Wimmer's Improved Method.
+| dubois    | Dubois Method.
 
-Reference: [Anaglyph Methods Comparison](https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx)
+Reference:
+- [Anaglyph Methods Comparison](https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx)
+- [Conversion of a Stereo Pair to Anaglyph with the Least-Squares Projection Method Eric Dubois, March 2009](https://www.site.uottawa.ca/~edubois/anaglyph/LeastSquaresHowToPhotoshop.pdf)
 
 For video, I recommend `--pix-fmt yuv444p` or `--pix-fmt rgb24` option. `yuv420p` (by default) uses 4:2:0 chroma subsampling, red colors are degraded and cause ghosting artifacts (crosstalk).
 
