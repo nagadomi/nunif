@@ -188,10 +188,12 @@ class MainFrame(wx.Frame):
                                                 style=wx.CB_READONLY, name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(0)
 
-        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"))
+        self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
                                                   choices=["0", "1", "2", "3", "4"],
                                                   name="cbo_edge_dilation")
+        self.chk_edge_dilation.SetValue(False)
+
         self.cbo_edge_dilation.SetSelection(2)
         self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
 
@@ -226,7 +228,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_zoed_resolution, 1, wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, 1, wx.EXPAND)
-        layout.Add(self.lbl_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_edge_dilation, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
@@ -468,6 +470,7 @@ class MainFrame(wx.Frame):
         self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
 
         self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
+        self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -497,7 +500,9 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_rembg_state()
         self.update_input_option_state()
-        self.update_model_selection()
+        if not self.chk_edge_dilation.IsChecked():
+            self.update_model_selection()
+        self.update_edge_dilation()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -625,12 +630,23 @@ class MainFrame(wx.Frame):
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
         if name in DEPTH_ANYTHING_MODELS:
+            self.chk_edge_dilation.SetValue(True)
             self.cbo_edge_dilation.Enable()
         else:
+            self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
 
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
+
+    def update_edge_dilation(self):
+        if self.chk_edge_dilation.IsChecked():
+            self.cbo_edge_dilation.Enable()
+        else:
+            self.cbo_edge_dilation.Disable()
+
+    def on_changed_chk_edge_dilation(self, event):
+        self.update_edge_dilation()
 
     def confirm_overwrite(self):
         input_path = self.txt_input.GetValue()
@@ -764,6 +780,7 @@ class MainFrame(wx.Frame):
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
+        edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
 
         parser.set_defaults(
             input=input_path,
@@ -776,7 +793,7 @@ class MainFrame(wx.Frame):
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
             foreground_scale=int(self.cbo_foreground_scale.GetValue()),
-            edge_dilation=int(self.cbo_edge_dilation.GetValue()),
+            edge_dilation=edge_dilation,
             vr180=vr180,
             half_sbs=half_sbs,
             anaglyph=anaglyph,
