@@ -33,8 +33,8 @@ class ONNXReflectionPadding(I2IBaseModel):
             f,
             input_names=["x", "left", "right", "top", "bottom"],
             output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
-                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+                          "y": {0: "batch_size", 2: "height", 3: "width"}},
             **kwargs
         )
 
@@ -72,8 +72,8 @@ class ONNXTTASplit(I2IBaseModel):
             f,
             input_names=["x", "tta_level"],
             output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
-                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            dynamic_axes={"x": {0: "input_batch_size", 2: "input_height", 3: "input_width"},
+                          "y": {0: "batch_size", 2: "height", 3: "width"}},
             **kwargs
         )
 
@@ -108,8 +108,8 @@ class ONNXTTAMerge(I2IBaseModel):
             f,
             input_names=["x", "tta_level"],
             output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
-                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            dynamic_axes={"x": {0: "input_batch_size", 2: "input_height", 3: "input_width"},
+                          "y": {0: "batch_size", 2: "height", 3: "width"}},
             **kwargs
         )
 
@@ -141,7 +141,7 @@ class ONNXCreateSeamBlendingFilter(I2IBaseModel):
             f,
             input_names=["scale", "offset", "tile_size"],
             output_names=["y"],
-            dynamic_axes={'y': {0: "channels", 1: "height", 2: "width"}},
+            dynamic_axes={"y": {0: "channels", 1: "height", 2: "width"}},
             **kwargs
         )
 
@@ -197,9 +197,9 @@ class ONNXAlphaBorderPadding(nn.Module):
             f,
             input_names=["rgb", "alpha", "offset"],
             output_names=["y"],
-            dynamic_axes={'rgb': {1: "height", 2: "width"},
-                          'alpha': {1: "height", 2: "width"},
-                          'y': {1: "height", 2: "width"}},
+            dynamic_axes={"rgb": {1: "input_height", 2: "input_width"},
+                          "alpha": {1: "input_height", 2: "input_width"},
+                          "y": {1: "height", 2: "width"}},
             **kwargs
         )
 
@@ -222,8 +222,8 @@ class ONNXScale1x(I2IBaseModel):
             f,
             input_names=["x"],
             output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
-                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+                          "y": {0: "batch_size", 2: "height", 3: "width"}},
             **kwargs
         )
 
@@ -239,7 +239,6 @@ class ONNXAntialias(I2IBaseModel):
         return x
 
     def export_onnx(self, f, **kwargs):
-        kwargs["opset_version"] = 18
         x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
         model = self.to_inference_model()
         torch.onnx.export(
@@ -248,8 +247,8 @@ class ONNXAntialias(I2IBaseModel):
             f,
             input_names=["x"],
             output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 2: "height", 3: "width"},
-                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
+            dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+                          "y": {0: "batch_size", 2: "height", 3: "width"}},
             **kwargs
         )
         patch_resize_antialias(f, index=1)
@@ -275,8 +274,8 @@ class ONNXResizeBicubic(nn.Module):
             f,
             input_names=["x", "scale_factor"],
             output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 1: "channels", 2: "height", 3: "width"},
-                          'y': {0: 'batch_size', 1: "channels", 2: "height", 3: "width"}},
+            dynamic_axes={"x": {0: "batch_size", 1: "channels", 2: "input_height", 3: "input_width"},
+                          "y": {0: "batch_size", 1: "channels", 2: "height", 3: "width"}},
             **kwargs
         )
         patch_resize_antialias(f, index=0)
@@ -290,8 +289,9 @@ def patch_resize_antialias(onnx_path, name=None, index=None):
     then fixed antialias=True with ONNX file patch.
     """
     model = onnx.load(onnx_path)
-    onnx.checker.check_model(model)
+    model = onnx.version_converter.convert_version(model, 18)
     assert model.opset_import[0].version >= 18
+    onnx.checker.check_model(model)
     hit = False
     resize_count = 0
     for node in model.graph.node:

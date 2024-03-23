@@ -19,13 +19,17 @@ from .utils import (
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
-    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
+    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl, EditableComboBox,
+    apply_patch_persistancemanger,
     resolve_default_dir, extension_list_to_wildcard, validate_number,
     set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
 from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS
 import torch
+
+
+apply_patch_persistancemanger()
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
@@ -43,8 +47,8 @@ class IW3App(wx.App):
         self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
         if self.instance.IsAnotherRunning():
             with wx.MessageDialog(None,
-                                  message=(T("Another instance is running") + "\n"
-                                           + T("Are you sure you want to do this?")),
+                                  message=(T("Another instance is running") + "\n" +
+                                           T("Are you sure you want to do this?")),
                                   caption=T("Confirm"), style=wx.YES_NO) as dlg:
                 if dlg.ShowModal() == wx.ID_NO:
                     return False
@@ -143,14 +147,14 @@ class MainFrame(wx.Frame):
         self.grp_stereo = wx.StaticBox(self.pnl_options, label=T("Stereo Generation"))
 
         self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
-        self.cbo_divergence = wx.ComboBox(self.grp_stereo, choices=["2.5", "2.0", "1.0"],
-                                          style=wx.CB_DROPDOWN, name="cbo_divergence")
+        self.cbo_divergence = EditableComboBox(self.grp_stereo, choices=["2.5", "2.0", "1.0"],
+                                               name="cbo_divergence")
         self.cbo_divergence.SetToolTip("Divergence")
         self.cbo_divergence.SetSelection(1)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
-        self.cbo_convergence = wx.ComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
-                                           style=wx.CB_DROPDOWN, name="cbo_convergence")
+        self.cbo_convergence = EditableComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
+                                                name="cbo_convergence")
         self.cbo_convergence.SetSelection(1)
         self.cbo_convergence.SetToolTip("Convergence")
 
@@ -172,22 +176,36 @@ class MainFrame(wx.Frame):
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(0)
 
+        self.lbl_zoed_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
+        self.cbo_zoed_resolution = EditableComboBox(self.grp_stereo,
+                                                    choices=["Default", "512"],
+                                                    name="cbo_zoed_resolution")
+        self.cbo_zoed_resolution.SetSelection(0)
+
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
         self.cbo_foreground_scale = wx.ComboBox(self.grp_stereo,
-                                           choices=["0", "1", "2", "3"],
-                                           style=wx.CB_READONLY, name="cbo_foreground_scale")
+                                                choices=["0", "1", "2", "3"],
+                                                style=wx.CB_READONLY, name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(0)
 
-        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"))
-        self.cbo_edge_dilation = wx.ComboBox(self.grp_stereo,
-                                             choices=["0", "1", "2", "3", "4"],
-                                             style=wx.CB_READONLY, name="cbo_edge_dilation")
+        self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
+        self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
+                                                  choices=["0", "1", "2", "3", "4"],
+                                                  name="cbo_edge_dilation")
+        self.chk_edge_dilation.SetValue(False)
+
         self.cbo_edge_dilation.SetSelection(2)
         self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
 
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
-        self.cbo_stereo_format = wx.ComboBox(self.grp_stereo, choices=["Full SBS", "Half SBS", "VR90"],
-                                             style=wx.CB_READONLY, name="cbo_stereo_format")
+        self.cbo_stereo_format = wx.ComboBox(
+            self.grp_stereo,
+            choices=["Full SBS", "Half SBS", "VR90",
+                     "Anaglyph dubois",
+                     "Anaglyph color", "Anaglyph gray",
+                     "Anaglyph half-color",
+                     "Anaglyph wimmer", "Anaglyph wimmer2"],
+            style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
@@ -195,7 +213,7 @@ class MainFrame(wx.Frame):
                                              name="chk_ema_normalize")
         self.chk_ema_normalize.SetToolTip(T("Video Only"))
 
-        layout = wx.FlexGridSizer(rows=9, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=10, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -206,9 +224,11 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_method, 1, wx.EXPAND)
         layout.Add(self.lbl_depth_model, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_depth_model, 1, wx.EXPAND)
+        layout.Add(self.lbl_zoed_resolution, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_resolution, 1, wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, 1, wx.EXPAND)
-        layout.Add(self.lbl_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_edge_dilation, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
@@ -223,9 +243,15 @@ class MainFrame(wx.Frame):
         self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
 
         self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
-        self.cbo_fps = wx.ComboBox(self.grp_video, choices=["0.25", "1", "15", "30", "60", "1000"],
-                                   style=wx.CB_READONLY, name="cbo_fps")
+        self.cbo_fps = EditableComboBox(
+            self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
+            name="cbo_fps")
         self.cbo_fps.SetSelection(3)
+
+        self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
+        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=["yuv420p", "yuv444p", "rgb24"],
+                                       style=wx.CB_READONLY, name="cbo_pix_fmt")
+        self.cbo_pix_fmt.SetSelection(0)
 
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
         self.cbo_crf = wx.ComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
@@ -254,14 +280,16 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_fps, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_fps, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_crf, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_crf, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_preset, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_preset, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_tune, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_tune, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_fastdecode, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_zerolatency, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_pix_fmt, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pix_fmt, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_crf, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_crf, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_preset, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_preset, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_tune, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_tune, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_fastdecode, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_zerolatency, (6, 1), flag=wx.EXPAND)
 
         sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
         sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -365,12 +393,6 @@ class MainFrame(wx.Frame):
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
 
-        self.lbl_zoed_resolution = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Resolution"))
-        self.cbo_zoed_resolution = wx.ComboBox(self.grp_processor,
-                                               choices=["Default", "512"],
-                                               style=wx.CB_READONLY, name="cbo_zoed_resolution")
-        self.cbo_zoed_resolution.SetSelection(0)
-        self.zoed_resolution = [None, 512]
         self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
         self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
                                                choices=[str(n) for n in (64, 32, 16, 8, 4, 2, 1)],
@@ -395,15 +417,13 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_zoed_resolution, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_resolution, (1, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_zoed_batch_size, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_batch_size, (2, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_max_workers, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_max_workers, (3, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_low_vram, (4, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_tta, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_fp16, (4, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_zoed_batch_size, (1, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_max_workers, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_max_workers, (2, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_low_vram, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -450,6 +470,7 @@ class MainFrame(wx.Frame):
         self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
 
         self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
+        self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -479,7 +500,9 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_rembg_state()
         self.update_input_option_state()
-        self.update_model_selection()
+        if not self.chk_edge_dilation.IsChecked():
+            self.update_model_selection()
+        self.update_edge_dilation()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -567,12 +590,14 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        anaglyph = "Anaglyph" in self.cbo_stereo_format.GetValue()
         video = is_video(input_path)
 
         if is_output_dir(output_path):
             output_path = path.join(
                 output_path,
-                make_output_filename(input_path, video=video, vr180=vr180, half_sbs=half_sbs))
+                make_output_filename(input_path, video=video,
+                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
 
         if path.exists(output_path):
             start_file(output_path)
@@ -605,24 +630,37 @@ class MainFrame(wx.Frame):
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
         if name in DEPTH_ANYTHING_MODELS:
+            self.chk_edge_dilation.SetValue(True)
             self.cbo_edge_dilation.Enable()
         else:
+            self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
 
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
+
+    def update_edge_dilation(self):
+        if self.chk_edge_dilation.IsChecked():
+            self.cbo_edge_dilation.Enable()
+        else:
+            self.cbo_edge_dilation.Disable()
+
+    def on_changed_chk_edge_dilation(self, event):
+        self.update_edge_dilation()
 
     def confirm_overwrite(self):
         input_path = self.txt_input.GetValue()
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        anaglyph = "Anaglyph" in self.cbo_stereo_format.GetValue()
         video = is_video(input_path)
 
         if is_output_dir(output_path):
             output_path = path.join(
                 output_path,
-                make_output_filename(input_path, video=video, vr180=vr180, half_sbs=half_sbs))
+                make_output_filename(input_path, video=video,
+                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
         else:
             output_path = output_path
 
@@ -643,15 +681,31 @@ class MainFrame(wx.Frame):
             dlg.ShowModal()
 
     def on_click_btn_start(self, event):
-        if not validate_number(self.cbo_divergence.GetValue(), 0.0, 6.0):
-            self.show_validation_error_message(T("3D Strength"), 0.0, 6.0)
+        if not validate_number(self.cbo_divergence.GetValue(), 0.0, 100.0):
+            self.show_validation_error_message(T("3D Strength"), 0.0, 100.0)
             return
-        if not validate_number(self.cbo_convergence.GetValue(), 0.0, 1.0):
-            self.show_validation_error_message(T("Convergence Plane"), 0.0, 1.0)
+        if not validate_number(self.cbo_convergence.GetValue(), -100.0, 100.0):
+            self.show_validation_error_message(T("Convergence Plane"), -100.0, 100.0)
             return
         if not validate_number(self.cbo_pad.GetValue(), 0.0, 10.0, allow_empty=True):
             self.show_validation_error_message(T("Padding"), 0.0, 10.0)
             return
+        if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
+            self.show_validation_error_message(T("Edge Fix"), 0, 20)
+            return
+        if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
+            self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
+            return
+
+        zoed_height = self.cbo_zoed_resolution.GetValue()
+        if zoed_height == "Default" or zoed_height == "":
+            zoed_height = None
+        else:
+            if not validate_number(zoed_height, 384, 2048, is_int=True, allow_empty=False):
+                self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 384, 2048)
+                return
+            zoed_height = int(zoed_height)
+
         if not self.confirm_overwrite():
             return
 
@@ -665,6 +719,11 @@ class MainFrame(wx.Frame):
 
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        if "Anaglyph" in self.cbo_stereo_format.GetValue():
+            anaglyph = self.cbo_stereo_format.GetValue().split(" ")[-1]
+        else:
+            anaglyph = None
+
         tune = set()
         if self.chk_tune_zerolatency.GetValue():
             tune.add("zerolatency")
@@ -698,7 +757,6 @@ class MainFrame(wx.Frame):
             device_id = [device_id]
 
         depth_model_type = self.cbo_depth_model.GetValue()
-        zoed_height = self.zoed_resolution[self.cbo_zoed_resolution.GetSelection()]
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
                                          self.depth_model_device_id != device_id or
                                          self.depth_model_height != zoed_height)):
@@ -722,6 +780,7 @@ class MainFrame(wx.Frame):
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
+        edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
 
         parser.set_defaults(
             input=input_path,
@@ -734,12 +793,14 @@ class MainFrame(wx.Frame):
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
             foreground_scale=int(self.cbo_foreground_scale.GetValue()),
-            edge_dilation=int(self.cbo_edge_dilation.GetValue()),
+            edge_dilation=edge_dilation,
             vr180=vr180,
             half_sbs=half_sbs,
+            anaglyph=anaglyph,
             ema_normalize=self.chk_ema_normalize.GetValue(),
 
             max_fps=float(self.cbo_fps.GetValue()),
+            pix_fmt=self.cbo_pix_fmt.GetValue(),
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),

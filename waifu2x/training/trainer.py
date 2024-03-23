@@ -119,9 +119,9 @@ def create_criterion(loss):
             IdentityLoss(),
         ], weight=(1.0, 1.0))
     elif loss == "lbpfft":
-        criterion = LBPFFTLoss()
+        criterion = LBPFFTLoss(kernel_size=3, weight=0.03)
     elif loss == "lbp5fft":
-        criterion = LBPFFTLoss(kernel_size=5)
+        criterion = LBPFFTLoss(kernel_size=5, weight=0.03)
     elif loss == "ident":
         # loss is computed in model.forward()
         criterion = IdentityLoss()
@@ -384,19 +384,20 @@ class Waifu2xEnv(LuminancePSNREnv):
 
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
+        model = self.get_eval_model()
         scale_factor = self.get_scale_factor()
 
         psnr = 0
         with self.autocast():
             if self.trainer.args.update_criterion in {"psnr", "all"}:
-                z = self.model(x)
+                z = model(x)
                 psnr = self.eval_criterion(z, y)
                 if self.trainer.args.update_criterion == "psnr":
                     loss = psnr
                 else:
                     loss = torch.tensor(inf_loss())
             elif self.trainer.args.update_criterion == "loss":
-                z = self.model(x)
+                z = model(x)
                 # TODO: AuxiliaryLoss does not work
                 psnr = self.eval_criterion(z, y)
                 loss = self.criterion(z, y)
@@ -508,6 +509,9 @@ class Waifu2xTrainer(Trainer):
                 model_offset=model_offset,
                 scale_factor=scale_factor,
                 bicubic_only=self.args.b4b,
+                skip_screentone=self.args.skip_screentone,
+                skip_dot=self.args.skip_dot,
+                crop_samples=self.args.crop_samples,
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
@@ -541,6 +545,8 @@ class Waifu2xTrainer(Trainer):
                 input_dir=path.join(self.args.data_dir, "eval"),
                 model_offset=model_offset,
                 scale_factor=scale_factor,
+                skip_screentone=self.args.skip_screentone,
+                skip_dot=self.args.skip_dot,
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
@@ -719,6 +725,17 @@ def register(subparsers, default_parser):
                         help="use only bicubic downsampling for bicubic downsampling restoration")
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
+    parser.add_argument("--pre-antialias", action="store_true",
+                        help=("Set `pre_antialias=True` for SwinUNet4x."))
+    parser.add_argument("--privilege", action="store_true",
+                        help=("Use model.forward(LR_image, HR_image)"))
+    parser.add_argument("--skip-screentone", action="store_true",
+                        help=("Skip files containing '__SCREENTONE_' in the filename"))
+    parser.add_argument("--skip-dot", action="store_true",
+                        help=("Skip files containing '__DOT_' in the filename"))
+    parser.add_argument("--crop-samples", type=int, default=4,
+                        help=("number of samples for hard example cropping"))
+
     # GAN related options
     parser.add_argument("--discriminator", type=str,
                         help="discriminator name or .pth or [`l3`, `l3c`, `l3v1`, `l3v1`].")
@@ -741,10 +758,6 @@ def register(subparsers, default_parser):
                               " Also do not hit the newbie discriminator."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
-    parser.add_argument("--pre-antialias", action="store_true",
-                        help=("Set `pre_antialias=True` for SwinUNet4x."))
-    parser.add_argument("--privilege", action="store_true",
-                        help=("Use model.forward(LR_image, HR_image)"))
 
     parser.set_defaults(
         batch_size=16,

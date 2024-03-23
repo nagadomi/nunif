@@ -105,19 +105,25 @@ If you can only choose one software, I would recommend this one.
 
 ### SKYBOX VR Video Player
 
-With recent updates(v1.1.5), most features of 3D Full SBS are now working.
+With recent updates(v1.1.6), most features of 3D Full SBS are now working.
 However, the following features have not yet been implemented.
 
-- File naming rule for Full SBS is not supported. You should manually enable `3D Full-SBS Matching` feature for each video/images
 - No ability to navigate prev/next images with joystick
 - Screen height position is not adjustable
 
 ## About file naming rule
 
 VR Player detects media format by filename.
-Adding `_LRF` suffix to the filename will identify the file as full side-by-side 3D media.
+Adding `_LRF_Full_SBS` suffix to the filename will identify the file as full side-by-side 3D media.
 
-When specifying a directory with `-o` option, it is automatically output as a filename with `{original_filename}_LRF.(png|mp4)`.
+When specifying a directory with `-o` option, it is automatically output as a filename with `{original_filename}_LRF_Full_SBS.(png|mp4)`.
+
+Reference:
+- Pigasus requires `LRF` https://hanginghatstudios.com/pigasus-faq/#acc-tb_obg1300-0
+- SKYBOX requires `Full_SBS`, https://forum.skybox.xyz/d/2161-skybox-vr-quest-v116-added-multi-language-keyboard-and-casting
+- DeoVR requires `SBS` or `LR`(`LRF` seems to not work), https://deovr.com/app/doc#naming
+
+I confirmed that `_LRF_Full_SBS` works with all of the above software.
 
 ## VR180 format
 
@@ -132,6 +138,33 @@ This is useful if your video player does not have the ability to play Full SBS 3
 When `--half-sbs` option is specified, the video is output in Half SBS format (subsampled at half resolution).
 
 Older VR devices may only support this format. Also, you may need to add `_3dh_` to the filename to play it.
+
+## Anaglyph 3D format
+
+When `--anaglyph` option is specified, the video is output in Red-Cyan Anaglyph 3D format.
+
+(On GUI, select `Anaglyph *` option in `Stereo Format`)
+
+Currently, the following methods are supported.
+
+| Method    |                        |
+|-----------|------------------------|
+| color     | Color anaglyphs. Partial color reproduction. Retinal rivalry.
+| half-color| Half-Color Anaglyphs. Partial color reproduction. Less retinal rivalry than color anaglyphs.
+| gray      | Grayscale Anaglyphs. No color reproduction.
+| wimmer    | Wimmer's Optimized Anaglyphs.
+| wimmer2   | Wimmer's Improved Method.
+| dubois    | Dubois Method.
+
+Reference:
+- [Anaglyph Methods Comparison](https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx)
+- [Conversion of a Stereo Pair to Anaglyph with the Least-Squares Projection Method Eric Dubois, March 2009](https://www.site.uottawa.ca/~edubois/anaglyph/LeastSquaresHowToPhotoshop.pdf)
+
+For video, I recommend `--pix-fmt yuv444p` or `--pix-fmt rgb24` option. `yuv420p` (by default) uses 4:2:0 chroma subsampling, red colors are degraded and cause ghosting artifacts (crosstalk).
+
+JPEG have the same problem so I recommend using PNG (by default) instead.
+
+Also, `--convergence 0.5 --divergence 2.0` is recommended.
 
 ## Trouble shooting
 
@@ -212,8 +245,7 @@ If the results are acceptable, process the full video.
 
 ## Limitation
 
-`--method row_flow`(by default) is currently only supports (`0 <= divergence <= 2.5` and `input width <= 1920`).
-
+`--method row_flow`(by default) is currently only trained for the range `0.0 <= divergence <= 2.5` and `0.0 <= convergence <= 1.0`.
 
 ## About row_flow model and its training
 

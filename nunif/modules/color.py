@@ -36,3 +36,26 @@ def rgb_to_yrgb(x, yycbcr=False):
 class RGBToYRGB(torch.nn.Module):
     def forward(self, x):
         return rgb_to_yrgb(x)
+
+
+def ycbcr_to_rgb(x):
+    # NOTE: `ycbcr_to_rgb(rgb_to_ycbcr(x))` has floating point arithmetic error. (around 1e-5)
+    #       It is not corrected here, so `torch.clamp(rgb, 0, 1)` is needed somewhere
+    x = x * 0.5 + 0.5
+    y = x[:, 0:1, :, :]
+    cb = x[:, 1:2, :, :]
+    cr = x[:, 2:3, :, :]
+
+    cb = cb - 0.5
+    cr = cr - 0.5
+    r = y + 1.403 * cr
+    g = y - 0.714 * cr - 0.344 * cb
+    b = y + 1.773 * cb
+    x = torch.cat([r, g, b], dim=1)
+
+    return x
+
+
+class YCbCrToRGB(torch.nn.Module):
+    def forward(self, x):
+        return ycbcr_to_rgb(x)

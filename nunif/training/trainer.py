@@ -4,6 +4,7 @@ import argparse
 from multiprocessing import cpu_count
 import torch
 import torch.optim as optim
+import torch.optim.swa_utils as swa_utils
 from torch.optim.lr_scheduler import (
     StepLR, MultiStepLR, CosineAnnealingWarmRestarts,
     ConstantLR, ChainedScheduler
@@ -54,6 +55,11 @@ class Trainer(ABC):
             self.env.enable_amp()
         self.env.set_amp_dtype(torch.bfloat16 if (self.args.amp_float == "bfloat16" or self.args.gpu[0] < 0) else torch.float16)
         self.log_fp = open(path.join(self.args.model_dir, f"loss_{self.runtime_id}.csv"), mode="w")
+
+        if self.args.ema_model:
+            self.ema_model = swa_utils.AveragedModel(
+                self.model, multi_avg_fn=swa_utils.get_ema_multi_avg_fn(self.args.ema_decay))
+
         self.setup()
 
     def shutdown(self):
@@ -122,13 +128,16 @@ class Trainer(ABC):
                     grad_scaler=self.grad_scaler,
                     backward_step=self.args.backward_step,
                 )
-                print("--\n eval")
-                loss = self.env.eval(self.eval_loader)
-                if loss is None:
-                    self.save_best_model()
-                elif loss < self.best_loss:
-                    print("* best model updated")
-                    self.best_loss = loss
+                if not self.args.skip_eval:
+                    print("--\n eval")
+                    loss = self.env.eval(self.eval_loader)
+                    if loss is None:
+                        self.save_best_model()
+                    elif loss < self.best_loss:
+                        print("* best model updated")
+                        self.best_loss = loss
+                        self.save_best_model()
+                else:
                     self.save_best_model()
                 self.save_checkpoint()
                 try:
@@ -222,8 +231,9 @@ class Trainer(ABC):
     def save_checkpoint(self, **kwargs):
         optimizer_state_dict = [optimizer.state_dict() for optimizer in self.optimizers]
         scheduler_state_dict = [scheduler.state_dict() for scheduler in self.schedulers]
+        model = self.ema_model.module if self.args.ema_model else self.model
         save_model(
-            self.model,
+            model,
             self.create_checkpoint_filename(),
             train_kwargs=self.args,
             optimizer_state_dict=optimizer_state_dict,
@@ -234,11 +244,12 @@ class Trainer(ABC):
             **kwargs)
 
     def save_best_model(self):
-        save_model(self.model, self.best_model_filename)
+        model = self.ema_model.module if self.args.ema_model else self.model
+        save_model(model, self.best_model_filename)
         if not self.args.disable_backup:
             # backup file per runtime
             backup_file = f"{path.splitext(self.best_model_filename)[0]}.{self.runtime_id}.pth.bk"
-            save_model(self.model, backup_file)
+            save_model(model, backup_file)
 
     def write_log(self, epoch, train_loss, eval_loss):
         def to_float(loss):
@@ -332,4 +343,13 @@ def create_trainer_default_parser():
                         help="disable backup of the best model file for every runtime")
     parser.add_argument("--ignore-nan", action="store_true",
                         help="do not raise NaN exception unless NaN occurs more than 100 times in one epoch")
+    parser.add_argument("--skip-eval", action="store_true",
+                        help="Skip eval")
+    parser.add_argument("--ema-model", action="store_true",
+                        help="Use AveragedModel and save EMA model checkpoint")
+    parser.add_argument("--ema-decay", type=float, default=0.98,
+                        help="decay parameter for EMA model")
+    parser.add_argument("--ema-step", type=int, default=8,
+                        help="Update interval for EMA model")
+
     return parser

@@ -12,6 +12,8 @@ from torchvision.transforms import (
     functional as TF,
     InterpolationMode,
 )
+import torch
+from nunif.utils.perlin2d import generate_perlin_noise_2d
 
 
 def ellipse_rect(center, size):
@@ -74,8 +76,8 @@ def gen_color(disable_color):
             fg = [fg_mean, fg_mean, fg_mean]
             bg = [bg_mean, bg_mean, bg_mean]
             line = fg
-        if random.uniform(0, 1) < 0.1:
-            if random.uniform(0, 1) < 0.5:
+        if random.uniform(0, 1) < 0.25:
+            if random.uniform(0, 1) < 0.75:
                 line_overlay = tuple(line)
             else:
                 line_masking = True
@@ -95,9 +97,12 @@ def gen_color(disable_color):
             c = random.randint(0, 16)
             fg = [c, c, c]
             line = fg
-            if random.uniform(0, 1) < 0.1:
-                line_masking = True
-                line_overlay = tuple(bg)
+            if random.uniform(0, 1) < 0.25:
+                if random.uniform(0, 1) < 0.75:
+                    line_overlay = tuple(line)
+                else:
+                    line_masking = True
+                    line_overlay = tuple(bg)
         else:
             # gray
             if random.uniform(0, 1) < 0.5:
@@ -107,16 +112,19 @@ def gen_color(disable_color):
             fg = [c, c, c]
             c = random.randint(0, 16)
             line = [c, c, c]
-            if random.uniform(0, 1) < 0.1:
-                # line overlay
-                line_overlay = tuple(line)
+            if random.uniform(0, 1) < 0.25:
+                if random.uniform(0, 1) < 0.75:
+                    line_overlay = tuple(line)
+                else:
+                    line_masking = True
+                    line_overlay = tuple(bg)
 
     if bg2 is None:
         bg2 = bg
     return tuple(fg), tuple(bg), tuple(bg2), tuple(line), line_overlay, line_masking
 
 
-def gen_mask(size=400):
+def gen_dot_mask(size=400):
     if random.uniform(0, 1) < 0.5:
         dot_size = random.choice([5, 7, 9, 11, 13])
     else:
@@ -164,7 +172,7 @@ def gen_mask(size=400):
     return grid
 
 
-def gen_gradient_mask(size=400):
+def gen_dot_gradient_mask(size=400):
     max_dot_size = random.randint(10, 20)
     min_dot_size = random.randint(2, max_dot_size)
 
@@ -209,16 +217,49 @@ def gen_gradient_mask(size=400):
     return grid
 
 
+def perlin_noise(size, resolution=1, threshold=0.1, invert=False):
+    ps = size // resolution
+    ps += 4 - ps % 4
+    ns = ps * resolution * 2
+    noise = generate_perlin_noise_2d([ns, ns], [ps, ps]).unsqueeze(0)
+    if threshold is not None:
+        white_index = noise > threshold
+        if invert:
+            white_index = torch.logical_not(white_index)
+        black_index = torch.logical_not(white_index)
+        noise[white_index] = 1.0
+        noise[black_index] = 0.0
+    noise = random_crop(noise, (size, size))
+
+    return noise
+
+
+def gen_sand_mask(size=400):
+    resolution = random.choice([2, 3, 4, 5, 6, 7, 8, 9])
+    threshold = random.uniform(0.05, 0.5)
+    invert = random.choice([True, False])
+    if resolution >= 5 and random.uniform(0, 1) < 0.2:
+        scale = random.uniform(0.5, 1.0)
+        mask = perlin_noise(int(size * scale), resolution=resolution, threshold=threshold, invert=invert)
+        mask = TF.resize(mask, (size, size), interpolation=random_interpolation())
+    else:
+        mask = perlin_noise(size, resolution=resolution, threshold=threshold, invert=invert)
+    mask = torch.clamp(mask, 0, 1)
+    mask = TF.to_pil_image(mask)
+
+    return mask
+
+
 def gen_line_overlay(size, line_scale=1):
     window = Image.new("L", (size * 2, size * 2), "black")
     if random.uniform(0, 1) < 0.5:
-        line_width = random.randint(3, 8) * 2
+        line_width = random.randint(1, 4) * 2
     else:
         line_width = random.randint(3, 16) * 2
     line_width *= line_scale
 
     if random.uniform(0, 1) < 0.5:
-        margin = random.randint(int(line_width * 0.75), line_width * 2)
+        margin = random.randint(int(line_width * 0.5), line_width * 2)
     else:
         margin = random.randint(2, line_width * 4)
     offset = random.randint(0, 20)
@@ -228,6 +269,10 @@ def gen_line_overlay(size, line_scale=1):
     while x < window.width:
         gc.line(((x, 0), (x, window.height)), fill="white", width=line_width)
         x = x + line_width + margin
+    if random.uniform(0, 1) < 0.25:
+        x1 = TF.to_tensor(window)
+        x2 = TF.to_tensor(window.transpose(Image.ROTATE_90))
+        window = TF.to_pil_image((x1 + x2).clamp(0, 1))
 
     angle = random.uniform(-180, 180)
     window = TF.rotate(window, angle=angle, interpolation=random_interpolation(rotate=True))
@@ -244,15 +289,19 @@ def gen(disable_color):
     fg_color, window_bg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
     bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), window_bg_color)
     fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), fg_color)
-    if random.uniform(0, 1) < 0.75:
-        mask = gen_mask(WINDOW_SIZE * 2)
+    if random.uniform(0, 1) < 0.7:
+        mask = gen_dot_mask(WINDOW_SIZE * 2)
     else:
-        mask = gen_gradient_mask(WINDOW_SIZE * 2)
+        if random.uniform(0, 1) < 0.5:
+            mask = gen_dot_gradient_mask(WINDOW_SIZE * 2)
+        else:
+            mask = gen_sand_mask(WINDOW_SIZE * 2)
+
     bg.putalpha(255)
     fg.putalpha(mask)
     window = Image.alpha_composite(bg, fg)
     if line_overlay_color is not None:
-        mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=4 if line_masking else 1)
+        mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=(4 if line_masking else 1))
         fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), line_overlay_color)
         window.putalpha(255)
         fg.putalpha(mask)
@@ -266,8 +315,12 @@ def gen(disable_color):
         line_width = random.randint(4, 8) * 2
     else:
         line_width = random.randint(3, 12) * 2
-    gc.rectangle((pad, pad, pad + window.width, pad + window.height), outline=line_color, width=line_width)
+    if random.uniform(0, 1) < 0.5:
+        gc.rectangle((pad, pad, pad + window.width, pad + window.height), outline=line_color, width=line_width)
 
+    if random.uniform(0, 1) < 0.5:
+        angle = random.uniform(-180, 180)
+        screen = TF.rotate(screen, angle=angle, interpolation=random_interpolation(rotate=True), fill=bg_color)
     screen = TF.resize(screen, (IMAGE_SIZE, IMAGE_SIZE), interpolation=random_interpolation(), antialias=True)
 
     return screen
@@ -292,5 +345,13 @@ def main():
         im.save(path.join(args.output_dir, f"__SCREENTONE_{i}{postfix}.png"))
 
 
+def _test_perlin():
+    for resolution in (2, 3, 4):
+        for threshold in (0.1, 0.4):
+            noise = perlin_noise(320, resolution=resolution, threshold=threshold, invert=True)
+            TF.to_pil_image(noise).show()
+
+
 if __name__ == "__main__":
     main()
+    # _test_perlin()

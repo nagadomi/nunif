@@ -141,9 +141,11 @@ class FixedFPSFilter():
         prev_filter.link_to(buffersink)
         graph.configure()
 
-    def __init__(self, video_stream, fps, vf="", deny_filters=[]):
+    def __init__(self, video_stream, fps, vf="", deny_filters=[], colorspace=None):
         self.graph = av.filter.Graph()
         video_filters = self.parse_vf_option(vf)
+        if colorspace is not None:
+            video_filters.append(("colorspace", colorspace))
         video_filters.append(("fps", str(fps)))
         video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
         self.build_graph(self.graph, video_stream, video_filters)
@@ -275,9 +277,16 @@ def process_video(input_path, output_path,
         audio_input_stream = input_container.streams.audio[0]
 
     config = config_callback(video_input_stream)
+    if config.pix_fmt == "rgb24":
+        codec = "libx264rgb"
+        colorspace = None
+    else:
+        codec = "libx264"
+        # TODO: colorspace = "all=bt709:iprimaries=bt709:itrc=srgb:ispace=bt709:fast=1"
+        colorspace = None
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
 
-    fps_filter = FixedFPSFilter(video_input_stream, config.fps, vf)
+    fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf, colorspace=colorspace)
     if config.output_width is not None and config.output_height is not None:
         output_size = config.output_width, config.output_height
     else:
@@ -286,7 +295,7 @@ def process_video(input_path, output_path,
             test_callback = frame_callback
         output_size = test_output_size(test_callback, video_input_stream, vf)
 
-    video_output_stream = output_container.add_stream("libx264", config.fps)
+    video_output_stream = output_container.add_stream(codec, config.fps)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
     video_output_stream.width = output_size[0]

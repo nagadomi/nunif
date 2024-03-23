@@ -26,6 +26,7 @@ NEAREST_PREFIX = "__NEAREST_"
 DOT_SCALE2X_PREFIX = "__NEAREST__DOT_2x_"
 DOT_SCALE4X_PREFIX = "__NEAREST__DOT_4x_"
 SCREENTONE_PREFIX = "__SCREENTONE_"
+DOT_PREFIX = "__DOT_"
 INTERPOLATION_MODES = (
     "box",
     "sinc",
@@ -177,6 +178,9 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
                  da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
                  bicubic_only=False,
+                 skip_screentone=False,
+                 skip_dot=False,
+                 crop_samples=4,
                  deblur=0, resize_blur_p=0.1, resize_step_p=0,
                  noise_level=-1, style=None,
                  return_no_offset_y=False,
@@ -185,10 +189,19 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         assert scale_factor in {1, 2, 4, 8}
         assert noise_level in {-1, 0, 1, 2, 3}
         assert style in {None, "art", "photo"}
+        exclude_prefixes = []
         if scale_factor in {1, 2}:
-            exclude_filter = lambda fn: DOT_SCALE4X_PREFIX not in fn
+            exclude_prefixes.append(DOT_SCALE4X_PREFIX)
         else:
-            exclude_filter = lambda fn: DOT_SCALE2X_PREFIX not in fn
+            exclude_prefixes.append(DOT_SCALE2X_PREFIX)
+        if skip_screentone:
+            exclude_prefixes.append(SCREENTONE_PREFIX)
+        if skip_dot:
+            exclude_prefixes.append(DOT_PREFIX)
+        if exclude_prefixes:
+            exclude_filter = lambda fn: not any([prefix in fn for prefix in exclude_prefixes])
+        else:
+            exclude_filter = None
 
         super().__init__(input_dir, num_samples=num_samples, exclude_filter=exclude_filter)
         self.training = training
@@ -248,11 +261,16 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
                 T.RandomApply([TS.RandomUnsharpMask()], p=da_unsharpmask_p),
                 # TODO: maybe need to prevent color noise for grayscale
-                T.RandomApply([T.RandomGrayscale(p=1)], p=da_grayscale_p),
+                T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
+            self.gt_gen_transforms = T.Compose([
+                T.RandomApply([TS.RandomDownscale(min_size=y_min_size, min_scale=0.75)], p=da_scale_p),
+                T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
+                T.RandomInvert(p=0.5),
+            ])
             self.transforms = TP.Compose([
-                TP.RandomHardExampleCrop(size=y_min_size, samples=4),
+                TP.RandomHardExampleCrop(size=y_min_size, samples=crop_samples),
                 random_downscale_x,
                 photo_noise,
                 rotate_transform,
@@ -266,11 +284,12 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 jpeg_transform,
                 TP.RandomHardExampleCrop(size=tile_size,
                                          y_scale=scale_factor,
-                                         samples=4),
+                                         samples=crop_samples),
                 TP.RandomFlip(),
             ])
         else:
             self.gt_transforms = TS.Identity()
+            self.gt_gen_transforms = TS.Identity()
             interpolation = INTERPOLATION_BICUBIC
             if scale_factor > 1:
                 downscale_x = RandomDownscaleX(scale_factor=scale_factor,
@@ -301,7 +320,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             raise RuntimeError(f"Unable to load image: {filename}")
         if NEAREST_PREFIX in filename:
             x, y = self.transforms_nearest(im, im)
-        elif SCREENTONE_PREFIX in filename:
+        elif SCREENTONE_PREFIX in filename or DOT_PREFIX in filename:
+            im = self.gt_gen_transforms(im)
             x, y = self.transforms(im, im)
         else:
             im = self.gt_transforms(im)

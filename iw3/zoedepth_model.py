@@ -7,6 +7,7 @@ from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast
 from nunif.models.data_parallel import DataParallelInference
+from .dilation import dilate_edge
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -73,6 +74,8 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
     if model_type not in DEPTH_ANYTHING_MODELS:
         model.prep_mod = 32
         if height is not None:
+            if height % model.prep_mod != 0:
+                height += (model.prep_mod - height % model.prep_mod)
             model.prep_h_height = height
             model.prep_v_height = height
         else:
@@ -81,7 +84,8 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
     else:
         model.prep_mod = 14
         if height is not None:
-            height += (14 - height % 14)
+            if height % model.prep_mod != 0:
+                height += (model.prep_mod - height % model.prep_mod)
             model.prep_h_height = height
             model.prep_v_height = height
         else:
@@ -90,6 +94,7 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
 
     device = create_device(gpu)
     model = model.to(device).eval()
+    model._model_type = model_type
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1 and model_type not in {"ZoeD_Any_N", "ZoeD_Any_K"}:
         model = DataParallelInference(model, device_ids=gpu)
 
@@ -186,7 +191,9 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=False, resize_depth=False, **kwargs):
+                output_device="cpu", device=None, normalize_int16=False,
+                edge_dilation=0, resize_depth=True, **kwargs):
+
     device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
@@ -200,6 +207,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
+    org_size = x.shape[-2:]
     x, pad_h, pad_w = batch_preprocess(
         x,
         h_height=model.prep_h_height, v_height=model.prep_v_height,
@@ -218,9 +226,10 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out = torch.cat([out, out2], dim=0)
 
     out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
-
-    if out.shape[-2:] != x.shape[-2:]:
-        out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
+    if edge_dilation > 0:
+        out = dilate_edge(out, edge_dilation)
+    if resize_depth and out.shape[-2:] != org_size:
+        out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bilinear", align_corners=False)
 
     if flip_aug:
@@ -237,7 +246,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         assert z.shape[0] == 1
         z = z.squeeze(0)
 
-    z = z.to(output_device)
     if int16:
         if normalize_int16:
             max_v, min_v = z.max(), z.min()
@@ -247,5 +255,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             else:
                 z = torch.zeros_like(z)
         z = z.to(torch.int16)
+
+    z = z.to(output_device)
 
     return z

@@ -13,13 +13,13 @@ NR_RATE = {
         0: 0.65,
         1: 0.65,
         2: 0.65,
-        3: 1.0,
+        3: 0.9,
     },
     "photo": {
         0: 0.3,
         1: 0.6,
-        2: 1.0,
-        3: 1.0,
+        2: 0.9,
+        3: 0.9,
     }
 }
 JPEG_CHROMA_SUBSAMPLING_RATE = 0.5
@@ -52,7 +52,10 @@ else:
 def choose_validation_jpeg_quality(index, style, noise_level):
     mod100 = index % 100
     if mod100 > int(NR_RATE[style][noise_level] * 100):
-        return [], None
+        cand = list(range(-1, noise_level))
+        noise_level = cand[index % len(cand)]
+        if noise_level == -1:
+            return [], None
     if index % 2 == 0:
         subsampling = "4:2:0"
     else:
@@ -220,11 +223,20 @@ class RandomJPEGNoiseX():
     def __call__(self, x, y):
         original_x = x
         if random.uniform(0, 1) > NR_RATE[self.style][self.noise_level]:
-            # do nothing
-            return x, y
-        if self.style == "photo" and QTABLES and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.25:
+            # use lower noise_level noise
+            # this is the fix for a problem in the original waifu2x
+            # that lower level noise cannot be denoised with higher level denoise model.
+            noise_level = random.randint(-1, self.noise_level - 1)
+            if noise_level == -1:
+                # do nothing
+                return x, y
+        else:
+            # use noise level noise
+            noise_level = self.noise_level
+
+        if self.style == "photo" and QTABLES and noise_level in {2, 3} and random.uniform(0, 1) < 0.25:
             x = add_jpeg_noise_qtable(x)
-            strength_factor = 1. if self.noise_level == 3 else 0.75
+            strength_factor = 1. if noise_level == 3 else 0.75
             if random.uniform(0, 1) < 0.5:
                 if random.uniform(0, 1) < 0.25:
                     x = sharpen_noise(original_x, x,
@@ -238,20 +250,8 @@ class RandomJPEGNoiseX():
                     if random.uniform(0, 1) < 0.25:
                         x = add_jpeg_noise(x, quality=random.randint(80, 95), subsampling="4:2:0")
             return x, y
-        if self.noise_level == 3:
-            use_noise_level_noise = random.uniform(0, 1) < 0.95
-        else:
-            use_noise_level_noise = random.uniform(0, 1) < 0.75
-        if use_noise_level_noise:
-            # use noise_level noise
-            qualities = choose_jpeg_quality(self.style, self.noise_level)
-        else:
-            # use lower noise_level noise
-            # this is the fix for a problem in the original waifu2x
-            # that lower level noise cannot be denoised with higher level denoise model.
-            noise_level = random.randint(0, self.noise_level)
-            qualities = choose_jpeg_quality(self.style, noise_level)
 
+        qualities = choose_jpeg_quality(self.style, noise_level)
         assert len(qualities) > 0
 
         if random.uniform(0, 1) < JPEG_CHROMA_SUBSAMPLING_RATE:
@@ -266,7 +266,7 @@ class RandomJPEGNoiseX():
 
         for i, quality in enumerate(qualities):
             x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
-            if (i == 0 and self.style == "photo" and self.noise_level in {2, 3} and random.uniform(0, 1) < 0.2):
+            if (i == 0 and self.style == "photo" and noise_level in {2, 3} and random.uniform(0, 1) < 0.2):
                 if random.uniform(0, 1) < 0.75:
                     x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2))
                 else:

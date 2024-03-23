@@ -226,9 +226,10 @@ def has_rembg_model(model_type):
 
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
-FULL_SBS_SUFFIX = "_LRF"
+FULL_SBS_SUFFIX = "_LRF_Full_SBS"
 HALF_SBS_SUFFIX = "_LR"
 VR180_SUFFIX = "_180x180_LR"
+ANAGLYPH_SUFFIX = "_redcyan"  # temporary
 
 
 # SMB Invalid characters
@@ -237,13 +238,15 @@ VR180_SUFFIX = "_180x180_LR"
 SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
-def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False):
+def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False, anaglyph=None):
     basename = path.splitext(path.basename(input_filename))[0]
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
     if vr180:
         auto_detect_suffix = VR180_SUFFIX
     elif half_sbs:
         auto_detect_suffix = HALF_SBS_SUFFIX
+    elif anaglyph is not None:
+        auto_detect_suffix = ANAGLYPH_SUFFIX
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
 
@@ -333,6 +336,75 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
     return left_eye, right_eye
 
 
+def apply_anaglyph_redcyan(left_eye, right_eye, anaglyph_type):
+    def grayscale_bt601(x, num_output_channels=1):
+        y = x[0:1] * 0.299 + x[1:2] * 0.587 + x[2:3] * 0.114
+        return torch.cat([y for _ in range(num_output_channels)], dim=0)
+
+    if anaglyph_type == "color":
+        anaglyph = torch.cat((left_eye[0:1, :, :], right_eye[1:3, :, :]), dim=0)
+    elif anaglyph_type == "gray":
+        ly = grayscale_bt601(left_eye, num_output_channels=3)
+        ry = grayscale_bt601(right_eye, num_output_channels=3)
+        anaglyph = torch.cat((ly[0:1, :, :], ry[1:3, :, :]), dim=0)
+    elif anaglyph_type == "half-color":
+        anaglyph = torch.cat((grayscale_bt601(left_eye, num_output_channels=1),
+                              right_eye[1:3, :, :]), dim=0)
+    elif anaglyph_type == "wimmer":
+        # Wimmer's Optimized Anaglyph
+        # https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx
+        anaglyph = torch.cat((left_eye[1:2, :, :] * 0.7 + left_eye[2:3, :, :] * 0.3,
+                              right_eye[1:3, :, :]), dim=0)
+    elif anaglyph_type == "wimmer2":
+        # Wimmer's improved method
+        # described in "Methods for computing color anaglyphs"
+        g_l = left_eye[1:2] + 0.45 * torch.clamp(left_eye[0:1] - left_eye[1:2], min=0)
+        b_l = left_eye[2:3] + 0.25 * torch.clamp(left_eye[0:1] - left_eye[2:3], min=0)
+        g_r = right_eye[1:2] + 0.45 * torch.clamp(right_eye[0:1] - right_eye[1:2], min=0)
+        b_r = right_eye[2:3] + 0.25 * torch.clamp(right_eye[0:1] - right_eye[2:3], min=0)
+        l = (0.75 * g_l + 0.25 * b_l) ** (1.0 / 1.6)
+        anaglyph = torch.cat((l, g_r, b_r), dim=0)
+    elif anaglyph_type == "dubois":
+        # Dubois method
+        # reference: https://www.site.uottawa.ca/~edubois/anaglyph/LeastSquaresHowToPhotoshop.pdf
+        def to_linear(x):
+            cond1 = x <= 0.04045
+            cond2 = torch.logical_not(cond1)
+            x[cond1] = x[cond1] / 12.92
+            x[cond2] = ((x[cond2] + 0.055) / 1.055) ** 2.4
+            return x
+
+        def to_nonlinear(x):
+            cond1 = x <= 0.0031308
+            cond2 = torch.logical_not(cond1)
+            x[cond1] = x[cond1] * 12.92
+            x[cond2] = 1.055 * x[cond2] ** (1.0 / 2.4) - 0.055
+            return x
+
+        def dot_clamp(x, vec):
+            return (x * vec).sum(dim=0, keepdim=True).clamp(0, 1)
+
+        left_eye = to_linear(left_eye.detach().clone())
+        right_eye = to_linear(right_eye.detach().clone())
+        l_mat = torch.tensor([[0.437, 0.449, 0.164],
+                              [-0.062, -0.062, -0.024],
+                              [-0.048, -0.050, -0.017]],
+                             device=left_eye.device, dtype=torch.float32).reshape(3, 3, 1, 1)
+        r_mat = torch.tensor([[-0.011, -0.032, -0.007],
+                              [0.377, 0.761, 0.009],
+                              [-0.026, -0.093, 1.234]],
+                             device=right_eye.device, dtype=torch.float32).reshape(3, 3, 1, 1)
+        anaglyph = torch.cat([
+            dot_clamp(left_eye, l_mat[0]) + dot_clamp(right_eye, r_mat[0]),
+            dot_clamp(left_eye, l_mat[1]) + dot_clamp(right_eye, r_mat[1]),
+            dot_clamp(left_eye, l_mat[2]) + dot_clamp(right_eye, r_mat[2]),
+        ], dim=0)
+        anaglyph = to_nonlinear(anaglyph)
+
+    anaglyph = torch.clamp(anaglyph, 0, 1)
+    return anaglyph
+
+
 def postprocess_image(left_eye, right_eye, args):
     # CHW
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
@@ -356,8 +428,11 @@ def postprocess_image(left_eye, right_eye, args):
         right_eye = TF.resize(right_eye, (right_eye.shape[1], right_eye.shape[2] // 2),
                               interpolation=InterpolationMode.BICUBIC, antialias=True)
 
-    sbs = torch.cat([left_eye, right_eye], dim=2)
-    sbs = torch.clamp(sbs, 0., 1.)
+    if args.anaglyph is None:
+        sbs = torch.cat([left_eye, right_eye], dim=2)
+        sbs = torch.clamp(sbs, 0., 1.)
+    else:
+        sbs = apply_anaglyph_redcyan(left_eye, right_eye, args.anaglyph)
 
     h, w = sbs.shape[1:]
     new_w, new_h = w, h
@@ -429,7 +504,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             filename = meta["filename"]
             output_filename = path.join(
                 output_dir,
-                make_output_filename(filename, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
+                make_output_filename(filename, video=False,
+                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
             if im is None or (args.resume and path.exists(output_filename)):
                 continue
             output = process_image(im, args, depth_model, side_model)
@@ -456,7 +532,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         output_filename = path.join(
             output_path,
             make_output_filename(path.basename(input_filename), video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs))
+                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
     else:
         output_filename = output_path
 
@@ -486,6 +562,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             options["tune"] = ",".join(tune)
         return VU.VideoOutputConfig(
             fps=fps,
+            pix_fmt=args.pix_fmt,
             options=options,
             container_options={"movflags": "+faststart"}
         )
@@ -567,9 +644,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
-        output_filename = path.join(output_path,
-                                    make_output_filename(path.basename(input_filename),
-                                                         video=True, vr180=args.vr180, half_sbs=args.half_sbs))
+        output_filename = path.join(
+            output_path,
+            make_output_filename(path.basename(input_filename), video=True,
+                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
     else:
         output_filename = output_path
 
@@ -629,10 +707,10 @@ def create_parser(required_true=True):
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
                         help="left-right divergence method")
-    parser.add_argument("--divergence", "-d", type=float, default=2.0, choices=[Range(0.0, 6.0)],
-                        help=("strength of 3D effect"))
-    parser.add_argument("--convergence", "-c", type=float, default=0.5, choices=[Range(0.0, 1.0)],
-                        help=("(normalized) distance of convergence plane(screen position)"))
+    parser.add_argument("--divergence", "-d", type=float, default=2.0,
+                        help=("strength of 3D effect. 0-2 is reasonable value"))
+    parser.add_argument("--convergence", "-c", type=float, default=0.5,
+                        help=("(normalized) distance of convergence plane(screen position). 0-1 is reasonable value"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
     parser.add_argument("--recursive", "-r", action="store_true",
@@ -695,6 +773,11 @@ def create_parser(required_true=True):
                         help="output in VR180 format")
     parser.add_argument("--half-sbs", action="store_true",
                         help="output in Half SBS")
+    parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="dubois",
+                        choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois"],
+                        help="output in anaglyph 3d")
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
+                        help="pixel format (video only)")
     parser.add_argument("--tta", action="store_true",
                         help="Use flip augmentation on depth model")
     parser.add_argument("--disable-amp", action="store_true",
@@ -715,8 +798,8 @@ def create_parser(required_true=True):
                         help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
                         help="use min/max moving average to normalize video depth")
-    parser.add_argument("--edge-dilation", type=int, default=2,
-                        help="loop count of edge dilation. only used for DepthAnything model")
+    parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
+                        help="loop count of edge dilation.")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
                         help="max inference worker threads for video processing. 0 is disabled")
 
@@ -793,6 +876,12 @@ def iw3_main(args):
         elif args.state["depth_utils"].get_name() == "ZoeDepth":
             args.mapper = ["div_6", "div_4", "div_2", "div_1"][args.foreground_scale]
 
+    if args.edge_dilation is None:
+        if args.state["depth_utils"].get_name() == "DepthAnything":
+            args.edge_dilation = 2
+        else:
+            args.edge_dilation = 0
+
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]
     else:
@@ -850,7 +939,8 @@ def iw3_main(args):
             os.makedirs(args.output, exist_ok=True)
             output_filename = path.join(
                 args.output,
-                make_output_filename(args.input, video=False, vr180=args.vr180, half_sbs=args.half_sbs))
+                make_output_filename(args.input, video=False,
+                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")

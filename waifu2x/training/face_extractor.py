@@ -10,7 +10,7 @@ def main():
     parser.add_argument("--input-dir", "-i", type=str, required=True, help="input dir")
     parser.add_argument("--output-dir", "-o", type=str, required=True, help="output dir")
     parser.add_argument("--cascade-file", type=str, help="optional cascade classifier (human face detector by default)")
-    parser.add_argument("--min-size", type=int, default=320, help="minimum image size")
+    parser.add_argument("--min-size", type=int, default=512, help="minimum image size")
     parser.add_argument("--max-size", type=int, default=640, help="maximum image size. If the face image is larger than max-size, resize it to max-size.")
     parser.add_argument("--margin", type=float, nargs="+", default=[0.25, 0.5, 0.8], help="face margins")
     parser.add_argument("--prefix", type=str, help="filename prefix")

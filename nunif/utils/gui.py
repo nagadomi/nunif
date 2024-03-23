@@ -1,10 +1,10 @@
 import wx
+import wx.lib.agw.persist as wxpm
 from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
-import os
+import wx.lib.agw.persist.persistencemanager
 from os import path
 import sys
 import subprocess
-
 
 myEVT_TQDM = wx.NewEventType()
 EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
@@ -52,6 +52,80 @@ class TimeCtrl(_TimeCtrl):
         if sys.platform != "win32":
             self.Unbind(wx.EVT_CHAR)
             self.Bind(wx.EVT_CHAR_HOOK, self._OnChar)
+
+
+# Monkypatch for user defined Persistent Handler
+
+OLD_FIND_HANDLER = wx.lib.agw.persist.persistencemanager.FindHandler
+USER_HANDLERS = []
+
+
+def FindHandler(pObject):
+    window = pObject.GetWindow()
+    klass = window.__class__
+
+    for handler, subclasses in USER_HANDLERS:
+        for subclass in subclasses:
+            if issubclass(klass, subclass):
+                return handler(pObject)
+
+    return OLD_FIND_HANDLER(pObject)
+
+
+def register_persistent_handler(handler, subclasses):
+    if not isinstance(subclasses, (list, tuple)):
+        subclasses = [subclasses]
+    USER_HANDLERS.insert(0, (handler, subclasses))
+
+
+def apply_patch_persistancemanger():
+    """
+    Workaround.
+    May stop working in the future
+    """
+    wx.lib.agw.persist.persistencemanager.FindHandler = FindHandler
+
+
+class EditableComboBox(wx.ComboBox):
+    """
+    Serializable Editable ComboBox
+    wx.ComboBox can not serialize Value
+    """
+    def __init__(self, parent, **kwargs):
+        if "style" in kwargs:
+            style = kwargs.get("style", 0) | wx.CB_DROPDOWN
+            kwargs.pop("style")
+        else:
+            style = wx.CB_DROPDOWN
+        super().__init__(parent, style=style, **kwargs)
+
+
+class EditableComboBoxPersistentHandler(wxpm.AbstractHandler):
+    def __init__(self, pObject):
+        super().__init__(pObject)
+
+    def Save(self):
+        combo, obj = self._window, self._pObject
+        value = combo.GetValue()
+        obj.SaveCtrlValue("Value", value)
+        return True
+
+    def Restore(self):
+        combo, obj = self._window, self._pObject
+        value = obj.RestoreCtrlValue("Value")
+        if value is not None:
+            if value in combo.GetStrings():
+                combo.SetStringSelection(value)
+            else:
+                combo.SetValue(value)
+            return True
+        return False
+
+    def GetKind(self):
+        return "nunif.EditableComboBox"
+
+
+register_persistent_handler(EditableComboBoxPersistentHandler, EditableComboBox)
 
 
 def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):

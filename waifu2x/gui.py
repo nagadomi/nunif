@@ -182,7 +182,7 @@ class MainFrame(wx.Frame):
         self.cbo_fps.SetSelection(3)
 
         self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
-        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=["yuv420p", "yuv444p"],
+        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=["yuv420p", "yuv444p", "rgb24"],
                                        style=wx.CB_READONLY, name="cbo_pix_fmt")
         self.cbo_pix_fmt.SetSelection(0)
 
@@ -618,6 +618,7 @@ class MainFrame(wx.Frame):
             method=method,
             yes=True,  # TODO: remove this
             max_fps=float(self.cbo_fps.GetValue()),
+            pix_fmt=self.cbo_pix_fmt.GetValue(),
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
