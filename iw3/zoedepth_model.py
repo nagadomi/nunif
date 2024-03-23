@@ -7,6 +7,7 @@ from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast
 from nunif.models.data_parallel import DataParallelInference
+from .dilation import dilate_edge
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -93,6 +94,7 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
 
     device = create_device(gpu)
     model = model.to(device).eval()
+    model._model_type = model_type
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1 and model_type not in {"ZoeD_Any_N", "ZoeD_Any_K"}:
         model = DataParallelInference(model, device_ids=gpu)
 
@@ -189,7 +191,8 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=False, resize_depth=True, **kwargs):
+                output_device="cpu", device=None, normalize_int16=False,
+                edge_dilation=0, resize_depth=True, **kwargs):
 
     device = device if device is not None else model.device
     batch = False
@@ -223,6 +226,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out = torch.cat([out, out2], dim=0)
 
     out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
+    if edge_dilation > 0:
+        out = dilate_edge(out, edge_dilation)
     if resize_depth and out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bilinear", align_corners=False)

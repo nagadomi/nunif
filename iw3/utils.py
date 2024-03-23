@@ -798,8 +798,8 @@ def create_parser(required_true=True):
                         help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
                         help="use min/max moving average to normalize video depth")
-    parser.add_argument("--edge-dilation", type=int, default=2,
-                        help="loop count of edge dilation. only used for DepthAnything model")
+    parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
+                        help="loop count of edge dilation.")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
                         help="max inference worker threads for video processing. 0 is disabled")
 
@@ -875,6 +875,12 @@ def iw3_main(args):
             args.mapper = ["none", "mul_1", "mul_2", "mul_3"][args.foreground_scale]
         elif args.state["depth_utils"].get_name() == "ZoeDepth":
             args.mapper = ["div_6", "div_4", "div_2", "div_1"][args.foreground_scale]
+
+    if args.edge_dilation is None:
+        if args.state["depth_utils"].get_name() == "DepthAnything":
+            args.edge_dilation = 2
+        else:
+            args.edge_dilation = 0
 
     if args.state["depth_model"] is not None:
         depth_model = args.state["depth_model"]
