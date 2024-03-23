@@ -73,6 +73,8 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
     if model_type not in DEPTH_ANYTHING_MODELS:
         model.prep_mod = 32
         if height is not None:
+            if height % model.prep_mod != 0:
+                height += (model.prep_mod - height % model.prep_mod)
             model.prep_h_height = height
             model.prep_v_height = height
         else:
@@ -81,7 +83,8 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
     else:
         model.prep_mod = 14
         if height is not None:
-            height += (14 - height % 14)
+            if height % model.prep_mod != 0:
+                height += (model.prep_mod - height % model.prep_mod)
             model.prep_h_height = height
             model.prep_v_height = height
         else:

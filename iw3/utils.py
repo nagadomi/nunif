@@ -707,10 +707,10 @@ def create_parser(required_true=True):
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "row_flow"],
                         help="left-right divergence method")
-    parser.add_argument("--divergence", "-d", type=float, default=2.0, choices=[Range(0.0, 6.0)],
-                        help=("strength of 3D effect"))
-    parser.add_argument("--convergence", "-c", type=float, default=0.5, choices=[Range(0.0, 1.0)],
-                        help=("(normalized) distance of convergence plane(screen position)"))
+    parser.add_argument("--divergence", "-d", type=float, default=2.0,
+                        help=("strength of 3D effect. 0-2 is reasonable value"))
+    parser.add_argument("--convergence", "-c", type=float, default=0.5,
+                        help=("(normalized) distance of convergence plane(screen position). 0-1 is reasonable value"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
     parser.add_argument("--recursive", "-r", action="store_true",
