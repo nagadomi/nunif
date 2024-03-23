@@ -189,7 +189,8 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=False, resize_depth=False, **kwargs):
+                output_device="cpu", device=None, normalize_int16=False, resize_depth=True, **kwargs):
+
     device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
@@ -203,6 +204,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
+    org_size = x.shape[-2:]
     x, pad_h, pad_w = batch_preprocess(
         x,
         h_height=model.prep_h_height, v_height=model.prep_v_height,
@@ -221,9 +223,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out = torch.cat([out, out2], dim=0)
 
     out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
-
-    if out.shape[-2:] != x.shape[-2:]:
-        out = F.interpolate(out, size=(x.shape[2], x.shape[3]),
+    if resize_depth and out.shape[-2:] != org_size:
+        out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bilinear", align_corners=False)
 
     if flip_aug:
@@ -240,7 +241,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         assert z.shape[0] == 1
         z = z.squeeze(0)
 
-    z = z.to(output_device)
     if int16:
         if normalize_int16:
             max_v, min_v = z.max(), z.min()
@@ -250,5 +250,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             else:
                 z = torch.zeros_like(z)
         z = z.to(torch.int16)
+
+    z = z.to(output_device)
 
     return z
