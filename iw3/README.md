@@ -164,6 +164,8 @@ For video, I recommend `--pix-fmt yuv444p` or `--pix-fmt rgb24` option. `yuv420p
 
 JPEG have the same problem so I recommend using PNG (by default) instead.
 
+Also, `--convergence 0.5 --divergence 2.0` is recommended.
+
 ## Trouble shooting
 
 ### Very flat foreground
@@ -243,8 +245,7 @@ If the results are acceptable, process the full video.
 
 ## Limitation
 
-`--method row_flow`(by default) is currently only supports (`0 <= divergence <= 2.5` and `input width <= 1920`).
-
+`--method row_flow`(by default) is currently only trained for the range `0.0 <= divergence <= 2.5` and `0.0 <= convergence <= 1.0`.
 
 ## About row_flow model and its training
 
