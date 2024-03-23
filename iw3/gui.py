@@ -241,8 +241,9 @@ class MainFrame(wx.Frame):
         self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
 
         self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
-        self.cbo_fps = wx.ComboBox(self.grp_video, choices=["0.25", "1", "15", "30", "60", "1000"],
-                                   style=wx.CB_READONLY, name="cbo_fps")
+        self.cbo_fps = EditableComboBox(
+            self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
+            name="cbo_fps")
         self.cbo_fps.SetSelection(3)
 
         self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
@@ -675,6 +676,9 @@ class MainFrame(wx.Frame):
             return
         if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
+            return
+        if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
+            self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
             return
 
         zoed_height = self.cbo_zoed_resolution.GetValue()
