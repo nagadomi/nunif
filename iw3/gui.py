@@ -254,8 +254,8 @@ class MainFrame(wx.Frame):
         self.cbo_pix_fmt.SetSelection(0)
 
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
-        self.cbo_crf = wx.ComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
-                                   style=wx.CB_READONLY, name="cbo_crf")
+        self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
+                                        name="cbo_crf")
         self.cbo_crf.SetSelection(4)
 
         self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
@@ -695,6 +695,9 @@ class MainFrame(wx.Frame):
             return
         if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
             self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
+            return
+        if not validate_number(self.cbo_crf.GetValue(), 0, 30, is_int=True):
+            self.show_validation_error_message(T("CRF"), 0, 30)
             return
 
         zoed_height = self.cbo_zoed_resolution.GetValue()
