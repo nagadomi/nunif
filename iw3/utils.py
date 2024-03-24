@@ -245,7 +245,7 @@ def make_output_filename(input_filename, video=False, vr180=False, half_sbs=Fals
         auto_detect_suffix = VR180_SUFFIX
     elif half_sbs:
         auto_detect_suffix = HALF_SBS_SUFFIX
-    elif anaglyph is not None:
+    elif anaglyph:
         auto_detect_suffix = ANAGLYPH_SUFFIX
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
