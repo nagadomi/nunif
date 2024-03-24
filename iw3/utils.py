@@ -229,7 +229,7 @@ def has_rembg_model(model_type):
 FULL_SBS_SUFFIX = "_LRF_Full_SBS"
 HALF_SBS_SUFFIX = "_LR"
 VR180_SUFFIX = "_180x180_LR"
-ANAGLYPH_SUFFIX = "_redcyan"  # temporary
+ANAGLYPH_SUFFIX = "_redcyan"
 
 
 # SMB Invalid characters
@@ -246,7 +246,7 @@ def make_output_filename(input_filename, video=False, vr180=False, half_sbs=Fals
     elif half_sbs:
         auto_detect_suffix = HALF_SBS_SUFFIX
     elif anaglyph:
-        auto_detect_suffix = ANAGLYPH_SUFFIX
+        auto_detect_suffix = ANAGLYPH_SUFFIX + f"_{anaglyph}"
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
 
@@ -364,7 +364,7 @@ def apply_anaglyph_redcyan(left_eye, right_eye, anaglyph_type):
         b_r = right_eye[2:3] + 0.25 * torch.clamp(right_eye[0:1] - right_eye[2:3], min=0)
         l = (0.75 * g_l + 0.25 * b_l) ** (1.0 / 1.6)
         anaglyph = torch.cat((l, g_r, b_r), dim=0)
-    elif anaglyph_type == "dubois":
+    elif anaglyph_type in {"dubois", "dubois2"}:
         # Dubois method
         # reference: https://www.site.uottawa.ca/~edubois/anaglyph/LeastSquaresHowToPhotoshop.pdf
         def to_linear(x):
@@ -381,9 +381,12 @@ def apply_anaglyph_redcyan(left_eye, right_eye, anaglyph_type):
             x[cond2] = 1.055 * x[cond2] ** (1.0 / 2.4) - 0.055
             return x
 
-        def dot_clamp(x, vec):
-            return (x * vec).sum(dim=0, keepdim=True).clamp(0, 1)
-
+        def dot_clip(x, vec, clip):
+            x = (x * vec).sum(dim=0, keepdim=True)
+            if clip:
+                x = x.clamp(0, 1)
+            return x
+        clip_before = True if anaglyph_type == "dubois" else False
         left_eye = to_linear(left_eye.detach().clone())
         right_eye = to_linear(right_eye.detach().clone())
         l_mat = torch.tensor([[0.437, 0.449, 0.164],
@@ -395,10 +398,11 @@ def apply_anaglyph_redcyan(left_eye, right_eye, anaglyph_type):
                               [-0.026, -0.093, 1.234]],
                              device=right_eye.device, dtype=torch.float32).reshape(3, 3, 1, 1)
         anaglyph = torch.cat([
-            dot_clamp(left_eye, l_mat[0]) + dot_clamp(right_eye, r_mat[0]),
-            dot_clamp(left_eye, l_mat[1]) + dot_clamp(right_eye, r_mat[1]),
-            dot_clamp(left_eye, l_mat[2]) + dot_clamp(right_eye, r_mat[2]),
+            dot_clip(left_eye, l_mat[0], clip_before) + dot_clip(right_eye, r_mat[0], clip_before),
+            dot_clip(left_eye, l_mat[1], clip_before) + dot_clip(right_eye, r_mat[1], clip_before),
+            dot_clip(left_eye, l_mat[2], clip_before) + dot_clip(right_eye, r_mat[2], clip_before),
         ], dim=0)
+        anaglyph = torch.clamp(anaglyph, 0, 1)
         anaglyph = to_nonlinear(anaglyph)
 
     anaglyph = torch.clamp(anaglyph, 0, 1)
@@ -774,7 +778,7 @@ def create_parser(required_true=True):
     parser.add_argument("--half-sbs", action="store_true",
                         help="output in Half SBS")
     parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="dubois",
-                        choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois"],
+                        choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois", "dubois2"],
                         help="output in anaglyph 3d")
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
                         help="pixel format (video only)")
