@@ -155,6 +155,7 @@ Currently, the following methods are supported.
 | wimmer    | Wimmer's Optimized Anaglyphs.
 | wimmer2   | Wimmer's Improved Method.
 | dubois    | Dubois Method.
+| dubois2   | Dubois Method. This version ignores the specification `The first and second terms should be clipped to [0,1] before adding`.
 
 Reference:
 - [Anaglyph Methods Comparison](https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx)

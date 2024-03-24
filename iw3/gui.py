@@ -202,6 +202,7 @@ class MainFrame(wx.Frame):
             self.grp_stereo,
             choices=["Full SBS", "Half SBS", "VR90",
                      "Anaglyph dubois",
+                     "Anaglyph dubois2",
                      "Anaglyph color", "Anaglyph gray",
                      "Anaglyph half-color",
                      "Anaglyph wimmer", "Anaglyph wimmer2"],
@@ -504,6 +505,13 @@ class MainFrame(wx.Frame):
             self.update_model_selection()
         self.update_edge_dilation()
 
+    def get_anaglyph_method(self):
+        if "Anaglyph" in self.cbo_stereo_format.GetValue():
+            anaglyph = self.cbo_stereo_format.GetValue().split(" ")[-1]
+        else:
+            anaglyph = None
+        return anaglyph
+
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
         event.Skip()
@@ -590,7 +598,8 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
-        anaglyph = "Anaglyph" in self.cbo_stereo_format.GetValue()
+        anaglyph = self.get_anaglyph_method()
+
         video = is_video(input_path)
 
         if is_output_dir(output_path):
@@ -653,7 +662,7 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
-        anaglyph = "Anaglyph" in self.cbo_stereo_format.GetValue()
+        anaglyph = self.get_anaglyph_method()
         video = is_video(input_path)
 
         if is_output_dir(output_path):
@@ -722,10 +731,7 @@ class MainFrame(wx.Frame):
 
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
-        if "Anaglyph" in self.cbo_stereo_format.GetValue():
-            anaglyph = self.cbo_stereo_format.GetValue().split(" ")[-1]
-        else:
-            anaglyph = None
+        anaglyph = self.get_anaglyph_method()
 
         tune = set()
         if self.chk_tune_zerolatency.GetValue():

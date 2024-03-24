@@ -255,7 +255,10 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             # 8(max jpeg shift size) * 2(max jpeg shift count) * scale_factor
             y_min_size = tile_size * scale_factor + (8 * 2 * scale_factor)
             self.gt_transforms = T.Compose([
-                T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
+                T.RandomChoice([
+                    T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
+                    T.RandomPerspective(distortion_scale=0.25, p=da_scale_p),
+                ], p=[0.5, 0.5]),
                 T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)],
                               p=da_color_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
@@ -265,7 +268,10 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
             ])
             self.gt_gen_transforms = T.Compose([
-                T.RandomApply([TS.RandomDownscale(min_size=y_min_size, min_scale=0.75)], p=da_scale_p),
+                T.RandomChoice([
+                    T.RandomApply([TS.RandomDownscale(min_size=y_min_size, min_scale=0.75)], p=da_scale_p),
+                    T.RandomPerspective(distortion_scale=0.25, p=da_scale_p),
+                ], p=[0.5, 0.5]),
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomInvert(p=0.5),
             ])
