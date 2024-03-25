@@ -8,6 +8,7 @@ import mimetypes
 import re
 import torch
 from concurrent.futures import ThreadPoolExecutor
+from fractions import Fraction
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -107,6 +108,16 @@ def _print_len(stream):
     print("base_rate", float(stream.base_rate))
     print("average_rate", float(stream.average_rate))
     print("guessed_rate", float(stream.guessed_rate))
+
+
+def convert_known_fps(fps):
+    if fps == 29.97:
+        return Fraction(30000, 1001)
+    elif fps == 23.976:
+        return Fraction(24000, 1001)
+    elif fps == 59.94:
+        return Fraction(60000, 1001)
+    return fps
 
 
 class FixedFPSFilter():
@@ -277,6 +288,7 @@ def process_video(input_path, output_path,
         audio_input_stream = input_container.streams.audio[0]
 
     config = config_callback(video_input_stream)
+    config.fps = convert_known_fps(config.fps)
     if config.pix_fmt == "rgb24":
         codec = "libx264rgb"
         colorspace = None
