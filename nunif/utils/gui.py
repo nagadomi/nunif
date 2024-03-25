@@ -1,10 +1,10 @@
 import wx
-import wx.lib.agw.persist as wxpm
 from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
-import wx.lib.agw.persist.persistencemanager
+import wx.lib.agw.persist as persist
 from os import path
 import sys
 import subprocess
+
 
 myEVT_TQDM = wx.NewEventType()
 EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
@@ -54,38 +54,6 @@ class TimeCtrl(_TimeCtrl):
             self.Bind(wx.EVT_CHAR_HOOK, self._OnChar)
 
 
-# Monkypatch for user defined Persistent Handler
-
-OLD_FIND_HANDLER = wx.lib.agw.persist.persistencemanager.FindHandler
-USER_HANDLERS = []
-
-
-def FindHandler(pObject):
-    window = pObject.GetWindow()
-    klass = window.__class__
-
-    for handler, subclasses in USER_HANDLERS:
-        for subclass in subclasses:
-            if issubclass(klass, subclass):
-                return handler(pObject)
-
-    return OLD_FIND_HANDLER(pObject)
-
-
-def register_persistent_handler(handler, subclasses):
-    if not isinstance(subclasses, (list, tuple)):
-        subclasses = [subclasses]
-    USER_HANDLERS.insert(0, (handler, subclasses))
-
-
-def apply_patch_persistancemanger():
-    """
-    Workaround.
-    May stop working in the future
-    """
-    wx.lib.agw.persist.persistencemanager.FindHandler = FindHandler
-
-
 class EditableComboBox(wx.ComboBox):
     """
     Serializable Editable ComboBox
@@ -100,10 +68,7 @@ class EditableComboBox(wx.ComboBox):
         super().__init__(parent, style=style, **kwargs)
 
 
-class EditableComboBoxPersistentHandler(wxpm.AbstractHandler):
-    def __init__(self, pObject):
-        super().__init__(pObject)
-
+class EditableComboBoxPersistentHandler(persist.AbstractHandler):
     def Save(self):
         combo, obj = self._window, self._pObject
         value = combo.GetValue()
@@ -125,7 +90,25 @@ class EditableComboBoxPersistentHandler(wxpm.AbstractHandler):
         return "nunif.EditableComboBox"
 
 
-register_persistent_handler(EditableComboBoxPersistentHandler, EditableComboBox)
+def persistent_manager_register_all(manager, window):
+    # register all child controls without Restore() call
+    if window.GetName() not in persist.BAD_DEFAULT_NAMES and persist.HasCtrlHandler(window):
+        manager.Register(window)
+
+    for child in window.GetChildren():
+        persistent_manager_register_all(manager, child)
+
+
+def persistent_manager_restore_all(manager):
+    # restore all registered controls
+    for name, obj in list(manager._persistentObjects.items()):  # NOTE: private attribute
+        manager.Restore(obj.GetWindow())
+
+
+def persistent_manager_register(manager, window, handler):
+    # override
+    manager.Unregister(window)
+    manager.Register(window, handler)
 
 
 def validate_number(s, min_value, max_value, is_int=False, allow_empty=False):

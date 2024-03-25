@@ -10,7 +10,7 @@ from time import time
 import threading
 import wx
 from wx.lib.delayedresult import startWorker
-import wx.lib.agw.persist as wxpm
+import wx.lib.agw.persist as persist
 from wx.lib.buttons import GenBitmapButton
 from .utils import (
     create_parser, set_state_args, iw3_main,
@@ -19,17 +19,15 @@ from .utils import (
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
-    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl, EditableComboBox,
-    apply_patch_persistancemanger,
+    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
+    EditableComboBox, EditableComboBoxPersistentHandler,
+    persistent_manager_register_all, persistent_manager_restore_all, persistent_manager_register,
     resolve_default_dir, extension_list_to_wildcard, validate_number,
     set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
 from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS
 import torch
-
-
-apply_patch_persistancemanger()
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
@@ -491,12 +489,21 @@ class MainFrame(wx.Frame):
         # state
         self.btn_cancel.Disable()
 
-        self.persistence_manager = wxpm.PersistenceManager.Get()
-        self.persistence_manager.SetManagerStyle(
-            wxpm.PM_DEFAULT_STYLE | wxpm.PM_PERSIST_CONTROL_VALUE | wxpm.PM_SAVE_RESTORE_TREE_LIST_SELECTIONS)
+        editable_comboxes = [
+            self.cbo_divergence,
+            self.cbo_convergence,
+            self.cbo_zoed_resolution,
+            self.cbo_edge_dilation,
+            self.cbo_fps,
+            self.cbo_crf,
+        ]
+        self.persistence_manager = persist.PersistenceManager.Get()
+        self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
         self.persistence_manager.SetPersistenceFile(CONFIG_PATH)
-        self.persistence_manager.RegisterAndRestoreAll(self)
-        self.persistence_manager.Save(self)
+        persistent_manager_register_all(self.persistence_manager, self)
+        for control in editable_comboxes:
+            persistent_manager_register(self.persistence_manager, control, EditableComboBoxPersistentHandler)
+        persistent_manager_restore_all(self.persistence_manager)
 
         self.update_start_button_state()
         self.update_rembg_state()
