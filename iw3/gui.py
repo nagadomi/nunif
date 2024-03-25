@@ -10,7 +10,7 @@ from time import time
 import threading
 import wx
 from wx.lib.delayedresult import startWorker
-import wx.lib.agw.persist as wxpm
+import wx.lib.agw.persist as persist
 from wx.lib.buttons import GenBitmapButton
 from .utils import (
     create_parser, set_state_args, iw3_main,
@@ -497,9 +497,8 @@ class MainFrame(wx.Frame):
             self.cbo_fps,
             self.cbo_crf,
         ]
-        self.persistence_manager = wxpm.PersistenceManager.Get()
-        self.persistence_manager.SetManagerStyle(
-            wxpm.PM_DEFAULT_STYLE | wxpm.PM_PERSIST_CONTROL_VALUE | wxpm.PM_SAVE_RESTORE_TREE_LIST_SELECTIONS)
+        self.persistence_manager = persist.PersistenceManager.Get()
+        self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
         self.persistence_manager.SetPersistenceFile(CONFIG_PATH)
         persistent_manager_register_all(self.persistence_manager, self)
         for control in editable_comboxes:

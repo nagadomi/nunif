@@ -91,7 +91,7 @@ class EditableComboBoxPersistentHandler(persist.AbstractHandler):
 
 
 def persistent_manager_register_all(manager, window):
-    # register all child controls
+    # register all child controls without Restore() call
     if window.GetName() not in persist.BAD_DEFAULT_NAMES and persist.HasCtrlHandler(window):
         manager.Register(window)
 
@@ -101,7 +101,7 @@ def persistent_manager_register_all(manager, window):
 
 def persistent_manager_restore_all(manager):
     # restore all registered controls
-    for name, obj in list(manager._persistentObjects.items()):  # NOTE: private member is needed
+    for name, obj in list(manager._persistentObjects.items()):  # NOTE: private attribute
         manager.Restore(obj.GetWindow())
 
 
