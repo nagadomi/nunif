@@ -442,6 +442,67 @@ def hook_frame(input_path, frame_callback, stop_event=None, use_tqdm=False):
     input_container.close()
 
 
+def export_audio(input_path, output_path, start_time=None, end_time=None):
+    if isinstance(start_time, str):
+        start_time = parse_time(start_time)
+    if isinstance(end_time, str):
+        end_time = parse_time(end_time)
+        if start_time is not None and not (start_time < end_time):
+            raise ValueError("end_time must be greater than start_time")
+
+    input_container = av.open(input_path)
+    if len(input_container.streams.audio) == 0:
+        input_container.close()
+        return False
+
+    if start_time is not None:
+        input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
+
+    audio_input_stream = input_container.streams.audio[0]
+    output_container = av.open(output_path, "w")  # expect .m4a
+
+    if audio_input_stream.rate < 16000:
+        audio_output_stream = output_container.add_stream("aac", 16000)
+        audio_copy = False
+    elif start_time is not None:
+        audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+        audio_copy = False
+    else:
+        try:
+            audio_output_stream = output_container.add_stream(template=audio_input_stream)
+            audio_copy = True
+        except ValueError:
+            audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+            audio_copy = False
+
+    for packet in input_container.demux([audio_input_stream]):
+        if packet.pts is not None:
+            if end_time is not None and end_time < packet.pts * packet.time_base:
+                break
+        if packet.dts is not None:
+            if audio_copy:
+                packet.stream = audio_output_stream
+                output_container.mux(packet)
+            else:
+                for frame in packet.decode():
+                    frame.pts = None
+                    enc_packet = audio_output_stream.encode(frame)
+                    if enc_packet:
+                        output_container.mux(enc_packet)
+
+    try:
+        # TODO: Maybe this is needed only when audio_copy==False but not clear
+        for packet in audio_output_stream.encode(None):
+            output_container.mux(packet)
+    except ValueError:
+        pass
+
+    output_container.close()
+    input_container.close()
+
+    return True
+
+
 class _DummyFuture():
     def __init__(self, result):
         self._result = result
@@ -550,7 +611,7 @@ class FrameCallbackPool():
         self.shutdown()
 
 
-if __name__ == "__main__":
+def _test_process_video():
     from PIL import ImageOps
     import argparse
 
@@ -582,3 +643,21 @@ if __name__ == "__main__":
         return new_frame
 
     process_video(args.input, args.output, config_callback=make_config, frame_callback=process_image)
+
+
+def _test_export_audio():
+    import argparse
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
+    parser.add_argument("--output", "-o", type=str, required=True, help="output audio file")
+    parser.add_argument("--start-time", type=str, help="start time")
+    parser.add_argument("--end-time", type=str, help="end time")
+    args = parser.parse_args()
+
+    print(export_audio(args.input, args.output, start_time=args.start_time, end_time=args.end_time))
+
+
+if __name__ == "__main__":
+    _test_process_video()
+    # _test_export_audio()
