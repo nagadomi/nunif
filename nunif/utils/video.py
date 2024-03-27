@@ -442,7 +442,9 @@ def hook_frame(input_path, frame_callback, stop_event=None, use_tqdm=False):
     input_container.close()
 
 
-def export_audio(input_path, output_path, start_time=None, end_time=None):
+def export_audio(input_path, output_path, start_time=None, end_time=None,
+                 title=None, stop_event=None, tqdm_fn=None):
+
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
     if isinstance(end_time, str):
@@ -461,6 +463,11 @@ def export_audio(input_path, output_path, start_time=None, end_time=None):
     audio_input_stream = input_container.streams.audio[0]
     output_container = av.open(output_path, "w")  # expect .m4a
 
+    if input_container.duration:
+        container_duration = float(input_container.duration * av.time_base)
+    else:
+        container_duration = None
+
     if audio_input_stream.rate < 16000:
         audio_output_stream = output_container.add_stream("aac", 16000)
         audio_copy = False
@@ -475,10 +482,20 @@ def export_audio(input_path, output_path, start_time=None, end_time=None):
             audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
             audio_copy = False
 
+    tqdm_fn = tqdm_fn or tqdm
+    desc = title if title else input_path
+    ncols = len(desc) + 60
+    total = get_duration(audio_input_stream, container_duration=container_duration)
+    pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
+    last_sec = 0
     for packet in input_container.demux([audio_input_stream]):
         if packet.pts is not None:
             if end_time is not None and end_time < packet.pts * packet.time_base:
                 break
+            current_sec = int(packet.pts * packet.time_base)
+            if current_sec - last_sec > 0:
+                pbar.update(current_sec - last_sec)
+                last_sec = current_sec
         if packet.dts is not None:
             if audio_copy:
                 packet.stream = audio_output_stream
@@ -489,6 +506,9 @@ def export_audio(input_path, output_path, start_time=None, end_time=None):
                     enc_packet = audio_output_stream.encode(frame)
                     if enc_packet:
                         output_container.mux(enc_packet)
+        if stop_event is not None and stop_event.is_set():
+            break
+    pbar.close()
 
     try:
         # TODO: Maybe this is needed only when audio_copy==False but not clear
