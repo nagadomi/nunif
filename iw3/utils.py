@@ -1,5 +1,6 @@
 import os
 from os import path
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF, InterpolationMode
@@ -8,13 +9,14 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import threading
 import math
 from tqdm import tqdm
-from PIL import ImageDraw
+from PIL import ImageDraw, Image
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
 from nunif.device import create_device, autocast
+from . import export_config
 
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_v2.pth")
@@ -33,6 +35,13 @@ def normalize_depth(depth, depth_min=None, depth_max=None):
     else:
         depth = torch.zeros_like(depth)
     return torch.clamp(depth, 0., 1.)
+
+
+def convert_normalized_depth_to_uint16_numpy(depth):
+    uint16_max = 0xffff
+    depth = uint16_max * depth
+    depth = depth.to(torch.int16).numpy().astype(np.uint16)
+    return depth
 
 
 def make_divergence_feature_value(divergence, convergence, image_width):
@@ -684,6 +693,146 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
         process_video_full(input_filename, output_path, args, depth_model, side_model)
 
 
+def export_images(files, args):
+    pass
+
+
+def export_video(args):
+    if args.export_disparity:
+        mapper = "none"
+        edge_dilation = args.edge_dilation
+        skip_edge_dilation = True
+        skip_mapper = True
+    else:
+        mapper = args.mapper
+        edge_dilation = 0
+        skip_edge_dilation = False
+        skip_mapper = False
+    config = export_config.ExportConfig(
+        type=export_config.VIDEO_TYPE,
+        mapper=mapper,
+        skip_mapper=skip_mapper,
+        skip_edge_dilation=skip_edge_dilation,
+        user_data={
+            "export_options": {
+                "depth_model": args.depth_model,
+                "export_disparity": args.export_disparity,
+                "mapper": args.mapper,
+                "edge_dilation": args.edge_dilation,
+                "max_fps": args.max_fps,
+                "ema_normalize": args.ema_normalize,
+            }
+        }
+    )
+    output_dir = path.join(args.output, path.splitext(path.basename(args.input))[0])
+    rgb_dir = path.join(output_dir, config.rgb_dir)
+    depth_dir = path.join(output_dir, config.depth_dir)
+    audio_file = path.join(output_dir, config.audio_file)
+    config_file = path.join(output_dir, export_config.FILENAME)
+
+    if not args.yes and path.exists(config_file):
+        y = input(f"File '{config_file}' already exists. Overwrite? [y/N]").lower()
+        if y not in {"y", "ye", "yes"}:
+            return
+
+    os.makedirs(rgb_dir, exist_ok=True)
+    os.makedirs(depth_dir, exist_ok=True)
+
+    has_audio = VU.export_audio(args.input, audio_file,
+                                start_time=args.start_time, end_time=args.end_time,
+                                title="Audio", stop_event=args.state["stop_event"],
+                                tqdm_fn=args.state["tqdm_fn"])
+    if not has_audio:
+        config.audio_file = None
+
+    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+        return
+
+    ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if ema_normalize:
+        args.state["ema"].clear()
+
+    def config_callback(stream):
+        fps = VU.get_fps(stream)
+        if float(fps) > args.max_fps:
+            fps = args.max_fps
+        config.fps = fps  # update fps
+        return VU.VideoOutputConfig(fps=fps)
+
+    minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+    preprocess_lock = threading.Lock()
+    depth_lock = threading.Lock()
+    depth_model = args.state["depth_model"]
+
+    @torch.inference_mode()
+    def _batch_callback(x, pts):
+        if args.max_output_height is not None or args.bg_session is not None:
+            with preprocess_lock:
+                xs = [preprocess_image(xx, args) for xx in x]
+                x = torch.stack([x for x_org, x in xs])
+                if args.bg_session is not None:
+                    x_orgs = torch.stack([x_org for x_org, x in xs])
+                else:
+                    x_orgs = x
+        else:
+            x_orgs = x
+
+        with depth_lock:
+            depths = args.state["depth_utils"].batch_infer(
+                depth_model, x,
+                int16=False,
+                flip_aug=args.tta, low_vram=args.low_vram,
+                enable_amp=not args.disable_amp,
+                output_device=args.state["device"],
+                device=args.state["device"],
+                edge_dilation=edge_dilation,
+                resize_depth=False)
+
+            for i in range(depths.shape[0]):
+                depth_min, depth_max = depths[i].min(), depths[i].max()
+                if ema_normalize:
+                    depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
+                depth = normalize_depth(depths[i], depth_min=depth_min, depth_max=depth_max)
+                if args.export_disparity:
+                    depth = get_mapper(args.mapper)(depth)
+                depths[i] = depth
+
+        depths = depths.detach().cpu()
+        x_orgs = x_orgs.detach().cpu()
+
+        for x, depth, seq in zip(x_orgs, depths, pts):
+            seq = str(seq).zfill(8)
+            depth = convert_normalized_depth_to_uint16_numpy(depth[0])
+            dpeth = Image.fromarray(depth)
+            dpeth.save(path.join(depth_dir, f"{seq}.png"))
+            rgb = TF.to_pil_image(x)
+            rgb.save(path.join(rgb_dir, f"{seq}.png"))
+
+    frame_callback = VU.FrameCallbackPool(
+        _batch_callback,
+        batch_size=minibatch_size,
+        device=args.state["device"],
+        max_workers=args.max_workers,
+        max_batch_queue=args.max_workers + 1,
+        require_pts=True,
+    )
+    VU.hook_frame(args.input,
+                  config_callback=config_callback,
+                  frame_callback=frame_callback,
+                  vf=args.vf,
+                  stop_event=args.state["stop_event"],
+                  tqdm_fn=args.state["tqdm_fn"],
+                  title=path.basename(args.input),
+                  start_time=args.start_time,
+                  end_time=args.end_time)
+    frame_callback.shutdown()
+    config.save(config_file)
+
+
+def process_export_config(args):
+    pass
+
+
 def create_parser(required_true=True):
     class Range(object):
         def __init__(self, start, end):
@@ -763,6 +912,10 @@ def create_parser(required_true=True):
                         help="video filter options for ffmpeg.")
     parser.add_argument("--debug-depth", action="store_true",
                         help="debug output normalized depthmap, info and preprocessed depth")
+    parser.add_argument("--export", action="store_true", help="export depth, frame, audio")
+    parser.add_argument("--export-disparity", action="store_true",
+                        help=("export dispary instead of depth. "
+                              "this means applying --mapper and --foreground-scale."))
     parser.add_argument("--mapper", type=str,
                         choices=["auto", "pow2", "softplus", "softplus2",
                                  "div_6", "div_4", "div_2", "div_1",
@@ -849,6 +1002,21 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
     return args
 
 
+def export_main(args):
+    if args.recursive:
+        raise NotImplementedError("`--recursive --export` is not supported")
+    if is_text(args.input):
+        raise NotImplementedError("--export with text format input is not supported")
+
+    if path.isdir(args.input):
+        image_files = ImageLoader.listdir(args.input)
+        export_images(image_files, args)
+    elif is_image(args.input):
+        export_images([args.input], args)
+    elif is_video(args.input):
+        export_video(args)
+
+
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
     assert not (args.half_sbs and args.vr180)
@@ -858,6 +1026,9 @@ def iw3_main(args):
 
     if path.normpath(args.input) == path.normpath(args.output):
         raise ValueError("input and output must be different file")
+
+    if args.export_disparity:
+        args.export = True
 
     if args.remove_bg:
         global rembg
@@ -892,6 +1063,10 @@ def iw3_main(args):
         depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
                                                            height=args.zoed_height)
         args.state["depth_model"] = depth_model
+
+    if args.export:
+        export_main(args)
+        return args
 
     if args.method == "row_flow":
         side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu[0]])[0].eval()
@@ -951,5 +1126,7 @@ def iw3_main(args):
         output = process_image(im, args, depth_model, side_model)
         make_parent_dir(output_filename)
         output.save(output_filename)
+    elif path.splitext(args.input)[-1].lower() in {".yaml", ".yml"}:
+        process_export_config(args)
 
     return args

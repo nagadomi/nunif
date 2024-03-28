@@ -421,25 +421,67 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
     input_container.close()
 
 
-def hook_frame(input_path, frame_callback, stop_event=None, use_tqdm=False):
-    input_container = av.open(input_path)
-    if len(input_container.streams.video) == 0:
-        raise ValueError("No video stream")
-    video_input_stream = input_container.streams.video[0]
-    video_input_stream.thread_type = "AUTO"
+def hook_frame(input_path,
+               frame_callback,
+               config_callback=default_config_callback,
+               title=None,
+               vf="",
+               stop_event=None, tqdm_fn=None,
+               start_time=None, end_time=None):
+    if isinstance(start_time, str):
+        start_time = parse_time(start_time)
+    if isinstance(end_time, str):
+        end_time = parse_time(end_time)
+        if start_time is not None and not (start_time < end_time):
+            raise ValueError("end_time must be greater than start_time")
 
+    input_container = av.open(input_path)
     if input_container.duration:
         container_duration = float(input_container.duration * av.time_base)
     else:
         container_duration = None
-    total = guess_frames(video_input_stream, container_duration=container_duration)
-    pbar = tqdm(total=total, ncols=80, disable=not use_tqdm)
-    for frame in input_container.decode(video_input_stream):
-        frame_callback(frame)
-        pbar.update(1)
+
+    if len(input_container.streams.video) == 0:
+        raise ValueError("No video stream")
+
+    if start_time is not None:
+        input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
+
+    video_input_stream = input_container.streams.video[0]
+    video_input_stream.thread_type = "AUTO"
+
+    config = config_callback(video_input_stream)
+    config.fps = convert_known_fps(config.fps)
+
+    fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf)
+
+    desc = (title if title else input_path)
+    ncols = len(desc) + 60
+    tqdm_fn = tqdm_fn or tqdm
+    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time,
+                         container_duration=container_duration)
+    pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
+
+    for packet in input_container.demux([video_input_stream]):
+        if packet.pts is not None:
+            if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+                break
+        for frame in packet.decode():
+            frame = fps_filter.update(frame)
+            if frame is not None:
+                frame_callback(frame)
+                pbar.update(1)
         if stop_event is not None and stop_event.is_set():
             break
+
+    frame = fps_filter.update(None)
+    if frame is not None:
+        frame_callback(frame)
+        pbar.update(1)
+
+    frame_callback(None)
     input_container.close()
+    pbar.close()
 
 
 def export_audio(input_path, output_path, start_time=None, end_time=None,
@@ -550,18 +592,22 @@ class FrameCallbackPool():
     """
     thread pool callback wrapper
     """
-    def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2):
+    def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2,
+                 require_pts=False):
         if max_workers > 0:
             self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         else:
             self.thread_pool = _DummyThreadPool()
+        self.require_pts = require_pts
         self.frame_callback = frame_callback
         self.batch_size = batch_size
         self.max_workers = max_workers
         self.max_batch_queue = max_batch_queue
         self.device = device
         self.frame_queue = []
+        self.pts_queue = []
         self.batch_queue = []
+        self.pts_batch_queue = []
         self.futures = []
 
     def __call__(self, frame):
@@ -570,32 +616,41 @@ class FrameCallbackPool():
             print("\n__call__",
                   "frame_queue", len(self.frame_queue),
                   "batch_queue", len(self.batch_queue),
+                  "pts_queue", len(self.pts_queue),
+                  "pts_batch_queue", len(self.pts_batch_queue),
                   "futures", len(self.futures))
 
         if frame is None:
             return self.finish()
 
+        self.pts_queue.append(frame.pts)
         frame = to_tensor(frame, device=self.device)
         self.frame_queue.append(frame)
         if len(self.frame_queue) == self.batch_size:
             batch = torch.stack(self.frame_queue)
             self.batch_queue.append(batch)
             self.frame_queue.clear()
+            self.pts_batch_queue.append(list(self.pts_queue))
+            self.pts_queue.clear()
 
         if self.batch_queue:
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
                 batch = self.batch_queue.pop(0)
-                future = self.thread_pool.submit(self.frame_callback, batch)
+                pts_batch = self.pts_batch_queue.pop(0)
+                if self.require_pts:
+                    future = self.thread_pool.submit(self.frame_callback, batch, pts_batch)
+                else:
+                    future = self.thread_pool.submit(self.frame_callback, batch)
                 self.futures.append(future)
             if len(self.batch_queue) >= self.max_batch_queue and self.futures:
                 future = self.futures.pop(0)
                 frames = future.result()
-                return [to_frame(frame) for frame in frames]
+                return [to_frame(frame) for frame in frames] if frames is not None else None
         if self.futures:
             if self.futures[0].done():
                 future = self.futures.pop(0)
                 frames = future.result()
-                return [to_frame(frame) for frame in frames]
+                return [to_frame(frame) for frame in frames] if frames is not None else None
 
         return None
 
@@ -604,21 +659,29 @@ class FrameCallbackPool():
             batch = torch.stack(self.frame_queue)
             self.batch_queue.append(batch)
             self.frame_queue.clear()
+            self.pts_batch_queue.append(list(self.pts_queue))
+            self.pts_queue.clear()
 
         frame_remains = []
         while len(self.batch_queue) > 0:
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
                 batch = self.batch_queue.pop(0)
-                future = self.thread_pool.submit(self.frame_callback, batch)
+                pts_batch = self.pts_batch_queue.pop(0)
+                if self.require_pts:
+                    future = self.thread_pool.submit(self.frame_callback, batch, pts_batch)
+                else:
+                    future = self.thread_pool.submit(self.frame_callback, batch)
                 self.futures.append(future)
             else:
                 future = self.futures.pop(0)
                 frames = future.result()
-                frame_remains += [to_frame(frame) for frame in frames]
+                if frames is not None:
+                    frame_remains += [to_frame(frame) for frame in frames]
         while len(self.futures) > 0:
             future = self.futures.pop(0)
             frames = future.result()
-            frame_remains += [to_frame(frame) for frame in frames]
+            if frames is not None:
+                frame_remains += [to_frame(frame) for frame in frames]
         return frame_remains
 
     def shutdown(self):
