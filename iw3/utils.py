@@ -829,8 +829,139 @@ def export_video(args):
     config.save(config_file)
 
 
-def process_export_config(args):
-    pass
+def process_export_config(args, side_model):
+    config = export_config.ExportConfig.load(args.input)
+    base_dir = path.dirname(args.input)
+
+    def resolve_path(config, name):
+        entry = getattr(config, name)
+        if entry is None:
+            return None
+        if path.isabs(entry):
+            return entry
+        else:
+            return path.join(base_dir, entry)
+
+    rgb_dir = resolve_path(config, "rgb_dir")
+    depth_dir = resolve_path(config, "depth_dir")
+    audio_file = resolve_path(config, "audio_file")
+    if rgb_dir is None or not path.exists(rgb_dir):
+        raise ValueError(f"rgb_dir={rgb_dir} not found")
+    if depth_dir is None or not path.exists(depth_dir):
+        raise ValueError(f"depth_dir={depth_dir} not found")
+    if audio_file is not None and not path.exists(audio_file):
+        audio_file = None
+    if config.skip_mapper:
+        args.mapper = "none"
+    else:
+        if config.mapper is not None:
+            args.mapper = config.mapper
+
+    if is_output_dir(args.output):
+        os.makedirs(args.output, exist_ok=True)
+        output_filename = path.join(
+            args.output,
+            make_output_filename(path.basename(base_dir), video=True,
+                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+    else:
+        output_filename = args.output
+    make_parent_dir(output_filename)
+    if args.resume and path.exists(output_filename):
+        return
+    if not args.yes and path.exists(output_filename):
+        y = input(f"File '{output_filename}' already exists. Overwrite? [y/N]").lower()
+        if y not in {"y", "ye", "yes"}:
+            return
+
+    rgb_files = ImageLoader.listdir(rgb_dir)
+    depth_files = ImageLoader.listdir(depth_dir)
+    if len(rgb_files) != len(depth_files):
+        raise ValueError(f"rgb_files={len(rgb_files)} vs depth_files={len(depth_files)} missmatch")
+
+    if len(rgb_files) == 0:
+        raise ValueError(f"{rgb_dir} is empty")
+
+    rgb_loader = ImageLoader(
+        files=rgb_files,
+        load_func=load_image_simple,
+        load_func_kwargs={"color": "rgb"})
+    depth_loader = ImageLoader(
+        files=depth_files,
+        load_func=load_image_simple,
+        load_func_kwargs={"color": "any"})
+
+    @torch.inference_mode()
+    def batch_callback(x, depths):
+        left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+        return torch.stack([
+            postprocess_image(left_eyes[i], right_eyes[i], args)
+            for i in range(left_eyes.shape[0])])
+
+    def test_output_size(rgb_file, depth_file):
+        rgb = load_image_simple(rgb_file, color="rgb")[0]
+        depth = load_image_simple(depth_file, color="any")[0]
+        rgb = TF.to_tensor(rgb)
+        depth = TF.to_tensor(depth)
+        if depth.dtype == torch.int32:
+            depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+        if depth.shape[0] != 1:
+            depth = TF.rgb_to_grayscale(depth)
+        frame = batch_callback(rgb.unsqueeze(0).to(args.state["device"]),
+                               depth.unsqueeze(0).to(args.state["device"]))
+        return frame.shape[2:]
+
+    minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+
+    def generator():
+        rgb_batch = []
+        depth_batch = []
+        for rgb, depth in zip(rgb_loader, depth_loader):
+            rgb = TF.to_tensor(rgb[0])
+            depth = TF.to_tensor(depth[0])
+            if depth.dtype == torch.int32:
+                depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+            if depth.shape[0] != 1:
+                depth = TF.rgb_to_grayscale(depth)
+
+            rgb_batch.append(rgb)
+            depth_batch.append(depth)
+            if len(rgb_batch) == minibatch_size:
+                frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
+                                        torch.stack(depth_batch).to(args.state["device"]))
+                rgb_batch.clear()
+                depth_batch.clear()
+
+                yield [VU.to_frame(frame) for frame in frames]
+
+        if rgb_batch:
+            frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
+                                    torch.stack(depth_batch).to(args.state["device"]))
+            rgb_batch.clear()
+            depth_batch.clear()
+
+            yield [VU.to_frame(frame) for frame in frames]
+
+    output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
+    encoder_options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
+    if args.tune:
+        encoder_options.update({"tune": ",".join(list(set(args.tune)))})
+    video_config = VU.VideoOutputConfig(
+        fps=config.fps,
+        pix_fmt=args.pix_fmt,
+        options=encoder_options,
+        container_options={"movflags": "+faststart"},
+        output_width=output_width, output_height=output_height
+    )
+    VU.generate_video(
+        output_filename,
+        generator,
+        config=video_config,
+        audio_file=audio_file,
+        title=path.basename(base_dir),
+        total_frames=len(rgb_files),
+        stop_event=args.state["stop_event"],
+        tqdm_fn=args.state["tqdm_fn"],
+    )
 
 
 def create_parser(required_true=True):
@@ -1127,6 +1258,6 @@ def iw3_main(args):
         make_parent_dir(output_filename)
         output.save(output_filename)
     elif path.splitext(args.input)[-1].lower() in {".yaml", ".yml"}:
-        process_export_config(args)
+        process_export_config(args, side_model)
 
     return args

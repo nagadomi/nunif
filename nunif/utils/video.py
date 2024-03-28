@@ -391,6 +391,111 @@ def process_video(input_path, output_path,
             os.replace(output_path_tmp, output_path)
 
 
+def generate_video(output_path,
+                   frame_generator,
+                   config,
+                   audio_file=None,
+                   title=None, total_frames=None,
+                   stop_event=None, tqdm_fn=None):
+
+    output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
+    output_container = av.open(output_path_tmp, 'w', options=config.container_options)
+    output_size = config.output_width, config.output_height
+    if config.pix_fmt == "rgb24":
+        codec = "libx264rgb"
+    else:
+        codec = "libx264"
+    video_output_stream = output_container.add_stream(codec, config.fps)
+    video_output_stream.thread_type = "AUTO"
+    video_output_stream.pix_fmt = config.pix_fmt
+    video_output_stream.width = output_size[0]
+    video_output_stream.height = output_size[1]
+    video_output_stream.options = config.options
+
+    if audio_file is not None:
+        input_container = av.open(audio_file)
+        if input_container.duration:
+            container_duration = float(input_container.duration * av.time_base)
+        else:
+            container_duration = None
+        if len(input_container.streams.audio) > 0:
+            # has audio stream
+            audio_input_stream = input_container.streams.audio[0]
+            if audio_input_stream.rate < 16000:
+                audio_output_stream = output_container.add_stream("aac", 16000)
+                audio_copy = False
+            else:
+                try:
+                    audio_output_stream = output_container.add_stream(template=audio_input_stream)
+                    audio_copy = True
+                except ValueError:
+                    audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+                    audio_copy = False
+
+            tqdm_fn = tqdm_fn or tqdm
+            desc = (title + " Audio" if title else "Audio")
+            ncols = len(desc) + 60
+            total = get_duration(audio_input_stream, container_duration=container_duration)
+            pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
+            last_sec = 0
+
+            for packet in input_container.demux([audio_input_stream]):
+                if packet.pts is not None:
+                    current_sec = int(packet.pts * packet.time_base)
+                    if current_sec - last_sec > 0:
+                        pbar.update(current_sec - last_sec)
+                        last_sec = current_sec
+                if packet.dts is not None:
+                    if audio_copy:
+                        packet.stream = audio_output_stream
+                        output_container.mux(packet)
+                    else:
+                        for frame in packet.decode():
+                            frame.pts = None
+                            enc_packet = audio_output_stream.encode(frame)
+                            if enc_packet:
+                                output_container.mux(enc_packet)
+                if stop_event is not None and stop_event.is_set():
+                    break
+            pbar.close()
+            try:
+                for packet in audio_output_stream.encode(None):
+                    output_container.mux(packet)
+            except ValueError:
+                pass
+            input_container.close()
+
+    if stop_event is not None and stop_event.is_set():
+        output_container.close()
+        return
+
+    desc = (title + " Frames" if title else "Frames")
+    ncols = len(desc) + 60
+    tqdm_fn = tqdm_fn or tqdm
+    pbar = tqdm_fn(desc=desc, total=total_frames, ncols=ncols)
+    for frame in frame_generator():
+        if frame is None:
+            break
+        for new_frame in get_new_frames(frame):
+            enc_packet = video_output_stream.encode(new_frame)
+            if enc_packet:
+                output_container.mux(enc_packet)
+            pbar.update(1)
+        if stop_event is not None and stop_event.is_set():
+            break
+
+    packet = video_output_stream.encode(None)
+    if packet:
+        output_container.mux(packet)
+    pbar.close()
+    output_container.close()
+
+    if not (stop_event is not None and stop_event.is_set()):
+        # success
+        if path.exists(output_path_tmp):
+            os.replace(output_path_tmp, output_path)
+
+
 def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
