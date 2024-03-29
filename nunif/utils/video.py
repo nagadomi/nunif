@@ -405,7 +405,7 @@ def generate_video(output_path,
         codec = "libx264rgb"
     else:
         codec = "libx264"
-    video_output_stream = output_container.add_stream(codec, config.fps)
+    video_output_stream = output_container.add_stream(codec, convert_known_fps(config.fps))
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
     video_output_stream.width = output_size[0]
