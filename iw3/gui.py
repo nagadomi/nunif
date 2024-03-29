@@ -931,7 +931,7 @@ class MainFrame(wx.Frame):
             now = time()
             pos = self.prg_tqdm.GetValue()
             end_pos = self.prg_tqdm.GetRange()
-            fps = pos / (now - self.start_time)
+            fps = pos / (now - self.start_time + 1e-6)
             remaining_time = int((end_pos - pos) / fps)
             h = remaining_time // 3600
             m = (remaining_time - h * 3600) // 60
