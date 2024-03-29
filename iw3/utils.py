@@ -12,7 +12,7 @@ from tqdm import tqdm
 from PIL import ImageDraw, Image
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.models import load_model, compile_model
+from nunif.models import load_model  # , compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
 from nunif.device import create_device, autocast
@@ -372,8 +372,8 @@ def apply_anaglyph_redcyan(left_eye, right_eye, anaglyph_type):
         b_l = left_eye[2:3] + 0.25 * torch.clamp(left_eye[0:1] - left_eye[2:3], min=0)
         g_r = right_eye[1:2] + 0.45 * torch.clamp(right_eye[0:1] - right_eye[1:2], min=0)
         b_r = right_eye[2:3] + 0.25 * torch.clamp(right_eye[0:1] - right_eye[2:3], min=0)
-        l = (0.75 * g_l + 0.25 * b_l) ** (1.0 / 1.6)
-        anaglyph = torch.cat((l, g_r, b_r), dim=0)
+        left = (0.75 * g_l + 0.25 * b_l) ** (1.0 / 1.6)
+        anaglyph = torch.cat((left, g_r, b_r), dim=0)
     elif anaglyph_type in {"dubois", "dubois2"}:
         # Dubois method
         # reference: https://www.site.uottawa.ca/~edubois/anaglyph/LeastSquaresHowToPhotoshop.pdf
@@ -538,7 +538,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if side_model is not None:
         # TODO: sometimes ERROR RUNNING GUARDS forward error happen
-        #side_model = compile_model(side_model, dynamic=True)
+        # side_model = compile_model(side_model, dynamic=True)
         pass
 
     if is_output_dir(output_path):
