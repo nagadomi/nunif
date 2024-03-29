@@ -1,7 +1,7 @@
 # random dot image generator
 # port from waifu2x/image_generator/dot
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 import random
 import numpy as np
 import math
@@ -144,6 +144,11 @@ def _show():
     gen_dot_grid(40, 8, 2).show()
 
 
+def ellipse_rect(center, size):
+    return (center[0] - size // 2, center[1] - size // 2,
+            center[0] + size // 2, center[1] + size // 2)
+
+
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--size", "-s", type=int, default=640, choices=[320, 640, 1280],
@@ -168,6 +173,40 @@ def main():
     for i in tqdm(range(args.num_samples), ncols=80):
         rotate = random.choice([True, False]) if args.rotate else False
         dot = gen(cols_scale=cols_scale, rotate=rotate, dot_scale=args.dot_scale)
+
+        hole = random.choice([True, False, False])
+        rotate2 = random.choice([True, False, False]) if args.rotate else False
+        rotate = rotate or rotate2
+        if hole:
+            hole_scale = 4 if rotate else 1
+            mask = Image.new("L", (dot.width * hole_scale, dot.height * hole_scale), (0,))
+            gc = ImageDraw.Draw(mask)
+            color = tuple([random.randint(0, 255) for _ in range(3)] + [255])
+            circle_hole = random.choice([True, False])
+            if circle_hole:
+                r = random.randint(int(mask.width * 0.25), int(mask.width * 0.75))
+                center = [random.randint(int(-mask.width * 0.5), int(mask.width + mask.width * 0.5)),
+                          random.randint(int(-mask.height * 0.5), int(mask.height + mask.height * 0.5))]
+                gc.ellipse(ellipse_rect(center, r), fill=255)
+            else:
+                p1 = (random.randint(0, int(mask.width * 0.5)),
+                      random.randint(0, int(mask.height * 0.5)))
+                p2 = (random.randint(int(mask.width * 0.5), mask.width),
+                      random.randint(0, int(mask.height * 0.5)))
+                p3 = (random.randint(int(mask.width * 0.5), mask.width),
+                      random.randint(int(mask.height * 0.5), mask.height))
+                p4 = (random.randint(0, int(mask.width * 0.5)),
+                      random.randint(int(mask.height * 0.5), mask.height))
+                gc.polygon((p1, p2, p3, p4), fill=255)
+            if hole_scale != 1:
+                mask = mask.resize(dot.size, resample=Image.Resampling.LANCZOS)
+            if random.choice([True, True, True, False]):
+                mask = ImageOps.invert(mask)
+            bg = Image.new("RGB", dot.size, color)
+            dot = Image.composite(dot, bg, mask)
+
+        if rotate2:
+            dot = dot.rotate(random.randint(-180, 180), resample=Image.Resampling.BILINEAR)
         dot_prefix = DOT_SCALE_PREFIX[args.dot_scale]
         if rotate:
             output_filename = path.join(args.output_dir, f"_{dot_prefix}ROTATE_{i}{postfix}.png")

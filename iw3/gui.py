@@ -27,11 +27,13 @@ from nunif.utils.gui import (
 from .locales import LOCALES
 from . import models # noqa
 from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS
+from . import export_config
 import torch
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
 VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
+YAML_EXTENSIONS = extension_list_to_wildcard((".yml", ".yaml"))
 CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "iw3-gui.cfg")
 os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
 
@@ -199,6 +201,7 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format = wx.ComboBox(
             self.grp_stereo,
             choices=["Full SBS", "Half SBS", "VR90",
+                     "Export", "Export disparity",
                      "Anaglyph dubois",
                      "Anaglyph dubois2",
                      "Anaglyph color", "Anaglyph gray",
@@ -570,9 +573,10 @@ class MainFrame(wx.Frame):
             self.txt_output.SetValue(path.join(path.dirname(selected_path), "iw3"))
 
     def on_click_btn_input_file(self, event):
-        wildcard = (f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
+        wildcard = (f"Image and Video and YAML files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS};{YAML_EXTENSIONS}"
                     f"|Video files|{VIDEO_EXTENSIONS}"
                     f"|Image files|{IMAGE_EXTENSIONS}"
+                    f"|YAML files|{YAML_EXTENSIONS}"
                     "|All Files|*.*")
         default_dir = resolve_default_dir(self.txt_input.GetValue())
         with wx.FileDialog(self.pnl_file, T("Choose a file"),
@@ -671,14 +675,22 @@ class MainFrame(wx.Frame):
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         anaglyph = self.get_anaglyph_method()
         video = is_video(input_path)
+        is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
 
-        if is_output_dir(output_path):
-            output_path = path.join(
-                output_path,
-                make_output_filename(input_path, video=video,
-                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
+        if not is_export:
+            if is_output_dir(output_path):
+                output_path = path.join(
+                    output_path,
+                    make_output_filename(input_path, video=video,
+                                         vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
+            else:
+                output_path = output_path
         else:
-            output_path = output_path
+            if is_video(input_path):
+                basename = path.splitext(path.basename(input_path))[0]
+                output_path = path.join(output_path, basename, export_config.FILENAME)
+            else:
+                output_path = path.join(output_path, export_config.FILENAME)
 
         if path.exists(output_path):
             with wx.MessageDialog(None,
@@ -739,6 +751,8 @@ class MainFrame(wx.Frame):
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         anaglyph = self.get_anaglyph_method()
+        export = self.cbo_stereo_format.GetValue() == "Export"
+        export_disparity = self.cbo_stereo_format.GetValue() == "Export disparity"
 
         tune = set()
         if self.chk_tune_zerolatency.GetValue():
@@ -813,6 +827,8 @@ class MainFrame(wx.Frame):
             vr180=vr180,
             half_sbs=half_sbs,
             anaglyph=anaglyph,
+            export=export,
+            export_disparity=export_disparity,
             ema_normalize=self.chk_ema_normalize.GetValue(),
 
             max_fps=float(self.cbo_fps.GetValue()),
@@ -915,7 +931,7 @@ class MainFrame(wx.Frame):
             now = time()
             pos = self.prg_tqdm.GetValue()
             end_pos = self.prg_tqdm.GetRange()
-            fps = pos / (now - self.start_time)
+            fps = pos / (now - self.start_time + 1e-6)
             remaining_time = int((end_pos - pos) / fps)
             h = remaining_time // 3600
             m = (remaining_time - h * 3600) // 60

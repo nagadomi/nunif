@@ -391,6 +391,111 @@ def process_video(input_path, output_path,
             os.replace(output_path_tmp, output_path)
 
 
+def generate_video(output_path,
+                   frame_generator,
+                   config,
+                   audio_file=None,
+                   title=None, total_frames=None,
+                   stop_event=None, tqdm_fn=None):
+
+    output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
+    output_container = av.open(output_path_tmp, 'w', options=config.container_options)
+    output_size = config.output_width, config.output_height
+    if config.pix_fmt == "rgb24":
+        codec = "libx264rgb"
+    else:
+        codec = "libx264"
+    video_output_stream = output_container.add_stream(codec, convert_known_fps(config.fps))
+    video_output_stream.thread_type = "AUTO"
+    video_output_stream.pix_fmt = config.pix_fmt
+    video_output_stream.width = output_size[0]
+    video_output_stream.height = output_size[1]
+    video_output_stream.options = config.options
+
+    if audio_file is not None:
+        input_container = av.open(audio_file)
+        if input_container.duration:
+            container_duration = float(input_container.duration * av.time_base)
+        else:
+            container_duration = None
+        if len(input_container.streams.audio) > 0:
+            # has audio stream
+            audio_input_stream = input_container.streams.audio[0]
+            if audio_input_stream.rate < 16000:
+                audio_output_stream = output_container.add_stream("aac", 16000)
+                audio_copy = False
+            else:
+                try:
+                    audio_output_stream = output_container.add_stream(template=audio_input_stream)
+                    audio_copy = True
+                except ValueError:
+                    audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+                    audio_copy = False
+
+            tqdm_fn = tqdm_fn or tqdm
+            desc = (title + " Audio" if title else "Audio")
+            ncols = len(desc) + 60
+            total = get_duration(audio_input_stream, container_duration=container_duration)
+            pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
+            last_sec = 0
+
+            for packet in input_container.demux([audio_input_stream]):
+                if packet.pts is not None:
+                    current_sec = int(packet.pts * packet.time_base)
+                    if current_sec - last_sec > 0:
+                        pbar.update(current_sec - last_sec)
+                        last_sec = current_sec
+                if packet.dts is not None:
+                    if audio_copy:
+                        packet.stream = audio_output_stream
+                        output_container.mux(packet)
+                    else:
+                        for frame in packet.decode():
+                            frame.pts = None
+                            enc_packet = audio_output_stream.encode(frame)
+                            if enc_packet:
+                                output_container.mux(enc_packet)
+                if stop_event is not None and stop_event.is_set():
+                    break
+            pbar.close()
+            try:
+                for packet in audio_output_stream.encode(None):
+                    output_container.mux(packet)
+            except ValueError:
+                pass
+            input_container.close()
+
+    if stop_event is not None and stop_event.is_set():
+        output_container.close()
+        return
+
+    desc = (title + " Frames" if title else "Frames")
+    ncols = len(desc) + 60
+    tqdm_fn = tqdm_fn or tqdm
+    pbar = tqdm_fn(desc=desc, total=total_frames, ncols=ncols)
+    for frame in frame_generator():
+        if frame is None:
+            break
+        for new_frame in get_new_frames(frame):
+            enc_packet = video_output_stream.encode(new_frame)
+            if enc_packet:
+                output_container.mux(enc_packet)
+            pbar.update(1)
+        if stop_event is not None and stop_event.is_set():
+            break
+
+    packet = video_output_stream.encode(None)
+    if packet:
+        output_container.mux(packet)
+    pbar.close()
+    output_container.close()
+
+    if not (stop_event is not None and stop_event.is_set()):
+        # success
+        if path.exists(output_path_tmp):
+            os.replace(output_path_tmp, output_path)
+
+
 def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
@@ -421,25 +526,148 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
     input_container.close()
 
 
-def hook_frame(input_path, frame_callback, stop_event=None, use_tqdm=False):
+def hook_frame(input_path,
+               frame_callback,
+               config_callback=default_config_callback,
+               title=None,
+               vf="",
+               stop_event=None, tqdm_fn=None,
+               start_time=None, end_time=None):
+    if isinstance(start_time, str):
+        start_time = parse_time(start_time)
+    if isinstance(end_time, str):
+        end_time = parse_time(end_time)
+        if start_time is not None and not (start_time < end_time):
+            raise ValueError("end_time must be greater than start_time")
+
     input_container = av.open(input_path)
+    if input_container.duration:
+        container_duration = float(input_container.duration * av.time_base)
+    else:
+        container_duration = None
+
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
+
+    if start_time is not None:
+        input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
+
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+
+    config = config_callback(video_input_stream)
+    config.fps = convert_known_fps(config.fps)
+
+    fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf)
+
+    desc = (title if title else input_path)
+    ncols = len(desc) + 60
+    tqdm_fn = tqdm_fn or tqdm
+    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time,
+                         container_duration=container_duration)
+    pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
+
+    for packet in input_container.demux([video_input_stream]):
+        if packet.pts is not None:
+            if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+                break
+        for frame in packet.decode():
+            frame = fps_filter.update(frame)
+            if frame is not None:
+                frame_callback(frame)
+                pbar.update(1)
+        if stop_event is not None and stop_event.is_set():
+            break
+
+    frame = fps_filter.update(None)
+    if frame is not None:
+        frame_callback(frame)
+        pbar.update(1)
+
+    frame_callback(None)
+    input_container.close()
+    pbar.close()
+
+
+def export_audio(input_path, output_path, start_time=None, end_time=None,
+                 title=None, stop_event=None, tqdm_fn=None):
+
+    if isinstance(start_time, str):
+        start_time = parse_time(start_time)
+    if isinstance(end_time, str):
+        end_time = parse_time(end_time)
+        if start_time is not None and not (start_time < end_time):
+            raise ValueError("end_time must be greater than start_time")
+
+    input_container = av.open(input_path)
+    if len(input_container.streams.audio) == 0:
+        input_container.close()
+        return False
+
+    if start_time is not None:
+        input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
+
+    audio_input_stream = input_container.streams.audio[0]
+    output_container = av.open(output_path, "w")  # expect .m4a
 
     if input_container.duration:
         container_duration = float(input_container.duration * av.time_base)
     else:
         container_duration = None
-    total = guess_frames(video_input_stream, container_duration=container_duration)
-    pbar = tqdm(total=total, ncols=80, disable=not use_tqdm)
-    for frame in input_container.decode(video_input_stream):
-        frame_callback(frame)
-        pbar.update(1)
+
+    if audio_input_stream.rate < 16000:
+        audio_output_stream = output_container.add_stream("aac", 16000)
+        audio_copy = False
+    elif start_time is not None:
+        audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+        audio_copy = False
+    else:
+        try:
+            audio_output_stream = output_container.add_stream(template=audio_input_stream)
+            audio_copy = True
+        except ValueError:
+            audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+            audio_copy = False
+
+    tqdm_fn = tqdm_fn or tqdm
+    desc = title if title else input_path
+    ncols = len(desc) + 60
+    total = get_duration(audio_input_stream, container_duration=container_duration)
+    pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
+    last_sec = 0
+    for packet in input_container.demux([audio_input_stream]):
+        if packet.pts is not None:
+            if end_time is not None and end_time < packet.pts * packet.time_base:
+                break
+            current_sec = int(packet.pts * packet.time_base)
+            if current_sec - last_sec > 0:
+                pbar.update(current_sec - last_sec)
+                last_sec = current_sec
+        if packet.dts is not None:
+            if audio_copy:
+                packet.stream = audio_output_stream
+                output_container.mux(packet)
+            else:
+                for frame in packet.decode():
+                    frame.pts = None
+                    enc_packet = audio_output_stream.encode(frame)
+                    if enc_packet:
+                        output_container.mux(enc_packet)
         if stop_event is not None and stop_event.is_set():
             break
+    pbar.close()
+
+    try:
+        # TODO: Maybe this is needed only when audio_copy==False but not clear
+        for packet in audio_output_stream.encode(None):
+            output_container.mux(packet)
+    except ValueError:
+        pass
+
+    output_container.close()
     input_container.close()
+
+    return True
 
 
 class _DummyFuture():
@@ -469,18 +697,22 @@ class FrameCallbackPool():
     """
     thread pool callback wrapper
     """
-    def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2):
+    def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2,
+                 require_pts=False):
         if max_workers > 0:
             self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         else:
             self.thread_pool = _DummyThreadPool()
+        self.require_pts = require_pts
         self.frame_callback = frame_callback
         self.batch_size = batch_size
         self.max_workers = max_workers
         self.max_batch_queue = max_batch_queue
         self.device = device
         self.frame_queue = []
+        self.pts_queue = []
         self.batch_queue = []
+        self.pts_batch_queue = []
         self.futures = []
 
     def __call__(self, frame):
@@ -489,32 +721,41 @@ class FrameCallbackPool():
             print("\n__call__",
                   "frame_queue", len(self.frame_queue),
                   "batch_queue", len(self.batch_queue),
+                  "pts_queue", len(self.pts_queue),
+                  "pts_batch_queue", len(self.pts_batch_queue),
                   "futures", len(self.futures))
 
         if frame is None:
             return self.finish()
 
+        self.pts_queue.append(frame.pts)
         frame = to_tensor(frame, device=self.device)
         self.frame_queue.append(frame)
         if len(self.frame_queue) == self.batch_size:
             batch = torch.stack(self.frame_queue)
             self.batch_queue.append(batch)
             self.frame_queue.clear()
+            self.pts_batch_queue.append(list(self.pts_queue))
+            self.pts_queue.clear()
 
         if self.batch_queue:
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
                 batch = self.batch_queue.pop(0)
-                future = self.thread_pool.submit(self.frame_callback, batch)
+                pts_batch = self.pts_batch_queue.pop(0)
+                if self.require_pts:
+                    future = self.thread_pool.submit(self.frame_callback, batch, pts_batch)
+                else:
+                    future = self.thread_pool.submit(self.frame_callback, batch)
                 self.futures.append(future)
             if len(self.batch_queue) >= self.max_batch_queue and self.futures:
                 future = self.futures.pop(0)
                 frames = future.result()
-                return [to_frame(frame) for frame in frames]
+                return [to_frame(frame) for frame in frames] if frames is not None else None
         if self.futures:
             if self.futures[0].done():
                 future = self.futures.pop(0)
                 frames = future.result()
-                return [to_frame(frame) for frame in frames]
+                return [to_frame(frame) for frame in frames] if frames is not None else None
 
         return None
 
@@ -523,21 +764,29 @@ class FrameCallbackPool():
             batch = torch.stack(self.frame_queue)
             self.batch_queue.append(batch)
             self.frame_queue.clear()
+            self.pts_batch_queue.append(list(self.pts_queue))
+            self.pts_queue.clear()
 
         frame_remains = []
         while len(self.batch_queue) > 0:
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
                 batch = self.batch_queue.pop(0)
-                future = self.thread_pool.submit(self.frame_callback, batch)
+                pts_batch = self.pts_batch_queue.pop(0)
+                if self.require_pts:
+                    future = self.thread_pool.submit(self.frame_callback, batch, pts_batch)
+                else:
+                    future = self.thread_pool.submit(self.frame_callback, batch)
                 self.futures.append(future)
             else:
                 future = self.futures.pop(0)
                 frames = future.result()
-                frame_remains += [to_frame(frame) for frame in frames]
+                if frames is not None:
+                    frame_remains += [to_frame(frame) for frame in frames]
         while len(self.futures) > 0:
             future = self.futures.pop(0)
             frames = future.result()
-            frame_remains += [to_frame(frame) for frame in frames]
+            if frames is not None:
+                frame_remains += [to_frame(frame) for frame in frames]
         return frame_remains
 
     def shutdown(self):
@@ -550,7 +799,7 @@ class FrameCallbackPool():
         self.shutdown()
 
 
-if __name__ == "__main__":
+def _test_process_video():
     from PIL import ImageOps
     import argparse
 
@@ -582,3 +831,21 @@ if __name__ == "__main__":
         return new_frame
 
     process_video(args.input, args.output, config_callback=make_config, frame_callback=process_image)
+
+
+def _test_export_audio():
+    import argparse
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
+    parser.add_argument("--output", "-o", type=str, required=True, help="output audio file")
+    parser.add_argument("--start-time", type=str, help="start time")
+    parser.add_argument("--end-time", type=str, help="end time")
+    args = parser.parse_args()
+
+    print(export_audio(args.input, args.output, start_time=args.start_time, end_time=args.end_time))
+
+
+if __name__ == "__main__":
+    _test_process_video()
+    # _test_export_audio()

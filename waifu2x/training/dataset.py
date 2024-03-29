@@ -255,10 +255,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             # 8(max jpeg shift size) * 2(max jpeg shift count) * scale_factor
             y_min_size = tile_size * scale_factor + (8 * 2 * scale_factor)
             self.gt_transforms = T.Compose([
-                T.RandomChoice([
-                    T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
-                    T.RandomPerspective(distortion_scale=0.25, p=da_scale_p),
-                ], p=[0.5, 0.5]),
+                T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
                 T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)],
                               p=da_color_p),
                 T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
@@ -324,7 +321,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         im, _ = pil_io.load_image_simple(filename, color="rgb")
         if im is None:
             raise RuntimeError(f"Unable to load image: {filename}")
-        if NEAREST_PREFIX in filename:
+        if NEAREST_PREFIX in filename and (not self.training or random.uniform(0, 1) < 0.8):
             x, y = self.transforms_nearest(im, im)
         elif SCREENTONE_PREFIX in filename or DOT_PREFIX in filename:
             im = self.gt_gen_transforms(im)
