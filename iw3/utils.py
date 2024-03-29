@@ -915,6 +915,8 @@ def to_float32_grayscale_depth(depth):
         # Maybe 24bpp
         # TODO: color depth support?
         depth = torch.mean(depth, dim=0, keepdim=True)
+    # invert
+    depth = 1. - depth
     return depth
 
 
