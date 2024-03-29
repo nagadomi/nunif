@@ -1294,9 +1294,15 @@ def export_main(args):
         export_video(args)
 
 
+def is_yaml(filename):
+    return path.splitext(filename)[-1].lower() in {".yaml", ".yml"}
+
+
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
     assert not (args.half_sbs and args.vr180)
+    assert not (args.half_sbs and args.anaglyph)
+    assert not (args.vr180 and args.anaglyph)
 
     if args.update:
         args.state["depth_utils"].force_update()
@@ -1306,6 +1312,9 @@ def iw3_main(args):
 
     if args.export_disparity:
         args.export = True
+
+    if args.export and is_yaml(args.input):
+        raise ValueError("YAML file input does not support --export")
 
     if args.remove_bg:
         global rembg
@@ -1403,7 +1412,7 @@ def iw3_main(args):
         output = process_image(im, args, depth_model, side_model)
         make_parent_dir(output_filename)
         output.save(output_filename)
-    elif path.splitext(args.input)[-1].lower() in {".yaml", ".yml"}:
+    elif is_yaml(args.input):
         config = export_config.ExportConfig.load(args.input)
         if config.type == export_config.VIDEO_TYPE:
             process_config_video(config, args, side_model)
