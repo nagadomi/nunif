@@ -227,7 +227,9 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
     out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
     if edge_dilation > 0:
-        out = dilate_edge(out, edge_dilation)
+        # NOTE: dilate_edge() was developed for DepthAnything and it is not inverted depth
+        #       so must be calculated in negative space.
+        out = -dilate_edge(-out, edge_dilation)
     if resize_depth and out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bilinear", align_corners=False)

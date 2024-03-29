@@ -962,7 +962,7 @@ def process_config_video(config, args, side_model):
     def batch_callback(x, depths):
         if not config.skip_edge_dilation and args.edge_dilation > 0:
             # apply --edge-dilation
-            depths = dilate_edge(depths, args.edge_dilation)
+            depths = -dilate_edge(-depths, args.edge_dilation)
 
         left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
         return torch.stack([
@@ -1087,7 +1087,7 @@ def process_config_images(config, args, side_model):
                 rgb = TF.to_tensor(rgb)
                 depth = to_float32_grayscale_depth(TF.to_tensor(depth))
                 if not config.skip_edge_dilation and args.edge_dilation > 0:
-                    depth = dilate_edge(depth.unsqueeze(0), args.edge_dilation).squeeze(0)
+                    depth = -dilate_edge(-depth.unsqueeze(0), args.edge_dilation).squeeze(0)
 
                 left_eye, right_eye = apply_divergence(
                     depth.to(args.state["device"]),
