@@ -1343,12 +1343,15 @@ def iw3_main(args):
         else:
             args.edge_dilation = 0
 
-    if args.state["depth_model"] is not None:
-        depth_model = args.state["depth_model"]
+    if not is_yaml(args.input):
+        if args.state["depth_model"] is not None:
+            depth_model = args.state["depth_model"]
+        else:
+            depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
+                                                               height=args.zoed_height)
+            args.state["depth_model"] = depth_model
     else:
-        depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
-                                                           height=args.zoed_height)
-        args.state["depth_model"] = depth_model
+        depth_model = None
 
     if args.export:
         export_main(args)
