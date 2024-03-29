@@ -17,6 +17,7 @@ import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
 from nunif.device import create_device, autocast
 from . import export_config
+from . dilation import dilate_edge
 
 
 FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_v2.pth")
@@ -694,10 +695,86 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
 
 
 def export_images(files, args):
-    pass
+    if args.export_disparity:
+        mapper = "none"
+        edge_dilation = args.edge_dilation
+        skip_edge_dilation = True
+        skip_mapper = True
+    else:
+        mapper = args.mapper
+        edge_dilation = 0
+        skip_edge_dilation = False
+        skip_mapper = False
+    config = export_config.ExportConfig(
+        type=export_config.IMAGE_TYPE,
+        fps=1,
+        mapper=mapper,
+        skip_mapper=skip_mapper,
+        skip_edge_dilation=skip_edge_dilation,
+        user_data={
+            "export_options": {
+                "depth_model": args.depth_model,
+                "export_disparity": args.export_disparity,
+                "mapper": args.mapper,
+                "edge_dilation": args.edge_dilation,
+                "ema_normalize": False,
+            }
+        }
+    )
+    config.audio_file = None
+    output_dir = args.output
+    rgb_dir = path.join(output_dir, config.rgb_dir)
+    depth_dir = path.join(output_dir, config.depth_dir)
+    config_file = path.join(output_dir, export_config.FILENAME)
+
+    os.makedirs(rgb_dir, exist_ok=True)
+    os.makedirs(depth_dir, exist_ok=True)
+    depth_model = args.state["depth_model"]
+
+    loader = ImageLoader(
+        files=files,
+        load_func=load_image_simple,
+        load_func_kwargs={"color": "rgb"})
+    futures = []
+    tqdm_fn = args.state["tqdm_fn"] or tqdm
+    pbar = tqdm_fn(ncols=80, total=len(files), desc="Images")
+    with PoolExecutor(max_workers=4) as pool, torch.inference_mode():
+        for im, meta in loader:
+            basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
+            rgb_file = path.join(rgb_dir, basename)
+            depth_file = path.join(depth_dir, basename)
+            if im is None or (args.resume and path.exists(rgb_file) and path.exists(rgb_file)):
+                continue
+
+            im_org, im = preprocess_image(im, args)
+            depth = args.state["depth_utils"].batch_infer(
+                depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
+                int16=False, enable_amp=not args.disable_amp,
+                output_device=args.state["device"],
+                device=args.state["device"],
+                edge_dilation=edge_dilation,
+                resize_depth=False)
+
+            depth = normalize_depth(depth)
+            if args.export_disparity:
+                depth = get_mapper(args.mapper)(depth)
+            depth = convert_normalized_depth_to_uint16_numpy(depth.detach().cpu()[0])
+            depth = Image.fromarray(depth)
+            im_org = TF.to_pil_image(im_org)
+            futures.append(pool.submit(save_image, depth, depth_file))
+            futures.append(pool.submit(save_image, im_org, rgb_file))
+            pbar.update(1)
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                break
+
+        for f in futures:
+            f.result()
+    pbar.close()
+    config.save(config_file)
 
 
 def export_video(args):
+    basename = path.splitext(path.basename(args.input))[0]
     if args.export_disparity:
         mapper = "none"
         edge_dilation = args.edge_dilation
@@ -710,6 +787,7 @@ def export_video(args):
         skip_mapper = False
     config = export_config.ExportConfig(
         type=export_config.VIDEO_TYPE,
+        basename=basename,
         mapper=mapper,
         skip_mapper=skip_mapper,
         skip_edge_dilation=skip_edge_dilation,
@@ -724,7 +802,7 @@ def export_video(args):
             }
         }
     )
-    output_dir = path.join(args.output, path.splitext(path.basename(args.input))[0])
+    output_dir = path.join(args.output, basename)
     rgb_dir = path.join(output_dir, config.rgb_dir)
     depth_dir = path.join(output_dir, config.depth_dir)
     audio_file = path.join(output_dir, config.audio_file)
@@ -829,43 +907,32 @@ def export_video(args):
     config.save(config_file)
 
 
-def process_export_config(args, side_model):
-    config = export_config.ExportConfig.load(args.input)
+def to_float32_grayscale_depth(depth):
+    if depth.dtype == torch.int32:
+        # 16bit image
+        depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+    if depth.shape[0] != 1:
+        # Maybe 24bpp
+        # TODO: color depth support?
+        depth = torch.mean(depth, dim=0, keepdim=True)
+    return depth
+
+
+def process_config_video(config, args, side_model):
     base_dir = path.dirname(args.input)
-
-    def resolve_path(config, name):
-        entry = getattr(config, name)
-        if entry is None:
-            return None
-        if path.isabs(entry):
-            return entry
-        else:
-            return path.join(base_dir, entry)
-
-    rgb_dir = resolve_path(config, "rgb_dir")
-    depth_dir = resolve_path(config, "depth_dir")
-    audio_file = resolve_path(config, "audio_file")
-    if rgb_dir is None or not path.exists(rgb_dir):
-        raise ValueError(f"rgb_dir={rgb_dir} not found")
-    if depth_dir is None or not path.exists(depth_dir):
-        raise ValueError(f"depth_dir={depth_dir} not found")
-    if audio_file is not None and not path.exists(audio_file):
-        audio_file = None
-    if config.skip_mapper:
-        args.mapper = "none"
-    else:
-        if config.mapper is not None:
-            args.mapper = config.mapper
+    rgb_dir, depth_dir, audio_file = config.resolve_paths(base_dir)
 
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
+        basename = config.basename or path.basename(base_dir)
         output_filename = path.join(
             args.output,
-            make_output_filename(path.basename(base_dir), video=True,
+            make_output_filename(basename, video=True,
                                  vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
     else:
         output_filename = args.output
     make_parent_dir(output_filename)
+
     if args.resume and path.exists(output_filename):
         return
     if not args.yes and path.exists(output_filename):
@@ -876,8 +943,7 @@ def process_export_config(args, side_model):
     rgb_files = ImageLoader.listdir(rgb_dir)
     depth_files = ImageLoader.listdir(depth_dir)
     if len(rgb_files) != len(depth_files):
-        raise ValueError(f"rgb_files={len(rgb_files)} vs depth_files={len(depth_files)} missmatch")
-
+        raise ValueError(f"No match rgb_files={len(rgb_files)} and depth_files={len(depth_files)}")
     if len(rgb_files) == 0:
         raise ValueError(f"{rgb_dir} is empty")
 
@@ -892,6 +958,10 @@ def process_export_config(args, side_model):
 
     @torch.inference_mode()
     def batch_callback(x, depths):
+        if not config.skip_edge_dilation and args.edge_dilation > 0:
+            # apply --edge-dilation
+            depths = dilate_edge(depths, args.edge_dilation)
+
         left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
         return torch.stack([
             postprocess_image(left_eyes[i], right_eyes[i], args)
@@ -901,11 +971,7 @@ def process_export_config(args, side_model):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = load_image_simple(depth_file, color="any")[0]
         rgb = TF.to_tensor(rgb)
-        depth = TF.to_tensor(depth)
-        if depth.dtype == torch.int32:
-            depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
-        if depth.shape[0] != 1:
-            depth = TF.rgb_to_grayscale(depth)
+        depth = to_float32_grayscale_depth(TF.to_tensor(depth))
         frame = batch_callback(rgb.unsqueeze(0).to(args.state["device"]),
                                depth.unsqueeze(0).to(args.state["device"]))
         return frame.shape[2:]
@@ -917,12 +983,7 @@ def process_export_config(args, side_model):
         depth_batch = []
         for rgb, depth in zip(rgb_loader, depth_loader):
             rgb = TF.to_tensor(rgb[0])
-            depth = TF.to_tensor(depth[0])
-            if depth.dtype == torch.int32:
-                depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
-            if depth.shape[0] != 1:
-                depth = TF.rgb_to_grayscale(depth)
-
+            depth = to_float32_grayscale_depth(TF.to_tensor(depth[0]))
             rgb_batch.append(rgb)
             depth_batch.append(depth)
             if len(rgb_batch) == minibatch_size:
@@ -946,22 +1007,105 @@ def process_export_config(args, side_model):
     if args.tune:
         encoder_options.update({"tune": ",".join(list(set(args.tune)))})
     video_config = VU.VideoOutputConfig(
-        fps=config.fps,
+        fps=config.fps,  # use config.fps, ignore args.max_fps
         pix_fmt=args.pix_fmt,
         options=encoder_options,
         container_options={"movflags": "+faststart"},
-        output_width=output_width, output_height=output_height
+        output_width=output_width,
+        output_height=output_height
     )
-    VU.generate_video(
-        output_filename,
-        generator,
-        config=video_config,
-        audio_file=audio_file,
-        title=path.basename(base_dir),
-        total_frames=len(rgb_files),
-        stop_event=args.state["stop_event"],
-        tqdm_fn=args.state["tqdm_fn"],
-    )
+    original_mapper = args.mapper
+    try:
+        if config.skip_mapper:
+            # force use "none" mapper
+            args.mapper = "none"
+        else:
+            if config.mapper is not None:
+                # use specified mapper from config
+                # NOTE: override args
+                args.mapper = config.mapper
+            else:
+                # when config.mapper is not defined, use args.mapper
+                # TODO: It can be still disputable
+                pass
+        VU.generate_video(
+            output_filename,
+            generator,
+            config=video_config,
+            audio_file=audio_file,
+            title=path.basename(base_dir),
+            total_frames=len(rgb_files),
+            stop_event=args.state["stop_event"],
+            tqdm_fn=args.state["tqdm_fn"],
+        )
+    finally:
+        args.mapper = original_mapper
+
+
+def process_config_images(config, args, side_model):
+    base_dir = path.dirname(args.input)
+    rgb_dir, depth_dir, _ = config.resolve_paths(base_dir)
+    rgb_files = ImageLoader.listdir(rgb_dir)
+    depth_files = ImageLoader.listdir(depth_dir)
+    if len(rgb_files) != len(depth_files):
+        raise ValueError(f"No match rgb_files={len(rgb_files)} and depth_files={len(depth_files)}")
+    if len(rgb_files) == 0:
+        raise ValueError(f"{rgb_dir} is empty")
+
+    output_dir = args.output
+    os.makedirs(output_dir, exist_ok=True)
+
+    rgb_loader = ImageLoader(
+        files=rgb_files,
+        load_func=load_image_simple,
+        load_func_kwargs={"color": "rgb"})
+    depth_loader = ImageLoader(
+        files=depth_files,
+        load_func=load_image_simple,
+        load_func_kwargs={"color": "any"})
+
+    original_mapper = args.mapper
+    try:
+        if config.skip_mapper:
+            args.mapper = "none"
+        else:
+            if config.mapper is not None:
+                args.mapper = config.mapper
+            else:
+                pass
+        with PoolExecutor(max_workers=4) as pool:
+            tqdm_fn = args.state["tqdm_fn"] or tqdm
+            pbar = tqdm_fn(ncols=80, total=len(rgb_files), desc="Images")
+            futures = []
+            for (rgb, rgb_meta), (depth, depth_meta) in zip(rgb_loader, depth_loader):
+                rgb_filename = path.splitext(path.basename(rgb_meta["filename"]))[0]
+                depth_filename = path.splitext(path.basename(depth_meta["filename"]))[0]
+                if rgb_filename != depth_filename:
+                    raise ValueError(f"No match {rgb_filename} and {depth_filename}")
+                rgb = TF.to_tensor(rgb)
+                depth = to_float32_grayscale_depth(TF.to_tensor(depth))
+                if not config.skip_edge_dilation and args.edge_dilation > 0:
+                    depth = dilate_edge(depth.unsqueeze(0), args.edge_dilation).squeeze(0)
+
+                left_eye, right_eye = apply_divergence(
+                    depth.to(args.state["device"]),
+                    rgb.to(args.state["device"]),
+                    args, side_model)
+                sbs = postprocess_image(left_eye, right_eye, args)
+                sbs = TF.to_pil_image(sbs)
+
+                output_filename = path.join(
+                    output_dir,
+                    make_output_filename(rgb_filename, video=False,
+                                         vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+                f = pool.submit(save_image, sbs, output_filename)
+                futures.append(f)
+                pbar.update(1)
+            for f in futures:
+                f.result()
+            pbar.close()
+    finally:
+        args.mapper = original_mapper
 
 
 def create_parser(required_true=True):
@@ -1258,6 +1402,9 @@ def iw3_main(args):
         make_parent_dir(output_filename)
         output.save(output_filename)
     elif path.splitext(args.input)[-1].lower() in {".yaml", ".yml"}:
-        process_export_config(args, side_model)
-
+        config = export_config.ExportConfig.load(args.input)
+        if config.type == export_config.VIDEO_TYPE:
+            process_config_video(config, args, side_model)
+        if config.type == export_config.IMAGE_TYPE:
+            process_config_images(config, args, side_model)
     return args
