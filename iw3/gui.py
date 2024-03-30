@@ -687,7 +687,7 @@ class MainFrame(wx.Frame):
                 output_path = output_path
         else:
             if is_video(input_path):
-                basename = path.splitext(path.basename(input_path))[0]
+                basename = (path.splitext(path.basename(input_path))[0]).strip()
                 output_path = path.join(output_path, basename, export_config.FILENAME)
             else:
                 output_path = path.join(output_path, export_config.FILENAME)
