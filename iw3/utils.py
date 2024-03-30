@@ -802,7 +802,8 @@ def export_video(args):
             }
         }
     )
-    output_dir = path.join(args.output, basename)
+    # NOTE: Windows does not allow creating folders with trailing spaces. basename.strip()
+    output_dir = path.join(args.output, basename.strip())
     rgb_dir = path.join(output_dir, config.rgb_dir)
     depth_dir = path.join(output_dir, config.depth_dir)
     audio_file = path.join(output_dir, config.audio_file)
