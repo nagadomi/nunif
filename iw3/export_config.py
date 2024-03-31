@@ -1,6 +1,7 @@
 from os import path
 import yaml
 from datetime import datetime
+from fractions import Fraction
 
 
 FILENAME = "iw3_export.yml"
@@ -30,12 +31,24 @@ class ExportConfig:
         self.updated_at = updated_at
 
     def save(self, file_path):
+        if isinstance(self.fps, Fraction):
+            if self.fps.denominator == 1:
+                # int
+                fps = self.fps.numerator
+            else:
+                fps = f"{self.fps.numerator}/{self.fps.denominator}"
+        elif type(self.fps) in {int,}:
+            fps = self.fps
+        else:
+            # NOTE: This can cause "Phyton in too large to convert to C long"
+            fps = float(self.fps)
+
         config = {
             "type": self.type,
         }
         if self.basename:
             config.update({"basename": self.basename})
-        config.update({"fps": float(self.fps)})
+        config.update({"fps": fps})
         config.update({
             "rgb_dir": self.rgb_dir,
             "depth_dir": self.depth_dir
@@ -58,17 +71,24 @@ class ExportConfig:
     def load(file_path):
         with open(file_path, mode="r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        type = config.get("type")
+        export_type = config.get("type")
         basename = config.get("basename")
         fps = config.get("fps")
         mapper = config.get("mapper", "none")
         user_data = config.get("user_data", {})
-        if type not in {IMAGE_TYPE, VIDEO_TYPE}:
+        if export_type not in {IMAGE_TYPE, VIDEO_TYPE}:
             raise ValueError(f"Unsupported type={type} in {file_path}")
-        if type == "video":
+        if export_type == "video":
             try:
-                fps = float(fps)
-            except (ValueError, TypeError):
+                if isinstance(fps, str) and "/" in fps:
+                    # Fraction str. e.g, "30000/1001"
+                    int_parts = [int(v) for v in fps.split("/")]
+                    fps = Fraction(int_parts[0], int_parts[1])
+                elif type(fps) in {int,}:
+                    pass
+                else:
+                    fps = float(fps)
+            except (ValueError, TypeError, IndexError):
                 raise ValueError(f"Invalid fps={fps} in in {file_path}")
         else:
             fps = None
@@ -78,7 +98,7 @@ class ExportConfig:
         skip_edge_dilation = config.get("skip_edge_dilation", False)
         rgb_dir = config.get("rgb_dir")
         depth_dir = config.get("depth_dir")
-        if type == VIDEO_TYPE:
+        if export_type == VIDEO_TYPE:
             audio_file = config.get("audio_file")
         else:
             audio_file = None
@@ -90,7 +110,7 @@ class ExportConfig:
             except (TypeError, ValueError):
                 updated_at = None
 
-        return ExportConfig(type, basename=basename, fps=fps,
+        return ExportConfig(export_type, basename=basename, fps=fps,
                             mapper=mapper, skip_mapper=skip_mapper, skip_edge_dilation=skip_edge_dilation,
                             rgb_dir=rgb_dir, depth_dir=depth_dir, audio_file=audio_file,
                             user_data=user_data, updated_at=updated_at)
