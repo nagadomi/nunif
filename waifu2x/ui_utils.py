@@ -202,7 +202,7 @@ def create_parser(required_true=True):
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
                                  "medium", "slow", "slower", "veryslow", "placebo"],
                         help="encoder preset option (video only)")
-    parser.add_argument("--tune", type=str, nargs="+", default=["zerolatency"],
+    parser.add_argument("--tune", type=str, nargs="+", default=[],
                         choices=["film", "animation", "grain", "stillimage", "psnr",
                                  "fastdecode", "zerolatency"],
                         help="encoder tunings option (video only)")
