@@ -277,7 +277,6 @@ class MainFrame(wx.Frame):
                                                name="chk_tune_fastdecode")
         self.chk_tune_zerolatency = wx.CheckBox(self.grp_video, label=T("zerolatency"),
                                                 name="chk_tune_zerolatency")
-        self.chk_tune_zerolatency.SetValue(True)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_fps, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
