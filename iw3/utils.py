@@ -113,10 +113,11 @@ def get_mapper(name):
         return lambda x: softplus01(x) ** 2
     elif name in {"mul_1", "mul_2", "mul_3"}:
         # for DepthAnything
+        # https://github.com/nagadomi/nunif/assets/287255/2be5c0de-cb72-4c9c-9e95-4855c0730e5c
         param = {
             # none 1x
-            "mul_1": {"bias": 0.333, "scale": 12},  # smooth 1.5x
-            "mul_2": {"bias": 0.5, "scale": 12},    # smooth 2x
+            "mul_1": {"bias": 0.343, "scale": 12},  # smooth 1.5x
+            "mul_2": {"bias": 0.515, "scale": 12},  # smooth 2x
             "mul_3": {"bias": 0.687, "scale": 12},  # smooth 3x
         }[name]
         return lambda x: softplus01(x, **param)
