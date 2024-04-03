@@ -32,10 +32,16 @@ def hardplus(x, scale):
     return y
 
 
-def distance_to_dispary(x, c):
+def distance_to_disparity(x, c):
     c1 = 1.0 + c
     min_v = c / c1
     return ((c / (c1 - x)) - min_v) / (1.0 - min_v)
+
+
+def inv_distance_to_disparity(x, c):
+    # y = ((c / ((1.0 + c) - x)) - (c / (1.0 + c))) / (1.0 - (c / (1.0 + c)))
+    # x = ((c + 1) * y) / (y + c)
+    return ((c + 1) * x) / (x + c)
 
 
 def find_softplus_v2_main():
@@ -178,9 +184,53 @@ def check_find_inv_softplus_main():
     plt.show()
 
 
+def _check_inv_distance_to_disparity_main():
+    # NOT USED
+    # Should use larger `c` distance_to_disparity
+    x = torch.linspace(0, 1, 1000)
+    plt.plot(x, x, label="none")
+
+    y = distance_to_disparity(x, 0.6)
+    y2 = inv_distance_to_disparity(x, 0.6)
+    plt.plot(x, y, label="disparity_0.6")
+    plt.plot(x, y2, label="inv_distance_0.6")
+
+    y = distance_to_disparity(x, 0.4)
+    y2 = inv_distance_to_disparity(x, 0.4)
+    plt.plot(x, y, label="disparity_0.4")
+    plt.plot(x, y2, label="inv_distance_0.4")
+
+    y = distance_to_disparity(x, 0.2)
+    y2 = inv_distance_to_disparity(x, 0.2)
+    plt.plot(x, y, label="disparity_0.2")
+    plt.plot(x, y2, label="inv_distance_0.2")
+
+    y = distance_to_disparity(x, 0.1)
+    y2 = inv_distance_to_disparity(x, 0.1)
+    plt.plot(x, y, label="disparity_0.1")
+    plt.plot(x, y2, label="inv_distance_0.1")
+
+    plt.legend()
+    plt.show()
+
+
+def check_distance_to_disparity_main():
+    # result: https://github.com/nagadomi/nunif/assets/287255/46c6b292-040f-4820-93fc-9e001cd53375
+    x = torch.linspace(0, 1, 1000)
+    plt.plot(x, x, label="none")
+
+    for c in (2.5, 1, 0.6, 0.4, 0.2, 0.1):
+        y = distance_to_disparity(x, c)
+        plt.plot(x, y, label=f"{c}")
+
+    plt.legend()
+    plt.show()
+
+
 if __name__ == "__main__":
     # find_softplus_v2_main()
     # find_softplus_mul_main()
     # check_find_softplus_mul_main()
     # find_inv_softplus_main()
-    check_find_inv_softplus_main()
+    # check_find_inv_softplus_main()
+    check_distance_to_disparity_main()

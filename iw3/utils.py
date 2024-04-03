@@ -102,7 +102,7 @@ def inv_softplus01(x, bias, scale):
     return (v - min_v) / (max_v - min_v)
 
 
-def distance_to_dispary(x, c):
+def distance_to_disparity(x, c):
     c1 = 1.0 + c
     min_v = c / c1
     return ((c / (c1 - x)) - min_v) / (1.0 - min_v)
@@ -129,6 +129,7 @@ def get_mapper(name):
         }[name]
         return lambda x: softplus01(x, **param)
     elif name in {"inv_mul_1", "inv_mul_2", "inv_mul_3"}:
+        # for DepthAnything
         # https://github.com/nagadomi/nunif/assets/287255/f580b405-b0bf-4c6a-8362-66372b2ed930
         param = {
             # none 1x
@@ -137,17 +138,21 @@ def get_mapper(name):
             "inv_mul_3": {"bias": -0.0001, "scale": 3.4343},    # inverse smooth 3x
         }[name]
         return lambda x: inv_softplus01(x, **param)
-    elif name in {"div_6", "div_4", "div_2", "div_1"}:
+    elif name in {"div_25", "div_10", "div_6", "div_4", "div_2", "div_1"}:
         # for ZoeDepth
+        # TODO: There is no good reason for this parameter step
+        # https://github.com/nagadomi/nunif/assets/287255/46c6b292-040f-4820-93fc-9e001cd53375
         param = {
+            "div_25": 2.5,
+            "div_10": 1,
             "div_6": 0.6,
             "div_4": 0.4,
             "div_2": 0.2,
             "div_1": 0.1,
         }[name]
-        return lambda x: distance_to_dispary(x, param)
+        return lambda x: distance_to_disparity(x, param)
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"mapper={name}")
 
 
 def equirectangular_projection(c, device="cpu"):
@@ -1222,7 +1227,7 @@ def create_parser(required_true=True):
                               "if auto, div_6 for ZoeDepth model, none for DepthAnything model. "
                               "directly using this option is deprecated. "
                               "use --foreground-scale instead."))
-    parser.add_argument("--foreground-scale", type=int, choices=[0, 1, 2, 3], default=0,
+    parser.add_argument("--foreground-scale", type=int, choices=[-3, -2, -1, 0, 1, 2, 3], default=0,
                         help="foreground scaling level. 0 is disabled")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
@@ -1354,10 +1359,17 @@ def iw3_main(args):
             pass
     else:
         if args.state["depth_utils"].get_name() == "DepthAnything":
-            args.mapper = ["none", "mul_1", "mul_2", "mul_3"][args.foreground_scale]
+            args.mapper = [
+                "inv_mul_3", "inv_mul_2", "inv_mul_1",
+                "none",
+                "mul_1", "mul_2", "mul_3",
+            ][args.foreground_scale + 3]
         elif args.state["depth_utils"].get_name() == "ZoeDepth":
-            args.mapper = ["div_6", "div_4", "div_2", "div_1"][args.foreground_scale]
-
+            args.mapper = [
+                "none", "div_25", "div_10",
+                "div_6",
+                "div_4", "div_2", "div_1",
+            ][args.foreground_scale + 3]
     if args.edge_dilation is None:
         if args.state["depth_utils"].get_name() == "DepthAnything":
             args.edge_dilation = 2
