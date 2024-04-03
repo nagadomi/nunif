@@ -87,10 +87,11 @@ def make_input_tensor(c, depth, divergence, convergence,
         ], dim=0)
 
 
-def softplus01(depth, c=6):
-    min_v = math.log(1 + math.exp(0 * 12.0 - c)) / (12 - c)
-    max_v = math.log(1 + math.exp(1 * 12.0 - c)) / (12 - c)
-    v = torch.log(1. + torch.exp(depth * 12.0 - c)) / (12 - c)
+def softplus01(x, bias, scale):
+    # x: 0-1 normalized
+    min_v = math.log(1 + math.exp((0 - bias) * scale))
+    max_v = math.log(1 + math.exp((1 - bias) * scale))
+    v = torch.log(1. + torch.exp((x - bias) * scale))
     return (v - min_v) / (max_v - min_v)
 
 
@@ -114,11 +115,11 @@ def get_mapper(name):
         # for DepthAnything
         param = {
             # none 1x
-            "mul_1": 4,    # smooth 1.5x
-            "mul_2": 6,    # smooth 2x
-            "mul_3": 8.4,  # smooth 3x
+            "mul_1": {"bias": 0.333, "scale": 12},  # smooth 1.5x
+            "mul_2": {"bias": 0.5, "scale": 12},    # smooth 2x
+            "mul_3": {"bias": 0.687, "scale": 12},  # smooth 3x
         }[name]
-        return lambda x: softplus01(x, param)
+        return lambda x: softplus01(x, **param)
     elif name in {"div_6", "div_4", "div_2", "div_1"}:
         # for ZoeDepth
         param = {
