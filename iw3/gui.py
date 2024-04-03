@@ -184,9 +184,9 @@ class MainFrame(wx.Frame):
 
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
         self.cbo_foreground_scale = wx.ComboBox(self.grp_stereo,
-                                                choices=["0", "1", "2", "3"],
+                                                choices=["-3", "-2", "-1", "0", "1", "2", "3"],
                                                 style=wx.CB_READONLY, name="cbo_foreground_scale")
-        self.cbo_foreground_scale.SetSelection(0)
+        self.cbo_foreground_scale.SetSelection(3)
 
         self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,

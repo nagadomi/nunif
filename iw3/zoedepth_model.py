@@ -46,7 +46,7 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
                                            pretrained=True, verbose=False, trust_repo=True)
                 else:
                     assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                    model = torch.hub.load("../DepthAnything_iw3",
+                    model = torch.hub.load("../Depth-Anything_iw3",
                                            "DepthAnythingMetricDepth",
                                            model_type=DEPTH_ANYTHING_MODELS[model_type], remove_prep=False,
                                            source="local", verbose=False, trust_repo=True)

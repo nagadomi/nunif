@@ -48,6 +48,17 @@ class GroupNormNoBias(nn.Module):
         return x
 
 
+class RMSNorm(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(dim, dtype=torch.float32))
+
+    def forward(self, x):
+        scale = torch.rsqrt(torch.mean(x.to(torch.float32) ** 2, dim=-1, keepdim=True) + 1e-6)
+        scale = scale * self.weight.to(torch.float32)
+        return x * scale.to(x.dtype)
+
+
 def _test_l2norm():
     x = torch.randn((1, 4, 2, 2))
     model = L2Normalize()
