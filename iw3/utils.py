@@ -95,6 +95,13 @@ def softplus01(x, bias, scale):
     return (v - min_v) / (max_v - min_v)
 
 
+def inv_softplus01(x, bias, scale):
+    min_v = ((torch.zeros(1, dtype=x.dtype, device=x.device) - bias) * scale).expm1().clamp(min=1e-6).log()
+    max_v = ((torch.ones(1, dtype=x.dtype, device=x.device) - bias) * scale).expm1().clamp(min=1e-6).log()
+    v = ((x - bias) * scale).expm1().clamp(min=1e-6).log()
+    return (v - min_v) / (max_v - min_v)
+
+
 def distance_to_dispary(x, c):
     c1 = 1.0 + c
     min_v = c / c1
@@ -121,6 +128,15 @@ def get_mapper(name):
             "mul_3": {"bias": 0.687, "scale": 12},  # smooth 3x
         }[name]
         return lambda x: softplus01(x, **param)
+    elif name in {"inv_mul_1", "inv_mul_2", "inv_mul_3"}:
+        # https://github.com/nagadomi/nunif/assets/287255/f580b405-b0bf-4c6a-8362-66372b2ed930
+        param = {
+            # none 1x
+            "inv_mul_1": {"bias": -0.002102, "scale": 7.8788},  # inverse smooth 1.5x
+            "inv_mul_2": {"bias": -0.0003, "scale": 6.2626},    # inverse smooth 2x
+            "inv_mul_3": {"bias": -0.0001, "scale": 3.4343},    # inverse smooth 3x
+        }[name]
+        return lambda x: inv_softplus01(x, **param)
     elif name in {"div_6", "div_4", "div_2", "div_1"}:
         # for ZoeDepth
         param = {
@@ -1199,7 +1215,9 @@ def create_parser(required_true=True):
     parser.add_argument("--mapper", type=str,
                         choices=["auto", "pow2", "softplus", "softplus2",
                                  "div_6", "div_4", "div_2", "div_1",
-                                 "none", "mul_1", "mul_2", "mul_3"],
+                                 "none", "mul_1", "mul_2", "mul_3",
+                                 "inv_mul_1", "inv_mul_2", "inv_mul_3",
+                                 ],
                         help=("(re-)mapper function for depth. "
                               "if auto, div_6 for ZoeDepth model, none for DepthAnything model. "
                               "directly using this option is deprecated. "
