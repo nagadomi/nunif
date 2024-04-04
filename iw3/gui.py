@@ -213,9 +213,14 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format.SetSelection(0)
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
-                                             label=T("Flicker Reduction") + " " + T("(experimental)"),
+                                             label=T("Flicker Reduction"),
                                              name="chk_ema_normalize")
-        self.chk_ema_normalize.SetToolTip(T("Video Only"))
+        self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
+        self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.99", "0.9", "0.75", "0.5"],
+                                              name="cbo_ema_decay")
+        self.cbo_ema_decay.SetSelection(2)
+
+        self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
 
         layout = wx.FlexGridSizer(rows=10, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -234,9 +239,10 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_foreground_scale, 1, wx.EXPAND)
         layout.Add(self.chk_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_edge_dilation, 1, wx.EXPAND)
+        layout.Add(self.chk_ema_normalize, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_ema_decay, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
-        layout.Add(self.chk_ema_normalize, 1, wx.EXPAND)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -474,6 +480,7 @@ class MainFrame(wx.Frame):
 
         self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
         self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
+        self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -515,6 +522,7 @@ class MainFrame(wx.Frame):
         if not self.chk_edge_dilation.IsChecked():
             self.update_model_selection()
         self.update_edge_dilation()
+        self.update_ema_normalize()
 
     def get_anaglyph_method(self):
         if "Anaglyph" in self.cbo_stereo_format.GetValue():
@@ -671,6 +679,16 @@ class MainFrame(wx.Frame):
     def on_changed_chk_edge_dilation(self, event):
         self.update_edge_dilation()
 
+    def update_ema_normalize(self):
+        if self.chk_ema_normalize.IsChecked():
+            self.cbo_ema_decay.Enable()
+        else:
+            self.cbo_ema_decay.Disable()
+
+    def on_changed_chk_ema_normalize(self, event):
+        self.update_ema_normalize()
+
+
     def confirm_overwrite(self):
         input_path = self.txt_input.GetValue()
         output_path = self.txt_output.GetValue()
@@ -732,6 +750,9 @@ class MainFrame(wx.Frame):
             return
         if not validate_number(self.cbo_crf.GetValue(), 0, 30, is_int=True):
             self.show_validation_error_message(T("CRF"), 0, 30)
+            return
+        if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
+            self.show_validation_error_message(T("Flicker Reduction"), 0.1, 0.999)
             return
 
         zoed_height = self.cbo_zoed_resolution.GetValue()
@@ -838,6 +859,7 @@ class MainFrame(wx.Frame):
             export_disparity=export_disparity,
             debug_depth=debug_depth,
             ema_normalize=self.chk_ema_normalize.GetValue(),
+            ema_decay=float(self.cbo_ema_decay.GetValue()),
 
             max_fps=float(self.cbo_fps.GetValue()),
             pix_fmt=self.cbo_pix_fmt.GetValue(),
