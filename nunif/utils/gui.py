@@ -176,7 +176,7 @@ def start_file(file_path):
         if path.isdir(file_path):
             subprocess.Popen(["explorer", file_path], shell=True, **options)
         else:
-            subprocess.Popen(["start", file_path], shell=True, **options)
+            subprocess.Popen(["start", "", file_path], shell=True, **options)
     elif sys.platform == "linux":
         subprocess.Popen(["xdg-open", file_path], start_new_session=True, **options)
     elif sys.platform == "darwin":
