@@ -524,7 +524,7 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
                 sbs = TF.to_pil_image(sbs)
             return sbs
         else:
-            return debug_depth_image(depth, args)
+            return debug_depth_image(depth, args, args.ema_normalize)
 
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
@@ -582,8 +582,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return
 
     make_parent_dir(output_filename)
-    if ema_normalize:
-        args.state["ema"].clear()
 
     def config_callback(stream):
         fps = VU.get_fps(stream)
@@ -606,8 +604,12 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     @torch.inference_mode()
     def test_callback(frame):
-        return VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
-                                         return_tensor=True))
+        frame = VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
+                                          return_tensor=True))
+        if ema_normalize:
+            args.state["ema"].clear()
+        return frame
+
     if args.low_vram or args.debug_depth:
         @torch.inference_mode()
         def frame_callback(frame):
@@ -1279,7 +1281,6 @@ class EMAMinMax():
         else:
             self.min += (float(min_value) - self.min) * self.alpha
             self.max += (float(max_value) - self.max) * self.alpha
-
         return self.min, self.max
 
     def clear(self):
