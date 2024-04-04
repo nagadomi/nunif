@@ -263,7 +263,7 @@ FULL_SBS_SUFFIX = "_LRF_Full_SBS"
 HALF_SBS_SUFFIX = "_LR"
 VR180_SUFFIX = "_180x180_LR"
 ANAGLYPH_SUFFIX = "_redcyan"
-
+DEBUG_SUFFIX = "_debug"
 
 # SMB Invalid characters
 # Linux SMB replaces file names with random strings if they contain these invalid characters
@@ -271,7 +271,7 @@ ANAGLYPH_SUFFIX = "_redcyan"
 SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
-def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False, anaglyph=None):
+def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False, anaglyph=None, debug=False):
     basename = path.splitext(path.basename(input_filename))[0]
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
     if vr180:
@@ -280,6 +280,8 @@ def make_output_filename(input_filename, video=False, vr180=False, half_sbs=Fals
         auto_detect_suffix = HALF_SBS_SUFFIX
     elif anaglyph:
         auto_detect_suffix = ANAGLYPH_SUFFIX + f"_{anaglyph}"
+    elif debug:
+        auto_detect_suffix = DEBUG_SUFFIX
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
 
@@ -495,13 +497,16 @@ def debug_depth_image(depth, args, ema=False):
     depth_min, depth_max = depth.min(), depth.max()
     if ema:
         depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
-    mean_depth, std_depth = round(depth.mean().item(), 4), round(depth.std().item(), 4)
+    mean_depth, std_depth = depth.mean().item(), depth.std().item()
     depth = normalize_depth(depth, depth_min=depth_min, depth_max=depth_max)
     depth2 = get_mapper(args.mapper)(depth)
     out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
-    gc.text((16, 16), f"min={depth_min}\nmax={depth_max}\nmean={mean_depth}\nstd={std_depth}", "gray")
+    gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
+                       f"max={round(float(depth_max), 4)}\n"
+                       f"mean={round(float(mean_depth), 4)}\n"
+                       f"std={round(float(std_depth), 4)}"), "gray")
 
     return out
 
@@ -542,7 +547,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             output_filename = path.join(
                 output_dir,
                 make_output_filename(filename, video=False,
-                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
+                                     debug=args.debug_depth))
             if im is None or (args.resume and path.exists(output_filename)):
                 continue
             output = process_image(im, args, depth_model, side_model)
@@ -569,7 +575,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         output_filename = path.join(
             output_path,
             make_output_filename(path.basename(input_filename), video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
+                                 debug=args.debug_depth))
     else:
         output_filename = output_path
 
@@ -686,7 +693,8 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         output_filename = path.join(
             output_path,
             make_output_filename(path.basename(input_filename), video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
+                                 debug=args.debug_depth))
     else:
         output_filename = output_path
 
@@ -956,7 +964,8 @@ def process_config_video(config, args, side_model):
         output_filename = path.join(
             args.output,
             make_output_filename(basename, video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
+                                 debug=args.debug_depth))
     else:
         output_filename = args.output
     make_parent_dir(output_filename)
@@ -1125,7 +1134,8 @@ def process_config_images(config, args, side_model):
                 output_filename = path.join(
                     output_dir,
                     make_output_filename(rgb_filename, video=False,
-                                         vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+                                         vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
+                                         debug=args.debug_depth))
                 f = pool.submit(save_image, sbs, output_filename)
                 futures.append(f)
                 pbar.update(1)
@@ -1260,6 +1270,8 @@ def create_parser(required_true=True):
                         help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
                         help="use min/max moving average to normalize video depth")
+    parser.add_argument("--ema-decay", type=float, default=0.75,
+                        help="parameter for ema-normalize (0-1). large value makes it smoother")
     parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
                         help="loop count of edge dilation.")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
@@ -1269,7 +1281,7 @@ def create_parser(required_true=True):
 
 
 class EMAMinMax():
-    def __init__(self, alpha=0.25):
+    def __init__(self, alpha=0.75):
         self.min = None
         self.max = None
         self.alpha = alpha
@@ -1279,8 +1291,11 @@ class EMAMinMax():
             self.min = float(min_value)
             self.max = float(max_value)
         else:
-            self.min += (float(min_value) - self.min) * self.alpha
-            self.max += (float(max_value) - self.max) * self.alpha
+            self.min = self.alpha * self.min + (1. - self.alpha) * float(min_value)
+            self.max = self.alpha * self.max + (1. - self.alpha) * float(max_value)
+
+        # print(round(float(min_value), 3), round(float(max_value), 3), round(self.min, 3), round(self.max, 3))
+
         return self.min, self.max
 
     def clear(self):
@@ -1299,7 +1314,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
         "stop_event": stop_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
-        "ema": EMAMinMax(),
+        "ema": EMAMinMax(alpha=args.ema_decay),
         "device": create_device(args.gpu),
         "depth_utils": depth_utils
     }
@@ -1442,7 +1457,8 @@ def iw3_main(args):
             output_filename = path.join(
                 args.output,
                 make_output_filename(args.input, video=False,
-                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph))
+                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
+                                     debug=args.debug_depth))
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")
