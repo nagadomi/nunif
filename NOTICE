@@ -69,7 +69,11 @@ iw3 can anime-segmentation's pretrained model via rembg module.
 https://github.com/SkyTNT/anime-segmentation
 SkyTNT / Apache License Version 2.0
 
-
+---
+nunif/modules/lpips.py
+`normalize_tensor` fix is adapted from NormFixLPIPS of NeuralCompression
+https://github.com/facebookresearch/NeuralCompression
+Meta Platforms, Inc. and affiliates / MIT License
 
 ----
 Other libraries used are listed in `requirements.txt`.
