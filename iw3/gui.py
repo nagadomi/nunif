@@ -206,7 +206,9 @@ class MainFrame(wx.Frame):
                      "Anaglyph dubois2",
                      "Anaglyph color", "Anaglyph gray",
                      "Anaglyph half-color",
-                     "Anaglyph wimmer", "Anaglyph wimmer2"],
+                     "Anaglyph wimmer", "Anaglyph wimmer2",
+                     "Debug Depth",
+                     ],
             style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
 
@@ -608,6 +610,7 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        debug = self.cbo_stereo_format.GetValue() == "Debug Depth"
         anaglyph = self.get_anaglyph_method()
 
         video = is_video(input_path)
@@ -616,7 +619,8 @@ class MainFrame(wx.Frame):
             output_path = path.join(
                 output_path,
                 make_output_filename(input_path, video=video,
-                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
+                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph,
+                                     debug=debug))
 
         if path.exists(output_path):
             start_file(output_path)
@@ -672,7 +676,9 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        debug = self.cbo_stereo_format.GetValue() == "Debug Depth"
         anaglyph = self.get_anaglyph_method()
+
         video = is_video(input_path)
         is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
 
@@ -681,7 +687,8 @@ class MainFrame(wx.Frame):
                 output_path = path.join(
                     output_path,
                     make_output_filename(input_path, video=video,
-                                         vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph))
+                                         vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph,
+                                         debug=debug))
             else:
                 output_path = output_path
         else:
@@ -752,6 +759,7 @@ class MainFrame(wx.Frame):
         anaglyph = self.get_anaglyph_method()
         export = self.cbo_stereo_format.GetValue() == "Export"
         export_disparity = self.cbo_stereo_format.GetValue() == "Export disparity"
+        debug_depth = self.cbo_stereo_format.GetValue() == "Debug Depth"
 
         tune = set()
         if self.chk_tune_zerolatency.GetValue():
@@ -828,6 +836,7 @@ class MainFrame(wx.Frame):
             anaglyph=anaglyph,
             export=export,
             export_disparity=export_disparity,
+            debug_depth=debug_depth,
             ema_normalize=self.chk_ema_normalize.GetValue(),
 
             max_fps=float(self.cbo_fps.GetValue()),
