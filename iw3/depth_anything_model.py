@@ -118,6 +118,7 @@ def _forward(model, x, enable_amp):
         out = model(x).unsqueeze(dim=1)
     if out.dtype != torch.float32:
         out = out.to(torch.float32)
+    out = torch.nan_to_num(out)
     return out
 
 
