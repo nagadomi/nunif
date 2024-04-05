@@ -4,6 +4,14 @@ import lpips
 from os import path
 
 
+# Patch `lpips.normalize_tensor`
+# ref: https://github.com/facebookresearch/NeuralCompression/blob/main/neuralcompression/loss_fn/_normfix_lpips.py
+def _normalize_tensor_fix(in_feat, eps=1e-8):
+    return in_feat / torch.sqrt(torch.sum(in_feat**2 + eps, dim=1, keepdim=True))
+
+
+lpips.normalize_tensor = _normalize_tensor_fix
+
 # MODEL_PATH = None
 # MODEL_PATH = path.join(path.dirname(__file__), "_lpips_1.pth")
 MODEL_PATH = path.join(path.dirname(__file__), "_lpips_2.pth")
@@ -17,8 +25,6 @@ class LPIPSWith(nn.Module):
         self.lpips = lpips.LPIPS(net='vgg', model_path=MODEL_PATH).eval()
         # This needed because LPIPS has duplicate parameter references problem
         self.lpips.requires_grad_(False)
-        # TODO: NeuralCompression devs pointed out that LPIPS loss has a problem with gradient propagation.
-        #       https://github.com/facebookresearch/NeuralCompression/blob/main/neuralcompression/loss_fn/_normfix_lpips.py
 
     def train(mode=True):
         super().train(False)
@@ -40,5 +46,17 @@ def _test():
     print(loss(x, t))
 
 
+def _check_patch():
+    def my_normalize_tensor(in_feat, eps=1e-8):
+        print("!!my_normalize_tensor!!", eps)
+        return in_feat / torch.sqrt(torch.sum(in_feat**2 + eps, dim=1, keepdim=True))
+    lpips.normalize_tensor = my_normalize_tensor
+    loss = LPIPSWith(nn.L1Loss())
+    x = torch.randn((4, 3, 64, 64))
+    t = torch.randn((4, 3, 64, 64))
+    print(loss(x, t))
+
+
 if __name__ == "__main__":
+    # _check_patch()
     _test()

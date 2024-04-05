@@ -130,6 +130,7 @@ def force_update():
 def _forward(model, x, enable_amp):
     with autocast(device=x.device, enabled=enable_amp):
         out = model(x)['metric_depth']
+    out = torch.nan_to_num(out)
     return out
 
 
