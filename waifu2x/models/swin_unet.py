@@ -314,7 +314,13 @@ def box_resize(x, size):
     assert H % size[0] == 0 or W % size[1] == 0 and H > size[0] and W > size[1]
     kernel_h = H // size[0]
     kernel_w = W // size[1]
-    return F.avg_pool2d(x, kernel_size=(kernel_h, kernel_w), stride=(kernel_h, kernel_w))
+
+    # NOTE: Need static kernel_size for export
+    assert (kernel_h == kernel_w) and (kernel_h == 2 or kernel_h == 4)
+    if kernel_h == 2:
+        return F.avg_pool2d(x, kernel_size=(2, 2), stride=(2, 2))
+    else:
+        return F.avg_pool2d(x, kernel_size=(4, 4), stride=(4, 4))
 
 
 def resize(x, size, mode, align_corners, antialias):
