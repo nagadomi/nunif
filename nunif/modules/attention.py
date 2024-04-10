@@ -14,7 +14,6 @@ class SEBlock(nn.Module):
         self.conv2 = nn.Conv2d(in_channels // reduction, in_channels, 1, 1, 0, bias=bias)
 
     def forward(self, x):
-        b, c, _, _ = x.size()
         z = F.adaptive_avg_pool2d(x, 1)
         z = self.conv1(z)
         z = F.relu(z, inplace=True)
@@ -30,7 +29,6 @@ class SEBlockNHWC(nn.Module):
         self.lin2 = nn.Linear(in_channels // reduction, in_channels, bias=bias)
 
     def forward(self, x):
-        B, H, W, C = x.size()
         z = x.mean(dim=[1, 2], keepdim=True)
         z = F.relu(self.lin1(z), inplace=True)
         z = torch.sigmoid(self.lin2(z))
@@ -44,7 +42,6 @@ class SNSEBlock(nn.Module):
         self.conv2 = spectral_norm(nn.Conv2d(in_channels // reduction, in_channels, 1, 1, 0, bias=bias))
 
     def forward(self, x):
-        b, c, _, _ = x.size()
         z = F.adaptive_avg_pool2d(x, 1)
         z = self.conv1(z)
         z = F.relu(z, inplace=True)
@@ -84,7 +81,7 @@ class MHA(nn.Module):
         self.head_proj = nn.Linear(qkv_dim * num_heads, embed_dim)
 
     def forward(self, x, attn_mask=None, dropout_p=0.0, is_causal=False):
-        B, N, C = x.shape  # batch, sequence, feature
+        # x.shape: batch, sequence, feature
         q, k, v = self.qkv_proj(x).split(self.qkv_dim * self.num_heads, dim=-1)
         x = sliced_sdp(q, k, v, self.num_heads, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal)
         x = self.head_proj(x)
@@ -171,7 +168,6 @@ class CrossMHA(nn.Module):
 
     def forward(self, q, kv, attn_mask=None, dropout_p=0.0, is_causal=False):
         assert q.shape == kv.shape
-        B, N, C = q.shape
         q = self.q_proj(q)
         k, v = self.kv_proj(kv).split(self.qkv_dim * self.num_heads, dim=-1)
         x = sliced_sdp(q, k, v, self.num_heads, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal)
