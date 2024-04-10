@@ -62,6 +62,19 @@ class RMSNorm(nn.Module):
         return x * scale.to(x.dtype)
 
 
+class RMSNorm1(nn.Module):
+    # 1-centered ver
+    def __init__(self, normalized_shape, dim=-1):
+        super().__init__()
+        self.dim = dim
+        self.weight = nn.Parameter(torch.zeros(normalized_shape, dtype=torch.float32))
+
+    def forward(self, x):
+        scale = torch.rsqrt(torch.mean(x.to(torch.float32) ** 2, dim=self.dim, keepdim=True) + 1e-6)
+        scale = scale * (1.0 + self.weight.to(torch.float32))
+        return x * scale.to(x.dtype)
+
+
 def _test_l2norm():
     x = torch.randn((1, 4, 2, 2))
     model = L2Normalize()
