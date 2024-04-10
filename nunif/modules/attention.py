@@ -115,7 +115,7 @@ class WindowMHA2d(nn.Module):
 
 
 class OverlapWindowMHA2d(nn.Module):
-    # NOTE: Not much optimization
+    # NOTE: Not much optimization. Not used.
     def __init__(self, in_channels, num_heads, window_size=(4, 4), qkv_dim=None):
         super().__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
@@ -127,32 +127,30 @@ class OverlapWindowMHA2d(nn.Module):
             assert in_channels % num_heads == 0
             qkv_dim = in_channels // num_heads
         self.qkv_dim = qkv_dim
-        self.qkv_proj1 = nn.Linear(in_channels, qkv_dim * num_heads * 3)
-        self.qkv_proj2 = nn.Linear(in_channels, qkv_dim * num_heads * 3)
-        self.head_proj = nn.Conv2d(qkv_dim * num_heads * 2, in_channels, kernel_size=1, stride=1, padding=0)
+        self.qkv_proj = nn.Conv2d(in_channels, qkv_dim * num_heads * 3, kernel_size=1, stride=1, padding=0)
+        self.head_proj = nn.Conv2d(qkv_dim * num_heads, in_channels, kernel_size=1, stride=1, padding=0)
 
-    def forward_mha(self, x, qkv_proj, attn_mask=None):
-        B, N, C = x.shape
-        q, k, v = qkv_proj(x).split(self.qkv_dim * self.num_heads, dim=-1)
+    def forward_mha(self, x, attn_mask=None):
+        q, k, v = x.split(self.qkv_dim * self.num_heads, dim=-1)
         x = sliced_sdp(q, k, v, self.num_heads, attn_mask=attn_mask)
         return x
 
     def forward(self, x, attn_mask=None, layer_norm=None):
         if layer_norm is not None:
             x = bhwc_to_bchw(layer_norm(bchw_to_bhwc(x)))
+        x = self.qkv_proj(x)
         x1 = x
         x2 = F.pad(x, [self.pad_w, self.pad_w, self.pad_h, self.pad_h], mode="constant", value=0)
         out_shape1 = x1.shape
         out_shape2 = x2.shape
         x1 = bchw_to_bnc(x1, self.window_size)
         x2 = bchw_to_bnc(x2, self.window_size)
-        x1 = self.forward_mha(x1, self.qkv_proj1, attn_mask=attn_mask)
-        x2 = self.forward_mha(x2, self.qkv_proj2, attn_mask=attn_mask)
-        x1 = bnc_to_bchw(x1, out_shape1, self.window_size)
-        x2 = bnc_to_bchw(x2, out_shape2, self.window_size)
+        x1 = self.forward_mha(x1, attn_mask=attn_mask)
+        x2 = self.forward_mha(x2, attn_mask=attn_mask)
+        x1 = bnc_to_bchw(x1, (out_shape1[0], x1.shape[-1], *out_shape1[2:]), self.window_size)
+        x2 = bnc_to_bchw(x2, (out_shape2[0], x2.shape[-1], *out_shape2[2:]), self.window_size)
         x2 = F.pad(x2, [-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h])
-        x = torch.cat([x1, x2], dim=1)
-        x = self.head_proj(x)
+        x = self.head_proj(x1 + x2)
 
         return x
 
