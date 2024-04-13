@@ -197,5 +197,53 @@ class WindowCrossMHA2d(nn.Module):
         return x
 
 
+class WindowScoreBias(nn.Module):
+    def __init__(self, window_size, hidden_dim=None):
+        super().__init__()
+        if isinstance(window_size, int):
+            window_size = [window_size, window_size]
+        self.window_size = window_size
+
+        index, unique_delta = self._gen_input(self.window_size)
+        self.register_buffer("index", index)
+        self.register_buffer("delta", unique_delta)
+        if hidden_dim is None:
+            hidden_dim = int((self.window_size[0] * self.window_size[1]) ** 0.5) * 2
+
+        self.to_bias = nn.Sequential(
+            nn.Linear(2, hidden_dim, bias=True),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1, bias=True))
+
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, 0, 0.02)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    @staticmethod
+    def _gen_input(window_size):
+        N = window_size[0] * window_size[1]
+        mesh_y, mesh_x = torch.meshgrid(torch.arange(0, window_size[0]),
+                                        torch.arange(0, window_size[1]), indexing="ij")
+        positions = torch.stack((mesh_y, mesh_x), dim=2).reshape(N, 2)
+        delta = torch.cat([positions[i].view(1, 2) - positions
+                           for i in range(positions.shape[0])], dim=0)
+        delta = [tuple(p) for p in delta.tolist()]
+        unique_delta = sorted(list(set(delta)))
+        index = [unique_delta.index(d) for d in delta]
+        index = torch.tensor(index, dtype=torch.int64)
+        unique_delta = torch.tensor(unique_delta, dtype=torch.float32)
+        unique_delta = unique_delta / unique_delta.abs().max()
+        return index, unique_delta
+
+    def forward(self):
+        N = self.window_size[0] * self.window_size[1]
+        bias = self.to_bias(self.delta)
+        # (N,N) float attention score bias
+        bias = bias[self.index].reshape(N, N)
+        return bias
+
+
 if __name__ == "__main__":
     pass
