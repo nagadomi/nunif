@@ -17,26 +17,28 @@ class ReplicationPad2d(nn.Module):
         return self.pad(x)
 
 
+def replication_pad2d_naive(x, padding):
+    assert x.ndim == 4 and len(padding) == 4
+    left, right, top, bottom = padding
+    if left > 0:
+        x = torch.cat((*((x[:, :, :, :1],) * left), x), dim=3)
+    if right > 0:
+        x = torch.cat((x, *((x[:, :, :, -1:],) * right)), dim=3)
+    if top > 0:
+        x = torch.cat((*((x[:, :, :1, :],) * top), x), dim=2)
+    if bottom > 0:
+        x = torch.cat((x, *((x[:, :, -1:, :],) * bottom)), dim=2)
+    return x
+
+
 class ReplicationPad2dNaive(nn.Module):
     def __init__(self, padding):
         super().__init__()
         assert isinstance(padding, (list, tuple)) and len(padding) == 4
-        self.left = padding[0]
-        self.right = padding[1]
-        self.top = padding[2]
-        self.bottom = padding[3]
+        self.padding = padding
 
     def forward(self, x):
-        assert x.ndim == 4
-        if self.left > 0:
-            x = torch.cat((*((x[:, :, :, :1],) * self.left), x), dim=3)
-        if self.right > 0:
-            x = torch.cat((x, *((x[:, :, :, -1:],) * self.right)), dim=3)
-        if self.top > 0:
-            x = torch.cat((*((x[:, :, :1, :],) * self.top), x), dim=2)
-        if self.bottom > 0:
-            x = torch.cat((x, *((x[:, :, -1:, :],) * self.bottom)), dim=2)
-        return x
+        return replication_pad2d_naive(x, self.padding)
 
 
 def _test():
