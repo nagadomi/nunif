@@ -1,3 +1,4 @@
+# when unicode error, set LANG=C
 import os
 import sys
 import argparse
@@ -15,6 +16,7 @@ from PIL.PngImagePlugin import PngInfo
 from nunif.utils.image_loader import ImageLoader, list_images
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
+from iw3.utils import get_mapper, normalize_depth
 from .stereoimage_generation import create_stereoimages
 
 
@@ -35,7 +37,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
 
     # im_sbs.save(filename_base + "_LRF.png")
 
-    stride = size // 2
+    stride = size // 4
     w, h = im_org.size
     seq = 1
     rect_groups = []
@@ -63,22 +65,19 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
 
 def random_resize(im, min_size, max_size):
     w, h = im.size
-    common_width = [640, 768, 1024, 1280, 1440, 1920]
-    common_height = [320, 480, 576, 720, 1080]
-    common_width = [s for s in common_width if min_size <= s and s <= max_size and s <= w]
-    common_height = [s for s in common_height if min_size <= s and s <= max_size and s <= h]
+    common_size = [384, 392, 518] * 3 + [770, 1036]
 
-    if random.uniform(0, 1) < 0.5 and common_height and common_width:
+    if random.uniform(0, 1) < 0.75:
         # random select common format
-        if w > h:
-            new_w = random.choice(common_width)
-            if new_w != w:
+        if w < h:
+            new_w = random.choice(common_size)
+            if new_w < w:
                 new_h = int(h * (new_w / w))
                 interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
                 im = TF.resize(im, (new_h, new_w), interpolation=interpolation, antialias=True)
         else:
-            new_h = random.choice(common_height)
-            if new_h != h:
+            new_h = random.choice(common_size)
+            if new_h < h:
                 new_w = int(w * (new_h / h))
                 interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
                 im = TF.resize(im, (new_h, new_w), interpolation=interpolation, antialias=True)
@@ -97,13 +96,21 @@ def random_resize(im, min_size, max_size):
         scale_factor = random.uniform(min_factor, max_factor)
         new_w = int(im.width * scale_factor)
         new_h = int(im.height * scale_factor)
-        assert min(new_w, new_h) >= min_size and max(new_w, new_h) <= max_size
-        interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
-        im = TF.resize(im, (new_h, new_w), interpolation=interpolation, antialias=True)
+        if new_w < w:
+            assert min(new_w, new_h) >= min_size and max(new_w, new_h) <= max_size
+            interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
+            im = TF.resize(im, (new_h, new_w), interpolation=interpolation, antialias=True)
 
-    assert min_size <= min(im.size) and max(im.size) <= max_size
+    # assert min_size <= min(im.size) and max(im.size) <= max_size
 
     return im
+
+
+def apply_mapper(depth, mapper):
+    # signed int16 to unsigned long
+    depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
+    depth = normalize_depth(depth)
+    return get_mapper(mapper)(depth)
 
 
 def gen_divergence():
@@ -118,6 +125,21 @@ def gen_convergence():
         return random.choice([0.0, 0.5, 1.0])
     else:
         return random.uniform(0., 1.)
+
+
+def gen_mapper(model_type):
+    if model_type.startswith("ZoeD"):
+        if random.uniform(0, 1) < 0.7:
+            return "div_6"
+        else:
+            return random.choice(["none", "div_25", "div_10", "div_4", "div_2", "div_1"])
+    elif model_type.startswith("Any"):
+        if random.uniform(0, 1) < 0.7:
+            return "none"
+        else:
+            return random.choice(["inv_mul_1", "inv_mul_2", "inv_mul_3", "mul_1", "mul_2", "mul_3"])
+    else:
+        raise ValueError(model_type)
 
 
 def main(args):
@@ -164,24 +186,25 @@ def main(args):
                 if min(im.size) < args.min_size:
                     continue
                 for _ in range(args.times):
-                    mapper = random.choice(["pow2", "none"]) if args.mapper == "random" else args.mapper
+                    mapper = gen_mapper(args.model_type) if args.mapper == "random" else args.mapper
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
                     divergence = gen_divergence()
                     convergence = gen_convergence()
                     with torch.inference_mode():
                         flip_aug = random.choice([True, False]),
-                        enable_amp = True  # random.choice([True, False])
+                        enable_amp = True
                         depth = depth_utils.batch_infer(model, im_s, int16=True, normalize_int16=True,
                                                         flip_aug=flip_aug, enable_amp=enable_amp)
-                        np_depth = depth.squeeze(0).numpy().astype(np.uint16)
+                        np_depth16 = depth.clone().squeeze(0).numpy().astype(np.uint16)
+                        np_depth_f = apply_mapper(depth, mapper).squeeze(0).numpy().astype(np.float64)
                     sbs = create_stereoimages(
                         np.array(im_s, dtype=np.uint8),
-                        0xffff - np_depth,
+                        np_depth_f,
                         divergence, modes=["left-right"],
                         convergence=convergence,
-                        mapper=mapper)[0]
-                    f = pool.submit(save_images, im_s, sbs, Image.fromarray(np_depth),
+                        )[0]
+                    f = pool.submit(save_images, im_s, sbs, Image.fromarray(np_depth16),
                                     divergence, convergence,
                                     mapper,
                                     output_base, args.size, args.num_samples)
@@ -198,7 +221,7 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--max-size", type=int, default=1920, help="max image size")
+    parser.add_argument("--max-size", type=int, default=1280, help="max image size")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
