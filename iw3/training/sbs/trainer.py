@@ -79,6 +79,10 @@ class SBSTrainer(Trainer):
     def create_env(self):
         if self.args.loss == "l1":
             criterion = ClampLoss(nn.L1Loss()).to(self.device)
+        elif self.args.loss == "l1_delta":
+            criterion = AuxiliaryLoss(
+                (ClampLoss(nn.L1Loss()), DeltaPenalty()),
+                (1.0, 1.0)).to(self.device)
         elif self.args.loss == "aux_l1":
             criterion = AuxiliaryLoss(
                 (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()),
@@ -100,7 +104,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="sbs.row_flow_v2", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="aux_l1", choices=["l1", "aux_l1"],
+    parser.add_argument("--loss", type=str, default="aux_l1", choices=["l1", "aux_l1", "l1_delta"],
                         help="loss")
 
     parser.set_defaults(
