@@ -46,9 +46,13 @@ def load_model(model_path, model=None, device_ids=None,
         # Disabled due to https://github.com/pytorch/pytorch/issues/94670
         weights_only = False
     if "mps" in str(map_location):
-        data = torch.load(model_path, map_location="cpu", weights_only=weights_only)
+        map_location = "cpu"
+    if model_path.startswith("http://") or model_path.startswith("https://"):
+        # force weights_only=True to avoid security risk
+        data = torch.hub.load_state_dict_from_url(model_path, weights_only=True, map_location=map_location)
     else:
         data = torch.load(model_path, map_location=map_location, weights_only=weights_only)
+
     assert ("nunif_model" in data)
     if model is None:
         model = create_model(data["name"], device_ids=device_ids, **data["kwargs"])
