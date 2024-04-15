@@ -65,7 +65,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
 
 def random_resize(im, min_size, max_size):
     w, h = im.size
-    common_size = [384, 392, 518] * 3 + [770, 1036]
+    common_size = [384, 392, 512, 518] * 3 + [768, 770, 1036, 1024]
 
     if random.uniform(0, 1) < 0.75:
         # random select common format
@@ -117,7 +117,7 @@ def gen_divergence():
     if random.uniform(0, 1) < 0.7:
         return random.choice([2., 2.5])
     else:
-        return random.uniform(0., 2.5)
+        return random.uniform(0., 5.0)
 
 
 def gen_convergence():
@@ -140,6 +140,13 @@ def gen_mapper(model_type):
             return random.choice(["inv_mul_1", "inv_mul_2", "inv_mul_3", "mul_1", "mul_2", "mul_3"])
     else:
         raise ValueError(model_type)
+
+
+def gen_edge_dilation(model_type):
+    if model_type.startswith("ZoeD"):
+        return random.choice([0] * 7 + [1, 2, 3, 4])
+    elif model_type.startswith("Any"):
+        return random.choice([2] * 7 + [0, 1, 3, 4])
 
 
 def main(args):
@@ -191,11 +198,13 @@ def main(args):
                     output_base = path.join(output_dir, filename_prefix + str(seq))
                     divergence = gen_divergence()
                     convergence = gen_convergence()
+                    edge_dilation = gen_edge_dilation(args.model_type)
                     with torch.inference_mode():
-                        flip_aug = random.choice([True, False]),
+                        flip_aug = random.choice([True, False, False, False])
                         enable_amp = True
                         depth = depth_utils.batch_infer(model, im_s, int16=True, normalize_int16=True,
-                                                        flip_aug=flip_aug, enable_amp=enable_amp)
+                                                        flip_aug=flip_aug, enable_amp=enable_amp,
+                                                        edge_dilation=edge_dilation)
                         np_depth16 = depth.clone().squeeze(0).numpy().astype(np.uint16)
                         np_depth_f = apply_mapper(depth, mapper).squeeze(0).numpy().astype(np.float64)
                     sbs = create_stereoimages(
