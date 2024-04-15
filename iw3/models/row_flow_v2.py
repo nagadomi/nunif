@@ -112,9 +112,10 @@ def _bench(name):
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
             z = model(x)
+    torch.cuda.synchronize()
     print(1 / ((time.time() - t)/(B * N)), "FPS")
 
 
 if __name__ == "__main__":
-    # 732 FPS on RTX3070Ti
+    # 562 FPS on RTX3070Ti
     _bench("sbs.row_flow_v2")
