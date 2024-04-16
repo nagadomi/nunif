@@ -50,13 +50,22 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
             rects = []
             for im, postfix in zip((im_org, im_l, im_r, im_depth), ("_C", "_L", "_R", "_D")):
                 rect = TF.crop(im, y, x, size, size)
+
                 rects.append((filename_base + "_" + str(seq) + postfix + ".png", rect))
             rect_groups.append(rects)
             seq += 1
     if not rect_groups:
         return
+    if len(rect_groups) > num_samples:
+        if random.uniform(0, 1) < 0.5:
+            # sorted by depth std
+            rects_sorted = sorted([(rects, TF.to_tensor(rects[3][1]).float().std(dim=[1,2]).sum().item())
+                                   for rects in rect_groups],
+                                  key=lambda d: d[1], reverse=True)
+            rect_groups = [d[0] for d in rects_sorted[:num_samples]]
+        else:
+            random.shuffle(rect_groups)
 
-    random.shuffle(rect_groups)
     for i in range(min(num_samples, len(rect_groups))):
         rects = rect_groups[i]
         for output_filename, rect in rects:
