@@ -5,7 +5,6 @@ from nunif.models import I2IBaseModel, register_model
 from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2d
-from nunif.modules.norm import RMSNorm1
 
 
 class WABlock(nn.Module):
@@ -15,20 +14,14 @@ class WABlock(nn.Module):
         self.conv_mlp = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0),
             nn.GELU(),
-            ReplicationPad2d((1, 1, 0, 0)),
-            nn.Conv2d(in_channels, in_channels, kernel_size=(1, 3), padding=0),
+            ReplicationPad2d((1, 1, 1, 1)),
+            nn.Conv2d(in_channels, in_channels, kernel_size=(3, 3), padding=0),
             nn.LeakyReLU(0.1, inplace=True))
-        if layer_norm:
-            self.norm1 = nn.LayerNorm(in_channels, bias=False)
-            self.norm2 = RMSNorm1((1, in_channels, 1, 1), dim=1)
-        else:
-            self.norm1 = None
-            self.norm2 = nn.Identity()
         self.bias = WindowScoreBias(window_size)
 
     def forward(self, x):
-        x = x + self.mha(x, attn_mask=self.bias(), layer_norm=self.norm1)
-        x = x + self.conv_mlp(self.norm2(x))
+        x = x + self.mha(x, attn_mask=self.bias())
+        x = x + self.conv_mlp(x)
         return x
 
 
@@ -38,17 +31,15 @@ class RowFlowV3(I2IBaseModel):
 
     def __init__(self):
         super(RowFlowV3, self).__init__(locals(), scale=1, offset=28, in_channels=8, blend_size=4)
-        self.downscaling_factor = (4, 8)
+        self.downscaling_factor = (1, 8)
         self.mod = 4 * 3
         pack = self.downscaling_factor[0] * self.downscaling_factor[1]
-        C = 96
+        C = 64
         assert C >= pack
         self.blocks = nn.Sequential(
             nn.Conv2d(3 * pack, C, kernel_size=1, stride=1, padding=0),
-            WABlock(C, (1, 4)),
-            WABlock(C, (1, 3)),
-            WABlock(C, (1, 4)),
-            nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0),
+            WABlock(C, (4, 4)),
+            WABlock(C, (3, 3)),
         )
         self.last_layer = nn.Sequential(
             ReplicationPad2d((1, 1, 1, 1)),
