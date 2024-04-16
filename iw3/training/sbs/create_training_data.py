@@ -117,11 +117,12 @@ def apply_mapper(depth, mapper):
     return get_mapper(mapper)(depth)
 
 
-def gen_divergence():
+def gen_divergence(width):
+    max_divergence = min(32.0 / width * 100, 5.0)
     if random.uniform(0, 1) < 0.7:
         return random.choice([2., 2.5])
     else:
-        return random.uniform(0., 5.0)
+        return random.uniform(0., max_divergence)
 
 
 def gen_convergence():
@@ -200,7 +201,7 @@ def main(args):
                     mapper = gen_mapper(args.model_type) if args.mapper == "random" else args.mapper
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
-                    divergence = gen_divergence()
+                    divergence = gen_divergence(im_s.width)
                     convergence = gen_convergence()
                     edge_dilation = gen_edge_dilation(args.model_type)
                     with torch.inference_mode():
