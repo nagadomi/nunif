@@ -66,7 +66,6 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
 def random_resize(im, min_size, max_size):
     w, h = im.size
     common_size = [384, 392, 512, 518] * 3 + [768, 770, 1036, 1024]
-
     if random.uniform(0, 1) < 0.75:
         # random select common format
         if w < h:
@@ -101,7 +100,12 @@ def random_resize(im, min_size, max_size):
             interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
             im = TF.resize(im, (new_h, new_w), interpolation=interpolation, antialias=True)
 
-    # assert min_size <= min(im.size) and max(im.size) <= max_size
+    if max_size < im.width:
+        im = TF.crop(im, 0, 0, im.height, max_size)
+    if max_size < im.height:
+        im = TF.crop(im, 0, 0, max_size, im.width)
+
+    assert min_size <= min(im.size) and max(im.size) <= max_size
 
     return im
 
