@@ -41,6 +41,8 @@ class SBSTrainer(Trainer):
     def create_model(self):
         kwargs = {}
         model = create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
+        if self.args.symmetric:
+            model.symmetric = True
         model = model.to(self.device)
         return model
 
@@ -48,7 +50,8 @@ class SBSTrainer(Trainer):
         assert (type in {"train", "eval"})
         model_offset = self.model.i2i_offset
         if type == "train":
-            dataset = SBSDataset(path.join(self.args.data_dir, "train"), model_offset, training=True)
+            dataset = SBSDataset(path.join(self.args.data_dir, "train"), model_offset,
+                                 symmetric=self.args.symmetric, training=True)
             self.sampler = dataset.create_sampler(self.args.num_samples)
             loader = torch.utils.data.DataLoader(
                 dataset,
@@ -60,7 +63,8 @@ class SBSTrainer(Trainer):
                 drop_last=False)
             return loader
         else:
-            dataset = SBSDataset(path.join(self.args.data_dir, "eval"), model_offset, training=False)
+            dataset = SBSDataset(path.join(self.args.data_dir, "eval"), model_offset,
+                                 symmetric=self.args.symmetric, training=False)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -91,6 +95,14 @@ class SBSTrainer(Trainer):
 
 
 def train(args):
+    if args.loss is None:
+        if args.arch == "sbs.row_flow":
+            args.loss = "l1"
+        elif args.arch == "sbs.row_flow_v2":
+            args.loss = "aux_l1"
+        elif args.arch == "sbs.row_flow_v3":
+            args.loss = "l1_delta"
+
     trainer = SBSTrainer(args)
     trainer.fit()
 
@@ -101,11 +113,13 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="sbs.row_flow_v2", help="network arch")
+    parser.add_argument("--arch", type=str, default="sbs.row_flow_v3", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="aux_l1", choices=["l1", "aux_l1", "l1_delta"],
-                        help="loss")
+    parser.add_argument("--loss", type=str, nargs="?", default=None, const="l1",
+                        choices=["l1", "aux_l1", "l1_delta"], help="loss")
+    parser.add_argument("--symmetric", action="store_true",
+                        help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
 
     parser.set_defaults(
         batch_size=16,
@@ -113,7 +127,7 @@ def register(subparsers, default_parser):
         learning_rate=0.0001,
         scheduler="cosine",
         learning_rate_cycles=4,
-        max_epoch=100,
+        max_epoch=200,
         learning_rate_decay=0.98,
         learning_rate_decay_step=[1],
         momentum=0.9,

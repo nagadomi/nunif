@@ -7,6 +7,9 @@ from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2d
 
 
+OFFSET = 32
+
+
 class WABlock(nn.Module):
     def __init__(self, in_channels, window_size, layer_norm=False):
         super(WABlock, self).__init__()
@@ -30,7 +33,7 @@ class RowFlowV3(I2IBaseModel):
     name = "sbs.row_flow_v3"
 
     def __init__(self):
-        super(RowFlowV3, self).__init__(locals(), scale=1, offset=28, in_channels=8, blend_size=4)
+        super(RowFlowV3, self).__init__(locals(), scale=1, offset=OFFSET, in_channels=8, blend_size=4)
         self.downscaling_factor = (1, 8)
         self.mod = 4 * 3
         pack = self.downscaling_factor[0] * self.downscaling_factor[1]
@@ -45,9 +48,10 @@ class RowFlowV3(I2IBaseModel):
             ReplicationPad2d((1, 1, 1, 1)),
             nn.Conv2d(C // pack, 1, kernel_size=3, stride=1, padding=0)
         )
-        self.pre_pad = ReplicationPad2d((28,) * 4)
+        self.pre_pad = ReplicationPad2d((OFFSET,) * 4)
         self.register_buffer("delta_scale", torch.tensor(1.0 / 127.0))
         self.delta_output = False
+        self.symmetric = False
 
     def _forward(self, x):
         input_height, input_width = x.shape[2:]
@@ -78,15 +82,21 @@ class RowFlowV3(I2IBaseModel):
         rgb = x[:, 0:3, :, ]
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
-        if self.training:
-            delta = self._forward(x)
+
+        delta = self._forward(x)
+        if self.symmetric:
+            left = self._warp(rgb, grid, delta, self.delta_scale)
+            right = self._warp(rgb, grid, -delta, self.delta_scale)
+            left = F.pad(left, (-OFFSET,) * 4)
+            right = F.pad(right, (-OFFSET,) * 4)
+            z = torch.cat([left, right], dim=1)
+        else:
             z = self._warp(rgb, grid, delta, self.delta_scale)
-            z = F.pad(z, (-28, -28, -28, -28))
+            z = F.pad(z, (-OFFSET,) * 4)
+
+        if self.training:
             return z, ((grid[:, 0:1, :, :] / self.delta_scale).detach() + delta)
         else:
-            delta = self._forward(x)
-            z = self._warp(rgb, grid, delta, self.delta_scale)
-            z = F.pad(z, (-28, -28, -28, -28))
             return torch.clamp(z, 0., 1.)
 
     def _forward_delta_only(self, x):
@@ -95,7 +105,7 @@ class RowFlowV3(I2IBaseModel):
         x = self.pre_pad(x)
         delta = self._forward(x)
         delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
-        delta = F.pad(delta, [-28] * 4)
+        delta = F.pad(delta, [-OFFSET] * 4)
         return delta
 
     def forward(self, x):
@@ -130,5 +140,5 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    # 700 FPS on RTX3070Ti
+    # 540 FPS on RTX3070Ti
     _bench("sbs.row_flow_v3")
