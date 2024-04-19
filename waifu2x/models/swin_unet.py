@@ -309,6 +309,27 @@ class SwinUNet8x(I2IBaseModel):
             return torch.clamp(z, 0, 1)
 
 
+def box_resize(x, size):
+    H, W = x.shape[2:]
+    assert H % size[0] == 0 or W % size[1] == 0 and H > size[0] and W > size[1]
+    kernel_h = H // size[0]
+    kernel_w = W // size[1]
+
+    # NOTE: Need static kernel_size for export
+    assert (kernel_h == kernel_w) and (kernel_h == 2 or kernel_h == 4)
+    if kernel_h == 2:
+        return F.avg_pool2d(x, kernel_size=(2, 2), stride=(2, 2))
+    else:
+        return F.avg_pool2d(x, kernel_size=(4, 4), stride=(4, 4))
+
+
+def resize(x, size, mode, align_corners, antialias):
+    if mode == "box":
+        return box_resize(x, size=size)
+    else:
+        return F.interpolate(x, size=size, mode=mode, align_corners=align_corners, antialias=antialias)
+
+
 @register_model
 class SwinUNetDownscaled(I2IBaseModel):
     name = "waifu2x.swin_unet_downscaled"
@@ -329,6 +350,7 @@ class SwinUNetDownscaled(I2IBaseModel):
                 scale_factor=4)
         else:
             self.unet = unet
+        self.mode = "bicubic"
         self.antialias = True
         self.pre_antialias = pre_antialias
         self.downscale_factor = downscale_factor
@@ -338,13 +360,13 @@ class SwinUNetDownscaled(I2IBaseModel):
             x = resize_antialias(x, antialias=self.antialias)
         z = self.unet(x)
         if self.training:
-            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
-                              mode="bicubic", align_corners=False, antialias=self.antialias)
+            z = resize(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+                       mode=self.mode, align_corners=False, antialias=self.antialias)
             return z
         else:
             z = torch.clamp(z, 0., 1.)
-            z = F.interpolate(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
-                              mode="bicubic", align_corners=False, antialias=self.antialias)
+            z = resize(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+                       mode=self.mode, align_corners=False, antialias=self.antialias)
             z = torch.clamp(z, 0., 1.)
             return z
 

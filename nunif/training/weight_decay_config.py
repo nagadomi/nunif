@@ -4,7 +4,8 @@
 # Adding modules used in this repo by nagadomi
 import torch
 from torchvision.models.swin_transformer import ShiftedWindowAttentionV2, ShiftedWindowAttention
-from ..modules.norm import LayerNormNoBias2d, RMSNorm
+from ..modules.norm import LayerNormNoBias2d, RMSNorm, RMSNorm1
+from ..modules.fusion import Lerp
 
 
 def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
@@ -31,6 +32,8 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
         torch.nn.GroupNorm,
         LayerNormNoBias2d,
         RMSNorm,
+        RMSNorm1,
+        Lerp,
     )
     for mn, m in model.named_modules():
         for pn, p in m.named_parameters():

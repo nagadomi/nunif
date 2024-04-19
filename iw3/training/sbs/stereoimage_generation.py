@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 
 def create_stereoimages(original_image, depthmap, divergence, modes=None, stereo_balance=0.0,
-                        fill_technique='polylines_sharp', convergence=1, mapper="pow2"):
+                        fill_technique='polylines_sharp', convergence=1):
     """Creates stereoscopic images.
     An effort is made to make them look nice, but beware that the resulting image will have some distortion .
 
@@ -30,9 +30,9 @@ def create_stereoimages(original_image, depthmap, divergence, modes=None, stereo
     original_image = np.asarray(original_image)
     balance = (stereo_balance + 1) / 2
     left_eye = original_image if balance < 0.001 else \
-        apply_stereo_divergence(original_image, depthmap, +1 * divergence * balance, fill_technique, convergence=convergence, mapper=mapper)
+        apply_stereo_divergence(original_image, depthmap, +1 * divergence * balance, fill_technique, convergence=convergence)
     right_eye = original_image if balance > 0.999 else \
-        apply_stereo_divergence(original_image, depthmap, -1 * divergence * (1 - balance), fill_technique, convergence=convergence, mapper=mapper)
+        apply_stereo_divergence(original_image, depthmap, -1 * divergence * (1 - balance), fill_technique, convergence=convergence)
 
     results = []
     for mode in modes:
@@ -51,29 +51,22 @@ def create_stereoimages(original_image, depthmap, divergence, modes=None, stereo
     return [Image.fromarray(r) for r in results]
 
 
-def apply_stereo_divergence(original_image, depth, divergence, fill_technique, convergence=1, mapper="pow2"):
-    depth_min = depth.min()
-    depth_max = depth.max()
-    normalized_depth = (depth - depth_min) / (depth_max - depth_min)
+def apply_stereo_divergence(original_image, normalized_depth, divergence, fill_technique, convergence=1):
     divergence_px = (divergence / 100.0) * original_image.shape[1]
 
     if fill_technique in ['none', 'naive', 'naive_interpolating']:
-        return apply_stereo_divergence_naive(original_image, normalized_depth, divergence_px, fill_technique, convergence=convergence, mapper=mapper)
+        return apply_stereo_divergence_naive(original_image, normalized_depth, divergence_px, fill_technique, convergence=convergence)
     if fill_technique in ['polylines_soft', 'polylines_sharp']:
-        return apply_stereo_divergence_polylines(original_image, normalized_depth, divergence_px, fill_technique, convergence=convergence, mapper=mapper)
+        return apply_stereo_divergence_polylines(original_image, normalized_depth, divergence_px, fill_technique, convergence=convergence)
 
 
 @njit
-def apply_stereo_divergence_naive(original_image, normalized_depth, divergence_px: float, fill_technique, convergence=1, mapper="pow2"):
+def apply_stereo_divergence_naive(original_image, normalized_depth, divergence_px: float, fill_technique, convergence=1):
     h, w, c = original_image.shape
 
     derived_image = np.zeros_like(original_image)
     filled = np.zeros(h * w, dtype=np.uint8)
 
-    if mapper == "pow2":
-        normalized_depth = normalized_depth ** 2
-    elif mapper == "none":
-        pass
 
     for row in prange(h):
         # Swipe order should ensure that pixels that are closer overwrite
@@ -134,17 +127,12 @@ def apply_stereo_divergence_naive(original_image, normalized_depth, divergence_p
 
 
 @njit(parallel=True)  # fastmath=True does not reasonably improve performance
-def apply_stereo_divergence_polylines(original_image, normalized_depth, divergence_px: float, fill_technique, convergence=1, mapper="pow2"):
+def apply_stereo_divergence_polylines(original_image, normalized_depth, divergence_px: float, fill_technique, convergence=1):
     # This code treats rows of the image as polylines
     # It generates polylines, morphs them (applies divergence) to them, and then rasterizes them
     EPSILON = 1e-7
     PIXEL_HALF_WIDTH = 0.45 if fill_technique == 'polylines_sharp' else 0.0
     # PERF_COUNTERS = [0, 0, 0]
-
-    if mapper == "pow2":
-        normalized_depth = normalized_depth ** 2
-    elif mapper == "none":
-        pass
 
     h, w, c = original_image.shape
     derived_image = np.zeros_like(original_image)

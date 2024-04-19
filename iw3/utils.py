@@ -14,15 +14,20 @@ from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
 import nunif.utils.video as VU
-from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir
-from nunif.device import create_device, autocast
+from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
+from nunif.device import create_device, autocast, device_is_mps
 from . import export_config
 from . dilation import dilate_edge
+from . forward_warp import apply_divergence_forward_warp
 
 
-FLOW_MODEL_PATH = path.join(path.dirname(__file__), "pretrained_models", "row_flow_v2.pth")
+HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 REMBG_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "rembg")
 os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
+
+ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v2_20240130.pth"
+ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240417.pth"
+ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240418.pth"
 
 
 def normalize_depth(depth, depth_min=None, depth_max=None):
@@ -183,35 +188,56 @@ def equirectangular_projection(c, device="cpu"):
     return z
 
 
-def apply_divergence_grid_sample(c, depth, divergence, convergence, shift):
-    # BCHW
-    B, _, H, W = depth.shape
-    shift_size = (-shift * divergence * 0.01)
-    index_shift = depth * shift_size - (shift_size * convergence)
-    mesh_y, mesh_x = torch.meshgrid(
-        torch.linspace(-1, 1, H, device=c.device),
-        torch.linspace(-1, 1, W, device=c.device),
-        indexing="ij")
-    mesh_y = mesh_y.reshape(1, 1, H, W).expand(B, 1, H, W)
-    mesh_x = mesh_x.reshape(1, 1, H, W).expand(B, 1, H, W)
-    mesh_x = mesh_x - index_shift
-    grid = torch.cat((mesh_x, mesh_y), dim=1)
-    if c.shape[2] != H or c.shape[3] != W:
+def backward_warp(c, grid, delta, delta_scale):
+    grid = grid + delta * delta_scale
+    if c.shape[2] != grid.shape[2] or c.shape[3] != grid.shape[2]:
         grid = F.interpolate(grid, size=c.shape[-2:],
                              mode="bilinear", align_corners=True, antialias=False)
     grid = grid.permute(0, 2, 3, 1)
-    z = F.grid_sample(c, grid,
-                      mode="bicubic", padding_mode="border", align_corners=True)
-    z = torch.clamp(z, 0., 1.)
+    if device_is_mps(c.device):
+        # MPS does not support bicubic and border
+        mode = "bilinear"
+        padding_mode = "reflection"
+    else:
+        mode = "bicubic"
+        padding_mode = "border"
+
+    z = F.grid_sample(c, grid, mode=mode, padding_mode=padding_mode, align_corners=True)
+    z = torch.clamp(z, 0, 1)
     return z
+
+
+def make_grid(batch, width, height, device):
+    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, height, device=device),
+                                    torch.linspace(-1, 1, width, device=device), indexing="ij")
+    mesh_y = mesh_y.reshape(1, 1, height, width).expand(batch, 1, height, width)
+    mesh_x = mesh_x.reshape(1, 1, height, width).expand(batch, 1, height, width)
+    grid = torch.cat((mesh_x, mesh_y), dim=1)
+    return grid
+
+
+def apply_divergence_grid_sample(c, depth, divergence, convergence):
+    # BCHW
+    B, _, H, W = depth.shape
+    shift_size = divergence * 0.01
+    index_shift = depth * shift_size - (shift_size * convergence)
+    delta = torch.cat([index_shift, torch.zeros_like(index_shift)], dim=1)
+    grid = make_grid(B, W, H, c.device)
+    left_eye = backward_warp(c, grid, -delta, 1)
+    right_eye = backward_warp(c, grid, delta, 1)
+
+    return left_eye, right_eye
 
 
 def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
                            mapper, enable_amp):
-    left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                   mapper, -1, enable_amp)
-    right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                    mapper, 1, enable_amp)
+    if getattr(model, "symmetric", False):
+        left_eye, right_eye = apply_divergence_nn_symmetric(model, c, depth, divergence, convergence, mapper, enable_amp)
+    else:
+        left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                       mapper, -1, enable_amp)
+        right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                        mapper, 1, enable_amp)
     return left_eye, right_eye
 
 
@@ -222,6 +248,32 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
     if shift > 0:
         c = torch.flip(c, (3,))
         depth = torch.flip(depth, (3,))
+
+    B, _, H, W = depth.shape
+    x = torch.stack([make_input_tensor(None, depth[i],
+                                       divergence=divergence,
+                                       convergence=convergence,
+                                       image_width=W,
+                                       mapper=mapper,
+                                       normalize=False)  # already normalized
+                     for i in range(depth.shape[0])])
+    with autocast(device=depth.device, enabled=enable_amp):
+        delta = model(x)
+    grid = make_grid(B, W, H, c.device)
+    delta_scale = 1.0 / (W // 2 - 1)
+    z = backward_warp(c, grid, delta, delta_scale)
+
+    if shift > 0:
+        z = torch.flip(z, (3,))
+
+    return z
+
+
+def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
+                                  mapper, enable_amp):
+    # BCHW
+    assert model.delta_output
+    assert model.symmetric
     B, _, H, W = depth.shape
 
     x = torch.stack([make_input_tensor(None, depth[i],
@@ -233,24 +285,12 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, H, device=c.device),
-                                    torch.linspace(-1, 1, W, device=c.device), indexing="ij")
-    mesh_y = mesh_y.reshape(1, 1, H, W).expand(B, 1, H, W)
-    mesh_x = mesh_x.reshape(1, 1, H, W).expand(B, 1, H, W)
-    grid = torch.cat((mesh_x, mesh_y), dim=1)
+    grid = make_grid(B, W, H, c.device)
     delta_scale = 1.0 / (W // 2 - 1)
-    grid = grid + delta * delta_scale
-    if c.shape[2] != H or c.shape[3] != W:
-        grid = F.interpolate(grid, size=c.shape[-2:],
-                             mode="bilinear", align_corners=True, antialias=False)
-    grid = grid.permute(0, 2, 3, 1)
-    z = F.grid_sample(c, grid, mode="bicubic", padding_mode="border", align_corners=True)
-    z = torch.clamp(z, 0, 1)
+    left_eye = backward_warp(c, grid, delta, delta_scale)
+    right_eye = backward_warp(c, grid, -delta, delta_scale)
 
-    if shift > 0:
-        z = torch.flip(z, (3,))
-
-    return z
+    return left_eye, right_eye
 
 
 def has_rembg_model(model_type):
@@ -349,14 +389,17 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
             depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
         depth[i] = normalize_depth(depth[i], depth_min=depth_min, depth_max=depth_max)
 
-    if args.method == "grid_sample":
+    if args.method in {"grid_sample", "backward"}:
         depth = get_mapper(args.mapper)(depth)
-        left_eye = apply_divergence_grid_sample(
+        left_eye, right_eye = apply_divergence_grid_sample(
             im_org, depth,
-            args.divergence, convergence=args.convergence, shift=-1)
-        right_eye = apply_divergence_grid_sample(
+            args.divergence, convergence=args.convergence)
+    elif args.method in {"forward", "forward_fill"}:
+        depth = get_mapper(args.mapper)(depth)
+        left_eye, right_eye = apply_divergence_forward_warp(
             im_org, depth,
-            args.divergence, convergence=args.convergence, shift=1)
+            args.divergence, convergence=args.convergence,
+            method=args.method)
     else:
         left_eye, right_eye = apply_divergence_nn_LR(
             side_model, im_org, depth,
@@ -662,8 +705,15 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     device=args.state["device"],
                     edge_dilation=args.edge_dilation,
                     resize_depth=False)
-            with sbs_lock:
-                left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
+            if args.method in {"forward", "forward_fill"}:
+                # Lock all threads
+                # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
+                with sbs_lock, preprocess_lock, depth_lock:
+                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
+            else:
+                with sbs_lock:
+                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
+
             return torch.stack([
                 postprocess_image(left_eyes[i], right_eyes[i], args)
                 for i in range(left_eyes.shape[0])])
@@ -993,13 +1043,15 @@ def process_config_video(config, args, side_model):
         load_func=load_image_simple,
         load_func_kwargs={"color": "any"})
 
+    sbs_lock = threading.Lock()
+
     @torch.inference_mode()
     def batch_callback(x, depths):
         if not config.skip_edge_dilation and args.edge_dilation > 0:
             # apply --edge-dilation
             depths = -dilate_edge(-depths, args.edge_dilation)
-
-        left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+        with sbs_lock:
+            left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
         return torch.stack([
             postprocess_image(left_eyes[i], right_eyes[i], args)
             for i in range(left_eyes.shape[0])])
@@ -1170,8 +1222,11 @@ def create_parser(required_true=True):
                         help="output file or directory")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device id. -1 for CPU")
-    parser.add_argument("--method", type=str, default="row_flow",
-                        choices=["grid_sample", "row_flow"],
+    parser.add_argument("--method", type=str, default="row_flow_sym",
+                        choices=["grid_sample", "backward", "forward", "forward_fill",
+                                 "row_flow", "row_flow_sym",
+                                 "row_flow_v3", "row_flow_v3_sym",
+                                 "row_flow_v2"],
                         help="left-right divergence method")
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect. 0-2 is reasonable value"))
@@ -1406,11 +1461,20 @@ def iw3_main(args):
         export_main(args)
         return args
 
-    if args.method == "row_flow":
-        side_model = load_model(FLOW_MODEL_PATH, device_ids=[args.gpu[0]])[0].eval()
-        side_model.delta_output = True
-    else:
-        side_model = None
+    with TorchHubDir(HUB_MODEL_DIR):
+        if args.method in {"row_flow_v3_sym", "row_flow_sym"}:
+            side_model = load_model(ROW_FLOW_V3_SYM_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = True
+            side_model.delta_output = True
+        elif args.method in {"row_flow_v3", "row_flow"}:
+            side_model = load_model(ROW_FLOW_V3_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = False
+            side_model.delta_output = True
+        elif args.method == "row_flow_v2":
+            side_model = load_model(ROW_FLOW_V2_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.delta_output = True
+        else:
+            side_model = None
 
     if path.isdir(args.input):
         if not is_output_dir(args.output):

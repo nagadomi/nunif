@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d
+from nunif.modules.norm import RMSNorm1
+from nunif.modules.replication_pad2d import ReplicationPad2d
 
 
 class WindowBias(nn.Module):
@@ -55,17 +57,24 @@ class WindowBias(nn.Module):
 
 
 class GLUConvMLP(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3):
+    def __init__(self, in_channels, out_channels, kernel_size=3, mlp_ratio=2, layer_norm=True):
         super().__init__()
+        mid = int(out_channels * mlp_ratio)
+        if layer_norm:
+            self.norm = RMSNorm1((1, in_channels, 1, 1), dim=1)
+        else:
+            self.norm = nn.Identity()
         # assert kernel_size % 2 == 1
         padding = (kernel_size - 1) // 2
-        self.w1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
-        self.w2 = nn.Conv2d(out_channels // 2, out_channels, kernel_size=kernel_size, stride=1,
-                            padding=padding, padding_mode="replicate")
+        self.pad = ReplicationPad2d((padding,) * 4)
+        self.w1 = nn.Conv2d(in_channels, mid, kernel_size=1, stride=1, padding=0)
+        self.w2 = nn.Conv2d(mid // 2, out_channels, kernel_size=kernel_size, stride=1, padding=0)
 
     def forward(self, x):
+        x = self.norm(x)
         x = self.w1(x)
         x = F.glu(x, dim=1)
+        x = self.pad(x)
         x = self.w2(x)
         x = F.leaky_relu(x, 0.1, inplace=True)
         return x
@@ -74,38 +83,34 @@ class GLUConvMLP(nn.Module):
 class WACBlock(nn.Module):
     """ Window MHA + Multi Layer Conv2d
     """
-    def __init__(self, in_channels, num_heads=4, qkv_dim=16, window_size=8, padding=0):
+    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2, layer_norm=True):
         super(WACBlock, self).__init__()
-        self.padding = padding
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
-        self.norm = nn.LayerNorm(in_channels, bias=False)
+        if layer_norm:
+            self.norm = RMSNorm1(in_channels)
+        else:
+            self.norm = None
         self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size)
         self.relative_bias = WindowBias(self.window_size)
-        self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3)
+        self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3, mlp_ratio=mlp_ratio, layer_norm=layer_norm)
 
     def forward(self, x):
-        if self.padding > 0:
-            x1 = F.pad(x, [self.padding] * 4, mode="constant", value=0)
-            x1 = self.mha(x1, attn_mask=self.relative_bias(), layer_norm=self.norm)
-            x1 = F.pad(x1, [-self.padding] * 4)
-        else:
-            x1 = self.mha(x, attn_mask=self.relative_bias(), layer_norm=self.norm)
+        x1 = self.mha(x, attn_mask=self.relative_bias(), layer_norm=self.norm)
         x = x + x1
         x = x + self.conv_mlp(x)
         return x
 
 
 class WACBlocks(nn.Module):
-    def __init__(self, in_channels, num_heads=4, qkv_dim=16, window_size=8, padding=0, num_layers=2):
+    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2, num_layers=2, layer_norm=True):
         super(WACBlocks, self).__init__()
         if isinstance(window_size, int):
             window_size = [window_size] * num_layers
-        if isinstance(padding, int):
-            padding = [padding] * num_layers
 
         self.blocks = nn.Sequential(
-            *[WACBlock(in_channels, window_size=window_size[i], padding=padding[i], num_heads=num_heads, qkv_dim=qkv_dim)
+            *[WACBlock(in_channels, window_size=window_size[i],
+                       num_heads=num_heads, qkv_dim=qkv_dim, mlp_ratio=mlp_ratio, layer_norm=layer_norm)
               for i in range(num_layers)])
 
     def forward(self, x):
@@ -159,13 +164,15 @@ class ToImage(nn.Module):
 
 
 class WincUNetBase(nn.Module):
-    def __init__(self, in_channels, out_channels, base_dim=96, add_dim=0, scale_factor=2,
-                 lv3_window_size=[4, 12, 6, 4], lv3_padding=[2, 0, 0, 2], lv3_dim_scale=2):
+    def __init__(self, in_channels, out_channels, base_dim=96,
+                 lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4, last_layers=3,
+                 scale_factor=2):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
         C = base_dim
+        C2 = int(C * lv2_ratio)
+        # assert C % 32 == 0 and C2 % 32 == 0  # slow when C % 32 != 0
         HEADS = 4
-        QKV_DIM = C // 4
 
         # shallow feature extractor
         self.patch = nn.Sequential(
@@ -175,43 +182,30 @@ class WincUNetBase(nn.Module):
             nn.LeakyReLU(0.1, inplace=True),
         )
         # encoder
-        self.wac1 = WACBlocks(C, window_size=8, padding=[4, 0],
-                              num_heads=HEADS, qkv_dim=QKV_DIM)
-        self.down1 = PatchDown(C, C * 2)
-        self.wac2 = WACBlocks(C * 2, window_size=8, padding=[4, 0],
-                              num_heads=HEADS * 2, qkv_dim=QKV_DIM)
-        self.down2 = PatchDown(C * 2, C * lv3_dim_scale + add_dim)
-        self.wac3 = WACBlocks(C * lv3_dim_scale + add_dim,
-                              window_size=lv3_window_size, padding=lv3_padding,
-                              num_heads=HEADS * 2, qkv_dim=QKV_DIM, num_layers=4)
+        self.wac1 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
+                              window_size=8, num_heads=HEADS)
+        self.down1 = PatchDown(C, C2)
+        self.wac2 = WACBlocks(C2, mlp_ratio=lv2_mlp_ratio,
+                              window_size=[8, 6, 8, 6], num_heads=HEADS * 2, num_layers=4,
+                              # No layerNorm in this level
+                              layer_norm=False)
         # decoder
-        self.up2 = PatchUp(C * lv3_dim_scale + add_dim, C * 2 + add_dim)
-        self.wac2_proj = nn.Conv2d(C * 2, C * 2 + add_dim, kernel_size=1, stride=1, padding=0)
-        self.wac4 = WACBlocks(C * 2 + add_dim,
-                              window_size=8, padding=[4, 0, 4],
-                              num_heads=HEADS * 2, qkv_dim=QKV_DIM, num_layers=3)
-        self.up1 = PatchUp(C * 2 + add_dim, C + add_dim)
-        self.wac1_proj = nn.Conv2d(C, C + add_dim, kernel_size=1, stride=1, padding=0)
-        self.wac5 = WACBlocks(C + add_dim,
-                              window_size=8, padding=[0, 4, 0],
-                              num_heads=HEADS, qkv_dim=QKV_DIM, num_layers=3)
-        self.to_image = ToImage(C + add_dim, out_channels, scale_factor=scale_factor)
+        self.up1 = PatchUp(C2, C)
+        self.wac1_proj = nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0)
+        self.wac3 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
+                              window_size=8, num_heads=HEADS, num_layers=last_layers)
+        self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
 
     def forward(self, x):
         x = self.patch(x)
         x = F.pad(x, (-6, -6, -6, -6))
 
         x1 = self.wac1(x)
-        x2 = self.down1(x1)
-        x2 = self.wac2(x2)
-        x3 = self.down2(x2)
-        x3 = self.wac3(x3)
-        x3 = self.up2(x3)
-        x = x3 + self.wac2_proj(x2)
-        x = self.wac4(x)
+        x = self.down1(x1)
+        x = self.wac2(x)
         x = self.up1(x)
         x = x + self.wac1_proj(x1)
-        x = self.wac5(x)
+        x = self.wac3(x)
         z = self.to_image(x)
         return z
 
@@ -220,15 +214,14 @@ class WincUNetBase(nn.Module):
 class WincUNet2x(I2IBaseModel):
     name = "waifu2x.winc_unet_2x"
 
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96,
-                 lv3_window_size=[4, 12, 6, 4], lv3_padding=[2, 0, 0, 2], lv3_dim_scale=2):
+    def __init__(self, in_channels=3, out_channels=3,
+                 base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=4,
+                 **kwargs):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
-        self.unet = WincUNetBase(
-            in_channels, out_channels,
-            base_dim=base_dim, add_dim=base_dim // 4,
-            lv3_window_size=lv3_window_size,
-            lv3_dim_scale=lv3_dim_scale,
-            scale_factor=2)
+        self.unet = WincUNetBase(in_channels, out_channels,
+                                 base_dim=base_dim,
+                                 lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
+                                 scale_factor=2)
 
     def forward(self, x):
         z = self.unet(x)
@@ -242,17 +235,16 @@ class WincUNet2x(I2IBaseModel):
 class WincUNet4x(I2IBaseModel):
     name = "waifu2x.winc_unet_4x"
 
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96,
-                 lv3_window_size=[4, 12, 6, 4], lv3_padding=[2, 0, 0, 2], lv3_dim_scale=2):
+    def __init__(self, in_channels=3, out_channels=3,
+                 base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=3,
+                 **kwargs):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.unet = WincUNetBase(
-            in_channels, out_channels=out_channels,
-            base_dim=base_dim, add_dim=base_dim,
-            lv3_window_size=lv3_window_size,
-            lv3_dim_scale=lv3_dim_scale,
-            scale_factor=4)
+        self.unet = WincUNetBase(in_channels, out_channels=out_channels,
+                                 base_dim=base_dim,
+                                 lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
+                                 scale_factor=4)
 
     def forward(self, x):
         z = self.unet(x)
@@ -315,11 +307,12 @@ class WincUNetDownscaled(I2IBaseModel):
 
 register_model_factory(
     "waifu2x.winc_unet_2xl",
-    lambda **kwargs: WincUNet2x(base_dim=192, lv3_dim_scale=4, **kwargs))
+    lambda **kwargs: WincUNet2x(base_dim=96, **kwargs))
+
 
 register_model_factory(
     "waifu2x.winc_unet_4xl",
-    lambda **kwargs: WincUNet4x(base_dim=192, lv3_dim_scale=4, **kwargs))
+    lambda **kwargs: WincUNet4x(base_dim=192, **kwargs))
 
 
 def _bench(name, compile):
@@ -333,7 +326,8 @@ def _bench(name, compile):
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z, *_ = model(x)
         print(z.shape)
-        print(model.name, model.i2i_offset, model.i2i_scale, f"compile={compile}")
+        param = sum([p.numel() for p in model.parameters()])
+        print(model.name, model.i2i_offset, model.i2i_scale, f"{param:,}", f"compile={compile}")
 
     # benchmark
     t = time.time()

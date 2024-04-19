@@ -49,13 +49,29 @@ class GroupNormNoBias(nn.Module):
 
 
 class RMSNorm(nn.Module):
-    def __init__(self, dim):
+    # NHWC: normalized_shape=in_channels, dim=-1
+    # NCHW: normalized_shape=(1, in_channels, 1, 1), dim=1
+    def __init__(self, normalized_shape, dim=-1):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(dim, dtype=torch.float32))
+        self.dim = dim
+        self.weight = nn.Parameter(torch.ones(normalized_shape, dtype=torch.float32))
 
     def forward(self, x):
-        scale = torch.rsqrt(torch.mean(x.to(torch.float32) ** 2, dim=-1, keepdim=True) + 1e-6)
+        scale = torch.rsqrt(torch.mean(x.to(torch.float32) ** 2, dim=self.dim, keepdim=True) + 1e-6)
         scale = scale * self.weight.to(torch.float32)
+        return x * scale.to(x.dtype)
+
+
+class RMSNorm1(nn.Module):
+    # 1-centered ver
+    def __init__(self, normalized_shape, dim=-1):
+        super().__init__()
+        self.dim = dim
+        self.weight = nn.Parameter(torch.zeros(normalized_shape, dtype=torch.float32))
+
+    def forward(self, x):
+        scale = torch.rsqrt(torch.mean(x.to(torch.float32) ** 2, dim=self.dim, keepdim=True) + 1e-6)
+        scale = scale * (1.0 + self.weight.to(torch.float32))
         return x * scale.to(x.dtype)
 
 
