@@ -276,7 +276,7 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_L`     | DepthAnything model large. This model gives high quality, but is also heavy in terms of computation.
 
 Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
-`ZoeD_Any_N` looks the best for 3D scene. `Any_B` has the most accurate foreground and background segmentation, but the foreground looks slightly flat.
+`ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
 
 ## Stereo Generation Method (Left-Right Image Generation)
