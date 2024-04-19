@@ -70,13 +70,20 @@ This may be adjustable on the VR Player. If so, set it to 0 (by default).
 
 ### What is `--foreground-scale` option?
 
-When specifying a high value (1-3), foreground depth is scaled up and background depth is scaled down.
+When specifying a positive value (1 .. 3), foreground depth is scaled up and background depth is scaled down.
 
 ![foreground-scale](https://github.com/nagadomi/nunif/assets/287255/5664ea7a-bcf8-4430-b490-7f2bcf1a81c4)
 
 To be used for outdoor photos where foreground(people) look very flat. For videos, `0`(by default) is recommended.
 
+
+When specifying a nagative value (-1 .. -3), background depth is scaled up and foreground depth is scaled down.
+
+![foreground-scale-negative](https://github.com/nagadomi/nunif/assets/287255/458ca299-fb23-4e8d-b530-c7a3fe17dee3)
+
+
 Note that the transformation formula is different for ZoeDepth models(`ZoeD_N`, `ZoeD_Any_N`) and DepthAnything models(`Any_S`, `Any_B`, `Any_L`), even for the same value.
+
 
 ### What is `--edge-dilation` option?
 
@@ -268,7 +275,21 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_B`     | DepthAnything model base.
 | `Any_L`     | DepthAnything model large. This model gives high quality, but is also heavy in terms of computation.
 
-Personally, I recommend `ZoeD_N` or `Any_B`.
+Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
+`ZoeD_Any_N` looks the best for 3D scene. `Any_B` has the most accurate foreground and background segmentation, but the foreground looks slightly flat.
+
+
+## Stereo Generation Method (Left-Right Image Generation)
+
+| Short Name  |                   |
+|-------------|-------------------|
+| `row_flow_v3_sym`| Calculating the backward warping(`grid_sample`) parameters with ML model. The left and right parameters are fully symmetric. Faster than `row_flow_v3`, with less artifacts. Trained with `0.0 <= divergence <= 5.0`. Default method.
+| `row_flow_v3`    | Calculating the backward warping parameters with ML model. The left and right parameters are calculated individually. The output is closest to `apply_stereo_divergence_polylines` of `stable-diffusion-webui-depthmap-script`. Trained with `0.0 <= divergence <= 5.0`
+| `row_flow_v2`    | Older version of `row_flow_v3`. Trained with `0.0 <= divergence <= 2.5`
+| `forward_fill`   | Depth order forward warping. Works only for high-resolution images (Not recommended for small images or videos. May cause disparity banding artifacts). Very experimental method.
+| `forward`        | `forward_fill` without hole fill. Just for debug.
+| `grid_sample`,`backward`  | Naive backward warping. Lots of ghost artifacts. Just for debug.
+
 
 ## Updating torch.hub modules (ZoeDepth, DepthAnything)
 
