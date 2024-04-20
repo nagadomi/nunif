@@ -1535,4 +1535,7 @@ def iw3_main(args):
             process_config_video(config, args, side_model)
         if config.type == export_config.IMAGE_TYPE:
             process_config_images(config, args, side_model)
+    else:
+        raise ValueError("Unrecognized file type")
+
     return args
