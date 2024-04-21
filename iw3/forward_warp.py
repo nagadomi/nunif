@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from nunif.modules.replication_pad2d import ReplicationPad2d
 
 
 def box_blur(x, kernel_size=7):
@@ -58,10 +59,18 @@ def forward_warp(c, depth, divergence, convergence, fill=True):
 
         return out.view(B, H, W, -1).permute(0, 3, 1, 2)
 
-    # forward warping
+    # pad
+    org_width = c.shape[3]
+    padding_size = int(org_width * divergence * 0.01 + 2)
+    pad = ReplicationPad2d((padding_size, padding_size, 0, 0))
+    depad = ReplicationPad2d((-padding_size, -padding_size, 0, 0))
+    c = pad(c)
+    depth = pad(depth)
 
+    # forward warping
     B, _, H, W = depth.shape
-    shift_size = divergence * 0.01 * W * 0.5
+
+    shift_size = divergence * 0.01 * org_width * 0.5
     index_shift = depth * shift_size - (shift_size * convergence)
     x_index = torch.arange(0, W, device=c.device).view(1, 1, W).expand(B, H, W)
     src_index = make_forward_warp_index(B, W, H, x_index, 0, c.device)
@@ -71,6 +80,9 @@ def forward_warp(c, depth, divergence, convergence, fill=True):
     right_dest_index = make_forward_warp_index(B, W, H, x_index, -index_shift, c.device)
     left_eye = ordered_index_copy(c, src_index, left_dest_index, index_order)
     right_eye = ordered_index_copy(c, src_index, right_dest_index, index_order)
+
+    left_eye = depad(left_eye)
+    right_eye = depad(right_eye)
 
     if fill:
         # super simple inpainting
