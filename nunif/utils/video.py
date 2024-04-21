@@ -25,7 +25,7 @@ mimetypes.add_type("video/x-flv", ".flv")  # Not defined on Windows
 
 
 VIDEO_EXTENSIONS = [
-    ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".mp2", ".avi", ".wmv", ".mov", ".flv", ".webm",
+    ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".avi", ".wmv", ".mov", ".flv", ".webm",
     ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
 ]
 

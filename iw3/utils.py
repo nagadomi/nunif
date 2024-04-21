@@ -1499,6 +1499,12 @@ def iw3_main(args):
                         return args
                     process_video(video_file, output_dir, args, depth_model, side_model)
 
+    elif is_yaml(args.input):
+        config = export_config.ExportConfig.load(args.input)
+        if config.type == export_config.VIDEO_TYPE:
+            process_config_video(config, args, side_model)
+        if config.type == export_config.IMAGE_TYPE:
+            process_config_images(config, args, side_model)
     elif is_text(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
@@ -1529,12 +1535,6 @@ def iw3_main(args):
         output = process_image(im, args, depth_model, side_model)
         make_parent_dir(output_filename)
         output.save(output_filename)
-    elif is_yaml(args.input):
-        config = export_config.ExportConfig.load(args.input)
-        if config.type == export_config.VIDEO_TYPE:
-            process_config_video(config, args, side_model)
-        if config.type == export_config.IMAGE_TYPE:
-            process_config_images(config, args, side_model)
     else:
         raise ValueError("Unrecognized file type")
 
