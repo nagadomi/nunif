@@ -1,32 +1,18 @@
 import torch
 import torch.nn.functional as F
+from nunif.modules.replication_pad2d import ReplicationPad2d
 
 
-def make_forward_warp_index(batch, width, height, index, index_shift, device):
-    # NOTE: For small images, this `round().long()` causes disparity banding artifacts.
-    index = torch.clamp((index + index_shift).round().long(), 0, width - 1)
-    index = index + torch.arange(0, height, device=device).view(1, height, 1) * width
-    index = index + torch.arange(0, batch, device=device).view(batch, 1, 1) * height * width
-    return index.view(-1)
+def box_blur(x, kernel_size=7):
+    padding = kernel_size // 2
+    x = F.avg_pool2d(x, kernel_size=kernel_size, padding=padding, stride=1, count_include_pad=False)
+    return x
 
 
-def ordered_index_copy(c, src_index, dest_index, index_order):
-    B, _, H, W = c.shape
-    c = c.permute(0, 2, 3, 1).reshape(-1, c.shape[1])
-    out = torch.empty_like(c).fill_(-1)
-
-    # index_copy must run deterministically (depth order orverride)
-    deterministic = torch.are_deterministic_algorithms_enabled()
-    torch.use_deterministic_algorithms(True)
-    try:
-        # NOTE: `torch.use_deterministic_algorithms(True)` is a global setting.
-        #        This may cause an error if other threads run non-deterministic method while in this block.
-        #        Need to exclusive lock to prevent other threads running.
-        out.index_copy_(0, dest_index[index_order], c[src_index[index_order]])
-    finally:
-        torch.use_deterministic_algorithms(deterministic)
-
-    return out.view(B, H, W, -1).permute(0, 3, 1, 2)
+def blur_blend(x, mask):
+    mask = torch.clamp(box_blur(mask.to(x.dtype)), 0, 1)
+    x_blur = box_blur(x)
+    return x * (1.0 - mask) + x_blur * mask
 
 
 def shift_fill(x, max_tries=100):
@@ -43,45 +29,91 @@ def shift_fill(x, max_tries=100):
         max_tries = max_tries - 1
 
 
-def box_blur(x, kernel_size=7):
-    padding = kernel_size // 2
-    x = F.avg_pool2d(x, kernel_size=kernel_size, padding=padding, stride=1, count_include_pad=False)
-    return x
+def to_flat_index(batch, width, height, index):
+    index = index + torch.arange(0, height, device=index.device).view(1, height, 1) * width
+    index = index + torch.arange(0, batch, device=index.device).view(batch, 1, 1) * height * width
+    index = index.view(-1)
+    return index
 
 
-def blur_blend(x, mask):
-    mask = torch.clamp(box_blur(mask.to(x.dtype)), 0, 1)
-    x_blur = box_blur(x)
-    return x * (1.0 - mask) + x_blur * mask
+def make_bilinear_data(batch, width, height, index, index_shift):
+    float_index = torch.clamp(index + index_shift, 0, width - 1)
+    floor_index = torch.clamp(float_index.floor(), 0, width - 1)
+    ceil_index = torch.clamp(float_index.ceil(), 0, width - 1)
+    ceil_weight = torch.clamp((float_index - floor_index).reshape(batch, 1, height, width), min=1e-5, max=1.0 - 1e-5)
+    floor_weight = 1.0 - ceil_weight
+
+    floor_index = to_flat_index(batch, width, height, floor_index.long())
+    ceil_index = to_flat_index(batch, width, height, ceil_index.long())
+    return floor_index, ceil_index, floor_weight, ceil_weight
 
 
-def forward_warp(c, depth, divergence, convergence, fill=True):
+def ordered_index_copy(c, src_index, dest_index, index_order, undefined_value=-1):
+    B, _, H, W = c.shape
+    c = c.permute(0, 2, 3, 1).reshape(-1, c.shape[1])
+    out = torch.empty_like(c).fill_(undefined_value)
+
+    # index_copy must run deterministically (depth order orverride)
+    deterministic = torch.are_deterministic_algorithms_enabled()
+    torch.use_deterministic_algorithms(True)
+    try:
+        # NOTE: `torch.use_deterministic_algorithms(True)` is a global setting.
+        #        This may cause an error if other threads run non-deterministic method while in this block.
+        #        Need to exclusive lock to prevent other threads running.
+        out.index_copy_(0, dest_index[index_order], c[src_index[index_order]])
+    finally:
+        torch.use_deterministic_algorithms(deterministic)
+
+    return out.view(B, H, W, -1).permute(0, 3, 1, 2)
+
+
+def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
+    floor_index, ceil_index, floor_weight, ceil_weight = make_bilinear_data(batch, width, height, x_index, index_shift)
+
+    floor_warp = ordered_index_copy(c, src_index, floor_index, index_order)
+    ceil_warp = ordered_index_copy(c, src_index, ceil_index, index_order)
+    floor_weight_warp = ordered_index_copy(floor_weight, src_index, floor_index, index_order, undefined_value=0)
+    ceil_weight_warp = ordered_index_copy(ceil_weight, src_index, ceil_index, index_order, undefined_value=0)
+
+    out = (floor_warp * floor_weight_warp + ceil_warp * ceil_weight_warp) / (floor_weight_warp + ceil_weight_warp)
+    out = torch.nan_to_num(out, -1)
+
+    return out
+
+
+def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True):
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
         depth = F.interpolate(depth, size=c.shape[-2:],
                               mode="bilinear", align_corners=True, antialias=False)
+
+    # pad
+    org_width = c.shape[3]
+    padding_size = int(org_width * divergence * 0.01 + 2)
+    pad = ReplicationPad2d((padding_size, padding_size, 0, 0))
+    depad = ReplicationPad2d((-padding_size, -padding_size, 0, 0))
+    c = pad(c)
+    depth = pad(depth)
+
     # forward warping
     B, _, H, W = depth.shape
-    shift_size = divergence * 0.01 * W * 0.5
+
+    shift_size = divergence * 0.01 * org_width * 0.5
     index_shift = depth * shift_size - (shift_size * convergence)
-
+    index_shift = index_shift.view(B, H, W)
     x_index = torch.arange(0, W, device=c.device).view(1, 1, W).expand(B, H, W)
-    left_dest_index = make_forward_warp_index(B, W, H, x_index, index_shift, c.device)
-    right_dest_index = make_forward_warp_index(B, W, H, x_index, -index_shift, c.device)
-    src_index = make_forward_warp_index(B, W, H, x_index, 0, c.device)
-
+    src_index = to_flat_index(B, W, H, x_index)
     index_order = torch.argsort(depth.view(-1), dim=0)
-    left_eye = ordered_index_copy(c, src_index, left_dest_index, index_order)
-    right_eye = ordered_index_copy(c, src_index, right_dest_index, index_order)
+
+    left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
+    right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
+
+    left_eye = depad(left_eye)
+    right_eye = depad(right_eye)
 
     if fill:
         # super simple inpainting
-
-        # left_mask = left_eye < 0
-        # right_mask = right_eye < 0
         shift_fill(left_eye)
         shift_fill(right_eye)
-        # left_eye = blur_blend(left_eye, left_mask)
-        # right_eye = blur_blend(right_eye, right_mask)
     else:
         # drop undefined values
         left_eye = torch.clamp(left_eye, 0, 1)
@@ -90,16 +122,6 @@ def forward_warp(c, depth, divergence, convergence, fill=True):
     return left_eye, right_eye
 
 
-def forward_warp2x(c, depth, divergence, convergence):
-    # This reduces disparity banding artifacts but result is blurred
-    out_size = c.shape[2:]
-    c = F.interpolate(c, (c.shape[2] * 2, c.shape[3] * 2), mode="bilinear", align_corners=True)
-    left_eye, right_eye = forward_warp(c, depth, divergence, convergence, fill=True)
-    left_eye = F.interpolate(left_eye, out_size, mode="bilinear")
-    right_eye = F.interpolate(right_eye, out_size, mode="bilinear")
-    return left_eye, right_eye
-
-
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None):
     fill = (method == "forward_fill")
-    return forward_warp(c, depth, divergence, convergence, fill=fill)
+    return depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=fill)

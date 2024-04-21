@@ -286,7 +286,7 @@ Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
 | `row_flow_v3_sym`| Calculating the backward warping(`grid_sample`) parameters with ML model. The left and right parameters are fully symmetric. Faster than `row_flow_v3`, with less artifacts. Trained with `0.0 <= divergence <= 5.0`. Default method.
 | `row_flow_v3`    | Calculating the backward warping parameters with ML model. The left and right parameters are calculated individually. The output is closest to `apply_stereo_divergence_polylines` of `stable-diffusion-webui-depthmap-script`. Trained with `0.0 <= divergence <= 5.0`
 | `row_flow_v2`    | Older version of `row_flow_v3`. Trained with `0.0 <= divergence <= 2.5`
-| `forward_fill`   | Depth order forward warping. Works only for high-resolution images (Not recommended for small images or videos. May cause disparity banding artifacts). Very experimental method.
+| `forward_fill`   | Depth order bilinear forward warping. Non ML method.
 | `forward`        | `forward_fill` without hole fill. Just for debug.
 | `grid_sample`,`backward`  | Naive backward warping. Lots of ghost artifacts. Just for debug.
 
