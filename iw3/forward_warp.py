@@ -51,7 +51,10 @@ def make_bilinear_data(batch, width, height, index, index_shift):
 def ordered_index_copy(c, src_index, dest_index, index_order, undefined_value=-1):
     B, _, H, W = c.shape
     c = c.permute(0, 2, 3, 1).reshape(-1, c.shape[1])
-    out = torch.empty_like(c).fill_(undefined_value)
+    if torch.is_tensor(undefined_value):
+        out = undefined_value.view(1, -1).repeat(c.shape[0], 1)
+    else:
+        out = torch.empty_like(c).fill_(undefined_value)
 
     # index_copy must run deterministically (depth order orverride)
     deterministic = torch.are_deterministic_algorithms_enabled()
@@ -70,10 +73,18 @@ def ordered_index_copy(c, src_index, dest_index, index_order, undefined_value=-1
 def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
     floor_index, ceil_index, floor_weight, ceil_weight = make_bilinear_data(batch, width, height, x_index, index_shift)
 
-    floor_warp = ordered_index_copy(c, src_index, floor_index, index_order)
-    ceil_warp = ordered_index_copy(c, src_index, ceil_index, index_order)
-    floor_weight_warp = ordered_index_copy(floor_weight, src_index, floor_index, index_order, undefined_value=0)
-    ceil_weight_warp = ordered_index_copy(ceil_weight, src_index, ceil_index, index_order, undefined_value=0)
+    # pack for optimization
+    floor_data = torch.cat([floor_weight, c], dim=1)
+    ceil_data = torch.cat([ceil_weight, c], dim=1)
+
+    # 0 for weight, -1 for pixel
+    undefined_value = torch.tensor([0] + [-1] * c.shape[1], dtype=c.dtype, device=c.device)
+    floor_warp = ordered_index_copy(floor_data, src_index, floor_index, index_order, undefined_value=undefined_value)
+    ceil_warp = ordered_index_copy(ceil_data, src_index, ceil_index, index_order, undefined_value=undefined_value)
+
+    # unpack
+    floor_weight_warp, floor_warp = floor_warp[:, 0:1, :, :], floor_warp[:, 1:, :, :]
+    ceil_weight_warp, ceil_warp = ceil_warp[:, 0:1, :, :], ceil_warp[:, 1:, :, :]
 
     out = (floor_warp * floor_weight_warp + ceil_warp * ceil_weight_warp) / (floor_weight_warp + ceil_weight_warp)
     out = torch.nan_to_num(out, -1)
@@ -124,4 +135,25 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None):
     fill = (method == "forward_fill")
-    return depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=fill)
+    with torch.inference_mode():
+        return depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=fill)
+
+
+if __name__ == "__main__":
+    # 300 FPS on RTX3070Ti
+    import time
+    device = "cuda:0"
+    B = 4
+    N = 100
+
+    rgb = torch.zeros((B, 8, 512, 512)).to(device)
+    depth = torch.rand((B, 1, 512, 512)).to(device)
+    divergence = 2.0
+    convergence = 0.5
+
+    # benchmark
+    t = time.time()
+    for _ in range(N):
+        apply_divergence_forward_warp(rgb, depth, divergence, convergence, method="forward")
+    torch.cuda.synchronize()
+    print(1 / ((time.time() - t) / (B * N)), "FPS")
