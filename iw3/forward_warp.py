@@ -140,13 +140,13 @@ def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None
 
 
 if __name__ == "__main__":
-    # 300 FPS on RTX3070Ti
+    # 400 FPS on RTX3070Ti
     import time
     device = "cuda:0"
     B = 4
     N = 100
 
-    rgb = torch.zeros((B, 8, 512, 512)).to(device)
+    rgb = torch.zeros((B, 3, 512, 512)).to(device)
     depth = torch.rand((B, 1, 512, 512)).to(device)
     divergence = 2.0
     convergence = 0.5
