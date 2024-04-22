@@ -37,6 +37,14 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
 
     # im_sbs.save(filename_base + "_LRF.png")
 
+    # remove replication padding area
+    unpad_size = int(im_org.width * divergence * 0.01 + 2)
+    im_org = TF.crop(im_org, 0, unpad_size, im_org.height, im_org.width - unpad_size * 2)
+    im_depth = TF.crop(im_depth, 0, unpad_size, im_depth.height, im_depth.width - unpad_size * 2)
+    im_l = TF.crop(im_l, 0, unpad_size, im_l.height, im_l.width - unpad_size * 2)
+    im_r = TF.crop(im_r, 0, unpad_size, im_r.height, im_r.width - unpad_size * 2)
+    assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size
+
     stride = size // 4
     w, h = im_org.size
     seq = 1
