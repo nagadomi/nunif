@@ -252,6 +252,11 @@ class MainFrame(wx.Frame):
         # max-fps, crf, preset, tune
         self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
 
+        self.lbl_video_format = wx.StaticText(self.grp_video, label=T("Video Format"))
+        self.cbo_video_format = wx.ComboBox(self.grp_video, choices=["mp4", "mkv"],
+                                            style=wx.CB_READONLY, name="cbo_video_format")
+        self.cbo_video_format.SetSelection(0)
+
         self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
         self.cbo_fps = EditableComboBox(
             self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
@@ -289,16 +294,18 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_fps, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_fps, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_pix_fmt, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pix_fmt, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_crf, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_crf, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_preset, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_preset, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_tune, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_tune, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_fastdecode, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_zerolatency, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_video_format, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_video_format, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_pix_fmt, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pix_fmt, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_crf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_crf, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_preset, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_preset, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_tune, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_tune, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_fastdecode, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_zerolatency, (7, 1), flag=wx.EXPAND)
 
         sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
         sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -620,7 +627,7 @@ class MainFrame(wx.Frame):
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         debug = self.cbo_stereo_format.GetValue() == "Debug Depth"
         anaglyph = self.get_anaglyph_method()
-
+        video_extension = "." + self.cbo_video_format.GetValue()
         video = is_video(input_path)
 
         if is_output_dir(output_path):
@@ -628,7 +635,7 @@ class MainFrame(wx.Frame):
                 output_path,
                 make_output_filename(input_path, video=video,
                                      vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph,
-                                     debug=debug))
+                                     debug=debug, video_extension=video_extension))
 
         if path.exists(output_path):
             start_file(output_path)
@@ -695,7 +702,7 @@ class MainFrame(wx.Frame):
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         debug = self.cbo_stereo_format.GetValue() == "Debug Depth"
         anaglyph = self.get_anaglyph_method()
-
+        video_extension = "." + self.cbo_video_format.GetValue()
         video = is_video(input_path)
         is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
 
@@ -705,7 +712,7 @@ class MainFrame(wx.Frame):
                     output_path,
                     make_output_filename(input_path, video=video,
                                          vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph,
-                                         debug=debug))
+                                         debug=debug, video_extension=video_extension))
             else:
                 output_path = output_path
         else:
@@ -862,6 +869,7 @@ class MainFrame(wx.Frame):
 
             max_fps=float(self.cbo_fps.GetValue()),
             pix_fmt=self.cbo_pix_fmt.GetValue(),
+            video_format=self.cbo_video_format.GetValue(),
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
