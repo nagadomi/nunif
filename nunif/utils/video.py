@@ -183,6 +183,9 @@ class VideoOutputConfig():
         self.output_width = output_width
         self.output_height = output_height
 
+    def __repr__(self):
+        return "VideoOutputConfig({!r})".format(self.__dict__)
+
 
 def default_config_callback(stream):
     fps = get_fps(stream)

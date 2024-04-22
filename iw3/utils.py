@@ -311,7 +311,7 @@ DEBUG_SUFFIX = "_debug"
 SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
-def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False, anaglyph=None, debug=False):
+def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False, anaglyph=None, debug=False, video_extension=".mp4"):
     basename = path.splitext(path.basename(input_filename))[0]
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
     if vr180:
@@ -325,7 +325,7 @@ def make_output_filename(input_filename, video=False, vr180=False, half_sbs=Fals
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
 
-    return basename + auto_detect_suffix + (".mp4" if video else ".png")
+    return basename + auto_detect_suffix + (video_extension if video else ".png")
 
 
 def save_image(im, output_filename):
@@ -619,7 +619,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             output_path,
             make_output_filename(path.basename(input_filename), video=True,
                                  vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                 debug=args.debug_depth))
+                                 debug=args.debug_depth,
+                                 video_extension=args.video_extension))
     else:
         output_filename = output_path
 
@@ -639,17 +640,14 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             fps = args.max_fps
 
         options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
-        tune = []
         if args.tune:
-            tune += args.tune
-        tune = set(tune)
-        if tune:
-            options["tune"] = ",".join(tune)
+            options["tune"] = ",".join(set(args.tune))
+
         return VU.VideoOutputConfig(
             fps=fps,
             pix_fmt=args.pix_fmt,
             options=options,
-            container_options={"movflags": "+faststart"}
+            container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
     @torch.inference_mode()
@@ -744,7 +742,8 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
             output_path,
             make_output_filename(path.basename(input_filename), video=True,
                                  vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                 debug=args.debug_depth))
+                                 debug=args.debug_depth,
+                                 video_extension=args.video_extension))
     else:
         output_filename = output_path
 
@@ -1015,7 +1014,8 @@ def process_config_video(config, args, side_model):
             args.output,
             make_output_filename(basename, video=True,
                                  vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                 debug=args.debug_depth))
+                                 debug=args.debug_depth,
+                                 video_extension=args.video_extension))
     else:
         output_filename = args.output
     make_parent_dir(output_filename)
@@ -1095,11 +1095,12 @@ def process_config_video(config, args, side_model):
     encoder_options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
     if args.tune:
         encoder_options.update({"tune": ",".join(list(set(args.tune)))})
+
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
         pix_fmt=args.pix_fmt,
         options=encoder_options,
-        container_options={"movflags": "+faststart"},
+        container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
         output_height=output_height
     )
@@ -1331,6 +1332,8 @@ def create_parser(required_true=True):
                         help="loop count of edge dilation.")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
                         help="max inference worker threads for video processing. 0 is disabled")
+    parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv"],
+                        help="video container format")
 
     return parser
 
@@ -1457,6 +1460,8 @@ def iw3_main(args):
     else:
         depth_model = None
 
+    args.video_extension = "." + args.video_format
+
     if args.export:
         export_main(args)
         return args
@@ -1528,7 +1533,8 @@ def iw3_main(args):
                 args.output,
                 make_output_filename(args.input, video=False,
                                      vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                     debug=args.debug_depth))
+                                     debug=args.debug_depth,
+                                     video_extension=args.video_extension))
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")

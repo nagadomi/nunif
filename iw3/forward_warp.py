@@ -40,11 +40,12 @@ def make_bilinear_data(batch, width, height, index, index_shift):
     float_index = torch.clamp(index + index_shift, 0, width - 1)
     floor_index = torch.clamp(float_index.floor(), 0, width - 1)
     ceil_index = torch.clamp(float_index.ceil(), 0, width - 1)
-    ceil_weight = torch.clamp((float_index - floor_index).reshape(batch, 1, height, width), min=1e-5, max=1.0 - 1e-5)
+    ceil_weight = (float_index - floor_index).reshape(batch, 1, height, width)
+    ceil_weight = torch.clamp(ceil_weight, min=1e-5, max=1.0 - 1e-5)
     floor_weight = 1.0 - ceil_weight
-
     floor_index = to_flat_index(batch, width, height, floor_index.long())
     ceil_index = to_flat_index(batch, width, height, ceil_index.long())
+
     return floor_index, ceil_index, floor_weight, ceil_weight
 
 
@@ -57,12 +58,15 @@ def ordered_index_copy(c, src_index, dest_index, index_order, undefined_value=-1
         out = torch.empty_like(c).fill_(undefined_value)
 
     # index_copy must run deterministically (depth order orverride)
+    # NOTE: `torch.use_deterministic_algorithms(True)` is a global setting.
+    #        This may cause an error if other threads run non-deterministic method while in this block.
+    #        Need to exclusive lock to prevent other threads running.
+    # TODO: Need to remove the complicated conditions of this very simple operation.
+    # for i in index_order:
+    #   out[dest_index[i]] = c[src_index[i]]
     deterministic = torch.are_deterministic_algorithms_enabled()
     torch.use_deterministic_algorithms(True)
     try:
-        # NOTE: `torch.use_deterministic_algorithms(True)` is a global setting.
-        #        This may cause an error if other threads run non-deterministic method while in this block.
-        #        Need to exclusive lock to prevent other threads running.
         out.index_copy_(0, dest_index[index_order], c[src_index[index_order]])
     finally:
         torch.use_deterministic_algorithms(deterministic)
@@ -96,30 +100,28 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
         depth = F.interpolate(depth, size=c.shape[-2:],
                               mode="bilinear", align_corners=True, antialias=False)
-
     # pad
     org_width = c.shape[3]
     padding_size = int(org_width * divergence * 0.01 + 2)
     pad = ReplicationPad2d((padding_size, padding_size, 0, 0))
-    depad = ReplicationPad2d((-padding_size, -padding_size, 0, 0))
+    unpad = ReplicationPad2d((-padding_size, -padding_size, 0, 0))
     c = pad(c)
     depth = pad(depth)
 
     # forward warping
     B, _, H, W = depth.shape
-
     shift_size = divergence * 0.01 * org_width * 0.5
     index_shift = depth * shift_size - (shift_size * convergence)
     index_shift = index_shift.view(B, H, W)
     x_index = torch.arange(0, W, device=c.device).view(1, 1, W).expand(B, H, W)
     src_index = to_flat_index(B, W, H, x_index)
     index_order = torch.argsort(depth.view(-1), dim=0)
-
     left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
     right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
 
-    left_eye = depad(left_eye)
-    right_eye = depad(right_eye)
+    # unpad
+    left_eye = unpad(left_eye)
+    right_eye = unpad(right_eye)
 
     if fill:
         # super simple inpainting

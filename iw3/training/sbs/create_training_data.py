@@ -17,12 +17,14 @@ from nunif.utils.image_loader import ImageLoader, list_images
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
 from iw3.utils import get_mapper, normalize_depth
+from iw3.forward_warp import apply_divergence_forward_warp
 from .stereoimage_generation import create_stereoimages
 
 
 def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filename_base, size, num_samples):
     im_l = TF.crop(im_sbs, 0, 0, im_org.height, im_org.width)
     im_r = TF.crop(im_sbs, 0, im_org.width, im_org.height, im_org.width)
+
     assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size
 
     metadata = PngInfo()
@@ -39,6 +41,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
 
     # remove replication padding area
     unpad_size = int(im_org.width * divergence * 0.01 + 2)
+
     im_org = TF.crop(im_org, 0, unpad_size, im_org.height, im_org.width - unpad_size * 2)
     im_depth = TF.crop(im_depth, 0, unpad_size, im_depth.height, im_depth.width - unpad_size * 2)
     im_l = TF.crop(im_l, 0, unpad_size, im_l.height, im_l.width - unpad_size * 2)
@@ -67,7 +70,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
     if len(rect_groups) > num_samples:
         if random.uniform(0, 1) < 0.5:
             # sorted by depth std
-            rects_sorted = sorted([(rects, TF.to_tensor(rects[3][1]).float().std(dim=[1,2]).sum().item())
+            rects_sorted = sorted([(rects, TF.to_tensor(rects[3][1]).float().std(dim=[1, 2]).sum().item())
                                    for rects in rect_groups],
                                   key=lambda d: d[1], reverse=True)
             rect_groups = [d[0] for d in rects_sorted[:num_samples]]
@@ -128,8 +131,9 @@ def random_resize(im, min_size, max_size):
 
 
 def apply_mapper(depth, mapper):
-    # signed int16 to unsigned long
-    depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
+    if depth.dtype == torch.int16:
+        # signed int16 to unsigned long
+        depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
     depth = normalize_depth(depth)
     return get_mapper(mapper)(depth)
 
@@ -221,20 +225,29 @@ def main(args):
                     divergence = gen_divergence(im_s.width)
                     convergence = gen_convergence()
                     edge_dilation = gen_edge_dilation(args.model_type)
+                    flip_aug = random.choice([True, False, False, False])
+                    enable_amp = True
+
                     with torch.inference_mode():
-                        flip_aug = random.choice([True, False, False, False])
-                        enable_amp = True
                         depth = depth_utils.batch_infer(model, im_s, int16=True, normalize_int16=True,
                                                         flip_aug=flip_aug, enable_amp=enable_amp,
                                                         edge_dilation=edge_dilation)
                         np_depth16 = depth.clone().squeeze(0).numpy().astype(np.uint16)
+
+                    if args.method == "polylines":
                         np_depth_f = apply_mapper(depth, mapper).squeeze(0).numpy().astype(np.float64)
-                    sbs = create_stereoimages(
-                        np.array(im_s, dtype=np.uint8),
-                        np_depth_f,
-                        divergence, modes=["left-right"],
-                        convergence=convergence,
-                        )[0]
+                        sbs = create_stereoimages(
+                            np.array(im_s, dtype=np.uint8),
+                            np_depth_f,
+                            divergence, modes=["left-right"],
+                            convergence=convergence)[0]
+                    elif args.method == "forward_fill":
+                        c = TF.to_tensor(im_s).unsqueeze(0)
+                        depth_f = apply_mapper(depth, mapper).unsqueeze(0)
+                        left_eye, right_eye = apply_divergence_forward_warp(c, depth_f, divergence, convergence, method="forward_fill")
+                        sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
+                        sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
+
                     f = pool.submit(save_images, im_s, sbs, Image.fromarray(np_depth16),
                                     divergence, convergence,
                                     mapper,
@@ -263,6 +276,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--zoed-height", type=int, help="input height for ZoeDepth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
     parser.add_argument("--mapper", type=str, default="pow2", choices=["pow2", "none", "random"], help="depth mapper function")
+    parser.add_argument("--method", type=str, default="polylines", choices=["forward_fill", "polylines"], help="divergence method")
 
     parser.set_defaults(handler=main)
 
