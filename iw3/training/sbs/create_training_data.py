@@ -275,8 +275,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
     parser.add_argument("--zoed-height", type=int, help="input height for ZoeDepth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
-    parser.add_argument("--mapper", type=str, default="pow2", choices=["pow2", "none", "random"], help="depth mapper function")
-    parser.add_argument("--method", type=str, default="polylines", choices=["forward_fill", "polylines"], help="divergence method")
+    parser.add_argument("--mapper", type=str, default="random", help="depth mapper function")
+    parser.add_argument("--method", type=str, default="forward_fill", choices=["forward_fill", "polylines"], help="divergence method")
 
     parser.set_defaults(handler=main)
 
