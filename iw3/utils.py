@@ -27,6 +27,7 @@ os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
 
 ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v2_20240130.pth"
 ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240417.pth"
+ROW_FLOW_V3_REV2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
 ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240418.pth"
 
 
@@ -1226,7 +1227,7 @@ def create_parser(required_true=True):
     parser.add_argument("--method", type=str, default="row_flow_sym",
                         choices=["grid_sample", "backward", "forward", "forward_fill",
                                  "row_flow", "row_flow_sym",
-                                 "row_flow_v3", "row_flow_v3_sym",
+                                 "row_flow_v3_rev2", "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
                         help="left-right divergence method")
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
@@ -1471,7 +1472,11 @@ def iw3_main(args):
             side_model = load_model(ROW_FLOW_V3_SYM_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
             side_model.symmetric = True
             side_model.delta_output = True
-        elif args.method in {"row_flow_v3", "row_flow"}:
+        elif args.method in {"row_flow_v3_rev2", "row_flow"}:
+            side_model = load_model(ROW_FLOW_V3_REV2_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = False
+            side_model.delta_output = True
+        elif args.method in {"row_flow_v3"}:
             side_model = load_model(ROW_FLOW_V3_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
             side_model.symmetric = False
             side_model.delta_output = True

@@ -48,7 +48,6 @@ class RowFlowV3(I2IBaseModel):
             ReplicationPad2d((1, 1, 1, 1)),
             nn.Conv2d(C // pack, 1, kernel_size=3, stride=1, padding=0)
         )
-        self.pre_pad = ReplicationPad2d((OFFSET,) * 4)
         self.register_buffer("delta_scale", torch.tensor(1.0 / 127.0))
         self.delta_output = False
         self.symmetric = False
@@ -101,11 +100,8 @@ class RowFlowV3(I2IBaseModel):
 
     def _forward_delta_only(self, x):
         assert not self.training
-        # TODO: maybe no need this padding
-        x = self.pre_pad(x)
         delta = self._forward(x)
         delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
-        delta = F.pad(delta, [-OFFSET] * 4)
         return delta
 
     def forward(self, x):

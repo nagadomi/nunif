@@ -50,7 +50,16 @@ Also, when running `iw3` for the first time, it may take some time as it needs t
 
 ![divergence](https://github.com/nagadomi/nunif/assets/287255/814e34ff-88bc-4d55-8f53-921a698bc8c5)
 
-`2.0` by default. You can also specify `2.5`.
+`2.0` by default.
+
+This parameter changes the best distance for the screen position.
+
+With lower value, the best distance for the screen position is farther away.
+With higher value, the best distance for the screen position is closer.
+However, with higher value, artifacts are more visible.
+
+You can adjust the screen position by zoom-in/zoom-out on the VR Video Player.
+
 
 ### What is `--convergence`(`-c`) option?
 

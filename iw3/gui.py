@@ -164,7 +164,8 @@ class MainFrame(wx.Frame):
         self.sld_ipd_offset.SetToolTip("IPD Offset")
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
-        self.cbo_method = wx.ComboBox(self.grp_stereo, choices=["row_flow_v3_sym", "row_flow_v3", "row_flow_v2", "forward_fill"],
+        self.cbo_method = wx.ComboBox(self.grp_stereo, choices=["row_flow_v3_sym", "row_flow_v3_rev2", "row_flow_v3",
+                                                                "row_flow_v2", "forward_fill"],
                                       style=wx.CB_READONLY, name="cbo_method")
         self.cbo_method.SetSelection(0)
 
