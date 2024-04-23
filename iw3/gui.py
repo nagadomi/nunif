@@ -955,7 +955,10 @@ class MainFrame(wx.Frame):
         desc = desc if desc else ""
         if type == 0:
             # initialize
-            self.prg_tqdm.SetRange(value)
+            if 0 < value:
+                self.prg_tqdm.SetRange(value)
+            else:
+                self.prg_tqdm.SetRange(1)
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
             self.SetStatusText(f"{0}/{value} {desc}")
