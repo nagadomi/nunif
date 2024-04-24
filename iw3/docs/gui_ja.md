@@ -93,12 +93,12 @@ VR Player側で設定できる場合もあります。通常は0を選択して�
 
 | Short Name  |                   |
 |-------------|-------------------|
-| `row_flow_v3_sym`| 逆方向ワーピング(grid_sample)のパラメータを機械学習モデルで算出します。左と右のパラメータは完全に左右対称になります。`row_flow_v3`より2倍速くアーティファクトが少ないです。`0.0 <= divergence <= 5.0` の範囲で学習されています。 デフォルトメソッド。
-| `row_flow_v3`    | 逆方向ワーピングのパラメータを機械学習モデルで算出します。左と右のパラメータは個別に算出されます。出力は`stable-diffusion-webui-depthmap-script`の`apply_stereo_divergence_polylines`に最も近くなります。`0.0 <= divergence <= 5.0` の範囲で学習されています。
-| `row_flow_v2`    | `row_flow_v3`の古いバージョンです。`0.0 <= divergence <= 2.5`の範囲で学習されています。
-| `forward_fill`   | 深度順の順方向ワーピングです（ソース側からのサンプリングは行わず穴は隣接ピクセルで埋める+重なった領域は深度の低いほうで上書き）。非機械学習の率直なメソッド。
-| `forward`        | 穴を埋めない`forward_fill`です。デバッグ用。
-| `grid_sample`,`backward`  | 素朴な逆方向ワーピングです。ひどいゴーストアーティファクトが発生します。デバッグ用。
+| `row_flow_v3`    | 逆方向ワーピング(`grid_sample`)のパラメータを機械学習モデルで算出します。`0.0 <= divergence <= 5.0`の範囲で`forward_fill`で生成した合成データで学習されています。デフォルトメソッド。
+| `row_flow_v2`    | 以前のデフォルトメソッド。`0.0 <= divergence <= 2.5`の範囲で[stable-diffusion-webui-depthmap-script](https://github.com/thygate/stable-diffusion-webui-depthmap-script)で生成した合成データで学習されています。
+| `forward_fill`   | 深度順の順方向ワーピング（ソース側からのサンプリングは行わず穴は隣接ピクセルで埋める+重なった領域は深度的に前にあるほうで上書き）。非機械学習の率直なメソッド。
+| `row_flow_v3_sym`| `row_flow_v3`の左右対称制約版。左と右のワープパラメータは完全に左右対称になります。`row_flow_v3`より2倍速い。実験用。
+| `forward`        | 穴を埋めない`forward_fill`。実験用。
+| `grid_sample`,`backward`  | 素朴な逆方向ワーピング。ひどいゴーストアーティファクトが発生します。実験用。
 
 
 ### 深度推定モデル
