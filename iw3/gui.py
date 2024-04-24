@@ -147,10 +147,10 @@ class MainFrame(wx.Frame):
         self.grp_stereo = wx.StaticBox(self.pnl_options, label=T("Stereo Generation"))
 
         self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
-        self.cbo_divergence = EditableComboBox(self.grp_stereo, choices=["5.0", "2.5", "2.0", "1.0"],
+        self.cbo_divergence = EditableComboBox(self.grp_stereo, choices=["5.0", "4.0", "3.0", "2.5", "2.0", "1.0"],
                                                name="cbo_divergence")
         self.cbo_divergence.SetToolTip("Divergence")
-        self.cbo_divergence.SetSelection(2)
+        self.cbo_divergence.SetSelection(4)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
         self.cbo_convergence = EditableComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
@@ -164,8 +164,7 @@ class MainFrame(wx.Frame):
         self.sld_ipd_offset.SetToolTip("IPD Offset")
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
-        self.cbo_method = wx.ComboBox(self.grp_stereo, choices=["row_flow_v3_sym", "row_flow_v3_rev2", "row_flow_v3",
-                                                                "row_flow_v2", "forward_fill"],
+        self.cbo_method = wx.ComboBox(self.grp_stereo, choices=["row_flow_v3", "row_flow_v2", "forward_fill"],
                                       style=wx.CB_READONLY, name="cbo_method")
         self.cbo_method.SetSelection(0)
 
@@ -955,7 +954,10 @@ class MainFrame(wx.Frame):
         desc = desc if desc else ""
         if type == 0:
             # initialize
-            self.prg_tqdm.SetRange(value)
+            if 0 < value:
+                self.prg_tqdm.SetRange(value)
+            else:
+                self.prg_tqdm.SetRange(1)
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
             self.SetStatusText(f"{0}/{value} {desc}")
