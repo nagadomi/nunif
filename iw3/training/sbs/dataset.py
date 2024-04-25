@@ -10,6 +10,7 @@ from os import path
 import random
 from PIL import Image
 from ... import utils as US
+import numpy as np
 
 
 def load_images(org_file, side=None):
@@ -86,9 +87,13 @@ class SBSDataset(Dataset):
         (depth_max, depth_min, original_image_width,
          divergence, convergence, mapper) = self.get_metadata(im_depth)
 
+        depth = TF.to_tensor(im_depth)
+        if depth.dtype == torch.int16:
+            depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
+
         x = US.make_input_tensor(
             TF.to_tensor(im_org),
-            TF.to_tensor(im_depth),
+            depth,
             divergence, convergence,
             original_image_width,
             depth_min=depth_min, depth_max=depth_max,
@@ -101,6 +106,7 @@ class SBSDataset(Dataset):
                                      im_right.height - self.model_offset * 2,
                                      im_right.width - self.model_offset * 2))
         y = torch.cat([left, right], dim=0)
+
         return x, y, index
 
     def _getitem(self, index):
@@ -117,9 +123,12 @@ class SBSDataset(Dataset):
             im_depth = TF.hflip(im_depth)
             im_side = TF.hflip(im_side)
 
+        depth = TF.to_tensor(im_depth)
+        if depth.dtype == torch.int16:
+            depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
         x = US.make_input_tensor(
             TF.to_tensor(im_org),
-            TF.to_tensor(im_depth),
+            depth,
             divergence, convergence,
             original_image_width,
             depth_min=depth_min, depth_max=depth_max,
