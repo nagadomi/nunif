@@ -1,7 +1,8 @@
-from PIL import Image, ImageCms, ImageMath, PngImagePlugin, UnidentifiedImageError
+from PIL import Image, ImageCms, PngImagePlugin, UnidentifiedImageError
 import io
 import struct
 import base64
+import torch
 import torchvision.transforms.functional as TF
 from ..transforms.functional import quantize256
 from ..logger import logger
@@ -29,8 +30,8 @@ def remove_alpha(im, bg_color=255):
 
 
 def convert_i2l(im):
-    # https://github.com/python-pillow/Pillow/issues/3011
-    return ImageMath.eval('im >> 8', im=im).convert('L')
+    # https://github.com/python-pillow/Pillow/issues/5991
+    return im.point(lambda i: i / 255).convert('L')
 
 
 def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
@@ -70,7 +71,7 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
                 logger.warning(f"pil_io.load_image: profile error: im.mode={im.mode}, {e}")
 
     if im.mode not in {"RGB", "RGBA", "L", "LA"}:
-        if im.mode == "I":
+        if im.mode in {"I", "I;16"}:
             im = convert_i2l(im)
         else:
             im = im.convert("RGB")
@@ -130,11 +131,11 @@ def _load_image_simple(filename, color="rgb", bg_color=255):
         im = remove_alpha(im, bg_color=bg_color)
 
     if color == "rgb" and im.mode != "RGB":
-        if im.mode == "I":
+        if im.mode in {"I", "I;16"}:
             im = convert_i2l(im)
         im = im.convert("RGB")
     elif color == "gray" and im.mode != "L":
-        if im.mode == "I":
+        if im.mode in {"I", "I;16"}:
             im = convert_i2l(im)
         else:
             im = im.convert("L")
@@ -212,10 +213,15 @@ def to_tensor(im, return_alpha=False):
         alpha = im.getchannel("A")
         im = im.convert("L")
 
-    x = TF.to_tensor(im)
+    x = TF.pil_to_tensor(im)
+    if x.dtype != torch.float32:
+        x = x.float() / torch.iinfo(x.dtype).max
+
     if return_alpha:
         if alpha is not None:
-            alpha = TF.to_tensor(alpha)
+            alpha = TF.pil_to_tensor(alpha)
+            if x.dtype != torch.float32:
+                x = x.float() / torch.iinfo(x.dtype).max
         return x, alpha
     return x
 
