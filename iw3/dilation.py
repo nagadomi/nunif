@@ -23,7 +23,7 @@ def edge_weight(x):
     range_v = max_v.sub_(min_v)
     range_c = range_v.sub_(range_v.mean())
     range_s = range_c.pow(2).mean().add_(1e-6)
-    w = torch.clamp(range_c.div_(range_s), -2, 2).add_(2).div_(4)
+    w = torch.clamp(range_c.div_(range_s), -2, 2)
     w_min, w_max = w.min(), w.max()
     if w_max - w_min > 0:
         w = (w - w_min) / (w_max - w_min)
