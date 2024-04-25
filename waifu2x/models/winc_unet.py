@@ -3,57 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model, register_model_factory
-from nunif.modules.attention import WindowMHA2d
+from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.norm import RMSNorm1
 from nunif.modules.replication_pad2d import ReplicationPad2d
 
-
-class WindowBias(nn.Module):
-    def __init__(self, window_size, hidden_dim=None):
-        super().__init__()
-        if isinstance(window_size, int):
-            window_size = [window_size, window_size]
-        self.window_size = window_size
-
-        index, unique_delta = self._gen_input(self.window_size)
-        self.register_buffer("index", index)
-        self.register_buffer("delta", unique_delta)
-        if hidden_dim is None:
-            hidden_dim = int((self.window_size[0] * self.window_size[1]) ** 0.5) * 2
-
-        self.to_bias = nn.Sequential(
-            nn.Linear(2, hidden_dim, bias=True),
-            nn.GELU(),
-            nn.Linear(hidden_dim, 1, bias=True))
-
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.trunc_normal_(m.weight, 0, 0.02)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    @staticmethod
-    def _gen_input(window_size):
-        N = window_size[0] * window_size[1]
-        mesh_y, mesh_x = torch.meshgrid(torch.arange(0, window_size[0]),
-                                        torch.arange(0, window_size[1]), indexing="ij")
-        positions = torch.stack((mesh_y, mesh_x), dim=2).reshape(N, 2)
-        delta = torch.cat([positions[i].view(1, 2) - positions
-                           for i in range(positions.shape[0])], dim=0)
-        delta = [tuple(p) for p in delta.tolist()]
-        unique_delta = sorted(list(set(delta)))
-        index = [unique_delta.index(d) for d in delta]
-        index = torch.tensor(index, dtype=torch.int64)
-        unique_delta = torch.tensor(unique_delta, dtype=torch.float32)
-        unique_delta = unique_delta / unique_delta.abs().max()
-        return index, unique_delta
-
-    def forward(self):
-        N = self.window_size[0] * self.window_size[1]
-        bias = self.to_bias(self.delta)
-        # (N,N) float attention score bias
-        bias = bias[self.index].reshape(N, N)
-        return bias
 
 
 class GLUConvMLP(nn.Module):
@@ -92,7 +45,7 @@ class WACBlock(nn.Module):
         else:
             self.norm = None
         self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size)
-        self.relative_bias = WindowBias(self.window_size)
+        self.relative_bias = WindowScoreBias(self.window_size)
         self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3, mlp_ratio=mlp_ratio, layer_norm=layer_norm)
 
     def forward(self, x):
@@ -166,7 +119,7 @@ class ToImage(nn.Module):
 class WincUNetBase(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96,
                  lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4, last_layers=3,
-                 scale_factor=2):
+                 scale_factor=2, layer_norm=False):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
         C = base_dim
@@ -183,17 +136,18 @@ class WincUNetBase(nn.Module):
         )
         # encoder
         self.wac1 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=8, num_heads=HEADS)
+                              window_size=8, num_heads=HEADS,
+                              layer_norm=layer_norm)
         self.down1 = PatchDown(C, C2)
         self.wac2 = WACBlocks(C2, mlp_ratio=lv2_mlp_ratio,
                               window_size=[8, 6, 8, 6], num_heads=HEADS * 2, num_layers=4,
-                              # No layerNorm in this level
-                              layer_norm=False)
+                              layer_norm=layer_norm)
         # decoder
         self.up1 = PatchUp(C2, C)
         self.wac1_proj = nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0)
         self.wac3 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=8, num_heads=HEADS, num_layers=last_layers)
+                              window_size=8, num_heads=HEADS, num_layers=last_layers,
+                              layer_norm=layer_norm)
         self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
 
     def forward(self, x):
@@ -211,11 +165,32 @@ class WincUNetBase(nn.Module):
 
 
 @register_model
+class WincUNet(I2IBaseModel):
+    name = "waifu2x.winc_unet_1x"
+
+    def __init__(self, in_channels=3, out_channels=3,
+                 base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
+                 **kwargs):
+        super(WincUNet, self).__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
+        self.unet = WincUNetBase(in_channels, out_channels,
+                                 base_dim=base_dim,
+                                 lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
+                                 scale_factor=1)
+
+    def forward(self, x):
+        z = self.unet(x)
+        if self.training:
+            return z
+        else:
+            return torch.clamp(z, 0., 1.)
+
+
+@register_model
 class WincUNet2x(I2IBaseModel):
     name = "waifu2x.winc_unet_2x"
 
     def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=4,
+                 base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=3,
                  **kwargs):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
         self.unet = WincUNetBase(in_channels, out_channels,
@@ -338,6 +313,7 @@ def _bench(name, compile):
 
 
 if __name__ == "__main__":
+    _bench("waifu2x.winc_unet_1x", False)
     _bench("waifu2x.winc_unet_2x", False)
     _bench("waifu2x.winc_unet_4x", False)
     _bench("waifu2x.winc_unet_2x", True)
