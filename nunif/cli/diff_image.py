@@ -4,7 +4,7 @@
 # python -m nunif.cli.diff_image -v -i dir1/ dir2/
 import argparse
 from nunif.utils.image_loader import ImageLoader
-from nunif.utils.pil_io import load_image_simple
+from nunif.utils.pil_io import load_image_simple, to_tensor
 import torchvision.transforms.functional as TF
 import torch
 from os import path
@@ -12,15 +12,15 @@ import math
 
 
 def calc_psnr(im1, im2):
-    im1 = TF.to_tensor(im1)
-    im2 = TF.to_tensor(im2)
+    im1 = to_tensor(im1)
+    im2 = to_tensor(im2)
 
     mse = ((im1 - im2) ** 2).mean()
     return round(float(10 * torch.log10(1.0 / (mse + 1.0e-6))), 3)
 
 
 def compare_size(im1, im2):
-    return im1.width == im2.width and im1.height == im2.height
+    return im1.mode == im2.mode and im1.width == im2.width and im1.height == im2.height
 
 
 def main():
@@ -32,8 +32,8 @@ def main():
         raise ValueError("Specify two files")
 
     if path.isfile(args.input[0]):
-        im1, _ = load_image_simple(args.input[0])
-        im2, _ = load_image_simple(args.input[1])
+        im1, _ = load_image_simple(args.input[0], color="any")
+        im2, _ = load_image_simple(args.input[1], color="any")
         if not compare_size(im1, im2):
             print("size differ")
         else:
@@ -45,8 +45,8 @@ def main():
         # sorted
         psnr_sum = 0
         for i in range(len(files1)):
-            im1, _ = load_image_simple(files1[i])
-            im2, _ = load_image_simple(files2[i])
+            im1, _ = load_image_simple(files1[i], color="any")
+            im2, _ = load_image_simple(files2[i], color="any")
             if not compare_size(im1, im2):
                 psnr = float("nan")
             else:
