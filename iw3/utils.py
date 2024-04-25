@@ -919,9 +919,10 @@ def export_video(args):
 
 
 def to_float32_grayscale_depth(depth):
-    if depth.dtype == torch.int32:
+    if depth.dtype != torch.float32:
         # 16bit image
         depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+
     if depth.shape[0] != 1:
         # Maybe 24bpp
         # TODO: color depth support?
@@ -988,7 +989,7 @@ def process_config_video(config, args, side_model):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = load_image_simple(depth_file, color="any")[0]
         rgb = TF.to_tensor(rgb)
-        depth = to_float32_grayscale_depth(TF.to_tensor(depth))
+        depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth))
         frame = batch_callback(rgb.unsqueeze(0).to(args.state["device"]),
                                depth.unsqueeze(0).to(args.state["device"]))
         return frame.shape[2:]
@@ -1000,7 +1001,7 @@ def process_config_video(config, args, side_model):
         depth_batch = []
         for rgb, depth in zip(rgb_loader, depth_loader):
             rgb = TF.to_tensor(rgb[0])
-            depth = to_float32_grayscale_depth(TF.to_tensor(depth[0]))
+            depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth[0]))
             rgb_batch.append(rgb)
             depth_batch.append(depth)
             if len(rgb_batch) == minibatch_size:
@@ -1101,7 +1102,7 @@ def process_config_images(config, args, side_model):
                 if rgb_filename != depth_filename:
                     raise ValueError(f"No match {rgb_filename} and {depth_filename}")
                 rgb = TF.to_tensor(rgb)
-                depth = to_float32_grayscale_depth(TF.to_tensor(depth))
+                depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth))
                 if not config.skip_edge_dilation and args.edge_dilation > 0:
                     depth = -dilate_edge(-depth.unsqueeze(0), args.edge_dilation).squeeze(0)
 
