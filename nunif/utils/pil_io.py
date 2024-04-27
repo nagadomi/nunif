@@ -220,8 +220,8 @@ def to_tensor(im, return_alpha=False):
     if return_alpha:
         if alpha is not None:
             alpha = TF.pil_to_tensor(alpha)
-            if x.dtype != torch.float32:
-                x = x.float() / torch.iinfo(x.dtype).max
+            if alpha.dtype != torch.float32:
+                alpha = alpha.float() / torch.iinfo(alpha.dtype).max
         return x, alpha
     return x
 
