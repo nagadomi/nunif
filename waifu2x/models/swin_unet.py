@@ -438,7 +438,8 @@ def _bench(name, compile):
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z = model(x)
         print(z.shape)
-        print(model.name, model.i2i_offset, model.i2i_scale, f"compile={compile}")
+        param = sum([p.numel() for p in model.parameters()])
+        print(model.name, model.i2i_offset, model.i2i_scale, f"{param:,}", f"compile={compile}")
 
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
@@ -450,8 +451,10 @@ def _bench(name, compile):
 if __name__ == "__main__":
     if True:
         # _test()
+        _bench("waifu2x.swin_unet_1x", False)
         _bench("waifu2x.swin_unet_2x", False)
         _bench("waifu2x.swin_unet_4x", False)
+        _bench("waifu2x.swin_unet_1x", True)
         _bench("waifu2x.swin_unet_2x", True)
         _bench("waifu2x.swin_unet_4x", True)
     else:
