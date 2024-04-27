@@ -190,7 +190,7 @@ class WincUNet2x(I2IBaseModel):
     name = "waifu2x.winc_unet_2x"
 
     def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=3,
+                 base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
                  **kwargs):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
         self.unet = WincUNetBase(in_channels, out_channels,
