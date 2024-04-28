@@ -1,9 +1,7 @@
 import os
 from os import path
 import torch
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode)
+import torchvision.transforms.functional as TF
 from PIL import Image
 import argparse
 import csv
@@ -14,6 +12,7 @@ from nunif.logger import logger
 from nunif.device import create_device
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
+from nunif.utils.rgb_noise import rgb_noise_like, apply_rgb_noise
 from nunif.utils import video as VU
 from nunif.utils.ui import (
     is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir)
@@ -33,7 +32,16 @@ def process_image(ctx, im, meta, args):
     rgb, alpha = ctx.convert(
         rgb, alpha, args.method, args.noise_level,
         args.tile_size, args.batch_size,
-        args.tta, enable_amp=not args.disable_amp)
+        args.tta, enable_amp=not args.disable_amp,
+        output_device=args.state["device"],
+    )
+    if args.grain:
+        noise = rgb_noise_like(rgb)
+        # grain_strength = 1/2 for image
+        rgb = apply_rgb_noise(rgb, noise, strength=args.grain_strength * 0.5)
+
+    rgb = rgb.to("cpu")
+
     if args.depth is not None:
         meta["depth"] = args.depth
     depth = meta["depth"] if "depth" in meta and meta["depth"] is not None else 8
@@ -94,6 +102,7 @@ def process_video(ctx, input_filename, output_path, args):
             container_options={"movflags": "+faststart"}
         )
 
+    @torch.inference_mode()
     def frame_callback(frame):
         if frame is None:
             return None
@@ -104,21 +113,21 @@ def process_video(ctx, input_filename, output_path, args):
             im = im.transpose(Image.Transpose.ROTATE_270)
 
         rgb = TF.to_tensor(im).to(args.state["device"])
-        with torch.inference_mode():
-            output, _ = ctx.convert(
-                rgb, None, args.method, args.noise_level,
-                args.tile_size, args.batch_size,
-                args.tta, enable_amp=not args.disable_amp,
-                output_device=rgb.device)
+        output, _ = ctx.convert(
+            rgb, None, args.method, args.noise_level,
+            args.tile_size, args.batch_size,
+            args.tta, enable_amp=not args.disable_amp,
+            output_device=rgb.device)
         if args.grain:
-            noise = (torch.randn(output.shape, device=rgb.device) +
-                     TF.resize(torch.randn((3, output.shape[1] // 2, output.shape[2] // 2), device=rgb.device),
-                               (output.shape[1], output.shape[2]),
-                               interpolation=InterpolationMode.NEAREST))
-            correlated_noise = noise * output
-            light_decay = (1. - output.mean(dim=0, keepdim=True)) ** 2
-            output = output + correlated_noise * light_decay * args.grain_strength
-            output = torch.clamp(output, 0, 1)
+            noise = rgb_noise_like(output)
+            if noise.shape != args.state["noise_buffer"].shape:
+                args.state["noise_buffer"].resize_(noise.shape)
+                args.state["noise_buffer"].copy_(noise)
+            else:
+                args.state["noise_buffer"].mul_((1.0 - args.grain_speed))
+                args.state["noise_buffer"].add_(noise.mul_(args.grain_speed))
+            output = apply_rgb_noise(output, args.state["noise_buffer"], strength=args.grain_strength)
+
         return VU.to_frame(output)
 
     if is_output_dir(output_path):
@@ -217,9 +226,11 @@ def create_parser(required_true=True):
     parser.add_argument("--vf", type=str, default="",
                         help="video filter options for ffmpeg. (video only)")
     parser.add_argument("--grain", action="store_true",
-                        help=("add noise after denosing (video only)"))
-    parser.add_argument("--grain-strength", type=float, default=0.05,
-                        help=("noise strength  (video only)"))
+                        help=("add noise after denosing"))
+    parser.add_argument("--grain-strength", type=float, default=0.2,
+                        help=("noise strength"))
+    parser.add_argument("--grain-speed", type=float, default=0.8,
+                        help=("noise update speed (video only)"))
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
                         help=("pixel format (video only)"))
     parser.add_argument("--start-time", type=str,
@@ -231,8 +242,10 @@ def create_parser(required_true=True):
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None):
+    device = create_device(args.gpu)
     args.state = {
-        "device": create_device(args.gpu),
+        "device": device,
+        "noise_buffer": torch.zeros((1, 1, 1), dtype=torch.float32, device=device),
         "stop_event": stop_event,
         "tqdm_fn": tqdm_fn,
     }
