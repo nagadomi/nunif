@@ -28,6 +28,11 @@ DEFAULT_PHOTO_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "photo")
 
 @torch.inference_mode()
 def process_image(ctx, im, meta, args):
+    if args.rotate_left:
+        im = im.transpose(Image.Transpose.ROTATE_90)
+    elif args.rotate_right:
+        im = im.transpose(Image.Transpose.ROTATE_270)
+
     rgb, alpha = IL.to_tensor(im, return_alpha=True)
     rgb, alpha = ctx.convert(
         rgb, alpha, args.method, args.noise_level,
