@@ -9,10 +9,9 @@ from time import time
 import threading
 from pprint import pprint # noqa
 import wx
-from wx.lib.masked.numctrl import NumCtrl # noqa
 from wx.lib.buttons import GenBitmapButton
 from wx.lib.delayedresult import startWorker
-import wx.lib.agw.persist as wxpm
+import wx.lib.agw.persist as persist
 from .ui_utils import (
     create_parser, set_state_args, waifu2x_main,
     is_video, is_output_dir, is_text, is_image,
@@ -22,6 +21,8 @@ from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIO
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
+    EditableComboBox, EditableComboBoxPersistentHandler,
+    persistent_manager_register_all, persistent_manager_restore_all, persistent_manager_register,
     resolve_default_dir, extension_list_to_wildcard,
     validate_number,
     set_icon_ex, start_file, load_icon,
@@ -179,8 +180,9 @@ class MainFrame(wx.Frame):
         self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
 
         self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
-        self.cbo_fps = wx.ComboBox(self.grp_video, choices=["0.25", "1", "15", "30", "60", "1000"],
-                                   style=wx.CB_READONLY, name="cbo_fps")
+        self.cbo_fps = EditableComboBox(
+            self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
+            name="cbo_fps")
         self.cbo_fps.SetSelection(3)
 
         self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
@@ -189,8 +191,8 @@ class MainFrame(wx.Frame):
         self.cbo_pix_fmt.SetSelection(0)
 
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
-        self.cbo_crf = wx.ComboBox(self.grp_video, choices=[str(n) for n in range(16, 28 + 1)],
-                                   style=wx.CB_READONLY, name="cbo_crf")
+        self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28 + 1)],
+                                        name="cbo_crf")
         self.cbo_crf.SetSelection(4)
 
         self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
@@ -258,8 +260,8 @@ class MainFrame(wx.Frame):
 
         self.chk_grain_noise = wx.CheckBox(self.grp_video_filter,
                                            label=T("Add Noise"), name="chk_grain_noise")
-        self.cbo_grain_noise = wx.ComboBox(self.grp_video_filter, choices=["0.5", "0.4", "0.3", "0.2", "0.1"],
-                                           style=wx.CB_READONLY, name="cbo_grain_noise")
+        self.cbo_grain_noise = EditableComboBox(self.grp_video_filter, choices=["0.5", "0.4", "0.3", "0.2", "0.1"],
+                                                name="cbo_grain_noise")
         self.chk_grain_noise.SetValue(False)
         self.cbo_grain_noise.SetSelection(3)
         self.chk_grain_noise.SetToolTip(T("For Photo or Generative AI"))
@@ -390,12 +392,18 @@ class MainFrame(wx.Frame):
         # state
         self.btn_cancel.Disable()
 
-        self.persistence_manager = wxpm.PersistenceManager.Get()
-        self.persistence_manager.SetManagerStyle(
-            wxpm.PM_DEFAULT_STYLE | wxpm.PM_PERSIST_CONTROL_VALUE | wxpm.PM_SAVE_RESTORE_TREE_LIST_SELECTIONS)
+        editable_comboxes = [
+            self.cbo_fps,
+            self.cbo_crf,
+            self.cbo_grain_noise,
+        ]
+        self.persistence_manager = persist.PersistenceManager.Get()
+        self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
         self.persistence_manager.SetPersistenceFile(CONFIG_PATH)
-        self.persistence_manager.RegisterAndRestoreAll(self)
-        self.persistence_manager.Save(self)
+        persistent_manager_register_all(self.persistence_manager, self)
+        for control in editable_comboxes:
+            persistent_manager_register(self.persistence_manager, control, EditableComboBoxPersistentHandler)
+        persistent_manager_restore_all(self.persistence_manager)
 
         self.update_start_button_state()
         self.update_upscaling_state()
@@ -564,6 +572,12 @@ class MainFrame(wx.Frame):
             dlg.ShowModal()
 
     def on_click_btn_start(self, event):
+        if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
+            self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
+            return
+        if not validate_number(self.cbo_crf.GetValue(), 0, 30, is_int=True):
+            self.show_validation_error_message(T("CRF"), 0, 30)
+            return
         if self.chk_grain_noise.GetValue():
             if not validate_number(self.cbo_grain_noise.GetValue(), 0.0, 1.0):
                 self.show_validation_error_message(T("Add Noise"), 0.0, 1.0)
