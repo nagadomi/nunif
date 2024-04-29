@@ -118,7 +118,8 @@ class ToImage(nn.Module):
 
 class WincUNetBase(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96,
-                 lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4, last_layers=3,
+                 lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
+                 first_layers=2, last_layers=3,
                  scale_factor=2, layer_norm=False):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
@@ -136,7 +137,7 @@ class WincUNetBase(nn.Module):
         )
         # encoder
         self.wac1 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=8, num_heads=HEADS,
+                              window_size=8, num_heads=HEADS, num_layers=first_layers,
                               layer_norm=layer_norm)
         self.down1 = PatchDown(C, C2)
         self.wac2 = WACBlocks(C2, mlp_ratio=lv2_mlp_ratio,
@@ -165,16 +166,18 @@ class WincUNetBase(nn.Module):
 
 
 @register_model
-class WincUNet(I2IBaseModel):
+class WincUNet1x(I2IBaseModel):
     name = "waifu2x.winc_unet_1x"
 
     def __init__(self, in_channels=3, out_channels=3,
                  base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
+                 first_layers=2, last_layers=3,
                  **kwargs):
-        super(WincUNet, self).__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
+        super(WincUNet1x, self).__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
         self.unet = WincUNetBase(in_channels, out_channels,
                                  base_dim=base_dim,
                                  lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
+                                 first_layers=first_layers, last_layers=last_layers,
                                  scale_factor=1)
 
     def forward(self, x):
@@ -290,6 +293,11 @@ register_model_factory(
     lambda **kwargs: WincUNet4x(base_dim=192, **kwargs))
 
 
+register_model_factory(
+    "waifu2x.winc_unet_1x_small",
+    lambda **kwargs: WincUNet1x(base_dim=32, first_layers=1, last_layers=1, lv1_mlp_ratio=1, lv2_mlp_ratio=1, **kwargs))
+
+
 def _bench(name, compile):
     from nunif.models import create_model
     import time
@@ -313,6 +321,7 @@ def _bench(name, compile):
 
 
 if __name__ == "__main__":
+    _bench("waifu2x.winc_unet_1x_small", False)
     _bench("waifu2x.winc_unet_1x", False)
     _bench("waifu2x.winc_unet_2x", False)
     _bench("waifu2x.winc_unet_4x", False)
