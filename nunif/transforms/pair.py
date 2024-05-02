@@ -130,6 +130,14 @@ class RandomFlip():
         return x, y
 
 
+class RandomHFlip():
+    def __call__(self, x, y):
+        if random.uniform(0, 1) > 0.5:
+            x = TF.hflip(x)
+            y = TF.hflip(y)
+        return x, y
+
+
 class RandomApply():
     def __init__(self, transforms, p):
         self.transforms = transforms

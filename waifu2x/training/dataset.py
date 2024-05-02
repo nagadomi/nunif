@@ -176,7 +176,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  scale_factor,
                  tile_size, num_samples=None,
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
-                 da_grayscale_p=0, da_color_p=0, da_antialias_p=0,
+                 da_grayscale_p=0, da_color_p=0, da_antialias_p=0, da_hflip_only=False,
                  bicubic_only=False,
                  skip_screentone=False,
                  skip_dot=False,
@@ -252,6 +252,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 random_downscale_x = TP.Identity()
                 random_downscale_x_nearest = TP.Identity()
 
+            random_flip = TP.RandomHFlip() if da_hflip_only else TP.RandomFlip()
+
             # 8(max jpeg shift size) * 2(max jpeg shift count) * scale_factor
             y_min_size = tile_size * scale_factor + (8 * 2 * scale_factor)
             self.gt_transforms = T.Compose([
@@ -272,6 +274,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomInvert(p=0.5),
             ])
+
             self.transforms = TP.Compose([
                 TP.RandomHardExampleCrop(size=y_min_size, samples=crop_samples),
                 random_downscale_x,
@@ -279,7 +282,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 rotate_transform,
                 antialias,
                 jpeg_transform,
-                TP.RandomFlip(),
+                random_flip,
                 TP.RandomCrop(size=tile_size, y_scale=scale_factor),
             ])
             self.transforms_nearest = TP.Compose([
@@ -288,7 +291,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 TP.RandomHardExampleCrop(size=tile_size,
                                          y_scale=scale_factor,
                                          samples=crop_samples),
-                TP.RandomFlip(),
+                random_flip,
             ])
         else:
             self.gt_transforms = TS.Identity()
