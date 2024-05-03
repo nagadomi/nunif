@@ -157,7 +157,13 @@ def get_last_layer(model):
     if model.name in {"waifu2x.swin_unet_1x",
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x",
-                      "waifu2x.swin_unet_8x"}:
+                      "waifu2x.swin_unet_8x",
+                      "waifu2x.winc_unet_1x",
+                      "waifu2x.winc_unet_2x",
+                      "waifu2x.winc_unet_4x",
+                      "waifu2x.winc_unet_1x_small",
+                      "waifu2x.winc_unet_2x_small",
+                      }:
         return model.unet.to_image.proj.weight
     elif model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
         return model.unet2.conv_bottom.weight
@@ -449,14 +455,6 @@ class Waifu2xTrainer(Trainer):
 
     def setup_model(self):
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
-        if self.discriminator is not None:
-            # initialize lazy modules
-            model_offset = self.model.i2i_offset
-            scale_factor = self.model.i2i_scale
-            output_size = self.args.size * scale_factor - model_offset * 2
-            y = torch.zeros((1, 3, output_size, output_size)).to(self.device)
-            _ = self.discriminator(y, y, scale_factor)
-
         if self.args.freeze and hasattr(self.model, "freeze"):
             self.model.freeze()
             logger.debug("call model.freeze()")

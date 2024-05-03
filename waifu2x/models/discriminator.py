@@ -27,7 +27,7 @@ class ImageToCondition(nn.Module):
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((4, 4)),
         )
-        self.aggregate = nn.LazyLinear(embed_dim, bias=True)
+        self.aggregate = nn.Linear(embed_dim * 16, embed_dim, bias=True)
         self.fc = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(embed_dim, embed_dim, bias=True),
