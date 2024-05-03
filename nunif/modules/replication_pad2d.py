@@ -21,13 +21,13 @@ def replication_pad2d_naive(x, padding):
     assert x.ndim == 4 and len(padding) == 4
     left, right, top, bottom = padding
     if left > 0:
-        x = torch.cat((*((x[:, :, :, :1],) * left), x), dim=3)
+        x = torch.cat((*((x[:, :, :, :1].detach(),) * left), x), dim=3)
     if right > 0:
-        x = torch.cat((x, *((x[:, :, :, -1:],) * right)), dim=3)
+        x = torch.cat((x, *((x[:, :, :, -1:].detach(),) * right)), dim=3)
     if top > 0:
-        x = torch.cat((*((x[:, :, :1, :],) * top), x), dim=2)
+        x = torch.cat((*((x[:, :, :1, :].detach(),) * top), x), dim=2)
     if bottom > 0:
-        x = torch.cat((x, *((x[:, :, -1:, :],) * bottom)), dim=2)
+        x = torch.cat((x, *((x[:, :, -1:, :].detach(),) * bottom)), dim=2)
     return x
 
 
