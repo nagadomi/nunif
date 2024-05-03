@@ -14,7 +14,7 @@ def normalize(x):
 
 def clamp(x, min=-2., max=2., eps=0.01):
     c = torch.clamp(x, min, max)
-    return c + (c.detach() - x) * eps
+    return c - (c.detach() - x) * eps
 
 
 class ImageToCondition(nn.Module):
