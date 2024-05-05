@@ -42,7 +42,10 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
             # random note: because named_modules and named_parameters are recursive
             # we will see the same tensors p many many times. but doing it this way
             # allows us to know which parent module any tensor p belongs to...
-            if pn.endswith('bias'):
+            if not p.requires_grad:
+                # no grad
+                no_decay.add(fpn)
+            elif pn.endswith('bias'):
                 # all biases will not be decayed
                 no_decay.add(fpn)
             elif pn.endswith('weight') and isinstance(m, whitelist_weight_modules):
