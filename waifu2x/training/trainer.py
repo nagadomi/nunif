@@ -144,6 +144,8 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.l3v1_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "u3c":
         model = create_model("waifu2x.u3_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "l3v1_dino":
+        model = create_model("waifu2x.l3v1_dino_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "u3fftc":
         model = create_model("waifu2x.u3fft_conditional_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):

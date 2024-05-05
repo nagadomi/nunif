@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 
 try:
     import xformers  # noqa
@@ -16,6 +18,29 @@ PATCH_SIZE = 14
 
 def dinov2_normalize(x):
     return x * 2.0 - 1.0
+
+
+def dinov2_pad(x):
+    B, C, H, W = x.shape
+    pad_h = 14 - H % 14 if H % 14 != 0 else 0
+    pad_w = 14 - W % 14 if W % 14 != 0 else 0
+    if pad_h != 0 or pad_w != 0:
+        x = F.pad(x, (0, pad_w, 0, pad_h), mode="reflect")
+    return x
+
+
+def dinov2_crop(x):
+    B, C, H, W = x.shape
+    pad_h = H % 14
+    pad_w = W % 14
+
+    pad_h1 = pad_h // 2
+    pad_h2 = pad_h - pad_h1
+    pad_w1 = pad_w // 2
+    pad_w2 = pad_w - pad_w1
+    x = F.pad(x, (-pad_w1, -pad_w2, -pad_h1, -pad_h2))
+    return x
+
 
 
 class DINOEmbedding(nn.Module):
@@ -60,6 +85,8 @@ class DINOLoss(nn.Module):
         self.dino = DINOEmbedding()
 
     def forward(self, input, target):
+        input = dinov2_crop(input)
+        target = dinov2_crop(target)
         return self.loss(self.dino.forward_patch_raw(dinov2_normalize(input)),
                          self.dino.forward_patch_raw(dinov2_normalize(target)).detach())
 
