@@ -22,11 +22,12 @@ class DINOEmbedding(nn.Module):
     def __init__(self, model_type="dinov2_vits14"):
         super().__init__()
         self.model = torch.hub.load('facebookresearch/dinov2', model_type,
-                                    verbose=False, trust_repo=True)
-        self.model = self.model.eval()
+                                    verbose=False, trust_repo=True).eval()
+        self.model.requires_grad_(False)
 
     def train(self, mode=True):
         self.model.train(False)
+        self.model.requires_grad_(False)
         return self
 
     def forward(self, x):
