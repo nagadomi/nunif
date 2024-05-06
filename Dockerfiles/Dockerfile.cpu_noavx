@@ -44,26 +44,18 @@ RUN cat /root/src/build.sh
 
 # build and install torch
 RUN echo "* Build torch"
-RUN wget -q https://github.com/pytorch/pytorch/releases/download/v1.13.1/pytorch-v1.13.1.tar.gz -O pytorch-v1.13.1.tar.gz && \
-    tar -xzf pytorch-v1.13.1.tar.gz && \
-    cd pytorch-v1.13.1 && \
+RUN wget -q https://github.com/pytorch/pytorch/releases/download/v2.2.2/pytorch-v2.2.2.tar.gz -O pytorch-v2.2.2.tar.gz && \
+    tar -xzf pytorch-v2.2.2.tar.gz && \
+    cd pytorch-v2.2.2 && \
     pip3 install -r requirements.txt && \
     . ../build.sh && \
     pip3 install dist/*.whl
 
 # build and install torchvision
 RUN echo "* Build torchvision"
-RUN wget -q https://github.com/pytorch/vision/archive/refs/tags/v0.14.1.tar.gz -O vision-0.14.1.tar.gz && \
-    tar -xzf vision-0.14.1.tar.gz && \
-    cd vision-0.14.1 && \
-    . ../build.sh && \
-    pip3 install dist/*.whl
-
-# build and install torchtext
-# torchtext cannot be compiled from release/tar.gz, so clone from git
-RUN echo "* Build torchtext"
-RUN git clone https://github.com/pytorch/text -b v0.14.1 torchtext-0.14.1  && \
-    cd torchtext-0.14.1 && \
+RUN wget -q https://github.com/pytorch/vision/archive/refs/tags/v0.17.2.tar.gz -O vision-0.17.2.tar.gz && \
+    tar -xzf vision-0.17.2.tar.gz && \
+    cd vision-0.17.2 && \
     . ../build.sh && \
     pip3 install dist/*.whl
 

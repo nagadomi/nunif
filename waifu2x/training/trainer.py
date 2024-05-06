@@ -144,6 +144,8 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.l3v1_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "u3c":
         model = create_model("waifu2x.u3_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "l3v1_dino":
+        model = create_model("waifu2x.l3v1_dino_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "u3fftc":
         model = create_model("waifu2x.u3fft_conditional_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
@@ -157,7 +159,13 @@ def get_last_layer(model):
     if model.name in {"waifu2x.swin_unet_1x",
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x",
-                      "waifu2x.swin_unet_8x"}:
+                      "waifu2x.swin_unet_8x",
+                      "waifu2x.winc_unet_1x",
+                      "waifu2x.winc_unet_2x",
+                      "waifu2x.winc_unet_4x",
+                      "waifu2x.winc_unet_1x_small",
+                      "waifu2x.winc_unet_2x_small",
+                      }:
         return model.unet.to_image.proj.weight
     elif model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
         return model.unet2.conv_bottom.weight
@@ -449,14 +457,6 @@ class Waifu2xTrainer(Trainer):
 
     def setup_model(self):
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
-        if self.discriminator is not None:
-            # initialize lazy modules
-            model_offset = self.model.i2i_offset
-            scale_factor = self.model.i2i_scale
-            output_size = self.args.size * scale_factor - model_offset * 2
-            y = torch.zeros((1, 3, output_size, output_size)).to(self.device)
-            _ = self.discriminator(y, y, scale_factor)
-
         if self.args.freeze and hasattr(self.model, "freeze"):
             self.model.freeze()
             logger.debug("call model.freeze()")
@@ -523,6 +523,7 @@ class Waifu2xTrainer(Trainer):
                 da_grayscale_p=self.args.da_grayscale_p,
                 da_color_p=self.args.da_color_p,
                 da_antialias_p=self.args.da_antialias_p,
+                da_hflip_only=self.args.da_hflip_only,
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 resize_step_p=self.args.resize_step_p,
@@ -707,6 +708,9 @@ def register(subparsers, default_parser):
                         help="random color jitter data augmentation for gt image")
     parser.add_argument("--da-antialias-p", type=float, default=0.0,
                         help="random antialias input degradation")
+    parser.add_argument("--da-hflip-only", action="store_true",
+                        help="restrict random flip to horizontal flip only")
+
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of resize blur."
                               " 0.0-0.1 is a reasonable value."

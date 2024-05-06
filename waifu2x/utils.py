@@ -243,7 +243,7 @@ class Waifu2x():
 
     def convert(self, x, alpha, method, noise_level,
                 tile_size=256, batch_size=4,
-                tta=False, enable_amp=False):
+                tta=False, enable_amp=False, output_device="cpu"):
         assert (not torch.is_grad_enabled())
         assert (x.shape[0] == 3)
         assert (alpha is None or alpha.shape[0] == 1 and alpha.shape[1:] == x.shape[1:])
@@ -262,7 +262,7 @@ class Waifu2x():
         else:
             rgb = self.render(x, method, noise_level, tile_size, batch_size, enable_amp)
 
-        rgb = rgb.to("cpu")
+        rgb = rgb.to(output_device)
         if alpha is not None and method in ("scale", "noise_scale", "scale4x", "noise_scale4x"):
             if not blank_alpha:
                 model = self.scale4x_model if method in {"scale4x", "noise_scale4x"} else self.scale_model
@@ -277,6 +277,6 @@ class Waifu2x():
             else:
                 scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
                 alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)
-            alpha = alpha.to("cpu")
+            alpha = alpha.to(output_device)
 
         return rgb, alpha

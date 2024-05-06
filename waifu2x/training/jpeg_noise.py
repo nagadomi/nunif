@@ -13,13 +13,13 @@ NR_RATE = {
         0: 0.65,
         1: 0.65,
         2: 0.65,
-        3: 0.9,
+        3: 1,
     },
     "photo": {
         0: 0.3,
         1: 0.6,
         2: 0.9,
-        3: 0.9,
+        3: 1,
     }
 }
 JPEG_CHROMA_SUBSAMPLING_RATE = 0.5
@@ -52,7 +52,8 @@ else:
 def choose_validation_jpeg_quality(index, style, noise_level):
     mod100 = index % 100
     if mod100 > int(NR_RATE[style][noise_level] * 100):
-        cand = list(range(-1, noise_level))
+        min_level = -1 if noise_level < 2 else 0
+        cand = list(range(min_level, noise_level))
         noise_level = cand[index % len(cand)]
         if noise_level == -1:
             return [], None
@@ -226,7 +227,8 @@ class RandomJPEGNoiseX():
             # use lower noise_level noise
             # this is the fix for a problem in the original waifu2x
             # that lower level noise cannot be denoised with higher level denoise model.
-            noise_level = random.randint(-1, self.noise_level - 1)
+            min_level = -1 if self.noise_level < 2 else 0
+            noise_level = random.randint(min_level, self.noise_level - 1)
             if noise_level == -1:
                 # do nothing
                 return x, y

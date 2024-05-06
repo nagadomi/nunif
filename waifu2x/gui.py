@@ -9,10 +9,9 @@ from time import time
 import threading
 from pprint import pprint # noqa
 import wx
-from wx.lib.masked.numctrl import NumCtrl # noqa
 from wx.lib.buttons import GenBitmapButton
 from wx.lib.delayedresult import startWorker
-import wx.lib.agw.persist as wxpm
+import wx.lib.agw.persist as persist
 from .ui_utils import (
     create_parser, set_state_args, waifu2x_main,
     is_video, is_output_dir, is_text, is_image,
@@ -22,8 +21,12 @@ from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIO
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
 from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
+    EditableComboBox, EditableComboBoxPersistentHandler,
+    persistent_manager_register_all, persistent_manager_restore_all, persistent_manager_register,
     resolve_default_dir, extension_list_to_wildcard,
-    set_icon_ex, start_file, load_icon)
+    validate_number,
+    set_icon_ex, start_file, load_icon,
+)
 from .locales import LOCALES
 from . import models # noqa
 import torch
@@ -177,8 +180,9 @@ class MainFrame(wx.Frame):
         self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
 
         self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
-        self.cbo_fps = wx.ComboBox(self.grp_video, choices=["0.25", "1", "15", "30", "60", "1000"],
-                                   style=wx.CB_READONLY, name="cbo_fps")
+        self.cbo_fps = EditableComboBox(
+            self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
+            name="cbo_fps")
         self.cbo_fps.SetSelection(3)
 
         self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
@@ -187,8 +191,8 @@ class MainFrame(wx.Frame):
         self.cbo_pix_fmt.SetSelection(0)
 
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
-        self.cbo_crf = wx.ComboBox(self.grp_video, choices=[str(n) for n in range(16, 28 + 1)],
-                                   style=wx.CB_READONLY, name="cbo_crf")
+        self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28 + 1)],
+                                        name="cbo_crf")
         self.cbo_crf.SetSelection(4)
 
         self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
@@ -228,7 +232,7 @@ class MainFrame(wx.Frame):
 
         # input video filter
         # deinterlace, rotate, vf
-        self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video Filter"))
+        self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video/Image Filter"))
         self.chk_start_time = wx.CheckBox(self.grp_video_filter, label=T("Start Time"),
                                           name="chk_start_time")
         self.txt_start_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
@@ -242,6 +246,10 @@ class MainFrame(wx.Frame):
                                            style=wx.CB_READONLY, name="cbo_deinterlace")
         self.cbo_deinterlace.SetSelection(0)
 
+        self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
+        self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
+
+        # -- image
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
         self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
                                       style=wx.CB_READONLY, name="cbo_rotate")
@@ -250,17 +258,13 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.Append(T("Right 90 (clockwise)"), "right")
         self.cbo_rotate.SetSelection(0)
 
-        self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
-        self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
-        """
         self.chk_grain_noise = wx.CheckBox(self.grp_video_filter,
-                                           label=T("Add grain noise"), name="chk_grain_noise")
-        self.txt_grain_noise = NumCtrl(self.grp_video_filter, name="txt_grain_noise")
-        self.txt_grain_noise.SetFractionWidth(2)
-        self.txt_grain_noise.SetMax(0.5)
-        self.txt_grain_noise.SetMin(0.0)
-        self.txt_grain_noise.SetValue(0.05)
-        """
+                                           label=T("Add Noise"), name="chk_grain_noise")
+        self.cbo_grain_noise = EditableComboBox(self.grp_video_filter, choices=["0.5", "0.4", "0.3", "0.2", "0.1"],
+                                                name="cbo_grain_noise")
+        self.chk_grain_noise.SetValue(False)
+        self.cbo_grain_noise.SetSelection(3)
+        self.chk_grain_noise.SetToolTip(T("For Photo or Generative AI"))
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -269,12 +273,14 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_end_time, (1, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_deinterlace, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_deinterlace, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_rotate, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_rotate, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_vf, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_vf, (4, 1), flag=wx.EXPAND)
-        # layout.Add(self.chk_grain_noise, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        # layout.Add(self.txt_grain_noise, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_vf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_vf, (3, 1), flag=wx.EXPAND)
+        layout.Add(wx.StaticLine(self.grp_video_filter), (4, 0), flag=wx.GROW)
+        layout.Add(wx.StaticLine(self.grp_video_filter), (4, 1), flag=wx.GROW)
+        layout.Add(self.lbl_rotate, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_rotate, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_grain_noise, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_grain_noise, (6, 1), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -386,12 +392,18 @@ class MainFrame(wx.Frame):
         # state
         self.btn_cancel.Disable()
 
-        self.persistence_manager = wxpm.PersistenceManager.Get()
-        self.persistence_manager.SetManagerStyle(
-            wxpm.PM_DEFAULT_STYLE | wxpm.PM_PERSIST_CONTROL_VALUE | wxpm.PM_SAVE_RESTORE_TREE_LIST_SELECTIONS)
+        editable_comboxes = [
+            self.cbo_fps,
+            self.cbo_crf,
+            self.cbo_grain_noise,
+        ]
+        self.persistence_manager = persist.PersistenceManager.Get()
+        self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
         self.persistence_manager.SetPersistenceFile(CONFIG_PATH)
-        self.persistence_manager.RegisterAndRestoreAll(self)
-        self.persistence_manager.Save(self)
+        persistent_manager_register_all(self.persistence_manager, self)
+        for control in editable_comboxes:
+            persistent_manager_register(self.persistence_manager, control, EditableComboBoxPersistentHandler)
+        persistent_manager_restore_all(self.persistence_manager)
 
         self.update_start_button_state()
         self.update_upscaling_state()
@@ -551,7 +563,26 @@ class MainFrame(wx.Frame):
         else:
             return True
 
+    def show_validation_error_message(self, name, min_value, max_value):
+        with wx.MessageDialog(
+                None,
+                message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
+                caption=T("Error"),
+                style=wx.OK) as dlg:
+            dlg.ShowModal()
+
     def on_click_btn_start(self, event):
+        if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
+            self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
+            return
+        if not validate_number(self.cbo_crf.GetValue(), 0, 30, is_int=True):
+            self.show_validation_error_message(T("CRF"), 0, 30)
+            return
+        if self.chk_grain_noise.GetValue():
+            if not validate_number(self.cbo_grain_noise.GetValue(), 0.0, 1.0):
+                self.show_validation_error_message(T("Add Noise"), 0.0, 1.0)
+                return
+
         if not self.confirm_overwrite():
             return
         self.btn_start.Disable()
@@ -625,9 +656,8 @@ class MainFrame(wx.Frame):
             rotate_right=rotate_right,
             rotate_left=rotate_left,
             vf=vf,
-            # TODO
-            # grain=(self.txt_grain_noise.GetValue() > 0 and self.chk_grain_noise.GetValue()),
-            # grain_strength=self.txt_grain_noise.GetValue(),
+            grain=(float(self.cbo_grain_noise.GetValue()) > 0.0 and self.chk_grain_noise.GetValue()),
+            grain_strength=float(self.cbo_grain_noise.GetValue()),
 
             gpu=gpus,
             batch_size=int(self.cbo_batch_size.GetValue()),

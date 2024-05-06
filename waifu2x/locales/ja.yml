@@ -19,6 +19,7 @@
 "Finished": "完了"
 "Confirm": "確認"
 "already exists. Overwrite?": "すでに存在します。上書きしますか？"
+"`{}` must be a number {} - {}": "`{}` は {} から {} の数字でなければなりません"
 
 "Superresolution": "超解像"
 "Model": "モデル"
@@ -37,14 +38,15 @@
 "Preset": "プリセット"
 "Tune": "チューニング"
 
-"Video Filter": "ビデオフィルタ"
+"Video/Image Filter": "ビデオ/画像 フィルタ"
 "Start Time": "開始時間"
 "End Time": "終了時間"
 "Deinterlace": "デインターレース"
 "Rotate": "回転"
 "Left 90 (counterclockwise)": "左に90°回転 (半時計回り)"
 "Right 90 (clockwise)": "右に90°回転 (時計回り)"
-"Add grain noise": "ノイズを追加"
+"Add Noise": "ノイズ付加"
+"For Photo or Generative AI": "実写・生成AI用"
 
 "Processor": "プロセッサ"
 "Device": "デバイス"

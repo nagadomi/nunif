@@ -5,6 +5,7 @@ from nunif.models import Model, register_model
 from nunif.modules.attention import SEBlock, SNSEBlock
 from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
 from nunif.modules.fourier_unit import FourierUnitSNLReLU
+from nunif.modules.dinov2 import DINOEmbedding, dinov2_normalize, dinov2_pad
 from torch.nn.utils.parametrizations import spectral_norm
 
 
@@ -14,7 +15,7 @@ def normalize(x):
 
 def clamp(x, min=-2., max=2., eps=0.01):
     c = torch.clamp(x, min, max)
-    return c + (c.detach() - x) * eps
+    return c - (c.detach() - x) * eps
 
 
 class ImageToCondition(nn.Module):
@@ -27,7 +28,7 @@ class ImageToCondition(nn.Module):
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((4, 4)),
         )
-        self.aggregate = nn.LazyLinear(embed_dim, bias=True)
+        self.aggregate = nn.Linear(embed_dim * 16, embed_dim, bias=True)
         self.fc = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(embed_dim, embed_dim, bias=True),
@@ -46,6 +47,51 @@ class ImageToCondition(nn.Module):
             enc = enc.view(B, enc.shape[1], 1, 1)
             outputs.append(enc)
         return outputs
+
+
+class DINOPatch(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dino = DINOEmbedding()
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        if H == 192:
+            pool_size = 6
+        elif H == 384:
+            pool_size = 12
+        else:
+            raise NotImplementedError()
+        x = dinov2_pad(x)
+        x = dinov2_normalize(x)
+        x = self.dino.forward_patch(x)
+        x = F.adaptive_avg_pool2d(x, (pool_size, pool_size))
+        x = x.detach()
+        return x
+
+
+class PatchToCondition(nn.Module):
+    def __init__(self, embed_dim, outputs):
+        super().__init__()
+        self.proj = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(384, embed_dim, kernel_size=1, stride=1, padding=0),
+                nn.LeakyReLU(0.1, inplace=True),
+                nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0),
+                nn.LeakyReLU(0.1, inplace=True)
+            ) for out_channels in outputs])
+
+    def forward(self, x):
+        outputs = []
+        for proj in self.proj:
+            enc = proj(x)
+            outputs.append(enc)
+        return outputs
+
+
+def dinov2_add_patch(x, cond):
+    cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
+    return x + cond
 
 
 def add_noise(x, strength=0.01):
@@ -204,6 +250,44 @@ class L3V1ConditionalDiscriminator(Discriminator):
         return clamp(l3), clamp(v1)
 
 
+@register_model
+class L3V1DINOConditionalDiscriminator(Discriminator):
+    name = "waifu2x.l3v1_dino_conditional_discriminator"
+
+    def __init__(self, in_channels=3, out_channels=1):
+        super().__init__(locals(), loss_weights=(0.8, 0.2))
+        self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels)
+        self.v1 = V1Discriminator(in_channels=in_channels, out_channels=out_channels)
+        self.dino_patch = DINOPatch()
+        self.to_cond_l3 = PatchToCondition(32, [64, 256])
+        self.to_cond_v1 = PatchToCondition(32, [64, 128])
+
+    def forward_l3(self, x, cond):
+        x = self.l3.first_layer(x)
+        x = dinov2_add_patch(x, cond[0])
+        x = self.l3.features(x)
+        x = dinov2_add_patch(x, cond[1])
+        x = self.l3.classifier(x)
+        return x
+
+    def forward_v1(self, x, cond):
+        x = self.v1.first_layer(x)
+        x = dinov2_add_patch(x, cond[0])
+        x = self.v1.features(x)
+        x = dinov2_add_patch(x, cond[1])
+        x = self.v1.classifier(x)
+        return x
+
+    def forward(self, x, c=None, scale_factor=None):
+        dino_patch = self.dino_patch(c)
+        cond_v1 = self.to_cond_v1(dino_patch)
+        cond_l3 = self.to_cond_l3(dino_patch)
+        x = normalize(x)
+        v1 = self.forward_v1(x, cond_v1)
+        l3 = self.forward_l3(x, cond_l3)
+        return clamp(l3), clamp(v1)
+
+
 class SelfSupervisedDiscriminator():
     pass
 
@@ -325,6 +409,7 @@ if __name__ == "__main__":
     l3c = L3ConditionalDiscriminator()
     l3v1 = L3V1Discriminator()
     l3v1c = L3V1ConditionalDiscriminator()
+    l3v1dino = L3V1DINOConditionalDiscriminator()
     u3c = U3ConditionalDiscriminator()
     u3fftc = U3FFTConditionalDiscriminator()
 
@@ -334,5 +419,6 @@ if __name__ == "__main__":
     print(l3c(x, c, 4).shape)
     print([z.shape for z in l3v1(x, c, 4)])
     print([z.shape for z in l3v1c(x, c, 4)])
+    print([z.shape for z in l3v1dino(x, c, 4)])
     print([z.shape for z in u3c(x, c, 4)])
     print([z.shape for z in u3fftc(x, c, 4)])
