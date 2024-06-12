@@ -325,7 +325,7 @@ def create_trainer_default_parser():
                         help="Minimum learning rate factor for --schedule cosine")
     parser.add_argument("--warmup-epoch", type=int, default=0,
                         help="warmup epochs with --warmup-learning-rate")
-    parser.add_argument("--warmup-learning-rate", type=int, default=1e-6,
+    parser.add_argument("--warmup-learning-rate", type=float, default=1e-6,
                         help="learning rate for warmup")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
