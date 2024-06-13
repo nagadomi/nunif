@@ -114,9 +114,14 @@ class MainFrame(wx.Frame):
                                          name="chk_recursive")
         self.chk_recursive.SetValue(False)
 
+        self.chk_metadata = wx.CheckBox(self.pnl_file, label=T("Add metadata to filename"),
+                                        name="chk_metadata")
+        self.chk_metadata.SetValue(False)
+
         sublayout = wx.BoxSizer(wx.HORIZONTAL)
         sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.chk_metadata, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
@@ -827,6 +832,7 @@ class MainFrame(wx.Frame):
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
         edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
+        metadata = "filename" if self.chk_metadata.GetValue() else None
 
         parser.set_defaults(
             input=input_path,
@@ -877,6 +883,7 @@ class MainFrame(wx.Frame):
 
             resume=resume,
             recursive=recursive,
+            metadata=metadata,
             start_time=start_time,
             end_time=end_time,
         )

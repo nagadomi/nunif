@@ -260,7 +260,32 @@ def make_output_filename(input_filename, args, video=False):
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
 
-    return basename + auto_detect_suffix + (args.video_extension if video else ".png")
+    def to_deciaml(f, scale, zfill=0):
+        s = str(int(f * scale))
+        if zfill:
+            s = s.zfill(zfill)
+        return s
+
+    if args.metadata == "filename":
+        if args.zoed_height:
+            resolution = f"{args.zoed_height}_"
+        else:
+            resolution = ""
+        if args.tta:
+            tta = "TTA_"
+        else:
+            tta = ""
+        if args.ema_normalize and video:
+            ema = f"_ema{to_deciaml(args.ema_decay, 100, 2)}"
+        else:
+            ema = ""
+        metadata = (f"_{args.depth_model}_{resolution}{tta}{args.method}_"
+                    f"d{to_deciaml(args.divergence, 10, 2)}_c{to_deciaml(args.convergence, 10, 2)}_"
+                    f"di{args.edge_dilation}_fs{args.foreground_scale}_ipd{to_deciaml(args.ipd_offset, 1)}{ema}")
+    else:
+        metadata = ""
+
+    return basename + metadata + auto_detect_suffix + (args.video_extension if video else ".png")
 
 
 def save_image(im, output_filename):
@@ -1184,6 +1209,8 @@ def create_parser(required_true=True):
                         help="max inference worker threads for video processing. 0 is disabled")
     parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv"],
                         help="video container format")
+    parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
+                        help="Add metadata")
 
     return parser
 
