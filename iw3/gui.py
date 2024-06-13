@@ -623,19 +623,13 @@ class MainFrame(wx.Frame):
     def on_click_btn_output_play(self, event):
         input_path = self.txt_input.GetValue()
         output_path = self.txt_output.GetValue()
-        vr180 = self.cbo_stereo_format.GetValue() == "VR90"
-        half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
-        debug = self.cbo_stereo_format.GetValue() == "Debug Depth"
-        anaglyph = self.get_anaglyph_method()
-        video_extension = "." + self.cbo_video_format.GetValue()
+        args = self.parse_args()
         video = is_video(input_path)
 
         if is_output_dir(output_path):
             output_path = path.join(
                 output_path,
-                make_output_filename(input_path, video=video,
-                                     vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph,
-                                     debug=debug, video_extension=video_extension))
+                make_output_filename(input_path, args, video=video))
 
         if path.exists(output_path):
             start_file(output_path)
@@ -695,24 +689,17 @@ class MainFrame(wx.Frame):
     def on_changed_chk_ema_normalize(self, event):
         self.update_ema_normalize()
 
-    def confirm_overwrite(self):
-        input_path = self.txt_input.GetValue()
-        output_path = self.txt_output.GetValue()
-        vr180 = self.cbo_stereo_format.GetValue() == "VR90"
-        half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
-        debug = self.cbo_stereo_format.GetValue() == "Debug Depth"
-        anaglyph = self.get_anaglyph_method()
-        video_extension = "." + self.cbo_video_format.GetValue()
+    def confirm_overwrite(self, args):
+        input_path = args.input
+        output_path = args.output
         video = is_video(input_path)
-        is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
+        is_export = args.export
 
         if not is_export:
             if is_output_dir(output_path):
                 output_path = path.join(
                     output_path,
-                    make_output_filename(input_path, video=video,
-                                         vr180=vr180, half_sbs=half_sbs, anaglyph=anaglyph,
-                                         debug=debug, video_extension=video_extension))
+                    make_output_filename(input_path, args, video=video))
             else:
                 output_path = output_path
         else:
@@ -738,28 +725,29 @@ class MainFrame(wx.Frame):
                 style=wx.OK) as dlg:
             dlg.ShowModal()
 
-    def on_click_btn_start(self, event):
+
+    def parse_args(self):
         if not validate_number(self.cbo_divergence.GetValue(), 0.0, 100.0):
             self.show_validation_error_message(T("3D Strength"), 0.0, 100.0)
-            return
+            return None
         if not validate_number(self.cbo_convergence.GetValue(), -100.0, 100.0):
             self.show_validation_error_message(T("Convergence Plane"), -100.0, 100.0)
-            return
+            return None
         if not validate_number(self.cbo_pad.GetValue(), 0.0, 10.0, allow_empty=True):
             self.show_validation_error_message(T("Padding"), 0.0, 10.0)
-            return
+            return None
         if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
-            return
+            return None
         if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
             self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
-            return
+            return None
         if not validate_number(self.cbo_crf.GetValue(), 0, 30, is_int=True):
             self.show_validation_error_message(T("CRF"), 0, 30)
-            return
+            return None
         if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
             self.show_validation_error_message(T("Flicker Reduction"), 0.1, 0.999)
-            return
+            return None
 
         zoed_height = self.cbo_zoed_resolution.GetValue()
         if zoed_height == "Default" or zoed_height == "":
@@ -769,15 +757,6 @@ class MainFrame(wx.Frame):
                 self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 384, 2048)
                 return
             zoed_height = int(zoed_height)
-
-        if not self.confirm_overwrite():
-            return
-
-        self.btn_start.Disable()
-        self.btn_cancel.Enable()
-        self.stop_event.clear()
-        self.prg_tqdm.SetValue(0)
-        self.SetStatusText("...")
 
         parser = create_parser(required_true=False)
 
@@ -904,15 +883,29 @@ class MainFrame(wx.Frame):
             stop_event=self.stop_event,
             tqdm_fn=functools.partial(TQDMGUI, self),
             depth_model=self.depth_model)
+        return args
 
-        if args.state["depth_utils"].has_model(depth_model_type):
+    def on_click_btn_start(self, event):
+        args = self.parse_args()
+        if args is None:
+            return
+        if not self.confirm_overwrite(args):
+            return
+
+        self.btn_start.Disable()
+        self.btn_cancel.Enable()
+        self.stop_event.clear()
+        self.prg_tqdm.SetValue(0)
+        self.SetStatusText("...")
+
+        if args.state["depth_utils"].has_model(args.depth_model):
             # Realod depth model
-            self.SetStatusText(f"Loading {depth_model_type}...")
-            if remove_bg and not has_rembg_model(bg_model_type):
-                self.SetStatusText(f"Downloading {bg_model_type}...")
+            self.SetStatusText(f"Loading {args.depth_model}...")
+            if args.remove_bg and not has_rembg_model(args.bg_model):
+                self.SetStatusText(f"Downloading {args.bg_model}...")
         else:
             # Need to download the model
-            self.SetStatusText(f"Downloading {depth_model_type}...")
+            self.SetStatusText(f"Downloading {args.depth_model}...")
 
         startWorker(self.on_exit_worker, iw3_main, wargs=(args,))
         self.processing = True

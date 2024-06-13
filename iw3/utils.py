@@ -10,6 +10,7 @@ import threading
 import math
 from tqdm import tqdm
 from PIL import ImageDraw, Image
+from dataclasses import dataclass
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
@@ -245,21 +246,21 @@ DEBUG_SUFFIX = "_debug"
 SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
-def make_output_filename(input_filename, video=False, vr180=False, half_sbs=False, anaglyph=None, debug=False, video_extension=".mp4"):
+def make_output_filename(input_filename, args, video=False):
     basename = path.splitext(path.basename(input_filename))[0]
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
-    if vr180:
+    if args.vr180:
         auto_detect_suffix = VR180_SUFFIX
-    elif half_sbs:
+    elif args.half_sbs:
         auto_detect_suffix = HALF_SBS_SUFFIX
-    elif anaglyph:
-        auto_detect_suffix = ANAGLYPH_SUFFIX + f"_{anaglyph}"
-    elif debug:
+    elif args.anaglyph:
+        auto_detect_suffix = ANAGLYPH_SUFFIX + f"_{args.anaglyph}"
+    elif args.debug_depth:
         auto_detect_suffix = DEBUG_SUFFIX
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
 
-    return basename + auto_detect_suffix + (video_extension if video else ".png")
+    return basename + auto_detect_suffix + (args.video_extension if video else ".png")
 
 
 def save_image(im, output_filename):
@@ -450,9 +451,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             filename = meta["filename"]
             output_filename = path.join(
                 output_dir,
-                make_output_filename(filename, video=False,
-                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                     debug=args.debug_depth))
+                make_output_filename(filename, args, video=False))
             if im is None or (args.resume and path.exists(output_filename)):
                 continue
             output = process_image(im, args, depth_model, side_model)
@@ -478,10 +477,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
             output_path,
-            make_output_filename(path.basename(input_filename), video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                 debug=args.debug_depth,
-                                 video_extension=args.video_extension))
+            make_output_filename(path.basename(input_filename), args, video=True))
     else:
         output_filename = output_path
 
@@ -601,10 +597,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
             output_path,
-            make_output_filename(path.basename(input_filename), video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                 debug=args.debug_depth,
-                                 video_extension=args.video_extension))
+            make_output_filename(path.basename(input_filename), args, video=True))
     else:
         output_filename = output_path
 
@@ -874,10 +867,7 @@ def process_config_video(config, args, side_model):
         basename = config.basename or path.basename(base_dir)
         output_filename = path.join(
             args.output,
-            make_output_filename(basename, video=True,
-                                 vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                 debug=args.debug_depth,
-                                 video_extension=args.video_extension))
+            make_output_filename(basename, args, video=True))
     else:
         output_filename = args.output
     make_parent_dir(output_filename)
@@ -1048,9 +1038,7 @@ def process_config_images(config, args, side_model):
 
                 output_filename = path.join(
                     output_dir,
-                    make_output_filename(rgb_filename, video=False,
-                                         vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                         debug=args.debug_depth))
+                    make_output_filename(rgb_filename, args, video=False))
                 f = pool.submit(save_image, sbs, output_filename)
                 futures.append(f)
                 pbar.update(1)
@@ -1230,6 +1218,11 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
     elif args.depth_model in DU.MODEL_FILES:
         depth_utils = DU
 
+    if args.export_disparity:
+        args.export = True
+
+    args.video_extension = "." + args.video_format
+
     args.state = {
         "stop_event": stop_event,
         "tqdm_fn": tqdm_fn,
@@ -1272,9 +1265,6 @@ def iw3_main(args):
     if path.normpath(args.input) == path.normpath(args.output):
         raise ValueError("input and output must be different file")
 
-    if args.export_disparity:
-        args.export = True
-
     if args.export and is_yaml(args.input):
         raise ValueError("YAML file input does not support --export")
 
@@ -1287,7 +1277,6 @@ def iw3_main(args):
 
     args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                       model_name=args.state["depth_utils"].get_name())
-
     if args.edge_dilation is None:
         if args.state["depth_utils"].get_name() == "DepthAnything":
             # TODO: This may not be a sensible choice
@@ -1304,8 +1293,6 @@ def iw3_main(args):
             args.state["depth_model"] = depth_model
     else:
         depth_model = None
-
-    args.video_extension = "." + args.video_format
 
     if args.export:
         export_main(args)
@@ -1376,10 +1363,7 @@ def iw3_main(args):
             os.makedirs(args.output, exist_ok=True)
             output_filename = path.join(
                 args.output,
-                make_output_filename(args.input, video=False,
-                                     vr180=args.vr180, half_sbs=args.half_sbs, anaglyph=args.anaglyph,
-                                     debug=args.debug_depth,
-                                     video_extension=args.video_extension))
+                make_output_filename(args.input, args, video=False))
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")
