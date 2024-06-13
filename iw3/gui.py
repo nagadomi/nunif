@@ -626,7 +626,11 @@ class MainFrame(wx.Frame):
         args = self.parse_args()
         video = is_video(input_path)
 
-        if is_output_dir(output_path):
+        if args.export:
+            if is_video(input_path):
+                basename = (path.splitext(path.basename(input_path))[0]).strip()
+                output_path = path.join(output_path, basename)
+        elif is_output_dir(output_path):
             output_path = path.join(
                 output_path,
                 make_output_filename(input_path, args, video=video))
@@ -693,21 +697,20 @@ class MainFrame(wx.Frame):
         input_path = args.input
         output_path = args.output
         video = is_video(input_path)
-        is_export = args.export
 
-        if not is_export:
+        if args.export:
+            if is_video(input_path):
+                basename = (path.splitext(path.basename(input_path))[0]).strip()
+                output_path = path.join(output_path, basename, export_config.FILENAME)
+            else:
+                output_path = path.join(output_path, export_config.FILENAME)
+        else:
             if is_output_dir(output_path):
                 output_path = path.join(
                     output_path,
                     make_output_filename(input_path, args, video=video))
             else:
                 output_path = output_path
-        else:
-            if is_video(input_path):
-                basename = (path.splitext(path.basename(input_path))[0]).strip()
-                output_path = path.join(output_path, basename, export_config.FILENAME)
-            else:
-                output_path = path.join(output_path, export_config.FILENAME)
 
         if path.exists(output_path):
             with wx.MessageDialog(None,
