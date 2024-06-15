@@ -5,7 +5,7 @@ from nunif.models import Model, register_model
 from nunif.modules.attention import SEBlock, SNSEBlock
 from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
 from nunif.modules.fourier_unit import FourierUnitSNLReLU
-from nunif.modules.dinov2 import DINOEmbedding, dinov2_normalize, dinov2_pad
+from nunif.modules.dinov2 import DINOEmbedding, dinov2_normalize, dinov2_pad, DINO_PATCH_SIZE
 from torch.nn.utils.parametrizations import spectral_norm
 
 
@@ -56,16 +56,9 @@ class DINOPatch(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        if H == 192:
-            pool_size = 6
-        elif H == 384:
-            pool_size = 12
-        else:
-            raise NotImplementedError()
         x = dinov2_pad(x)
         x = dinov2_normalize(x)
         x = self.dino.forward_patch(x)
-        x = F.adaptive_avg_pool2d(x, (pool_size, pool_size))
         x = x.detach()
         return x
 
@@ -76,9 +69,9 @@ class PatchToCondition(nn.Module):
         self.proj = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(384, embed_dim, kernel_size=1, stride=1, padding=0),
-                nn.LeakyReLU(0.1, inplace=True),
-                nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0),
-                nn.LeakyReLU(0.1, inplace=True)
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Conv2d(embed_dim, out_channels, kernel_size=3,
+                          stride=1, padding=1, padding_mode="replicate"),
             ) for out_channels in outputs])
 
     def forward(self, x):
@@ -92,6 +85,12 @@ class PatchToCondition(nn.Module):
 def dinov2_add_patch(x, cond):
     cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
     return x + cond
+
+
+def dinov2_attention_patch(x, cond):
+    cond = torch.sigmoid(cond)
+    cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
+    return x * cond
 
 
 def add_noise(x, strength=0.01):
@@ -128,9 +127,10 @@ class Discriminator(Model):
 class L3Discriminator(Discriminator):
     name = "waifu2x.l3_discriminator"
 
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1, feature_se_block=True):
         super().__init__(locals())
         self.first_layer = nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate")
+        se_block = SEBlock(128, bias=True) if feature_se_block else nn.Identity()
         self.features = nn.Sequential(
             nn.GroupNorm(32, 64),
             nn.LeakyReLU(0.2, inplace=True),
@@ -138,7 +138,7 @@ class L3Discriminator(Discriminator):
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
             nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.2, inplace=True),
-            SEBlock(128, bias=True),
+            se_block,
 
             nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
         )
@@ -175,7 +175,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
 
 
 class V1Discriminator(Discriminator):
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1, se_block=True):
         super().__init__(locals())
         self.first_layer = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, padding_mode="replicate")
         self.features = nn.Sequential(
@@ -188,10 +188,11 @@ class V1Discriminator(Discriminator):
 
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
         )
+        se_block = SEBlock(128, bias=True) if se_block else nn.Identity()
         self.classifier = nn.Sequential(
             nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.2, inplace=True),
-            SEBlock(128, bias=True),
+            se_block,
             nn.Conv2d(128, out_channels, kernel_size=3, stride=1, padding=0),
         )
         init_moduels(self)
@@ -256,25 +257,25 @@ class L3V1DINOConditionalDiscriminator(Discriminator):
 
     def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
-        self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels)
-        self.v1 = V1Discriminator(in_channels=in_channels, out_channels=out_channels)
+        self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels, feature_se_block=False)
+        self.v1 = V1Discriminator(in_channels=in_channels, out_channels=out_channels, se_block=False)
         self.dino_patch = DINOPatch()
         self.to_cond_l3 = PatchToCondition(32, [64, 256])
         self.to_cond_v1 = PatchToCondition(32, [64, 128])
 
     def forward_l3(self, x, cond):
         x = self.l3.first_layer(x)
-        x = dinov2_add_patch(x, cond[0])
+        x = dinov2_attention_patch(x, cond[0])
         x = self.l3.features(x)
-        x = dinov2_add_patch(x, cond[1])
+        x = dinov2_attention_patch(x, cond[1])
         x = self.l3.classifier(x)
         return x
 
     def forward_v1(self, x, cond):
         x = self.v1.first_layer(x)
-        x = dinov2_add_patch(x, cond[0])
+        x = dinov2_attention_patch(x, cond[0])
         x = self.v1.features(x)
-        x = dinov2_add_patch(x, cond[1])
+        x = dinov2_attention_patch(x, cond[1])
         x = self.v1.classifier(x)
         return x
 

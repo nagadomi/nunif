@@ -13,7 +13,7 @@ except ModuleNotFoundError:
     warnings.filterwarnings(action="ignore", category=UserWarning, message="xFormers is not available*")
 
 
-PATCH_SIZE = 14
+DINO_PATCH_SIZE = 14
 
 
 def dinov2_normalize(x):
@@ -22,8 +22,8 @@ def dinov2_normalize(x):
 
 def dinov2_pad(x):
     B, C, H, W = x.shape
-    pad_h = 14 - H % 14 if H % 14 != 0 else 0
-    pad_w = 14 - W % 14 if W % 14 != 0 else 0
+    pad_h = DINO_PATCH_SIZE - H % DINO_PATCH_SIZE if H % DINO_PATCH_SIZE != 0 else 0
+    pad_w = DINO_PATCH_SIZE - W % DINO_PATCH_SIZE if W % DINO_PATCH_SIZE != 0 else 0
     if pad_h != 0 or pad_w != 0:
         x = F.pad(x, (0, pad_w, 0, pad_h), mode="reflect")
     return x
@@ -31,8 +31,8 @@ def dinov2_pad(x):
 
 def dinov2_crop(x):
     B, C, H, W = x.shape
-    pad_h = H % 14
-    pad_w = W % 14
+    pad_h = H % DINO_PATCH_SIZE
+    pad_w = W % DINO_PATCH_SIZE
 
     pad_h1 = pad_h // 2
     pad_h2 = pad_h - pad_h1
@@ -40,7 +40,6 @@ def dinov2_crop(x):
     pad_w2 = pad_w - pad_w1
     x = F.pad(x, (-pad_w1, -pad_w2, -pad_h1, -pad_h2))
     return x
-
 
 
 class DINOEmbedding(nn.Module):
@@ -57,14 +56,14 @@ class DINOEmbedding(nn.Module):
 
     def forward(self, x):
         assert x.ndim == 4
-        assert x.shape[2] % PATCH_SIZE == 0 and x.shape[3] % PATCH_SIZE == 0
+        assert x.shape[2] % DINO_PATCH_SIZE == 0 and x.shape[3] % DINO_PATCH_SIZE == 0
 
         x = self.model.forward(x)
         return x
 
     def forward_patch_raw(self, x):
         assert x.ndim == 4
-        assert x.shape[2] % PATCH_SIZE == 0 and x.shape[3] % PATCH_SIZE == 0
+        assert x.shape[2] % DINO_PATCH_SIZE == 0 and x.shape[3] % DINO_PATCH_SIZE == 0
         assert x.shape[2] == x.shape[3]
 
         x = self.model.forward_features(x)["x_norm_patchtokens"]
@@ -74,7 +73,7 @@ class DINOEmbedding(nn.Module):
         z = self.forward_patch_raw(x)
         z = z.permute(0, 2, 1).reshape(
             z.shape[0], z.shape[-1],
-            x.shape[2] // PATCH_SIZE, x.shape[3] // PATCH_SIZE)
+            x.shape[2] // DINO_PATCH_SIZE, x.shape[3] // DINO_PATCH_SIZE)
         return z
 
 
