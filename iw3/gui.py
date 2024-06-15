@@ -26,7 +26,7 @@ from nunif.utils.gui import (
     set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
-from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS
+from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS, has_model as depth_anything_has_model
 from . import export_config
 import torch
 
@@ -174,10 +174,19 @@ class MainFrame(wx.Frame):
         self.cbo_method.SetSelection(0)
 
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
+        depth_models = [
+            "ZoeD_N", "ZoeD_K", "ZoeD_NK",
+            "ZoeD_Any_N", "ZoeD_Any_K",
+            "Any_S", "Any_B", "Any_L",
+            "Any_V2_S",
+        ]
+        if depth_anything_has_model("Any_V2_B"):
+            depth_models.append("Any_V2_B")
+        if depth_anything_has_model("Any_V2_L"):
+            depth_models.append("Any_V2_L")
+
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
-                                           choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
-                                                    "ZoeD_Any_N", "ZoeD_Any_K",
-                                                    "Any_S", "Any_B", "Any_L"],
+                                           choices=depth_models,
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(0)
 

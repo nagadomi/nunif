@@ -14,12 +14,18 @@ HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 NAME_MAP = {
     "Any_S": "vits",
     "Any_B": "vitb",
-    "Any_L": "vitl"
+    "Any_L": "vitl",
+    "Any_V2_S": "v2_vits",
+    "Any_V2_B": "v2_vitb",
+    "Any_V2_L": "v2_vitl"
 }
 MODEL_FILES = {
     "Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_vits14.pth"),
     "Any_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_vitb14.pth"),
     "Any_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_vitl14.pth"),
+    "Any_V2_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vits.pth"),
+    "Any_V2_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitb.pth"),
+    "Any_V2_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitl.pth"),
 }
 
 

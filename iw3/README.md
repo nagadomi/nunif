@@ -10,7 +10,7 @@ This project is under construction.
 
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything)
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or Depth-Anything-V2.
 - Generating side-by-side image using grid_sample based lightweight model
 
 ## Usage
@@ -278,15 +278,28 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `ZoeD_N`    | ZoeDepth model NYUv2. Tuned for indoor scenes.
 | `ZoeD_K`    | ZoeDepth model KITTI. Tuned for outdoor scenes (dashboard camera view).
 | `ZoeD_NK`   | ZoeDepth model NYUv2 and KITTI.
-| `ZoeD_Any_N`| DepthAnything metric depth model NYUv2. Tuned for indoor scenes.
-| `ZoeD_Any_K`| DepthAnything metric depth model KITTI. Tuned for outdoor scenes (dashboard camera view).
-| `Any_S`     | DepthAnything model small. The most efficient model, with promising performance.
-| `Any_B`     | DepthAnything model base.
-| `Any_L`     | DepthAnything model large. This model gives high quality, but is also heavy in terms of computation.
+| `ZoeD_Any_N`| Depth-Anything metric depth model NYUv2. Tuned for indoor scenes.
+| `ZoeD_Any_K`| Depth-Anything metric depth model KITTI. Tuned for outdoor scenes (dashboard camera view).
+| `Any_S`     | Depth-Anything model small. The most efficient model, with promising performance.
+| `Any_B`     | Depth-Anything model base.
+| `Any_L`     | Depth-Anything model large. This model gives high quality, but is also heavy in terms of computation.
+| `Any_V2_S`  | Depth-Anything-V2 model small.
+| `Any_V2_B`  | Depth-Anything-V2 model base. (cc-by-nc-4.0)
+| `Any_V2_L`  | Depth-Anything-V2 model large. (cc-by-nc-4.0)
 
 Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
+### About `Any_V2_B` and `Any_V2_L`
+
+These models are licensed under cc-by-nc-4.0. These are not available by default due to conflicts with the software license.
+
+If you want to use it, agree to the pre-trained model license and place the checkpoint file yourself.
+
+| Short Name | Path |
+|------------|------|
+| `Any_V2_B` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitb.pth`
+| `Any_V2_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitl.pth`
 
 ## Stereo Generation Method (Left-Right Image Generation)
 

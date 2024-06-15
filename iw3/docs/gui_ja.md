@@ -105,18 +105,21 @@ VR Player側で設定できる場合もあります。通常は0を選択して�
 
 深度を推定する学習済みモデルを指定します。
 
-深度推定には[ZoeDepth](https://github.com/isl-org/ZoeDepth)または[Depth-Anything](https://github.com/LiheYoung/Depth-Anything)を使用しています。
+深度推定には[ZoeDepth](https://github.com/isl-org/ZoeDepth)または[Depth-Anything](https://github.com/LiheYoung/Depth-Anything)、Depth-Anything-V2を使用しています。
 
 | Short Name  |                   |
 |-------------|-------------------|
 | `ZoeD_N`    | ZoeDepth model NYUv2(屋内シーンのデータ)
 | `ZoeD_K`    | ZoeDepth model KITTI(屋外シーンのデータ)
 | `ZoeD_NK`   | ZoeDepth model NYUv2 and KITTI
-| `ZoeD_Any_N`| DepthAnything metric depth model NYUv2
-| `ZoeD_Any_K`| DepthAnything metric depth model KITTI
-| `Any_S`     | DepthAnything model small. 一番速い
-| `Any_B`     | DepthAnything model base.
-| `Any_L`     | DepthAnything model large. 精度が高いが重い
+| `ZoeD_Any_N`| Depth-Anything metric depth model NYUv2
+| `ZoeD_Any_K`| Depth-Anything metric depth model KITTI
+| `Any_S`     | Depth-Anything model small. 一番速い
+| `Any_B`     | Depth-Anything model base.
+| `Any_L`     | Depth-Anything model large. 精度が高いが重い
+| `Any_V2_S`  | Depth-Anything-V2 model small.
+| `Any_V2_B`  | Depth-Anything-V2 model base. (cc-by-nc-4.0)
+| `Any_V2_L`  | Depth-Anything-V2 model large. (cc-by-nc-4.0)
 
 通常は`ZoeD_N`か`Any_B`,または`ZoeD_Any_N`を選択してください。
 
@@ -131,6 +134,18 @@ DepthAnythingのほうが精度が高いですが、ステレオ生成の結果�
 またZoeDepthとDepthAnythingは出力する深度の種類が違います。ZeoDepthはメートル単位の距離を出力していて、DepthAnythingはDisparity(視差)を出力しています。近い結果に見えるように変換式を調節していますが、モデルを変更すると深度の精度だけではなく他の設定の見え方も全体的に変わることに注意してください。
 
 たくさんありますが、個人的には、`ZoeD_N`, `Any_B`, `ZoeD_Any_N`のどれかをオススメします。
+
+### `Any_V2_B` と `Any_V2_L`について
+
+これらのモデルはcc-by-nc-4.0の下で配布されています。ソフトウェアのライセンスと衝突するためデフォルトでは利用できません。
+
+使用したい場合は、それらのライセンスに同意して自分でチェックポイントファイルを配置してください。
+
+| Short Name | Path |
+|------------|------|
+| `Any_V2_B` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitb.pth`
+| `Any_V2_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitl.pth`
+
 
 ### 前景拡大
 
