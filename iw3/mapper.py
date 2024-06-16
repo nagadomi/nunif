@@ -116,34 +116,29 @@ def get_mapper(name):
     return lambda x: chain(x, functions)
 
 
-def resolve_mapper_name(mapper, foreground_scale, model_name):
+def resolve_mapper_name(mapper, foreground_scale, metric_depth):
     disparity_mapper = None
     if mapper is not None:
         if mapper == "auto":
-            if model_name == "DepthAnything":
+            if not metric_depth:
                 disparity_mapper = "none"
-            elif model_name == "ZoeDepth":
-                disparity_mapper = "div_6"
             else:
-                raise ValueError(f"Unsupported model_name {model_name}")
+                disparity_mapper = "div_6"
         else:
             disparity_mapper = mapper
     else:
-        if model_name == "DepthAnything":
+        if not metric_depth:
             disparity_mapper = [
                 "inv_mul_3", "inv_mul_2", "inv_mul_1",
                 "none",
                 "mul_1", "mul_2", "mul_3",
             ][foreground_scale + 3]
-        elif model_name == "ZoeDepth":
+        else:
             disparity_mapper = [
                 "none", "div_25", "div_10",
                 "div_6",
                 "div_4", "div_2", "div_1",
             ][foreground_scale + 3]
-        else:
-            raise ValueError(f"Unsupported model_name {model_name}")
 
     assert disparity_mapper is not None
-
     return disparity_mapper

@@ -17,7 +17,9 @@ NAME_MAP = {
     "Any_L": "vitl",
     "Any_V2_S": "v2_vits",
     "Any_V2_B": "v2_vitb",
-    "Any_V2_L": "v2_vitl"
+    "Any_V2_L": "v2_vitl",
+    "Any_V2_N": "hypersim",
+    "Any_V2_K": "vkitti",
 }
 MODEL_FILES = {
     "Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_vits14.pth"),
@@ -26,6 +28,8 @@ MODEL_FILES = {
     "Any_V2_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vits.pth"),
     "Any_V2_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitb.pth"),
     "Any_V2_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitl.pth"),
+    "Any_V2_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitl.pth"),
+    "Any_V2_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
 }
 
 
@@ -38,15 +42,26 @@ def load_model(model_type="Any_B", gpu=0, **kwargs):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         try:
             encoder = NAME_MAP[model_type]
-            if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                       "DepthAnything", encoder=encoder,
-                                       verbose=False, trust_repo=True)
+            if encoder not in {"hypersim", "vkitti"}:
+                if not os.getenv("IW3_DEBUG"):
+                    model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
+                                           "DepthAnything", encoder=encoder,
+                                           verbose=False, trust_repo=True)
+                else:
+                    assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                    model = torch.hub.load("../Depth-Anything_iw3",
+                                           "DepthAnything", encoder=encoder, source="local",
+                                           verbose=False, trust_repo=True)
             else:
-                assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Depth-Anything_iw3",
-                                       "DepthAnything", encoder=encoder, source="local",
-                                       verbose=False, trust_repo=True)
+                if not os.getenv("IW3_DEBUG"):
+                    model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
+                                           "DepthAnythingMetricDepthV2", model_type=encoder,
+                                           verbose=False, trust_repo=True)
+                else:
+                    assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                    model = torch.hub.load("../Depth-Anything_iw3",
+                                           "DepthAnythingMetricDepthV2", model_type=encoder, source="local",
+                                           verbose=False, trust_repo=True)
         except (RuntimeError, pickle.PickleError) as e:
             if isinstance(e, RuntimeError):
                 do_handle = "PytorchStreamReader" in repr(e)
@@ -69,6 +84,7 @@ def load_model(model_type="Any_B", gpu=0, **kwargs):
     device = create_device(gpu)
     model = model.to(device).eval()
     model.device = device
+    model.metric_depth = getattr(model, "metric_depth", False)
     model.prep_lower_bound = kwargs.get("height", None) or 392
     if model.prep_lower_bound % 14 != 0:
         # From GUI, 512 -> 518
@@ -162,13 +178,17 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out = torch.cat([out, out2], dim=0)
 
     if edge_dilation > 0:
-        out = dilate_edge(out, edge_dilation)
+        if not model.metric_depth:
+            out = dilate_edge(out, edge_dilation)
+        else:
+            out = dilate_edge(out.neg_(), edge_dilation).neg_()
     if resize_depth and out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bilinear", align_corners=False, antialias=True)
 
-    # invert for zoedepth compatibility
-    out.neg_()
+    if not model.metric_depth:
+        # invert for zoedepth compatibility
+        out.neg_()
 
     if flip_aug:
         if batch:

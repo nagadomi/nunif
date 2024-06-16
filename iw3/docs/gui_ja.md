@@ -120,10 +120,12 @@ VR Player側で設定できる場合もあります。通常は0を選択して�
 | `Any_V2_S`  | Depth-Anything-V2 model small.
 | `Any_V2_B`  | Depth-Anything-V2 model base. (cc-by-nc-4.0)
 | `Any_V2_L`  | Depth-Anything-V2 model large. (cc-by-nc-4.0)
+| `Any_V2_N`  | Depth-Anything-V2 Metric Depth model Hypersim. Tuned for indoor scenes. (cc-by-nc-4.0)
+| `Any_V2_K`  | Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
 
 通常は`ZoeD_N`か`Any_B`,または`ZoeD_Any_N`を選択してください。
 
-`ZoeD_N`は屋内シーンのデータで調節されたモデルです。`ZoeD_K`は、屋外シーンのデータで調節されたモデルですが、屋外シーンというのがドライブレコーダーの映像です。
+`ZoeD_N`は屋内シーンのデータで調節されたモデルです。`ZoeD_K`は、屋外シーンのデータで調節されたモデルですが、屋外シーンというのがドライブレコーダーの映像です（これが向いているケースはないと思います）。
 
 `Any_B`はDepthAnythingの基本モデルです。`Any_S`が速くて精度が低い、`Any_L`が遅くて精度が高いバランスのモデルです。
 
@@ -131,13 +133,15 @@ VR Player側で設定できる場合もあります。通常は0を選択して�
 
 DepthAnythingのほうが精度が高いですが、ステレオ生成の結果はZoeDepthのほうがよいことが多いです。DepthAnythingのほうが使用VRAMが少なく速いです。
 
+イラスト/アニメには、ZoeDepthよりもDepthAnythingのほうがよいです。
+
 またZoeDepthとDepthAnythingは出力する深度の種類が違います。ZeoDepthはメートル単位の距離を出力していて、DepthAnythingはDisparity(視差)を出力しています。近い結果に見えるように変換式を調節していますが、モデルを変更すると深度の精度だけではなく他の設定の見え方も全体的に変わることに注意してください。
 
 たくさんありますが、個人的には、`ZoeD_N`, `Any_B`, `ZoeD_Any_N`のどれかをオススメします。
 
-### `Any_V2_B` と `Any_V2_L`について
+### `Any_V2_B` ,`Any_V2_L`, `Any_V2_N`, `Any_V2_K` について
 
-これらのモデルはcc-by-nc-4.0の下で配布されています。ソフトウェアのライセンスと衝突するためデフォルトでは利用できません。
+これらのモデルはcc-by-nc-4.0の下で配布されています。nunifのMITライセンスと衝突するためデフォルトでは利用できません。
 
 使用したい場合は、それらのライセンスに同意して自分でチェックポイントファイルを配置してください。
 
@@ -145,7 +149,10 @@ DepthAnythingのほうが精度が高いですが、ステレオ生成の結果�
 |------------|------|
 | `Any_V2_B` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitb.pth`
 | `Any_V2_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitl.pth`
+| `Any_V2_N` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_hypersim_vitl.pth`
+| `Any_V2_K` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
 
+ファイルが存在する場合のみGUI上に表示されます。
 
 ### 前景拡大
 
