@@ -1303,8 +1303,6 @@ def iw3_main(args):
     else:
         args.bg_session = None
 
-    args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
-                                      model_name=args.state["depth_utils"].get_name())
     if args.edge_dilation is None:
         if args.state["depth_utils"].get_name() == "DepthAnything":
             # TODO: This may not be a sensible choice
@@ -1321,6 +1319,11 @@ def iw3_main(args):
             args.state["depth_model"] = depth_model
     else:
         depth_model = None
+
+    is_metric = (args.state["depth_utils"].get_name() == "ZoeDepth" or
+                 (args.state["depth_utils"].get_name() == "DepthAnything" and args.state["depth_model"].metric_depth))
+    args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
+                                      metric_depth=is_metric)
 
     if args.export:
         export_main(args)

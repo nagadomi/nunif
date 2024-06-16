@@ -20,7 +20,7 @@ The demo application can be found at
 
 I want to watch any 2D video as 3D video on my VR device, so I developed this very personal tool.
 
-iw3 provides the ability to convert any 2D image/video into side-by-side 3D image/video. However, it does not support Anime.
+iw3 provides the ability to convert any 2D image/video into side-by-side 3D image/video.
 
 ## cliqa
 
