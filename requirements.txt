@@ -2,7 +2,7 @@
 # torch
 # torchvision
 # torchtext
-numpy
+numpy < 2.0.0
 pillow
 tqdm
 wand >= 0.6.10
