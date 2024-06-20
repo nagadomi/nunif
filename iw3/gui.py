@@ -774,8 +774,8 @@ class MainFrame(wx.Frame):
         if zoed_height == "Default" or zoed_height == "":
             zoed_height = None
         else:
-            if not validate_number(zoed_height, 384, 2048, is_int=True, allow_empty=False):
-                self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 384, 2048)
+            if not validate_number(zoed_height, 384, 8190, is_int=True, allow_empty=False):
+                self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 384, 8190)
                 return
             zoed_height = int(zoed_height)
 
