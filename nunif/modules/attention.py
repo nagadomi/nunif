@@ -4,6 +4,19 @@ import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
 from .permute import bchw_to_bnc, bnc_to_bchw, bchw_to_bhwc, bhwc_to_bchw
 
+try:
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    def use_flash_attention(flag):
+        if flag:
+            return sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH])
+        else:
+            return sdpa_kernel([SDPBackend.MATH])
+
+except ModuleNotFoundError:
+    def use_flash_attention(flag):
+        return torch.backends.cuda.sdp_kernel(enable_flash=flag, enable_math=True, enable_mem_efficient=flag)
+
 
 class SEBlock(nn.Module):
     """ from Squeeze-and-Excitation Networks
@@ -58,9 +71,12 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, dropout_p=0.0, is_causal=Fals
     q = q.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
     k = k.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
     v = v.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
-    x = F.scaled_dot_product_attention(q, k, v,
-                                       attn_mask=attn_mask, dropout_p=dropout_p,
-                                       is_causal=is_causal)
+
+    use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
+    with use_flash_attention(use_flash):
+        x = F.scaled_dot_product_attention(q, k, v,
+                                           attn_mask=attn_mask, dropout_p=dropout_p,
+                                           is_causal=is_causal)
     # B, N, (H, C // H)
     return x.permute(0, 2, 1, 3).reshape(B, N, qkv_dim * num_heads)
 
