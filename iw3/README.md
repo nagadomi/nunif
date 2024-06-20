@@ -10,7 +10,7 @@ This project is under construction.
 
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://huggingface.co/depth-anything).
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2).
 - Generating side-by-side image using grid_sample based lightweight model
 
 ## Usage
@@ -306,6 +306,8 @@ If you want to use it, agree to the pre-trained model license and place the chec
 | `Any_V2_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitl.pth`
 | `Any_V2_N` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_hypersim_vitl.pth`
 | `Any_V2_K` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
+
+These files can be downloaded from Models section of https://huggingface.co/depth-anything .
 
 ## Stereo Generation Method (Left-Right Image Generation)
 
