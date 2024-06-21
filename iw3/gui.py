@@ -184,10 +184,13 @@ class MainFrame(wx.Frame):
             depth_models.append("Any_V2_B")
         if depth_anything_has_model("Any_V2_L"):
             depth_models.append("Any_V2_L")
-        if depth_anything_has_model("Any_V2_N"):
-            depth_models.append("Any_V2_N")
-        if depth_anything_has_model("Any_V2_K"):
-            depth_models.append("Any_V2_K")
+
+        depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
+        if depth_anything_has_model("Any_V2_N_L"):
+            depth_models.append("Any_V2_N_L")
+        depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
+        if depth_anything_has_model("Any_V2_K_L"):
+            depth_models.append("Any_V2_K_L")
 
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
                                            choices=depth_models,

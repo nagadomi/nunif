@@ -286,17 +286,21 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_V2_S`  | Depth-Anything-V2 model small.
 | `Any_V2_B`  | Depth-Anything-V2 model base. (cc-by-nc-4.0)
 | `Any_V2_L`  | Depth-Anything-V2 model large. (cc-by-nc-4.0)
-| `Any_V2_N`  | Depth-Anything-V2 Metric Depth model Hypersim. Tuned for indoor scenes. (cc-by-nc-4.0)
-| `Any_V2_K`  | Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `Any_V2_N_S`| Depth-Anything-V2 Metric Depth model Hypersim small. Tuned for indoor scenes.
+| `Any_V2_N_B`| Depth-Anything-V2 Metric Depth model Hypersim base. Tuned for indoor scenes
+| `Any_V2_N_L`| Depth-Anything-V2 Metric Depth model Hypersim large. Tuned for indoor scenes. (cc-by-nc-4.0)
+| `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
 
 Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
 For art/anime, DepthAnything is better than ZoeDepth.
 
-### About `Any_V2_B` ,`Any_V2_L`, `Any_V2_N`, `Any_V2_K`
+### About `Any_V2_B` ,`Any_V2_L`, `Any_V2_N_L`, `Any_V2_K_L`
 
-These models are licensed under cc-by-nc-4.0. These are not available by default due to conflicts with nunif MIT license.
+These models are licensed under cc-by-nc-4.0 (Non Commercial). These are not available by default due to conflicts with nunif MIT license.
 
 If you want to use it, agree to the pre-trained model license and place the checkpoint file yourself.
 
@@ -304,8 +308,8 @@ If you want to use it, agree to the pre-trained model license and place the chec
 |------------|------|
 | `Any_V2_B` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitb.pth`
 | `Any_V2_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitl.pth`
-| `Any_V2_N` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_hypersim_vitl.pth`
-| `Any_V2_K` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
+| `Any_V2_N_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_hypersim_vitl.pth`
+| `Any_V2_K_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
 
 These files can be downloaded from Models section of https://huggingface.co/depth-anything .
 
