@@ -289,9 +289,9 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_V2_N_S`| Depth-Anything-V2 Metric Depth model Hypersim small. Tuned for indoor scenes.
 | `Any_V2_N_B`| Depth-Anything-V2 Metric Depth model Hypersim base. Tuned for indoor scenes
 | `Any_V2_N_L`| Depth-Anything-V2 Metric Depth model Hypersim large. Tuned for indoor scenes. (cc-by-nc-4.0)
-| `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
-| `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
-| `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI small. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI base. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
 
 Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.

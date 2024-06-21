@@ -123,9 +123,9 @@ VR Player側で設定できる場合もあります。通常は0を選択して�
 | `Any_V2_N_S`| Depth-Anything-V2 Metric Depth model Hypersim small. Tuned for indoor scenes.
 | `Any_V2_N_B`| Depth-Anything-V2 Metric Depth model Hypersim base. Tuned for indoor scenes
 | `Any_V2_N_L`| Depth-Anything-V2 Metric Depth model Hypersim large. Tuned for indoor scenes. (cc-by-nc-4.0)
-| `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
-| `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
-| `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI small. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI base. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
 
 通常は`ZoeD_N`か`Any_B`,または`ZoeD_Any_N`を選択してください。
 
