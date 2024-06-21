@@ -1138,7 +1138,10 @@ def create_parser(required_true=True):
                                  "Any_S", "Any_B", "Any_L",
                                  "ZoeD_Any_N", "ZoeD_Any_K",
                                  "Any_V2_S", "Any_V2_B", "Any_V2_L",
-                                 "Any_V2_N", "Any_V2_K"],
+                                 "Any_V2_N", "Any_V2_K",
+                                 "Any_V2_N_S", "Any_V2_N_B", "Any_V2_N_L",
+                                 "Any_V2_K_S", "Any_V2_K_B", "Any_V2_K_L",
+                                 ],
                         help="depth model name")
     parser.add_argument("--remove-bg", action="store_true",
                         help="remove background depth, not recommended for video")

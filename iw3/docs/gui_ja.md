@@ -105,7 +105,7 @@ VR Player側で設定できる場合もあります。通常は0を選択して�
 
 深度を推定する学習済みモデルを指定します。
 
-深度推定には[ZoeDepth](https://github.com/isl-org/ZoeDepth)または[Depth-Anything](https://github.com/LiheYoung/Depth-Anything)、Depth-Anything-V2を使用しています。
+深度推定には[ZoeDepth](https://github.com/isl-org/ZoeDepth)または[Depth-Anything](https://github.com/LiheYoung/Depth-Anything)、[Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2)を使用しています。
 
 | Short Name  |                   |
 |-------------|-------------------|
@@ -120,8 +120,12 @@ VR Player側で設定できる場合もあります。通常は0を選択して�
 | `Any_V2_S`  | Depth-Anything-V2 model small.
 | `Any_V2_B`  | Depth-Anything-V2 model base. (cc-by-nc-4.0)
 | `Any_V2_L`  | Depth-Anything-V2 model large. (cc-by-nc-4.0)
-| `Any_V2_N`  | Depth-Anything-V2 Metric Depth model Hypersim. Tuned for indoor scenes. (cc-by-nc-4.0)
-| `Any_V2_K`  | Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `Any_V2_N_S`| Depth-Anything-V2 Metric Depth model Hypersim small. Tuned for indoor scenes.
+| `Any_V2_N_B`| Depth-Anything-V2 Metric Depth model Hypersim base. Tuned for indoor scenes
+| `Any_V2_N_L`| Depth-Anything-V2 Metric Depth model Hypersim large. Tuned for indoor scenes. (cc-by-nc-4.0)
+| `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view).
+| `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
 
 通常は`ZoeD_N`か`Any_B`,または`ZoeD_Any_N`を選択してください。
 
@@ -139,9 +143,9 @@ DepthAnythingのほうが精度が高いですが、ステレオ生成の結果�
 
 たくさんありますが、個人的には、`ZoeD_N`, `Any_B`, `ZoeD_Any_N`のどれかをオススメします。
 
-### `Any_V2_B` ,`Any_V2_L`, `Any_V2_N`, `Any_V2_K` について
+### `Any_V2_B` ,`Any_V2_L`, `Any_V2_N_L`, `Any_V2_K_L` について
 
-これらのモデルはcc-by-nc-4.0の下で配布されています。nunifのMITライセンスと衝突するためデフォルトでは利用できません。
+これらのモデルはcc-by-nc-4.0(非商用)の下で配布されています。nunifのMITライセンスと衝突するためデフォルトでは利用できません。
 
 使用したい場合は、それらのライセンスに同意して自分でチェックポイントファイルを配置してください。
 
@@ -149,9 +153,10 @@ DepthAnythingのほうが精度が高いですが、ステレオ生成の結果�
 |------------|------|
 | `Any_V2_B` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitb.pth`
 | `Any_V2_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitl.pth`
-| `Any_V2_N` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_hypersim_vitl.pth`
-| `Any_V2_K` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
+| `Any_V2_N_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_hypersim_vitl.pth`
+| `Any_V2_K_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
 
+これらのファイルは https://huggingface.co/depth-anything のModelsセクションからダウンロードできます。
 ファイルが存在する場合のみGUI上に表示されます。
 
 ### 前景拡大

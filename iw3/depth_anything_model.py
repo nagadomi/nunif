@@ -18,8 +18,17 @@ NAME_MAP = {
     "Any_V2_S": "v2_vits",
     "Any_V2_B": "v2_vitb",
     "Any_V2_L": "v2_vitl",
-    "Any_V2_N": "hypersim",
-    "Any_V2_K": "vkitti",
+
+    "Any_V2_N_S": "hypersim_s",
+    "Any_V2_N_B": "hypersim_b",
+    "Any_V2_N_L": "hypersim_l",
+    "Any_V2_K_S": "vkitti_s",
+    "Any_V2_K_B": "vkitti_b",
+    "Any_V2_K_L": "vkitti_l",
+
+    # for compatibility
+    "Any_V2_N": "hypersim_l",
+    "Any_V2_K": "vkitti_l",
 }
 MODEL_FILES = {
     "Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_vits14.pth"),
@@ -28,6 +37,16 @@ MODEL_FILES = {
     "Any_V2_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vits.pth"),
     "Any_V2_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitb.pth"),
     "Any_V2_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitl.pth"),
+
+    "Any_V2_N_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vits.pth"),
+    "Any_V2_N_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitb.pth"),
+    "Any_V2_N_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitl.pth"),
+
+    "Any_V2_K_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vits.pth"),
+    "Any_V2_K_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitb.pth"),
+    "Any_V2_K_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
+
+    # for compatibility
     "Any_V2_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitl.pth"),
     "Any_V2_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
 }
@@ -42,7 +61,8 @@ def load_model(model_type="Any_B", gpu=0, **kwargs):
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         try:
             encoder = NAME_MAP[model_type]
-            if encoder not in {"hypersim", "vkitti"}:
+            if "hypersim" not in encoder and "vkitti" not in encoder:
+                # disparity model
                 if not os.getenv("IW3_DEBUG"):
                     model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
                                            "DepthAnything", encoder=encoder,
@@ -53,6 +73,7 @@ def load_model(model_type="Any_B", gpu=0, **kwargs):
                                            "DepthAnything", encoder=encoder, source="local",
                                            verbose=False, trust_repo=True)
             else:
+                # metric depth model
                 if not os.getenv("IW3_DEBUG"):
                     model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
                                            "DepthAnythingMetricDepthV2", model_type=encoder,
