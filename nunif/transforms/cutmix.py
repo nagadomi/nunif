@@ -51,7 +51,6 @@ def cutmix(a, b=None, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
         b.paste(hflip, (a.width, 0))
         b.paste(hflip, (0, a.height))
         b.paste(a, (a.width, a.height))
-        a, b = b, a
 
     # crop to the same size
     width = min(a.width, b.height)
@@ -62,7 +61,7 @@ def cutmix(a, b=None, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
         b = _random_crop(b, width, height)
     # composite
     mask = generate_random_mask(width, height, mask_min=mask_min, mask_max=mask_max, rotate_p=rotate_p)
-    out = Image.composite(a, b, mask)
+    out = Image.composite(b, a, mask)
     return out
 
 
