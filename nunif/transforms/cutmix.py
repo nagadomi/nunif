@@ -66,6 +66,16 @@ def cutmix(a, b=None, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
     return out
 
 
+class CutMix():
+    def __init__(self, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
+        self.mask_min = mask_min
+        self.mask_max = mask_max
+        self.rotate_p = rotate_p
+
+    def __call__(self, a, b=None):
+        return cutmix(a, b, mask_min=self.mask_min, mask_max=self.mask_max, rotate_p=self.rotate_p)
+
+
 if __name__ == "__main__":
     import time
     a = Image.open("cc0/bottle.jpg")
@@ -78,7 +88,8 @@ if __name__ == "__main__":
             time.sleep(1)
 
     if True:
+        transform = CutMix()
         for i in range(10):
-            out = cutmix(b)
+            out = transform(b)
             out.show()
             time.sleep(1)
