@@ -266,7 +266,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 # TODO: maybe need to prevent color noise for grayscale
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
-                T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5)], p=da_cutmix_p),
+                T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5, blur_p=0.2)], p=da_cutmix_p),
             ])
             self.gt_gen_transforms = T.Compose([
                 T.RandomChoice([

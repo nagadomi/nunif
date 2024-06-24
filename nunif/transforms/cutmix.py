@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageOps, ImageFilter
 import random
 from torchvision import transforms as T
 from torchvision.transforms import (
@@ -13,7 +13,7 @@ def _random_crop(x, width, height):
     return rect
 
 
-def generate_random_mask(width, height, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
+def generate_random_mask(width, height, mask_min=0.2, mask_max=0.5, rotate_p=0.2, blur_p=0.1):
     width, height = width * 2, height * 2
 
     mask = Image.new("L", (width, height), "black")
@@ -34,13 +34,20 @@ def generate_random_mask(width, height, mask_min=0.2, mask_max=0.5, rotate_p=0.2
     if random.uniform(0, 1) < rotate_p:
         angle = random.uniform(0, 360)
         mask = TF.rotate(mask, angle=angle, interpolation=InterpolationMode.BILINEAR)
+    if random.uniform(0, 1) < blur_p:
+        if random.uniform(0, 1) < 0.5:
+            radius = random.randint(2, 6)
+        else:
+            radius = random.randint(10, 20)
+        kernel = ImageFilter.GaussianBlur(radius=radius)
+        mask = mask.filter(kernel)
 
     mask = TF.resize(mask, size=(height // 2, width // 2), interpolation=InterpolationMode.BILINEAR)
 
     return mask
 
 
-def cutmix(a, b=None, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
+def cutmix(a, b=None, mask_min=0.2, mask_max=0.5, rotate_p=0.2, blur_p=0.1):
     # a, b: PIL image
     if b is None:
         # a and b are the same image
@@ -60,19 +67,22 @@ def cutmix(a, b=None, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
     if b.width != width or b.height != height:
         b = _random_crop(b, width, height)
     # composite
-    mask = generate_random_mask(width, height, mask_min=mask_min, mask_max=mask_max, rotate_p=rotate_p)
+    mask = generate_random_mask(width, height,
+                                mask_min=mask_min, mask_max=mask_max,
+                                rotate_p=rotate_p, blur_p=blur_p)
     out = Image.composite(b, a, mask)
     return out
 
 
 class CutMix():
-    def __init__(self, mask_min=0.2, mask_max=0.5, rotate_p=0.2):
+    def __init__(self, mask_min=0.2, mask_max=0.5, rotate_p=0.2, blur_p=0.1):
         self.mask_min = mask_min
         self.mask_max = mask_max
         self.rotate_p = rotate_p
+        self.blur_p = blur_p
 
     def __call__(self, a, b=None):
-        return cutmix(a, b, mask_min=self.mask_min, mask_max=self.mask_max, rotate_p=self.rotate_p)
+        return cutmix(a, b, mask_min=self.mask_min, mask_max=self.mask_max, rotate_p=self.rotate_p, blur_p=self.blur_p)
 
 
 if __name__ == "__main__":
@@ -87,6 +97,8 @@ if __name__ == "__main__":
             time.sleep(1)
 
     if True:
+        # transform = CutMix(blur_p=1)
+        # transform = CutMix(rotate_p=1)
         transform = CutMix()
         for i in range(10):
             out = transform(b)
