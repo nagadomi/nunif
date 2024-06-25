@@ -34,6 +34,9 @@ def process_image(ctx, im, meta, args):
         im = im.transpose(Image.Transpose.ROTATE_270)
 
     rgb, alpha = IL.to_tensor(im, return_alpha=True)
+    if rgb.shape[0] == 1:
+        rgb = rgb.repeat(3, 1, 1)
+
     rgb, alpha = ctx.convert(
         rgb, alpha, args.method, args.noise_level,
         args.tile_size, args.batch_size,
@@ -47,7 +50,7 @@ def process_image(ctx, im, meta, args):
 
     rgb = rgb.to("cpu")
 
-    if args.depth is not None:
+    if args.depth is not None and args.image_lib == "wand":
         meta["depth"] = args.depth
     depth = meta["depth"] if "depth" in meta and meta["depth"] is not None else 8
     if args.grayscale:
