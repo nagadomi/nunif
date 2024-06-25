@@ -38,9 +38,7 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
     meta = {"engine": "pil", "filename": filename}
     im.load()
     meta["mode"] = im.mode
-    if im.mode == "I;16":
-        # TODO: dont work
-        im = im.convert("L")
+
     if im.mode in {"L", "I", "RGB", "P"}:
         transparency = im.info.get('transparency')
         if isinstance(transparency, bytes) or isinstance(transparency, int):
