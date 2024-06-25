@@ -4,6 +4,7 @@ import struct
 import base64
 import torch
 import torchvision.transforms.functional as TF
+import numpy as np
 from ..transforms.functional import quantize256
 from ..logger import logger
 
@@ -70,11 +71,13 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
 
     if im.mode not in {"RGB", "RGBA", "L", "LA"}:
         if im.mode in {"I", "I;16"}:
-            im = convert_i2l(im)
+            # convert in to_tensor
+            pass
         else:
             im = im.convert("RGB")
 
-    meta["grayscale"] = im.mode in {"L", "LA"}
+    meta["depth"] = 8 if im.mode not in {"I", "I;16"} else 16
+    meta["grayscale"] = im.mode in {"L", "LA", "I", "I;16"}
     meta["gamma"] = None
     gamma = im.info.get("gamma")
     if gamma is not None:
@@ -89,28 +92,30 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
             color = "rgb"
         else:
             color = "gray"
-    if color == "rgb":
-        if keep_alpha:
-            if im.mode == "L":
-                im = im.convert("RGB")
-            elif im.mode == "LA":
-                im = im.convert("RGBA")
-        else:
-            if im.mode in {"LA", "RGBA"}:
-                im = remove_alpha(im, bg_color=bg_color)
-            if im.mode != "RGB":
-                im = im.convert("RGB")
-    elif color == "gray":
-        if keep_alpha:
-            if im.mode == "RGB":
-                im = im.convert("L")
-            elif im.mode == "RGBA":
-                im = im.convert("LA")
-        else:
-            if im.mode in {"LA", "RGBA"}:
-                im = remove_alpha(im, bg_color=bg_color)
-            if im.mode != "L":
-                im = im.convert("L")
+
+    if im.mode not in {"I", "I;16"}:
+        if color == "rgb":
+            if keep_alpha:
+                if im.mode == "L":
+                    im = im.convert("RGB")
+                elif im.mode == "LA":
+                    im = im.convert("RGBA")
+            else:
+                if im.mode in {"LA", "RGBA"}:
+                    im = remove_alpha(im, bg_color=bg_color)
+                if im.mode != "RGB":
+                    im = im.convert("RGB")
+        elif color == "gray":
+            if keep_alpha:
+                if im.mode == "RGB":
+                    im = im.convert("L")
+                elif im.mode == "RGBA":
+                    im = im.convert("LA")
+            else:
+                if im.mode in {"LA", "RGBA"}:
+                    im = remove_alpha(im, bg_color=bg_color)
+                if im.mode != "L":
+                    im = im.convert("L")
 
     return im, meta
 
@@ -225,7 +230,15 @@ def to_tensor(im, return_alpha=False):
 
 
 def to_image(im, alpha=None, depth=None):
-    im = TF.to_pil_image(quantize256(im))
+    if depth == 16:
+        # PIL does not support 16bit RGB so this case is 16bit grayscale
+        if im.shape[0] != 1:
+            im = im.mean(dim=0, keepdim=True)
+        im = im * 0xffff
+        im = im.to(torch.int16).numpy().astype(np.uint16)[0]
+        im = Image.fromarray(im)
+    else:
+        im = TF.to_pil_image(quantize256(im))
     if alpha is not None:
         alpha = TF.to_pil_image(quantize256(alpha))
         im.putalpha(alpha)
@@ -304,7 +317,6 @@ def save_image(im, filename, format="png",
 
 try:
     import cv2
-    import numpy as np
 
     def to_cv2(im):
         cvim = np.array(im, dtype=np.uint8)
