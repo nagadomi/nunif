@@ -10,7 +10,6 @@ import threading
 import math
 from tqdm import tqdm
 from PIL import ImageDraw, Image
-from dataclasses import dataclass
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
@@ -734,6 +733,17 @@ def export_images(files, args):
     config.save(config_file)
 
 
+def get_resume_seq(depth_dir, rgb_dir):
+    depth_files = sorted(os.listdir(depth_dir))
+    rgb_files = sorted(os.listdir(rgb_dir))
+    if rgb_files and depth_files:
+        last_seq = int(path.splitext(min(rgb_files[-1], depth_files[-1]))[0], 10)
+    else:
+        last_seq = -1
+
+    return last_seq
+
+
 def export_video(args):
     basename = path.splitext(path.basename(args.input))[0]
     if args.export_disparity:
@@ -770,7 +780,7 @@ def export_video(args):
     audio_file = path.join(output_dir, config.audio_file)
     config_file = path.join(output_dir, export_config.FILENAME)
 
-    if not args.yes and path.exists(config_file):
+    if not args.resume and (not args.yes and path.exists(config_file)):
         y = input(f"File '{config_file}' already exists. Overwrite? [y/N]").lower()
         if y not in {"y", "ye", "yes"}:
             return
@@ -778,10 +788,18 @@ def export_video(args):
     os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
-    has_audio = VU.export_audio(args.input, audio_file,
-                                start_time=args.start_time, end_time=args.end_time,
-                                title="Audio", stop_event=args.state["stop_event"],
-                                tqdm_fn=args.state["tqdm_fn"])
+    if args.resume:
+        resume_seq = get_resume_seq(depth_dir, rgb_dir) - args.zoed_batch_size
+    else:
+        resume_seq = -1
+
+    if resume_seq > 0 and path.exists(audio_file):
+        has_audio = True
+    else:
+        has_audio = VU.export_audio(args.input, audio_file,
+                                    start_time=args.start_time, end_time=args.end_time,
+                                    title="Audio", stop_event=args.state["stop_event"],
+                                    tqdm_fn=args.state["tqdm_fn"])
     if not has_audio:
         config.audio_file = None
 
@@ -855,6 +873,7 @@ def export_video(args):
         max_workers=args.max_workers,
         max_batch_queue=args.max_workers + 1,
         require_pts=True,
+        skip_pts=resume_seq
     )
     VU.hook_frame(args.input,
                   config_callback=config_callback,

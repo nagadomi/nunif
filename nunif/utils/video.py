@@ -702,12 +702,13 @@ class FrameCallbackPool():
     thread pool callback wrapper
     """
     def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2,
-                 require_pts=False):
+                 require_pts=False, skip_pts=-1):
         if max_workers > 0:
             self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         else:
             self.thread_pool = _DummyThreadPool()
         self.require_pts = require_pts
+        self.skip_pts = skip_pts
         self.frame_callback = frame_callback
         self.batch_size = batch_size
         self.max_workers = max_workers
@@ -731,6 +732,8 @@ class FrameCallbackPool():
 
         if frame is None:
             return self.finish()
+        if frame.pts <= self.skip_pts:
+            return None
 
         self.pts_queue.append(frame.pts)
         frame = to_tensor(frame, device=self.device)

@@ -510,6 +510,8 @@ class MainFrame(wx.Frame):
         self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
 
+        self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
+
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
 
@@ -588,12 +590,17 @@ class MainFrame(wx.Frame):
 
     def update_input_option_state(self):
         input_path = self.txt_input.GetValue()
-        if path.isdir(input_path) or is_text(input_path):
+        is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
+        if is_export:
             self.chk_resume.Enable()
-            self.chk_recursive.Enable()
-        else:
-            self.chk_resume.Disable()
             self.chk_recursive.Disable()
+        else:
+            if path.isdir(input_path) or is_text(input_path):
+                self.chk_resume.Enable()
+                self.chk_recursive.Enable()
+            else:
+                self.chk_resume.Disable()
+                self.chk_recursive.Disable()
         self.chk_recursive.SetValue(False)
 
     def reset_time_range(self):
@@ -696,6 +703,9 @@ class MainFrame(wx.Frame):
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
 
+    def on_selected_index_changed_cbo_stereo_format(self, event):
+        self.update_input_option_state()
+
     def update_edge_dilation(self):
         if self.chk_edge_dilation.IsChecked():
             self.cbo_edge_dilation.Enable()
@@ -718,7 +728,7 @@ class MainFrame(wx.Frame):
         input_path = args.input
         output_path = args.output
         video = is_video(input_path)
-
+        resume = args.resume
         if args.export:
             if is_video(input_path):
                 basename = (path.splitext(path.basename(input_path))[0]).strip()
@@ -732,8 +742,9 @@ class MainFrame(wx.Frame):
                     make_output_filename(input_path, args, video=video))
             else:
                 output_path = output_path
+                resume = False
 
-        if path.exists(output_path):
+        if path.exists(output_path) and not resume:
             with wx.MessageDialog(None,
                                   message=output_path + "\n" + T("already exists. Overwrite?"),
                                   caption=T("Confirm"), style=wx.YES_NO) as dlg:
@@ -748,7 +759,6 @@ class MainFrame(wx.Frame):
                 caption=T("Error"),
                 style=wx.OK) as dlg:
             dlg.ShowModal()
-
 
     def parse_args(self):
         if not validate_number(self.cbo_divergence.GetValue(), 0.0, 100.0):
@@ -843,7 +853,7 @@ class MainFrame(wx.Frame):
             max_output_width, max_output_height = [int(s) for s in max_output_size.split("x")]
 
         input_path = self.txt_input.GetValue()
-        resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
+        resume = (path.isdir(input_path) or is_text(input_path) or export or export_disparity) and self.chk_resume.GetValue()
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
