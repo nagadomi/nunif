@@ -244,6 +244,11 @@ Note that
 
 See https://ffmpeg.org/ffmpeg-filters.html
 
+### Artifacts in encoded video
+
+When `preset=slower|veryslow|placebo` is used for high resolution video, it may produce video files that are not supported by hardware decoder.
+If you have been using that setting, try `preset=medium`.
+
 ### Recommended workflow for slow processor or very large video
 
 First check the results with a few samples. There are two ways.
