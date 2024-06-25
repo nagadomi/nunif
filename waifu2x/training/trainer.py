@@ -528,6 +528,7 @@ class Waifu2xTrainer(Trainer):
                 deblur=self.args.deblur,
                 resize_blur_p=self.args.resize_blur_p,
                 resize_step_p=self.args.resize_step_p,
+                resize_no_antialias_p=self.args.resize_no_antialias_p,
                 return_no_offset_y=return_no_offset_y,
                 training=True,
             )
@@ -723,6 +724,9 @@ def register(subparsers, default_parser):
                         help=("probability that resize blur should be used"))
     parser.add_argument("--resize-step-p", type=float, default=0.,
                         help=("probability that 2 step downscaling should be used"))
+    parser.add_argument("--resize-no-antialias-p", type=float, default=0.,
+                        help="probability that no antialias(jagged edge) downscaling should be used")
+
     parser.add_argument("--hard-example", type=str, default="linear",
                         choices=["none", "linear", "top10", "top20"],
                         help="hard example mining for training data sampleing")

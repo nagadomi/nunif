@@ -34,11 +34,9 @@ INTERPOLATION_MODES = (
     "lanczos",
     "triangle",
     "catrom",
-    # "vision.bicubic_no_antialias",
 )
 INTERPOLATION_NEAREST = "box"
 INTERPOLATION_BICUBIC = "catrom"
-# INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3, 1/12)  # noqa: E226
 INTERPOLATION_MODE_WEIGHTS = (1/3, 1/3, 1/6, 1/16, 1/3)  # noqa: E226
 
 
@@ -47,11 +45,15 @@ def _resize(im, size, filter_type, blur):
         return IM.resize(im, size, filter_type, blur)
     elif filter_type == "vision.bicubic_no_antialias":
         return TF.resize(im, size, InterpolationMode.BICUBIC, antialias=False)
+    elif filter_type == "vision.bilinear_no_antialias":
+        return TF.resize(im, size, InterpolationMode.BILINEAR, antialias=False)
     else:
         raise ValueError(filter_type)
 
 
-def resize(im, size, filter_type, blur, enable_step=False, step_p=0.):
+def resize(im, size, filter_type, blur,
+           enable_step=False, step_p=0.0,
+           enable_no_antialias=False, no_antialias_p=0.0):
     if enable_step and filter_type != INTERPOLATION_NEAREST and step_p > 0 and random.uniform(0, 1) < step_p:
         h, w = im.shape[1:]
         scale = h / size[0]
@@ -60,6 +62,9 @@ def resize(im, size, filter_type, blur, enable_step=False, step_p=0.):
         im = _resize(im, (step1_h, step1_w), filter_type, 1)
         im = _resize(im, size, filter_type, blur)
         return im
+    elif enable_no_antialias and random.uniform(0, 1) < no_antialias_p:
+        filter_type = random.choice(["vision.bilinear_no_antialias", "vision.bicubic_no_antialias"])
+        return _resize(im, size, filter_type, blur)
     else:
         return _resize(im, size, filter_type, blur)
 
@@ -81,7 +86,7 @@ def pil_resize(im, size, filter_type):
 
 class RandomDownscaleX():
     def __init__(self, scale_factor,
-                 blur_shift=0, resize_blur_p=0.1, resize_step_p=0,
+                 blur_shift=0, resize_blur_p=0.1, resize_step_p=0, resize_no_antialias_p=0,
                  interpolation=None, training=True):
         assert scale_factor in {2, 4, 8}
         self.interpolation = interpolation
@@ -90,6 +95,7 @@ class RandomDownscaleX():
         self.training = training
         self.resize_blur_p = resize_blur_p
         self.resize_step_p = resize_step_p
+        self.resize_no_antialias_p = resize_no_antialias_p
 
     def __call__(self, x, y):
         w, h = x.size
@@ -112,8 +118,8 @@ class RandomDownscaleX():
                 blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
                        filter_type=interpolation, blur=blur,
-                       enable_step=self.training or fixed_interpolation,
-                       step_p=self.resize_step_p)
+                       enable_step=self.training or fixed_interpolation, step_p=self.resize_step_p,
+                       enable_no_antialias=self.training, no_antialias_p=self.resize_no_antialias_p)
             x = pil_io.to_image(x)
         elif self.scale_factor == 8:
             # wand 8x downscale is very slow for some reason
@@ -182,7 +188,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  skip_screentone=False,
                  skip_dot=False,
                  crop_samples=4,
-                 deblur=0, resize_blur_p=0.1, resize_step_p=0,
+                 deblur=0, resize_blur_p=0.1, resize_step_p=0, resize_no_antialias_p=0,
                  noise_level=-1, style=None,
                  return_no_offset_y=False,
                  training=True,
@@ -246,7 +252,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 random_downscale_x = RandomDownscaleX(scale_factor=scale_factor,
                                                       interpolation=interpolation,
                                                       blur_shift=deblur, resize_blur_p=resize_blur_p,
-                                                      resize_step_p=resize_step_p)
+                                                      resize_step_p=resize_step_p,
+                                                      resize_no_antialias_p=resize_no_antialias_p)
                 random_downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
                                                               interpolation=INTERPOLATION_NEAREST)
             else:
