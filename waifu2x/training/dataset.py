@@ -9,6 +9,7 @@ from torchvision import transforms as T
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils import pil_io
 from nunif.transforms import pair as TP
+from nunif.transforms.cutmix import CutMix
 from nunif.training.sampler import HardExampleSampler, MiningMethod
 import nunif.transforms as TS
 from nunif.transforms import image_magick as IM
@@ -176,7 +177,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  scale_factor,
                  tile_size, num_samples=None,
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
-                 da_grayscale_p=0, da_color_p=0, da_antialias_p=0, da_hflip_only=False,
+                 da_grayscale_p=0, da_color_p=0, da_antialias_p=0, da_hflip_only=False, da_cutmix_p=0,
                  bicubic_only=False,
                  skip_screentone=False,
                  skip_dot=False,
@@ -265,6 +266,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 # TODO: maybe need to prevent color noise for grayscale
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
+                T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5, blur_p=0.2)], p=da_cutmix_p),
             ])
             self.gt_gen_transforms = T.Compose([
                 T.RandomChoice([
@@ -273,6 +275,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 ], p=[0.5, 0.5]),
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomInvert(p=0.5),
+                T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5)], p=da_cutmix_p),
             ])
 
             self.transforms = TP.Compose([
