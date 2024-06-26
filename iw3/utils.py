@@ -1348,6 +1348,7 @@ def iw3_main(args):
     else:
         depth_model = None
         # specified args.mapper never used in process_config_*
+        args.mapper = "none"
 
     if args.export:
         export_main(args)
