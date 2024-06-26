@@ -1340,13 +1340,15 @@ def iw3_main(args):
             depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
                                                                height=args.zoed_height)
             args.state["depth_model"] = depth_model
+
+        is_metric = (args.state["depth_utils"].get_name() == "ZoeDepth" or
+                     (args.state["depth_utils"].get_name() == "DepthAnything" and args.state["depth_model"].metric_depth))
+        args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
+                                          metric_depth=is_metric)
     else:
         depth_model = None
-
-    is_metric = (args.state["depth_utils"].get_name() == "ZoeDepth" or
-                 (args.state["depth_utils"].get_name() == "DepthAnything" and args.state["depth_model"].metric_depth))
-    args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
-                                      metric_depth=is_metric)
+        # specified args.mapper never used in process_config_*
+        args.mapper = "none"
 
     if args.export:
         export_main(args)
