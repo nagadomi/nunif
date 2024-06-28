@@ -235,6 +235,9 @@ def has_rembg_model(model_type):
 # LRF: full left-right 3D video
 FULL_SBS_SUFFIX = "_LRF_Full_SBS"
 HALF_SBS_SUFFIX = "_LR"
+FULL_TB_SUFFIX = "_TBF_fulltb"
+HALF_TB_SUFFIX = "_TB"
+
 VR180_SUFFIX = "_180x180_LR"
 ANAGLYPH_SUFFIX = "_redcyan"
 DEBUG_SUFFIX = "_debug"
@@ -252,6 +255,10 @@ def make_output_filename(input_filename, args, video=False):
         auto_detect_suffix = VR180_SUFFIX
     elif args.half_sbs:
         auto_detect_suffix = HALF_SBS_SUFFIX
+    elif args.tb:
+        auto_detect_suffix = FULL_TB_SUFFIX
+    elif args.half_tb:
+        auto_detect_suffix = HALF_TB_SUFFIX
     elif args.anaglyph:
         auto_detect_suffix = ANAGLYPH_SUFFIX + f"_{args.anaglyph}"
     elif args.debug_depth:
@@ -395,12 +402,24 @@ def postprocess_image(left_eye, right_eye, args):
                              interpolation=InterpolationMode.BICUBIC, antialias=True)
         right_eye = TF.resize(right_eye, (right_eye.shape[1], right_eye.shape[2] // 2),
                               interpolation=InterpolationMode.BICUBIC, antialias=True)
+    elif args.half_tb:
+        left_eye = TF.resize(left_eye, (left_eye.shape[1] // 2, left_eye.shape[2]),
+                             interpolation=InterpolationMode.BICUBIC, antialias=True)
+        right_eye = TF.resize(right_eye, (right_eye.shape[1] // 2, right_eye.shape[2]),
+                              interpolation=InterpolationMode.BICUBIC, antialias=True)
 
-    if args.anaglyph is None:
-        sbs = torch.cat([left_eye, right_eye], dim=2)
+    if args.anaglyph is not None:
+        # Anaglyph
+        sbs = apply_anaglyph_redcyan(left_eye, right_eye, args.anaglyph)
+    elif args.tb or args.half_tb:
+        # TopBottom
+        # SideBySide
+        sbs = torch.cat([left_eye, right_eye], dim=1)
         sbs = torch.clamp(sbs, 0., 1.)
     else:
-        sbs = apply_anaglyph_redcyan(left_eye, right_eye, args.anaglyph)
+        # SideBySide
+        sbs = torch.cat([left_eye, right_eye], dim=2)
+        sbs = torch.clamp(sbs, 0., 1.)
 
     h, w = sbs.shape[1:]
     new_w, new_h = w, h
@@ -520,7 +539,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         if float(fps) > args.max_fps:
             fps = args.max_fps
 
-        options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
+        frame_packing = "4" if args.tb or args.half_tb else "3"
+        options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": frame_packing}
         if args.tune:
             options["tune"] = ",".join(set(args.tune))
 
@@ -988,7 +1008,8 @@ def process_config_video(config, args, side_model):
             yield [VU.to_frame(frame) for frame in frames]
 
     output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
-    encoder_options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": "3"}
+    frame_packing = "4" if args.tb or args.half_tb else "3"
+    encoder_options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": frame_packing}
     if args.tune:
         encoder_options.update({"tune": ",".join(list(set(args.tune)))})
 
@@ -1200,6 +1221,9 @@ def create_parser(required_true=True):
                         help="output in VR180 format")
     parser.add_argument("--half-sbs", action="store_true",
                         help="output in Half SBS")
+    parser.add_argument("--tb", action="store_true", help="output in Full TopBottom")
+    parser.add_argument("--half-tb", action="store_true", help="output in Half TopBottom")
+
     parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="dubois",
                         choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois", "dubois2"],
                         help="output in anaglyph 3d")
