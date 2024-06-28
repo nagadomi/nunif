@@ -155,6 +155,13 @@ When `--half-sbs` option is specified, the video is output in Half SBS format (s
 
 Older VR devices may only support this format. Also, you may need to add `_3dh_` to the filename to play it.
 
+## Full TB and Half TB format
+
+When `--tb` or `--half-tb` option is specified, the video is output in TopBottom format.
+
+TopBottom format can be played back with higher resolution than SBS on some 3D TVs (Polarized/Passive 3D system).
+
+
 ## Anaglyph 3D format
 
 When `--anaglyph` option is specified, the video is output in Red-Cyan Anaglyph 3D format.

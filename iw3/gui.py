@@ -221,7 +221,9 @@ class MainFrame(wx.Frame):
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
         self.cbo_stereo_format = wx.ComboBox(
             self.grp_stereo,
-            choices=["Full SBS", "Half SBS", "VR90",
+            choices=["Full SBS", "Half SBS",
+                     "Full TB", "Half TB",
+                     "VR90",
                      "Export", "Export disparity",
                      "Anaglyph dubois",
                      "Anaglyph dubois2",
@@ -796,6 +798,8 @@ class MainFrame(wx.Frame):
 
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
+        tb = self.cbo_stereo_format.GetValue() == "Full TB"
+        half_tb = self.cbo_stereo_format.GetValue() == "Half TB"
         anaglyph = self.get_anaglyph_method()
         export = self.cbo_stereo_format.GetValue() == "Export"
         export_disparity = self.cbo_stereo_format.GetValue() == "Export disparity"
@@ -874,6 +878,8 @@ class MainFrame(wx.Frame):
             edge_dilation=edge_dilation,
             vr180=vr180,
             half_sbs=half_sbs,
+            tb=tb,
+            half_tb=half_tb,
             anaglyph=anaglyph,
             export=export,
             export_disparity=export_disparity,
