@@ -63,14 +63,15 @@ def _test_downscaling():
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input file")
+    parser.add_argument("--kernel-size", type=int, default=2, help="kernel size")
     args = parser.parse_args()
     x = io.read_image(args.input, io.ImageReadMode.RGB)
     x = (x / 255.0)
-    pad_h = x.shape[1] % 2
-    pad_w = x.shape[2] % 2
+    pad_h = x.shape[1] % args.kernel_size
+    pad_w = x.shape[2] % args.kernel_size
     if pad_h != 0 or pad_w != 0:
         x = TF.pad(x, (0, 0, pad_w, pad_h), padding_mode="edge")
-    z = soft_pool2d(x.unsqueeze(0), 2)
+    z = soft_pool2d(x.unsqueeze(0), args.kernel_size)
     z = torch.clamp(z, 0, 1).squeeze(0)
     TF.to_pil_image(z.squeeze(0)).show()
 
