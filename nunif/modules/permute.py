@@ -139,7 +139,7 @@ def window_partition2d(x, window_size):
     x = x.reshape(B, C, oh, SH, ow, SW)
     # B, oh, ow, C, SH, SW
     x = x.permute(0, 2, 4, 1, 3, 5)
-    # B, (SH, SW), C, oh, ow
+    # B, (oh, ow), C, SH, SW
     x = x.reshape(B, oh * ow, C, SH, SW)
 
     return x
