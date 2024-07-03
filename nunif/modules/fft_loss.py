@@ -7,6 +7,7 @@ from . weighted_loss import WeightedLoss
 from . gradient_loss import GradientLoss
 from . color import RGBToYRGB, rgb_to_yrgb
 from . lbp_loss import YLBP
+from . permute import window_partition2d
 
 # ref. Rethinking Coarse-to-Fine Approach in Single Image Deblurring
 # https://arxiv.org/abs/2108.05054
@@ -15,7 +16,10 @@ from . lbp_loss import YLBP
 fp16_max_value = torch.finfo(torch.float16).max - 1
 
 
-def fft_loss(input, target, norm="backward"):
+def fft_loss(input, target, norm="backward", padding=0):
+    if padding > 0:
+        input = F.pad(input, [padding] * 4)
+        target = F.pad(target, [padding] * 4)
     if input.dtype == torch.float16:
         input = torch.fft.fft2(input.to(torch.float32), norm=norm, dim=(-2, -1))
         target = torch.fft.fft2(target.to(torch.float32), norm=norm, dim=(-2, -1))
@@ -31,50 +35,72 @@ def fft_loss(input, target, norm="backward"):
     return loss
 
 
+def window_fft_loss(input, target, window_size=8, norm="backward", padding=0):
+    input = window_partition2d(input, window_size=window_size)
+    target = window_partition2d(target, window_size=window_size)
+    B, N, C, H, W = input.shape
+    input = input.reshape(B * N, C, H, W).contiguous()
+    target = target.reshape(B * N, C, H, W).contiguous()
+    return fft_loss(input, target, norm=norm, padding=padding)
+
+
 class FFTLoss(nn.Module):
     # BCHW or CHW
-    def __init__(self, norm="backward"):
+    def __init__(self, norm="backward", window_size=None, padding=0):
         super().__init__()
         self.norm = norm
+        self.window_size = window_size
+        self.padding = padding
 
     def forward(self, input, target):
-        return fft_loss(input, target, norm=self.norm)
+        if self.window_size is not None:
+            return window_fft_loss(input, target, window_size=self.window_size, norm=self.norm, padding=self.padding)
+        else:
+            return fft_loss(input, target, norm=self.norm, padding=self.padding)
 
 
 class LBPFFTLoss(nn.Module):
-    def __init__(self, kernel_size=3, weight=0.1, norm="backward"):
+    def __init__(self, kernel_size=3, weight=0.1, norm="backward", window_size=None, padding=0):
         super().__init__()
         self.norm = norm
         self.lbp = YLBP(kernel_size=kernel_size)
         self.weight = weight
+        self.window_size = window_size
+        self.padding = padding
 
     def forward(self, input, target):
         lbp = self.lbp(input, target)
-        fft = fft_loss(rgb_to_yrgb(input), rgb_to_yrgb(target), norm=self.norm)
+        if self.window_size is not None:
+            fft = window_fft_loss(rgb_to_yrgb(input), rgb_to_yrgb(target),
+                                  window_size=self.window_size, norm=self.norm, padding=self.padding)
+        else:
+            fft = fft_loss(rgb_to_yrgb(input), rgb_to_yrgb(target), norm=self.norm, padding=self.padding)
         return lbp + fft * self.weight
 
 
-def L1FFTLoss(weight=0.1, norm="backward"):
-    return WeightedLoss((nn.L1Loss(), FFTLoss(norm=norm)), weights=(1.0, weight))
+def L1FFTLoss(weight=0.1, norm="backward", window_size=None, padding=0):
+    return WeightedLoss((nn.L1Loss(), FFTLoss(norm=norm, window_size=window_size, padding=padding)), weights=(1.0, weight))
 
 
-def YRGBL1FFTLoss(weight=0.1, norm="backward"):
-    return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm)),
+def YRGBL1FFTLoss(weight=0.1, norm="backward", window_size=None, padding=0):
+    return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm, window_size=window_size, padding=padding)),
                         weights=(1.0, weight), preprocess=RGBToYRGB())
 
 
-def YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, norm="backward", diag=False):
-    return WeightedLoss((ClampLoss(nn.L1Loss()), FFTLoss(norm=norm), ClampLoss(GradientLoss(diag=diag))),
+def YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, norm="backward", diag=False, window_size=None, padding=0):
+    return WeightedLoss((ClampLoss(nn.L1Loss()),
+                         FFTLoss(norm=norm, window_size=window_size, padding=padding),
+                         ClampLoss(GradientLoss(diag=diag))),
                         weights=(1.0, fft_weight, grad_weight), preprocess=RGBToYRGB())
 
 
 class MultiscaleL1FFTLoss(nn.Module):
     def __init__(self, scale_factors=(1, 2), weights=(0.5, 0.5),
                  mode="bilinear",
-                 fft_weight=0.1, norm="backward"):
+                 fft_weight=0.1, norm="backward", window_size=None, padding=0):
         super().__init__()
         self.loss = MultiscaleLoss(
-            L1FFTLoss(weight=fft_weight, norm=norm),
+            L1FFTLoss(weight=fft_weight, norm=norm, window_size=window_size, padding=padding),
             scale_factors=scale_factors, weights=weights, mode=mode)
 
     def forward(self, input, target):
@@ -89,6 +115,9 @@ def _test():
 
     with torch.autocast(device_type="cuda"):
         print(criterion(x, t))
+
+    criterion = FFTLoss(window_size=8, padding=8).cuda()
+    print(criterion(x, t))
 
 
 if __name__ == "__main__":

@@ -120,9 +120,10 @@ class WincUNetBase(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96,
                  lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
                  first_layers=2, last_layers=3,
-                 scale_factor=2, layer_norm=False):
+                 scale_factor=2, layer_norm=False, ftf_loss=False):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
+        self.ftf_loss = ftf_loss
         C = base_dim
         C2 = int(C * lv2_ratio)
         # assert C % 32 == 0 and C2 % 32 == 0  # slow when C % 32 != 0
@@ -162,6 +163,12 @@ class WincUNetBase(nn.Module):
         x = x + self.wac1_proj(x1)
         x = self.wac3(x)
         z = self.to_image(x)
+
+        if self.training and self.ftf_loss:
+            # follow the future output in shallow layer
+            ftf_loss = F.l1_loss(x1, x.detach())
+            return z, ftf_loss * 0.2
+
         return z
 
 
@@ -215,6 +222,7 @@ class WincUNet4x(I2IBaseModel):
 
     def __init__(self, in_channels=3, out_channels=3,
                  base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=3,
+                 ftf_loss=False,
                  **kwargs):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
         self.in_channels = in_channels
@@ -222,7 +230,7 @@ class WincUNet4x(I2IBaseModel):
         self.unet = WincUNetBase(in_channels, out_channels=out_channels,
                                  base_dim=base_dim,
                                  lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                 scale_factor=4)
+                                 scale_factor=4, ftf_loss=ftf_loss)
 
     def forward(self, x):
         z = self.unet(x)
@@ -296,6 +304,11 @@ register_model_factory(
 register_model_factory(
     "waifu2x.winc_unet_1x_small",
     lambda **kwargs: WincUNet1x(base_dim=32, first_layers=1, last_layers=1, lv1_mlp_ratio=1, lv2_mlp_ratio=1, **kwargs))
+
+
+register_model_factory(
+    "waifu2x.winc_unet_4x_ftf",
+    lambda **kwargs: WincUNet4x(ftf_loss=True))
 
 
 def _bench(name, compile):

@@ -120,8 +120,24 @@ def create_criterion(loss):
         ], weight=(1.0, 1.0))
     elif loss == "lbpfft":
         criterion = LBPFFTLoss(kernel_size=3, weight=0.05)
+    elif loss == "lbpwfft":
+        # except size=112 output 192
+        criterion = LBPFFTLoss(kernel_size=3, window_size=96, padding=0, weight=0.05)
     elif loss == "lbp5fft":
         criterion = LBPFFTLoss(kernel_size=5, weight=0.05)
+    elif loss == "aux_lbp5fft_ident":
+        criterion = AuxiliaryLoss([
+            LBPFFTLoss(kernel_size=5, weight=0.05),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
+    elif loss == "lbp5wfft":
+        # except size=112 output 384
+        criterion = LBPFFTLoss(kernel_size=5, window_size=96, padding=0, weight=0.05)
+    elif loss == "aux_lbp5wfft_ident":
+        criterion = AuxiliaryLoss([
+            LBPFFTLoss(kernel_size=5, window_size=96, padding=0, weight=0.05),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
     elif loss == "ident":
         # loss is computed in model.forward()
         criterion = IdentityLoss()
@@ -525,7 +541,9 @@ class Waifu2xTrainer(Trainer):
                 da_antialias_p=self.args.da_antialias_p,
                 da_hflip_only=self.args.da_hflip_only,
                 da_cutmix_p=self.args.da_cutmix_p,
+                fixed_deblur=self.args.fixed_deblur,
                 deblur=self.args.deblur,
+                resize_blur_range=self.args.resize_blur_range,
                 resize_blur_p=self.args.resize_blur_p,
                 resize_step_p=self.args.resize_step_p,
                 resize_no_antialias_p=self.args.resize_no_antialias_p,
@@ -553,7 +571,9 @@ class Waifu2xTrainer(Trainer):
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
+                fixed_deblur=self.args.fixed_deblur,
                 deblur=self.args.deblur,
+                resize_blur_range=self.args.resize_blur_range,
                 return_no_offset_y=False,
                 training=False)
             dataloader = torch.utils.data.DataLoader(
@@ -688,11 +708,11 @@ def register(subparsers, default_parser):
                                  "y_charbonnier", "charbonnier",
                                  "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
                                  "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
-                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp", "lbpfft", "lbp5fft",
+                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp", "lbpfft", "lbpwfft", "lbp5fft", "lbp5wfft",
                                  "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad",
                                  "y_l1fftgradm", "aux_y_l1fftgrad",
                                  "y_l1grad",
-                                 "aux_l1fftgrad_ident", "aux_lbp_ident",
+                                 "aux_l1fftgrad_ident", "aux_lbp_ident", "aux_lbp5fft_ident", "aux_lbp5wfft_ident",
                                  "ident",
                                  ],
                         help="loss function")
@@ -715,10 +735,18 @@ def register(subparsers, default_parser):
     parser.add_argument("--da-cutmix-p", type=float, default=0.0,
                         help="random cutmix data augmentation for gt image")
 
+    parser.add_argument("--fixed-deblur", type=float, default=0.0,
+                        help=("fixed shift parameter of resize blur."
+                              "deblur = 1 + fixed_deblur"))
     parser.add_argument("--deblur", type=float, default=0.0,
-                        help=("shift parameter of resize blur."
-                              " 0.0-0.1 is a reasonable value."
-                              " blur = uniform(0.95 + deblur, 1.05 + deblur)."
+                        help=("shift parameter of random resize blur."
+                              " 0.0-0.05 is a reasonable value. "
+                              "see --resize-blur-range for details"))
+    parser.add_argument("--resize-blur-range", type=float, nargs="+", default=[0.05],
+                        help=("max shift of random resize blur."
+                              " blur = 1 + fixed_deblur + uniform(-resize_blur_range + deblur, resize_blur_range + deblur)."
+                              " or "
+                              " blur = 1 + fixed_deblur + uniform(resize_blur_range[0] + deblur, resize_blur_range[1] + deblur)."
                               " blur >= 1 is blur, blur <= 1 is sharpen. mean 1 by default"))
     parser.add_argument("--resize-blur-p", type=float, default=0.1,
                         help=("probability that resize blur should be used"))

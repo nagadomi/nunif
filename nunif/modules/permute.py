@@ -128,6 +128,23 @@ def bnc_to_bchw(x, out_shape, window_size):
     return x
 
 
+def window_partition2d(x, window_size):
+    B, C, H, W = x.shape
+    SH, SW = window_size if isinstance(window_size, (list, tuple)) else [window_size, window_size]
+    assert H % SH == 0 and W % SW == 0
+
+    oh = H // SH
+    ow = W // SW
+    # B, C, oh, SH, ow, SW
+    x = x.reshape(B, C, oh, SH, ow, SW)
+    # B, oh, ow, C, SH, SW
+    x = x.permute(0, 2, 4, 1, 3, 5)
+    # B, (oh, ow), C, SH, SW
+    x = x.reshape(B, oh * ow, C, SH, SW)
+
+    return x
+
+
 def _test_bhwc():
     src = x = torch.rand((4, 3, 2, 2))
     x = bchw_to_bhwc(x)
