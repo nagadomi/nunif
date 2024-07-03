@@ -670,6 +670,10 @@ def train(args):
         else:
             args.loss = "y_charbonnier"
 
+    if args.b4b:
+        # disable random resize blur
+        args.resize_blur_p = 0.0
+
     trainer = Waifu2xTrainer(args)
     trainer.fit()
 
