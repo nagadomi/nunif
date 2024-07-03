@@ -367,14 +367,16 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
             args.divergence, convergence=args.convergence,
             method=args.method)
     else:
-        if args.stereo_width and depth.shape[3] != args.stereo_width:
+        if args.stereo_width is not None:
             # NOTE: use src aspect ratio instead of depth aspect ratio
             H, W = im_org.shape[2:]
-            new_w = args.stereo_width
-            new_h = int(H * (args.stereo_width / W))
-            depth = F.interpolate(depth, size=(new_h, new_w),
-                                  mode="bilinear", align_corners=True, antialias=True)
-            depth = torch.clamp(depth, 0, 1)
+            stereo_width = min(W, args.stereo_width)
+            if depth.shape[3] != stereo_width:
+                new_w = stereo_width
+                new_h = int(H * (stereo_width / W))
+                depth = F.interpolate(depth, size=(new_h, new_w),
+                                      mode="bilinear", align_corners=True, antialias=True)
+                depth = torch.clamp(depth, 0, 1)
         left_eye, right_eye = apply_divergence_nn_LR(
             side_model, im_org, depth,
             args.divergence, args.convergence,
