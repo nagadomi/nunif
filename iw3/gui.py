@@ -173,6 +173,13 @@ class MainFrame(wx.Frame):
                                       style=wx.CB_READONLY, name="cbo_method")
         self.cbo_method.SetSelection(0)
 
+        self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Procesing Width"))
+        self.cbo_stereo_width = EditableComboBox(self.grp_stereo,
+                                                 choices=["Default", "1920", "1280", "640"],
+                                                 name="cbo_stereo_width")
+        self.cbo_stereo_width.SetSelection(0)
+        self.cbo_stereo_width.SetToolTip(T("Only used for row_flow_v3 and row_flow_v2"))
+
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
         depth_models = [
             "ZoeD_N", "ZoeD_K", "ZoeD_NK",
@@ -245,7 +252,7 @@ class MainFrame(wx.Frame):
 
         self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
 
-        layout = wx.FlexGridSizer(rows=10, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=11, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -254,6 +261,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.sld_ipd_offset, 1, wx.EXPAND)
         layout.Add(self.lbl_method, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_method, 1, wx.EXPAND)
+        layout.Add(self.lbl_stereo_width, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stereo_width, 1, wx.EXPAND)
         layout.Add(self.lbl_depth_model, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_depth_model, 1, wx.EXPAND)
         layout.Add(self.lbl_zoed_resolution, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -536,7 +545,9 @@ class MainFrame(wx.Frame):
             self.cbo_divergence,
             self.cbo_convergence,
             self.cbo_zoed_resolution,
+            self.cbo_stereo_width,
             self.cbo_edge_dilation,
+            self.cbo_ema_decay,
             self.cbo_fps,
             self.cbo_crf,
         ]
@@ -794,6 +805,15 @@ class MainFrame(wx.Frame):
                 return
             zoed_height = int(zoed_height)
 
+        stereo_width = self.cbo_stereo_width.GetValue()
+        if stereo_width == "Default" or stereo_width == "":
+            stereo_width = None
+        else:
+            if not validate_number(stereo_width, 320, 8190, is_int=True, allow_empty=False):
+                self.show_validation_error_message(T("Stereo processing Width"), 320, 8190)
+                return
+            stereo_width = int(stereo_width)
+
         parser = create_parser(required_true=False)
 
         vr180 = self.cbo_stereo_format.GetValue() == "VR90"
@@ -908,6 +928,7 @@ class MainFrame(wx.Frame):
             gpu=device_id,
             zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
             zoed_height=zoed_height,
+            stereo_width=stereo_width,
             max_workers=int(self.cbo_max_workers.GetValue()),
             tta=self.chk_tta.GetValue(),
             disable_amp=not self.chk_fp16.GetValue(),

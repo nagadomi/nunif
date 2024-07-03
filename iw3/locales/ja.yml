@@ -29,6 +29,8 @@
 "Method": "メソッド"
 "Depth Model": "深度推定モデル"
 "Depth Mapping": "深度の割当"
+"Stereo Procesing Width": "ステレオ処理幅"
+"Only used for row_flow_v3 and row_flow_v2": "row_flow_v3とrow_flow_v2でのみ使用"
 "Foreground Scale": "前景拡大"
 "Edge Fix": "境界修正"
 "Reduce distortion of foreground and background edges": "前景と背景の境界の歪みを減らす"
