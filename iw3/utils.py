@@ -124,7 +124,7 @@ def equirectangular_projection(c, device="cpu"):
 
 def backward_warp(c, grid, delta, delta_scale):
     grid = grid + delta * delta_scale
-    if c.shape[2] != grid.shape[2] or c.shape[3] != grid.shape[2]:
+    if c.shape[2] != grid.shape[2] or c.shape[3] != grid.shape[3]:
         grid = F.interpolate(grid, size=c.shape[-2:],
                              mode="bilinear", align_corners=True, antialias=False)
     grid = grid.permute(0, 2, 3, 1)
@@ -367,6 +367,14 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
             args.divergence, convergence=args.convergence,
             method=args.method)
     else:
+        if args.stereo_width and depth.shape[3] != args.stereo_width:
+            # NOTE: use src aspect ratio instead of depth aspect ratio
+            H, W = im_org.shape[2:]
+            new_w = args.stereo_width
+            new_h = int(H * (args.stereo_width / W))
+            depth = F.interpolate(depth, size=(new_h, new_w),
+                                  mode="bilinear", align_corners=True, antialias=True)
+            depth = torch.clamp(depth, 0, 1)
         left_eye, right_eye = apply_divergence_nn_LR(
             side_model, im_org, depth,
             args.divergence, args.convergence,
@@ -1244,7 +1252,9 @@ def create_parser(required_true=True):
     parser.add_argument("--end-time", type=str,
                         help="set the end time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--zoed-height", type=int,
-                        help="input height for ZoeDepth model")
+                        help="input resolution(small side) for depth model")
+    parser.add_argument("--stereo-width", type=int,
+                        help="input width for row_flow_v3/row_flow_v2 model")
     parser.add_argument("--ipd-offset", type=float, default=0,
                         help="IPD Offset (width scale %%). 0-10 is reasonable value for Full SBS")
     parser.add_argument("--ema-normalize", action="store_true",
