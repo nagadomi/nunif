@@ -121,11 +121,23 @@ def create_criterion(loss):
     elif loss == "lbpfft":
         criterion = LBPFFTLoss(kernel_size=3, weight=0.05)
     elif loss == "lbpwfft":
-        criterion = LBPFFTLoss(kernel_size=3, window_size=48, padding=8, weight=0.05)
+        # except size=112 output 192
+        criterion = LBPFFTLoss(kernel_size=3, window_size=96, padding=0, weight=0.05)
     elif loss == "lbp5fft":
         criterion = LBPFFTLoss(kernel_size=5, weight=0.05)
+    elif loss == "aux_lbp5fft_ident":
+        criterion = AuxiliaryLoss([
+            LBPFFTLoss(kernel_size=5, weight=0.05),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
     elif loss == "lbp5wfft":
-        criterion = LBPFFTLoss(kernel_size=5, window_size=48, padding=8, weight=0.05)
+        # except size=112 output 384
+        criterion = LBPFFTLoss(kernel_size=5, window_size=96, padding=0, weight=0.05)
+    elif loss == "aux_lbp5wfft_ident":
+        criterion = AuxiliaryLoss([
+            LBPFFTLoss(kernel_size=5, window_size=96, padding=0, weight=0.05),
+            IdentityLoss(),
+        ], weight=(1.0, 1.0))
     elif loss == "ident":
         # loss is computed in model.forward()
         criterion = IdentityLoss()
@@ -700,7 +712,7 @@ def register(subparsers, default_parser):
                                  "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad",
                                  "y_l1fftgradm", "aux_y_l1fftgrad",
                                  "y_l1grad",
-                                 "aux_l1fftgrad_ident", "aux_lbp_ident",
+                                 "aux_l1fftgrad_ident", "aux_lbp_ident", "aux_lbp5fft_ident", "aux_lbp5wfft_ident",
                                  "ident",
                                  ],
                         help="loss function")
