@@ -83,6 +83,7 @@ class PatchToCondition(nn.Module):
 
 
 def dinov2_add_patch(x, cond):
+    cond = F.leaky_relu(x, 0.1, inplace=False)
     cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
     return x + cond
 
@@ -257,8 +258,8 @@ class L3V1DINOConditionalDiscriminator(Discriminator):
 
     def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
-        self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels, feature_se_block=False)
-        self.v1 = V1Discriminator(in_channels=in_channels, out_channels=out_channels, se_block=False)
+        self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels)
+        self.v1 = V1Discriminator(in_channels=in_channels, out_channels=out_channels)
         self.dino_patch = DINOPatch()
         self.to_cond_l3 = PatchToCondition(32, [64, 256])
         self.to_cond_v1 = PatchToCondition(32, [64, 128])
