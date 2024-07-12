@@ -557,6 +557,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         return VU.VideoOutputConfig(
             fps=fps,
             pix_fmt=args.pix_fmt,
+            colorspace=args.x264_colorspace,
             options=options,
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
@@ -1271,7 +1272,10 @@ def create_parser(required_true=True):
                         help="video container format")
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")
-
+    parser.add_argument("--x264-colorspace", type=str, default="auto",
+                        choices=["auto", "copy", "undefined", "bt709", "bt601"],
+                        help=("Add colorprim=bt709:transfer=bt709:colormatrix=bt709 option. "
+                              "Note that this option does not actually convert the colorspace"))
     return parser
 
 

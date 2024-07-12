@@ -38,6 +38,19 @@ def list_videos(directory, extensions=VIDEO_EXTENSIONS):
     )
 
 
+def is_bt709(stream):
+    return (stream.codec_context.color_primaries == 1 and
+            stream.codec_context.color_trc == 1 and
+            stream.codec_context.colorspace == 1)
+
+
+def is_bt601(stream):
+    # bt470bg/bt470bg/smpte170m
+    return (stream.codec_context.color_primaries == 5 and
+            stream.codec_context.color_trc == 6 and
+            stream.codec_context.colorspace == 5)
+
+
 def get_fps(stream):
     return stream.guessed_rate
 
@@ -175,13 +188,14 @@ class FixedFPSFilter():
 
 class VideoOutputConfig():
     def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={},
-                 output_width=None, output_height=None):
+                 output_width=None, output_height=None, colorspace=None):
         self.pix_fmt = pix_fmt
         self.fps = fps
         self.options = options
         self.container_options = container_options
         self.output_width = output_width
         self.output_height = output_height
+        self.colorspace = colorspace
 
     def __repr__(self):
         return "VideoOutputConfig({!r})".format(self.__dict__)
@@ -253,6 +267,32 @@ def parse_time(s):
 
 
 # TODO: correct colorspace transform
+def set_colorspace(output_stream, input_stream, config):
+    if config.pix_fmt == "rgb24":
+        # skip
+        return
+
+    colorspace = config.colorspace
+    if input_stream is not None and colorspace == "auto":
+        if is_bt601(input_stream):
+            colorspace = "bt601"
+        elif is_bt709(input_stream):
+            colorspace = "bt709"
+        else:
+            # undefined
+            pass
+    if colorspace == "bt709":
+        output_stream.codec_context.color_primaries = 1
+        output_stream.codec_context.color_trc = 1
+        output_stream.codec_context.colorspace = 1
+    elif colorspace == "bt601":
+        output_stream.codec_context.color_primaries = 5
+        output_stream.codec_context.color_trc = 6
+        output_stream.codec_context.colorspace = 5
+    elif input_stream is not None and colorspace == "copy":
+        output_stream.codec_context.color_primaries = input_stream.codec_context.color_primaries
+        output_stream.codec_context.color_trc = input_stream.codec_context.color_trc
+        output_stream.codec_context.colorspace = input_stream.codec_context.colorspace
 
 
 def process_video(input_path, output_path,
@@ -317,6 +357,8 @@ def process_video(input_path, output_path,
     video_output_stream.width = output_size[0]
     video_output_stream.height = output_size[1]
     video_output_stream.options = config.options
+    set_colorspace(video_output_stream, video_input_stream, config)
+
     if audio_input_stream is not None:
         if audio_input_stream.rate < 16000:
             audio_output_stream = output_container.add_stream("aac", 16000)
