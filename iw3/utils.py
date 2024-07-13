@@ -582,7 +582,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         return VU.VideoOutputConfig(
             fps=fps,
             pix_fmt=args.pix_fmt,
-            colorspace=args.x264_colorspace,
+            colorspace=args.colorspace,
             options=options,
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
@@ -898,7 +898,8 @@ def export_video(args):
         if float(fps) > args.max_fps:
             fps = args.max_fps
         config.fps = fps  # update fps
-        return VU.VideoOutputConfig(fps=fps)
+
+        return VU.VideoOutputConfig(fps=fps, colorspace=args.colorspace)
 
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
     preprocess_lock = threading.Lock()
@@ -1079,6 +1080,7 @@ def process_config_video(config, args, side_model):
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
         pix_fmt=args.pix_fmt,
+        colorspace=args.colorspace,
         options=encoder_options,
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
@@ -1357,10 +1359,11 @@ def create_parser(required_true=True):
                         help="video container format")
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")
-    parser.add_argument("--x264-colorspace", type=str, default="auto",
-                        choices=["auto", "copy", "undefined", "bt709", "bt601"],
-                        help=("Add colorprim=bt709:transfer=bt709:colormatrix=bt709 option. "
-                              "Note that this option does not actually convert the colorspace"))
+    # TODO: Change the default value from "undefined" to "auto"
+    parser.add_argument("--colorspace", type=str, default="undefined",
+                        choices=["undefined", "auto",
+                                 "bt709-pc", "bt709-tv", "bt601-pc", "bt601-tv"],
+                        help="video colorspace")
     return parser
 
 
