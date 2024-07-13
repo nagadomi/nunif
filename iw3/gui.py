@@ -14,7 +14,7 @@ import wx.lib.agw.persist as persist
 from wx.lib.buttons import GenBitmapButton
 from .utils import (
     create_parser, set_state_args, iw3_main,
-    is_text, is_video, is_output_dir, make_output_filename,
+    is_text, is_video, is_output_dir, is_yaml, make_output_filename,
     has_rembg_model)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
@@ -608,7 +608,19 @@ class MainFrame(wx.Frame):
             self.chk_resume.Enable()
             self.chk_recursive.Disable()
         else:
-            if path.isdir(input_path) or is_text(input_path):
+            if is_yaml(input_path):
+                try:
+                    config = export_config.ExportConfig.load(input_path)
+                    if config.type == export_config.IMAGE_TYPE:
+                        self.chk_resume.Enable()
+                        self.chk_recursive.Disable()
+                    else:
+                        self.chk_resume.Disable()
+                        self.chk_recursive.Disable()
+                except:  # noqa
+                    self.chk_resume.Disable()
+                    self.chk_recursive.Disable()
+            elif path.isdir(input_path) or is_text(input_path):
                 self.chk_resume.Enable()
                 self.chk_recursive.Enable()
             else:
@@ -877,7 +889,7 @@ class MainFrame(wx.Frame):
             max_output_width, max_output_height = [int(s) for s in max_output_size.split("x")]
 
         input_path = self.txt_input.GetValue()
-        resume = (path.isdir(input_path) or is_text(input_path) or export or export_disparity) and self.chk_resume.GetValue()
+        resume = self.chk_resume.IsEnabled() and self.chk_resume.GetValue()
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
