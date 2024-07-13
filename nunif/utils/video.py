@@ -41,6 +41,11 @@ def list_videos(directory, extensions=VIDEO_EXTENSIONS):
     )
 
 
+# define BT2020
+if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and 9 not in Colorspace._by_value:
+    Colorspace._create("BT2020", 9)
+
+
 def is_bt709(stream):
     return (stream.codec_context.color_primaries == 1 and
             stream.codec_context.color_trc == 1 and
