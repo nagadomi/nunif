@@ -494,6 +494,24 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
     os.makedirs(output_dir, exist_ok=True)
+
+    if args.resume:
+        # skip existing output files
+        remaining_files = []
+        existing_files = []
+        for fn in files:
+            output_filename = path.join(
+                output_dir,
+                make_output_filename(path.basename(fn), args, video=False))
+            if not path.exists(output_filename):
+                remaining_files.append(fn)
+            else:
+                existing_files.append(fn)
+        if existing_files:
+            # The last file may be corrupt, so process it again
+            remaining_files.insert(0, existing_files[0])
+        files = remaining_files
+
     loader = ImageLoader(
         files=files,
         load_func=load_image_simple,
@@ -507,7 +525,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             output_filename = path.join(
                 output_dir,
                 make_output_filename(filename, args, video=False))
-            if im is None or (args.resume and path.exists(output_filename)):
+            if im is None:
+                pbar.update(1)
                 continue
             output = process_image(im, args, depth_model, side_model)
             f = pool.submit(save_image, output, output_filename)
@@ -765,6 +784,7 @@ def export_images(args):
             basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
             depth_file = path.join(depth_dir, basename)
             if im is None:
+                pbar.update(1)
                 continue
             im_org, im = preprocess_image(im, args)
             depth = args.state["depth_utils"].batch_infer(
