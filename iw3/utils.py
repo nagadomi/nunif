@@ -31,6 +31,8 @@ ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3
 ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
 ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240424.pth"
 
+IMAGE_IO_QUEUE_MAX = 100
+
 
 def normalize_depth(depth, depth_min=None, depth_max=None):
     depth = depth.float()
@@ -514,6 +516,10 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             pbar.update(1)
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 break
+            if len(futures) > IMAGE_IO_QUEUE_MAX:
+                for f in futures:
+                    f.result()
+                futures = []
         for f in futures:
             f.result()
     pbar.close()
@@ -778,6 +784,10 @@ def export_images(args):
             pbar.update(1)
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 break
+            if len(futures) > IMAGE_IO_QUEUE_MAX:
+                for f in futures:
+                    f.result()
+                futures = []
 
         for f in futures:
             f.result()
@@ -1149,6 +1159,10 @@ def process_config_images(config, args, side_model):
                 pbar.update(1)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     break
+                if len(futures) > IMAGE_IO_QUEUE_MAX:
+                    for f in futures:
+                        f.result()
+                    futures = []
             for f in futures:
                 f.result()
             pbar.close()
