@@ -190,6 +190,12 @@ JPEG have the same problem so I recommend using PNG (by default) instead.
 
 Also, `--convergence 0.5 --divergence 2.0` is recommended.
 
+## Export and Export Disparity
+
+Export and Export Disparity are features to output depth and frame images.
+
+See https://github.com/nagadomi/nunif/issues/97#issuecomment-2027349722 for details at the moment.
+
 ## Trouble shooting
 
 ### Very flat foreground
