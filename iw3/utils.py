@@ -1147,6 +1147,8 @@ def process_config_images(config, args, side_model):
                 f = pool.submit(save_image, sbs, output_filename)
                 futures.append(f)
                 pbar.update(1)
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    break
             for f in futures:
                 f.result()
             pbar.close()
