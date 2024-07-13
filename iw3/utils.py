@@ -684,7 +684,15 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
         process_video_full(input_filename, output_path, args, depth_model, side_model)
 
 
-def export_images(files, args):
+def export_images(args):
+    if path.isdir(args.input):
+        files = ImageLoader.listdir(args.input)
+        rgb_dir = path.normpath(path.abspath(args.input))
+    else:
+        assert is_image(args.input)
+        files = [args.input]
+        rgb_dir = path.normpath(path.abspath(path.dirname(args.input)))
+
     if args.export_disparity:
         mapper = "none"
         edge_dilation = args.edge_dilation
@@ -695,6 +703,7 @@ def export_images(files, args):
         edge_dilation = 0
         skip_edge_dilation = False
         skip_mapper = False
+
     config = export_config.ExportConfig(
         type=export_config.IMAGE_TYPE,
         fps=1,
@@ -711,15 +720,31 @@ def export_images(files, args):
             }
         }
     )
+    config.rgb_dir = rgb_dir
     config.audio_file = None
     output_dir = args.output
-    rgb_dir = path.join(output_dir, config.rgb_dir)
     depth_dir = path.join(output_dir, config.depth_dir)
     config_file = path.join(output_dir, export_config.FILENAME)
 
-    os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
     depth_model = args.state["depth_model"]
+
+    if args.resume:
+        # skip existing depth files
+        remaining_files = []
+        existing_files = []
+        for fn in files:
+            basename = path.splitext(path.basename(fn))[0] + ".png"
+            depth_file = path.join(depth_dir, basename)
+            if not path.exists(depth_file):
+                remaining_files.append(fn)
+            else:
+                existing_files.append(fn)
+
+        if existing_files:
+            # The last file may be corrupt, so process it again
+            remaining_files.insert(0, existing_files[0])
+        files = remaining_files
 
     loader = ImageLoader(
         files=files,
@@ -728,14 +753,13 @@ def export_images(files, args):
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc="Images")
+
     with PoolExecutor(max_workers=4) as pool, torch.inference_mode():
         for im, meta in loader:
             basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
-            rgb_file = path.join(rgb_dir, basename)
             depth_file = path.join(depth_dir, basename)
-            if im is None or (args.resume and path.exists(rgb_file) and path.exists(rgb_file)):
+            if im is None:
                 continue
-
             im_org, im = preprocess_image(im, args)
             depth = args.state["depth_utils"].batch_infer(
                 depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
@@ -750,9 +774,7 @@ def export_images(files, args):
                 depth = get_mapper(args.mapper)(depth)
             depth = convert_normalized_depth_to_uint16_numpy(depth.detach().cpu()[0])
             depth = Image.fromarray(depth)
-            im_org = TF.to_pil_image(im_org)
             futures.append(pool.submit(save_image, depth, depth_file))
-            futures.append(pool.submit(save_image, im_org, rgb_file))
             pbar.update(1)
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 break
@@ -1062,8 +1084,16 @@ def process_config_video(config, args, side_model):
 def process_config_images(config, args, side_model):
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, _ = config.resolve_paths(base_dir)
-    rgb_files = ImageLoader.listdir(rgb_dir)
-    depth_files = ImageLoader.listdir(depth_dir)
+    def fix_rgb_depth_pair(files1, files2):
+        # files1 and file2 are sorted
+        db1 = {path.basename(fn): fn for fn in files1}
+        db2 = {path.basename(fn): fn for fn in files2}
+        files2 = [fn for key, fn in db2.items() if key in db1]
+        files1 = [fn for key, fn in db1.items() if key in db2]
+        return files1, files2
+
+    rgb_files, depth_files = fix_rgb_depth_pair(ImageLoader.listdir(rgb_dir),
+                                                ImageLoader.listdir(depth_dir))
     if len(rgb_files) != len(depth_files):
         raise ValueError(f"No match rgb_files={len(rgb_files)} and depth_files={len(depth_files)}")
     if len(rgb_files) == 0:
@@ -1327,13 +1357,12 @@ def export_main(args):
     if is_text(args.input):
         raise NotImplementedError("--export with text format input is not supported")
 
-    if path.isdir(args.input):
-        image_files = ImageLoader.listdir(args.input)
-        export_images(image_files, args)
-    elif is_image(args.input):
-        export_images([args.input], args)
+    if path.isdir(args.input) or is_image(args.input):
+        export_images(args)
     elif is_video(args.input):
         export_video(args)
+    else:
+        raise ValueError("Unrecognized file type")
 
 
 def is_yaml(filename):
