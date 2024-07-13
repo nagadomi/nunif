@@ -19,6 +19,8 @@ mimetypes.add_type("video/3gpp", ".3gp")
 mimetypes.add_type("video/ogg", ".ogg")
 mimetypes.add_type("video/3gpp2", ".3g2")
 mimetypes.add_type("video/m2ts", ".m2ts")
+mimetypes.add_type("video/m2ts", ".m2t")
+mimetypes.add_type("video/m2ts", ".mts")
 mimetypes.add_type("video/m2ts", ".ts")
 mimetypes.add_type("video/vnd.rn-realmedia", ".rm")  # fake
 mimetypes.add_type("video/x-flv", ".flv")  # Not defined on Windows
@@ -546,7 +548,7 @@ def hook_frame(input_path,
 
     input_container = av.open(input_path)
     if input_container.duration:
-        container_duration = float(input_container.duration * av.time_base)
+        container_duration = float(input_container.duration / av.time_base)
     else:
         container_duration = None
 
