@@ -47,6 +47,11 @@ def get_fps(stream):
 def guess_frames(stream, fps=None, start_time=None, end_time=None, container_duration=None):
     fps = fps or get_fps(stream)
     duration = get_duration(stream, container_duration, to_int=False)
+
+    if duration is None:
+        # N/A
+        return -1
+
     if start_time is not None and end_time is not None:
         duration = min(end_time, duration) - start_time
     elif start_time is not None:
@@ -64,6 +69,11 @@ def get_duration(stream, container_duration=None, to_int=True):
         duration = float(stream.duration * stream.time_base)
     else:
         duration = container_duration
+
+    if duration is None:
+        # N/A
+        return -1
+
     if to_int:
         return math.ceil(duration)
     else:
