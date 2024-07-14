@@ -242,8 +242,8 @@ def create_parser(required_true=True):
                         help=("noise update speed (video only)"))
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
                         help=("pixel format (video only)"))
-    parser.add_argument("--colorspace", type=str, default="undefined",
-                        choices=["undefined", "auto",
+    parser.add_argument("--colorspace", type=str, default="unspecified",
+                        choices=["unspecified", "auto",
                                  "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
                         help="video colorspace")
     parser.add_argument("--start-time", type=str,

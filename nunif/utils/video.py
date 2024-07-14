@@ -225,7 +225,7 @@ class VideoOutputConfig():
         if colorspace is not None:
             self.colorspace = colorspace
         else:
-            self.colorspace = "undefined"
+            self.colorspace = "unspecified"
         self.rgb24_options = {}
         self.reformatter = lambda frame: frame
 
@@ -402,12 +402,12 @@ def guess_target_colorspace(input_stream, colorspace_arg, pix_fmt):
 
 
 def configure_colorspace(output_stream, input_stream, config):
-    assert config.colorspace in {"undefined", "auto", "copy",
+    assert config.colorspace in {"unspecified", "auto", "copy",
                                  "bt709", "bt709-tv", "bt709-pc",
                                  "bt601", "bt601-tv", "bt601-pc",
                                  "bt2020", "bt2020-tv", "bt2020-pc"}
 
-    if config.pix_fmt == "rgb24" or config.colorspace == "undefined":
+    if config.pix_fmt == "rgb24" or config.colorspace == "unspecified":
         return
 
     if output_stream is not None:
@@ -431,7 +431,7 @@ def configure_colorspace(output_stream, input_stream, config):
                 dst_colorspace=output_stream.codec_context.colorspace,
                 src_color_range=ColorRange.JPEG, dst_color_range=output_stream.codec_context.color_range)
         elif output_stream.codec_context.color_range in {ColorRange.MPEG.value, ColorRange.JPEG.value}:
-            # colorspace is undefined, use guessed value
+            # colorspace is unspecified, use guessed value
             target_colorspace = guess_colorspace(input_stream)
             if input_stream is not None:
                 config.rgb24_options = guess_rgb24_options(input_stream, target_colorspace=target_colorspace)
@@ -1076,8 +1076,8 @@ def _test_reencode():
     parser.add_argument("--pix-fmt", type=str, default="yuv420p",
                         choices=["yuv420p", "yuv444p", "rgb24"],
                         help="colorspace")
-    parser.add_argument("--colorspace", type=str, default="undefined",
-                        choices=["auto", "undefined", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+    parser.add_argument("--colorspace", type=str, default="unspecified",
+                        choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
                         help="colorspace")
     args = parser.parse_args()
 

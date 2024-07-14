@@ -193,7 +193,7 @@ class MainFrame(wx.Frame):
         self.lbl_colorspace = wx.StaticText(self.grp_video, label=T("Colorspace"))
         self.cbo_colorspace = wx.ComboBox(
             self.grp_video,
-            choices=["auto", "undefined", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+            choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
             style=wx.CB_READONLY, name="cbo_colorspace")
         self.cbo_colorspace.SetSelection(1)
 

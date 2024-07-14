@@ -1359,9 +1359,9 @@ def create_parser(required_true=True):
                         help="video container format")
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")
-    # TODO: Change the default value from "undefined" to "auto"
-    parser.add_argument("--colorspace", type=str, default="undefined",
-                        choices=["undefined", "auto",
+    # TODO: Change the default value from "unspecified" to "auto"
+    parser.add_argument("--colorspace", type=str, default="unspecified",
+                        choices=["unspecified", "auto",
                                  "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
                         help="video colorspace")
     return parser
