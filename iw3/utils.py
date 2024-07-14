@@ -1362,7 +1362,7 @@ def create_parser(required_true=True):
     # TODO: Change the default value from "undefined" to "auto"
     parser.add_argument("--colorspace", type=str, default="undefined",
                         choices=["undefined", "auto",
-                                 "bt709-pc", "bt709-tv", "bt601-pc", "bt601-tv"],
+                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
                         help="video colorspace")
     return parser
 
