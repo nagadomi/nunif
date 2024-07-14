@@ -899,7 +899,14 @@ def export_video(args):
             fps = args.max_fps
         config.fps = fps  # update fps
 
-        return VU.VideoOutputConfig(fps=fps, colorspace=args.colorspace)
+        def state_update_callback(c):
+            config.source_color_range = c.state["source_color_range"]
+            config.output_colorspace = c.state["output_colorspace"]
+
+        video_output_config = VU.VideoOutputConfig(fps=fps, pix_fmt=args.pix_fmt, colorspace=args.colorspace)
+        video_output_config.state_updated = state_update_callback
+
+        return video_output_config
 
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
     preprocess_lock = threading.Lock()
@@ -1086,6 +1093,9 @@ def process_config_video(config, args, side_model):
         output_width=output_width,
         output_height=output_height
     )
+    video_config.state["source_color_range"] = config.source_color_range
+    video_config.state["output_colorspace"] = config.output_colorspace
+
     original_mapper = args.mapper
     try:
         if config.skip_mapper:
