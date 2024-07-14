@@ -480,7 +480,6 @@ def configure_colorspace(output_stream, input_stream, config):
                         reformatter_src_color_range = exported_source_color_range
                     else:
                         reformatter_src_color_range = output_stream.codec_context.color_range
-            print(reformatter_src_color_range, reformatter_src_colorspace)
 
             reformatter = lambda frame: frame.reformat(
                 format=config.pix_fmt,
