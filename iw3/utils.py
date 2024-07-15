@@ -582,6 +582,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         return VU.VideoOutputConfig(
             fps=fps,
             pix_fmt=args.pix_fmt,
+            colorspace=args.colorspace,
             options=options,
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
@@ -897,7 +898,15 @@ def export_video(args):
         if float(fps) > args.max_fps:
             fps = args.max_fps
         config.fps = fps  # update fps
-        return VU.VideoOutputConfig(fps=fps)
+
+        def state_update_callback(c):
+            config.source_color_range = c.state["source_color_range"]
+            config.output_colorspace = c.state["output_colorspace"]
+
+        video_output_config = VU.VideoOutputConfig(fps=fps, pix_fmt=args.pix_fmt, colorspace=args.colorspace)
+        video_output_config.state_updated = state_update_callback
+
+        return video_output_config
 
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
     preprocess_lock = threading.Lock()
@@ -1078,11 +1087,15 @@ def process_config_video(config, args, side_model):
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
         pix_fmt=args.pix_fmt,
+        colorspace=args.colorspace,
         options=encoder_options,
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
         output_height=output_height
     )
+    video_config.state["source_color_range"] = config.source_color_range
+    video_config.state["output_colorspace"] = config.output_colorspace
+
     original_mapper = args.mapper
     try:
         if config.skip_mapper:
@@ -1356,7 +1369,11 @@ def create_parser(required_true=True):
                         help="video container format")
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")
-
+    # TODO: Change the default value from "unspecified" to "auto"
+    parser.add_argument("--colorspace", type=str, default="unspecified",
+                        choices=["unspecified", "auto",
+                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                        help="video colorspace")
     return parser
 
 

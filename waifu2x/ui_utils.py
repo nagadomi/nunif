@@ -106,6 +106,7 @@ def process_video(ctx, input_filename, output_path, args):
         return VU.VideoOutputConfig(
             fps=fps,
             pix_fmt=args.pix_fmt,
+            colorspace=args.colorspace,
             options=options,
             container_options={"movflags": "+faststart"}
         )
@@ -241,6 +242,10 @@ def create_parser(required_true=True):
                         help=("noise update speed (video only)"))
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
                         help=("pixel format (video only)"))
+    parser.add_argument("--colorspace", type=str, default="unspecified",
+                        choices=["unspecified", "auto",
+                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                        help="video colorspace")
     parser.add_argument("--start-time", type=str,
                         help="set the start time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--end-time", type=str,
