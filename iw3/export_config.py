@@ -16,7 +16,8 @@ class ExportConfig:
     def __init__(self, type, basename=None, fps=None,
                  mapper=None, skip_mapper=None, skip_edge_dilation=None,
                  rgb_dir=None, depth_dir=None, audio_file=None,
-                 user_data={}, updated_at=None):
+                 user_data={}, updated_at=None,
+                 output_colorspace=None, source_color_range=None):
         assert type in {IMAGE_TYPE, VIDEO_TYPE}
         self.type = type
         self.basename = basename
@@ -27,6 +28,8 @@ class ExportConfig:
         self.rgb_dir = rgb_dir or RGB_DIR
         self.depth_dir = depth_dir or DEPTH_DIR
         self.audio_file = audio_file or AUDIO_FILE
+        self.output_colorspace = output_colorspace
+        self.source_color_range = source_color_range
         self.user_data = user_data
         self.updated_at = updated_at
 
@@ -61,6 +64,12 @@ class ExportConfig:
             config.update({"skip_mapper": self.skip_mapper})
         if self.skip_edge_dilation is not None:
             config.update({"skip_edge_dilation": self.skip_edge_dilation})
+
+        if self.source_color_range is not None:
+            config.update({"source_color_range": self.source_color_range})
+        if self.output_colorspace is not None:
+            config.update({"output_colorspace": self.output_colorspace})
+
         config.update({"updated_at": datetime.now().isoformat()})  # local time
         config.update({"user_data": self.user_data})
 
@@ -94,8 +103,6 @@ class ExportConfig:
             fps = None
         # TODO: Should support formula, but need to use a security-safe eval
         mapper = str(mapper)
-        skip_mapper = config.get("skip_mapper", False)
-        skip_edge_dilation = config.get("skip_edge_dilation", False)
         rgb_dir = config.get("rgb_dir")
         depth_dir = config.get("depth_dir")
         if export_type == VIDEO_TYPE:
@@ -103,6 +110,12 @@ class ExportConfig:
         else:
             audio_file = None
         depth_dir = config.get("depth_dir")
+
+        skip_mapper = config.get("skip_mapper", False)
+        skip_edge_dilation = config.get("skip_edge_dilation", False)
+        source_color_range = config.get("source_color_range", None)
+        output_colorspace = config.get("output_colorspace", None)
+
         updated_at = config.get("updated_at", None)
         if updated_at is not None:
             try:
@@ -113,7 +126,9 @@ class ExportConfig:
         return ExportConfig(export_type, basename=basename, fps=fps,
                             mapper=mapper, skip_mapper=skip_mapper, skip_edge_dilation=skip_edge_dilation,
                             rgb_dir=rgb_dir, depth_dir=depth_dir, audio_file=audio_file,
-                            user_data=user_data, updated_at=updated_at)
+                            user_data=user_data, updated_at=updated_at,
+                            source_color_range=source_color_range, output_colorspace=output_colorspace)
+
 
     def to_dict(self):
         return dict(

@@ -300,6 +300,13 @@ class MainFrame(wx.Frame):
                                        style=wx.CB_READONLY, name="cbo_pix_fmt")
         self.cbo_pix_fmt.SetSelection(0)
 
+        self.lbl_colorspace = wx.StaticText(self.grp_video, label=T("Colorspace"))
+        self.cbo_colorspace = wx.ComboBox(
+            self.grp_video,
+            choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+            style=wx.CB_READONLY, name="cbo_colorspace")
+        self.cbo_colorspace.SetSelection(1)
+
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
         self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
                                         name="cbo_crf")
@@ -330,14 +337,16 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_video_format, (1, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_pix_fmt, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_pix_fmt, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_crf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_crf, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_preset, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_preset, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_tune, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_tune, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_fastdecode, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_zerolatency, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_colorspace, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_colorspace, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_crf, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_crf, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_preset, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_preset, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_tune, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_tune, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_fastdecode, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_zerolatency, (8, 1), flag=wx.EXPAND)
 
         sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
         sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -921,6 +930,7 @@ class MainFrame(wx.Frame):
 
             max_fps=float(self.cbo_fps.GetValue()),
             pix_fmt=self.cbo_pix_fmt.GetValue(),
+            colorspace=self.cbo_colorspace.GetValue(),
             video_format=self.cbo_video_format.GetValue(),
             crf=int(self.cbo_crf.GetValue()),
             preset=self.cbo_preset.GetValue(),

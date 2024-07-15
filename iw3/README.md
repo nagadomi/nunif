@@ -108,6 +108,14 @@ This approach reduces artifacts by dilating foreground segments (high value area
 
 `0` is disabled. `2` by default. `4` is the most eye-friendly, but it degrades depth accuracy.
 
+## About Colorspace
+
+See [Colorspace](docs/colorspace.md) and https://github.com/nagadomi/nunif/issues/164 .
+
+## About Depth Resolution
+
+See https://github.com/nagadomi/nunif/discussions/168 .
+
 ## About VR Player
 
 I have tested the results with the following software.

@@ -23,5 +23,5 @@ packaging
 # iw3
 timm
 numba # only for iww3 sbs training
-av >= 9.0.0
+av >= 12.2.0
 rembg # for --remove-bg
