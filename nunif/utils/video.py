@@ -540,7 +540,7 @@ def process_video(input_path, output_path,
                   config_callback=default_config_callback,
                   title=None,
                   vf="",
-                  stop_event=None, tqdm_fn=None,
+                  stop_event=None, suspend_event=None, tqdm_fn=None,
                   start_time=None, end_time=None,
                   test_callback=None):
     if isinstance(start_time, str):
@@ -654,6 +654,8 @@ def process_video(input_path, output_path,
                         enc_packet = audio_output_stream.encode(frame)
                         if enc_packet:
                             output_container.mux(enc_packet)
+        if suspend_event is not None:
+            suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
 
@@ -692,7 +694,7 @@ def generate_video(output_path,
                    config,
                    audio_file=None,
                    title=None, total_frames=None,
-                   stop_event=None, tqdm_fn=None):
+                   stop_event=None, suspend_event=None, tqdm_fn=None):
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
@@ -753,6 +755,8 @@ def generate_video(output_path,
                             enc_packet = audio_output_stream.encode(frame)
                             if enc_packet:
                                 output_container.mux(enc_packet)
+                if suspend_event is not None:
+                    suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
                     break
             pbar.close()
@@ -780,6 +784,8 @@ def generate_video(output_path,
             if enc_packet:
                 output_container.mux(enc_packet)
             pbar.update(1)
+        if suspend_event is not None:
+            suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
 
@@ -795,7 +801,7 @@ def generate_video(output_path,
             os.replace(output_path_tmp, output_path)
 
 
-def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None):
+def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None, suspend_event=None):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -819,6 +825,8 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
             frame_callback(frame)
             pbar.update(current_sec - prev_sec)
             prev_sec = current_sec
+        if suspend_event is not None:
+            suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
     pbar.close()
@@ -830,7 +838,7 @@ def hook_frame(input_path,
                config_callback=default_config_callback,
                title=None,
                vf="",
-               stop_event=None, tqdm_fn=None,
+               stop_event=None, suspend_event=None, tqdm_fn=None,
                start_time=None, end_time=None):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -878,6 +886,8 @@ def hook_frame(input_path,
                 frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
                 frame_callback(frame)
                 pbar.update(1)
+        if suspend_event is not None:
+            suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
 
@@ -893,7 +903,7 @@ def hook_frame(input_path,
 
 
 def export_audio(input_path, output_path, start_time=None, end_time=None,
-                 title=None, stop_event=None, tqdm_fn=None):
+                 title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
 
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -956,6 +966,8 @@ def export_audio(input_path, output_path, start_time=None, end_time=None,
                     enc_packet = audio_output_stream.encode(frame)
                     if enc_packet:
                         output_container.mux(enc_packet)
+        if suspend_event is not None:
+            suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
     pbar.close()

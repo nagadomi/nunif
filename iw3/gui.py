@@ -72,6 +72,8 @@ class MainFrame(wx.Frame):
         self.start_time = 0
         self.input_type = None
         self.stop_event = threading.Event()
+        self.suspend_event = threading.Event()
+        self.suspend_event.set()
         self.depth_model = None
         self.depth_model_type = None
         self.depth_model_device_id = None
@@ -499,11 +501,13 @@ class MainFrame(wx.Frame):
             self.pnl_process.SetBackgroundColour("#fcc")
         self.prg_tqdm = wx.Gauge(self.pnl_process, style=wx.GA_HORIZONTAL)
         self.btn_start = wx.Button(self.pnl_process, label=T("Start"))
+        self.btn_suspend = wx.Button(self.pnl_process, label=T("Suspend"))
         self.btn_cancel = wx.Button(self.pnl_process, label=T("Cancel"))
 
         layout = wx.BoxSizer(wx.HORIZONTAL)
         layout.Add(self.prg_tqdm, 1, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 4)
         layout.Add(self.btn_start, 0, wx.ALL, 4)
+        layout.Add(self.btn_suspend, 0, wx.ALL, 4)
         layout.Add(self.btn_cancel, 0, wx.ALL, 4)
         self.pnl_process.SetSizer(layout)
 
@@ -534,6 +538,7 @@ class MainFrame(wx.Frame):
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
+        self.btn_suspend.Bind(wx.EVT_BUTTON, self.on_click_btn_suspend)
 
         self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
@@ -549,6 +554,7 @@ class MainFrame(wx.Frame):
 
         # state
         self.btn_cancel.Disable()
+        self.btn_suspend.Disable()
 
         editable_comboxes = [
             self.cbo_divergence,
@@ -966,6 +972,7 @@ class MainFrame(wx.Frame):
         set_state_args(
             args,
             stop_event=self.stop_event,
+            suspend_event=self.suspend_event,
             tqdm_fn=functools.partial(TQDMGUI, self),
             depth_model=self.depth_model)
         return args
@@ -979,7 +986,9 @@ class MainFrame(wx.Frame):
 
         self.btn_start.Disable()
         self.btn_cancel.Enable()
+        self.btn_suspend.Enable()
         self.stop_event.clear()
+        self.suspend_event.set()
         self.prg_tqdm.SetValue(0)
         self.SetStatusText("...")
 
@@ -1017,6 +1026,8 @@ class MainFrame(wx.Frame):
 
         self.processing = False
         self.btn_cancel.Disable()
+        self.btn_suspend.Disable()
+        self.btn_suspend.SetLabel(T("Suspend"))
         self.update_start_button_state()
 
         # free vram
@@ -1025,7 +1036,16 @@ class MainFrame(wx.Frame):
             torch.cuda.empty_cache()
 
     def on_click_btn_cancel(self, event):
+        self.suspend_event.set()
         self.stop_event.set()
+
+    def on_click_btn_suspend(self, event):
+        if self.suspend_event.is_set():
+            self.suspend_event.clear()
+            self.btn_suspend.SetLabel(T("Resume"))
+        else:
+            self.suspend_event.set()
+            self.btn_suspend.SetLabel(T("Suspend"))
 
     def on_tqdm(self, event):
         type, value, desc = event.GetValue()

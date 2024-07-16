@@ -519,6 +519,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
+    stop_event = args.state["stop_event"]
+    suspend_event = args.state["suspend_event"]
     with PoolExecutor(max_workers=4) as pool:
         for im, meta in loader:
             filename = meta["filename"]
@@ -533,7 +535,9 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             #  f.result() # for debug
             futures.append(f)
             pbar.update(1)
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+            if suspend_event is not None:
+                suspend_event.wait()
+            if stop_event is not None and stop_event.is_set():
                 break
             if len(futures) > IMAGE_IO_QUEUE_MAX:
                 for f in futures:
@@ -609,6 +613,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                          test_callback=test_callback,
                          vf=args.vf,
                          stop_event=args.state["stop_event"],
+                         suspend_event=args.state["suspend_event"],
                          tqdm_fn=args.state["tqdm_fn"],
                          title=path.basename(input_filename),
                          start_time=args.start_time,
@@ -665,6 +670,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                          test_callback=test_callback,
                          vf=args.vf,
                          stop_event=args.state["stop_event"],
+                         suspend_event=args.state["suspend_event"],
                          tqdm_fn=args.state["tqdm_fn"],
                          title=path.basename(input_filename),
                          start_time=args.start_time,
@@ -698,6 +704,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
                                    min_interval_sec=args.keyframe_interval,
                                    stop_event=args.state["stop_event"],
+                                   suspend_event=args.state["suspend_event"],
                                    title=path.basename(input_filename))
         for f in futures:
             f.result()
@@ -779,7 +786,8 @@ def export_images(args):
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc="Images")
-
+    stop_event = args.state["stop_event"]
+    suspend_event = args.state["suspend_event"]
     with PoolExecutor(max_workers=4) as pool, torch.inference_mode():
         for im, meta in loader:
             basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
@@ -803,7 +811,9 @@ def export_images(args):
             depth = Image.fromarray(depth)
             futures.append(pool.submit(save_image, depth, depth_file))
             pbar.update(1)
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+            if suspend_event is not None:
+                suspend_event.wait()
+            if stop_event is not None and stop_event.is_set():
                 break
             if len(futures) > IMAGE_IO_QUEUE_MAX:
                 for f in futures:
@@ -881,7 +891,8 @@ def export_video(args):
     else:
         has_audio = VU.export_audio(args.input, audio_file,
                                     start_time=args.start_time, end_time=args.end_time,
-                                    title="Audio", stop_event=args.state["stop_event"],
+                                    title="Audio",
+                                    stop_event=args.state["stop_event"], suspend_event=args.state["suspend_event"],
                                     tqdm_fn=args.state["tqdm_fn"])
     if not has_audio:
         config.audio_file = None
@@ -971,6 +982,7 @@ def export_video(args):
                   frame_callback=frame_callback,
                   vf=args.vf,
                   stop_event=args.state["stop_event"],
+                  suspend_event=args.state["suspend_event"],
                   tqdm_fn=args.state["tqdm_fn"],
                   title=path.basename(args.input),
                   start_time=args.start_time,
@@ -1118,6 +1130,7 @@ def process_config_video(config, args, side_model):
             title=path.basename(base_dir),
             total_frames=len(rgb_files),
             stop_event=args.state["stop_event"],
+            suspend_event=args.state["suspend_event"],
             tqdm_fn=args.state["tqdm_fn"],
         )
     finally:
@@ -1185,6 +1198,8 @@ def process_config_images(config, args, side_model):
         with PoolExecutor(max_workers=4) as pool:
             tqdm_fn = args.state["tqdm_fn"] or tqdm
             pbar = tqdm_fn(ncols=80, total=len(rgb_files), desc="Images")
+            stop_event = args.state["stop_event"]
+            suspend_event = args.state["suspend_event"]
             futures = []
             for (rgb, rgb_meta), (depth, depth_meta) in zip(rgb_loader, depth_loader):
                 rgb_filename = path.splitext(path.basename(rgb_meta["filename"]))[0]
@@ -1209,7 +1224,9 @@ def process_config_images(config, args, side_model):
                 f = pool.submit(save_image, sbs, output_filename)
                 futures.append(f)
                 pbar.update(1)
-                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                if suspend_event is not None:
+                    suspend_event.wait()
+                if stop_event is not None and stop_event.is_set():
                     break
                 if len(futures) > IMAGE_IO_QUEUE_MAX:
                     for f in futures:
@@ -1399,7 +1416,7 @@ class EMAMinMax():
         self.min = self.max = None
 
 
-def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
+def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspend_event=None):
     from . import zoedepth_model as ZU
     from . import depth_anything_model as DU
     if args.depth_model in ZU.MODEL_FILES:
@@ -1414,6 +1431,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None):
 
     args.state = {
         "stop_event": stop_event,
+        "suspend_event": suspend_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
         "ema": EMAMinMax(alpha=args.ema_decay),
