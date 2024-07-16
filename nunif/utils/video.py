@@ -25,6 +25,7 @@ mimetypes.add_type("video/m2ts", ".mts")
 mimetypes.add_type("video/m2ts", ".ts")
 mimetypes.add_type("video/vnd.rn-realmedia", ".rm")  # fake
 mimetypes.add_type("video/x-flv", ".flv")  # Not defined on Windows
+mimetypes.add_type("video/x-matroska", ".mkv")  # May not be defined for some reason
 
 
 VIDEO_EXTENSIONS = [
