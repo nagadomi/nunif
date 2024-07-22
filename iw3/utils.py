@@ -1386,6 +1386,10 @@ def create_parser(required_true=True):
                         help="video container format")
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")
+    parser.add_argument("--find-param", type=str, nargs="+",
+                        choices=["divergence", "convergence", "foreground-scale", "ipd-offset"],
+                        help="outputs results for various parameter combinations")
+
     # TODO: Change the default value from "unspecified" to "auto"
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["unspecified", "auto",
@@ -1524,6 +1528,11 @@ def iw3_main(args):
         else:
             side_model = None
 
+    if args.find_param:
+        assert is_image(args.input) and (path.isdir(args.output) or not path.exists(args.output))
+        find_param(args, depth_model, side_model)
+        return args
+
     if path.isdir(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
@@ -1585,3 +1594,34 @@ def iw3_main(args):
         raise ValueError("Unrecognized file type")
 
     return args
+
+
+def find_param(args, depth_model, side_model):
+    im, _ = load_image_simple(args.input, color="rgb")
+    args.metadata = "filename"
+    os.makedirs(args.output, exist_ok=True)
+    if args.method == "forward_fill":
+        divergence_cond = range(1, 10 + 1) if "divergence" in args.find_param else [args.divergence]
+        convergence_cond = np.arange(-2, 2, 0.25) if "convergence" in args.find_param else [args.convergence]
+    else:
+        divergence_cond = range(1, 5) if "divergence" in args.find_param else [args.divergence]
+        convergence_cond = np.arange(0, 1, 0.25) if "convergence" in args.find_param else [args.convergence]
+
+    foreground_scale_cond = range(0, 3 + 1) if "foreground-scale" in args.find_param else [args.foreground_scale]
+    ipd_offset_cond = range(0, 5 + 1) if "ipd-offset" in args.find_param else [args.ipd_offset]
+
+    for divergence in divergence_cond:
+        for convergence in convergence_cond:
+            for foreground_scale in foreground_scale_cond:
+                for ipd_offset in ipd_offset_cond:
+                    args.divergence = float(divergence)
+                    args.convergence = float(convergence)
+                    args.foreground_scale = foreground_scale
+                    args.ipd_offset = ipd_offset
+
+                    output_filename = path.join(
+                        args.output,
+                        make_output_filename("param.png", args, video=False))
+                    print(output_filename)
+                    output = process_image(im, args, depth_model, side_model)
+                    output.save(output_filename)
