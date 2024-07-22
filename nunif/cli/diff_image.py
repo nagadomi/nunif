@@ -5,7 +5,6 @@
 import argparse
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple, to_tensor
-import torchvision.transforms.functional as TF
 import torch
 from os import path
 import math
@@ -31,14 +30,42 @@ def main():
     if len(args.input) != 2:
         raise ValueError("Specify two files")
 
-    if path.isfile(args.input[0]):
+    if path.isfile(args.input[0]) and path.isfile(args.input[1]):
         im1, _ = load_image_simple(args.input[0], color="any")
         im2, _ = load_image_simple(args.input[1], color="any")
         if not compare_size(im1, im2):
             print("size differ")
         else:
             print(f"PSNR: {calc_psnr(im1, im2)}")
-    else:
+    elif path.isfile(args.input[0]) and path.isdir(args.input[1]):
+        im1, _ = load_image_simple(args.input[0], color="any")
+        files2 = ImageLoader.listdir(args.input[1])
+
+        psnr_max = 0
+        psnr_max_file = None
+        psnr_min = 1000
+        psnr_min_file = None
+
+        for i in range(len(files2)):
+            im2, _ = load_image_simple(files2[i], color="any")
+            if not compare_size(im1, im2):
+                psnr = float("nan")
+            else:
+                psnr = calc_psnr(im1, im2)
+            if math.isnan(psnr):
+                print(f"size differ {path.basename(files2[i])}")
+            else:
+                print(f"PSNR: {psnr} {path.basename(files2[i])}")
+                if psnr_max < psnr:
+                    psnr_max = psnr
+                    psnr_max_file = files2[i]
+                if psnr_min > psnr:
+                    psnr_min = psnr
+                    psnr_min_file = files2[i]
+        print(f"Max PSNR: {psnr_max}: {psnr_max_file}")
+        print(f"Min PSNR: {psnr_min}: {psnr_min_file}")
+
+    elif path.isdir(args.input[0]) and path.isdir(args.input[1]):
         files1 = ImageLoader.listdir(args.input[0])
         files2 = ImageLoader.listdir(args.input[1])
         assert len(files1) == len(files2)
@@ -59,6 +86,8 @@ def main():
                     print(f"PSNR: {psnr} {path.basename(files1[i])}")
 
         print(f"Mean PSNR: {round(psnr_sum/len(files1), 3)}")
+    else:
+        raise ValueError("input = `file file` or `file dir` or `dir dir`")
 
 
 if __name__ == "__main__":
