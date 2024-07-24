@@ -77,7 +77,7 @@ exit /b 0
   echo Install MinGit...
 
   setlocal
-  set MINGIT_URL=https://github.com/git-for-windows/git/releases/download/v2.41.0.windows.2/MinGit-2.41.0.2-64-bit.zip
+  set MINGIT_URL=https://github.com/git-for-windows/git/releases/download/v2.45.2.windows.1/MinGit-2.45.2-64-bit.zip
   set TMP_DIR=%ROOT_DIR%\tmp
 
   if not exist %TMP_DIR% mkdir %TMP_DIR%
