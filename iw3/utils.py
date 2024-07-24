@@ -698,7 +698,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
             output = process_image(frame.to_image(), args, depth_model, side_model)
             output_filename = path.join(
                 output_dir,
-                path.basename(output_dir) + "_" + str(frame.index).zfill(8) + FULL_SBS_SUFFIX + ".png")
+                path.basename(output_dir) + "_" + str(frame.pts).zfill(8) + FULL_SBS_SUFFIX + ".png")
             f = pool.submit(save_image, output, output_filename)
             futures.append(f)
         VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
