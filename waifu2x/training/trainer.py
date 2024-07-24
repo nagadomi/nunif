@@ -673,6 +673,9 @@ def train(args):
     if args.b4b:
         # disable random resize blur
         args.resize_blur_p = 0.0
+        args.deblur = 0.0
+        # disable random rescale
+        args.da_scape_p = 0.0
 
     trainer = Waifu2xTrainer(args)
     trainer.fit()
@@ -765,7 +768,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--hard-example-scale", type=float, default=4.,
                         help="max weight scaling factor of hard example sampler")
     parser.add_argument("--b4b", action="store_true",
-                        help="use only bicubic downsampling for bicubic downsampling restoration")
+                        help="use only bicubic downsampling for bicubic downsampling restoration (classic super-resolution)")
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
     parser.add_argument("--pre-antialias", action="store_true",

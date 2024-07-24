@@ -39,6 +39,35 @@ class ONNXReflectionPadding(I2IBaseModel):
         )
 
 
+class ONNXReplicationPadding(I2IBaseModel):
+    def __init__(self):
+        super().__init__({}, scale=1, offset=0, in_channels=3)
+
+    def forward(self, x: torch.Tensor, left: int, right: int, top: int, bottom: int):
+        return F.pad(x, (left, right, top, bottom), mode="replicate")
+
+    def export_onnx(self, f, **kwargs):
+        """
+         const ses = await ort.InferenceSession.create('./pad.onnx');
+         var offset = BigInt(model_offset / model_scale);
+         var pad = new ort.Tensor('int64', BigInt64Array.from([offset]), []);
+         var out = await ses.run({"x": x, "left": pad, "right": pad, "top": pad, "bottom": pad});
+        """
+        x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
+        pad = 4
+        model = torch.jit.script(self.to_inference_model())
+        torch.onnx.export(
+            model,
+            [x, pad, pad, pad, pad],
+            f,
+            input_names=["x", "left", "right", "top", "bottom"],
+            output_names=["y"],
+            dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+                          "y": {0: "batch_size", 2: "height", 3: "width"}},
+            **kwargs
+        )
+
+
 class ONNXTTASplit(I2IBaseModel):
     def __init__(self):
         super().__init__({}, scale=1, offset=0, in_channels=3)
@@ -333,8 +362,13 @@ def _test_antialias():
 def _test_pad():
     import onnx
     pad = ONNXReflectionPadding()
-    pad.export_onnx("./tmp/pad.onnx")
-    model = onnx.load("./tmp/pad.onnx")
+    pad.export_onnx("./tmp/pad_reflect.onnx")
+    model = onnx.load("./tmp/pad_reflect.onnx")
+    print(model.graph)
+
+    pad = ONNXReplicationPadding()
+    pad.export_onnx("./tmp/pad_replicate.onnx")
+    model = onnx.load("./tmp/pad_replicate.onnx")
     print(model.graph)
 
 
@@ -398,6 +432,7 @@ def _test_alpha_border():
 
 
 if __name__ == "__main__":
+    # _test_pad()
     # _test_blend_filter()
     # _test_alpha_border()
     # _test_resize()
