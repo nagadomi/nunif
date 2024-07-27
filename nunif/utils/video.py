@@ -128,11 +128,11 @@ def to_tensor(frame, device=None):
     else:
         x = x.permute(2, 0, 1) / 255.0
     # CHW float32
-    return x
+    return x.contiguous()
 
 
 def from_tensor(x):
-    x = (x.permute(1, 2, 0) * 255.0).to(torch.uint8).detach().cpu().numpy()
+    x = (x.permute(1, 2, 0) * 255.0).contiguous().to(torch.uint8).detach().cpu().numpy()
     return av.video.frame.VideoFrame.from_ndarray(x, format="rgb24")
 
 
