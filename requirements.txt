@@ -20,6 +20,9 @@ lpips
 # opencv-python
 packaging
 
+# https://github.com/GallagherCommaJack/dctorch
+dctorch
+
 # iw3
 timm
 numba # only for iww3 sbs training

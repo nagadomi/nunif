@@ -25,6 +25,8 @@ from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
 from nunif.modules.fft_loss import (
     YRGBL1FFTLoss, YRGBL1FFTGradientLoss, L1FFTLoss, MultiscaleL1FFTLoss,
     LBPFFTLoss)
+from nunif.modules.weighted_loss import WeightedLoss
+from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.gradient_loss import YRGBL1GradientLoss
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.logger import logger
@@ -88,6 +90,16 @@ def create_criterion(loss):
         criterion = L1LBP(kernel_size=5, weight=0.4)
     elif loss == "rgb_l1lbp":
         criterion = L1LBP(kernel_size=3, weight=0.4)
+    elif loss == "dct":
+        criterion = DCTLoss()
+    elif loss == "dct8":
+        criterion = DCTLoss(window_size=8)
+    elif loss == "dct4":
+        criterion = DCTLoss(window_size=4)
+    elif loss == "dctm":
+        criterion = WeightedLoss((DCTLoss(window_size=4),
+                                  DCTLoss(window_size=24),
+                                  DCTLoss()), (0.2, 0.2, 0.6))
     elif loss == "l1fft":
         criterion = L1FFTLoss()
     elif loss == "y_l1fft":
@@ -719,6 +731,7 @@ def register(subparsers, default_parser):
                                  "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad",
                                  "y_l1fftgradm", "aux_y_l1fftgrad",
                                  "y_l1grad",
+                                 "dct", "dct4", "dct8", "dctm",
                                  "aux_l1fftgrad_ident", "aux_lbp_ident", "aux_lbp5fft_ident", "aux_lbp5wfft_ident",
                                  "ident",
                                  ],
