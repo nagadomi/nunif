@@ -16,6 +16,8 @@ from . permute import window_partition2d
 fp16_max_value = torch.finfo(torch.float16).max - 1
 
 
+# NOTE: Lately I have realized that norm should be `ortho`.
+#       otherwise, the gradient norm depends on the resolution of the input image.
 def fft_loss(input, target, norm="backward", padding=0):
     if padding > 0:
         input = F.pad(input, [padding] * 4)
