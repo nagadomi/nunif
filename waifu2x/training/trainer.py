@@ -22,10 +22,10 @@ from nunif.modules import (
     MultiscaleLoss,
 )
 from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
-from nunif.modules.fft_loss import (
-    YRGBL1FFTLoss, YRGBL1FFTGradientLoss, L1FFTLoss, MultiscaleL1FFTLoss,
-    LBPFFTLoss)
-from nunif.modules.gradient_loss import YRGBL1GradientLoss
+from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
+from nunif.modules.lpips import LPIPSWith
+from nunif.modules.weighted_loss import WeightedLoss
+from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.logger import logger
 import random
@@ -35,112 +35,49 @@ import math
 # basic training
 
 
+LOSS_FUNCTIONS = {
+    "l1": lambda: ClampLoss(torch.nn.L1Loss()),
+    "y_l1": lambda: ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss())),
+    "charbonnier": lambda: ClampLoss(CharbonnierLoss()),
+    "y_charbonnier": lambda: ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),
+    "lbp": lambda: YLBP(),
+    "lbpm": lambda: MultiscaleLoss(YLBP(), mode="avg"),
+    "lbp5": lambda: YLBP(kernel_size=5),
+    "lbp5m": lambda: MultiscaleLoss(YLBP(kernel_size=5), mode="avg"),
+    "rgb_lbp": lambda: RGBLBP(),
+    "rgb_lbp5": lambda: RGBLBP(kernel_size=5),
+    "l1lbp5": lambda: YL1LBP(kernel_size=5, weight=0.4),
+    "rgb_l1lbp": lambda: L1LBP(kernel_size=3, weight=0.4),
+    "rgb_l1lbp5": lambda: L1LBP(kernel_size=5, weight=0.4),
+    "alex11": lambda: ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+    "y_l1fftgrad": lambda: YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
+    "dct": lambda: DCTLoss(),
+    "dct4": lambda: DCTLoss(window_size=4),
+    "dct8": lambda: DCTLoss(window_size=8),
+    "dctm": lambda: WeightedLoss((DCTLoss(window_size=4), DCTLoss(window_size=24), DCTLoss()), (0.2, 0.2, 0.6)),
+
+    "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
+    "aux_alex11": lambda: AuxiliaryLoss((
+        ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
+        ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))), weights=(1.0, 0.5)),
+    "aux_charbonnier": lambda: AuxiliaryLoss((ClampLoss(CharbonnierLoss()), ClampLoss(CharbonnierLoss())), weight=(1.0, 0.5)),
+    "aux_y_charbonnier": lambda: AuxiliaryLoss((
+        ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),
+        ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))), weight=(1.0, 0.5)),
+
+    # weight=0.1, gradient norm is about the same as L1Loss.
+    "l1lpips": lambda: LPIPSWith(ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3)), weight=0.4),
+
+    "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
+
+    # loss is computed in model.forward()
+    "ident": lambda: IdentityLoss(),
+}
+
+
 def create_criterion(loss):
-    if loss == "l1":
-        criterion = ClampLoss(torch.nn.L1Loss())
-    elif loss == "y_l1":
-        criterion = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
-    elif loss == "lbp":
-        criterion = YLBP()
-    elif loss == "lbpm":
-        criterion = MultiscaleLoss(YLBP(), mode="avg")
-    elif loss == "lbp5":
-        criterion = YLBP(kernel_size=5)
-    elif loss == "lbp5m":
-        criterion = MultiscaleLoss(YLBP(kernel_size=5), mode="avg")
-    elif loss == "rgb_lbp":
-        criterion = RGBLBP()
-    elif loss == "rgb_lbp5":
-        criterion = RGBLBP(kernel_size=5)
-    elif loss == "alex11":
-        criterion = ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))
-    elif loss == "charbonnier":
-        criterion = ClampLoss(CharbonnierLoss())
-    elif loss == "y_charbonnier":
-        criterion = ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))
-    elif loss == "aux_lbp":
-        criterion = AuxiliaryLoss([
-            YLBP(),
-            YLBP(),
-        ], weight=(1.0, 0.5))
-    elif loss == "aux_alex11":
-        criterion = AuxiliaryLoss([
-            ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
-            ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
-        ], weights=(1.0, 0.5))
-    elif loss == "aux_y_charbonnier":
-        criterion = AuxiliaryLoss([
-            ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),
-            ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))],
-            weight=(1.0, 0.5))
-    elif loss == "aux_charbonnier":
-        criterion = AuxiliaryLoss([
-            ClampLoss(CharbonnierLoss()),
-            ClampLoss(CharbonnierLoss())],
-            weight=(1.0, 0.5))
-    elif loss == "l1lpips":
-        from nunif.modules.lpips import LPIPSWith
-        # weight=0.1, gradient norm is about the same as L1Loss.
-        criterion = LPIPSWith(ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3)), weight=0.4)
-    elif loss == "l1lbp5":
-        criterion = YL1LBP(kernel_size=5, weight=0.4)
-    elif loss == "rgb_l1lbp5":
-        criterion = L1LBP(kernel_size=5, weight=0.4)
-    elif loss == "rgb_l1lbp":
-        criterion = L1LBP(kernel_size=3, weight=0.4)
-    elif loss == "l1fft":
-        criterion = L1FFTLoss()
-    elif loss == "y_l1fft":
-        criterion = YRGBL1FFTLoss()
-    elif loss == "l1fftm":
-        criterion = MultiscaleL1FFTLoss()
-    elif loss == "y_l1fftgrad":
-        criterion = YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False)
-    elif loss == "y_l1fftgradm":
-        # for 4x
-        criterion = MultiscaleLoss(
-            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
-            scale_factors=(1, 2), weights=(0.75, 0.25), mode="avg")
-    elif loss == "aux_y_l1fftgrad":
-        criterion = AuxiliaryLoss([
-            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
-            torch.nn.L1Loss(),
-        ], weight=(1.0, 0.5))
-    elif loss == "y_l1grad":
-        criterion = YRGBL1GradientLoss(diag=False)
-    elif loss == "aux_l1fftgrad_ident":
-        criterion = AuxiliaryLoss([
-            YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
-            IdentityLoss(),
-        ], weight=(1.0, 1.0))
-    elif loss == "aux_lbp_ident":
-        criterion = AuxiliaryLoss([
-            YLBP(),
-            IdentityLoss(),
-        ], weight=(1.0, 1.0))
-    elif loss == "lbpfft":
-        criterion = LBPFFTLoss(kernel_size=3, weight=0.05)
-    elif loss == "lbpwfft":
-        # except size=112 output 192
-        criterion = LBPFFTLoss(kernel_size=3, window_size=96, padding=0, weight=0.05)
-    elif loss == "lbp5fft":
-        criterion = LBPFFTLoss(kernel_size=5, weight=0.05)
-    elif loss == "aux_lbp5fft_ident":
-        criterion = AuxiliaryLoss([
-            LBPFFTLoss(kernel_size=5, weight=0.05),
-            IdentityLoss(),
-        ], weight=(1.0, 1.0))
-    elif loss == "lbp5wfft":
-        # except size=112 output 384
-        criterion = LBPFFTLoss(kernel_size=5, window_size=96, padding=0, weight=0.05)
-    elif loss == "aux_lbp5wfft_ident":
-        criterion = AuxiliaryLoss([
-            LBPFFTLoss(kernel_size=5, window_size=96, padding=0, weight=0.05),
-            IdentityLoss(),
-        ], weight=(1.0, 1.0))
-    elif loss == "ident":
-        # loss is computed in model.forward()
-        criterion = IdentityLoss()
+    if loss in LOSS_FUNCTIONS:
+        criterion = LOSS_FUNCTIONS[loss]()
     else:
         raise NotImplementedError(loss)
 
@@ -711,17 +648,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--num-samples", type=int, default=50000,
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str,
-                        choices=["lbp", "lbp5", "lbpm", "lbp5m", "rgb_lbp", "rgb_lbp5",
-                                 "y_charbonnier", "charbonnier",
-                                 "aux_lbp", "aux_y_charbonnier", "aux_charbonnier",
-                                 "alex11", "aux_alex11", "l1", "y_l1", "l1lpips",
-                                 "l1lbp5", "rgb_l1lbp5", "rgb_l1lbp", "lbpfft", "lbpwfft", "lbp5fft", "lbp5wfft",
-                                 "l1fft", "l1fftm", "y_l1fft", "y_l1fftgrad",
-                                 "y_l1fftgradm", "aux_y_l1fftgrad",
-                                 "y_l1grad",
-                                 "aux_l1fftgrad_ident", "aux_lbp_ident", "aux_lbp5fft_ident", "aux_lbp5wfft_ident",
-                                 "ident",
-                                 ],
+                        choices=list(LOSS_FUNCTIONS.keys()),
                         help="loss function")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")

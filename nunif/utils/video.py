@@ -551,7 +551,9 @@ def process_video(input_path, output_path,
             raise ValueError("end_time must be greater than start_time")
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
+    container_format = path.splitext(output_path)[-1].lower()[1:]
     input_container = av.open(input_path)
+
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
     else:
@@ -573,19 +575,28 @@ def process_video(input_path, output_path,
 
     config = config_callback(video_input_stream)
     config.fps = convert_known_fps(config.fps)
-    if config.pix_fmt == "rgb24":
-        codec = "libx264rgb"
-        colorspace = None
+    if container_format == "avi":
+        codec = "utvideo"
+        if config.pix_fmt == "rgb24":
+            config.pix_fmt = "gbrp"
+        # override unsupported colorspace, pc is not supported
+        if config.colorspace in {"bt601", "bt601-pc", "bt601-tv"}:
+            config.colorspace = "bt601-tv"
+        elif config.colorspace in {"bt709", "bt709-pc", "bt709-tv"}:
+            config.colorspace = "bt709-tv"
+        elif config.colorspace in {"auto", "copy"}:
+            config.colorspace = "bt709-tv"
     else:
-        if config.colorspace in {"bt2020", "bt2020-tv", "bt2020-pc"}:
-            # TODO: change pix_fmt
-            codec = "libx265"
+        if config.pix_fmt == "rgb24":
+            codec = "libx264rgb"
         else:
-            codec = "libx264"
-        colorspace = None
+            if config.colorspace in {"bt2020", "bt2020-tv", "bt2020-pc"}:
+                # TODO: change pix_fmt
+                codec = "libx265"
+            else:
+                codec = "libx264"
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
-
-    fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf, colorspace=colorspace)
+    fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf)
     if config.output_width is not None and config.output_height is not None:
         output_size = config.output_width, config.output_height
     else:
@@ -604,19 +615,22 @@ def process_video(input_path, output_path,
     rgb24_options = config.state["rgb24_options"]
     reformatter = config.state["reformatter"]
 
+    # utvideo + flac crashes on windows media player
+    # default_acodec = "flac" if container_format == "avi" else "aac"
+    default_acodec = "aac"
     if audio_input_stream is not None:
         if audio_input_stream.rate < 16000:
-            audio_output_stream = output_container.add_stream("aac", 16000)
+            audio_output_stream = output_container.add_stream(default_acodec, 16000)
             audio_copy = False
         elif start_time is not None:
-            audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+            audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
             audio_copy = False
         else:
             try:
                 audio_output_stream = output_container.add_stream(template=audio_input_stream)
                 audio_copy = True
             except ValueError:
-                audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+                audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
                 audio_copy = False
 
     desc = (title if title else input_path)
