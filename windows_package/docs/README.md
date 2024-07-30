@@ -1,6 +1,6 @@
 # nunif windows package
 
-nunif-windows-package is a online installer for non-developer windows users.
+nunif-windows-package is a online installer for Windows users.
 
 It installs everything needed to run waifu2x-gui and iw3-gui in a single folder.
 

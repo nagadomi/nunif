@@ -128,9 +128,9 @@ Exportした深度画像を別のソフトウェアで処理するときにフ�
 | `Any_S`     | Depth-Anything model small. 一番速い
 | `Any_B`     | Depth-Anything model base.
 | `Any_L`     | Depth-Anything model large. 精度が高いが重い
-| `Any_V2_S`  | Depth-Anything-V2 model small.
+| `Any_V2_S`  | Depth-Anything-V2 model small. 一番速いV2
 | `Any_V2_B`  | Depth-Anything-V2 model base. (cc-by-nc-4.0)
-| `Any_V2_L`  | Depth-Anything-V2 model large. (cc-by-nc-4.0)
+| `Any_V2_L`  | Depth-Anything-V2 model large. (cc-by-nc-4.0) 深度の精度は一番高い
 | `Any_V2_N_S`| Depth-Anything-V2 Metric Depth model Hypersim small. Tuned for indoor scenes.
 | `Any_V2_N_B`| Depth-Anything-V2 Metric Depth model Hypersim base. Tuned for indoor scenes
 | `Any_V2_N_L`| Depth-Anything-V2 Metric Depth model Hypersim large. Tuned for indoor scenes. (cc-by-nc-4.0)
@@ -148,7 +148,7 @@ Exportした深度画像を別のソフトウェアで処理するときにフ�
 
 DepthAnythingのほうが精度が高いですが、ステレオ生成の結果はZoeDepthのほうがよいことが多いです。DepthAnythingのほうが使用VRAMが少なく速いです。
 
-イラスト/アニメには、ZoeDepthよりもDepthAnythingのほうがよいです。
+イラスト/アニメには、ZoeDepthよりもDepthAnythingのほうがよいです。`Any_V2_L`がよいですが、デフォルトでは利用できないので自分で配置する必要があります。
 
 またZoeDepthとDepthAnythingは出力する深度の種類が違います。ZeoDepthはメートル単位の距離を出力していて、DepthAnythingはDisparity(視差)を出力しています。近い結果に見えるように変換式を調節していますが、モデルを変更すると深度の精度だけではなく他の設定の見え方も全体的に変わることに注意してください。
 
@@ -158,17 +158,25 @@ DepthAnythingのほうが精度が高いですが、ステレオ生成の結果�
 
 これらのモデルはcc-by-nc-4.0(非商用)の下で配布されています。nunifのMITライセンスと衝突するためデフォルトでは利用できません。
 
-使用したい場合は、それらのライセンスに同意して自分でチェックポイントファイルを配置してください。
+使用したい場合は、それらのライセンスに同意して自分でファイルを配置してください。
 
-| Short Name | Path |
+| Short Name | ファイル |
 |------------|------|
 | `Any_V2_B` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitb.pth`
 | `Any_V2_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_vitl.pth`
 | `Any_V2_N_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_hypersim_vitl.pth`
 | `Any_V2_K_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
 
-これらのファイルは https://huggingface.co/depth-anything のModelsセクションからダウンロードできます。
+これらのファイルは https://huggingface.co/depth-anything のModelsセクションからダウンロードできます。開いたページの`Files and versions`タブにあります。
 ファイルが存在する場合のみGUI上に表示されます。
+
+### 深度解像度
+
+深度推定時の解像度を上げることができます。解像度が高いほど処理時間がかかります。
+
+ZoeDepthモデルでは、モデル自体が高解像度に対応していないため、結果がよくなるかは分かりません。縦長の画像はデフォルトで大きめの解像度で計算されているので効果はありません。
+
+DepthAnythingモデルでは512(518)で適切な解像度になり深度の精度が上がります。
 
 ### 前景拡大
 
@@ -235,6 +243,14 @@ DepthAnythingの出力は精度が高いですが、ステレオ生成におい�
 
 出力動画のピクセルフォーマットを指定します。通常は`yuv420p`を指定してください。
 詳しい人は他の設定も使えます。`色空間`とも関連しています。
+
+### 動画形式
+
+コンテナ形式を指定します。
+
+`mp4`は互換性の高い形式です。
+
+`mkv`は変換中に視聴できます。変換速度が30FPSを超えていればリアルタイムで視聴できます（シークは変換済み範囲しかできません）。
 
 ### 色空間
 
@@ -317,14 +333,6 @@ slowより遅い設定は使わないのが安全です。
 GPUにはCUDAに対応しているグラフィックボードが表示されます。事実上NVIDIA製になります。
 
 CPUでも動作はしますが、信じがたい遅さになります。
-
-### 深度解像度
-
-深度推定時の解像度を上げることができます。
-
-ZoeDepthモデルでは、モデル自体が高解像度に対応していないため、結果がよくなるかは分かりません。縦長の画像はデフォルトで大きめの解像度で計算されているので効果はありません。
-
-DepthAnythingモデルでは適切な解像度になり深度の精度が上がりますが、前景と背景の境界の問題がより発生しやすくなります。
 
 ### 深度バッチサイズ
 
