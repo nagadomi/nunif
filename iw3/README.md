@@ -116,6 +116,14 @@ See [Colorspace](docs/colorspace.md) and https://github.com/nagadomi/nunif/issue
 
 See https://github.com/nagadomi/nunif/discussions/168 .
 
+## Video Format
+
+`mp4` is highly compatible format. h264 acc.
+
+`mkv` can be previewed during conversion. h264 aac.
+
+`avi` is lossless **utvideo**.
+
 ## About VR Player
 
 I have tested the results with the following software.
