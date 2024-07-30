@@ -287,7 +287,7 @@ class MainFrame(wx.Frame):
         self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
 
         self.lbl_video_format = wx.StaticText(self.grp_video, label=T("Video Format"))
-        self.cbo_video_format = wx.ComboBox(self.grp_video, choices=["mp4", "mkv"],
+        self.cbo_video_format = wx.ComboBox(self.grp_video, choices=["mp4", "mkv", "avi"],
                                             style=wx.CB_READONLY, name="cbo_video_format")
         self.cbo_video_format.SetSelection(0)
 
@@ -535,6 +535,7 @@ class MainFrame(wx.Frame):
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
 
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
+        self.cbo_video_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_video_format)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -581,6 +582,7 @@ class MainFrame(wx.Frame):
             self.update_model_selection()
         self.update_edge_dilation()
         self.update_ema_normalize()
+        self.update_video_format()
 
     def get_anaglyph_method(self):
         if "Anaglyph" in self.cbo_stereo_format.GetValue():
@@ -740,11 +742,29 @@ class MainFrame(wx.Frame):
             self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
 
+    def update_video_format(self):
+        name = self.cbo_video_format.GetValue()
+        if name == "avi":
+            self.cbo_crf.Disable()
+            self.cbo_preset.Disable()
+            self.cbo_tune.Disable()
+            self.chk_tune_fastdecode.Disable()
+            self.chk_tune_zerolatency.Disable()
+        else:
+            self.cbo_crf.Enable()
+            self.cbo_preset.Enable()
+            self.cbo_tune.Enable()
+            self.chk_tune_fastdecode.Enable()
+            self.chk_tune_zerolatency.Enable()
+
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
 
     def on_selected_index_changed_cbo_stereo_format(self, event):
         self.update_input_option_state()
+
+    def on_selected_index_changed_cbo_video_format(self, event):
+        self.update_video_format()
 
     def update_edge_dilation(self):
         if self.chk_edge_dilation.IsChecked():

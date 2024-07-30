@@ -587,7 +587,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             fps=fps,
             pix_fmt=args.pix_fmt,
             colorspace=args.colorspace,
-            options=options,
+            options=options if args.video_format in {"mp4", "mkv"} else {},
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
@@ -1100,7 +1100,7 @@ def process_config_video(config, args, side_model):
         fps=config.fps,  # use config.fps, ignore args.max_fps
         pix_fmt=args.pix_fmt,
         colorspace=args.colorspace,
-        options=encoder_options,
+        options=encoder_options if args.video_format in {"mp4", "mkv"} else {},
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
         output_height=output_height
@@ -1382,7 +1382,7 @@ def create_parser(required_true=True):
                         help="loop count of edge dilation.")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
                         help="max inference worker threads for video processing. 0 is disabled")
-    parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv"],
+    parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
                         help="video container format")
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")
