@@ -444,7 +444,7 @@ def configure_colorspace(output_stream, input_stream, config):
     config.state["reformatter"] = reformatter = lambda frame: frame
     exported_source_color_range = config.state["source_color_range"]
     exported_output_colorspace = config.state["output_colorspace"]
-    if config.pix_fmt == "rgb24" or config.colorspace == "unspecified":
+    if config.pix_fmt in {"rgb24", "gbrp"} or config.colorspace == "unspecified":
         config.state["source_color_range"] = config.state["output_colorspace"] = None
         if config.state_updated:
             config.state_updated(config)
@@ -711,12 +711,31 @@ def generate_video(output_path,
                    stop_event=None, suspend_event=None, tqdm_fn=None):
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
+    container_format = path.splitext(output_path)[-1].lower()[1:]
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
     output_size = config.output_width, config.output_height
-    if config.pix_fmt == "rgb24":
-        codec = "libx264rgb"
+
+    if container_format == "avi":
+        codec = "utvideo"
+        if config.pix_fmt == "rgb24":
+            config.pix_fmt = "gbrp"
+        # override unsupported colorspace, pc is not supported
+        if config.colorspace in {"bt601", "bt601-pc", "bt601-tv"}:
+            config.colorspace = "bt601-tv"
+        elif config.colorspace in {"bt709", "bt709-pc", "bt709-tv"}:
+            config.colorspace = "bt709-tv"
+        elif config.colorspace in {"auto", "copy"}:
+            config.colorspace = "bt709-tv"
     else:
-        codec = "libx264"
+        if config.pix_fmt == "rgb24":
+            codec = "libx264rgb"
+        else:
+            if config.colorspace in {"bt2020", "bt2020-tv", "bt2020-pc"}:
+                # TODO: change pix_fmt
+                codec = "libx265"
+            else:
+                codec = "libx264"
+
     video_output_stream = output_container.add_stream(codec, convert_known_fps(config.fps))
     configure_colorspace(video_output_stream, None, config)
     video_output_stream.thread_type = "AUTO"
