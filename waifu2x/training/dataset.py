@@ -122,7 +122,7 @@ class RandomDownscaleX():
         if self.scale_factor in {2, 4}:
             x = pil_io.to_tensor(x)
             if not self.training:
-                blur = 1 + self.fixed_blur_shift + self.blur_shift / 4
+                blur = 1 + self.fixed_blur_shift
             elif random.uniform(0, 1) < self.resize_blur_p:
                 blur = 1 + self.fixed_blur_shift
                 blur = blur + random.uniform(self.resize_blur_range[0] + self.blur_shift,
