@@ -234,7 +234,10 @@ class Trainer(ABC):
         return scheduler
 
     def create_grad_scaler(self):
-        return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
+        if hasattr(torch.amp, "GradScaler"):
+            return torch.amp.GradScaler(self.device.type, enabled=self.amp_is_enabled())
+        else:
+            return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
 
     def create_best_model_filename(self):
         return path.join(self.args.model_dir, f"{self.model.name}.pth")
