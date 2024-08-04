@@ -314,6 +314,12 @@ class MainFrame(wx.Frame):
                                         name="cbo_crf")
         self.cbo_crf.SetSelection(4)
 
+        self.lbl_profile_level = wx.StaticText(self.grp_video, label=T("Level"))
+        self.cbo_profile_level = EditableComboBox(
+            self.grp_video, choices=["auto", "3.0", "3.1", "3.2", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2", "6.0", "6.2"],
+            name="cbo_profile_level")
+        self.cbo_profile_level.SetSelection(0)
+
         self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
         self.cbo_preset = wx.ComboBox(
             self.grp_video, choices=[
@@ -343,12 +349,15 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_colorspace, (3, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_crf, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_crf, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_preset, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_preset, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_tune, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_tune, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_fastdecode, (7, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_zerolatency, (8, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_profile_level, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_profile_level, (5, 1), flag=wx.EXPAND)
+
+        layout.Add(self.lbl_preset, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_preset, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_tune, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_tune, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_fastdecode, (8, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_tune_zerolatency, (9, 1), flag=wx.EXPAND)
 
         sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
         sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -566,6 +575,7 @@ class MainFrame(wx.Frame):
             self.cbo_ema_decay,
             self.cbo_fps,
             self.cbo_crf,
+            self.cbo_profile_level,
         ]
         self.persistence_manager = persist.PersistenceManager.Get()
         self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
@@ -745,12 +755,14 @@ class MainFrame(wx.Frame):
     def update_video_format(self):
         name = self.cbo_video_format.GetValue()
         if name == "avi":
+            self.cbo_profile_level.Disable()
             self.cbo_crf.Disable()
             self.cbo_preset.Disable()
             self.cbo_tune.Disable()
             self.chk_tune_fastdecode.Disable()
             self.chk_tune_zerolatency.Disable()
         else:
+            self.cbo_profile_level.Enable()
             self.cbo_crf.Enable()
             self.cbo_preset.Enable()
             self.cbo_tune.Enable()
@@ -879,6 +891,10 @@ class MainFrame(wx.Frame):
             tune.add("fastdecode")
         if self.cbo_tune.GetValue():
             tune.add(self.cbo_tune.GetValue())
+        profile_level = self.cbo_profile_level.GetValue()
+        if not profile_level or profile_level == "auto":
+            profile_level = None
+
         if self.cbo_pad.GetValue():
             pad = float(self.cbo_pad.GetValue())
         else:
@@ -959,6 +975,7 @@ class MainFrame(wx.Frame):
             colorspace=self.cbo_colorspace.GetValue(),
             video_format=self.cbo_video_format.GetValue(),
             crf=int(self.cbo_crf.GetValue()),
+            profile_level=profile_level,
             preset=self.cbo_preset.GetValue(),
             tune=list(tune),
 

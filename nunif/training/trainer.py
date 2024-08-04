@@ -9,6 +9,10 @@ from torch.optim.lr_scheduler import (
     StepLR, MultiStepLR, CosineAnnealingWarmRestarts,
     ConstantLR, ChainedScheduler
 )
+from . cosine_wd import (
+    CosineAnnealingWarmRestartsWithFixedWeightDecay,
+    CosineAnnealingWarmRestartsWithScheduledWeightDecay,
+)
 from ..optim import Lion
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
@@ -200,15 +204,25 @@ class Trainer(ABC):
                     optimizer,
                     milestones=self.args.learning_rate_decay_step,
                     gamma=self.args.learning_rate_decay)
-        elif self.args.scheduler == "cosine":
+        elif self.args.scheduler in {"cosine", "cosine_wd", "cosine_fixed_wd"}:
             step = self.args.learning_rate_cycles
             t_0 = self.args.max_epoch // step
             old_max_epoch = self.args.max_epoch
             # Adjust epoch to keep the final epoch to the minimum LR
             self.args.max_epoch -= (self.args.max_epoch % step) + 1
             print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
-            eta_min = self.args.learning_rate * self.args.learning_rate_cosine_min_factor
-            scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=t_0, eta_min=eta_min)
+            eta_min = self.args.learning_rate_cosine_min
+            if self.args.scheduler == "cosine":
+                scheduler = CosineAnnealingWarmRestarts(
+                    optimizer, T_0=t_0, eta_min=eta_min)
+            elif self.args.scheduler == "cosine_wd":
+                scheduler = CosineAnnealingWarmRestartsWithScheduledWeightDecay(
+                    optimizer, T_0=t_0, eta_min=eta_min,
+                    weight_decay_min=self.args.weight_decay,
+                    weight_decay_max=self.args.weight_decay_end)
+            elif self.args.scheduler == "cosine_fixed_wd":
+                scheduler = CosineAnnealingWarmRestartsWithFixedWeightDecay(
+                    optimizer, T_0=t_0, eta_min=eta_min)
         if self.args.warmup_epoch > 0:
             # TODO: `total_iters=self.args.warmup_epoch` does not work correctly,
             # ConstantLR works fine, but does not work correctly when used with ChainedScheduler.
@@ -220,7 +234,10 @@ class Trainer(ABC):
         return scheduler
 
     def create_grad_scaler(self):
-        return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
+        if hasattr(torch.amp, "GradScaler"):
+            return torch.amp.GradScaler(self.device.type, enabled=self.amp_is_enabled())
+        else:
+            return torch.cuda.amp.GradScaler(enabled=self.amp_is_enabled())
 
     def create_best_model_filename(self):
         return path.join(self.args.model_dir, f"{self.model.name}.pth")
@@ -299,6 +316,8 @@ def create_trainer_default_parser():
                         help="optimizer")
     parser.add_argument("--weight-decay", type=float, default=1e-4,
                         help="weight decay coefficient for adamw, sgd")
+    parser.add_argument("--weight-decay-end", type=float, default=0.05,
+                        help="max weight decay coefficient for cosine_wd")
     parser.add_argument("--adam-beta1", type=float, default=0.9,
                         help="beta1 hyperparameter for adam/adamw")
     parser.add_argument("--momentum", type=float, default=0.9,
@@ -313,7 +332,7 @@ def create_trainer_default_parser():
                         help="device ids; if -1 is specified, use CPU")
     parser.add_argument("--learning-rate", type=float, default=0.00025,
                         help="learning rate")
-    parser.add_argument("--scheduler", type=str, choices=["step", "cosine"], default="step",
+    parser.add_argument("--scheduler", type=str, choices=["step", "cosine", "cosine_wd", "cosine_fixed_wd"], default="step",
                         help="learning rate scheduler")
     parser.add_argument("--learning-rate-decay", type=float, default=0.995,
                         help="learning rate decay for StepLR")
@@ -321,8 +340,8 @@ def create_trainer_default_parser():
                         help="learning rate decay step for StepLR/MultiStepLR")
     parser.add_argument("--learning-rate-cycles", type=int, default=5,
                         help="number of learning rate cycles for CosineAnnealingWarmRestarts")
-    parser.add_argument("--learning-rate-cosine-min-factor", type=float, default=1e-3,
-                        help="Minimum learning rate factor for --schedule cosine")
+    parser.add_argument("--learning-rate-cosine-min", type=float, default=1e-6,
+                        help="Minimum learning rate for --schedule cosine")
     parser.add_argument("--warmup-epoch", type=int, default=0,
                         help="warmup epochs with --warmup-learning-rate")
     parser.add_argument("--warmup-learning-rate", type=float, default=1e-6,

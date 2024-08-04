@@ -124,15 +124,18 @@ def gen_color(disable_color):
     return tuple(fg), tuple(bg), tuple(bg2), tuple(line), line_overlay, line_masking
 
 
-def gen_dot_mask(size=400):
+def gen_dot_mask(size=400, allow_small=False):
     if random.uniform(0, 1) < 0.5:
-        dot_size = random.choice([5, 7, 9, 11, 13])
+        if allow_small:
+            dot_size = random.choice([3, 5, 7])
+        else:
+            dot_size = random.choice([5, 7, 9, 11, 13])
     else:
         dot_size = random.choice([7, 9, 11, 13, 15, 17, 19, 21])
     p = random.uniform(0, 1)
-    if p < 0.33:
+    if p < 0.5:
         margin = random.randint(2, dot_size)
-    elif p < 0.66:
+    elif p < 0.7:
         margin = random.randint(2, dot_size * 2)
     else:
         margin = random.choice([7, 9, 11, 13, 15, 17, 19])
@@ -147,7 +150,7 @@ def gen_dot_mask(size=400):
 
     kernel = TF.to_tensor(kernel).squeeze(0)
     p = random.uniform(0, 1)
-    if p < 0.4:
+    if dot_size <= 3 or p < 0.4:
         # [o o]
         # [o o]
         repeat_y = repeat_x = (size * 2) // kernel_size
@@ -172,11 +175,14 @@ def gen_dot_mask(size=400):
     return grid
 
 
-def gen_dot_gradient_mask(size=400):
-    max_dot_size = random.randint(10, 20)
-    min_dot_size = random.randint(2, max_dot_size)
+def gen_dot_gradient_mask(size=400, allow_small=False):
+    if allow_small:
+        max_dot_size = random.randint(3, 9)
+    else:
+        max_dot_size = random.randint(10, 20)
+    min_dot_size = random.randint(3, max_dot_size)
 
-    margin = random.randint(1, max_dot_size)
+    margin = random.randint(3, max_dot_size)
     cell_size = max_dot_size + margin
     cell_size += (cell_size % 2 == 0) * 1
     cell_n = (size * 2) // cell_size
@@ -200,20 +206,17 @@ def gen_dot_gradient_mask(size=400):
             gc.ellipse(ellipse_rect_float(center, dot_size), fill="white")
     if random.uniform(0, 1) < 0.8:
         grid = random_flip(grid)
-        if random.uniform(0, 1) < 0.5:
-            grid = random_downscale(grid, size, int(size * 2 * 0.75))
-        grid = random_crop(grid, (size, size))
-    else:
+    elif not allow_small:
         if random.uniform(0, 1) < 0.8:
             angle = 45
         else:
             angle = random.uniform(-180, 180)
         grid = TF.rotate(grid, angle=angle, interpolation=random_interpolation(rotate=True))
         grid = TF.center_crop(grid, (size * 2, size * 2))
-        if random.uniform(0, 1) < 0.5:
-            grid = random_downscale(grid, size, int(size * 2 * 0.75))
-        grid = random_crop(grid, (size, size))
 
+    if not allow_small and random.uniform(0, 1) < 0.5:
+        grid = random_downscale(grid, size, int(size * 2 * 0.75))
+    grid = random_crop(grid, (size, size))
     return grid
 
 
@@ -269,13 +272,20 @@ def gen_line_overlay(size, line_scale=1):
     while x < window.width:
         gc.line(((x, 0), (x, window.height)), fill="white", width=line_width)
         x = x + line_width + margin
+    if random.uniform(0, 1) < 0.5:
+        y = offset
+        while y < window.width:
+            gc.line(((0, y), (window.width, y)), fill="white", width=line_width)
+            y = y + line_width + margin
+
     if random.uniform(0, 1) < 0.25:
         x1 = TF.to_tensor(window)
         x2 = TF.to_tensor(window.transpose(Image.ROTATE_90))
         window = TF.to_pil_image((x1 + x2).clamp(0, 1))
 
-    angle = random.uniform(-180, 180)
-    window = TF.rotate(window, angle=angle, interpolation=random_interpolation(rotate=True))
+    if random.uniform(0, 1) < 0.8:
+        angle = random.uniform(-180, 180)
+        window = TF.rotate(window, angle=angle, interpolation=random_interpolation(rotate=True))
     window = TF.center_crop(window, (size, size))
 
     return window
@@ -289,18 +299,25 @@ def gen(disable_color):
     fg_color, window_bg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
     bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), window_bg_color)
     fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), fg_color)
-    if random.uniform(0, 1) < 0.7:
-        mask = gen_dot_mask(WINDOW_SIZE * 2)
+
+    line_pattern = False
+    random_rotate = random.uniform(0, 1) < 0.25
+    p = random.uniform(0, 1)
+    if p < 0.7:
+        mask = gen_dot_mask(WINDOW_SIZE * 2, allow_small=not random_rotate)
+    elif p < 0.75:
+        mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=1)
+        line_pattern = True
     else:
         if random.uniform(0, 1) < 0.5:
-            mask = gen_dot_gradient_mask(WINDOW_SIZE * 2)
+            mask = gen_dot_gradient_mask(WINDOW_SIZE * 2, allow_small=not random_rotate)
         else:
             mask = gen_sand_mask(WINDOW_SIZE * 2)
 
     bg.putalpha(255)
     fg.putalpha(mask)
     window = Image.alpha_composite(bg, fg)
-    if line_overlay_color is not None:
+    if not line_pattern and line_overlay_color is not None:
         mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=(4 if line_masking else 1))
         fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), line_overlay_color)
         window.putalpha(255)
@@ -318,7 +335,7 @@ def gen(disable_color):
     if random.uniform(0, 1) < 0.5:
         gc.rectangle((pad, pad, pad + window.width, pad + window.height), outline=line_color, width=line_width)
 
-    if random.uniform(0, 1) < 0.5:
+    if random_rotate:
         angle = random.uniform(-180, 180)
         screen = TF.rotate(screen, angle=angle, interpolation=random_interpolation(rotate=True), fill=bg_color)
     screen = TF.resize(screen, (IMAGE_SIZE, IMAGE_SIZE), interpolation=random_interpolation(), antialias=True)

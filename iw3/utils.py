@@ -582,6 +582,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": frame_packing}
         if args.tune:
             options["tune"] = ",".join(set(args.tune))
+        if args.profile_level:
+            options["level"] = args.profile_level
 
         return VU.VideoOutputConfig(
             fps=fps,
@@ -1095,6 +1097,8 @@ def process_config_video(config, args, side_model):
     encoder_options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": frame_packing}
     if args.tune:
         encoder_options.update({"tune": ",".join(list(set(args.tune)))})
+    if args.profile_level:
+        encoder_options["level"] = args.profile_level
 
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
@@ -1285,6 +1289,7 @@ def create_parser(required_true=True):
                         help="batch size for ZoeDepth model. ignored when --low-vram")
     parser.add_argument("--max-fps", type=float, default=30,
                         help="max framerate for video. output fps = min(fps, --max-fps)")
+    parser.add_argument("--profile-level", type=str, help="h264 profile level")
     parser.add_argument("--crf", type=int, default=20,
                         help="constant quality value for video. smaller value is higher quality")
     parser.add_argument("--preset", type=str, default="ultrafast",
@@ -1432,6 +1437,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         args.export = True
 
     args.video_extension = "." + args.video_format
+    if not args.profile_level or args.profile_level == "auto":
+        args.profile_level = None
 
     args.state = {
         "stop_event": stop_event,

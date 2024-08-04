@@ -1,5 +1,20 @@
 import torch
-from torch import nn
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+def clamp_loss(input, target, loss_function, min_value, max_value, eta=0.001):
+    noclip_loss = loss_function(input, target)
+    clip_loss = loss_function(torch.clamp(input, min_value, max_value),
+                              torch.clamp(target, min_value, max_value))
+    return clip_loss + noclip_loss * eta
+
+
+def clamp_l1_loss(input, target, loss_function, min_value, max_value, eta=0.001):
+    noclip_loss = F.l1_loss(input, target)
+    clip_loss = loss_function(torch.clamp(input, min_value, max_value),
+                              torch.clamp(target, min_value, max_value))
+    return clip_loss + noclip_loss * eta
 
 
 class ClampLoss(nn.Module):
@@ -13,8 +28,5 @@ class ClampLoss(nn.Module):
         self.eta = eta
 
     def forward(self, input, target):
-        noclip_loss = self.module(input, target)
-        clip_loss = self.module(torch.clamp(input, self.min_value, self.max_value),
-                                torch.clamp(target, self.min_value, self.max_value))
-
-        return clip_loss + noclip_loss * self.eta
+        return clamp_loss(input, target, self.module,
+                          min_value=self.min_value, max_value=self.max_value, eta=self.eta)
