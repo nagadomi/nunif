@@ -51,10 +51,10 @@ LOSS_FUNCTIONS = {
     "rgb_l1lbp5": lambda: L1LBP(kernel_size=5, weight=0.4),
     "alex11": lambda: ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
     "y_l1fftgrad": lambda: YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
-    "dct": lambda: DCTLoss(),
-    "dct4": lambda: DCTLoss(window_size=4),
-    "dct8": lambda: DCTLoss(window_size=8),
-    "dctm": lambda: WeightedLoss((DCTLoss(window_size=4), DCTLoss(window_size=24), DCTLoss()), (0.2, 0.2, 0.6)),
+    "dct": lambda: DCTLoss(clamp=True),
+    "dct4": lambda: DCTLoss(window_size=4, clamp=True),
+    "dct8": lambda: DCTLoss(window_size=8, clamp=True),
+    "dctm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True), DCTLoss(window_size=24, clamp=True), DCTLoss(clamp=True)), (0.2, 0.2, 0.6)),
 
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
