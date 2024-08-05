@@ -21,8 +21,8 @@ def window_dct_loss(input, target, window_size=8, loss_function=F.l1_loss, clamp
         rem = window_size - input.shape[2] % window_size
         pad1 = rem // 2
         pad2 = rem - pad1
-        input = F.pad(input, (pad1, pad2, pad1, pad2) * 4, mode="reflect")
-        target = F.pad(target, (pad1, pad2, pad1, pad2) * 4, mode="reflect")
+        input = F.pad(input, (pad1, pad2, pad1, pad2) * 4)
+        target = F.pad(target, (pad1, pad2, pad1, pad2) * 4)
 
     input = window_partition2d(input, window_size=window_size)
     target = window_partition2d(target, window_size=window_size)
@@ -40,13 +40,13 @@ def overlap_window_dct_loss(input, target, window_size=8, loss_function=F.l1_los
         rem = (window_size - input.shape[2] % window_size)
         pad1 = rem // 2
         pad2 = rem - pad1
-        input2 = F.pad(input, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad), mode="reflect")
-        target2 = F.pad(target, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad), mode="reflect")
-        input = F.pad(input, (pad1, pad2, pad1, pad2), mode="reflect")
-        target = F.pad(target, (pad1, pad2, pad1, pad2), mode="reflect")
+        input2 = F.pad(input, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad))
+        target2 = F.pad(target, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad))
+        input = F.pad(input, (pad1, pad2, pad1, pad2))
+        target = F.pad(target, (pad1, pad2, pad1, pad2))
     else:
-        input2 = F.pad(input, (pad,) * 4, mode="reflect")
-        target2 = F.pad(target, (pad,) * 4, mode="reflect")
+        input2 = F.pad(input, (pad,) * 4)
+        target2 = F.pad(target, (pad,) * 4)
 
     dct1 = window_dct_loss(input, target, window_size=window_size, loss_function=loss_function, clamp=clamp)
     dct2 = window_dct_loss(input2, target2, window_size=window_size, loss_function=loss_function, clamp=clamp)
