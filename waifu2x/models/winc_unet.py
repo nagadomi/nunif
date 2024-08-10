@@ -6,6 +6,7 @@ from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.norm import RMSNorm1
 from nunif.modules.replication_pad2d import ReplicationPad2d
+from nunif.modules.init import icnr_init, basic_module_init
 
 
 class GLUConvMLP(nn.Module):
@@ -21,6 +22,7 @@ class GLUConvMLP(nn.Module):
         self.pad = ReplicationPad2d((padding,) * 4)
         self.w1 = nn.Conv2d(in_channels, mid, kernel_size=1, stride=1, padding=0)
         self.w2 = nn.Conv2d(mid // 2, out_channels, kernel_size=kernel_size, stride=1, padding=0)
+        basic_module_init(self)
 
     def forward(self, x):
         x = self.norm(x)
@@ -84,6 +86,8 @@ class Overscan(nn.Module):
             nn.Conv2d(C, C, kernel_size=3, stride=1, padding=0),
             nn.LeakyReLU(0.1, inplace=True),
         )
+        basic_module_init(self.proj)
+        basic_module_init(self.mlp)
 
     def forward(self, x):
         x = F.pixel_unshuffle(x, 2)
@@ -101,11 +105,7 @@ class PatchDown(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_normal_(self.conv.weight, mode='fan_out', nonlinearity='relu')
-        nn.init.constant_(self.conv.bias, 0)
+        basic_module_init(self.conv)
 
     def forward(self, x):
         x = F.leaky_relu(self.conv(x), 0.1, inplace=True)
@@ -116,11 +116,7 @@ class PatchUp(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.proj = nn.Conv2d(in_channels, out_channels * 4, kernel_size=1, stride=1, padding=0)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_normal_(self.proj.weight, mode='fan_out', nonlinearity='relu')
-        nn.init.constant_(self.proj.bias, 0)
+        icnr_init(self.proj, scale_factor=2)
 
     def forward(self, x):
         x = F.leaky_relu(self.proj(x), 0.1, inplace=True)
@@ -135,6 +131,7 @@ class ToImage(nn.Module):
         # assert in_channels >= out_channels * scale_factor ** 2
         self.proj = nn.Conv2d(in_channels, out_channels * scale_factor ** 2,
                               kernel_size=1, stride=1, padding=0)
+        icnr_init(self.proj, scale_factor=scale_factor)
 
     def forward(self, x):
         x = self.proj(x)
@@ -176,6 +173,10 @@ class WincUNetBase(nn.Module):
                               window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers,
                               layer_norm=layer_norm)
         self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
+
+        basic_module_init(self.patch)
+        basic_module_init(self.wac1_proj)
+        basic_module_init(self.fusion)
 
     def forward(self, x):
         ov = self.overscan(x)
