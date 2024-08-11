@@ -5,6 +5,7 @@ from dctorch.functional import dct2
 from .color import rgb_to_yrgb
 from . permute import window_partition2d
 from . charbonnier_loss import charbonnier_loss
+from . transforms import diff_rotate
 
 
 def dct_loss(input, target, loss_function=F.l1_loss, clamp=False):
@@ -21,8 +22,8 @@ def window_dct_loss(input, target, window_size=8, loss_function=F.l1_loss, clamp
         rem = window_size - input.shape[2] % window_size
         pad1 = rem // 2
         pad2 = rem - pad1
-        input = F.pad(input, (pad1, pad2, pad1, pad2) * 4)
-        target = F.pad(target, (pad1, pad2, pad1, pad2) * 4)
+        input = F.pad(input, (pad1, pad2, pad1, pad2))
+        target = F.pad(target, (pad1, pad2, pad1, pad2))
 
     input = window_partition2d(input, window_size=window_size)
     target = window_partition2d(target, window_size=window_size)
@@ -55,11 +56,12 @@ def overlap_window_dct_loss(input, target, window_size=8, loss_function=F.l1_los
 
 class DCTLoss(nn.Module):
     # BCHW
-    def __init__(self, window_size=None, overlap=False, loss_function="l1", clamp=False):
+    def __init__(self, window_size=None, overlap=False, loss_function="l1", clamp=False, diag=False):
         super().__init__()
         self.clamp = clamp
         self.window_size = window_size
         self.overlap = overlap
+        self.diag = diag
         if isinstance(loss_function, str):
             if loss_function == "l1":
                 self.loss_function = F.l1_loss
@@ -72,9 +74,7 @@ class DCTLoss(nn.Module):
         else:
             self.loss_function = loss_function
 
-    def forward(self, input, target):
-        input = rgb_to_yrgb(input)
-        target = rgb_to_yrgb(target)
+    def forward_loss(self, input, target):
         if self.window_size is not None:
             if self.overlap:
                 return overlap_window_dct_loss(input, target, window_size=self.window_size,
@@ -84,6 +84,18 @@ class DCTLoss(nn.Module):
                                        loss_function=self.loss_function, clamp=self.clamp)
         else:
             return dct_loss(input, target, loss_function=self.loss_function, clamp=self.clamp)
+
+    def forward(self, input, target):
+        input = rgb_to_yrgb(input)
+        target = rgb_to_yrgb(target)
+
+        if self.diag:
+            return (
+                self.forward_loss(input, target) * 0.5 +
+                self.forward_loss(diff_rotate(input, 45, expand=True), diff_rotate(target, 45, expand=True)) * 0.5
+            )
+        else:
+            return self.forward_loss(input, target)
 
 
 def _test():
