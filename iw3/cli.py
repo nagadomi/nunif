@@ -1,9 +1,10 @@
+import os
+os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 import torch
 from .utils import create_parser, set_state_args, iw3_main
 from . import models # noqa
 from nunif.logger import logger
 from nunif.device import device_is_cuda
-
 
 def main():
     parser = create_parser()
