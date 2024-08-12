@@ -27,12 +27,21 @@ def replication_pad2d_naive(x, padding, detach=False):
     detach_fn = lambda t: t.detach() if detach else t
     if left > 0:
         x = torch.cat((*((detach_fn(x[:, :, :, :1]),) * left), x), dim=3)
+    elif left < 0:
+        x = x[:, :, :, -left:]
     if right > 0:
         x = torch.cat((x, *((detach_fn(x[:, :, :, -1:]),) * right)), dim=3)
+    elif right < 0:
+        x = x[:, :, :, :right]
     if top > 0:
         x = torch.cat((*((detach_fn(x[:, :, :1, :]),) * top), x), dim=2)
+    elif top < 0:
+        x = x[:, :, -top:, :]
     if bottom > 0:
         x = torch.cat((x, *((detach_fn(x[:, :, -1:, :]),) * bottom)), dim=2)
+    elif bottom < 0:
+        x = x[:, :, :bottom, :]
+
     return x
 
 
@@ -57,8 +66,8 @@ def _test():
     y2 = nn_pad(x)
     assert (y1 - y2).abs().sum() == 0
 
-    for _ in range(100):
-        padding = torch.randint(0, 10, (4,)).tolist()
+    for _ in range(10):
+        padding = torch.randint(-3, 3, (4,)).tolist()
         my_pad = ReplicationPad2dNaive(padding).cuda()
         nn_pad = nn.ReplicationPad2d(padding).cuda()
         x = torch.rand((4, 3, 8, 8)).cuda()
