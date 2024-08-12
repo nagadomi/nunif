@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.norm import RMSNorm1
-from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dDetach
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive
 from nunif.modules.init import icnr_init, basic_module_init
 
 
@@ -19,7 +19,7 @@ class GLUConvMLP(nn.Module):
             self.norm = nn.Identity()
         # assert kernel_size % 2 == 1
         padding = (kernel_size - 1) // 2
-        self.pad = ReplicationPad2dDetach((padding,) * 4)
+        self.pad = ReplicationPad2dNaive((padding,) * 4, detach=True)
         self.w1 = nn.Conv2d(in_channels, mid, kernel_size=1, stride=1, padding=0)
         self.w2 = nn.Conv2d(mid // 2, out_channels, kernel_size=kernel_size, stride=1, padding=0)
         basic_module_init(self)
