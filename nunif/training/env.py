@@ -191,6 +191,7 @@ class SoftmaxEnv(BaseEnv):
 
     def train_begin(self):
         self.model.train()
+        self.criterion.train()
         self.confusion_matrix.clear()
 
     def train_step(self, data):
@@ -209,6 +210,7 @@ class SoftmaxEnv(BaseEnv):
     def eval_begin(self):
         model = self.get_eval_model()
         model.eval()
+        self.criterion.eval()
         self.confusion_matrix.clear()
 
     def eval_step(self, data):
@@ -255,6 +257,7 @@ class I2IEnv(BaseEnv):
 
     def train_begin(self):
         self.model.train()
+        self.criterion.train()
         self.clear_loss()
 
     def train_step(self, data):
@@ -276,6 +279,7 @@ class I2IEnv(BaseEnv):
     def eval_begin(self):
         model = self.get_eval_model()
         model.eval()
+        self.criterion.eval()
         self.clear_loss()
 
     def eval_step(self, data):
@@ -333,6 +337,7 @@ class UnsupervisedEnv(BaseEnv):
 
     def train_begin(self):
         self.model.train()
+        self.criterion.train()
         self.clear_loss()
 
     def train_step(self, data):
@@ -355,6 +360,7 @@ class UnsupervisedEnv(BaseEnv):
 
     def eval_begin(self):
         self.model.eval()
+        self.criterion.eval()
 
     def eval_step(self, data):
         pass
@@ -376,6 +382,7 @@ class RegressionEnv(BaseEnv):
 
     def train_begin(self):
         self.model.train()
+        self.criterion.train()
         self.clear_loss()
 
     def train_step(self, data):
@@ -397,6 +404,7 @@ class RegressionEnv(BaseEnv):
     def eval_begin(self):
         model = self.get_eval_model()
         model.eval()
+        self.criterion.eval()
         self.clear_loss()
 
     def eval_step(self, data):
