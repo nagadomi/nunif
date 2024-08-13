@@ -1,17 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://download.pytorch.org/whl/cu118
+
 # macOS
--f https://download.pytorch.org/whl/cpu/torch
 torch; sys_platform == "darwin"
--f https://download.pytorch.org/whl/cpu/torchvision
 torchvision; sys_platform == "darwin"
 
 # Linux
--f https://download.pytorch.org/whl/cu118/torch
-torch; sys_platform == "linux"
--f https://download.pytorch.org/whl/cu118/torchvision
-torchvision; sys_platform == "linux"
+torch==2.4.0+cu118; sys_platform == "linux"
+torchvision==0.19.0+cu118; sys_platform == "linux"
 
 # Windows
--f https://download.pytorch.org/whl/cu118/torch
-torch==2.3.1; sys_platform == "win32"
--f https://download.pytorch.org/whl/cu118/torchvision
-torchvision==0.18.1; sys_platform == "win32"
+torch==2.3.1+cu118; sys_platform == "win32"
+torchvision==0.18.1+cu118; sys_platform == "win32"
