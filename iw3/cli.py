@@ -6,6 +6,7 @@ from . import models # noqa
 from nunif.logger import logger
 from nunif.device import device_is_cuda
 
+
 def main():
     parser = create_parser()
     args = parser.parse_args()

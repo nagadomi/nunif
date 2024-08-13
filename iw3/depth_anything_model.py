@@ -251,9 +251,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
 
 def _bench():
-    from PIL import Image
-    import cv2
-    import numpy as np
     import time
 
     N = 100
@@ -263,7 +260,7 @@ def _bench():
     with torch.no_grad():
         t = time.time()
         for _ in range(N):
-            z = model(x)
+            model(x)
             torch.cuda.synchronize()
         print(round((time.time() - t) / N, 4))
 
@@ -282,5 +279,5 @@ def _test():
 
 
 if __name__ == "__main__":
-    #_test()
+    # _test()
     _bench()

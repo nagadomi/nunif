@@ -1,5 +1,9 @@
 [flake8]
 ignore = E501 W504 E731
+per-file-ignores =
+     iw3/cli.py: E402
+     iw3/gui.py: E402
+
 max_line_length = 128
 exclude =
         .env*/
