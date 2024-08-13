@@ -118,24 +118,8 @@ def draw_line(block, p1, p2, fg, size, size_step):
     return last_p
 
 
-def gen_dot_line_block(block_size=24, scale=1, rotate=False):
-    block = np.zeros((block_size, block_size, 3), dtype=np.float32)
-    margin = random.randint(1, 3)
-    if rotate:
-        size = random.randint(3, 5)
-    else:
-        if exec_prob(0.5):
-            size = random.randint(1, 5)
-        else:
-            size = random.randint(1, 3)
-
-    if exec_prob(0.5):
-        fg = gen_color(black=False)
-        bg = gen_color(black=True)
-    else:
-        fg = gen_color(black=True)
-        bg = gen_color(black=False)
-
+def draw_random_line(block, fg, size, size_step):
+    block_size = block.shape[0]
     num_points = random.randint(2, 12)
     points = []
     for i in range(num_points):
@@ -149,9 +133,36 @@ def gen_dot_line_block(block_size=24, scale=1, rotate=False):
         random.shuffle(points)
 
     p = points[0]
-    block[:, :] = bg
     for next_p in points[1:]:
-        p = draw_line(block, p, next_p, fg, size, size_step=(rotate or exec_prob(0.5)))
+        p = draw_line(block, p, next_p, fg, size, size_step=size_step)
+
+
+def gen_dot_line_block(block_size=24, scale=1, rotate=False):
+    block = np.zeros((block_size, block_size, 3), dtype=np.float32)
+    margin = random.randint(1, 3)
+    if rotate:
+        size = random.randint(3, 5)
+    else:
+        if exec_prob(0.5):
+            size = random.randint(1, 5)
+        else:
+            size = random.randint(1, 3)
+
+    if exec_prob(0.5):
+        fg1 = gen_color(black=False)
+        fg2 = gen_color(black=False)
+        bg = gen_color(black=True)
+    else:
+        fg1 = gen_color(black=True)
+        fg2 = gen_color(black=True)
+        bg = gen_color(black=False)
+
+    block[:, :] = bg
+    if exec_prob(0.5):
+        p = draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
+    else:
+        p = draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
+        p = draw_random_line(block, fg2, size, size_step=(rotate or exec_prob(0.5)))
 
     block = (block * 255).astype(np.uint8)
     im = Image.fromarray(block)
