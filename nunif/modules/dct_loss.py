@@ -92,7 +92,8 @@ class DCTLoss(nn.Module):
         if self.diag:
             return (
                 self.forward_loss(input, target) * 0.5 +
-                self.forward_loss(diff_rotate(input, 45, expand=True), diff_rotate(target, 45, expand=True)) * 0.5
+                self.forward_loss(diff_rotate(input, 45, expand=True, padding_mode="zeros"),
+                                  diff_rotate(target, 45, expand=True, padding_mode="zeros")) * 0.5
             )
         else:
             return self.forward_loss(input, target)
