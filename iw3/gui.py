@@ -1,5 +1,3 @@
-import os
-os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 import nunif.pythonw_fix  # noqa
 import locale
 import sys

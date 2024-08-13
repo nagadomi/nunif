@@ -1,5 +1,3 @@
-import os
-os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 import torch
 from .utils import create_parser, set_state_args, iw3_main
 from . import models # noqa
