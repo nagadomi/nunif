@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.norm import RMSNorm1
-from nunif.modules.replication_pad2d import ReplicationPad2d
-
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive
+from nunif.modules.init import icnr_init, basic_module_init
 
 
 class GLUConvMLP(nn.Module):
@@ -19,9 +19,10 @@ class GLUConvMLP(nn.Module):
             self.norm = nn.Identity()
         # assert kernel_size % 2 == 1
         padding = (kernel_size - 1) // 2
-        self.pad = ReplicationPad2d((padding,) * 4)
+        self.pad = ReplicationPad2dNaive((padding,) * 4, detach=True)
         self.w1 = nn.Conv2d(in_channels, mid, kernel_size=1, stride=1, padding=0)
         self.w2 = nn.Conv2d(mid // 2, out_channels, kernel_size=kernel_size, stride=1, padding=0)
+        basic_module_init(self)
 
     def forward(self, x):
         x = self.norm(x)
@@ -70,15 +71,41 @@ class WACBlocks(nn.Module):
         return self.blocks(x)
 
 
+class Overscan(nn.Module):
+    def __init__(self, in_channels=3, out_channels=16):
+        super().__init__()
+        C = out_channels * 2 * 2
+        self.proj = nn.Conv2d(in_channels * 2 * 2, C, kernel_size=1, stride=1, padding=0)
+        self.mha1 = WindowMHA2d(C, num_heads=2, window_size=8)
+        self.mha2 = WindowMHA2d(C, num_heads=2, window_size=6)
+        self.relative_bias1 = WindowScoreBias(window_size=8)
+        self.relative_bias2 = WindowScoreBias(window_size=6)
+        self.mlp = nn.Sequential(
+            nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(C, C, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(0.1, inplace=True),
+        )
+        basic_module_init(self.proj)
+        basic_module_init(self.mlp)
+
+    def forward(self, x):
+        x = F.pixel_unshuffle(x, 2)
+        assert x.shape[2] % 8 == 0
+        x = self.proj(x)
+        x = x + self.mha1(x, attn_mask=self.relative_bias1())
+        x = F.pad(x, (-1,) * 4) + self.mlp(x)
+        assert x.shape[2] % 6 == 0
+        x = x + self.mha2(x, attn_mask=self.relative_bias2())
+        x = F.pixel_shuffle(x, 2)
+        return x
+
+
 class PatchDown(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_normal_(self.conv.weight, mode='fan_out', nonlinearity='relu')
-        nn.init.constant_(self.conv.bias, 0)
+        basic_module_init(self.conv)
 
     def forward(self, x):
         x = F.leaky_relu(self.conv(x), 0.1, inplace=True)
@@ -89,11 +116,7 @@ class PatchUp(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.proj = nn.Conv2d(in_channels, out_channels * 4, kernel_size=1, stride=1, padding=0)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_normal_(self.proj.weight, mode='fan_out', nonlinearity='relu')
-        nn.init.constant_(self.proj.bias, 0)
+        icnr_init(self.proj, scale_factor=2)
 
     def forward(self, x):
         x = F.leaky_relu(self.proj(x), 0.1, inplace=True)
@@ -108,6 +131,7 @@ class ToImage(nn.Module):
         # assert in_channels >= out_channels * scale_factor ** 2
         self.proj = nn.Conv2d(in_channels, out_channels * scale_factor ** 2,
                               kernel_size=1, stride=1, padding=0)
+        icnr_init(self.proj, scale_factor=scale_factor)
 
     def forward(self, x):
         x = self.proj(x)
@@ -129,16 +153,14 @@ class WincUNetBase(nn.Module):
         # assert C % 32 == 0 and C2 % 32 == 0  # slow when C % 32 != 0
         HEADS = 4
 
+        self.overscan = Overscan(in_channels)
         # shallow feature extractor
-        self.patch = nn.Sequential(
-            nn.Conv2d(in_channels, C // 2, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
-        )
+        self.patch = nn.Conv2d(in_channels, C // 2, kernel_size=3, stride=1, padding=0)
+        self.fusion = nn.Conv2d(C // 2 + 16, C, kernel_size=3, stride=1, padding=0)
+
         # encoder
         self.wac1 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=8, num_heads=HEADS, num_layers=first_layers,
+                              window_size=[8, 6] * first_layers, num_heads=HEADS, num_layers=first_layers,
                               layer_norm=layer_norm)
         self.down1 = PatchDown(C, C2)
         self.wac2 = WACBlocks(C2, mlp_ratio=lv2_mlp_ratio,
@@ -148,13 +170,23 @@ class WincUNetBase(nn.Module):
         self.up1 = PatchUp(C2, C)
         self.wac1_proj = nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0)
         self.wac3 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=8, num_heads=HEADS, num_layers=last_layers,
+                              window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers,
                               layer_norm=layer_norm)
         self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
 
+        basic_module_init(self.patch)
+        basic_module_init(self.wac1_proj)
+        basic_module_init(self.fusion)
+
     def forward(self, x):
+        ov = self.overscan(x)
         x = self.patch(x)
-        x = F.pad(x, (-6, -6, -6, -6))
+        x = F.leaky_relu(x, 0.1, inplace=True)
+        x = F.pad(x, (-1,) * 4)
+        x = torch.cat([x, ov], dim=1)
+        x = self.fusion(x)
+        x = F.pad(x, (-5,) * 4)
+        x = F.leaky_relu(x, 0.1, inplace=True)
 
         x1 = self.wac1(x)
         x = self.down1(x1)

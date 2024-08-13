@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
-from nunif.device import create_device, autocast
+from nunif.device import create_device, autocast, device_is_mps # noqa
 from nunif.models.data_parallel import DataParallelInference
 from .dilation import dilate_edge
 
@@ -146,7 +146,12 @@ def batch_preprocess(x, lower_bound=392):
         new_h = lower_bound
     if new_w < lower_bound:
         new_w = lower_bound
-    x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False, antialias=True)
+
+    # TODO: 'aten::_upsample_bilinear2d_aa.out' is not currently implemented for the MPS device
+    # This did not cause any performance problems, so I decided not to handle it.
+    # antialias = not device_is_mps(x.device)
+    antialias = True
+    x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False, antialias=antialias)
     x.clamp_(0, 1)
 
     # normalize
@@ -246,9 +251,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
 
 def _bench():
-    from PIL import Image
-    import cv2
-    import numpy as np
     import time
 
     N = 100
@@ -258,7 +260,7 @@ def _bench():
     with torch.no_grad():
         t = time.time()
         for _ in range(N):
-            z = model(x)
+            model(x)
             torch.cuda.synchronize()
         print(round((time.time() - t) / N, 4))
 
@@ -277,5 +279,5 @@ def _test():
 
 
 if __name__ == "__main__":
-    #_test()
+    # _test()
     _bench()

@@ -56,3 +56,4 @@ We usually support the latest version. If there are bugs or compatibility issues
 
 - [INSTALL-ubuntu](INSTALL-ubuntu.md)
 - [INSTALL-windows](INSTALL-windows.md)
+- [INSTALL-macos](INSTALL-macos.md)

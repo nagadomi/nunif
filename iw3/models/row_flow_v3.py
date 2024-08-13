@@ -56,7 +56,7 @@ class RowFlowV3(I2IBaseModel):
         input_height, input_width = x.shape[2:]
         pad1 = (self.mod * self.downscaling_factor[1]) - input_width % (self.mod * self.downscaling_factor[1])
         pad2 = (self.mod * self.downscaling_factor[0]) - input_height % (self.mod * self.downscaling_factor[0])
-        x = replication_pad2d_naive(x, (0, pad1, 0, pad2))
+        x = replication_pad2d_naive(x, (0, pad1, 0, pad2), detach=True)
         x = pixel_unshuffle(x, self.downscaling_factor)
         x = self.blocks(x)
         x = pixel_shuffle(x, self.downscaling_factor)

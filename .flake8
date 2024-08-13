@@ -1,5 +1,9 @@
 [flake8]
 ignore = E501 W504 E731
+per-file-ignores =
+     iw3/__init__.py: E402
+     waifu2x/__init__.py: E402
+
 max_line_length = 128
 exclude =
         .env*/

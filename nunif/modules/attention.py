@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
 from .permute import bchw_to_bnc, bnc_to_bchw, bchw_to_bhwc, bhwc_to_bchw
+from .init import basic_module_init
+
 
 try:
     from torch.nn.attention import SDPBackend, sdpa_kernel
@@ -25,6 +27,7 @@ class SEBlock(nn.Module):
         super(SEBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels // reduction, 1, 1, 0, bias=bias)
         self.conv2 = nn.Conv2d(in_channels // reduction, in_channels, 1, 1, 0, bias=bias)
+        basic_module_init(self)
 
     def forward(self, x):
         z = F.adaptive_avg_pool2d(x, 1)
@@ -40,6 +43,7 @@ class SEBlockNHWC(nn.Module):
         super().__init__()
         self.lin1 = nn.Linear(in_channels, in_channels // reduction, bias=bias)
         self.lin2 = nn.Linear(in_channels // reduction, in_channels, bias=bias)
+        basic_module_init(self)
 
     def forward(self, x):
         z = x.mean(dim=[1, 2], keepdim=True)
@@ -53,6 +57,7 @@ class SNSEBlock(nn.Module):
         super().__init__()
         self.conv1 = spectral_norm(nn.Conv2d(in_channels, in_channels // reduction, 1, 1, 0, bias=bias))
         self.conv2 = spectral_norm(nn.Conv2d(in_channels // reduction, in_channels, 1, 1, 0, bias=bias))
+        basic_module_init(self)
 
     def forward(self, x):
         z = F.adaptive_avg_pool2d(x, 1)
@@ -95,6 +100,7 @@ class MHA(nn.Module):
         self.num_heads = num_heads
         self.qkv_proj = nn.Linear(embed_dim, qkv_dim * num_heads * 3)
         self.head_proj = nn.Linear(qkv_dim * num_heads, embed_dim)
+        basic_module_init(self)
 
     def forward(self, x, attn_mask=None, dropout_p=0.0, is_causal=False):
         # x.shape: batch, sequence, feature
@@ -181,6 +187,7 @@ class CrossMHA(nn.Module):
         self.q_proj = nn.Linear(embed_dim, qkv_dim * num_heads)
         self.kv_proj = nn.Linear(embed_dim, qkv_dim * num_heads * 2)
         self.head_proj = nn.Linear(qkv_dim * num_heads, embed_dim)
+        basic_module_init(self)
 
     def forward(self, q, kv, attn_mask=None, dropout_p=0.0, is_causal=False):
         assert q.shape == kv.shape
@@ -231,11 +238,7 @@ class WindowScoreBias(nn.Module):
             nn.GELU(),
             nn.Linear(hidden_dim, 1, bias=True))
 
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.trunc_normal_(m.weight, 0, 0.02)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
+        basic_module_init(self)
 
     @staticmethod
     def _gen_input(window_size):

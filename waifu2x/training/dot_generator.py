@@ -92,6 +92,88 @@ def gen_dot_block(block_size=24, scale=1, rotate=False):
     return im
 
 
+def draw_line(block, p1, p2, fg, size, size_step):
+    steps = math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+    if not size_step:
+        pass
+    else:
+        steps = steps / size
+    steps = int(steps)
+    if steps == 0:
+        return p1
+
+    y_delta = (p2[0] - p1[0]) / steps
+    x_delta = (p2[1] - p1[1]) / steps
+    p = p1
+    last_p = None
+    for _ in range(steps):
+        last_p = [int(p[0]), int(p[1])]
+        for y in range(size):
+            y = min(y + last_p[0], block.shape[0] - 1)
+            for x in range(size):
+                x = min(x + last_p[1], block.shape[1] - 1)
+                block[y, x, :] = fg
+        p[0] += y_delta
+        p[1] += x_delta
+    return last_p
+
+
+def draw_random_line(block, fg, size, size_step):
+    block_size = block.shape[0]
+    num_points = random.randint(2, 12)
+    points = []
+    for i in range(num_points):
+        points.append([random.randint(0, block_size - 1), random.randint(0, block_size - 1)])
+    if exec_prob(0.5):
+        if exec_prob(0.5):
+            points = sorted(points, key=lambda p: p[0])
+        else:
+            points = sorted(points, key=lambda p: p[1])
+    else:
+        random.shuffle(points)
+
+    p = points[0]
+    for next_p in points[1:]:
+        p = draw_line(block, p, next_p, fg, size, size_step=size_step)
+
+
+def gen_dot_line_block(block_size=24, scale=1, rotate=False):
+    block = np.zeros((block_size, block_size, 3), dtype=np.float32)
+    margin = random.randint(1, 3)
+    if rotate:
+        size = random.randint(3, 5)
+    else:
+        if exec_prob(0.5):
+            size = random.randint(1, 5)
+        else:
+            size = random.randint(1, 3)
+
+    if exec_prob(0.5):
+        fg1 = gen_color(black=False)
+        fg2 = gen_color(black=False)
+        bg = gen_color(black=True)
+    else:
+        fg1 = gen_color(black=True)
+        fg2 = gen_color(black=True)
+        bg = gen_color(black=False)
+
+    block[:, :] = bg
+    if exec_prob(0.5):
+        p = draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
+    else:
+        p = draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
+        p = draw_random_line(block, fg2, size, size_step=(rotate or exec_prob(0.5)))
+
+    block = (block * 255).astype(np.uint8)
+    im = Image.fromarray(block)
+    im = im.resize((block_size * scale, block_size * scale), resample=Image.Resampling.NEAREST)
+    if rotate:
+        im = im.convert("RGBA")
+        im = im.rotate(random.randint(0, 90), resample=Image.Resampling.BILINEAR)
+        im = remove_alpha(im, (int(bg[0] * 255), int(bg[1] * 255), int(bg[2] * 255)))
+    return im
+
+
 def image_grid(blocks, block_size, rows, cols):
     assert len(blocks) == rows * cols
     w, h = block_size, block_size
@@ -105,7 +187,10 @@ def image_grid(blocks, block_size, rows, cols):
 def gen_dot_grid(block_size, scale, cols, rotate=False):
     blocks = []
     for _ in range(cols * cols):
-        block = gen_dot_block(block_size=block_size, scale=scale, rotate=rotate)
+        if exec_prob(0.2):
+            block = gen_dot_line_block(block_size=block_size, scale=scale, rotate=rotate)
+        else:
+            block = gen_dot_block(block_size=block_size, scale=scale, rotate=rotate)
         blocks.append(block)
     im = image_grid(blocks, block_size * scale, cols, cols)
     return im
@@ -117,6 +202,7 @@ COLS_MAP = {2: 4, 4: 2, 8: 1}
 def gen(cell=40, cols_scale=1, rotate=False, dot_scale=2):
     assert isinstance(cols_scale, int)
     assert dot_scale in {2, 4}
+    line_block = exec_prob(0.2)
     if dot_scale == 2:
         scale = random.choices((2, 4, 8), weights=(0.25, 1, 1), k=1)[0]
     elif dot_scale == 4:
