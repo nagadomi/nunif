@@ -115,9 +115,16 @@ def equirectangular_projection(c, device="cpu"):
     mesh_x = (max_edge / output_size) * torch.tan(azimuth)
     mesh_y = (max_edge / output_size) * (torch.tan(elevation) / torch.cos(azimuth))
     grid = torch.stack((mesh_x, mesh_y), 2)
+
+    if device_is_mps(c.device):
+        # MPS does not support bicubic
+        mode = "bilinear"
+    else:
+        mode = "bicubic"
+
     z = F.grid_sample(c.unsqueeze(0),
                       grid.unsqueeze(0),
-                      mode="bicubic", padding_mode="zeros",
+                      mode=mode, padding_mode="zeros",
                       align_corners=True).squeeze(0)
     z = torch.clamp(z, 0, 1)
 
