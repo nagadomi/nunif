@@ -56,12 +56,14 @@ def overlap_window_dct_loss(input, target, window_size=8, loss_function=F.l1_los
 
 class DCTLoss(nn.Module):
     # BCHW
-    def __init__(self, window_size=None, overlap=False, loss_function="l1", clamp=False, diag=False):
+    def __init__(self, window_size=None, overlap=False, loss_function="l1", clamp=False, diag=False, random_rotate=False):
         super().__init__()
         self.clamp = clamp
         self.window_size = window_size
         self.overlap = overlap
         self.diag = diag
+        self.random_rotate = random_rotate
+
         if isinstance(loss_function, str):
             if loss_function == "l1":
                 self.loss_function = F.l1_loss
@@ -89,7 +91,17 @@ class DCTLoss(nn.Module):
         input = rgb_to_yrgb(input)
         target = rgb_to_yrgb(target)
 
-        if self.diag:
+        if self.random_rotate:
+            if self.training:
+                angle = torch.rand(1).item() * 360
+            else:
+                angle = 45
+            return (
+                self.forward_loss(input, target) * 0.5 +
+                self.forward_loss(diff_rotate(input, angle, expand=True, padding_mode="zeros"),
+                                  diff_rotate(target, angle, expand=True, padding_mode="zeros")) * 0.5
+            )
+        elif self.diag:
             return (
                 self.forward_loss(input, target) * 0.5 +
                 self.forward_loss(diff_rotate(input, 45, expand=True, padding_mode="zeros"),
