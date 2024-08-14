@@ -51,7 +51,7 @@ def overlap_window_dct_loss(input, target, window_size=8, loss_function=F.l1_los
 
     dct1 = window_dct_loss(input, target, window_size=window_size, loss_function=loss_function, clamp=clamp)
     dct2 = window_dct_loss(input2, target2, window_size=window_size, loss_function=loss_function, clamp=clamp)
-    return dct1 * 0.5 + dct2 * 0.5
+    return (dct1 + dct2) * 0.5
 
 
 class DCTLoss(nn.Module):
@@ -90,25 +90,22 @@ class DCTLoss(nn.Module):
     def forward(self, input, target):
         input = rgb_to_yrgb(input)
         target = rgb_to_yrgb(target)
+        loss1 = self.forward_loss(input, target)
 
         if self.random_rotate:
             if self.training:
                 angle = torch.rand(1).item() * 360
             else:
                 angle = 45
-            return (
-                self.forward_loss(input, target) * 0.5 +
-                self.forward_loss(diff_rotate(input, angle, expand=True, padding_mode="zeros"),
-                                  diff_rotate(target, angle, expand=True, padding_mode="zeros")) * 0.5
-            )
+            loss2 = self.forward_loss(diff_rotate(input, angle, expand=True, padding_mode="zeros"),
+                                      diff_rotate(target, angle, expand=True, padding_mode="zeros"))
+            return (loss1 + loss2) * 0.5
         elif self.diag:
-            return (
-                self.forward_loss(input, target) * 0.5 +
-                self.forward_loss(diff_rotate(input, 45, expand=True, padding_mode="zeros"),
-                                  diff_rotate(target, 45, expand=True, padding_mode="zeros")) * 0.5
-            )
+            loss2 = self.forward_loss(diff_rotate(input, 45, expand=True, padding_mode="zeros"),
+                                      diff_rotate(target, 45, expand=True, padding_mode="zeros"))
+            return (loss1 + loss2) * 0.5
         else:
-            return self.forward_loss(input, target)
+            return loss1
 
 
 def _test():
