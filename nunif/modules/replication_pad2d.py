@@ -1,6 +1,6 @@
 # 1. MPS backend does not support nn.ReplicationPad2d. Use this instead.
 # 2. ReplicationPad2 calculates the gradient of the padding values multiply.
-#    This implementation can use `detach=False` option.
+#    This implementation can use `detach=True` option.
 
 import torch
 import torch.nn as nn
