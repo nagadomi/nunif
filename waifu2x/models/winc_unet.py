@@ -204,6 +204,12 @@ class WincUNetBase(nn.Module):
         return z
 
 
+def tile_size_validator(size):
+    return (size > 16 and
+            (size - 16) % 12 == 0 and
+            (size - 16) % 16 == 0)
+
+
 @register_model
 class WincUNet1x(I2IBaseModel):
     name = "waifu2x.winc_unet_1x"
@@ -213,6 +219,7 @@ class WincUNet1x(I2IBaseModel):
                  first_layers=2, last_layers=3,
                  **kwargs):
         super(WincUNet1x, self).__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
+        self.register_tile_size_validator(tile_size_validator)
         self.unet = WincUNetBase(in_channels, out_channels,
                                  base_dim=base_dim,
                                  lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
@@ -235,6 +242,7 @@ class WincUNet2x(I2IBaseModel):
                  base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
                  **kwargs):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
+        self.register_tile_size_validator(tile_size_validator)
         self.unet = WincUNetBase(in_channels, out_channels,
                                  base_dim=base_dim,
                                  lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
@@ -257,6 +265,7 @@ class WincUNet4x(I2IBaseModel):
                  ftf_loss=False,
                  **kwargs):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
+        self.register_tile_size_validator(tile_size_validator)
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.unet = WincUNetBase(in_channels, out_channels=out_channels,
@@ -296,6 +305,7 @@ class WincUNetDownscaled(I2IBaseModel):
         super().__init__(dict(in_channels=in_channels, out_channels=out_channels,
                               downscale_factor=downscale_factor),
                          scale=scale, offset=offset, in_channels=in_channels, blend_size=blend_size)
+        self.register_tile_size_validator(tile_size_validator)
         self.unet = unet
         self.downscale_factor = downscale_factor
 

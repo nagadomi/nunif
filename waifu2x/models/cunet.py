@@ -120,12 +120,17 @@ class UNet2(nn.Module):
         return z
 
 
+def tile_size_validator(size):
+    return size % 4 == 0
+
+
 @register_model
 class UpCUNet(I2IBaseModel):
     name = "waifu2x.upcunet"
 
     def __init__(self, in_channels=3, out_channels=3, no_clip=False):
         super(UpCUNet, self).__init__(locals(), scale=2, offset=36, in_channels=in_channels)
+        self.register_tile_size_validator(tile_size_validator)
         self.unet1 = UNet1(in_channels, out_channels, deconv=True)
         self.unet2 = UNet2(in_channels, out_channels, deconv=False)
         self.no_clip = no_clip
@@ -159,6 +164,7 @@ class CUNet(I2IBaseModel):
 
     def __init__(self, in_channels=3, out_channels=3, no_clip=False):
         super(CUNet, self).__init__(locals(), scale=1, offset=28, in_channels=in_channels)
+        self.register_tile_size_validator(tile_size_validator)
         self.unet1 = UNet1(in_channels, out_channels, deconv=False)
         self.unet2 = UNet2(in_channels, out_channels, deconv=False)
         self.no_clip = no_clip
