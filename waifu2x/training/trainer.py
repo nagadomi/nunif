@@ -488,6 +488,7 @@ class Waifu2xTrainer(Trainer):
                 da_antialias_p=self.args.da_antialias_p,
                 da_hflip_only=self.args.da_hflip_only,
                 da_cutmix_p=self.args.da_cutmix_p,
+                da_mixup_p=self.args.da_mixup_p,
                 fixed_deblur=self.args.fixed_deblur,
                 deblur=self.args.deblur,
                 resize_blur_range=self.args.resize_blur_range,
@@ -678,6 +679,8 @@ def register(subparsers, default_parser):
                         help="restrict random flip to horizontal flip only")
     parser.add_argument("--da-cutmix-p", type=float, default=0.0,
                         help="random cutmix data augmentation for gt image")
+    parser.add_argument("--da-mixup-p", type=float, default=0.0,
+                        help="random mixup(overlay) data augmentation for gt image")
 
     parser.add_argument("--fixed-deblur", type=float, default=0.0,
                         help=("fixed shift parameter of resize blur."
