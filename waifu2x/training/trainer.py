@@ -66,6 +66,10 @@ LOSS_FUNCTIONS = {
                                    DCTLoss(window_size=24, clamp=True, random_rotate=True),
                                    DCTLoss(clamp=True, random_rotate=True)),
                                   (0.2, 0.2, 0.6)),
+    "dctirm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True),
+                                    DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+                                    DCTLoss(clamp=True, random_instance_rotate=True)),
+                                   (0.2, 0.2, 0.6)),
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
         ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
