@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import copy
+from functools import lru_cache
 
 
 class Model(nn.Module):
@@ -40,19 +41,53 @@ class Model(nn.Module):
         raise NotImplementedError()
 
 
+_tile_size_validators = {}
+
+
+def _register_tile_size_validator(name, func):
+    _tile_size_validators[name] = func
+
+
+@lru_cache
+def _find_valid_tile_size(name, base_tile_size):
+    validator = _tile_size_validators.get(name, None)
+    if validator is not None:
+        tile_size = int(base_tile_size)
+        while tile_size > 0:
+            if validator(tile_size):
+                return tile_size
+            tile_size -= 1
+        raise ValueError(f"Could not find valid tile size: tile_size={base_tile_size}")
+    else:
+        return int(base_tile_size)
+
+
 class I2IBaseModel(Model):
     name = "nunif.i2i_base_model"
 
-    def __init__(self, kwargs, scale, offset, in_channels=None, in_size=None, blend_size=None):
+    def __init__(self, kwargs, scale, offset, in_channels=None, in_size=None, blend_size=None,
+                 default_tile_size=256, default_batch_size=4):
         super(I2IBaseModel, self).__init__(kwargs)
         self.i2i_scale = scale
         self.i2i_offset = offset
         self.i2i_in_channels = in_channels
         self.i2i_in_size = in_size
         self.i2i_blend_size = blend_size
+        self.i2i_default_tile_size = default_tile_size
+        self.i2i_default_batch_size = default_batch_size
+
+    def register_tile_size_validator(self, validator):
+        _register_tile_size_validator(self.name, validator)
+
+    def find_valid_tile_size(self, base_tile_size):
+        if base_tile_size is None:
+            base_tile_size = self.i2i_default_tile_size
+        tile_size = _find_valid_tile_size(self.name, base_tile_size)
+        return tile_size
 
     def export_onnx(self, f, **kwargs):
-        x = torch.rand([1, self.i2i_in_channels, 256, 256], dtype=torch.float32)
+        shape = [1, self.i2i_in_channels, self.i2i_default_tile_size, self.i2i_default_tile_size]
+        x = torch.rand(shape, dtype=torch.float32)
         model = self.to_inference_model()
         torch.onnx.export(
             model,

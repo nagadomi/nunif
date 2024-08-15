@@ -115,8 +115,8 @@ def setup():
     parser.add_argument("--photo-model-dir", type=str, default=DEFAULT_PHOTO_MODEL_DIR, help="photo model dir")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device ids. -1 for CPU")
-    parser.add_argument("--tile-size", type=int, default=256, help="tile size for tiled render")
-    parser.add_argument("--batch-size", type=int, default=4, help="minibatch size for tiled render")
+    parser.add_argument("--tile-size", type=int, default=None, help="tile size for tiled render")
+    parser.add_argument("--batch-size", type=int, default=None, help="minibatch size for tiled render")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
     parser.add_argument("--compile", action="store_true", help="Use torch.compile()")

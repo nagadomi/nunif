@@ -30,7 +30,7 @@ METHODS = [
 
 class Waifu2xImageModel():
     def __init__(self, model_type, method=None, noise_level=-1,
-                 device_ids=[-1], tile_size=256, batch_size=4, keep_alpha=True, amp=True):
+                 device_ids=[-1], tile_size=None, batch_size=None, keep_alpha=True, amp=True):
         self.model_type = model_type
         self.tile_size = tile_size
         self.batch_size = batch_size
@@ -165,7 +165,7 @@ class Waifu2xImageModel():
 
 def waifu2x(model_type="art",
             method=None, noise_level=-1,
-            device_ids=[-1], tile_size=256, batch_size=4, keep_alpha=True, amp=True,
+            device_ids=[-1], tile_size=None, batch_size=None, keep_alpha=True, amp=True,
             **kwargs):
     download_main()
     return Waifu2xImageModel(

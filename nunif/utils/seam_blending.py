@@ -45,7 +45,7 @@ class SeamBlending(torch.nn.Module):
         self.pixels.zero_()
 
     @staticmethod
-    def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=True,
+    def tiled_render(x, model, tile_size=None, batch_size=None, enable_amp=True,
                      config_callback=None, preprocess_callback=None, input_callback=None):
         assert not torch.is_grad_enabled()
         if config_callback is None:
@@ -59,6 +59,10 @@ class SeamBlending(torch.nn.Module):
         blend_size = model.i2i_blend_size
         if blend_size is None:
             blend_size = 0
+        batch_size = batch_size or model.i2i_default_batch_size
+        tile_size = model.find_valid_tile_size(tile_size)
+        # print("batch_size", batch_size, "tile_size", tile_size)
+
         device = get_model_device(model)
 
         seam_blending = SeamBlending(output_base_shape, scale=scale,
