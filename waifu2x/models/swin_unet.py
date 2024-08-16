@@ -194,12 +194,19 @@ class SwinUNetBase(nn.Module):
         return x
 
 
+def tile_size_validator(size):
+    return (size > 16 and
+            (size - 16) % 12 == 0 and
+            (size - 16) % 16 == 0)
+
+
 @register_model
 class SwinUNet(I2IBaseModel):
     name = "waifu2x.swin_unet_1x"
 
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
+        self.register_tile_size_validator(tile_size_validator)
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -220,6 +227,7 @@ class SwinUNet2x(I2IBaseModel):
 
     def __init__(self, in_channels=3, out_channels=3, base_dim=96, layer_norm=False):
         super().__init__(locals(), scale=2, offset=16, in_channels=in_channels, blend_size=8)
+        self.register_tile_size_validator(tile_size_validator)
         norm_layer = LayerNormNoBias if layer_norm else NO_NORM_LAYER
         self.unet = SwinUNetBase(
             in_channels=in_channels,
@@ -252,6 +260,7 @@ class SwinUNet4x(I2IBaseModel):
     def __init__(self, in_channels=3, out_channels=3, pre_antialias=False,
                  base_dim=96, layer_norm=False):
         super().__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
+        self.register_tile_size_validator(tile_size_validator)
         self.out_channels = out_channels
         self.pre_antialias = pre_antialias
         self.antialias = True
@@ -295,6 +304,7 @@ class SwinUNet8x(I2IBaseModel):
 
     def __init__(self, in_channels=3, out_channels=3):
         super().__init__(locals(), scale=4, offset=64, in_channels=in_channels, blend_size=32)
+        self.register_tile_size_validator(tile_size_validator)
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -342,6 +352,8 @@ class SwinUNetDownscaled(I2IBaseModel):
         super().__init__(dict(in_channels=in_channels, out_channels=out_channels,
                               downscale_factor=downscale_factor),
                          scale=scale, offset=offset, in_channels=in_channels, blend_size=blend_size)
+        self.register_tile_size_validator(tile_size_validator)
+
         if unet is None:
             self.unet = SwinUNetBase(
                 in_channels=in_channels,

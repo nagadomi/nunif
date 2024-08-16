@@ -5,7 +5,7 @@ from .. device import autocast
 from .seam_blending import SeamBlending
 
 
-def tiled_render(x, model, tile_size=256, batch_size=4, enable_amp=False):
+def tiled_render(x, model, tile_size=None, batch_size=None, enable_amp=False):
     return SeamBlending.tiled_render(
         x, model,
         tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp)

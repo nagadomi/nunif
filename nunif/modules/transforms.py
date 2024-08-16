@@ -60,6 +60,22 @@ def diff_random_rotate(x, angle=45, mode="bilinear", padding_mode="zeros", align
                       for i in range(B)], dim=0)
 
 
+def diff_random_rotate_pair(x, y, angle=45, mode="bilinear", padding_mode="zeros", align_corners=False, expand=False):
+    B, _, H, W = x.shape
+    angle = (torch.rand((B,), device=x.device) * 2 - 1) * angle
+    xy = torch.stack((x, y), dim=1)
+    xys = []
+    for i in range(B):
+        xys.append(diff_rotate(
+            xy[i], angle=angle[i].item(),
+            mode=mode, padding_mode=padding_mode,
+            align_corners=align_corners, expand=expand, cache=False))
+    x = torch.stack([xyi[0] for xyi in xys], dim=0)
+    y = torch.stack([xyi[1] for xyi in xys], dim=0)
+
+    return x, y
+
+
 def diff_translate(x, x_shift, y_shift, padding_mode="zeros"):
     # NOTE: padded values with reflect or replicate have copied gradients.
     #       there may be cases where that is undesirable.
@@ -115,6 +131,21 @@ def _test_translate():
         time.sleep(1)
 
 
+def _bench_random_rotate_pair():
+    import time
+    N = 100
+    B = 16
+    x = torch.randn((B, 3, 512, 512)).cuda()
+    y = torch.randn((B, 3, 512, 512)).cuda()
+
+    t = time.time()
+    for _ in range(N):
+        diff_random_rotate_pair(x, y)
+    torch.cuda.synchronize()
+    print(1 / ((time.time() - t) / (B * N)), "FPS")
+
+
 if __name__ == "__main__":
-    _test_rotate()
-    _test_translate()
+    # _test_rotate()
+    # _test_translate()
+    _bench_random_rotate_pair()

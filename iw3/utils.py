@@ -591,12 +591,19 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             options["tune"] = ",".join(set(args.tune))
         if args.profile_level:
             options["level"] = args.profile_level
+        if args.video_codec == "libx265":
+            x265_params = ["log-level=warning", "high-tier=enabled"]
+            if args.profile_level:
+                x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
+            options["x265-params"] = ":".join(x265_params)
 
         return VU.VideoOutputConfig(
             fps=fps,
+            container_format=args.video_format,
+            video_codec=args.video_codec,
             pix_fmt=args.pix_fmt,
             colorspace=args.colorspace,
-            options=options if args.video_format in {"mp4", "mkv"} else {},
+            options=options if args.video_codec in {"libx264", "libx265"} else {},
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
@@ -1106,12 +1113,19 @@ def process_config_video(config, args, side_model):
         encoder_options.update({"tune": ",".join(list(set(args.tune)))})
     if args.profile_level:
         encoder_options["level"] = args.profile_level
+    if args.video_codec == "libx265":
+        x265_params = ["log-level=warning", "high-tier=enabled"]
+        if args.profile_level:
+            x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
+        encoder_options["x265-params"] = ":".join(x265_params)
 
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
+        container_format=args.video_format,
+        video_codec=args.video_codec,
         pix_fmt=args.pix_fmt,
         colorspace=args.colorspace,
-        options=encoder_options if args.video_format in {"mp4", "mkv"} else {},
+        options=encoder_options if args.video_codec in {"libx264", "libx265"} else {},
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
         output_height=output_height
@@ -1364,7 +1378,7 @@ def create_parser(required_true=True):
     parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="dubois",
                         choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois", "dubois2"],
                         help="output in anaglyph 3d")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
                         help="pixel format (video only)")
     parser.add_argument("--tta", action="store_true",
                         help="Use flip augmentation on depth model")
@@ -1396,6 +1410,8 @@ def create_parser(required_true=True):
                         help="max inference worker threads for video processing. 0 is disabled")
     parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
                         help="video container format")
+    parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
+
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")
     parser.add_argument("--find-param", type=str, nargs="+",
@@ -1443,7 +1459,20 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
     if args.export_disparity:
         args.export = True
 
+    if is_video(args.output):
+        # replace --video-format when filename is specified
+        ext = path.splitext(args.output)[-1]
+        if ext == ".mp4":
+            args.video_format = "mp4"
+        elif ext == ".mkv":
+            args.video_format = "mkv"
+        elif ext == ".avi":
+            args.video_format = "avi"
+
     args.video_extension = "." + args.video_format
+    if args.video_codec is None:
+        args.video_codec = VU.get_default_video_codec(args.video_format)
+
     if not args.profile_level or args.profile_level == "auto":
         args.profile_level = None
 
@@ -1491,6 +1520,14 @@ def iw3_main(args):
 
     if args.export and is_yaml(args.input):
         raise ValueError("YAML file input does not support --export")
+
+    if args.tune and args.video_codec == "libx265":
+        if len(args.tune) != 1:
+            raise ValueError("libx265 does not support multiple --tune options.\n"
+                             f"tune={','.join(args.tune)}")
+        if args.tune[0] in {"film", "stillimage"}:
+            raise ValueError(f"libx265 does not support --tune {args.tune[0]}\n"
+                             "available options: grain,animation,psnr,zerolatency,fastdecode")
 
     if args.remove_bg:
         global rembg

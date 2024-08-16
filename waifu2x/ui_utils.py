@@ -188,9 +188,9 @@ def create_parser(required_true=True):
                         default="noise_scale", help="method")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device ids. -1 for CPU")
-    parser.add_argument("--batch-size", type=int, default=4,
+    parser.add_argument("--batch-size", type=int, default=None,
                         help="minibatch_size")
-    parser.add_argument("--tile-size", type=int, default=256,
+    parser.add_argument("--tile-size", type=int, default=None,
                         help="tile size for tiled render")
     parser.add_argument("--output", "-o", type=str, required=required_true,
                         help="output file or directory")

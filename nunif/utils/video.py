@@ -216,7 +216,9 @@ class FixedFPSFilter():
 
 class VideoOutputConfig():
     def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={},
-                 output_width=None, output_height=None, colorspace=None):
+                 output_width=None, output_height=None, colorspace=None,
+                 container_format=None,
+                 video_codec=None):
         self.pix_fmt = pix_fmt
         self.fps = fps
         self.options = options
@@ -227,6 +229,8 @@ class VideoOutputConfig():
             self.colorspace = colorspace
         else:
             self.colorspace = "unspecified"
+        self.container_format = container_format
+        self.video_codec = video_codec
 
         self.state_updated = lambda config: None
         self.state = dict(
@@ -238,6 +242,15 @@ class VideoOutputConfig():
 
     def __repr__(self):
         return "VideoOutputConfig({!r})".format(self.__dict__)
+
+
+def get_default_video_codec(container_format):
+    if container_format in {"mp4", "mkv"}:
+        return "libx264"
+    elif container_format == "avi":
+        return "utvideo"
+    else:
+        raise ValueError(f"Unsupported container format: {container_format}")
 
 
 def default_config_callback(stream):
@@ -535,6 +548,32 @@ def configure_colorspace(output_stream, input_stream, config):
         config.state_updated(config)
 
 
+def configure_video_codec(config):
+    if config.video_codec == "utvideo":
+        if config.pix_fmt == "rgb24":
+            config.pix_fmt = "gbrp"
+        # override unsupported colorspace, pc is not supported
+        if config.colorspace in {"bt601", "bt601-pc", "bt601-tv"}:
+            config.colorspace = "bt601-tv"
+        elif config.colorspace in {"bt709", "bt709-pc", "bt709-tv"}:
+            config.colorspace = "bt709-tv"
+        elif config.colorspace in {"auto", "copy"}:
+            config.colorspace = "bt709-tv"
+
+    if config.video_codec == "libx264":
+        if config.pix_fmt in {"rgb24", "gbrp"}:
+            config.video_codec = "libx264rgb"
+            config.pix_fmt = "rgb24"
+        else:
+            if config.colorspace in {"bt2020", "bt2020-tv", "bt2020-pc"}:
+                # TODO: change pix_fmt
+                config.video_codec = "libx265"
+
+    if config.video_codec == "libx265":
+        if config.pix_fmt == "rgb24":
+            config.pix_fmt = "gbrp"
+
+
 def process_video(input_path, output_path,
                   frame_callback,
                   config_callback=default_config_callback,
@@ -551,7 +590,6 @@ def process_video(input_path, output_path,
             raise ValueError("end_time must be greater than start_time")
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
-    container_format = path.splitext(output_path)[-1].lower()[1:]
     input_container = av.open(input_path)
 
     if input_container.duration:
@@ -575,26 +613,13 @@ def process_video(input_path, output_path,
 
     config = config_callback(video_input_stream)
     config.fps = convert_known_fps(config.fps)
-    if container_format == "avi":
-        codec = "utvideo"
-        if config.pix_fmt == "rgb24":
-            config.pix_fmt = "gbrp"
-        # override unsupported colorspace, pc is not supported
-        if config.colorspace in {"bt601", "bt601-pc", "bt601-tv"}:
-            config.colorspace = "bt601-tv"
-        elif config.colorspace in {"bt709", "bt709-pc", "bt709-tv"}:
-            config.colorspace = "bt709-tv"
-        elif config.colorspace in {"auto", "copy"}:
-            config.colorspace = "bt709-tv"
-    else:
-        if config.pix_fmt == "rgb24":
-            codec = "libx264rgb"
-        else:
-            if config.colorspace in {"bt2020", "bt2020-tv", "bt2020-pc"}:
-                # TODO: change pix_fmt
-                codec = "libx265"
-            else:
-                codec = "libx264"
+
+    if not config.container_format:
+        config.container_format = path.splitext(output_path)[-1].lower()[1:]
+    if not config.video_codec:
+        config.video_codec = get_default_video_codec(config.container_format)
+    configure_video_codec(config)
+
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
     fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf)
     if config.output_width is not None and config.output_height is not None:
@@ -605,7 +630,7 @@ def process_video(input_path, output_path,
             test_callback = frame_callback
         output_size = test_output_size(test_callback, video_input_stream, vf)
 
-    video_output_stream = output_container.add_stream(codec, config.fps)
+    video_output_stream = output_container.add_stream(config.video_codec, config.fps)
     configure_colorspace(video_output_stream, video_input_stream, config)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
@@ -616,7 +641,7 @@ def process_video(input_path, output_path,
     reformatter = config.state["reformatter"]
 
     # utvideo + flac crashes on windows media player
-    # default_acodec = "flac" if container_format == "avi" else "aac"
+    # default_acodec = "flac" if config.container_format == "avi" else "aac"
     default_acodec = "aac"
     if audio_input_stream is not None:
         if audio_input_stream.rate < 16000:
@@ -711,32 +736,16 @@ def generate_video(output_path,
                    stop_event=None, suspend_event=None, tqdm_fn=None):
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
-    container_format = path.splitext(output_path)[-1].lower()[1:]
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
     output_size = config.output_width, config.output_height
 
-    if container_format == "avi":
-        codec = "utvideo"
-        if config.pix_fmt == "rgb24":
-            config.pix_fmt = "gbrp"
-        # override unsupported colorspace, pc is not supported
-        if config.colorspace in {"bt601", "bt601-pc", "bt601-tv"}:
-            config.colorspace = "bt601-tv"
-        elif config.colorspace in {"bt709", "bt709-pc", "bt709-tv"}:
-            config.colorspace = "bt709-tv"
-        elif config.colorspace in {"auto", "copy"}:
-            config.colorspace = "bt709-tv"
-    else:
-        if config.pix_fmt == "rgb24":
-            codec = "libx264rgb"
-        else:
-            if config.colorspace in {"bt2020", "bt2020-tv", "bt2020-pc"}:
-                # TODO: change pix_fmt
-                codec = "libx265"
-            else:
-                codec = "libx264"
+    if not config.container_format:
+        config.container_format = path.splitext(output_path)[-1].lower()[1:]
+    if not config.video_codec:
+        config.video_codec = get_default_video_codec(config.container_format)
+    configure_video_codec(config)
 
-    video_output_stream = output_container.add_stream(codec, convert_known_fps(config.fps))
+    video_output_stream = output_container.add_stream(config.video_codec, convert_known_fps(config.fps))
     configure_colorspace(video_output_stream, None, config)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt

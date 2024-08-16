@@ -62,10 +62,17 @@ class Waifu2x():
                                       *self.noise_models, *self.noise_scale_models,
                                       *self.noise_scale4x_models) if model is not None]
         for i, model in enumerate(models):
-            for j, bs in enumerate(reversed(range(1, batch_size + 1))):
-                x = torch.zeros((bs, 3, tile_size, tile_size),
+            if tile_size is None:
+                model_tile_size = model.i2i_default_tile_size
+            else:
+                model_tile_size = model.find_valid_tile_size(tile_size)
+            if batch_size is None:
+                model_batch_size = model.i2i_default_batch_size
+
+            for j, bs in enumerate(reversed(range(1, model_batch_size + 1))):
+                x = torch.zeros((bs, 3, model_tile_size, model_tile_size),
                                 device=self.device, dtype=torch.float16 if self.is_half else torch.float32)
-                logger.debug(f"warmup {i * batch_size + j + 1}/{len(models) * batch_size}: {x.shape}")
+                logger.debug(f"warmup {i * model_batch_size + j + 1}/{len(models) * model_batch_size}: {x.shape}")
                 with autocast(device=self.device, enabled=enable_amp):
                     model(x)
                     if torch.cuda.is_available():
@@ -204,7 +211,7 @@ class Waifu2x():
             self.noise_scale4x_models = [None] * 4
         self._setup()
 
-    def render(self, x, method, noise_level, tile_size=256, batch_size=4, enable_amp=False):
+    def render(self, x, method, noise_level, tile_size=None, batch_size=None, enable_amp=False):
         assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
         assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
         if method == "scale":
@@ -242,7 +249,7 @@ class Waifu2x():
             return self.noise_scale4x_models[noise_level].i2i_offset
 
     def convert(self, x, alpha, method, noise_level,
-                tile_size=256, batch_size=4,
+                tile_size=None, batch_size=None,
                 tta=False, enable_amp=False, output_device="cpu"):
         assert (not torch.is_grad_enabled())
         assert (x.shape[0] == 3)

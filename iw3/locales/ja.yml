@@ -43,6 +43,7 @@
 
 "Max FPS": "最大フレームレート"
 "Video Format": "動画形式"
+"Video Codec": "動画コーデック"
 "Pixel Format": "ピクセルフォーマット"
 "Colorspace": "色空間"
 "CRF": "CRF(固定品質)"
