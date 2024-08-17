@@ -116,13 +116,31 @@ See [Colorspace](docs/colorspace.md) and https://github.com/nagadomi/nunif/issue
 
 See https://github.com/nagadomi/nunif/discussions/168 .
 
-## Video Format
+## About Video Format
 
-`mp4` is highly compatible format. h264 acc.
+`mp4` is a highly compatible format.
 
-`mkv` can be previewed during conversion. h264 aac.
+`mkv` can be previewed during conversion.
 
-`avi` is lossless **utvideo**.
+`avi` is provided to output lossless video for your own encoding.
+
+## Video Codec
+
+`libx264` is for H.264 which is a highly compatible format. However, at higher resolutions like 4K, the file size will be larger, which may cause playback lag/artifact.
+
+`libx265` is for H.265.
+
+`utvideo` is for lossless video. You may need [Ut Video Codec Suite](https://github.com/umezawatakeshi/utvideo/releases) for playback.
+
+#### Level option for H.265
+
+`auto` is recommended.
+This will cause an error if the wrong level is selected for a video that is out of range for the specification.
+
+#### H.264 Profile
+
+There is no way to specify H.264 profile.
+However, it seems to be `Constrained Baseline` when `--preset ultrafast` and `High` otherwise.
 
 ## About VR Player
 
@@ -230,10 +248,23 @@ When `--remove-bg` is specified, the background area is removed using [rembg](ht
 
 Please post to the issue about the format of the video.
 
+### Large video file size
+
+You can reduce the file size with `--preset medium` option.
+`--video-codec libx265` also helps reduce the file size.
+
 ### 60fps video drops to 30fps
 
 By default, FPS is limited to 30fps.
 Use `--max-fps 128` option.
+
+Note that 60fps video takes twice as long to process as 30fps limit.
+
+### Problems with older GPUs
+
+`FP16` can cause slowdowns and errors on older GPUs (older than GeForce 20 series).
+
+In CLI, `FP16` can be disabled with `--disable-amp` option.
 
 ### It's a giant!
 
