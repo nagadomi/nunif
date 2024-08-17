@@ -473,6 +473,8 @@ class Waifu2xTrainer(Trainer):
         if type == "train":
             dataset = Waifu2xDataset(
                 input_dir=path.join(self.args.data_dir, "train"),
+                additional_data_dir=self.args.additional_data_dir,
+                additional_data_dir_p=self.args.additional_data_dir_p,
                 model_offset=model_offset,
                 scale_factor=scale_factor,
                 bicubic_only=self.args.b4b,
@@ -665,6 +667,9 @@ def register(subparsers, default_parser):
     parser.add_argument("--loss", type=str,
                         choices=list(LOSS_FUNCTIONS.keys()),
                         help="loss function")
+    parser.add_argument("--additional-data-dir", type=str, help="additional data dir for training")
+    parser.add_argument("--additional-data-dir-p", type=float, default=0.01,
+                        help="probability that --additional-data-dir should be used")
     parser.add_argument("--da-jpeg-p", type=float, default=0.0,
                         help="HQ JPEG(quality=92-99) data augmentation for gt image")
     parser.add_argument("--da-scale-p", type=float, default=0.25,
