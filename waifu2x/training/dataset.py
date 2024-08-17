@@ -162,19 +162,40 @@ class AntialiasX():
 class Waifu2xDatasetBase(Dataset):
     def __init__(self, input_dir, num_samples,
                  hard_example_history_size=6,
-                 exclude_filter=None):
+                 exclude_filter=None,
+                 additional_data_dir=None, additional_data_dir_p=0.01):
         super().__init__()
         self.files = ImageLoader.listdir(input_dir)
         if exclude_filter is not None:
             self.files = list(filter(exclude_filter, self.files))
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
+        if additional_data_dir:
+            self.additional_files = ImageLoader.listdir(additional_data_dir)
+            if exclude_filter is not None:
+                self.additional_files = list(filter(exclude_filter, self.additional_files))
+            if not self.additional_files:
+                raise RuntimeError(f"{additional_data_dir} is empty")
+        else:
+            self.additional_files = []
+        self.additional_data_dir_p = additional_data_dir_p
         self.num_samples = num_samples
         self.hard_example_history_size = hard_example_history_size
 
     def create_sampler(self):
+        if self.additional_files:
+            p1 = 1.0 - self.additional_data_dir_p
+            p2 = self.additional_data_dir_p
+            p1 = p1 * (1.0 / len(self.files))
+            p2 = p2 * (1.0 / len(self.additional_files))
+            base_weights = torch.full((len(self.files),), fill_value=p1, dtype=torch.double)
+            additional_weights = torch.full((len(self.additional_files),), fill_value=p2, dtype=torch.double)
+            weights = torch.cat((base_weights, additional_weights), dim=0)
+        else:
+            weights = torch.ones((len(self),), dtype=torch.double)
+
         return HardExampleSampler(
-            torch.ones((len(self),), dtype=torch.double),
+            weights,
             num_samples=self.num_samples,
             method=MiningMethod.TOP10,
             history_size=self.hard_example_history_size,
@@ -185,10 +206,14 @@ class Waifu2xDatasetBase(Dataset):
         pass
 
     def __len__(self):
-        return len(self.files)
+        return len(self.files) + len(self.additional_files)
 
     def __getitem__(self, index):
-        return self.files[index]
+        if index < len(self.files):
+            return self.files[index]
+        else:
+            index = index - len(self.files)
+            return self.additional_files[index]
 
 
 class Waifu2xDataset(Waifu2xDatasetBase):
@@ -207,6 +232,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  resize_step_p=0, resize_no_antialias_p=0,
                  noise_level=-1, style=None,
                  return_no_offset_y=False,
+                 additional_data_dir=None,
+                 additional_data_dir_p=0.01,
                  training=True,
                  ):
         assert scale_factor in {1, 2, 4, 8}
@@ -226,7 +253,9 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         else:
             exclude_filter = None
 
-        super().__init__(input_dir, num_samples=num_samples, exclude_filter=exclude_filter)
+        super().__init__(input_dir, num_samples=num_samples, exclude_filter=exclude_filter,
+                         additional_data_dir=additional_data_dir,
+                         additional_data_dir_p=additional_data_dir_p)
         self.training = training
         self.style = style
         self.noise_level = noise_level
