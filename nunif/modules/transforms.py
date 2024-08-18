@@ -76,20 +76,59 @@ def diff_random_rotate_pair(x, y, angle=45, mode="bilinear", padding_mode="zeros
     return x, y
 
 
-def diff_translate(x, x_shift, y_shift, padding_mode="zeros"):
+def diff_translate(x, x_shift, y_shift, padding_mode="zeros", expand_x=0, expand_y=0):
     # NOTE: padded values with reflect or replicate have copied gradients.
     #       there may be cases where that is undesirable.
-    return F.pad(x, (x_shift, -x_shift, y_shift, -y_shift),
+    return F.pad(x, (x_shift + expand_x, -x_shift + expand_x,
+                     y_shift + expand_y, -y_shift + expand_y),
                  mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
 
 
-def diff_random_translate(x, ratio=0.15, padding_mode="zeros"):
+def diff_random_translate(x, ratio=0.15, pixel=None, padding_mode="zeros", expand=False):
     B, _, H, W = x.shape
-    x_shift = torch.randint(low=int(-W * ratio), high=int(W * ratio), size=(B,), device=x.device)
-    y_shift = torch.randint(low=int(-H * ratio), high=int(H * ratio), size=(B,), device=x.device)
+    if pixel is not None:
+        x_shift = torch.randint(low=-pixel, high=pixel + 1, size=(B,), device=x.device)
+        y_shift = torch.randint(low=-pixel, high=pixel + 1, size=(B,), device=x.device)
+    else:
+        x_shift = torch.randint(low=int(-W * ratio), high=int(W * ratio) + 1, size=(B,), device=x.device)
+        y_shift = torch.randint(low=int(-H * ratio), high=int(H * ratio) + 1, size=(B,), device=x.device)
+
+    if expand:
+        expand_x, expand_y = (pixel, pixel) if pixel is not None else (int(W * ratio), int(H * ratio))
+    else:
+        expand_x = expand_y = 0
+
     # FIXME: remove loop
-    return torch.cat([diff_translate(x[i:i + 1, :, :, :], x_shift[i], y_shift[i],
-                                     padding_mode=padding_mode) for i in range(B)], dim=0)
+    return torch.cat([diff_translate(x[i:i + 1, :, :, :], x_shift=x_shift[i], y_shift=y_shift[i],
+                                     padding_mode=padding_mode,
+                                     expand_x=expand_x, expand_y=expand_y) for i in range(B)], dim=0)
+
+
+def diff_random_translate_pair(x, y, ratio=0.15, pixel=None, padding_mode="zeros", expand=False):
+    B, _, H, W = x.shape
+    if pixel is not None:
+        x_shift = torch.randint(low=-pixel, high=pixel + 1, size=(B,), device=x.device)
+        y_shift = torch.randint(low=-pixel, high=pixel + 1, size=(B,), device=x.device)
+    else:
+        x_shift = torch.randint(low=int(-W * ratio), high=int(W * ratio) + 1, size=(B,), device=x.device)
+        y_shift = torch.randint(low=int(-H * ratio), high=int(H * ratio) + 1, size=(B,), device=x.device)
+
+    if expand:
+        expand_x, expand_y = (pixel, pixel) if pixel is not None else (int(W * ratio), int(H * ratio))
+    else:
+        expand_x = expand_y = 0
+
+    xy = torch.stack((x, y), dim=1)
+    xys = []
+    for i in range(B):
+        xys.append(diff_translate(
+            xy[i], x_shift=x_shift[i], y_shift=y_shift[i],
+            padding_mode=padding_mode,
+            expand_x=expand_x, expand_y=expand_y))
+    x = torch.stack([xyi[0] for xyi in xys], dim=0)
+    y = torch.stack([xyi[1] for xyi in xys], dim=0)
+
+    return x, y
 
 
 def _test_rotate():
@@ -131,6 +170,22 @@ def _test_translate():
         time.sleep(1)
 
 
+def _test_translate_random():
+    import torchvision.io as IO
+    import torchvision.transforms.functional as TF
+    import time
+
+    x = IO.read_image("cc0/dog2.jpg") / 255.0
+    x = x[:, :256, :256].unsqueeze(0)
+    x = x.repeat(4, 1, 1, 1)
+
+    z1, z2 = diff_random_translate_pair(x, x, padding_mode="zeros", expand=True)
+    for i in range(4):
+        assert (z1 - z2).abs().sum() == 0
+        TF.to_pil_image(z1[i]).show()
+        time.sleep(1)
+
+
 def _bench_random_rotate_pair():
     import time
     N = 100
@@ -148,4 +203,5 @@ def _bench_random_rotate_pair():
 if __name__ == "__main__":
     # _test_rotate()
     # _test_translate()
-    _bench_random_rotate_pair()
+    _test_translate_random()
+    # _bench_random_rotate_pair()
