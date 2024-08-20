@@ -42,8 +42,9 @@ def list_videos(directory, extensions=VIDEO_EXTENSIONS):
     )
 
 
-# Color space values not defined in pyav.
-# I am not sure about the compatibility of these values with libsws.
+# Color space values that are not defined in pyav.
+# I am not sure about the compatibility of these values with libsws,
+# but it seems to work.
 ADDITIONAL_COLORSPACE_VALUES = {
     "UNSPECIFIED": 2,
     "SMPTE170M_2": 6,  # BT.601 NTSC. smpte170m is defined as 5 in libsws
