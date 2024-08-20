@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.utils.image_loader import list_images
 from nunif.transforms.std import pad
-from multiprocessing import cpu_count
 
 
 def split_image(filepath_prefix, im, size, stride, reject_rate, format):
@@ -61,9 +60,14 @@ class CreateTrainingData(Dataset):
         if self.args.pad:
             bg = random.randint(0, 255)
             im = pad(im, [self.args.size] * 2, mode=self.args.pad_mode, fill=bg)
+
+        stride = int(self.args.size * self.args.stride)
+        if self.args.stride_step is not None:
+            stride -= stride % self.args.stride_step
+
         split_image(
             path.join(self.output_dir, self.filename_prefix + str(i)),
-            im, self.args.size, int(self.args.size * self.args.stride), self.args.reject_rate,
+            im, self.args.size, stride, self.args.reject_rate,
             self.args.format,
         )
         im.close()
@@ -72,7 +76,7 @@ class CreateTrainingData(Dataset):
 
 
 def main(args):
-    num_workers = cpu_count()
+    num_workers = args.num_workers
 
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
@@ -92,7 +96,7 @@ def main(args):
             batch_size=1,
             shuffle=False,
             num_workers=num_workers,
-            prefetch_factor=8,
+            prefetch_factor=4,
             drop_last=False
         )
         for _ in tqdm(loader, ncols=80):
@@ -119,6 +123,9 @@ def register(subparsers, default_parser):
                         help="use padding for small images")
     parser.add_argument("--pad-mode", choices=["reflect", "edge", "constant"], default="reflect",
                         help="padding mode for pad")
+    parser.add_argument("--stride-step", type=int, default=None, help="multiple of step size")
+    parser.add_argument("--num-workers", type=int, default=4, help="num workers")
+
     parser.set_defaults(handler=main)
 
     return parser
