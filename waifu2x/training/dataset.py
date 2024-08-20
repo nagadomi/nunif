@@ -381,7 +381,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         im, _ = pil_io.load_image_simple(filename, color="rgb")
         if im is None:
             raise RuntimeError(f"Unable to load image: {filename}")
-        if NEAREST_PREFIX in filename and (not self.training or random.uniform(0, 1) < 0.8):
+        if NEAREST_PREFIX in filename:
             x, y = self.transforms_nearest(im, im)
         elif SCREENTONE_PREFIX in filename or DOT_PREFIX in filename:
             im = self.gt_gen_transforms(im)
