@@ -133,14 +133,15 @@ class Trainer(ABC):
                     backward_step=self.args.backward_step,
                 )
                 if not self.args.skip_eval:
-                    print("--\n eval")
-                    loss = self.env.eval(self.eval_loader)
-                    if loss is None:
-                        self.save_best_model()
-                    elif loss < self.best_loss:
-                        print("* best model updated")
-                        self.best_loss = loss
-                        self.save_best_model()
+                    if self.epoch % self.args.eval_step == 0:
+                        print("--\n eval")
+                        loss = self.env.eval(self.eval_loader)
+                        if loss is None:
+                            self.save_best_model()
+                        elif loss < self.best_loss:
+                            print("* best model updated")
+                            self.best_loss = loss
+                            self.save_best_model()
                 else:
                     self.save_best_model()
                 self.save_checkpoint()
@@ -312,6 +313,9 @@ def create_trainer_default_parser():
                         help="minibatch size")
     parser.add_argument("--backward-step", type=int, default=1,
                         help="number of times to accumulate gradient")
+    parser.add_argument("--eval-step", type=int, default=1,
+                        help="eval interval")
+
     parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd", "lion"], default="adam",
                         help="optimizer")
     parser.add_argument("--weight-decay", type=float, default=1e-4,
