@@ -42,18 +42,25 @@ def list_videos(directory, extensions=VIDEO_EXTENSIONS):
     )
 
 
-# define BT2020
-if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and 9 not in Colorspace._by_value:
-    Colorspace._create("BT2020", 9)
+# Color space values not defined in pyav.
+# I am not sure about the compatibility of these values with libsws.
+ADDITIONAL_COLORSPACE_VALUES = {
+    "UNSPECIFIED": 2,
+    "SMPTE170M_2": 6,  # BT.601 NTSC. smpte170m is defined as 5 in libsws
+    "SMPTE240M_2": 7,  # smpte240m is defined as 5 in libsws
+    "BT2020": 9,
+}
+for name, value in ADDITIONAL_COLORSPACE_VALUES.items():
+    if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and value not in Colorspace._by_value:
+        Colorspace._create(name, value)
 
-COLORSPACE_BT2020 = 9
-
-
-# define UNSPECIFIED colorspace
-if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and 2 not in Colorspace._by_value:
-    Colorspace._create("UNSPECIFIED", 2)
 
 COLORSPACE_UNSPECIFIED = 2
+COLORSPACE_SMPTE170M = 6
+COLORSPACE_SMPTE240M = 7
+COLORSPACE_BT2020 = 9
+KNOWN_COLORSPACES = {Colorspace.ITU601.value, Colorspace.ITU709.value,
+                     COLORSPACE_SMPTE170M, COLORSPACE_SMPTE240M, COLORSPACE_BT2020}
 
 
 def is_bt709(stream):
@@ -474,7 +481,7 @@ def configure_colorspace(output_stream, input_stream, config):
         output_stream.codec_context.colorspace = colorspace
         output_stream.codec_context.color_range = color_range
 
-        if output_stream.codec_context.colorspace in {Colorspace.ITU601.value, Colorspace.ITU709.value}:
+        if output_stream.codec_context.colorspace in KNOWN_COLORSPACES:
             if input_stream is not None:
                 rgb24_options = guess_rgb24_options(
                     input_stream,
@@ -483,7 +490,7 @@ def configure_colorspace(output_stream, input_stream, config):
                 reformatter_src_color_range = rgb24_options["dst_color_range"]  # ColorRange.JPEG
             else:
                 # image import (generate_video)
-                if exported_output_colorspace in {Colorspace.ITU601.value, Colorspace.ITU709.value, COLORSPACE_BT2020}:
+                if exported_output_colorspace in KNOWN_COLORSPACES:
                     reformatter_src_colorspace = exported_output_colorspace
                     reformatter_src_color_range = ColorRange.JPEG
                 else:
@@ -511,7 +518,7 @@ def configure_colorspace(output_stream, input_stream, config):
                 reformatter_src_color_range = rgb24_options["dst_color_range"]  # ColorRange.JPEG
             else:
                 # image import (generate_video)
-                if exported_output_colorspace in {Colorspace.ITU601.value, Colorspace.ITU709.value, COLORSPACE_BT2020}:
+                if exported_output_colorspace in KNOWN_COLORSPACES:
                     target_colorspace = exported_output_colorspace
                     reformatter_src_colorspace = exported_output_colorspace
                     reformatter_src_color_range = ColorRange.JPEG
