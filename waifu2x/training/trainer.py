@@ -27,7 +27,7 @@ from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.identity_loss import IdentityLoss
-from nunif.modules.transforms import DiffBatchRandomTranslatePair, DiffInstanceRandomTranslatePair
+from nunif.modules.transforms import DiffPairRandomTranslate
 from nunif.logger import logger
 import random
 import math
@@ -63,16 +63,18 @@ LOSS_FUNCTIONS = {
                                    DCTLoss(window_size=24, clamp=True, diag=True),
                                    DCTLoss(clamp=True, diag=True)),
                                   (0.2, 0.2, 0.6)),
-    "dctrm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True),
-                                   DCTLoss(window_size=24, clamp=True, random_rotate=True),
-                                   DCTLoss(clamp=True, random_rotate=True)),
-                                  weights=(0.2, 0.2, 0.6),
-                                  preprocess_pair=DiffBatchRandomTranslatePair(size=12, padding_mode="zeros", expand=True)),
-    "dctirm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True),
-                                    DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-                                    DCTLoss(clamp=True, random_instance_rotate=True)),
-                                   weights=(0.2, 0.2, 0.6),
-                                   preprocess_pair=DiffInstanceRandomTranslatePair(size=12, padding_mode="zeros", expand=True)),
+    "dctrm": lambda: WeightedLoss(
+        (DCTLoss(window_size=4, clamp=True),
+         DCTLoss(window_size=24, clamp=True, random_rotate=True),
+         DCTLoss(clamp=True, random_rotate=True)),
+        weights=(0.2, 0.2, 0.6),
+        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True)),
+    "dctirm": lambda: WeightedLoss(
+        (DCTLoss(window_size=4, clamp=True),
+         DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+         DCTLoss(clamp=True, random_instance_rotate=True)),
+        weights=(0.2, 0.2, 0.6),
+        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)),
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
         ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
