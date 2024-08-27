@@ -33,20 +33,10 @@ activate
 source .venv/bin/activate
 ```
 
-(exit)
-```
-deactivate
-```
-
-## 4. Install Pytorch
+## 4. Install Pytorch and pip packages
 
 ```
 pip3 install -r requirements-torch.txt
-```
-
-## 5. Install pip packages
-
-```
 pip3 install -r requirements.txt
 ```
 
@@ -64,27 +54,27 @@ sudo apt-get install libgtk-3-dev
 pip3 install -r requirements-gui.txt
 ```
 
-## 6. Run waifu2x.web
-
-Download pre-trained models.
+If want to use NVENC(`h264_nvenc` and `hevc_nvenc`) in iw3, install PyAV from source code.
 ```
-python -m waifu2x.download_models
-```
-
-Generate `waifu2x/web/public_html`
-```
-python -m waifu2x.web.webgen
+sudo apt-get install ffmpeg libavcodec-dev libavformat-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev
+pip3 install av --force-reinstall --no-binary av
 ```
 
-Start the web server.
-```
-python -m waifu2x.web
-```
-Open http://localhost:8812/
+## 5. Download pre-trained models
 
-If you don't have an NVIDIA GPU, specify the `--gpu -1` option. (CPU Mode)
+### waifu2x
+
 ```
-python -m waifu2x.web --gpu -1
+python3 -m waifu2x.download_models
+python3 -m waifu2x.web.webgen
 ```
 
-See also [waifu2x README.md](waifu2x/README.md).
+See also [waifu2x README.md](waifu2x/README.md)
+
+### iw3
+
+```
+python -m iw3.download_models
+```
+
+See also [iw3 README.md](iw3/README.md).

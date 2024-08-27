@@ -42,8 +42,9 @@ def list_videos(directory, extensions=VIDEO_EXTENSIONS):
     )
 
 
-# Color space values not defined in pyav.
-# I am not sure about the compatibility of these values with libsws.
+# Color space values that are not defined in pyav.
+# I am not sure about the compatibility of these values with libsws,
+# but it seems to work.
 ADDITIONAL_COLORSPACE_VALUES = {
     "UNSPECIFIED": 2,
     "SMPTE170M_2": 6,  # BT.601 NTSC. smpte170m is defined as 5 in libsws
@@ -74,6 +75,11 @@ def is_bt601(stream):
     return (stream.codec_context.color_primaries == 5 and
             stream.codec_context.color_trc == 6 and
             stream.codec_context.colorspace == 5)
+
+
+def has_nvenc():
+    return ("h264_nvenc" in av.codec.codecs_available and
+            "hevc_nvenc" in av.codec.codecs_available)
 
 
 def get_fps(stream):

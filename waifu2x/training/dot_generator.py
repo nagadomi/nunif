@@ -44,15 +44,16 @@ def remove_alpha(im, bg_color):
     return nobg
 
 
-def gen_dot_block(block_size=24, scale=1, rotate=False):
+def gen_dot_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_black=True):
     block = np.zeros((block_size, block_size, 3), dtype=np.float32)
-    margin = random.randint(1, 3)
+    y_margin = random.randint(1, 3)
     if rotate:
         size = random.randint(3, 5)
         use_cross_and_skip = False
     else:
         size = random.randint(1, 5)
         use_cross_and_skip = exec_prob(0.5)
+    use_random_size = exec_prob(0.9)
 
     xm = random.randint(2, 4)
     ym = random.randint(2, 4)
@@ -60,20 +61,29 @@ def gen_dot_block(block_size=24, scale=1, rotate=False):
     def mod(x, y):
         return x % xm == 0 and y % ym == 0
 
-    if exec_prob(0.5):
-        fg = gen_color(black=False)
-        bg = gen_color(black=True)
+    if bg_color is not None:
+        bg = bg_color
+        fg = gen_color(black=bg_color_black)
     else:
-        fg = gen_color(black=True)
-        bg = gen_color(black=False)
+        if exec_prob(0.5):
+            fg = gen_color(black=False)
+            bg = gen_color(black=True)
+        else:
+            fg = gen_color(black=True)
+            bg = gen_color(black=False)
 
     block[:, :] = bg
-    for y in range(margin, block_size - margin):
+    for y in range(y_margin, block_size - y_margin):
+        if use_random_size:
+            if rotate:
+                size = random.randint(3, 5)
+            else:
+                size = random.randint(1, 5)
         yc = math.floor(y / size)
         b = 0
         if use_cross_and_skip and exec_prob(0.5):
             b = random.randint(0, 1)
-        for x in range(margin, block_size - margin):
+        for x in range(y_margin, block_size - y_margin):
             xc = math.floor(x / size)
             if use_cross_and_skip:
                 if exec_prob(0.75) and mod(yc + b, xc + b):
@@ -84,6 +94,12 @@ def gen_dot_block(block_size=24, scale=1, rotate=False):
 
     block = (block * 255).astype(np.uint8)
     im = Image.fromarray(block)
+    if exec_prob(0.5):
+        # flip
+        if exec_prob(0.5):
+            im = im.transpose(Image.FLIP_LEFT_RIGHT)
+        im = im.transpose(random.choice([Image.ROTATE_90, Image.ROTATE_180, Image.ROTATE_270]))
+
     im = im.resize((block_size * scale, block_size * scale), resample=Image.Resampling.NEAREST)
     if rotate:
         im = im.convert("RGBA")
@@ -137,7 +153,7 @@ def draw_random_line(block, fg, size, size_step):
         p = draw_line(block, p, next_p, fg, size, size_step=size_step)
 
 
-def gen_dot_line_block(block_size=24, scale=1, rotate=False):
+def gen_dot_line_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_black=True):
     block = np.zeros((block_size, block_size, 3), dtype=np.float32)
     margin = random.randint(1, 3)
     if rotate:
@@ -148,14 +164,19 @@ def gen_dot_line_block(block_size=24, scale=1, rotate=False):
         else:
             size = random.randint(1, 3)
 
-    if exec_prob(0.5):
-        fg1 = gen_color(black=False)
-        fg2 = gen_color(black=False)
-        bg = gen_color(black=True)
+    if bg_color is not None:
+        bg = bg_color
+        fg1 = gen_color(black=bg_color_black)
+        fg2 = gen_color(black=bg_color_black)
     else:
-        fg1 = gen_color(black=True)
-        fg2 = gen_color(black=True)
-        bg = gen_color(black=False)
+        if exec_prob(0.5):
+            fg1 = gen_color(black=False)
+            fg2 = gen_color(black=False)
+            bg = gen_color(black=True)
+        else:
+            fg1 = gen_color(black=True)
+            fg2 = gen_color(black=True)
+            bg = gen_color(black=False)
 
     block[:, :] = bg
     if exec_prob(0.5):
@@ -185,12 +206,16 @@ def image_grid(blocks, block_size, rows, cols):
 
 
 def gen_dot_grid(block_size, scale, cols, rotate=False):
+    bg_color_black = exec_prob(0.5)
+    bg_color = gen_color(bg_color_black)
     blocks = []
     for _ in range(cols * cols):
         if exec_prob(0.2):
-            block = gen_dot_line_block(block_size=block_size, scale=scale, rotate=rotate)
+            block = gen_dot_line_block(block_size=block_size, scale=scale, rotate=rotate,
+                                       bg_color=bg_color, bg_color_black=bg_color_black)
         else:
-            block = gen_dot_block(block_size=block_size, scale=scale, rotate=rotate)
+            block = gen_dot_block(block_size=block_size, scale=scale, rotate=rotate,
+                                  bg_color=bg_color, bg_color_black=bg_color_black)
         blocks.append(block)
     im = image_grid(blocks, block_size * scale, cols, cols)
     return im
@@ -257,7 +282,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     for i in tqdm(range(args.num_samples), ncols=80):
-        rotate = random.choice([True, False]) if args.rotate else False
+        rotate = random.choice([True, False, False]) if args.rotate else False
         dot = gen(cols_scale=cols_scale, rotate=rotate, dot_scale=args.dot_scale)
 
         hole = random.choice([True, False, False])

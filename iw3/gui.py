@@ -17,7 +17,7 @@ from .utils import (
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
     has_rembg_model)
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
-from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
+from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -47,7 +47,13 @@ LEVEL_ALL = ["auto"] + sorted(list(set(LEVEL_LIBX264) | set(LEVEL_LIBX265)), key
 
 TUNE_LIBX264 = ["film", "animation", "grain", "stillimage", "psnr"]
 TUNE_LIBX265 = ["grain", "animation", "psnr", "fastdecode", "zerolatency"]
+TUNE_NVENC = ["hq", "ll", "ull"]
 TUNE_ALL = [""] + sorted(list(set(TUNE_LIBX264) | set(TUNE_LIBX265)))
+
+PRESET_LIBX264 = ["ultrafast", "superfast", "veryfast", "faster", "fast",
+                  "medium", "slow", "slower", "veryslow", "placebo"]
+PRESET_NVENC = ["fast", "medium", "slow"]
+PRESET_ALL = PRESET_LIBX264
 
 
 class IW3App(wx.App):
@@ -301,8 +307,9 @@ class MainFrame(wx.Frame):
         self.cbo_video_format.SetSelection(0)
 
         self.lbl_video_codec = wx.StaticText(self.grp_video, label=T("Video Codec"))
-        self.cbo_video_codec = EditableComboBox(self.grp_video, choices=["libx264", "libx265", "utvideo"],
-                                                name="cbo_video_codec")
+        self.cbo_video_codec = EditableComboBox(
+            self.grp_video, choices=["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"],
+            name="cbo_video_codec")
         self.cbo_video_codec.SetSelection(0)
 
         self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
@@ -334,9 +341,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
         self.cbo_preset = wx.ComboBox(
-            self.grp_video, choices=[
-                "ultrafast", "superfast", "veryfast", "faster", "fast",
-                "medium", "slow", "slower", "veryslow", "placebo"],
+            self.grp_video, choices=PRESET_ALL,
             style=wx.CB_READONLY, name="cbo_preset")
         self.cbo_preset.SetSelection(0)
 
@@ -789,9 +794,15 @@ class MainFrame(wx.Frame):
             self.chk_tune_zerolatency.Enable()
 
         # codec
-        choices = ["utvideo"] if name == "avi" else ["libx264", "libx265"]
+        if name == "avi":
+            choices = ["utvideo"]
+        else:
+            choices = ["libx264", "libx265"]
+            if has_nvenc():
+                choices += ["h264_nvenc", "hevc_nvenc"]
+
         user_codec = self.cbo_video_codec.GetValue()
-        if user_codec not in {"libx265", "libx264", "utvideo"}:
+        if user_codec not in {"libx265", "libx264", "h264_nvenc", "hevc_nvenc", "utvideo"}:
             choices.append(user_codec)
         self.cbo_video_codec.SetItems(choices)
         if user_codec in choices:
@@ -806,9 +817,9 @@ class MainFrame(wx.Frame):
 
         # level
         user_level = self.cbo_profile_level.GetValue()
-        if codec == "libx264":
+        if codec in {"libx264", "h264_nvenc"}:
             choices = ["auto"] + LEVEL_LIBX264
-        elif codec == "libx265":
+        elif codec in {"libx265", "hevc_nvenc"}:
             choices = ["auto"] + LEVEL_LIBX265
         else:
             choices = LEVEL_ALL
@@ -819,9 +830,29 @@ class MainFrame(wx.Frame):
         else:
             self.cbo_profile_level.SetSelection(0)
 
+        # preset
+        if container_format in {"mp4", "mkv"}:
+            preset = self.cbo_preset.GetValue()
+            if codec in {"libx265", "libx264"}:
+                # preset
+                choices = PRESET_LIBX264
+                default_preset = "ultrafast"
+            elif codec in {"h264_nvenc", "hevc_nvenc"}:
+                choices = PRESET_NVENC
+                default_preset = "medium"
+            else:
+                choices = PRESET_ALL
+                default_preset = "ultrafast"
+
+            self.cbo_preset.SetItems(choices)
+            if preset in choices:
+                self.cbo_preset.SetSelection(choices.index(preset))
+            else:
+                self.cbo_preset.SetSelection(choices.index(default_preset))
         # tune
         if container_format in {"mp4", "mkv"}:
             if codec == "libx265":
+                # tune
                 tune = []
                 if self.chk_tune_zerolatency.IsChecked():
                     tune.append("zerolatency")
@@ -840,6 +871,7 @@ class MainFrame(wx.Frame):
                 self.chk_tune_fastdecode.Disable()
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
+
             elif codec == "libx264":
                 tune = []
                 tune.append(self.cbo_tune.GetValue())
@@ -859,6 +891,18 @@ class MainFrame(wx.Frame):
                 self.chk_tune_fastdecode.SetValue("fastdecode" in tune)
                 self.chk_tune_zerolatency.Enable()
                 self.chk_tune_zerolatency.SetValue("zerolatency" in tune)
+            elif codec in {"h264_nvenc", "hevc_nvenc"}:
+                tune = self.cbo_tune.GetValue()
+                choices = [""] + TUNE_NVENC
+                self.cbo_tune.SetItems(choices)
+                if tune in choices:
+                    self.cbo_tune.SetSelection(choices.index(tune))
+                else:
+                    self.cbo_tune.SetSelection(0)
+                self.chk_tune_fastdecode.SetValue(False)
+                self.chk_tune_fastdecode.Disable()
+                self.chk_tune_zerolatency.SetValue(False)
+                self.chk_tune_zerolatency.Disable()
 
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()

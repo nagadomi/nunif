@@ -142,48 +142,34 @@ def expand_pad(input, target, ratio=0.15, size=None, padding_mode="zeros"):
     return input, target
 
 
-class DiffBatchRandomTranslatePair(nn.Module):
-    def __init__(self, ratio=0.15, size=None, padding_mode="zeros", expand=False):
+class DiffPairRandomTranslate(nn.Module):
+    def __init__(self, ratio=0.15, size=None, padding_mode="zeros", expand=False, instance_random=False):
         super().__init__()
         self.ratio = ratio
         self.size = size
         self.expand = expand
         self.padding_mode = padding_mode
+        self.instance_random = instance_random
 
     def forward(self, input, target):
         if self.training:
-            size = self.size if self.size else int(input.shape[2:] * self.ratio)
-            shift = torch.randint(low=-size, high=size + 1, size=(2,))
-            x_shift, y_shift = shift[0], shift[1]
-            if self.expand:
-                expand_x = expand_y = size
+            if self.instance_random:
+                return diff_random_translate_pair(input, target, ratio=self.ratio, size=self.size,
+                                                  padding_mode=self.padding_mode, expand=self.expand)
             else:
-                expand_x = expand_y = 0
-            input = diff_translate(input, x_shift=x_shift, y_shift=y_shift, padding_mode=self.padding_mode,
-                                   expand_x=expand_x, expand_y=expand_y)
-            target = diff_translate(target, x_shift=x_shift, y_shift=y_shift, padding_mode=self.padding_mode,
-                                    expand_x=expand_x, expand_y=expand_y)
-            return input, target
-        else:
-            if self.expand:
-                return expand_pad(input, target, ratio=self.ratio, size=self.size,
-                                  padding_mode=self.padding_mode)
-            else:
+                # batch random
+                size = self.size if self.size else int(input.shape[2] * self.ratio)
+                shift = torch.randint(low=-size, high=size + 1, size=(2,))
+                x_shift, y_shift = shift[0], shift[1]
+                if self.expand:
+                    expand_x = expand_y = size
+                else:
+                    expand_x = expand_y = 0
+                input = diff_translate(input, x_shift=x_shift, y_shift=y_shift, padding_mode=self.padding_mode,
+                                       expand_x=expand_x, expand_y=expand_y)
+                target = diff_translate(target, x_shift=x_shift, y_shift=y_shift, padding_mode=self.padding_mode,
+                                        expand_x=expand_x, expand_y=expand_y)
                 return input, target
-
-
-class DiffInstanceRandomTranslatePair(nn.Module):
-    def __init__(self, ratio=0.15, size=None, padding_mode="zeros", expand=False):
-        super().__init__()
-        self.ratio = ratio
-        self.size = size
-        self.expand = expand
-        self.padding_mode = padding_mode
-
-    def forward(self, input, target):
-        if self.training:
-            return diff_random_translate_pair(input, target, ratio=self.ratio, size=self.size,
-                                              padding_mode=self.padding_mode, expand=self.expand)
         else:
             if self.expand:
                 return expand_pad(input, target, ratio=self.ratio, size=self.size,
