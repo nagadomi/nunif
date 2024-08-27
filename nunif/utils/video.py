@@ -77,6 +77,11 @@ def is_bt601(stream):
             stream.codec_context.colorspace == 5)
 
 
+def has_nvenc():
+    return ("h264_nvenc" in av.codec.codecs_available and
+            "hevc_nvenc" in av.codec.codecs_available)
+
+
 def get_fps(stream):
     return stream.guessed_rate
 

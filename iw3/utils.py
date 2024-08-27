@@ -303,6 +303,35 @@ def make_output_filename(input_filename, args, video=False):
     return basename + metadata + auto_detect_suffix + (args.video_extension if video else ".png")
 
 
+def make_video_codec_option(args):
+    if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
+        options = {"preset": args.preset, "crf": str(args.crf)}
+
+        if args.tb or args.half_tb:
+            options["frame-packing"] = "4"
+        elif not args.anaglyph:
+            options["frame-packing"] = "3"
+
+        if args.tune:
+            options["tune"] = ",".join(set(args.tune))
+
+        if args.profile_level:
+            options["level"] = args.profile_level
+
+        if args.video_codec == "libx265":
+            x265_params = ["log-level=warning", "high-tier=enabled"]
+            if args.profile_level:
+                x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
+            options["x265-params"] = ":".join(x265_params)
+        elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
+            options["rc"] = "constqp"
+            options["qp"] = str(args.crf)
+    else:
+        options = {}
+
+    return options
+
+
 def save_image(im, output_filename):
     im.save(output_filename)
 
@@ -585,25 +614,13 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         if float(fps) > args.max_fps:
             fps = args.max_fps
 
-        frame_packing = "4" if args.tb or args.half_tb else "3"
-        options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": frame_packing}
-        if args.tune:
-            options["tune"] = ",".join(set(args.tune))
-        if args.profile_level:
-            options["level"] = args.profile_level
-        if args.video_codec == "libx265":
-            x265_params = ["log-level=warning", "high-tier=enabled"]
-            if args.profile_level:
-                x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
-            options["x265-params"] = ":".join(x265_params)
-
         return VU.VideoOutputConfig(
             fps=fps,
             container_format=args.video_format,
             video_codec=args.video_codec,
             pix_fmt=args.pix_fmt,
             colorspace=args.colorspace,
-            options=options if args.video_codec in {"libx264", "libx265"} else {},
+            options=make_video_codec_option(args),
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
@@ -1107,25 +1124,13 @@ def process_config_video(config, args, side_model):
             yield [VU.to_frame(frame) for frame in frames]
 
     output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
-    frame_packing = "4" if args.tb or args.half_tb else "3"
-    encoder_options = {"preset": args.preset, "crf": str(args.crf), "frame-packing": frame_packing}
-    if args.tune:
-        encoder_options.update({"tune": ",".join(list(set(args.tune)))})
-    if args.profile_level:
-        encoder_options["level"] = args.profile_level
-    if args.video_codec == "libx265":
-        x265_params = ["log-level=warning", "high-tier=enabled"]
-        if args.profile_level:
-            x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
-        encoder_options["x265-params"] = ":".join(x265_params)
-
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
         container_format=args.video_format,
         video_codec=args.video_codec,
         pix_fmt=args.pix_fmt,
         colorspace=args.colorspace,
-        options=encoder_options if args.video_codec in {"libx264", "libx265"} else {},
+        options=make_video_codec_option(args),
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
         output_height=output_height
