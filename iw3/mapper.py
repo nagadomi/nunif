@@ -112,8 +112,37 @@ def get_mapper(name):
         names = name.split(":")
     else:
         names = [name]
-    functions = [resolve_mapper_function(name) for name in names]
+
+    functions = []
+    for name in names:
+        if "+" in name:
+            # weighted average (interpolation)
+            name, weight = name.split("=")
+            if not weight:
+                weight = 0.5
+            else:
+                weight = float(weight)
+                assert 0.0 <= weight <= 1.0
+            mapper_a, mapper_b = name.split("+")
+            mapper_a = resolve_mapper_function(mapper_a)
+            mapper_b = resolve_mapper_function(mapper_b)
+            functions.append(lambda x: mapper_a(x) * (1 - weight) + mapper_b(x) * weight)
+        else:
+            functions.append(resolve_mapper_function(name))
+
     return lambda x: chain(x, functions)
+
+
+METRIC_MAPPER = [
+    "none", "div_25", "div_10",
+    "div_6",
+    "div_4", "div_2", "div_1",
+]
+RELATIVE_MAPPER = [
+    "inv_mul_3", "inv_mul_2", "inv_mul_1",
+    "none",
+    "mul_1", "mul_2", "mul_3",
+]
 
 
 def resolve_mapper_name(mapper, foreground_scale, metric_depth):
@@ -127,18 +156,33 @@ def resolve_mapper_name(mapper, foreground_scale, metric_depth):
         else:
             disparity_mapper = mapper
     else:
-        if not metric_depth:
-            disparity_mapper = [
-                "inv_mul_3", "inv_mul_2", "inv_mul_1",
-                "none",
-                "mul_1", "mul_2", "mul_3",
-            ][foreground_scale + 3]
+        if foreground_scale == int(foreground_scale):
+            foreground_scale = int(foreground_scale)
+            if metric_depth:
+                disparity_mapper = METRIC_MAPPER[foreground_scale + 3]
+            else:
+                disparity_mapper = RELATIVE_MAPPER[foreground_scale + 3]
         else:
-            disparity_mapper = [
-                "none", "div_25", "div_10",
-                "div_6",
-                "div_4", "div_2", "div_1",
-            ][foreground_scale + 3]
+            # float value, interpolate two mappers
+            if foreground_scale > 0:
+                foreground_scale_a = math.floor(foreground_scale)
+                foreground_scale_b = math.ceil(foreground_scale)
+                weight = foreground_scale - foreground_scale_a
+            else:
+                foreground_scale = -foreground_scale
+                foreground_scale_a = math.floor(foreground_scale)
+                foreground_scale_b = math.ceil(foreground_scale)
+                weight = foreground_scale - foreground_scale_a
+                foreground_scale_a, foreground_scale_b = -foreground_scale_a, -foreground_scale_b
+
+            if metric_depth:
+                mapper_a = METRIC_MAPPER[foreground_scale_a + 3]
+                mapper_b = METRIC_MAPPER[foreground_scale_b + 3]
+            else:
+                mapper_a = RELATIVE_MAPPER[foreground_scale_a + 3]
+                mapper_b = RELATIVE_MAPPER[foreground_scale_b + 3]
+
+            disparity_mapper = f"{mapper_a}+{mapper_b}={round(weight, 2)}"
 
     assert disparity_mapper is not None
     return disparity_mapper

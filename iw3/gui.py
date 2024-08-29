@@ -228,9 +228,9 @@ class MainFrame(wx.Frame):
         self.cbo_zoed_resolution.SetSelection(0)
 
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
-        self.cbo_foreground_scale = wx.ComboBox(self.grp_stereo,
-                                                choices=["-3", "-2", "-1", "0", "1", "2", "3"],
-                                                style=wx.CB_READONLY, name="cbo_foreground_scale")
+        self.cbo_foreground_scale = EditableComboBox(self.grp_stereo,
+                                                     choices=["-3", "-2", "-1", "0", "1", "2", "3"],
+                                                     name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(3)
 
         self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
@@ -599,6 +599,7 @@ class MainFrame(wx.Frame):
             self.cbo_crf,
             self.cbo_profile_level,
             self.cbo_video_codec,
+            self.cbo_foreground_scale,
         ]
         self.persistence_manager = persist.PersistenceManager.Get()
         self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
@@ -992,6 +993,9 @@ class MainFrame(wx.Frame):
         if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
             self.show_validation_error_message(T("Flicker Reduction"), 0.1, 0.999)
             return None
+        if not validate_number(self.cbo_foreground_scale.GetValue(), -3.0, 3.0, allow_empty=False):
+            self.show_validation_error_message(T("Foreground Scale"), -3, 3)
+            return None
 
         zoed_height = self.cbo_zoed_resolution.GetValue()
         if zoed_height == "Default" or zoed_height == "":
@@ -1095,7 +1099,7 @@ class MainFrame(wx.Frame):
             ipd_offset=float(self.sld_ipd_offset.GetValue()),
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
-            foreground_scale=int(self.cbo_foreground_scale.GetValue()),
+            foreground_scale=float(self.cbo_foreground_scale.GetValue()),
             edge_dilation=edge_dilation,
             vr180=vr180,
             half_sbs=half_sbs,
