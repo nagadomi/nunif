@@ -1371,7 +1371,7 @@ def create_parser(required_true=True):
                               "if auto, div_6 for ZoeDepth model, none for DepthAnything model. "
                               "directly using this option is deprecated. "
                               "use --foreground-scale instead."))
-    parser.add_argument("--foreground-scale", type=int, choices=[-3, -2, -1, 0, 1, 2, 3], default=0,
+    parser.add_argument("--foreground-scale", type=float, choices=[Range(-3.0, 3.0)], default=0,
                         help="foreground scaling level. 0 is disabled")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
