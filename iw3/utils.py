@@ -654,15 +654,16 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                          end_time=args.end_time)
     else:
         minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
-        preprocess_lock = threading.Lock()
-        depth_lock = threading.Lock()
-        sbs_lock = threading.Lock()
+        preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+        depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+        sbs_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
 
         @torch.inference_mode()
         def _batch_callback(x):
+            device_index = args.state["devices"].index(x.device)
             if args.max_output_height is not None or args.bg_session is not None:
                 # TODO: batch preprocess_image
-                with preprocess_lock:
+                with preprocess_lock[device_index]:
                     xs = [preprocess_image(xx, args) for xx in x]
                     x = torch.stack([x for x_org, x in xs])
                     if args.bg_session is not None:
@@ -671,7 +672,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                         x_orgs = x
             else:
                 x_orgs = x
-            with depth_lock:
+            with depth_lock[device_index]:
                 depths = args.state["depth_utils"].batch_infer(
                     depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
                     int16=False, enable_amp=not args.disable_amp,
@@ -682,21 +683,22 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             if args.method in {"forward", "forward_fill"}:
                 # Lock all threads
                 # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
-                with sbs_lock, preprocess_lock, depth_lock:
+                with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
                     left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
             else:
-                with sbs_lock:
+                with sbs_lock[device_index]:
                     left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
 
             return torch.stack([
                 postprocess_image(left_eyes[i], right_eyes[i], args)
                 for i in range(left_eyes.shape[0])])
+        extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         frame_callback = VU.FrameCallbackPool(
             _batch_callback,
             batch_size=minibatch_size,
             device=args.state["devices"],
             max_workers=args.max_workers,
-            max_batch_queue=args.max_workers + 1,
+            max_batch_queue=args.max_workers + extra_queue,
         )
         VU.process_video(input_filename, output_filename,
                          config_callback=config_callback,
