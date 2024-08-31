@@ -443,8 +443,8 @@ def postprocess_image(left_eye, right_eye, args):
         left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
     if args.vr180:
-        left_eye = equirectangular_projection(left_eye, device=args.state["device"])
-        right_eye = equirectangular_projection(right_eye, device=args.state["device"])
+        left_eye = equirectangular_projection(left_eye, device=left_eye.device)
+        right_eye = equirectangular_projection(right_eye, device=right_eye.device)
     elif args.half_sbs:
         left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
                              interpolation=InterpolationMode.BICUBIC, antialias=True)
@@ -513,13 +513,12 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
         depth = args.state["depth_utils"].batch_infer(
             depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
             int16=False, enable_amp=not args.disable_amp,
-            output_device=args.state["device"],
-            device=args.state["device"],
+            output_device=im.device,
+            device=im.device,
             edge_dilation=args.edge_dilation,
             resize_depth=False)
         if not args.debug_depth:
-            left_eye, right_eye = apply_divergence(depth, im_org.to(args.state["device"]),
-                                                   args, side_model)
+            left_eye, right_eye = apply_divergence(depth, im_org, args, side_model)
             sbs = postprocess_image(left_eye, right_eye, args)
             if not return_tensor:
                 sbs = TF.to_pil_image(sbs)
@@ -566,6 +565,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             if im is None:
                 pbar.update(1)
                 continue
+            im = TF.to_tensor(im).to(args.state["device"])
             output = process_image(im, args, depth_model, side_model)
             f = pool.submit(save_image, output, output_filename)
             #  f.result() # for debug
@@ -626,7 +626,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     @torch.inference_mode()
     def test_callback(frame):
-        frame = VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
+        frame = VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
                                           return_tensor=True))
         if ema_normalize:
             args.state["ema"].clear()
@@ -637,7 +637,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         def frame_callback(frame):
             if frame is None:
                 return None
-            return VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
+            return VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
                                              return_tensor=True))
 
         VU.process_video(input_filename, output_filename,
@@ -674,8 +674,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 depths = args.state["depth_utils"].batch_infer(
                     depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
                     int16=False, enable_amp=not args.disable_amp,
-                    output_device=args.state["device"],
-                    device=args.state["device"],
+                    output_device=x.device,
+                    device=x.device,
                     edge_dilation=args.edge_dilation,
                     resize_depth=False)
             if args.method in {"forward", "forward_fill"}:
@@ -828,12 +828,13 @@ def export_images(args):
             if im is None:
                 pbar.update(1)
                 continue
+            im = TF.to_tensor(im).to(args.state["device"])
             im_org, im = preprocess_image(im, args)
             depth = args.state["depth_utils"].batch_infer(
                 depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
                 int16=False, enable_amp=not args.disable_amp,
-                output_device=args.state["device"],
-                device=args.state["device"],
+                output_device=im.device,
+                device=im.device,
                 edge_dilation=edge_dilation,
                 resize_depth=False)
 
@@ -976,8 +977,8 @@ def export_video(args):
                 int16=False,
                 flip_aug=args.tta, low_vram=args.low_vram,
                 enable_amp=not args.disable_amp,
-                output_device=args.state["device"],
-                device=args.state["device"],
+                output_device=x.device,
+                device=x.device,
                 edge_dilation=edge_dilation,
                 resize_depth=False)
 
@@ -1091,10 +1092,9 @@ def process_config_video(config, args, side_model):
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = load_image_simple(depth_file, color="any")[0]
-        rgb = TF.to_tensor(rgb)
-        depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth))
-        frame = batch_callback(rgb.unsqueeze(0).to(args.state["device"]),
-                               depth.unsqueeze(0).to(args.state["device"]))
+        rgb = TF.to_tensor(rgb).to(args.state["device"])
+        depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth)).to(args.state["device"])
+        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0))
         return frame.shape[2:]
 
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
@@ -1236,15 +1236,12 @@ def process_config_images(config, args, side_model):
                 depth_filename = path.splitext(path.basename(depth_meta["filename"]))[0]
                 if rgb_filename != depth_filename:
                     raise ValueError(f"No match {rgb_filename} and {depth_filename}")
-                rgb = TF.to_tensor(rgb)
-                depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth))
+                rgb = TF.to_tensor(rgb).to(args.state["device"])
+                depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth)).to(args.state["device"])
                 if not config.skip_edge_dilation and args.edge_dilation > 0:
                     depth = -dilate_edge(-depth.unsqueeze(0), args.edge_dilation).squeeze(0)
 
-                left_eye, right_eye = apply_divergence(
-                    depth.to(args.state["device"]),
-                    rgb.to(args.state["device"]),
-                    args, side_model)
+                left_eye, right_eye = apply_divergence(depth, rgb, args, side_model)
                 sbs = postprocess_image(left_eye, right_eye, args)
                 sbs = TF.to_pil_image(sbs)
 
