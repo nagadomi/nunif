@@ -95,7 +95,9 @@ def load_model(model_type="ZoeD_N", gpu=0, height=None):
     device = create_device(gpu)
     model = model.to(device).eval()
     model._model_type = model_type
-    if isinstance(gpu, (list, tuple)) and len(gpu) > 1 and model_type not in {"ZoeD_Any_N", "ZoeD_Any_K"}:
+    if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
+        if model_type in {"ZoeD_Any_N", "ZoeD_Any_K"}:
+            raise ValueError(f"{model_type} does not support Multi-GPU")
         model = DeviceSwitchInference(model, device_ids=gpu)
 
     return model
