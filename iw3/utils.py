@@ -15,7 +15,8 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
-from nunif.device import create_device, autocast, device_is_mps
+from nunif.device import create_device, autocast, device_is_mps, device_is_cuda
+from nunif.models.data_parallel import DeviceSwitchInference
 from . import export_config
 from . dilation import dilate_edge
 from . forward_warp import apply_divergence_forward_warp
@@ -443,8 +444,8 @@ def postprocess_image(left_eye, right_eye, args):
         left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
     if args.vr180:
-        left_eye = equirectangular_projection(left_eye, device=args.state["device"])
-        right_eye = equirectangular_projection(right_eye, device=args.state["device"])
+        left_eye = equirectangular_projection(left_eye, device=left_eye.device)
+        right_eye = equirectangular_projection(right_eye, device=right_eye.device)
     elif args.half_sbs:
         left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
                              interpolation=InterpolationMode.BICUBIC, antialias=True)
@@ -513,13 +514,12 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
         depth = args.state["depth_utils"].batch_infer(
             depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
             int16=False, enable_amp=not args.disable_amp,
-            output_device=args.state["device"],
-            device=args.state["device"],
+            output_device=im.device,
+            device=im.device,
             edge_dilation=args.edge_dilation,
             resize_depth=False)
         if not args.debug_depth:
-            left_eye, right_eye = apply_divergence(depth, im_org.to(args.state["device"]),
-                                                   args, side_model)
+            left_eye, right_eye = apply_divergence(depth, im_org, args, side_model)
             sbs = postprocess_image(left_eye, right_eye, args)
             if not return_tensor:
                 sbs = TF.to_pil_image(sbs)
@@ -566,6 +566,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
             if im is None:
                 pbar.update(1)
                 continue
+            im = TF.to_tensor(im).to(args.state["device"])
             output = process_image(im, args, depth_model, side_model)
             f = pool.submit(save_image, output, output_filename)
             #  f.result() # for debug
@@ -626,7 +627,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     @torch.inference_mode()
     def test_callback(frame):
-        frame = VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
+        frame = VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
                                           return_tensor=True))
         if ema_normalize:
             args.state["ema"].clear()
@@ -637,7 +638,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         def frame_callback(frame):
             if frame is None:
                 return None
-            return VU.to_frame(process_image(VU.to_tensor(frame), args, depth_model, side_model,
+            return VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
                                              return_tensor=True))
 
         VU.process_video(input_filename, output_filename,
@@ -653,15 +654,17 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                          end_time=args.end_time)
     else:
         minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
-        preprocess_lock = threading.Lock()
-        depth_lock = threading.Lock()
-        sbs_lock = threading.Lock()
+        preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+        depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+        sbs_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+        streams = threading.local()
 
         @torch.inference_mode()
-        def _batch_callback(x):
+        def __batch_callback(x):
+            device_index = args.state["devices"].index(x.device)
             if args.max_output_height is not None or args.bg_session is not None:
                 # TODO: batch preprocess_image
-                with preprocess_lock:
+                with preprocess_lock[device_index]:
                     xs = [preprocess_image(xx, args) for xx in x]
                     x = torch.stack([x for x_org, x in xs])
                     if args.bg_session is not None:
@@ -670,32 +673,48 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                         x_orgs = x
             else:
                 x_orgs = x
-            with depth_lock:
+            with depth_lock[device_index]:
                 depths = args.state["depth_utils"].batch_infer(
                     depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
                     int16=False, enable_amp=not args.disable_amp,
-                    output_device=args.state["device"],
-                    device=args.state["device"],
+                    output_device=x.device,
+                    device=x.device,
                     edge_dilation=args.edge_dilation,
                     resize_depth=False)
             if args.method in {"forward", "forward_fill"}:
                 # Lock all threads
                 # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
-                with sbs_lock, preprocess_lock, depth_lock:
+                with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
                     left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
             else:
-                with sbs_lock:
+                with sbs_lock[device_index]:
                     left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
 
             return torch.stack([
                 postprocess_image(left_eyes[i], right_eyes[i], args)
                 for i in range(left_eyes.shape[0])])
+
+        def _batch_callback(x):
+            if device_is_cuda(x.device):
+                device_name = str(x.device)
+                if not hasattr(streams, device_name):
+                    setattr(streams, device_name, torch.cuda.Stream(device=x.device))
+                stream = getattr(streams, device_name)
+                stream.wait_stream(torch.cuda.current_stream(x.device))
+                with torch.cuda.device(x.device), torch.cuda.stream(stream):
+                    ret = __batch_callback(x)
+                    stream.synchronize()
+                    return ret
+            else:
+                return __batch_callback(x)
+
+        extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         frame_callback = VU.FrameCallbackPool(
             _batch_callback,
             batch_size=minibatch_size,
-            device=args.state["device"],
+            device=args.state["devices"],
             max_workers=args.max_workers,
-            max_batch_queue=args.max_workers + 1,
+            max_batch_queue=args.max_workers + extra_queue,
         )
         VU.process_video(input_filename, output_filename,
                          config_callback=config_callback,
@@ -828,12 +847,13 @@ def export_images(args):
             if im is None:
                 pbar.update(1)
                 continue
+            im = TF.to_tensor(im).to(args.state["device"])
             im_org, im = preprocess_image(im, args)
             depth = args.state["depth_utils"].batch_infer(
                 depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
                 int16=False, enable_amp=not args.disable_amp,
-                output_device=args.state["device"],
-                device=args.state["device"],
+                output_device=im.device,
+                device=im.device,
                 edge_dilation=edge_dilation,
                 resize_depth=False)
 
@@ -953,14 +973,16 @@ def export_video(args):
         return video_output_config
 
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
-    preprocess_lock = threading.Lock()
-    depth_lock = threading.Lock()
+    preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+    depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+    streams = threading.local()
     depth_model = args.state["depth_model"]
 
     @torch.inference_mode()
-    def _batch_callback(x, pts):
+    def __batch_callback(x, pts):
+        device_index = args.state["devices"].index(x.device)
         if args.max_output_height is not None or args.bg_session is not None:
-            with preprocess_lock:
+            with preprocess_lock[device_index]:
                 xs = [preprocess_image(xx, args) for xx in x]
                 x = torch.stack([x for x_org, x in xs])
                 if args.bg_session is not None:
@@ -970,14 +992,14 @@ def export_video(args):
         else:
             x_orgs = x
 
-        with depth_lock:
+        with depth_lock[device_index]:
             depths = args.state["depth_utils"].batch_infer(
                 depth_model, x,
                 int16=False,
                 flip_aug=args.tta, low_vram=args.low_vram,
                 enable_amp=not args.disable_amp,
-                output_device=args.state["device"],
-                device=args.state["device"],
+                output_device=x.device,
+                device=x.device,
                 edge_dilation=edge_dilation,
                 resize_depth=False)
 
@@ -1001,12 +1023,27 @@ def export_video(args):
             rgb = TF.to_pil_image(x)
             rgb.save(path.join(rgb_dir, f"{seq}.png"))
 
+    def _batch_callback(x, pts):
+        if device_is_cuda(x.device):
+            device_name = str(x.device)
+            if not hasattr(streams, device_name):
+                setattr(streams, device_name, torch.cuda.Stream(device=x.device))
+            stream = getattr(streams, device_name)
+            stream.wait_stream(torch.cuda.current_stream(x.device))
+            with torch.cuda.device(x.device), torch.cuda.stream(stream):
+                ret = __batch_callback(x, pts)
+                stream.synchronize()
+                return ret
+        else:
+            return __batch_callback(x, pts)
+
+    extra_queue = 1 if len(args.state["devices"]) == 1 else 0
     frame_callback = VU.FrameCallbackPool(
         _batch_callback,
         batch_size=minibatch_size,
-        device=args.state["device"],
+        device=args.state["devices"],
         max_workers=args.max_workers,
-        max_batch_queue=args.max_workers + 1,
+        max_batch_queue=args.max_workers + extra_queue,
         require_pts=True,
         skip_pts=resume_seq
     )
@@ -1091,10 +1128,9 @@ def process_config_video(config, args, side_model):
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = load_image_simple(depth_file, color="any")[0]
-        rgb = TF.to_tensor(rgb)
-        depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth))
-        frame = batch_callback(rgb.unsqueeze(0).to(args.state["device"]),
-                               depth.unsqueeze(0).to(args.state["device"]))
+        rgb = TF.to_tensor(rgb).to(args.state["device"])
+        depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth)).to(args.state["device"])
+        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0))
         return frame.shape[2:]
 
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
@@ -1236,15 +1272,12 @@ def process_config_images(config, args, side_model):
                 depth_filename = path.splitext(path.basename(depth_meta["filename"]))[0]
                 if rgb_filename != depth_filename:
                     raise ValueError(f"No match {rgb_filename} and {depth_filename}")
-                rgb = TF.to_tensor(rgb)
-                depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth))
+                rgb = TF.to_tensor(rgb).to(args.state["device"])
+                depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth)).to(args.state["device"])
                 if not config.skip_edge_dilation and args.edge_dilation > 0:
                     depth = -dilate_edge(-depth.unsqueeze(0), args.edge_dilation).squeeze(0)
 
-                left_eye, right_eye = apply_divergence(
-                    depth.to(args.state["device"]),
-                    rgb.to(args.state["device"]),
-                    args, side_model)
+                left_eye, right_eye = apply_divergence(depth, rgb, args, side_model)
                 sbs = postprocess_image(left_eye, right_eye, args)
                 sbs = TF.to_pil_image(sbs)
 
@@ -1488,6 +1521,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         "depth_model": depth_model,
         "ema": EMAMinMax(alpha=args.ema_decay),
         "device": create_device(args.gpu),
+        "devices": [create_device(gpu_id) for gpu_id in args.gpu],
         "depth_utils": depth_utils
     }
     return args
@@ -1516,6 +1550,10 @@ def iw3_main(args):
     assert not (args.half_sbs and args.vr180)
     assert not (args.half_sbs and args.anaglyph)
     assert not (args.vr180 and args.anaglyph)
+
+    if len(args.gpu) > 1 and len(args.gpu) > args.max_workers:
+        # For GPU round-robin on thread pool
+        args.max_workers = len(args.gpu)
 
     if args.update:
         args.state["depth_utils"].force_update()
@@ -1583,6 +1621,8 @@ def iw3_main(args):
             side_model.delta_output = True
         else:
             side_model = None
+        if side_model is not None and len(args.gpu) > 1:
+            side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
 
     if args.find_param:
         assert is_image(args.input) and (path.isdir(args.output) or not path.exists(args.output))
@@ -1643,6 +1683,7 @@ def iw3_main(args):
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")
+        im = TF.to_tensor(im).to(args.state["device"])
         output = process_image(im, args, depth_model, side_model)
         make_parent_dir(output_filename)
         output.save(output_filename)

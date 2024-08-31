@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast, device_is_mps # noqa
-from nunif.models.data_parallel import DataParallelInference
+from nunif.models.data_parallel import DeviceSwitchInference
 from .dilation import dilate_edge
 
 
@@ -112,7 +112,7 @@ def load_model(model_type="Any_B", gpu=0, **kwargs):
         model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
 
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
-        model = DataParallelInference(model, device_ids=gpu)
+        model = DeviceSwitchInference(model, device_ids=gpu)
 
     return model
 

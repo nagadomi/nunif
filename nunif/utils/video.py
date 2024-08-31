@@ -137,15 +137,13 @@ def from_image(im):
 def to_tensor(frame, device=None):
     x = torch.from_numpy(frame.to_ndarray(format="rgb24"))
     if device is not None:
-        x = x.to(device).permute(2, 0, 1) / 255.0
-    else:
-        x = x.permute(2, 0, 1) / 255.0
+        x = x.to(device)
     # CHW float32
-    return x.contiguous()
+    return x.permute(2, 0, 1).contiguous() / 255.0
 
 
 def from_tensor(x):
-    x = (x.permute(1, 2, 0) * 255.0).contiguous().to(torch.uint8).detach().cpu().numpy()
+    x = (x.permute(1, 2, 0).contiguous() * 255.0).to(torch.uint8).detach().cpu().numpy()
     return av.video.frame.VideoFrame.from_ndarray(x, format="rgb24")
 
 
@@ -1079,7 +1077,8 @@ class FrameCallbackPool():
         self.batch_size = batch_size
         self.max_workers = max_workers
         self.max_batch_queue = max_batch_queue
-        self.device = device
+        self.devices = device if isinstance(device, (tuple, list)) else [device]
+        self.round_robin_index = 0
         self.frame_queue = []
         self.pts_queue = []
         self.batch_queue = []
@@ -1102,7 +1101,8 @@ class FrameCallbackPool():
             return None
 
         self.pts_queue.append(frame.pts)
-        frame = to_tensor(frame, device=self.device)
+        frame = to_tensor(frame, device=self.devices[self.round_robin_index % len(self.devices)])
+
         self.frame_queue.append(frame)
         if len(self.frame_queue) == self.batch_size:
             batch = torch.stack(self.frame_queue)
@@ -1110,6 +1110,7 @@ class FrameCallbackPool():
             self.frame_queue.clear()
             self.pts_batch_queue.append(list(self.pts_queue))
             self.pts_queue.clear()
+            self.round_robin_index += 1
 
         if self.batch_queue:
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
