@@ -973,14 +973,16 @@ def export_video(args):
         return video_output_config
 
     minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
-    preprocess_lock = threading.Lock()
-    depth_lock = threading.Lock()
+    preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+    depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+    streams = threading.local()
     depth_model = args.state["depth_model"]
 
     @torch.inference_mode()
-    def _batch_callback(x, pts):
+    def __batch_callback(x, pts):
+        device_index = args.state["devices"].index(x.device)
         if args.max_output_height is not None or args.bg_session is not None:
-            with preprocess_lock:
+            with preprocess_lock[device_index]:
                 xs = [preprocess_image(xx, args) for xx in x]
                 x = torch.stack([x for x_org, x in xs])
                 if args.bg_session is not None:
@@ -990,7 +992,7 @@ def export_video(args):
         else:
             x_orgs = x
 
-        with depth_lock:
+        with depth_lock[device_index]:
             depths = args.state["depth_utils"].batch_infer(
                 depth_model, x,
                 int16=False,
@@ -1021,12 +1023,27 @@ def export_video(args):
             rgb = TF.to_pil_image(x)
             rgb.save(path.join(rgb_dir, f"{seq}.png"))
 
+    def _batch_callback(x, pts):
+        if device_is_cuda(x.device):
+            device_name = str(x.device)
+            if not hasattr(streams, device_name):
+                setattr(streams, device_name, torch.cuda.Stream(device=x.device))
+            stream = getattr(streams, device_name)
+            stream.wait_stream(torch.cuda.current_stream(x.device))
+            with torch.cuda.device(x.device), torch.cuda.stream(stream):
+                ret = __batch_callback(x, pts)
+                stream.synchronize()
+                return ret
+        else:
+            return __batch_callback(x, pts)
+
+    extra_queue = 1 if len(args.state["devices"]) == 1 else 0
     frame_callback = VU.FrameCallbackPool(
         _batch_callback,
         batch_size=minibatch_size,
-        device=args.state["device"],
+        device=args.state["devices"],
         max_workers=args.max_workers,
-        max_batch_queue=args.max_workers + 1,
+        max_batch_queue=args.max_workers + extra_queue,
         require_pts=True,
         skip_pts=resume_seq
     )
