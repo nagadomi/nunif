@@ -1104,7 +1104,6 @@ class FrameCallbackPool():
 
         self.pts_queue.append(frame.pts)
         frame = to_tensor(frame, device=self.devices[self.round_robin_index % len(self.devices)])
-        self.round_robin_index += 1
 
         self.frame_queue.append(frame)
         if len(self.frame_queue) == self.batch_size:
@@ -1113,6 +1112,7 @@ class FrameCallbackPool():
             self.frame_queue.clear()
             self.pts_batch_queue.append(list(self.pts_queue))
             self.pts_queue.clear()
+            self.round_robin_index += 1
 
         if self.batch_queue:
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
