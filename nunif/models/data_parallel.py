@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.parallel import gather, replicate, parallel_apply
 from torch.nn.parallel.scatter_gather import scatter_kwargs
+from .. device import create_device
 
 
 class DataParallelInference():
@@ -47,3 +48,21 @@ class DataParallelWrapper(nn.DataParallel):
             return super().__getattr__(name)
         except AttributeError:
             return getattr(self.module, name)
+
+
+class DeviceSwitchInference(object):
+    def __init__(self, module, device_ids=None):
+        device_ids = device_ids or list(range(torch.cuda.device_count()))
+        self._devices = [create_device(id) for id in device_ids]
+        self._module = module.eval()
+        self._replicas = replicate(self._module, self._devices)
+
+    def __call__(self, x, *args, **kwargs):
+        module = self._replicas[self._devices.index(x.device)]
+        return module(x, *args, **kwargs)
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self._module, name)

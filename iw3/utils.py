@@ -16,6 +16,7 @@ from nunif.models import load_model  # , compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.device import create_device, autocast, device_is_mps
+from nunif.models.data_parallel import DeviceSwitchInference
 from . import export_config
 from . dilation import dilate_edge
 from . forward_warp import apply_divergence_forward_warp
@@ -693,7 +694,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         frame_callback = VU.FrameCallbackPool(
             _batch_callback,
             batch_size=minibatch_size,
-            device=args.state["device"],
+            device=args.state["devices"],
             max_workers=args.max_workers,
             max_batch_queue=args.max_workers + 1,
         )
@@ -1485,6 +1486,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         "depth_model": depth_model,
         "ema": EMAMinMax(alpha=args.ema_decay),
         "device": create_device(args.gpu),
+        "devices": [create_device(gpu_id) for gpu_id in args.gpu],
         "depth_utils": depth_utils
     }
     return args
@@ -1513,6 +1515,10 @@ def iw3_main(args):
     assert not (args.half_sbs and args.vr180)
     assert not (args.half_sbs and args.anaglyph)
     assert not (args.vr180 and args.anaglyph)
+
+    if len(args.gpu) > 1 and len(args.gpu) > args.max_workers:
+        # For GPU round-robin on thread pool
+        args.max_workers = len(args.gpu)
 
     if args.update:
         args.state["depth_utils"].force_update()
@@ -1580,6 +1586,8 @@ def iw3_main(args):
             side_model.delta_output = True
         else:
             side_model = None
+        if side_model is not None and len(args.gpu) > 1:
+            side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
 
     if args.find_param:
         assert is_image(args.input) and (path.isdir(args.output) or not path.exists(args.output))
@@ -1640,6 +1648,7 @@ def iw3_main(args):
         else:
             output_filename = args.output
         im, _ = load_image_simple(args.input, color="rgb")
+        im = TF.to_tensor(im).to(args.state["device"])
         output = process_image(im, args, depth_model, side_model)
         make_parent_dir(output_filename)
         output.save(output_filename)

@@ -1079,7 +1079,8 @@ class FrameCallbackPool():
         self.batch_size = batch_size
         self.max_workers = max_workers
         self.max_batch_queue = max_batch_queue
-        self.device = device
+        self.devices = device if isinstance(device, (tuple, list)) else [device]
+        self.round_robin_index = 0
         self.frame_queue = []
         self.pts_queue = []
         self.batch_queue = []
@@ -1102,7 +1103,9 @@ class FrameCallbackPool():
             return None
 
         self.pts_queue.append(frame.pts)
-        frame = to_tensor(frame, device=self.device)
+        frame = to_tensor(frame, device=self.devices[self.round_robin_index % len(self.devices)])
+        self.round_robin_index += 1
+
         self.frame_queue.append(frame)
         if len(self.frame_queue) == self.batch_size:
             batch = torch.stack(self.frame_queue)
