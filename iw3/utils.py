@@ -700,7 +700,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 if not hasattr(streams, device_name):
                     setattr(streams, device_name, torch.cuda.Stream(device=x.device))
                 stream = getattr(streams, device_name)
-                with torch.cuda.stream(stream):
+                stream.wait_stream(torch.cuda.current_stream(x.device))
+                with torch.cuda.device(x.device), torch.cuda.stream(stream):
                     ret = __batch_callback(x)
                     stream.synchronize()
                     return ret
