@@ -137,15 +137,13 @@ def from_image(im):
 def to_tensor(frame, device=None):
     x = torch.from_numpy(frame.to_ndarray(format="rgb24"))
     if device is not None:
-        x = x.to(device).permute(2, 0, 1) / 255.0
-    else:
-        x = x.permute(2, 0, 1) / 255.0
+        x = x.to(device)
     # CHW float32
-    return x.contiguous()
+    return x.permute(2, 0, 1).contiguous() / 255.0
 
 
 def from_tensor(x):
-    x = (x.permute(1, 2, 0) * 255.0).contiguous().to(torch.uint8).detach().cpu().numpy()
+    x = (x.permute(1, 2, 0).contiguous() * 255.0).to(torch.uint8).detach().cpu().numpy()
     return av.video.frame.VideoFrame.from_ndarray(x, format="rgb24")
 
 
