@@ -15,7 +15,7 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
-from nunif.device import create_device, autocast, device_is_mps
+from nunif.device import create_device, autocast, device_is_mps, device_is_cuda
 from nunif.models.data_parallel import DeviceSwitchInference
 from . import export_config
 from . dilation import dilate_edge
@@ -657,9 +657,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
         depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
         sbs_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+        streams = threading.local()
 
         @torch.inference_mode()
-        def _batch_callback(x):
+        def __batch_callback(x):
             device_index = args.state["devices"].index(x.device)
             if args.max_output_height is not None or args.bg_session is not None:
                 # TODO: batch preprocess_image
@@ -692,6 +693,20 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return torch.stack([
                 postprocess_image(left_eyes[i], right_eyes[i], args)
                 for i in range(left_eyes.shape[0])])
+
+        def _batch_callback(x):
+            if device_is_cuda(x.device):
+                device_name = str(x.device)
+                if not hasattr(streams, device_name):
+                    setattr(streams, device_name, torch.cuda.Stream(device=x.device))
+                stream = getattr(streams, device_name)
+                with torch.cuda.stream(stream):
+                    ret = __batch_callback(x)
+                    stream.synchronize()
+                    return ret
+            else:
+                return __batch_callback(x)
+
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         frame_callback = VU.FrameCallbackPool(
             _batch_callback,
