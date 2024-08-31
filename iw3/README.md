@@ -389,6 +389,10 @@ These files can be downloaded from Models section of https://huggingface.co/dept
 | `forward`        | `forward_fill` without hole fill. For experimental use.
 | `grid_sample`,`backward`  | Naive backward warping. Lots of ghost artifacts. For experimental use.
 
+## Multi-GPU
+
+Multi-GPU(`All CUDA Device`) feature is supported only for video processing and Export. Other features work on a single GPU.
+
 ## Updating torch.hub modules (ZoeDepth, DepthAnything)
 
 When you manually update the code, run the following command.
