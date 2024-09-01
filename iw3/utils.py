@@ -695,7 +695,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 for i in range(left_eyes.shape[0])])
 
         def _batch_callback(x):
-            if device_is_cuda(x.device):
+            if args.cuda_stream and device_is_cuda(x.device):
                 device_name = str(x.device)
                 if not hasattr(streams, device_name):
                     setattr(streams, device_name, torch.cuda.Stream(device=x.device))
@@ -1024,7 +1024,7 @@ def export_video(args):
             rgb.save(path.join(rgb_dir, f"{seq}.png"))
 
     def _batch_callback(x, pts):
-        if device_is_cuda(x.device):
+        if args.cuda_stream and device_is_cuda(x.device):
             device_name = str(x.device)
             if not hasattr(streams, device_name):
                 setattr(streams, device_name, torch.cuda.Stream(device=x.device))
@@ -1422,6 +1422,8 @@ def create_parser(required_true=True):
                         help="Use flip augmentation on depth model")
     parser.add_argument("--disable-amp", action="store_true",
                         help="disable AMP for some special reason")
+    parser.add_argument("--cuda-stream", action="store_true",
+                        help="use multi cuda stream for each thread/device")
     parser.add_argument("--max-output-width", type=int,
                         help="limit output width for cardboard players")
     parser.add_argument("--max-output-height", type=int,
