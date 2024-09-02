@@ -32,7 +32,7 @@ class GLUConvMLP(nn.Module):
         x = F.glu(x, dim=1)
         x = self.pad(x)
         x = self.w2(x)
-        x = F.leaky_relu(x, 0.1, inplace=True)
+        x = F.leaky_relu(x, 0.2, inplace=True)
         return x
 
 
@@ -93,9 +93,9 @@ class Overscan(nn.Module):
         self.relative_bias2 = WindowScoreBias(window_size=6)
         self.mlp = nn.Sequential(
             nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(C, C, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True),
         )
         basic_module_init(self.proj)
         basic_module_init(self.mlp)
@@ -119,7 +119,7 @@ class PatchDown(nn.Module):
         basic_module_init(self.conv)
 
     def forward(self, x):
-        x = F.leaky_relu(self.conv(x), 0.1, inplace=True)
+        x = F.leaky_relu(self.conv(x), 0.2, inplace=True)
         return x
 
 
@@ -130,7 +130,7 @@ class PatchUp(nn.Module):
         icnr_init(self.proj, scale_factor=2)
 
     def forward(self, x):
-        x = F.leaky_relu(self.proj(x), 0.1, inplace=True)
+        x = F.leaky_relu(self.proj(x), 0.2, inplace=True)
         x = F.pixel_shuffle(x, 2)
         return x
 
@@ -140,18 +140,18 @@ class ToImage(nn.Module):
         super().__init__()
         mid_channels = max(in_channels // scale_factor ** 2, 8)
         self.scale_factor = scale_factor
-        self.proj = nn.Conv2d(in_channels, mid_channels * scale_factor ** 2, kernel_size=1, stride=1, padding=0)
+        self.proj = nn.Conv2d(in_channels, mid_channels * scale_factor ** 2, kernel_size=3, stride=1, padding=0)
         self.conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, stride=1, padding=0)
         icnr_init(self.proj, scale_factor=scale_factor)
         basic_module_init(self.conv)
 
     def forward(self, x):
         x = self.proj(x)
-        x = F.leaky_relu(x, 0.1, inplace=True)
+        x = F.leaky_relu(x, 0.2, inplace=True)
         if self.scale_factor > 1:
             x = F.pixel_shuffle(x, self.scale_factor)
-            x = self.conv(x)
             x = F.pad(x, (-self.scale_factor + 1,) * 4)
+            x = self.conv(x)
         else:
             x = self.conv(x)
 
@@ -159,29 +159,24 @@ class ToImage(nn.Module):
 
 
 class ToImage4x(nn.Module):
-    def __init__(self, in_channels, out_channels, num_heads, num_layers, layer_norm=False):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
         mid_channels = max(in_channels // 4 ** 2, 8)
-        self.proj1 = nn.Conv2d(in_channels, mid_channels * 16, kernel_size=1, stride=1, padding=0)
-        self.wac = WACBlocks(mid_channels * 4, mlp_ratio=2, window_size=[8, 6] * num_layers,
-                             num_heads=num_heads, num_layers=num_layers, layer_norm=layer_norm,
-                             padding=[True] * (num_layers - 1) + [False])
-        self.proj2 = nn.Conv2d(mid_channels * 4, mid_channels * 4, kernel_size=1, stride=1, padding=0)
+        self.proj = nn.Conv2d(in_channels, mid_channels * 16, kernel_size=1, stride=1, padding=0)
+        self.conv2x = nn.Conv2d(mid_channels * 4, mid_channels * 4, kernel_size=3, stride=1, padding=0)
         self.conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, stride=1, padding=0)
+        icnr_init(self.proj, scale_factor=2)
+        icnr_init(self.conv2x, scale_factor=2)
         basic_module_init(self.conv)
-        icnr_init(self.proj1, scale_factor=2)
-        icnr_init(self.proj2, scale_factor=2)
 
     def forward(self, x):
-        x = self.proj1(x)
+        x = self.proj(x)
         x = F.pixel_shuffle(x, 2)
-        x = F.leaky_relu(x, 0.1, inplace=True)
-        x = self.wac(x)
-        x = self.proj2(x)
+        x = self.conv2x(x)
+        x = F.leaky_relu(x, 0.2, inplace=True)
         x = F.pixel_shuffle(x, 2)
-        x = F.leaky_relu(x, 0.1, inplace=True)
-        x = self.conv(x)
         x = F.pad(x, (-1,) * 4)
+        x = self.conv(x)
 
         return x
 
@@ -189,7 +184,6 @@ class ToImage4x(nn.Module):
 class WincUNetBase(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96,
                  lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
-                 decoder_add_dim=0,
                  first_layers=2, last_layers=3,
                  scale_factor=2, layer_norm=False):
         super(WincUNetBase, self).__init__()
@@ -197,7 +191,8 @@ class WincUNetBase(nn.Module):
         C = base_dim
         C2 = int(C * lv2_ratio)
         # assert C % 32 == 0 and C2 % 32 == 0  # slow when C % 32 != 0
-        HEADS = 4
+        HEADS = max(C // 32, 2)
+        HEADS2 = max(C2 // 32, 2)
 
         self.overscan = Overscan(in_channels)
         # shallow feature extractor
@@ -210,23 +205,18 @@ class WincUNetBase(nn.Module):
                               layer_norm=layer_norm)
         self.down1 = PatchDown(C, C2)
         self.wac2 = WACBlocks(C2, mlp_ratio=lv2_mlp_ratio,
-                              window_size=[8, 6, 8, 6], num_heads=HEADS * 2, num_layers=4,
+                              window_size=[8, 12, 8, 6], num_heads=HEADS2, num_layers=4,
                               layer_norm=layer_norm)
         # decoder
-        self.up1 = PatchUp(C2, C + decoder_add_dim)
-        self.wac1_proj = nn.Conv2d(C, C + decoder_add_dim, kernel_size=1, stride=1, padding=0)
+        self.up1 = PatchUp(C2, C)
+        self.wac1_proj = nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0)
+        self.wac3 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
+                              window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers,
+                              layer_norm=layer_norm)
         if scale_factor == 4:
-            last_layers = last_layers - 2
-            assert last_layers > 0
-            self.wac3 = WACBlocks(C + decoder_add_dim, mlp_ratio=lv1_mlp_ratio,
-                                  window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers,
-                                  layer_norm=layer_norm)
-            self.to_image = ToImage4x(C + decoder_add_dim, out_channels, num_heads=HEADS // 2, num_layers=2)
+            self.to_image = ToImage4x(C, out_channels)
         else:
-            self.wac3 = WACBlocks(C + decoder_add_dim, mlp_ratio=lv1_mlp_ratio,
-                                  window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers,
-                                  layer_norm=layer_norm)
-            self.to_image = ToImage(C + decoder_add_dim, out_channels, scale_factor=scale_factor)
+            self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
 
         basic_module_init(self.patch)
         basic_module_init(self.wac1_proj)
@@ -235,12 +225,12 @@ class WincUNetBase(nn.Module):
     def forward(self, x):
         ov = self.overscan(x)
         x = self.patch(x)
-        x = F.leaky_relu(x, 0.1, inplace=True)
+        x = F.leaky_relu(x, 0.2, inplace=True)
         x = F.pad(x, (-1,) * 4)
         x = torch.cat([x, ov], dim=1)
         x = self.fusion(x)
         x = F.pad(x, (-5,) * 4)
-        x = F.leaky_relu(x, 0.1, inplace=True)
+        x = F.leaky_relu(x, 0.2, inplace=True)
 
         x1 = self.wac1(x)
         x = self.down1(x1)
@@ -310,8 +300,7 @@ class WincUNet4x(I2IBaseModel):
     name = "waifu2x.winc_unet_4x"
 
     def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
-                 decoder_add_dim=32,
+                 base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=3,
                  **kwargs):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=36, in_channels=in_channels, blend_size=16)
         self.register_tile_size_validator(tile_size_validator)
@@ -320,8 +309,7 @@ class WincUNet4x(I2IBaseModel):
         self.unet = WincUNetBase(in_channels, out_channels=out_channels,
                                  base_dim=base_dim,
                                  lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                 decoder_add_dim=decoder_add_dim,
-                                 scale_factor=4, last_layers=4)
+                                 scale_factor=4, last_layers=3)
 
     def forward(self, x):
         z = self.unet(x)
