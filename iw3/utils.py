@@ -1666,7 +1666,9 @@ def iw3_main(args):
         files = []
         with open(args.input, mode="r", encoding="utf-8") as f:
             for line in f.readlines():
-                files.append(line.strip())
+                line = line.strip()
+                if not line.startswith("#"):
+                    files.append(line.strip())
         image_files = [f for f in files if is_image(f)]
         process_images(image_files, args.output, args, depth_model, side_model, title="Images")
         video_files = [f for f in files if is_video(f)]

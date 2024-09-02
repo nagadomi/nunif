@@ -88,6 +88,7 @@ class MainFrame(wx.Frame):
         self.input_type = None
         self.stop_event = threading.Event()
         self.suspend_event = threading.Event()
+        self.suspend_pos = 0
         self.suspend_event.set()
         self.depth_model = None
         self.depth_model_type = None
@@ -1229,6 +1230,8 @@ class MainFrame(wx.Frame):
             self.suspend_event.clear()
             self.btn_suspend.SetLabel(T("Resume"))
         else:
+            self.start_time = time()
+            self.suspend_pos = self.prg_tqdm.GetValue()
             self.suspend_event.set()
             self.btn_suspend.SetLabel(T("Suspend"))
 
@@ -1243,6 +1246,7 @@ class MainFrame(wx.Frame):
                 self.prg_tqdm.SetRange(1)
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
+            self.suspend_pos = 0
             self.SetStatusText(f"{0}/{value} {desc}")
         elif type == 1:
             # update
@@ -1254,7 +1258,7 @@ class MainFrame(wx.Frame):
             now = time()
             pos = self.prg_tqdm.GetValue()
             end_pos = self.prg_tqdm.GetRange()
-            fps = pos / (now - self.start_time + 1e-6)
+            fps = (pos - self.suspend_pos) / (now - self.start_time + 1e-6)
             remaining_time = int((end_pos - pos) / fps)
             h = remaining_time // 3600
             m = (remaining_time - h * 3600) // 60
