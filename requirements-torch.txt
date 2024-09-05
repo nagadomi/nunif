@@ -1,14 +1,14 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cu124
 
 # macOS
 torch; sys_platform == "darwin"
 torchvision; sys_platform == "darwin"
 
 # Linux
-torch==2.4.0+cu118; sys_platform == "linux"
-torchvision==0.19.0+cu118; sys_platform == "linux"
+torch==2.4.1+cu124; sys_platform == "linux"
+torchvision==0.19.1+cu124; sys_platform == "linux"
 
 # Windows
-torch==2.3.1+cu118; sys_platform == "win32"
-torchvision==0.18.1+cu118; sys_platform == "win32"
+torch==2.4.1+cu124; sys_platform == "win32"
+torchvision==0.19.1+cu124; sys_platform == "win32"
