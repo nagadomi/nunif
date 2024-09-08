@@ -48,7 +48,16 @@ class BackgroundImageGenerator():
         ])
 
     def generate(self):
-        bg, _ = load_image_simple(random.choice(self.images), color="rgb")
+        error_count = 0
+        while True:
+            bg, _ = load_image_simple(random.choice(self.images), color="rgb")
+            if bg is None:
+                error_count += 1
+                if error_count > 10:
+                    raise RuntimeError("+10 Errors in BG image loading")
+            else:
+                break
+
         return self.transforms(bg)
 
 
@@ -72,7 +81,7 @@ class TextGenerator():
         retry_count = 0
         while True:
             line = random.choice(self.lines)
-            if drawable(line):
+            if line and drawable(line):
                 break
             retry_count += 1
             if retry_count > 100:
@@ -84,6 +93,7 @@ class TextImageGenerator(Dataset):
     def __init__(self, args):
         super().__init__()
         tmp_size = int(args.size * 1.25)
+        self.size = args.size
         self.safe_size = int(tmp_size * math.sqrt(2)) + 4
         self.fonts = load_fonts(args.font_names, font_dir=args.font_dir)
         self.text_gen = TextGenerator()
@@ -93,19 +103,20 @@ class TextImageGenerator(Dataset):
             self.bg_gen = None
         self.num_samples = args.num_samples
         self.lock = threading.RLock()
+        interpolation = random.choice([TT.InterpolationMode.BICUBIC, TT.InterpolationMode.BILINEAR])
         self.transforms = TT.Compose([
             TT.RandomChoice([
                 NT.Identity(),
-                TT.RandomRotation((-45, 45), interpolation=TT.InterpolationMode.BILINEAR, expand=True),
+                TT.RandomRotation((-45, 45), interpolation=interpolation, expand=True),
                 TT.RandomPerspective(distortion_scale=1 - 1 / math.sqrt(2), p=1.0),
-            ], p=[5, 1, 1]),
+            ], p=[20, 1, 1]),
             TT.CenterCrop(args.size),
             # TT.CenterCrop(tmp_size),
-            # TT.Resize(args.size, interpolation=TT.InterpolationMode.BILINEAR)
+            # TT.Resize(args.size, interpolation=interpolation, antialias=True)
         ])
 
     def gen_basecolor(self):
-        if random.uniform(0, 1) < 0.7:
+        if random.uniform(0, 1) < 0.2:
             # random color
             bg = []
             for _ in range(3):
@@ -123,14 +134,18 @@ class TextImageGenerator(Dataset):
                 bg = [bg_mean, bg_mean, bg_mean]
         else:
             # black white
-            a = random.randint(0, 10)
-            b = random.randint(245, 255)
-            if random.uniform(0, 1) < 0.5:
-                bg = [a, a, a]
-                fg = [b, b, b]
+            if random.uniform(0, 1) < 0.2:
+                a = [random.randint(0, 10), random.randint(0, 10), random.randint(0, 10)]
+                b = [random.randint(245, 255), random.randint(245, 255), random.randint(245, 255)]
             else:
-                bg = [b, b, b]
-                fg = [a, a, a]
+                a = [random.randint(0, 10),] * 3
+                b = [random.randint(245, 255)] * 3
+            if random.uniform(0, 1) < 0.8:
+                fg = a
+                bg = b
+            else:
+                fg = b
+                bg = a
 
         return tuple(fg), tuple(bg)
 
@@ -173,20 +188,42 @@ class TextImageGenerator(Dataset):
         canvas = conf.bg
         gc = ImageDraw.Draw(canvas)
         pen = SimpleLineDraw(conf.font, font_size=conf.font_size, vertical=conf.vertical)
-        margin = conf.font_size // 2
+
+        canvas_size = max(canvas.size[0], canvas.size[1])
+        offset = (canvas_size - self.size) // 2
+        margin = random.randint(offset, offset + (self.size // 2 - conf.font_size // 2))
+        if exec_prob(0.5):
+            small_block = True
+            max_lines = random.randint(1, 4)
+        else:
+            small_block = False
+            max_lines = 1000
         x = y = margin
+        total_lines = 0
         if conf.vertical:
             while x + conf.font_size + conf.line_spacing + margin < canvas.size[0]:
                 line = self.text_gen.generate(pen.drawable)
+                if small_block:
+                    max_len = random.randint(2, 8)
+                    line = line[:max_len]
                 box = pen.draw(gc, x, y, line, color=conf.fg_color,
                                shadow_color=conf.shadow_color, shadow_width=conf.shadow_width)
                 x += box.width + conf.line_spacing
+                total_lines += 1
+                if max_lines <= total_lines:
+                    break
         else:
             while y + conf.font_size + conf.line_spacing + margin < canvas.size[1]:
                 line = self.text_gen.generate(pen.drawable)
+                if small_block:
+                    max_len = random.randint(2, 8)
+                    line = line[:max_len]
                 box = pen.draw(gc, x, y, line, color=conf.fg_color,
                                shadow_color=conf.shadow_color, shadow_width=conf.shadow_width)
                 y += box.height + conf.line_spacing
+                total_lines += 1
+                if max_lines <= total_lines:
+                    break
         return canvas
 
     def collate_fn(batch):
