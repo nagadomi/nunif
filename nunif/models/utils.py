@@ -6,9 +6,10 @@ from collections import OrderedDict
 import torch.nn as nn
 from . register import create_model
 from . model import Model
-from . data_parallel import DataParallelInference
+from . data_parallel import DataParallelInference, DeviceSwitchInference
 from .. logger import logger
 from .. device import create_device
+
 
 PYTORCH2 = packaging_version.parse(torch.__version__).major >= 2
 
@@ -103,7 +104,7 @@ def compile_model(model, **kwargs):
 
 def is_compiled_model(model):
     # TODO: class name of compiled model is unclear
-    return not isinstance(model, (Model, nn.DataParallel, DataParallelInference))
+    return not isinstance(model, (Model, nn.DataParallel, DataParallelInference, DeviceSwitchInference))
 
 
 def merge_state_dict(a, b, alpha=0.5):
