@@ -7,6 +7,7 @@ from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.norm import RMSNorm1
 from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive
 from nunif.modules.init import icnr_init, basic_module_init
+from nunif.modules.compile_wrapper import compile
 
 
 class GLUConvMLP(nn.Module):
@@ -26,6 +27,7 @@ class GLUConvMLP(nn.Module):
         self.w2 = nn.Conv2d(mid // 2, out_channels, kernel_size=kernel_size, stride=1, padding=0)
         basic_module_init(self)
 
+    @compile
     def forward(self, x):
         x = self.norm(x)
         x = self.w1(x)
@@ -118,6 +120,7 @@ class PatchDown(nn.Module):
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0)
         basic_module_init(self.conv)
 
+    @compile
     def forward(self, x):
         x = F.leaky_relu(self.conv(x), 0.2, inplace=True)
         return x
@@ -129,6 +132,7 @@ class PatchUp(nn.Module):
         self.proj = nn.Conv2d(in_channels, out_channels * 4, kernel_size=1, stride=1, padding=0)
         icnr_init(self.proj, scale_factor=2)
 
+    @compile
     def forward(self, x):
         x = F.leaky_relu(self.proj(x), 0.2, inplace=True)
         x = F.pixel_shuffle(x, 2)
@@ -145,6 +149,7 @@ class ToImage(nn.Module):
         icnr_init(self.proj, scale_factor=scale_factor)
         basic_module_init(self.conv)
 
+    @compile
     def forward(self, x):
         x = self.proj(x)
         x = F.leaky_relu(x, 0.2, inplace=True)
@@ -169,6 +174,7 @@ class ToImage4x(nn.Module):
         icnr_init(self.conv2x, scale_factor=2)
         basic_module_init(self.conv)
 
+    @compile
     def forward(self, x):
         x = self.proj(x)
         x = F.pixel_shuffle(x, 2)
