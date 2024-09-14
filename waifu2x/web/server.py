@@ -519,7 +519,6 @@ def main():
         else:
             max_request_body_size = 1073741824  # 1GB
         backend_kwargs = {
-            "preload_app": True,
             "threads": command_args.threads,
             "outbuf_overflow": 20 * SIZE_MB,
             "inbuf_overflow": 20 * SIZE_MB,
