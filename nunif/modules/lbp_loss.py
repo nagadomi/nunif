@@ -5,7 +5,7 @@ from .lbcnn import generate_lbcnn_filters
 from .charbonnier_loss import CharbonnierLoss
 from .clamp_loss import ClampLoss
 from .channel_weighted_loss import LuminanceWeightedLoss, AverageWeightedLoss, LUMINANCE_WEIGHT
-from .compile_wrapper import compile
+from .compile_wrapper import conditional_compile
 
 
 
@@ -33,7 +33,7 @@ class LBPLoss(nn.Module):
     def conv(self, x):
         return F.conv2d(x, weight=self.kernel, bias=None, stride=1, padding=0, groups=self.groups)
 
-    @compile
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, input, target):
         b, ch, *_ = input.shape
         return self.loss(self.conv(input), self.conv(target))
@@ -49,7 +49,7 @@ class YLBP(nn.Module):
     def conv(self, x):
         return F.conv2d(x, weight=self.kernel, bias=None, stride=1, padding=0)
 
-    @compile
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, input, target):
         B, C, *_ = input.shape
         target = torch.clamp(target, 0, 1)
@@ -73,7 +73,7 @@ class YL1LBP(nn.Module):
         self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
         self.weight = weight
 
-    @compile
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, input, target):
         lbp_loss = self.lbp(input, target)
         l1_loss = self.l1(input, target)
@@ -87,7 +87,7 @@ class L1LBP(nn.Module):
         self.l1 = ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3))
         self.weight = weight
 
-    @compile
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, input, target):
         lbp_loss = self.lbp(input, target)
         l1_loss = self.l1(input, target)
