@@ -2,8 +2,8 @@
 # torch
 # torchvision
 # torchtext
-numpy < 2.0.0
-pillow
+# numpy < 2.0.0
+# pillow
 tqdm
 wand >= 0.6.10
 fonttools

@@ -132,15 +132,6 @@ def diff_random_translate_pair(x, y, ratio=0.15, size=None, padding_mode="zeros"
     return x, y
 
 
-def expand_pad(input, target, ratio=0.15, size=None, padding_mode="zeros"):
-    size = size if size else int(input.shape[2:] * ratio)
-    expand_x = expand_y = size
-    input = F.pad(input, (expand_x, expand_x, expand_y, expand_y),
-                  mode=PAD_MODE_NN.get(padding_mode, padding_mode))
-    target = F.pad(target, (expand_x, expand_x, expand_y, expand_y),
-                   mode=PAD_MODE_NN.get(padding_mode, padding_mode))
-    return input, target
-
 
 class DiffPairRandomTranslate(nn.Module):
     def __init__(self, ratio=0.15, size=None, padding_mode="zeros", expand=False, instance_random=False):
@@ -150,6 +141,17 @@ class DiffPairRandomTranslate(nn.Module):
         self.expand = expand
         self.padding_mode = padding_mode
         self.instance_random = instance_random
+
+
+    @staticmethod
+    def expand_pad(input, target, ratio=0.15, size=None, padding_mode="zeros"):
+        size = size if size else int(input.shape[2:] * ratio)
+        expand_x = expand_y = size
+        input = F.pad(input, (expand_x, expand_x, expand_y, expand_y),
+                      mode=PAD_MODE_NN.get(padding_mode, padding_mode))
+        target = F.pad(target, (expand_x, expand_x, expand_y, expand_y),
+                       mode=PAD_MODE_NN.get(padding_mode, padding_mode))
+        return input, target
 
     def forward(self, input, target):
         if self.training:
@@ -172,8 +174,52 @@ class DiffPairRandomTranslate(nn.Module):
                 return input, target
         else:
             if self.expand:
-                return expand_pad(input, target, ratio=self.ratio, size=self.size,
-                                  padding_mode=self.padding_mode)
+                return self.expand_pad(input, target, ratio=self.ratio, size=self.size,
+                                       padding_mode=self.padding_mode)
+            else:
+                return input, target
+
+
+class DiffPairRandomRotate(nn.Module):
+    def __init__(self, angle=45, mode="bilinear", padding_mode="zeros",
+                 align_corners=False, expand=False, instance_random=False):
+        super().__init__()
+        self.angle = angle
+        self.mode = mode
+        self.expand = expand
+        self.padding_mode = padding_mode
+        self.align_corners = align_corners
+        self.instance_random = instance_random
+
+    @staticmethod
+    def expand_pad(input, target, padding_mode):
+        H, W = input.shape[:2]
+        pad_h = (int(2 ** 0.5 * H) - H) // 2 + 1
+        pad_w = (int(2 ** 0.5 * W) - W) // 2 + 1
+        input = F.pad(input, (pad_w, pad_w, pad_h, pad_h),
+                      mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
+        target = F.pad(input, (pad_w, pad_w, pad_h, pad_h),
+                       mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
+        return input, target
+
+    def forward(self, input, target):
+        if self.training:
+            if self.instance_random:
+                return diff_random_rotate_pair(
+                    input, target,
+                    angle=self.angle, mode=self.mode, padding_mode=self.padding_mode,
+                    align_corners=self.align_corners, expand=self.expand)
+            else:
+                # batch random
+                angle = (torch.rand(1).item() * 2 - 1) * self.angle
+                input = diff_rotate(input, angle, mode=self.mode, padding_mode="zeros",
+                                    align_corners=self.align_corners, expand=self.expand)
+                target = diff_rotate(target, angle, mode=self.mode, padding_mode="zeros",
+                                     align_corners=self.align_corners, expand=self.expand)
+                return input, target
+        else:
+            if self.expand:
+                return self.expand_pad(input, target, padding_mode=self.padding_mode)
             else:
                 return input, target
 
