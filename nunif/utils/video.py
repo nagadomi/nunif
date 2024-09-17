@@ -284,7 +284,9 @@ def test_output_size(test_callback, video_stream, vf):
     video_filter = FixedFPSFilter(video_stream, fps=60, vf=vf, deny_filters=SIZE_SAFE_FILTERS)
     empty_image = Image.new("RGB", (video_stream.codec_context.width,
                                     video_stream.codec_context.height), (128, 128, 128))
-    test_frame = av.video.frame.VideoFrame.from_image(empty_image)
+    test_frame = av.video.frame.VideoFrame.from_image(empty_image).reformat(
+        format=video_stream.pix_fmt,
+        src_color_range=ColorRange.JPEG, dst_color_range=video_stream.codec_context.color_range)
     pts_step = int((1. / video_stream.time_base) / 30) or 1
     test_frame.pts = pts_step
     while True:
@@ -1263,7 +1265,7 @@ def _test_reencode():
 
     callback = FrameCallbackPool(process_image, batch_size=args.batch_size,
                                  device=device, max_workers=args.max_workers,
-                                 max_batch_queue=args.max_workers+1)
+                                 max_batch_queue=args.max_workers + 1)
 
     process_video(args.input, args.output, config_callback=make_config, frame_callback=callback)
 
