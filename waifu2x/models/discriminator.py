@@ -7,6 +7,7 @@ from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
 from nunif.modules.fourier_unit import FourierUnitSNLReLU
 from nunif.modules.dinov2 import DINOEmbedding, dinov2_normalize, dinov2_pad, DINO_PATCH_SIZE
 from torch.nn.utils.parametrizations import spectral_norm
+from nunif.modules.compile_wrapper import conditional_compile
 
 
 def normalize(x):
@@ -36,6 +37,7 @@ class ImageToCondition(nn.Module):
                 nn.Linear(embed_dim, out_channels, bias=True))
             for out_channels in outputs])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x):
         B = x.shape[0]
         x = normalize(x)
@@ -152,6 +154,7 @@ class L3Discriminator(Discriminator):
             nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
         init_moduels(self)
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
         x = self.features(self.first_layer(x))
@@ -167,6 +170,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [64, 256])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         cond = self.to_cond(c)
         x = normalize(x)
@@ -198,6 +202,7 @@ class V1Discriminator(Discriminator):
         )
         init_moduels(self)
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
         x = self.features(self.first_layer(x))
@@ -213,6 +218,7 @@ class V1ConditionalDiscriminator(V1Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [64, 128])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         cond = self.to_cond(c)
         x = normalize(x)
@@ -334,6 +340,7 @@ class U3ConditionalDiscriminator(Discriminator):
         init_moduels(self)
         self.to_cond = ImageToCondition(64, [256])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         cond = self.to_cond(c)
         x = normalize(x)
