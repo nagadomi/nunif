@@ -20,13 +20,18 @@ def clamp_l1_loss(input, target, loss_function, min_value, max_value, eta=0.001)
 class ClampLoss(nn.Module):
     """ Wrapper Module for `(clamp(input, 0, 1) - clamp(target, 0, 1))`
     """
-    def __init__(self, module, min_value=0, max_value=1, eta=0.001):
+    def __init__(self, module, min_value=0, max_value=1, eta=0.001, clamp_l1=False):
         super().__init__()
         self.module = module
         self.min_value = min_value
         self.max_value = max_value
         self.eta = eta
+        self.clamp_l1 = clamp_l1
 
     def forward(self, input, target):
-        return clamp_loss(input, target, self.module,
-                          min_value=self.min_value, max_value=self.max_value, eta=self.eta)
+        if self.clamp_l1:
+            return clamp_l1_loss(input, target, self.module,
+                                 min_value=self.min_value, max_value=self.max_value, eta=self.eta)
+        else:
+            return clamp_loss(input, target, self.module,
+                              min_value=self.min_value, max_value=self.max_value, eta=self.eta)
