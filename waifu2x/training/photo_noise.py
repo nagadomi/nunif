@@ -335,36 +335,39 @@ class RandomPhotoNoiseX():
         self.force = force
 
     def __call__(self, x, y):
+        noise_level = self.noise_level
         if not self.force:
-            if random.uniform(0, 1) > NR_RATE[self.noise_level]:
-                # do nothing
-                return x, y
+            if random.uniform(0, 1) > NR_RATE[noise_level]:
+                noise_level = random.randint(-1, noise_level - 1)
+                if noise_level == -1:
+                    # do nothing
+                    return x, y
 
         x = TF.to_tensor(x)
-        if self.noise_level in {0, 1}:
+        if noise_level in {0, 1}:
             method = random.choice([0, 1, 2, 3])
-        elif self.noise_level in {2, 3}:
+        elif noise_level in {2, 3}:
             method = random.choice([0, 1, 2, 3, 4, 5])
         else:
-            raise ValueError(self.noise_level)
+            raise ValueError(noise_level)
 
         if method == 0:
-            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[noise_level]
             x = sampling_noise(x, strength=strength)
         elif method == 1:
-            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[noise_level]
             x = grain_noise1(x, strength=strength)
         elif method == 2:
-            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[noise_level]
             x = grain_noise2(x, strength=strength)
         elif method == 3:
-            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[noise_level]
             x = gaussian_noise_variants(x, strength=strength)
         elif method == 4:
-            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[noise_level]
             x = structured_noise(x, strength=strength)
         elif method == 5:
-            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[self.noise_level]
+            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[noise_level]
             x = gaussian_8x8_masked_noise(x, strength=strength)
 
         x = TF.to_pil_image(x)
@@ -470,4 +473,4 @@ def _test_structured_noise():
 if __name__ == "__main__":
     _test()
     # _test_gaussian()
-    #_test_structured_noise()
+    # _test_structured_noise()
