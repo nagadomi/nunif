@@ -21,7 +21,7 @@ from nunif.modules import (
     DiscriminatorHingeLoss,
     MultiscaleLoss,
 )
-from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
+from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP
 from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
@@ -45,16 +45,21 @@ LOSS_FUNCTIONS = {
     "lbpm": lambda: MultiscaleLoss(YLBP(), mode="avg"),
     "lbp5": lambda: YLBP(kernel_size=5),
     "lbp5m": lambda: MultiscaleLoss(YLBP(kernel_size=5), mode="avg"),
-    "rgb_lbp": lambda: RGBLBP(),
-    "rgb_lbp5": lambda: RGBLBP(kernel_size=5),
-    "l1lbp5": lambda: YL1LBP(kernel_size=5, weight=0.4),
-    "rgb_l1lbp": lambda: L1LBP(kernel_size=3, weight=0.4),
-    "rgb_l1lbp5": lambda: L1LBP(kernel_size=5, weight=0.4),
+    "rgb_l1lbp": lambda: YRGBL1LBP(kernel_size=3, weight=0.4),
+    "rgb_l1lbp5": lambda: YRGBL1LBP(kernel_size=5, weight=0.4),
+    "rgb_lbp5": lambda: YRGBLBP(kernel_size=5),
+
+    "dct24lbp5": lambda: WeightedLoss(
+        (DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+         YRGBLBP(kernel_size=5)),
+        weights=(0.6, 0.4)),
+
     "alex11": lambda: ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
     "y_l1fftgrad": lambda: YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
     "dct": lambda: DCTLoss(clamp=True),
     "dct4": lambda: DCTLoss(window_size=4, clamp=True),
     "dct8": lambda: DCTLoss(window_size=8, clamp=True),
+
     "dctm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True),
                                   DCTLoss(window_size=24, clamp=True),
                                   DCTLoss(clamp=True)),
@@ -75,6 +80,12 @@ LOSS_FUNCTIONS = {
          DCTLoss(clamp=True, random_instance_rotate=True)),
         weights=(0.2, 0.2, 0.6),
         preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)),
+    "dctrm4-24": lambda: WeightedLoss(
+        (DCTLoss(window_size=4, clamp=True),
+         DCTLoss(window_size=24, clamp=True, random_rotate=True)),
+        weights=(0.4, 0.6),
+        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True)),
+
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
         ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
