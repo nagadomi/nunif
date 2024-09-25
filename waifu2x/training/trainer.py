@@ -170,6 +170,7 @@ class Waifu2xEnv(LuminancePSNREnv):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
+        self.adaptive_weight_ema = None
         self.sampler = sampler
 
     def train_loss_hook(self, data, loss):
@@ -317,6 +318,17 @@ class Waifu2xEnv(LuminancePSNREnv):
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
                     min=1e-3, max=10, mode="norm") * self.trainer.args.discriminator_weight
+                if not math.isnan(weight):
+                    if self.adaptive_weight_ema is None:
+                        self.adaptive_weight_ema = weight
+                    else:
+                        alpha = 0.95
+                        self.adaptive_weight_ema = self.adaptive_weight_ema * alpha + weight * (1 - alpha)
+                    weight = self.adaptive_weight_ema
+                elif self.adaptive_weight_ema is not None:
+                    weight = self.adaptive_weight_ema
+                else:
+                    weight = 10.0 # +inf
                 recon_weight = 1.0 / weight
                 if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
                                              generator_loss > 0.95):
