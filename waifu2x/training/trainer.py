@@ -269,7 +269,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     # loss weight will be recalculated later,
                     # but multiplied by 10 here to reduce the gap.
                     # (gradient norm of generator_loss is 10-100x larger than recon_loss)
-                    recon_loss = recon_loss * 10
+                    recon_loss = recon_loss * self.trainer.args.reconstruction_loss_scale
                 else:
                     with torch.inference_mode():
                         z = self.model(x)
@@ -781,6 +781,9 @@ def register(subparsers, default_parser):
                               " Also do not hit the newbie discriminator."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
+    parser.add_argument("--reconstruction-loss-scale", type=float, default=10.0,
+                        help=("pre scaling factor for reconstruction loss. "
+                              "When discriminator weight is clipping(1e-3 or 10.0),this needs to be adjusted."))
 
     parser.set_defaults(
         batch_size=16,
