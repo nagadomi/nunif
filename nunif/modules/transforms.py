@@ -132,7 +132,6 @@ def diff_random_translate_pair(x, y, ratio=0.15, size=None, padding_mode="zeros"
     return x, y
 
 
-
 class DiffPairRandomTranslate(nn.Module):
     def __init__(self, ratio=0.15, size=None, padding_mode="zeros", expand=False, instance_random=False):
         super().__init__()
@@ -141,7 +140,6 @@ class DiffPairRandomTranslate(nn.Module):
         self.expand = expand
         self.padding_mode = padding_mode
         self.instance_random = instance_random
-
 
     @staticmethod
     def expand_pad(input, target, ratio=0.15, size=None, padding_mode="zeros"):
@@ -212,9 +210,9 @@ class DiffPairRandomRotate(nn.Module):
             else:
                 # batch random
                 angle = (torch.rand(1).item() * 2 - 1) * self.angle
-                input = diff_rotate(input, angle, mode=self.mode, padding_mode="zeros",
+                input = diff_rotate(input, angle, mode=self.mode, padding_mode=self.padding_mode,
                                     align_corners=self.align_corners, expand=self.expand)
-                target = diff_rotate(target, angle, mode=self.mode, padding_mode="zeros",
+                target = diff_rotate(target, angle, mode=self.mode, padding_mode=self.padding_mode,
                                      align_corners=self.align_corners, expand=self.expand)
                 return input, target
         else:
@@ -293,8 +291,27 @@ def _bench_random_rotate_pair():
     print(1 / ((time.time() - t) / (B * N)), "FPS")
 
 
+def _test_compose():
+    import time
+    import torchvision.io as IO
+    import torchvision.transforms.functional as TF
+    from .. transforms import pair as TP
+
+    transform = TP.Compose([
+        TP.RandomChoice([DiffPairRandomRotate(padding_mode="reflection"),
+                        DiffPairRandomTranslate(padding_mode="reflection")])
+    ])
+    x = IO.read_image("cc0/dog2.jpg") / 255.0
+    x = x[:, :256, :256].unsqueeze(0)
+    for _ in range(5):
+        x, y = transform(x, x)
+        TF.to_pil_image(x[0]).show()
+        time.sleep(1)
+
+
 if __name__ == "__main__":
     # _test_rotate()
     # _test_translate()
-    _test_translate_random()
+    # _test_translate_random()
     # _bench_random_rotate_pair()
+    _test_compose()
