@@ -211,9 +211,9 @@ class DiffPairRandomRotate(nn.Module):
                 # batch random
                 angle = (torch.rand(1).item() * 2 - 1) * self.angle
                 input = diff_rotate(input, angle, mode=self.mode, padding_mode=self.padding_mode,
-                                    align_corners=self.align_corners, expand=self.expand)
+                                    align_corners=self.align_corners, expand=self.expand, cache=False)
                 target = diff_rotate(target, angle, mode=self.mode, padding_mode=self.padding_mode,
-                                     align_corners=self.align_corners, expand=self.expand)
+                                     align_corners=self.align_corners, expand=self.expand, cache=False)
                 return input, target
         else:
             if self.expand:
