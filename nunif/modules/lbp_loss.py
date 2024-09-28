@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from .lbcnn import generate_lbcnn_filters
 from .charbonnier_loss import CharbonnierLoss
 from .clamp_loss import ClampLoss
-from .channel_weighted_loss import LuminanceWeightedLoss, AverageWeightedLoss, LUMINANCE_WEIGHT
+from .channel_weighted_loss import LuminanceWeightedLoss, AverageWeightedLoss
 from .compile_wrapper import conditional_compile
-
+from .color import rgb_to_yrgb
 
 
 def generate_lbp_kernel(in_channels, out_channels, kernel_size=3, seed=71):
@@ -39,52 +39,34 @@ class LBPLoss(nn.Module):
         return self.loss(self.conv(input), self.conv(target))
 
 
-class YLBP(nn.Module):
-    def __init__(self, kernel_size=3, out_channels=64):
-        super().__init__()
-        self.eta = 0.001
-        self.loss = CharbonnierLoss()
-        self.register_buffer("kernel", generate_lbp_kernel(1, out_channels, kernel_size))
-
-    def conv(self, x):
-        return F.conv2d(x, weight=self.kernel, bias=None, stride=1, padding=0)
-
-    @conditional_compile("NUNIF_TRAIN")
-    def forward(self, input, target):
-        B, C, *_ = input.shape
-        target = torch.clamp(target, 0, 1)
-        target_feat = [self.conv(target[:, i:i + 1, :, :]) for i in range(C)]
-        nonclip_loss = sum([self.loss(self.conv(input[:, i:i + 1, :, :]), target_feat[i]) * w
-                            for i, w in enumerate(LUMINANCE_WEIGHT)])
-        clip_loss = sum([self.loss(self.conv(torch.clamp(input[:, i:i + 1, :, :], 0, 1)), target_feat[i]) * w
-                         for i, w in enumerate(LUMINANCE_WEIGHT)])
-        return clip_loss + nonclip_loss * self.eta
+def YLBP(kernel_size=3, out_channels=64):
+    return ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size, out_channels=out_channels)),
+                     clamp_l1=True)
 
 
 def RGBLBP(kernel_size=3):
     return ClampLoss(AverageWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size),
-                                         in_channels=3))
+                                         in_channels=3), clamp_l1=True)
 
 
-class YL1LBP(nn.Module):
-    def __init__(self, kernel_size=5, weight=0.4):
+class YRGBLBP(nn.Module):
+    def __init__(self, kernel_size=5):
         super().__init__()
-        self.lbp = YLBP(kernel_size=kernel_size)
-        self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
-        self.weight = weight
+        self.loss = ClampLoss(AverageWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size), in_channels=4),
+                              clamp_l1=True)
 
     @conditional_compile("NUNIF_TRAIN")
     def forward(self, input, target):
-        lbp_loss = self.lbp(input, target)
-        l1_loss = self.l1(input, target)
-        return l1_loss + lbp_loss * self.weight
+        input = rgb_to_yrgb(input, y_clamp=True)
+        target = rgb_to_yrgb(target, y_clamp=True)
+        return self.loss(input, target)
 
 
-class L1LBP(nn.Module):
+class YRGBL1LBP(nn.Module):
     def __init__(self, kernel_size=5, weight=0.4):
         super().__init__()
-        self.lbp = RGBLBP(kernel_size=kernel_size)
-        self.l1 = ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3))
+        self.lbp = YRGBLBP(kernel_size=kernel_size)
+        self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
         self.weight = weight
 
     @conditional_compile("NUNIF_TRAIN")

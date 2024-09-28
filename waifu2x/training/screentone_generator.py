@@ -295,7 +295,7 @@ IMAGE_SIZE = 640
 WINDOW_SIZE = 400  # 320 < WINDOW_SIZE
 
 
-def gen(disable_color):
+def gen(disable_color, disable_sand):
     fg_color, window_bg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
     bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), window_bg_color)
     fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), fg_color)
@@ -309,7 +309,7 @@ def gen(disable_color):
         mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=1)
         line_pattern = True
     else:
-        if random.uniform(0, 1) < 0.5:
+        if disable_sand or random.uniform(0, 1) < 0.5:
             mask = gen_dot_gradient_mask(WINDOW_SIZE * 2, allow_small=not random_rotate)
         else:
             mask = gen_sand_mask(WINDOW_SIZE * 2)
@@ -350,6 +350,7 @@ def main():
     parser.add_argument("--seed", type=int, default=71, help="random seed")
     parser.add_argument("--postfix", type=str, help="filename postfix")
     parser.add_argument("--use-color", action="store_true", help="use random RGB color")
+    parser.add_argument("--disable-sand", action="store_true", help="No sand texture(perlin noise)")
     parser.add_argument("--output-dir", "-o", type=str, required=True,
                         help="output directory")
     args = parser.parse_args()
@@ -358,7 +359,7 @@ def main():
 
     postfix = "_" + args.postfix if args.postfix else ""
     for i in tqdm(range(args.num_samples), ncols=80):
-        im = gen(disable_color=not args.use_color)
+        im = gen(disable_color=not args.use_color, disable_sand=args.disable_sand)
         im.save(path.join(args.output_dir, f"__SCREENTONE_{i}{postfix}.png"))
 
 

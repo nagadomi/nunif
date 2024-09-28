@@ -21,7 +21,7 @@ from nunif.modules import (
     DiscriminatorHingeLoss,
     MultiscaleLoss,
 )
-from nunif.modules.lbp_loss import L1LBP, YL1LBP, YLBP, RGBLBP
+from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP
 from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
@@ -45,16 +45,21 @@ LOSS_FUNCTIONS = {
     "lbpm": lambda: MultiscaleLoss(YLBP(), mode="avg"),
     "lbp5": lambda: YLBP(kernel_size=5),
     "lbp5m": lambda: MultiscaleLoss(YLBP(kernel_size=5), mode="avg"),
-    "rgb_lbp": lambda: RGBLBP(),
-    "rgb_lbp5": lambda: RGBLBP(kernel_size=5),
-    "l1lbp5": lambda: YL1LBP(kernel_size=5, weight=0.4),
-    "rgb_l1lbp": lambda: L1LBP(kernel_size=3, weight=0.4),
-    "rgb_l1lbp5": lambda: L1LBP(kernel_size=5, weight=0.4),
+    "rgb_l1lbp": lambda: YRGBL1LBP(kernel_size=3, weight=0.4),
+    "rgb_l1lbp5": lambda: YRGBL1LBP(kernel_size=5, weight=0.4),
+    "rgb_lbp5": lambda: YRGBLBP(kernel_size=5),
+
+    "dct24lbp5": lambda: WeightedLoss(
+        (DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+         YRGBLBP(kernel_size=5)),
+        weights=(0.6, 0.4)),
+
     "alex11": lambda: ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
     "y_l1fftgrad": lambda: YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
     "dct": lambda: DCTLoss(clamp=True),
     "dct4": lambda: DCTLoss(window_size=4, clamp=True),
     "dct8": lambda: DCTLoss(window_size=8, clamp=True),
+
     "dctm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True),
                                   DCTLoss(window_size=24, clamp=True),
                                   DCTLoss(clamp=True)),
@@ -75,6 +80,12 @@ LOSS_FUNCTIONS = {
          DCTLoss(clamp=True, random_instance_rotate=True)),
         weights=(0.2, 0.2, 0.6),
         preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)),
+    "dctrm4-24": lambda: WeightedLoss(
+        (DCTLoss(window_size=4, clamp=True),
+         DCTLoss(window_size=24, clamp=True, random_rotate=True)),
+        weights=(0.4, 0.6),
+        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True)),
+
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
         ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
@@ -159,6 +170,7 @@ class Waifu2xEnv(LuminancePSNREnv):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
+        self.adaptive_weight_ema = None
         self.sampler = sampler
 
     def train_loss_hook(self, data, loss):
@@ -257,7 +269,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     # loss weight will be recalculated later,
                     # but multiplied by 10 here to reduce the gap.
                     # (gradient norm of generator_loss is 10-100x larger than recon_loss)
-                    recon_loss = recon_loss * 10
+                    recon_loss = recon_loss * self.trainer.args.reconstruction_loss_scale
                 else:
                     with torch.inference_mode():
                         z = self.model(x)
@@ -306,6 +318,17 @@ class Waifu2xEnv(LuminancePSNREnv):
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
                     min=1e-3, max=10, mode="norm") * self.trainer.args.discriminator_weight
+                if not math.isnan(weight):
+                    if self.adaptive_weight_ema is None:
+                        self.adaptive_weight_ema = weight
+                    else:
+                        alpha = 0.95
+                        self.adaptive_weight_ema = self.adaptive_weight_ema * alpha + weight * (1 - alpha)
+                    weight = self.adaptive_weight_ema
+                elif self.adaptive_weight_ema is not None:
+                    weight = self.adaptive_weight_ema
+                else:
+                    weight = 10.0 # +inf
                 recon_weight = 1.0 / weight
                 if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
                                              generator_loss > 0.95):
@@ -758,6 +781,9 @@ def register(subparsers, default_parser):
                               " Also do not hit the newbie discriminator."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
+    parser.add_argument("--reconstruction-loss-scale", type=float, default=10.0,
+                        help=("pre scaling factor for reconstruction loss. "
+                              "When discriminator weight is clipping(1e-3 or 10.0),this needs to be adjusted."))
 
     parser.set_defaults(
         batch_size=16,

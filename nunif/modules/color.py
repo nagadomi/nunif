@@ -28,8 +28,13 @@ class RGBToYCbCr(torch.nn.Module):
         return rgb_to_ycbcr(x, self.yycbcr)
 
 
-def rgb_to_yrgb(x, yycbcr=False):
-    y = x[:, 0:1, :, :] * 0.299 + x[:, 1:2, :, :] * 0.587 + x[:, 2:3, :, :] * 0.114
+def rgb_to_yrgb(x, y_clamp=False):
+    if y_clamp:
+        y = (torch.clamp(x[:, 0:1, :, :], 0, 1) * 0.299 +
+             torch.clamp(x[:, 1:2, :, :], 0, 1) * 0.587 +
+             torch.clamp(x[:, 2:3, :, :], 0, 1) * 0.114)
+    else:
+        y = x[:, 0:1, :, :] * 0.299 + x[:, 1:2, :, :] * 0.587 + x[:, 2:3, :, :] * 0.114
     return torch.cat([y, x], dim=1)
 
 

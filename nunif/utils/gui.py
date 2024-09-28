@@ -39,6 +39,7 @@ class FileDropCallback(wx.FileDropTarget):
     def __init__(self, callback):
         super(FileDropCallback, self).__init__()
         self.callback = callback
+        self.SetDefaultAction(wx.DragCopy)
 
     def OnDropFiles(self, x, y, filenames):
         return self.callback(x, y, filenames)

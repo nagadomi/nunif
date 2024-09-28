@@ -7,6 +7,7 @@ from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
 from nunif.modules.fourier_unit import FourierUnitSNLReLU
 from nunif.modules.dinov2 import DINOEmbedding, dinov2_normalize, dinov2_pad, DINO_PATCH_SIZE
 from torch.nn.utils.parametrizations import spectral_norm
+from nunif.modules.compile_wrapper import conditional_compile
 
 
 def normalize(x):
@@ -36,6 +37,7 @@ class ImageToCondition(nn.Module):
                 nn.Linear(embed_dim, out_channels, bias=True))
             for out_channels in outputs])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x):
         B = x.shape[0]
         x = normalize(x)
@@ -45,6 +47,36 @@ class ImageToCondition(nn.Module):
         for fc in self.fc:
             enc = fc(x)
             enc = enc.view(B, enc.shape[1], 1, 1)
+            outputs.append(enc)
+        return outputs
+
+
+class ImageToCondition3x3(nn.Module):
+    def __init__(self, embed_dim, outputs):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.AvgPool2d((4, 4)),
+            nn.Conv2d(3, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
+            nn.ReLU(inplace=True),
+            ResBlockGNLReLU(embed_dim, embed_dim),
+            nn.AdaptiveAvgPool2d((6, 6)),
+            nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, padding_mode="replicate"),
+        )
+        self.fc = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(embed_dim, embed_dim, kernel_size=1, stride=1, padding=0),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0)
+            )
+            for out_channels in outputs])
+
+    @conditional_compile("NUNIF_TRAIN")
+    def forward(self, x):
+        x = normalize(x)
+        x = self.features(x)
+        outputs = []
+        for fc in self.fc:
+            enc = fc(x)
             outputs.append(enc)
         return outputs
 
@@ -80,6 +112,21 @@ class PatchToCondition(nn.Module):
             enc = proj(x)
             outputs.append(enc)
         return outputs
+
+
+def fit_to_size(x, cond):
+    dh = cond.shape[2] - x.shape[2]
+    dw = cond.shape[3] - x.shape[3]
+    assert dh >= 0 and dw >= 0
+    pad_h, pad_w = dh // 2, dw // 2
+    if pad_h > 0 or pad_w > 0:
+        cond = F.pad(cond, (-pad_w, -pad_w, -pad_h, -pad_h))
+    return cond
+
+
+def add_bias(x, cond):
+    cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
+    return x + cond
 
 
 def dinov2_add_patch(x, cond):
@@ -152,6 +199,7 @@ class L3Discriminator(Discriminator):
             nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
         init_moduels(self)
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
         x = self.features(self.first_layer(x))
@@ -167,6 +215,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [64, 256])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         cond = self.to_cond(c)
         x = normalize(x)
@@ -198,6 +247,7 @@ class V1Discriminator(Discriminator):
         )
         init_moduels(self)
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
         x = self.features(self.first_layer(x))
@@ -213,6 +263,7 @@ class V1ConditionalDiscriminator(V1Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [64, 128])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
         cond = self.to_cond(c)
         x = normalize(x)
@@ -332,14 +383,15 @@ class U3ConditionalDiscriminator(Discriminator):
             nn.Conv2d(64, out_channels, kernel_size=3, stride=1, padding=0)
         )
         init_moduels(self)
-        self.to_cond = ImageToCondition(64, [256])
+        self.to_cond = ImageToCondition3x3(64, [256])
 
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, scale_factor=None):
-        cond = self.to_cond(c)
+        cond = self.to_cond(fit_to_size(x, c))
         x = normalize(x)
         x1 = self.enc1(x)
         x2 = self.enc2(x1)
-        x3 = F.leaky_relu(self.enc3(x2) + cond[0], 0.2, inplace=True)
+        x3 = F.leaky_relu(add_bias(self.enc3(x2), cond[0]), 0.2, inplace=True)
         z1 = self.class1(x3)
 
         x4 = self.dec1(self.up1(x3) + x2)
