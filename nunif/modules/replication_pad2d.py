@@ -42,7 +42,7 @@ def replication_pad2d_naive(x, padding, detach=False):
     elif bottom < 0:
         x = x[:, :, :bottom, :]
 
-    return x
+    return x.contiguous()
 
 
 class ReplicationPad2dNaive(nn.Module):
