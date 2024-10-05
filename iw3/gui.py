@@ -27,6 +27,7 @@ from nunif.utils.gui import (
 from .locales import LOCALES
 from . import models # noqa
 from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS, has_model as depth_anything_has_model
+from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
 import torch
 
@@ -202,6 +203,7 @@ class MainFrame(wx.Frame):
         depth_models = [
             "ZoeD_N", "ZoeD_K", "ZoeD_NK",
             "ZoeD_Any_N", "ZoeD_Any_K",
+            "DepthPro_SD", "DepthPro_HD", "DepthPro",
             "Any_S", "Any_B", "Any_L",
             "Any_V2_S",
         ]
@@ -781,6 +783,12 @@ class MainFrame(wx.Frame):
         else:
             self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
+        if name in DEPTH_PRO_MODELS:
+            self.cbo_zoed_resolution.Disable()
+            self.chk_fp16.Disable()
+        else:
+            self.cbo_zoed_resolution.Enable()
+            self.chk_fp16.Enable()
 
     def update_video_format(self):
         name = self.cbo_video_format.GetValue()

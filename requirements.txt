@@ -28,3 +28,4 @@ timm
 numba # only for iww3 sbs training
 av >= 12.2.0
 rembg # for --remove-bg
+pillow_heif

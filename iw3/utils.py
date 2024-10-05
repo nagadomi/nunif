@@ -1370,6 +1370,7 @@ def create_parser(required_true=True):
                                  "Any_V2_N", "Any_V2_K",
                                  "Any_V2_N_S", "Any_V2_N_B", "Any_V2_N_L",
                                  "Any_V2_K_S", "Any_V2_K_B", "Any_V2_K_L",
+                                 "DEPTH_PRO", "DEPTH_PRO_S", "DEPTH_PRO_SS",
                                  ],
                         help="depth model name")
     parser.add_argument("--remove-bg", action="store_true",
@@ -1401,7 +1402,7 @@ def create_parser(required_true=True):
                                  "inv_mul_1", "inv_mul_2", "inv_mul_3",
                                  ],
                         help=("(re-)mapper function for depth. "
-                              "if auto, div_6 for ZoeDepth model, none for DepthAnything model. "
+                              "if auto, div_6 for ZoeDepth model, none for DepthAnything/DepthPro model. "
                               "directly using this option is deprecated. "
                               "use --foreground-scale instead."))
     parser.add_argument("--foreground-scale", type=float, choices=[Range(-3.0, 3.0)], default=0,
@@ -1491,10 +1492,14 @@ class EMAMinMax():
 def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspend_event=None):
     from . import zoedepth_model as ZU
     from . import depth_anything_model as DU
+    from . import depth_pro_model as PU
+
     if args.depth_model in ZU.MODEL_FILES:
         depth_utils = ZU
     elif args.depth_model in DU.MODEL_FILES:
         depth_utils = DU
+    elif args.depth_model in PU.MODEL_FILES:
+        depth_utils = PU
 
     if args.export_disparity:
         args.export = True
@@ -1582,7 +1587,7 @@ def iw3_main(args):
         args.bg_session = None
 
     if args.edge_dilation is None:
-        if args.state["depth_utils"].get_name() == "DepthAnything":
+        if args.state["depth_utils"].get_name() in {"DepthAnything", "DepthPro"}:
             # TODO: This may not be a sensible choice
             args.edge_dilation = 2
         else:
@@ -1596,7 +1601,7 @@ def iw3_main(args):
                                                                height=args.zoed_height)
             args.state["depth_model"] = depth_model
 
-        is_metric = (args.state["depth_utils"].get_name() == "ZoeDepth" or
+        is_metric = (args.state["depth_utils"].get_name() in {"ZoeDepth", "DepthPro"} or
                      (args.state["depth_utils"].get_name() == "DepthAnything" and args.state["depth_model"].metric_depth))
         args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                           metric_depth=is_metric)
