@@ -145,6 +145,21 @@ def window_partition2d(x, window_size):
     return x
 
 
+def window_reverse2d(x, out_shape, window_size):
+    # reverse window_reverse2d
+    # x: B, N, C, H, W
+    OB, OC, OH, OW = out_shape
+    assert OC == x.shape[2]
+    SH, SW = window_size if isinstance(window_size, (list, tuple)) else [window_size, window_size]
+    assert OH % SH == 0 and OW % SW == 0
+    H = OH // SH
+    W = OW // SW
+    x = x.reshape(OB, H, W, OC, SH, SW)
+    x = x.permute(0, 3, 1, 4, 2, 5)
+    x = x.reshape(OB, OC, OH, OW)
+    return x
+
+
 def _test_bhwc():
     src = x = torch.rand((4, 3, 2, 2))
     x = bchw_to_bhwc(x)
@@ -197,7 +212,16 @@ def _test_bnc():
     print("pass _test_bnc")
 
 
+def _test_window():
+    x = torch.rand((4, 3, 6, 6))
+    y = window_partition2d(x, window_size=2)
+    z = window_reverse2d(y, x.shape, window_size=2)
+    assert x.shape == z.shape
+    assert (x - z).abs().sum() == 0
+
+
 if __name__ == "__main__":
     _test_bhwc()
     _test_pixel_shuffle()
     _test_bnc()
+    _test_window()
