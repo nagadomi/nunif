@@ -777,7 +777,7 @@ class MainFrame(wx.Frame):
 
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
-        if name in DEPTH_ANYTHING_MODELS:
+        if name in DEPTH_ANYTHING_MODELS or name in DEPTH_PRO_MODELS:
             self.chk_edge_dilation.SetValue(True)
             self.cbo_edge_dilation.Enable()
         else:
