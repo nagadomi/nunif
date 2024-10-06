@@ -1601,7 +1601,7 @@ def iw3_main(args):
                                                                height=args.zoed_height)
             args.state["depth_model"] = depth_model
 
-        is_metric = (args.state["depth_utils"].get_name() in {"ZoeDepth", "DepthPro"} or
+        is_metric = (args.state["depth_utils"].get_name() in {"ZoeDepth"} or
                      (args.state["depth_utils"].get_name() == "DepthAnything" and args.state["depth_model"].metric_depth))
         args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                           metric_depth=is_metric)

@@ -1,5 +1,6 @@
 import os
 from os import path
+import gc
 import pickle
 import torch
 import torch.nn.functional as F
@@ -30,18 +31,19 @@ def get_name():
 def load_model(model_type="DepthPro", gpu=0, **kwargs):
     assert model_type in MODEL_FILES
     device = create_device(gpu)
+    dtype = torch.float16
 
     with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
         try:
             encoder = NAME_MAP[model_type]
             if not os.getenv("IW3_DEBUG"):
                 model, _ = torch.hub.load("nagadomi/ml-depth-pro_iw3:main",
-                                          "DepthPro", img_size=encoder, device=device, dtype=torch.float16,
+                                          "DepthPro", img_size=encoder, device=device, dtype=dtype,
                                           verbose=False, trust_repo=True)
             else:
                 assert path.exists("../ml-depth-pro_iw3/hubconf.py")
                 model, _ = torch.hub.load("../ml-depth-pro_iw3",
-                                          "DepthPro", img_size=encoder, device=device, dtype=torch.float16,
+                                          "DepthPro", img_size=encoder, device=device, dtype=dtype,
                                           source="local", verbose=False, trust_repo=True)
         except (RuntimeError, pickle.PickleError) as e:
             if isinstance(e, RuntimeError):
@@ -64,8 +66,15 @@ def load_model(model_type="DepthPro", gpu=0, **kwargs):
 
     model.device = device
     model.metric_depth = True
+    # delete unused fov model
+    delattr(model, "fov")
     if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
         model = DeviceSwitchInference(model, device_ids=gpu)
+
+    # Release VRAM (there are many unused parameters that have not been released)
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return model
 
@@ -81,38 +90,49 @@ def force_update():
                        force_reload=True, trust_repo=True)
 
 
-def batch_preprocess(x, img_size=1536):
-    # x: BCHW float32 0-1
-    B, C, H, W = x.shape
-    antialias = True
-    x = F.interpolate(x, size=(img_size, img_size),
-                      mode="bilinear", align_corners=False, antialias=antialias)
-    x.clamp_(0, 1)
-
-    # normalize
+def normalize(x):
     mean = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
     stdv = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
     x.sub_(mean).div_(stdv)
     return x
 
 
-def _forward(model, x, min_dist=0.01, max_dist=40.0):
+def batch_preprocess(x, img_size=1536, padding=False):
+    # x: BCHW float32 0-1
+    B, C, H, W = x.shape
+    antialias = False
+    if not padding:
+        x = normalize(x.clone())
+        x = F.interpolate(x, size=(img_size, img_size),
+                          mode="bilinear", align_corners=False, antialias=antialias)
+        return x, 0
+    else:
+        pad = int(img_size * 0.25 ** 2)
+        size = img_size - pad * 2
+        x = normalize(x.clone())
+        x = F.interpolate(x, size=(size, size),
+                          mode="bilinear", align_corners=False, antialias=antialias)
+        x = F.pad(x, (pad,) * 4, mode="reflect")
+
+    return x, pad
+
+
+def _forward(model, x, min_dist=0.1, max_dist=40.0):
     if x.dtype != torch.float16:
         x = x.half()
     H, W = x.shape[2:]
-    canonical_inverse_depth, fov_deg = model(x)
+    canonical_inverse_depth, _ = model(x)
     canonical_inverse_depth = canonical_inverse_depth.to(torch.float32)
 
-    # TODO: weird value range
-    if True:
-        fov_deg = fov_deg.to(torch.float32)
-        f_px = 0.5 * W / torch.tan(0.5 * torch.deg2rad(fov_deg))
-        inverse_depth = canonical_inverse_depth * (W / f_px)
-        depth = 1.0 / torch.clamp(inverse_depth, min=1e-4, max=1e4)
-        depth = torch.clamp(depth, min=min_dist, max=max_dist)
+    if False:
+        # distance
+        inverse_depth = canonical_inverse_depth.mul_(0.6115)
+        depth = 1.0 / torch.clamp(inverse_depth, min=1.0 / max_dist, max=1.0 / min_dist)
     else:
-        depth = -canonical_inverse_depth
-
+        # inverse distance
+        # Fov=70mm fixed to avoid fov flicking
+        inverse_depth = canonical_inverse_depth.mul_(0.6115)
+        depth = torch.clamp(inverse_depth, max=1.0 / min_dist)
     return depth
 
 
@@ -135,7 +155,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
     org_size = x.shape[-2:]
-    x = batch_preprocess(x, model.img_size)
+    x, unpad = batch_preprocess(x, model.img_size)
 
     if not low_vram:
         if flip_aug:
@@ -149,11 +169,16 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
 
+    if unpad > 0:
+        out = out[:, :, unpad:-unpad, unpad:-unpad]
+
     if edge_dilation > 0:
-        out = -dilate_edge(-out, edge_dilation)
+        out = dilate_edge(out, edge_dilation)
     if resize_depth and out.shape[-2:] != org_size:
         out = F.interpolate(out, size=(org_size[0], org_size[1]),
                             mode="bilinear", align_corners=False, antialias=True)
+    out.neg_()
+
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
