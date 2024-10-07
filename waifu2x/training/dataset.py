@@ -264,7 +264,8 @@ class Waifu2xDataset(Waifu2xDatasetBase):
 
         if self.training:
             if noise_level >= 0:
-                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop_p=0.07)
+                random_crop_p = 0.3 if self.style == "photo" else 0.07
+                jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop_p=random_crop_p)
             else:
                 jpeg_transform = TP.Identity()
 
