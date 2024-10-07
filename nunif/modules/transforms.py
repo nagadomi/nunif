@@ -257,6 +257,23 @@ class DiffPairRandomRotate(nn.Module):
                 return input, target
 
 
+class DiffPairRandomDownsample(nn.Module):
+    def __init__(self, scale_factor_min=0.5, scale_factor_max=1.0):
+        super().__init__()
+        self.scale_factor_min = scale_factor_min
+        self.scale_factor_max = scale_factor_max
+
+    def forward(self, input, target):
+        if self.training:
+            scale_factor = (self.scale_factor_max - self.scale_factor_min) * torch.rand(1).item() + self.scale_factor_min
+        else:
+            scale_factor = (self.scale_factor_max - self.scale_factor_min) * 0.5 + self.scale_factor_min
+
+        input = F.interpolate(input, scale_factor=scale_factor, mode="bilinear", align_corners=False, antialias=True)
+        target = F.interpolate(target, scale_factor=scale_factor, mode="bilinear", align_corners=False, antialias=True)
+        return input, target
+
+
 def _test_rotate():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
