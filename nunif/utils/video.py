@@ -298,7 +298,7 @@ def test_output_size(test_callback, video_stream, vf):
             if frame is not None:
                 break
             try_count += 1
-            if try_count * video_stream.codec_context.width * video_stream.codec_context.height * 3 > 300 * 1024 * 1024:
+            if try_count * video_stream.codec_context.width * video_stream.codec_context.height * 3 > 2000 * 1024 * 1024:
                 raise RuntimeError("Unable to estimate output size of video filter")
         output_frame = get_new_frames(test_callback(frame))
         if output_frame:
