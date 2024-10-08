@@ -289,12 +289,17 @@ def test_output_size(test_callback, video_stream, vf):
         src_color_range=ColorRange.JPEG, dst_color_range=video_stream.codec_context.color_range)
     pts_step = int((1. / video_stream.time_base) / 30) or 1
     test_frame.pts = pts_step
+
+    try_count = 0
     while True:
         while True:
             frame = video_filter.update(test_frame)
             test_frame.pts = (test_frame.pts + pts_step)
             if frame is not None:
                 break
+            try_count += 1
+            if try_count * video_stream.codec_context.width * video_stream.codec_context.height * 3 > 300 * 1024 * 1024:
+                raise RuntimeError("Unable to estimate output size of video filter")
         output_frame = get_new_frames(test_callback(frame))
         if output_frame:
             output_frame = output_frame[0]
