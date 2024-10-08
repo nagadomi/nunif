@@ -28,7 +28,7 @@ def reflection_pad2d_naive(x, padding, detach=False):
     elif bottom < 0:
         x = x[:, :, :bottom, :]
 
-    return x
+    return x.contiguous()
 
 
 class ReflectionPad2dNaive(nn.Module):

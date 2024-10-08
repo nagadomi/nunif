@@ -992,8 +992,8 @@ class MainFrame(wx.Frame):
         if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
             self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
             return None
-        if not validate_number(self.cbo_crf.GetValue(), 0, 30, is_int=True):
-            self.show_validation_error_message(T("CRF"), 0, 30)
+        if not validate_number(self.cbo_crf.GetValue(), 0, 51, is_int=True):
+            self.show_validation_error_message(T("CRF"), 0, 51)
             return None
         if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
             self.show_validation_error_message(T("Flicker Reduction"), 0.1, 0.999)

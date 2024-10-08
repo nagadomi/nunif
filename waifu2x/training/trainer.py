@@ -27,7 +27,8 @@ from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.identity_loss import IdentityLoss
-from nunif.modules.transforms import DiffPairRandomTranslate
+from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate, DiffPairRandomDownsample
+from nunif.transforms import pair as TP
 from nunif.logger import logger
 import random
 import math
@@ -129,8 +130,8 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.u3_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "l3v1_dino":
         model = create_model("waifu2x.l3v1_dino_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "u3fftc":
-        model = create_model("waifu2x.u3fft_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "dct":
+        model = create_model("waifu2x.dct_conditional_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator, device_ids=device_ids)
     else:
@@ -166,12 +167,28 @@ class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
                  discriminator_criterion,
-                 sampler):
+                 sampler, use_diff_aug=False, use_diff_aug_downsample=False):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
         self.adaptive_weight_ema = None
         self.sampler = sampler
+        self.use_diff_aug = use_diff_aug
+        if use_diff_aug:
+            if use_diff_aug_downsample:
+                self.diff_aug = TP.RandomChoice([
+                    DiffPairRandomTranslate(size=16, padding_mode="reflection", expand=False, instance_random=False),
+                    DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
+                    DiffPairRandomDownsample(scale_factor_min=0.5, scale_factor_max=0.5),
+                    TP.Identity()], p=[0.25, 0.25, 0.25, 0.25])
+            else:
+                self.diff_aug = TP.RandomChoice([
+                    DiffPairRandomTranslate(size=16, padding_mode="reflection", expand=False, instance_random=False),
+                    DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
+                    TP.Identity()], p=[0.25, 0.25, 0.5])
+
+        else:
+            self.diff_aug = TP.Identity()
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
@@ -239,6 +256,9 @@ class Waifu2xEnv(LuminancePSNREnv):
                     z = self.model(x)
                 else:
                     z = self.model(x, self.to_device(privilege))
+                if isinstance(z, (list, tuple)) and self.use_diff_aug:
+                    raise ValueError(f"--diff-aug does not support {self.model.name}")
+                z, y = self.diff_aug(z, y)
                 loss = self.criterion(z, y)
                 self.sum_loss += loss.item()
             else:
@@ -252,8 +272,11 @@ class Waifu2xEnv(LuminancePSNREnv):
                     if isinstance(z, (list, tuple)):
                         # NOTE: models using auxiliary loss return tuple.
                         #       first element is SR result.
+                        if self.use_diff_aug:
+                            raise ValueError(f"--diff-aug does not support {self.model.name}")
                         fake = z[0]
                     else:
+                        z, y = self.diff_aug(z, y)
                         fake = z
                     if isinstance(self.discriminator, SelfSupervisedDiscriminator):
                         *z_real, _ = self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor)
@@ -317,7 +340,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
-                    min=1e-3, max=10, mode="norm") * self.trainer.args.discriminator_weight
+                    min=1e-3, max=10, mode="norm")
                 if not math.isnan(weight):
                     if self.adaptive_weight_ema is None:
                         self.adaptive_weight_ema = weight
@@ -328,11 +351,11 @@ class Waifu2xEnv(LuminancePSNREnv):
                 elif self.adaptive_weight_ema is not None:
                     weight = self.adaptive_weight_ema
                 else:
-                    weight = 10.0 # +inf
+                    weight = 10.0  # inf
                 recon_weight = 1.0 / weight
                 if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
                                              generator_loss > 0.95):
-                    g_loss = (recon_loss * recon_weight + generator_loss) * 0.5
+                    g_loss = (recon_loss * recon_weight + generator_loss * self.trainer.args.discriminator_weight) * 0.5
                 else:
                     g_loss = recon_loss * recon_weight * 0.5
                 self.sum_loss += g_loss.item()
@@ -438,7 +461,8 @@ class Waifu2xTrainer(Trainer):
         return Waifu2xEnv(self.model, criterion=criterion,
                           discriminator=self.discriminator,
                           discriminator_criterion=discriminator_criterion,
-                          sampler=self.sampler)
+                          sampler=self.sampler,
+                          use_diff_aug=self.args.diff_aug, use_diff_aug_downsample=self.args.diff_aug_downsample)
 
     def setup(self):
         method = self.args.hard_example
@@ -521,6 +545,7 @@ class Waifu2xTrainer(Trainer):
                 da_color_p=self.args.da_color_p,
                 da_antialias_p=self.args.da_antialias_p,
                 da_hflip_only=self.args.da_hflip_only,
+                da_no_rotate=self.args.da_no_rotate,
                 da_cutmix_p=self.args.da_cutmix_p,
                 da_mixup_p=self.args.da_mixup_p,
                 fixed_deblur=self.args.fixed_deblur,
@@ -714,6 +739,8 @@ def register(subparsers, default_parser):
                         help="random antialias input degradation")
     parser.add_argument("--da-hflip-only", action="store_true",
                         help="restrict random flip to horizontal flip only")
+    parser.add_argument("--da-no-rotate", action="store_true",
+                        help="restrict random rotate when style=photo")
     parser.add_argument("--da-cutmix-p", type=float, default=0.0,
                         help="random cutmix data augmentation for gt image")
     parser.add_argument("--da-mixup-p", type=float, default=0.0,
@@ -784,6 +811,10 @@ def register(subparsers, default_parser):
     parser.add_argument("--reconstruction-loss-scale", type=float, default=10.0,
                         help=("pre scaling factor for reconstruction loss. "
                               "When discriminator weight is clipping(1e-3 or 10.0),this needs to be adjusted."))
+    parser.add_argument("--diff-aug", action="store_true",
+                        help="Use differentiable transforms for reconstruction loss and discriminator")
+    parser.add_argument("--diff-aug-downsample", action="store_true",
+                        help="Use addtional 2x downsample transforms")
 
     parser.set_defaults(
         batch_size=16,
