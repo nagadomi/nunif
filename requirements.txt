@@ -26,5 +26,5 @@ dctorch
 # iw3
 timm
 numba # only for iww3 sbs training
-av >= 12.2.0
+av==13.0.0
 rembg # for --remove-bg
