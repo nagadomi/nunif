@@ -164,12 +164,20 @@ def _print_len(stream):
 
 
 def convert_known_fps(fps):
-    if fps == 29.97:
-        return Fraction(30000, 1001)
-    elif fps == 23.976:
-        return Fraction(24000, 1001)
-    elif fps == 59.94:
-        return Fraction(60000, 1001)
+    if isinstance(fps, float):
+        if fps == 29.97:
+            return Fraction(30000, 1001)
+        elif fps == 23.976:
+            return Fraction(24000, 1001)
+        elif fps == 59.94:
+            return Fraction(60000, 1001)
+        else:
+            fps_frac = Fraction(fps)
+            fps_frac.limit_denominator(0x7fffffff)
+            if fps_frac.denominator > 0x7fffffff or fps_frac.numerator > 0x7fffffff:
+                raise ValueError(f"FPS={fps} could not be converted to Fraction={fps_frac}")
+            return fps_frac
+
     return fps
 
 
