@@ -173,7 +173,7 @@ def convert_known_fps(fps):
             return Fraction(60000, 1001)
         else:
             fps_frac = Fraction(fps)
-            fps_frac.limit_denominator(0x7fffffff)
+            fps_frac = fps_frac.limit_denominator(0x7fffffff)
             if fps_frac.denominator > 0x7fffffff or fps_frac.numerator > 0x7fffffff:
                 raise ValueError(f"FPS={fps} could not be converted to Fraction={fps_frac}")
             return fps_frac
