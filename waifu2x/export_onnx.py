@@ -8,6 +8,7 @@ import argparse
 from nunif.models import load_model
 from nunif.models.onnx_helper_models import (
     ONNXReflectionPadding,
+    ONNXReplicationPadding,
     ONNXTTASplit,
     ONNXTTAMerge,
     ONNXCreateSeamBlendingFilter,
@@ -114,7 +115,10 @@ def convert_utils(output_dir):
     os.makedirs(utils_dir, exist_ok=True)
 
     pad = ONNXReflectionPadding()
-    pad.export_onnx(path.join(utils_dir, "pad.onnx"))
+    pad.export_onnx(path.join(utils_dir, "reflection_pad.onnx"))
+    pad = ONNXReplicationPadding()
+    pad.export_onnx(path.join(utils_dir, "replication_pad.onnx"))
+    pad.export_onnx(path.join(utils_dir, "pad.onnx"))  # for compatibility
 
     tta_split = ONNXTTASplit()
     tta_split.export_onnx(path.join(utils_dir, "tta_split.onnx"))
