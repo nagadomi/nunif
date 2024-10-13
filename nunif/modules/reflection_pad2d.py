@@ -3,32 +3,59 @@ import torch
 import torch.nn as nn
 
 
-def reflection_pad2d_naive(x, padding, detach=False):
+def _detach_fn(x, flag: bool):
+    if flag:
+        return x.detach()
+    else:
+        return x
+
+
+def reflection_pad2d_naive(x, padding: tuple[int, int, int, int], detach: bool = False):
     assert x.ndim == 4 and len(padding) == 4
-    # TODO: over 2x size support
-    assert padding[0] < x.shape[3] and padding[1] < x.shape[3]
-    assert padding[2] < x.shape[2] and padding[3] < x.shape[2]
+    assert padding[0] <= x.shape[3] and padding[1] <= x.shape[3]
+    assert padding[2] <= x.shape[2] and padding[3] <= x.shape[2]
     left, right, top, bottom = padding
 
-    detach_fn = lambda t: t.detach() if detach else t
     if left > 0:
-        x = torch.cat((torch.flip(detach_fn(x[:, :, :, 1:left + 1]), dims=[3]), x), dim=3)
+        x = torch.cat((torch.flip(_detach_fn(x[:, :, :, 1:left + 1], detach), dims=[3]), x), dim=3)
     elif left < 0:
         x = x[:, :, :, -left:]
     if right > 0:
-        x = torch.cat((x, torch.flip(detach_fn(x[:, :, :, -right - 1:-1]), dims=[3])), dim=3)
+        x = torch.cat((x, torch.flip(_detach_fn(x[:, :, :, -right - 1:-1], detach), dims=[3])), dim=3)
     elif right < 0:
         x = x[:, :, :, :right]
     if top > 0:
-        x = torch.cat((torch.flip(detach_fn(x[:, :, 1:top + 1, :]), dims=[2]), x), dim=2)
+        x = torch.cat((torch.flip(_detach_fn(x[:, :, 1:top + 1, :], detach), dims=[2]), x), dim=2)
     elif top < 0:
         x = x[:, :, -top:, :]
     if bottom > 0:
-        x = torch.cat((x, torch.flip(detach_fn(x[:, :, -bottom - 1:-1, :]), dims=[2])), dim=2)
+        x = torch.cat((x, torch.flip(_detach_fn(x[:, :, -bottom - 1:-1, :], detach), dims=[2])), dim=2)
     elif bottom < 0:
         x = x[:, :, :bottom, :]
 
     return x.contiguous()
+
+
+def _loop_step(pad: int, base: int) -> tuple[int, int]:
+    remain = 0
+    if pad > base:
+        remain = pad - base
+        pad = base
+    return pad, remain
+
+
+def reflection_pad2d_loop(x, padding: tuple[int, int, int, int], detach: bool = False):
+    # Limit one-step padding size to image size
+    # For onnxruntime
+    height, width = x.shape[2:]
+    left, right, top, bottom = padding
+    while left != 0 or right != 0 or top != 0 or bottom != 0:
+        left_step, left = _loop_step(left, width)
+        right_step, right = _loop_step(right, width)
+        top_step, top = _loop_step(top, height)
+        bottom_step, bottom = _loop_step(bottom, height)
+        x = reflection_pad2d_naive(x, (left_step, right_step, top_step, bottom_step), detach=detach)
+    return x
 
 
 class ReflectionPad2dNaive(nn.Module):
@@ -99,7 +126,19 @@ def _test_grad():
     print(x.grad)
 
 
+def _test_loop():
+    import torchvision.io as IO
+    import torchvision.transforms.functional as TF
+
+    x = IO.read_image("cc0/dog2.jpg") / 255.0
+    x = x[:, :256, :256].unsqueeze(0)
+
+    x = reflection_pad2d_loop(x, (640, -10, 320, -10))
+    TF.to_pil_image(x[0]).show()
+
+
 if __name__ == "__main__":
-    _test()
-    _test_grad()
+    # _test()
+    # _test_grad()
     # _test_vis()
+    _test_loop()

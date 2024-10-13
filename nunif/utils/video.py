@@ -164,12 +164,20 @@ def _print_len(stream):
 
 
 def convert_known_fps(fps):
-    if fps == 29.97:
-        return Fraction(30000, 1001)
-    elif fps == 23.976:
-        return Fraction(24000, 1001)
-    elif fps == 59.94:
-        return Fraction(60000, 1001)
+    if isinstance(fps, float):
+        if fps == 29.97:
+            return Fraction(30000, 1001)
+        elif fps == 23.976:
+            return Fraction(24000, 1001)
+        elif fps == 59.94:
+            return Fraction(60000, 1001)
+        else:
+            fps_frac = Fraction(fps)
+            fps_frac = fps_frac.limit_denominator(0x7fffffff)
+            if fps_frac.denominator > 0x7fffffff or fps_frac.numerator > 0x7fffffff:
+                raise ValueError(f"FPS={fps} could not be converted to Fraction={fps_frac}")
+            return fps_frac
+
     return fps
 
 
@@ -289,12 +297,17 @@ def test_output_size(test_callback, video_stream, vf):
         src_color_range=ColorRange.JPEG, dst_color_range=video_stream.codec_context.color_range)
     pts_step = int((1. / video_stream.time_base) / 30) or 1
     test_frame.pts = pts_step
+
+    try_count = 0
     while True:
         while True:
             frame = video_filter.update(test_frame)
             test_frame.pts = (test_frame.pts + pts_step)
             if frame is not None:
                 break
+            try_count += 1
+            if try_count * video_stream.codec_context.width * video_stream.codec_context.height * 3 > 2000 * 1024 * 1024:
+                raise RuntimeError("Unable to estimate output size of video filter")
         output_frame = get_new_frames(test_callback(frame))
         if output_frame:
             output_frame = output_frame[0]
