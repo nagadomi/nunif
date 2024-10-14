@@ -279,12 +279,8 @@ class Waifu2xEnv(LuminancePSNREnv):
                     else:
                         z, y = self.diff_aug(z, y)
                         fake = z
-                    if isinstance(self.discriminator, SelfSupervisedDiscriminator):
-                        *z_real, _ = self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor)
-                        if len(z_real) == 1:
-                            z_real = z_real[0]
-                    else:
-                        z_real = self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor)
+
+                    z_real = self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
                     self.sum_p_loss += recon_loss.item()
@@ -304,8 +300,8 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.discriminator.requires_grad_(True)
                 if isinstance(self.discriminator, SelfSupervisedDiscriminator):
                     *z_fake, fake_ss_loss = self.discriminator(torch.clamp(fake.detach(), 0, 1),
-                                                               y, scale_factor)
-                    *z_real, real_ss_loss = self.discriminator(y, y, scale_factor)
+                                                               y, scale_factor, train=True)
+                    *z_real, real_ss_loss = self.discriminator(y, y, scale_factor, train=True)
                     if len(z_fake) == 1:
                         z_fake = z_fake[0]
                         z_real = z_real[0]
