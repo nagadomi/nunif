@@ -146,11 +146,12 @@ def get_last_layer(model):
                       "waifu2x.swin_unet_8x",
                       "waifu2x.winc_unet_1x",
                       "waifu2x.winc_unet_2x",
-                      "waifu2x.winc_unet_4x",
                       "waifu2x.winc_unet_1x_small",
                       "waifu2x.winc_unet_2x_small",
                       }:
         return model.unet.to_image.proj.weight
+    elif model.name in {"waifu2x.winc_unet_4x"}:
+        return model.unet.to_image.conv.weight
     elif model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
         return model.unet2.conv_bottom.weight
     elif model.name in {"waifu2x.upconv_7", "waifu2x.vgg_7"}:
