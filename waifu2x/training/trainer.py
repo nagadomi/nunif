@@ -476,6 +476,8 @@ class Waifu2xTrainer(Trainer):
         if self.args.freeze and hasattr(self.model, "freeze"):
             self.model.freeze()
             logger.debug("call model.freeze()")
+        if self.args.tile_mode:
+            self.model.set_tile_mode()
 
     def create_model(self):
         kwargs = {"in_channels": 3, "out_channels": 3}
@@ -647,8 +649,8 @@ def train(args):
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x"}
     assert args.discriminator_stop_criteria < args.generator_start_criteria
-    if args.size % 4 != 0:
-        raise ValueError("--size must be a multiple of 4")
+    # if args.size % 4 != 0:
+    #     raise ValueError("--size must be a multiple of 4")
     if args.arch in ARCH_SWIN_UNET and ((args.size - 16) % 12 != 0 or (args.size - 16) % 16 != 0):
         raise ValueError("--size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0` for SwinUNet models")
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
@@ -772,6 +774,8 @@ def register(subparsers, default_parser):
                         help="use only bicubic downsampling for bicubic downsampling restoration (classic super-resolution)")
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
+    parser.add_argument("--tile-mode", action="store_true",
+                        help="call model.set_tile_mode()")
     parser.add_argument("--pre-antialias", action="store_true",
                         help=("Set `pre_antialias=True` for SwinUNet4x."))
     parser.add_argument("--privilege", action="store_true",

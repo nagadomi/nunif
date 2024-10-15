@@ -181,6 +181,7 @@ class WincUNetBase(nn.Module):
                  scale_factor=2):
         super(WincUNetBase, self).__init__()
         assert scale_factor in {1, 2, 4}
+        self.scale_factor = scale_factor
         C = base_dim
         C2 = int(C * lv2_ratio)
         # assert C % 32 == 0 and C2 % 32 == 0  # slow when C % 32 != 0
@@ -212,7 +213,12 @@ class WincUNetBase(nn.Module):
         basic_module_init(self.wac1_proj)
         basic_module_init(self.fusion)
 
-    def forward(self, x):
+        self.tile_mode = False
+
+    def set_tile_mode(self):
+        self.tile_mode = True
+
+    def _forward(self, x):
         ov = self.overscan(x)
         x = self.patch(x)
         x = F.leaky_relu(x, 0.2, inplace=True)
@@ -231,6 +237,32 @@ class WincUNetBase(nn.Module):
         z = self.to_image(x)
 
         return z
+
+    def _forward_tile4x4(self, x):
+        tl = x[:, :, :64, :64]
+        tr = x[:, :, :64, -64:]
+        bl = x[:, :, -64:, :64]
+        br = x[:, :, -64:, -64:]
+        x = torch.cat([tl, tr, bl, br], dim=0).contiguous()
+        x = self._forward(x)
+        tl, tr, bl, br = x.split(x.shape[0] // 4, dim=0)
+        top = torch.cat([tl, tr], dim=3)
+        bottom = torch.cat([bl, br], dim=3)
+        x = torch.cat([top, bottom], dim=2).contiguous()
+        return x
+
+    def forward(self, x):
+        if self.tile_mode:
+            B, C, H, W = x.shape
+            if self.scale_factor == 4:
+                assert H == 110 and W == H
+                assert H == 110 and W == H
+                pass
+            else:
+                raise NotImplementedError()
+            return self._forward_tile4x4(x)
+        else:
+            return self._forward(x)
 
 
 def tile_size_validator(size):
@@ -307,6 +339,9 @@ class WincUNet4x(I2IBaseModel):
             return z
         else:
             return torch.clamp(z, 0., 1.)
+
+    def set_tile_mode(self):
+        self.unet.set_tile_mode()
 
     def to_2x(self, shared=True):
         unet = self.unet if shared else copy.deepcopy(self.unet)
