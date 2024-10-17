@@ -22,7 +22,7 @@ RGB_TYPE = "truecolor"
 GAMMA_LCD = 45454
 
 
-def decode_image(blob, filename=None, color=None, keep_alpha=False):
+def decode_image(blob, filename=None, color=None, keep_alpha=False, **kwargs):
     im = Image(blob=blob)
 
     # normalize, build meta data
@@ -66,7 +66,7 @@ def decode_image(blob, filename=None, color=None, keep_alpha=False):
     return im, meta
 
 
-def load_image(filename, color=None, keep_alpha=False):
+def load_image(filename, color=None, keep_alpha=False, **kwargs):
     assert (color is None or color in {"rgb", "gray"})
     with open(filename, "rb") as f:
         return decode_image(f.read(), filename, color=color, keep_alpha=keep_alpha)
