@@ -238,7 +238,7 @@ class WincUNetBase(nn.Module):
 
         return z
 
-    def _forward_tile4x4(self, x):
+    def _forward_tile2x2(self, x):
         tl = x[:, :, :64, :64]
         tr = x[:, :, :64, -64:]
         bl = x[:, :, -64:, :64]
@@ -260,7 +260,7 @@ class WincUNetBase(nn.Module):
                 pass
             else:
                 raise NotImplementedError()
-            return self._forward_tile4x4(x)
+            return self._forward_tile2x2(x)
         else:
             return self._forward(x)
 
