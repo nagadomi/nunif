@@ -136,10 +136,20 @@ class MainFrame(wx.Frame):
                                         name="chk_metadata")
         self.chk_metadata.SetValue(False)
 
+        self.sep_image_format = wx.StaticLine(self.pnl_file, size=(2, 16), style=wx.LI_VERTICAL)
+        self.lbl_image_format = wx.StaticText(self.pnl_file, label=" " + T("Image Format"))
+        self.cbo_image_format = wx.ComboBox(self.pnl_file, choices=["png", "jpeg", "webp"],
+                                            style=wx.CB_READONLY, name="cbo_image_format")
+        self.cbo_image_format.SetSelection(0)
+        self.cbo_image_format.SetToolTip(T("Output Image Format"))
+
         sublayout = wx.BoxSizer(wx.HORIZONTAL)
         sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.chk_metadata, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.sep_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.lbl_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.cbo_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
@@ -1121,6 +1131,7 @@ class MainFrame(wx.Frame):
             pix_fmt=self.cbo_pix_fmt.GetValue(),
             colorspace=self.cbo_colorspace.GetValue(),
             video_format=self.cbo_video_format.GetValue(),
+            format=self.cbo_image_format.GetValue(),
             video_codec=self.cbo_video_codec.GetValue(),
             crf=int(self.cbo_crf.GetValue()),
             profile_level=profile_level,

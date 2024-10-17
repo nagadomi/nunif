@@ -11,6 +11,7 @@
 "Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップ"
 "Process all subfolders": "すべてのサブフォルダを処理"
 "Add metadata to filename": "ファイル名にメタデータを追加"
+"Image Format": "画像フォーマット"
 "Play": "再生"
 
 "Error": "エラー"
