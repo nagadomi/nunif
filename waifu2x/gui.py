@@ -104,10 +104,15 @@ class MainFrame(wx.Frame):
         self.chk_recursive = wx.CheckBox(self.pnl_file, label=T("Process all subfolders"),
                                          name="chk_recursive")
         self.chk_recursive.SetValue(False)
+        self.chk_exif_transpose = wx.CheckBox(self.pnl_file, label=T("EXIF Transpose"),
+                                              name="chk_exif_transpose")
+        self.chk_exif_transpose.SetValue(True)
+        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
 
         sublayout = wx.BoxSizer(wx.HORIZONTAL)
         sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
@@ -665,6 +670,7 @@ class MainFrame(wx.Frame):
 
             rotate_right=rotate_right,
             rotate_left=rotate_left,
+            disable_exif_transpose=not self.chk_exif_transpose.GetValue(),
             vf=vf,
             grain=(float(self.cbo_grain_noise.GetValue()) > 0.0 and self.chk_grain_noise.GetValue()),
             grain_strength=float(self.cbo_grain_noise.GetValue()),

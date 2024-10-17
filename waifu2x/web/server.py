@@ -229,7 +229,7 @@ def fetch_image(request):
         if not filename:
             filename = str(uuid.uuid4())
         im, meta = IL.decode_image(image_data, filename,
-                                   color="rgb", keep_alpha=True)
+                                   color="rgb", keep_alpha=True, exif_transpose=True)
     else:
         url = request.forms.get("url", "")
         if url.startswith("http://") or url.startswith("https://"):
@@ -243,11 +243,11 @@ def fetch_image(request):
             if image_data is not None:
                 logger.debug(f"fetch_image: load cache: {url}")
                 im, meta = IL.decode_image(image_data, filename,
-                                           color="rgb", keep_alpha=True)
+                                           color="rgb", keep_alpha=True, exif_transpose=True)
             else:
                 image_data = fetch_url_file(url)
                 im, meta = IL.decode_image(image_data, filename,
-                                           color="rgb", keep_alpha=True)
+                                           color="rgb", keep_alpha=True, exif_transpose=True)
                 cache.set(key, image_data, expire=command_args.cache_ttl * 60)
 
     if image_data is not None and meta is not None:
