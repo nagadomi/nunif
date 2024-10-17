@@ -580,7 +580,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
     loader = ImageLoader(
         files=files,
         load_func=load_image_simple,
-        load_func_kwargs={"color": "rgb"})
+        load_func_kwargs={"color": "rgb", "exif_transpose": not args.disable_exif_transpose})
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
@@ -864,7 +864,7 @@ def export_images(args):
     loader = ImageLoader(
         files=files,
         load_func=load_image_simple,
-        load_func_kwargs={"color": "rgb"})
+        load_func_kwargs={"color": "rgb", "exif_transpose": not args.disable_exif_transpose})
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc="Images")
@@ -1408,6 +1408,8 @@ def create_parser(required_true=True):
                         help="rembg model type")
     parser.add_argument("--rotate-left", action="store_true",
                         help="Rotate 90 degrees to the left(counterclockwise)")
+    parser.add_argument("--disable-exif-transpose", action="store_true",
+                        help="Disable EXIF orientation transpose")
     parser.add_argument("--rotate-right", action="store_true",
                         help="Rotate 90 degrees to the right(clockwise)")
     parser.add_argument("--low-vram", action="store_true",
@@ -1718,7 +1720,7 @@ def iw3_main(args):
                 make_output_filename(args.input, args, video=False))
         else:
             output_filename = args.output
-        im, _ = load_image_simple(args.input, color="rgb")
+        im, _ = load_image_simple(args.input, color="rgb", exif_transpose=not args.disable_exif_transpose)
         im = TF.to_tensor(im).to(args.state["device"])
         output = process_image(im, args, depth_model, side_model)
         make_parent_dir(output_filename)

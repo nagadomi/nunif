@@ -132,6 +132,11 @@ class MainFrame(wx.Frame):
                                          name="chk_recursive")
         self.chk_recursive.SetValue(False)
 
+        self.chk_exif_transpose = wx.CheckBox(self.pnl_file, label=T("EXIF Transpose"),
+                                              name="chk_exif_transpose")
+        self.chk_exif_transpose.SetValue(True)
+        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
+
         self.chk_metadata = wx.CheckBox(self.pnl_file, label=T("Add metadata to filename"),
                                         name="chk_metadata")
         self.chk_metadata.SetValue(False)
@@ -146,6 +151,7 @@ class MainFrame(wx.Frame):
         sublayout = wx.BoxSizer(wx.HORIZONTAL)
         sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        sublayout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.chk_metadata, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.sep_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         sublayout.Add(self.lbl_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
@@ -1144,6 +1150,7 @@ class MainFrame(wx.Frame):
             pad=pad,
             rotate_right=rotate_right,
             rotate_left=rotate_left,
+            disable_exif_transpose=not self.chk_exif_transpose.GetValue(),
             vf=vf,
             max_output_width=max_output_width,
             max_output_height=max_output_height,
