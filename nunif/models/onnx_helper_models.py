@@ -6,6 +6,7 @@ from torchvision.transforms import functional as TF
 import onnx
 import copy
 from .model import I2IBaseModel
+from ..modules.reflection_pad2d import reflection_pad2d_loop
 from ..utils.alpha import ChannelWiseSum
 from ..logger import logger
 
@@ -15,7 +16,7 @@ class ONNXReflectionPadding(I2IBaseModel):
         super().__init__({}, scale=1, offset=0, in_channels=3)
 
     def forward(self, x: torch.Tensor, left: int, right: int, top: int, bottom: int):
-        return F.pad(x, (left, right, top, bottom), mode="reflect")
+        return reflection_pad2d_loop(x, (left, right, top, bottom))
 
     def export_onnx(self, f, **kwargs):
         """
@@ -25,11 +26,11 @@ class ONNXReflectionPadding(I2IBaseModel):
          var out = await ses.run({"x": x, "left": pad, "right": pad, "top": pad, "bottom": pad});
         """
         x = torch.rand([1, 3, 256, 256], dtype=torch.float32)
-        pad = 4
+        pad = [512, 120, 512, 120]
         model = torch.jit.script(self.to_inference_model())
         torch.onnx.export(
             model,
-            [x, pad, pad, pad, pad],
+            [x, *pad],
             f,
             input_names=["x", "left", "right", "top", "bottom"],
             output_names=["y"],
@@ -432,7 +433,7 @@ def _test_alpha_border():
 
 
 if __name__ == "__main__":
-    # _test_pad()
+    _test_pad()
     # _test_blend_filter()
     # _test_alpha_border()
     # _test_resize()

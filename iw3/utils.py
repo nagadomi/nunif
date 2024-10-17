@@ -301,7 +301,7 @@ def make_output_filename(input_filename, args, video=False):
     else:
         metadata = ""
 
-    return basename + metadata + auto_detect_suffix + (args.video_extension if video else ".png")
+    return basename + metadata + auto_detect_suffix + (args.video_extension if video else get_image_ext(args.format))
 
 
 def make_video_codec_option(args):
@@ -333,8 +333,37 @@ def make_video_codec_option(args):
     return options
 
 
-def save_image(im, output_filename):
-    im.save(output_filename)
+def get_image_ext(format):
+    if format == "png":
+        return ".png"
+    elif format == "webp":
+        return ".webp"
+    elif format == "jpeg":
+        return ".jpg"
+    else:
+        raise NotImplementedError(format)
+
+
+def save_image(im, output_filename, format="png"):
+    if format == "png":
+        options = {
+            "compress_level": 6
+        }
+    elif format == "webp":
+        options = {
+            "quality": 95,
+            "method": 4,
+            "lossless": True
+        }
+    elif format == "jpeg":
+        options = {
+            "quality": 95,
+            "subsampling": "4:2:0",
+        }
+    else:
+        raise NotImplementedError(format)
+
+    im.save(output_filename, format=format, **options)
 
 
 def remove_bg_from_image(im, bg_session):
@@ -568,7 +597,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
                 continue
             im = TF.to_tensor(im).to(args.state["device"])
             output = process_image(im, args, depth_model, side_model)
-            f = pool.submit(save_image, output, output_filename)
+            f = pool.submit(save_image, output, output_filename, format=args.format)
             #  f.result() # for debug
             futures.append(f)
             pbar.update(1)
@@ -747,11 +776,12 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         futures = []
 
         def frame_callback(frame):
-            output = process_image(frame.to_image(), args, depth_model, side_model)
+            im = TF.to_tensor(frame.to_image()).to(args.state["device"])
+            output = process_image(im, args, depth_model, side_model)
             output_filename = path.join(
                 output_dir,
-                path.basename(output_dir) + "_" + str(frame.pts).zfill(8) + FULL_SBS_SUFFIX + ".png")
-            f = pool.submit(save_image, output, output_filename)
+                path.basename(output_dir) + "_" + str(frame.pts).zfill(8) + FULL_SBS_SUFFIX + get_image_ext(args.format))
+            f = pool.submit(save_image, output, output_filename, format=args.format)
             futures.append(f)
         VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
                                    min_interval_sec=args.keyframe_interval,
@@ -1284,7 +1314,7 @@ def process_config_images(config, args, side_model):
                 output_filename = path.join(
                     output_dir,
                     make_output_filename(rgb_filename, args, video=False))
-                f = pool.submit(save_image, sbs, output_filename)
+                f = pool.submit(save_image, sbs, output_filename, format=args.format)
                 futures.append(f)
                 pbar.update(1)
                 if suspend_event is not None:
@@ -1450,6 +1480,8 @@ def create_parser(required_true=True):
                         help="max inference worker threads for video processing. 0 is disabled")
     parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
                         help="video container format")
+    parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"],
+                        help="output image format")
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
 
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],

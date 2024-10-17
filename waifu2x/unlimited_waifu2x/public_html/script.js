@@ -28,9 +28,9 @@ function gen_arch_config()
 
     /* swin_unet */
     config["swin_unet"] = {
-        art: {color_stability: true},
-        art_scan: {color_stability: false},
-        photo: {color_stability: false}};
+        art: {color_stability: true, padding: "replication"},
+        art_scan: {color_stability: false, padding: "replication"},
+        photo: {color_stability: false, padding: "reflection"}};
     var swin = config["swin_unet"];
     const calc_tile_size_swin_unet = function (tile_size, config) {
         while (true) {
@@ -66,7 +66,8 @@ function gen_arch_config()
     };
     var base_config = {
         arch: "cunet", domain: "art", calc_tile_size: calc_tile_size_cunet,
-        color_stability: true
+        color_stability: true,
+        padding: "replication",
     };
     config["cunet"]["art"] = {
         scale2x: {...base_config, scale: 2, offset: 36},
@@ -459,9 +460,9 @@ const onnx_runner = {
             x = await this.alpha_border_padding(rgb, alpha1, BigInt(config.offset));
             // _debug_print_image_data(this.to_image_data(x.data, null, x.dims[3], x.dims[2]));
             x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]),
-                                   BigInt(p.pad[2]), BigInt(p.pad[3]));
+                                   BigInt(p.pad[2]), BigInt(p.pad[3]), config.padding);
             alpha3 = await this.padding(alpha3, BigInt(p.pad[0]), BigInt(p.pad[1]),
-                                        BigInt(p.pad[2]), BigInt(p.pad[3]));
+                                        BigInt(p.pad[2]), BigInt(p.pad[3]), config.padding);
             alpha1 = null;
         } else {
             var alpha3 = {data: null};
@@ -470,7 +471,7 @@ const onnx_runner = {
             await seam_blending.build();
             var p = seam_blending.get_rendering_config();
             x = await this.padding(x, BigInt(p.pad[0]), BigInt(p.pad[1]),
-                                   BigInt(p.pad[2]), BigInt(p.pad[3]));
+                                   BigInt(p.pad[2]), BigInt(p.pad[3]), config.padding);
         }
         var ch, h, w;
         [ch, h, w] = [x.dims[1], x.dims[2], x.dims[3]];
@@ -556,8 +557,8 @@ const onnx_runner = {
         console.timeEnd("render");
         this.running = false;
     },
-    padding: async function(x, left, right, top, bottom) {
-        const ses = await onnx_session.get_session(CONFIG.get_helper_model_path("pad"));
+    padding: async function(x, left, right, top, bottom, mode) {
+        const ses = await onnx_session.get_session(CONFIG.get_helper_model_path(mode + "_pad"));
         left = new ort.Tensor('int64', BigInt64Array.from([left]), []);
         right = new ort.Tensor('int64', BigInt64Array.from([right]), []);
         top = new ort.Tensor('int64', BigInt64Array.from([top]), []);

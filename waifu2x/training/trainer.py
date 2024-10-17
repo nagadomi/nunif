@@ -146,11 +146,12 @@ def get_last_layer(model):
                       "waifu2x.swin_unet_8x",
                       "waifu2x.winc_unet_1x",
                       "waifu2x.winc_unet_2x",
-                      "waifu2x.winc_unet_4x",
                       "waifu2x.winc_unet_1x_small",
                       "waifu2x.winc_unet_2x_small",
                       }:
         return model.unet.to_image.proj.weight
+    elif model.name in {"waifu2x.winc_unet_4x"}:
+        return model.unet.to_image.conv.weight
     elif model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
         return model.unet2.conv_bottom.weight
     elif model.name in {"waifu2x.upconv_7", "waifu2x.vgg_7"}:
@@ -278,12 +279,8 @@ class Waifu2xEnv(LuminancePSNREnv):
                     else:
                         z, y = self.diff_aug(z, y)
                         fake = z
-                    if isinstance(self.discriminator, SelfSupervisedDiscriminator):
-                        *z_real, _ = self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor)
-                        if len(z_real) == 1:
-                            z_real = z_real[0]
-                    else:
-                        z_real = self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor)
+
+                    z_real = self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
                     self.sum_p_loss += recon_loss.item()
@@ -303,8 +300,8 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.discriminator.requires_grad_(True)
                 if isinstance(self.discriminator, SelfSupervisedDiscriminator):
                     *z_fake, fake_ss_loss = self.discriminator(torch.clamp(fake.detach(), 0, 1),
-                                                               y, scale_factor)
-                    *z_real, real_ss_loss = self.discriminator(y, y, scale_factor)
+                                                               y, scale_factor, train=True)
+                    *z_real, real_ss_loss = self.discriminator(y, y, scale_factor, train=True)
                     if len(z_fake) == 1:
                         z_fake = z_fake[0]
                         z_real = z_real[0]
@@ -479,6 +476,8 @@ class Waifu2xTrainer(Trainer):
         if self.args.freeze and hasattr(self.model, "freeze"):
             self.model.freeze()
             logger.debug("call model.freeze()")
+        if self.args.tile_mode:
+            self.model.set_tile_mode()
 
     def create_model(self):
         kwargs = {"in_channels": 3, "out_channels": 3}
@@ -650,8 +649,8 @@ def train(args):
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x"}
     assert args.discriminator_stop_criteria < args.generator_start_criteria
-    if args.size % 4 != 0:
-        raise ValueError("--size must be a multiple of 4")
+    # if args.size % 4 != 0:
+    #     raise ValueError("--size must be a multiple of 4")
     if args.arch in ARCH_SWIN_UNET and ((args.size - 16) % 12 != 0 or (args.size - 16) % 16 != 0):
         raise ValueError("--size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0` for SwinUNet models")
     if args.method in {"noise", "noise_scale", "noise_scale4x"} and args.noise_level is None:
@@ -775,6 +774,8 @@ def register(subparsers, default_parser):
                         help="use only bicubic downsampling for bicubic downsampling restoration (classic super-resolution)")
     parser.add_argument("--freeze", action="store_true",
                         help="call model.freeze() if avaliable")
+    parser.add_argument("--tile-mode", action="store_true",
+                        help="call model.set_tile_mode()")
     parser.add_argument("--pre-antialias", action="store_true",
                         help=("Set `pre_antialias=True` for SwinUNet4x."))
     parser.add_argument("--privilege", action="store_true",
