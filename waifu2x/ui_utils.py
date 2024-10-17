@@ -63,7 +63,8 @@ def process_images(ctx, files, output_dir, args, title=None):
     os.makedirs(output_dir, exist_ok=True)
     loader = ImageLoader(files=files, max_queue_size=128,
                          load_func=IL.load_image,
-                         load_func_kwargs={"color": "rgb", "keep_alpha": True})
+                         load_func_kwargs={"color": "rgb", "keep_alpha": True,
+                                           "exif_transpose": not args.disable_exif_transpose})
     futures = []
     with PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         tqdm_fn = args.state["tqdm_fn"] or tqdm
@@ -232,6 +233,8 @@ def create_parser(required_true=True):
                         help="Rotate 90 degrees to the left(counterclockwise) (video only)")
     parser.add_argument("--rotate-right", action="store_true",
                         help="Rotate 90 degrees to the right(clockwise) (video only)")
+    parser.add_argument("--disable-exif-transpose", action="store_true",
+                        help="Disable EXIF orientation transpose")
     parser.add_argument("--vf", type=str, default="",
                         help="video filter options for ffmpeg. (video only)")
     parser.add_argument("--grain", action="store_true",
@@ -352,7 +355,7 @@ def waifu2x_main(args):
             output_filename = args.output
         if args.resume and path.exists(output_filename):
             return
-        im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True)
+        im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True, exif_transpose=not args.disable_exif_transpose)
         output = process_image(ctx, im, meta, args)
         make_parent_dir(output_filename)
         IL.save_image(output, filename=output_filename, meta=meta, format=fmt)

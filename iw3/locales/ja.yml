@@ -11,6 +11,8 @@
 "Skip processing when the output file already exists": "出力ファイルが存在する場合に処理をスキップ"
 "Process all subfolders": "すべてのサブフォルダを処理"
 "Add metadata to filename": "ファイル名にメタデータを追加"
+"EXIF Transpose": "EXIF回転補正"
+"Transpose images according to EXIF Orientaion Tag": "EXIF Orientation Tagに従って画像を転置"
 "Image Format": "画像フォーマット"
 "Play": "再生"
 

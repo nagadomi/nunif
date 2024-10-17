@@ -1,4 +1,4 @@
-from PIL import Image, ImageCms, PngImagePlugin, UnidentifiedImageError
+from PIL import Image, ImageCms, PngImagePlugin, UnidentifiedImageError, ImageOps
 import io
 import struct
 import base64
@@ -35,9 +35,12 @@ def convert_i2l(im):
     return im.point(lambda i: i / 255).convert('L')
 
 
-def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
+def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255, exif_transpose=False):
     meta = {"engine": "pil", "filename": filename}
     im.load()
+    if exif_transpose:
+        ImageOps.exif_transpose(im, in_place=True)
+
     meta["mode"] = im.mode
 
     if im.mode in {"L", "I", "RGB", "P"}:
@@ -120,9 +123,11 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255):
     return im, meta
 
 
-def _load_image_simple(filename, color="rgb", bg_color=255):
+def _load_image_simple(filename, color="rgb", bg_color=255, exif_transpose=False):
     im = Image.open(filename)
     im.load()
+    if exif_transpose:
+        ImageOps.exif_transpose(im, in_place=True)
 
     transparency = im.info.get('transparency')
     if isinstance(transparency, bytes) or isinstance(transparency, int):
@@ -145,9 +150,10 @@ def _load_image_simple(filename, color="rgb", bg_color=255):
     return im, {"filename": filename}
 
 
-def load_image_simple(filename, color="rgb", bg_color=255):
+def load_image_simple(filename, color="rgb", bg_color=255, exif_transpose=False, **kwargs):
     try:
-        im, meta = _load_image_simple(filename, color, bg_color)
+        im, meta = _load_image_simple(filename, color=color, bg_color=bg_color,
+                                      exif_transpose=exif_transpose)
         return im, meta
     except UnidentifiedImageError:
         return None, None
@@ -163,12 +169,13 @@ def load_image_simple(filename, color="rgb", bg_color=255):
         return None, None
 
 
-def load_image(filename, color=None, keep_alpha=False, bg_color=255):
+def load_image(filename, color=None, keep_alpha=False, bg_color=255, exif_transpose=False, **kwargs):
     assert (color is None or color in {"rgb", "gray"})
     with open(filename, "rb") as f:
         try:
             im = Image.open(f)
-            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color)
+            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color,
+                               exif_transpose=exif_transpose)
         except UnidentifiedImageError:
             return None, None
         except Image.DecompressionBombError:
@@ -183,11 +190,12 @@ def load_image(filename, color=None, keep_alpha=False, bg_color=255):
             return None, None
 
 
-def decode_image(buff, filename=None, color=None, keep_alpha=False, bg_color=255):
+def decode_image(buff, filename=None, color=None, keep_alpha=False, bg_color=255, exif_transpose=False, **kwargs):
     with io.BytesIO(buff) as data:
         try:
             im = Image.open(data)
-            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color)
+            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color,
+                               exif_transpose=exif_transpose)
         except UnidentifiedImageError:
             return None, None
         except Image.DecompressionBombError:
