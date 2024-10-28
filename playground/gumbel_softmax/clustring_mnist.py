@@ -2,6 +2,7 @@
 #
 # GumbelCustering(soft): https://github.com/user-attachments/assets/236f18d8-8a21-4e32-920d-b5844d09563a
 # GumbelCusteringOnlyBMU(hard): https://github.com/user-attachments/assets/6a6ebe6c-81d4-42a8-b9b3-700fd165c939
+# GumbelCusteringDirect(no guidance): https://github.com/user-attachments/assets/7efa455e-9bf7-489c-9295-968768b124a2
 
 from torchvision.datasets import MNIST
 from torchvision import transforms as T
@@ -95,6 +96,30 @@ class GumbelCusteringBMUOnly(nn.Module):
         return logits, bmu_index, delta
 
 
+class GumbelCusteringDirect(nn.Module):
+    def __init__(self, input_size, codebook_size, max_t, min_tau=1e-8, max_tau=10.0):
+        super().__init__()
+        self.codebook_size = codebook_size
+        self.min_tau = min_tau
+        self.max_tau = max_tau
+        self.max_t = max_tau
+        self.codebook = nn.Parameter(torch.zeros(size=(codebook_size, input_size), dtype=torch.float32))
+        self.bmu_net = nn.Sequential(
+            nn.Linear(input_size, int(codebook_size ** 0.5)),
+            nn.ReLU(True),
+            nn.Linear(int(codebook_size ** 0.5), codebook_size))
+
+    def forward(self, x, t):
+        B = x.shape[0]
+        N = self.codebook.shape[0]
+        temperature = cosine_annealing(self.min_tau, self.max_tau, t, self.max_t)
+        z = F.gumbel_softmax(self.bmu_net(x.reshape(B, -1)), tau=temperature, dim=-1, hard=True)
+        recon = (z.view(B, N, 1) * self.codebook.expand(B, N, -1)).sum(dim=1)
+        recon = recon.view_as(x)
+
+        return recon
+
+
 class MinMaxNormalize():
     def __call__(self, x):
         min_v, max_v = x.min(), x.max()
@@ -102,13 +127,6 @@ class MinMaxNormalize():
 
 
 def main():
-    if True:
-        MODEL_FACTORY = GumbelCusteringBMUOnly
-        VQ_LOSS_WEIGHT = 1.0
-    else:
-        MODEL_FACTORY = GumbelCustering
-        VQ_LOSS_WEIGHT = 10.0
-
     GRID_SIZE = 24
     BATCH_SIZE = 64
     IMAGE_SCALE = 0.5
@@ -118,6 +136,17 @@ def main():
     EPOCH_MULT = 2
     LR = 1e-3
     device = "cuda"
+    VQ_LOSS_WEIGHT = 1.0
+
+    method = 1
+    if method == 0:
+        MODEL_FACTORY = GumbelCusteringBMUOnly
+    elif method == 1:
+        MODEL_FACTORY = GumbelCustering
+        VQ_LOSS_WEIGHT = 10.0
+    elif method == 2:
+        MODEL_FACTORY = GumbelCusteringDirect
+        EPOCH_MULT = 4
 
     torch.manual_seed(72)
 
@@ -146,8 +175,13 @@ def main():
             for x, y in tqdm(loader, ncols=80):
                 optimizer.zero_grad()
                 x = x.to(device)
-                z, y, vq_loss = model(x, t)
-                loss = vq_loss * VQ_LOSS_WEIGHT + F.cross_entropy(z, y).mean()
+                if isinstance(model, GumbelCusteringDirect):
+                    recon = model(x, t)
+                    loss = F.l1_loss(recon, x).mean()
+                else:
+                    z, y, vq_loss = model(x, t)
+                    loss = vq_loss * VQ_LOSS_WEIGHT + F.cross_entropy(z, y).mean()
+
                 loss.backward()
                 optimizer.step()
 
