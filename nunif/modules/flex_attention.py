@@ -48,13 +48,15 @@ class FlexAttention(nn.Module):
 
 
 class WindowNeighborhoodMHA2d(nn.Module):
+    # TODO: probably better to use block_mask.
+    #       but it does not work with torch.compile() at the moment.
     def __init__(self, embed_dim, num_heads, window_size, radius, mask=True, relative_bias=False, qkv_dim=None):
         assert mask or relative_bias
         super().__init__()
 
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
-        self.register_buffer("max_distance", torch.tensor(radius + 0.5, dtype=torch.float32))
+        self.register_buffer("max_distance", torch.tensor(radius, dtype=torch.float32))
         # NOTE: should be int32. long is very slow
         self.register_buffer("window_h", torch.tensor(self.window_size[0], dtype=torch.int32))
         self.mha = FlexAttention(embed_dim, num_heads, qkv_dim=qkv_dim)
