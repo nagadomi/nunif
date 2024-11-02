@@ -50,18 +50,20 @@ class FlexAttention(nn.Module):
 class WindowNeighborhoodMHA2d(nn.Module):
     # TODO: probably better to use block_mask.
     #       but it does not work with torch.compile() at the moment.
-    def __init__(self, embed_dim, num_heads, window_size, radius, mask=True, relative_bias=False, qkv_dim=None):
-        assert mask or relative_bias
+    def __init__(self, embed_dim, num_heads, window_size, max_distance=None, relative_bias=False, qkv_dim=None):
+        assert max_distance is not None or relative_bias
         super().__init__()
 
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
-        self.register_buffer("max_distance", torch.tensor(radius, dtype=torch.float32))
+        if max_distance is not None:
+            self.register_buffer("max_distance", torch.tensor(max_distance, dtype=torch.float32))
+        else:
+            self.max_distance = None
         # NOTE: should be int32. long is very slow
         self.register_buffer("window_h", torch.tensor(self.window_size[0], dtype=torch.int32))
         self.mha = FlexAttention(embed_dim, num_heads, qkv_dim=qkv_dim)
         self.relative_bias = relative_bias
-        self.mask = mask
 
     def forward(self, x, layer_norm=None):
         # NOTE: should compile this function
@@ -70,7 +72,7 @@ class WindowNeighborhoodMHA2d(nn.Module):
         if layer_norm is not None:
             x = layer_norm(x)
 
-        if self.relative_bias and self.mask:
+        if self.relative_bias and self.max_distance is not None:
             def score_mod(score: Tensor, b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor) -> Tensor:
                 window_h = self.window_h
                 q_h, q_w, k_h, k_w = q_idx // window_h, q_idx % window_h, kv_idx // window_h, kv_idx % window_h
@@ -82,7 +84,7 @@ class WindowNeighborhoodMHA2d(nn.Module):
                 score = torch.where((distance <= self.max_distance), score, -float("inf"))
 
                 return score
-        elif self.mask:
+        elif self.max_distance is not None:
             def score_mod(score: Tensor, b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor) -> Tensor:
                 window_h = self.window_h
                 q_h, q_w, k_h, k_w = q_idx // window_h, q_idx % window_h, kv_idx // window_h, kv_idx % window_h
@@ -114,9 +116,7 @@ def _test():
         nn.Conv2d(3, C, kernel_size=3, padding=1, bias=True),
         # layers
         nn.Sequential(*[
-            WindowNeighborhoodMHA2d(
-                C, num_heads=NUM_HEADS, window_size=WINDOW_SIZE[i], radius=RADIUS,
-                mask=True, relative_bias=True)
+            WindowNeighborhoodMHA2d(C, num_heads=NUM_HEADS, window_size=WINDOW_SIZE[i], max_distance=RADIUS, relative_bias=True)
             for i in range(NUM_LAYERS)]),
     ).cuda()
     model = torch.compile(model)
