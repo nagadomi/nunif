@@ -273,6 +273,35 @@ class WindowCrossMHA2d(nn.Module):
         return x
 
 
+@torch.no_grad()
+def _gen_window_score_bias_input(window_size1, window_size2, reduction):
+    N1 = window_size1[0] * window_size1[1]
+    N2 = window_size2[0] * window_size2[1]
+
+    positions1 = torch.stack(
+        torch.meshgrid(torch.arange(0, window_size1[0]),
+                       torch.arange(0, window_size1[1]), indexing="ij"), dim=2).reshape(N1, 2)
+
+    positions2 = torch.stack(
+        torch.meshgrid(torch.arange(0, window_size2[0]),
+                       torch.arange(0, window_size2[1]), indexing="ij"), dim=2).reshape(N2, 2)
+    positions2.mul_(reduction)
+
+    delta = torch.zeros((N1, N2, 2), dtype=torch.long)
+    for i in range(N1):
+        for j in range(N2):
+            delta[i][j] = positions1[i] - positions2[j]
+
+    delta = delta.view(N1 * N2, 2)
+    delta = [tuple(p) for p in delta.tolist()]
+    unique_delta = sorted(list(set(delta)))
+    index = [unique_delta.index(d) for d in delta]
+    index = torch.tensor(index, dtype=torch.int64)
+    unique_delta = torch.tensor(unique_delta, dtype=torch.float32)
+    unique_delta = unique_delta / unique_delta.abs().max()
+    return index, unique_delta
+
+
 class WindowScoreBias(nn.Module):
     def __init__(self, window_size, hidden_dim=None, reduction=1):
         super().__init__()
@@ -288,7 +317,7 @@ class WindowScoreBias(nn.Module):
         self.window_size1 = window_size1
         self.window_size2 = window_size2
 
-        index, unique_delta = self._gen_input(self.window_size1, self.window_size2, reduction)
+        index, unique_delta = _gen_window_score_bias_input(self.window_size1, self.window_size2, reduction)
         self.register_buffer("index", index)
         self.register_buffer("delta", unique_delta)
         if hidden_dim is None:
@@ -301,41 +330,48 @@ class WindowScoreBias(nn.Module):
 
         basic_module_init(self)
 
-    @staticmethod
-    @torch.no_grad()
-    def _gen_input(window_size1, window_size2, reduction):
-        N1 = window_size1[0] * window_size1[1]
-        N2 = window_size2[0] * window_size2[1]
-
-        positions1 = torch.stack(
-            torch.meshgrid(torch.arange(0, window_size1[0]),
-                           torch.arange(0, window_size1[1]), indexing="ij"), dim=2).reshape(N1, 2)
-
-        positions2 = torch.stack(
-            torch.meshgrid(torch.arange(0, window_size2[0]),
-                           torch.arange(0, window_size2[1]), indexing="ij"), dim=2).reshape(N2, 2)
-        positions2.mul_(reduction)
-
-        delta = torch.zeros((N1, N2, 2), dtype=torch.long)
-        for i in range(N1):
-            for j in range(N2):
-                delta[i][j] = positions1[i] - positions2[j]
-
-        delta = delta.view(N1 * N2, 2)
-        delta = [tuple(p) for p in delta.tolist()]
-        unique_delta = sorted(list(set(delta)))
-        index = [unique_delta.index(d) for d in delta]
-        index = torch.tensor(index, dtype=torch.int64)
-        unique_delta = torch.tensor(unique_delta, dtype=torch.float32)
-        unique_delta = unique_delta / unique_delta.abs().max()
-        return index, unique_delta
-
     def forward(self):
         N1 = self.window_size1[0] * self.window_size1[1]
         N2 = self.window_size2[0] * self.window_size2[1]
         bias = self.to_bias(self.delta)
         # (N,N) float attention score bias
         bias = bias[self.index].reshape(N1, N2)
+        return bias
+
+
+class WindowRelativeScoreBias(nn.Module):
+    def __init__(self, window_size, hidden_dim=None, reduction=1, num_heads=None):
+        super().__init__()
+        self.num_heads = num_heads
+        if isinstance(window_size, int):
+            window_size1 = [window_size, window_size]
+        else:
+            window_size1 = window_size
+
+        assert window_size1[0] % reduction == 0 and window_size1[1] % reduction == 0
+
+        window_size2 = [window_size1[0] // reduction, window_size1[1] // reduction]
+
+        self.window_size1 = window_size1
+        self.window_size2 = window_size2
+
+        index, _ = _gen_window_score_bias_input(self.window_size1, self.window_size2, reduction)
+        self.register_buffer("index", index.to(torch.int32))
+        if num_heads is None:
+            self.bias = nn.Parameter(torch.zeros((index.max() + 1,), dtype=torch.float32))
+        else:
+            self.bias = nn.Parameter(torch.zeros((num_heads, index.max() + 1), dtype=torch.float32))
+
+    def forward(self):
+        N1 = self.window_size1[0] * self.window_size1[1]
+        N2 = self.window_size2[0] * self.window_size2[1]
+        if self.num_heads is None:
+            # (N,N) float attention score bias
+            bias = self.bias[self.index].reshape(N1, N2)
+        else:
+            # (H,N,N) float attention score bias
+            bias = self.bias[:, self.index].reshape(self.num_heads, N1, N2)
+
         return bias
 
 
@@ -495,8 +531,16 @@ def _test_neighborhood():
         assert diff < 1e-4
 
 
+def _test_bias2():
+    bias = WindowRelativeScoreBias(window_size=3, num_heads=4)
+    bias()
+    bias = WindowRelativeScoreBias(window_size=3)
+    bias()
+
+
 if __name__ == "__main__":
     # _test_spatial_reduction()
     _test_neighborhood()
     _test_bias()
+    _test_bias2()
     pass
