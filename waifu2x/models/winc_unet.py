@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model, register_model_factory
-from nunif.modules.attention import WindowMHA2d, WindowScoreBias
+from nunif.modules.attention import WindowMHA2d, WindowRelativeScoreBias
 from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive
 from nunif.modules.init import icnr_init, basic_module_init
 from nunif.modules.compile_wrapper import conditional_compile
@@ -32,39 +32,77 @@ class GLUConvMLP(nn.Module):
         return x
 
 
+class MLPBlocks(nn.Module):
+    def __init__(self, in_channels, mlp_ratio=2, num_layers=2):
+        super().__init__()
+        self.layers = nn.ModuleList([MLP(in_channels, in_channels, mlp_ratio=mlp_ratio) for i in range(num_layers)])
+        basic_module_init(self)
+
+    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
+    def forward(self, x):
+        for m in self.layers:
+            x = x + m(x)
+        return x
+
+
+class MLP(nn.Module):
+    def __init__(self, in_channels, out_channels, mlp_ratio=2):
+        super().__init__()
+        const_mlp_ratio = 1.0
+        mid = int(out_channels * mlp_ratio * const_mlp_ratio)
+        self.w1 = nn.Conv2d(in_channels, mid, kernel_size=1, stride=1, padding=0)
+        self.w2 = nn.Conv2d(mid, out_channels, kernel_size=1, stride=1, padding=0)
+        basic_module_init(self)
+
+    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
+    def forward(self, x):
+        x = self.w1(x)
+        x = F.leaky_relu(x, 0.1, inplace=True)
+        x = self.w2(x)
+        return x
+
+
 class WACBlock(nn.Module):
     """ Window MHA + Multi Layer Conv2d
     """
-    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2, padding=True):
+    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2, padding=True, conv_mlp=True):
         super(WACBlock, self).__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
         self.padding = padding
         self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size)
-        self.relative_bias = WindowScoreBias(self.window_size)
-        self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3, mlp_ratio=mlp_ratio, padding=padding)
+        self.relative_bias = WindowRelativeScoreBias(self.window_size, num_heads=num_heads)
+        if conv_mlp:
+            self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3, mlp_ratio=mlp_ratio, padding=padding)
+        else:
+            self.conv_mlp = MLP(in_channels, in_channels, mlp_ratio=mlp_ratio)
 
     def forward(self, x):
         x1 = self.mha(x, attn_mask=self.relative_bias())
         x = x + x1
-        if self.padding:
-            x = x + self.conv_mlp(x)
+        if isinstance(self.conv_mlp, GLUConvMLP):
+            if self.padding:
+                x = x + self.conv_mlp(x)
+            else:
+                x = F.pad(x, (-1,) * 4) + self.conv_mlp(x)
         else:
-            x = F.pad(x, (-1,) * 4) + self.conv_mlp(x)
+            x = x + self.conv_mlp(x)
         return x
 
 
 class WACBlocks(nn.Module):
-    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2, num_layers=2, padding=True):
+    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2, num_layers=2, padding=True, conv_mlp=True):
         super(WACBlocks, self).__init__()
         if isinstance(window_size, int):
             window_size = [window_size] * num_layers
         if isinstance(padding, bool):
             padding = [padding] * num_layers
+        if isinstance(conv_mlp, bool):
+            conv_mlp = [conv_mlp] * num_layers
 
         self.blocks = nn.Sequential(
             *[WACBlock(in_channels, window_size=window_size[i],
-                       num_heads=num_heads, qkv_dim=qkv_dim, mlp_ratio=mlp_ratio, padding=padding[i])
+                       num_heads=num_heads, qkv_dim=qkv_dim, mlp_ratio=mlp_ratio, padding=padding[i], conv_mlp=conv_mlp[i])
               for i in range(num_layers)])
 
     def forward(self, x):
@@ -78,8 +116,8 @@ class Overscan(nn.Module):
         self.proj = nn.Conv2d(in_channels * 2 * 2, C, kernel_size=1, stride=1, padding=0)
         self.mha1 = WindowMHA2d(C, num_heads=2, window_size=8)
         self.mha2 = WindowMHA2d(C, num_heads=2, window_size=6)
-        self.relative_bias1 = WindowScoreBias(window_size=8)
-        self.relative_bias2 = WindowScoreBias(window_size=6)
+        self.relative_bias1 = WindowRelativeScoreBias(window_size=8, num_heads=2)
+        self.relative_bias2 = WindowRelativeScoreBias(window_size=6, num_heads=2)
         self.mlp = nn.Sequential(
             nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0),
             nn.LeakyReLU(0.2, inplace=True),
@@ -89,6 +127,7 @@ class Overscan(nn.Module):
         basic_module_init(self.proj)
         basic_module_init(self.mlp)
 
+    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
         x = F.pixel_unshuffle(x, 2)
         assert x.shape[2] % 8 == 0
@@ -129,24 +168,16 @@ class PatchUp(nn.Module):
 class ToImage(nn.Module):
     def __init__(self, in_channels, out_channels, scale_factor):
         super().__init__()
-        mid_channels = max(in_channels // scale_factor ** 2, 8)
         self.scale_factor = scale_factor
-        self.proj = nn.Conv2d(in_channels, mid_channels * scale_factor ** 2, kernel_size=3, stride=1, padding=0)
-        self.conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, stride=1, padding=0)
+        self.proj = nn.Conv2d(in_channels, out_channels * scale_factor ** 2, kernel_size=1, stride=1, padding=0)
         icnr_init(self.proj, scale_factor=scale_factor)
-        basic_module_init(self.conv)
 
     @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
         x = self.proj(x)
-        x = F.leaky_relu(x, 0.2, inplace=True)
         if self.scale_factor > 1:
             x = F.pixel_shuffle(x, self.scale_factor)
-            x = F.pad(x, (-self.scale_factor + 1,) * 4)
-            x = self.conv(x)
-        else:
-            x = self.conv(x)
-
+        x = F.pad(x, (-self.scale_factor,) * 4)
         return x
 
 
@@ -170,6 +201,50 @@ class ToImage4x(nn.Module):
         x = F.pixel_shuffle(x, 2)
         x = F.pad(x, (-1,) * 4)
         x = self.conv(x)
+        return x
+
+
+class SourceResidual(nn.Module):
+    def __init__(self, out_channels, scale_factor, source_channels=3):
+        assert out_channels == 3
+        super().__init__()
+        self.scale_factor = scale_factor
+        if scale_factor > 1:
+            self.proj_source = nn.Conv2d(source_channels, out_channels * scale_factor ** 2,
+                                         kernel_size=3, stride=1, padding=0, bias=False)
+            self.nearest_neighbor_init(self.proj_source, scale_factor=scale_factor)
+        else:
+            self.proj_source = None
+        self.scale_bias = nn.Parameter(torch.zeros((1,), dtype=torch.float32))
+
+    @staticmethod
+    def nearest_neighbor_init(m, scale_factor):
+        with torch.no_grad():
+            OUT, IN, H, W = m.weight.data.shape
+            center = (H - 1) // 2
+            assert OUT % (scale_factor ** 2) == 0
+            weight = torch.zeros((OUT // (scale_factor ** 2), IN, H, W))
+            weight[0, 0, center, center] = 1.0
+            weight[1, 1, center, center] = 1.0
+            weight[2, 2, center, center] = 1.0
+            if scale_factor > 1:
+                weight = weight.permute(1, 0, 2, 3)
+                weight = F.interpolate(weight, scale_factor=scale_factor, mode="nearest")
+                weight = F.pixel_unshuffle(weight, scale_factor)
+                weight = weight.permute(1, 0, 2, 3)
+            m.weight.data.copy_(weight)
+
+    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
+    def forward(self, x, src):
+        # print(self.scale_bias)
+        # torch.save(self.proj_source.state_dict(), "tmp/nn_upsample/weight.pth")
+        if self.scale_factor > 1:
+            src = self.proj_source(src)
+            src = F.pixel_shuffle(src, self.scale_factor)
+        unpad = (x.shape[2] - src.shape[2]) // 2
+        if unpad != 0:
+            src = F.pad(src, (unpad,) * 4)
+        x = src + x * self.scale_bias
 
         return x
 
@@ -203,11 +278,11 @@ class WincUNetBase(nn.Module):
         self.up1 = PatchUp(C2, C)
         self.wac1_proj = nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0)
         self.wac3 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers)
-        if scale_factor == 4:
-            self.to_image = ToImage4x(C, out_channels)
-        else:
-            self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
+                              window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers,
+                              conv_mlp=[True] * (last_layers - 1) + [False])
+        self.res_mlp = MLPBlocks(C, mlp_ratio=lv1_mlp_ratio, num_layers=1)
+        self.to_residual_image = ToImage(C, out_channels, scale_factor=scale_factor)
+        self.to_image = SourceResidual(out_channels, scale_factor=scale_factor)
 
         basic_module_init(self.patch)
         basic_module_init(self.wac1_proj)
@@ -219,6 +294,7 @@ class WincUNetBase(nn.Module):
         self.tile_mode = True
 
     def _forward(self, x):
+        src = x
         ov = self.overscan(x)
         x = self.patch(x)
         x = F.leaky_relu(x, 0.2, inplace=True)
@@ -234,7 +310,9 @@ class WincUNetBase(nn.Module):
         x = self.up1(x)
         x = x + self.wac1_proj(x1)
         x = self.wac3(x)
-        z = self.to_image(x)
+        x = self.res_mlp(x)
+        x = self.to_residual_image(x)
+        z = self.to_image(x, src)
 
         return z
 
