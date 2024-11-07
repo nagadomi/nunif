@@ -10,10 +10,12 @@ def create_device_name(device_id):
     else:
         if torch.cuda.is_available():
             device_name = 'cuda:%d' % device_id
-        elif torch.backends.mps.is_available():
+        elif torch.mps.is_available():
             device_name = 'mps:%d' % device_id
+        elif hasattr(torch, "xpu") and torch.xpu.is_available():
+            device_name = 'xpu:%d' % device_id
         else:
-            raise ValueError("No cuda/mps available. Use `--gpu -1` for CPU.")
+            raise ValueError("No cuda/mps/xpu available. Use `--gpu -1` for CPU.")
     return device_name
 
 
@@ -32,6 +34,10 @@ def device_is_mps(device):
     return device_is(device, "mps")
 
 
+def device_is_xpu(device):
+    return device_is(device, "xpu")
+
+
 def device_is_cpu(device):
     return device_is(device, "cpu")
 
@@ -48,7 +54,7 @@ def autocast(device, dtype=None, enabled=True):
         amp_dtype = torch.bfloat16
         if enabled:
             enabled = False
-    elif device_is_mps(device):
+    elif device_is_mps(device):  # TODO: xpu work or not
         # currently pytorch does not support mps autocast
         # disabled
         amp_device_type = "cpu"

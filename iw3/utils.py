@@ -1345,7 +1345,7 @@ def create_parser(required_true=True):
             return f"{self.start} <= value <= {self.end}"
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    if torch.cuda.is_available() or torch.backends.mps.is_available():
+    if torch.cuda.is_available() or torch.backends.mps.is_available() or torch.xpu.is_available():
         default_gpu = 0
     else:
         default_gpu = -1
