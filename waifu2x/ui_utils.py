@@ -178,7 +178,7 @@ def load_files(txt):
 
 
 def create_parser(required_true=True):
-    default_gpu = 0 if torch.cuda.is_available() or torch.backends.mps.is_available() else -1
+    default_gpu = 0 if (torch.cuda.is_available() or torch.backends.mps.is_available() or torch.xpu.is_available()) else -1
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model-dir", type=str, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")

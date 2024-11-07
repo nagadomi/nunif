@@ -93,8 +93,8 @@ class CacheGC():
             logger.info(f"diskcache: cache={self.disk_size_mb()}MB, RAM={self.ram_size_mb()}")
 
 
-def setup():
-    default_gpu = 0 if torch.cuda.is_available() or torch.backends.mps.is_available() else -1
+def setup()
+    default_gpu = 0 if (torch.cuda.is_available() or torch.backends.mps.is_available() or torch.xpu.is_available()) else -1:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
                         help="0.0.0.0 for global, 127.0.0.1 for local")

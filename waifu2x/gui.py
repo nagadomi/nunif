@@ -313,6 +313,11 @@ class MainFrame(wx.Frame):
                 self.cbo_device.Append(T("All CUDA Device"), -2)
         elif torch.backends.mps.is_available():
             self.cbo_device.Append("MPS", 0)
+        elif torch.xpu.is_available():
+            for i in range(torch.xpu.device_count()):
+                device_name = torch.xpu.get_device_name(i)
+                self.cbo_device.Append(device_name, i)
+
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
 
