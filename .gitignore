@@ -1,4 +1,5 @@
 *~
+*.bk*.py
 .DS_Store
 TODO
 *.swp
