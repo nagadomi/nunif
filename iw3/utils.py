@@ -152,6 +152,7 @@ def backward_warp(c, grid, delta, delta_scale):
 
 
 def make_grid(batch, width, height, device):
+    # TODO: xpu: torch.meshgrid causes fallback from XPU to CPU, but it is faster to simply do nothing
     mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, height, device=device),
                                     torch.linspace(-1, 1, width, device=device), indexing="ij")
     mesh_y = mesh_y.reshape(1, 1, height, width).expand(batch, 1, height, width)
