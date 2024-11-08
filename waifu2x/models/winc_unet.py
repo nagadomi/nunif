@@ -1,9 +1,10 @@
+# wip
 import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model, register_model_factory
-from nunif.modules.attention import WindowMHA2d, WindowRelativeScoreBias
+from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive
 from nunif.modules.init import icnr_init, basic_module_init
 from nunif.modules.compile_wrapper import conditional_compile
@@ -71,7 +72,7 @@ class WACBlock(nn.Module):
                             else (window_size, window_size))
         self.padding = padding
         self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size)
-        self.relative_bias = WindowRelativeScoreBias(self.window_size, num_heads=num_heads)
+        self.relative_bias = WindowScoreBias(self.window_size)
         if conv_mlp:
             self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3, mlp_ratio=mlp_ratio, padding=padding)
         else:
@@ -116,8 +117,8 @@ class Overscan(nn.Module):
         self.proj = nn.Conv2d(in_channels * 2 * 2, C, kernel_size=1, stride=1, padding=0)
         self.mha1 = WindowMHA2d(C, num_heads=2, window_size=8)
         self.mha2 = WindowMHA2d(C, num_heads=2, window_size=6)
-        self.relative_bias1 = WindowRelativeScoreBias(window_size=8, num_heads=2)
-        self.relative_bias2 = WindowRelativeScoreBias(window_size=6, num_heads=2)
+        self.relative_bias1 = WindowScoreBias(window_size=8)
+        self.relative_bias2 = WindowScoreBias(window_size=6)
         self.mlp = nn.Sequential(
             nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0),
             nn.LeakyReLU(0.2, inplace=True),
@@ -181,41 +182,16 @@ class ToImage(nn.Module):
         return x
 
 
-class ToImage4x(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        mid_channels = max(in_channels // 4 ** 2, 8)
-        self.proj = nn.Conv2d(in_channels, mid_channels * 16, kernel_size=1, stride=1, padding=0)
-        self.conv2x = nn.Conv2d(mid_channels * 4, mid_channels * 4, kernel_size=3, stride=1, padding=0)
-        self.conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, stride=1, padding=0)
-        icnr_init(self.proj, scale_factor=2)
-        icnr_init(self.conv2x, scale_factor=2)
-        basic_module_init(self.conv)
-
-    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
-    def forward(self, x):
-        x = self.proj(x)
-        x = F.pixel_shuffle(x, 2)
-        x = self.conv2x(x)
-        x = F.leaky_relu(x, 0.2, inplace=True)
-        x = F.pixel_shuffle(x, 2)
-        x = F.pad(x, (-1,) * 4)
-        x = self.conv(x)
-        return x
-
-
 class SourceResidual(nn.Module):
     def __init__(self, out_channels, scale_factor, source_channels=3):
         assert out_channels == 3
         super().__init__()
         self.scale_factor = scale_factor
-        if scale_factor > 1:
-            self.proj_source = nn.Conv2d(source_channels, out_channels * scale_factor ** 2,
-                                         kernel_size=3, stride=1, padding=0, bias=False)
-            self.nearest_neighbor_init(self.proj_source, scale_factor=scale_factor)
-        else:
-            self.proj_source = None
+        self.resampling = nn.Conv2d(source_channels, out_channels * scale_factor ** 2,
+                                    kernel_size=3, stride=1, padding=0, bias=False)
+        # weight for main net
         self.scale_bias = nn.Parameter(torch.zeros((1,), dtype=torch.float32))
+        self.nearest_neighbor_init(self.resampling, scale_factor=scale_factor)
 
     @staticmethod
     def nearest_neighbor_init(m, scale_factor):
@@ -238,8 +214,8 @@ class SourceResidual(nn.Module):
     def forward(self, x, src):
         # print(self.scale_bias)
         # torch.save(self.proj_source.state_dict(), "tmp/nn_upsample/weight.pth")
+        src = self.resampling(src)
         if self.scale_factor > 1:
-            src = self.proj_source(src)
             src = F.pixel_shuffle(src, self.scale_factor)
         unpad = (x.shape[2] - src.shape[2]) // 2
         if unpad != 0:
