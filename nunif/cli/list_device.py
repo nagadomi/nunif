@@ -16,3 +16,6 @@ if mps_is_available():
 if xpu_is_available():
     for i in range(torch.xpu.device_count()):
         print(f"xpu:{i}", torch.xpu.get_device_name(i))
+
+# cpu should be available
+print("cpu")
