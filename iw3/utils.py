@@ -15,7 +15,7 @@ from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
-from nunif.device import create_device, autocast, device_is_mps, device_is_cuda
+from nunif.device import create_device, autocast, device_is_mps, device_is_cuda, mps_is_available, xpu_is_available
 from nunif.models.data_parallel import DeviceSwitchInference
 from . import export_config
 from . dilation import dilate_edge
@@ -1346,7 +1346,7 @@ def create_parser(required_true=True):
             return f"{self.start} <= value <= {self.end}"
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    if torch.cuda.is_available() or torch.backends.mps.is_available() or torch.xpu.is_available():
+    if torch.cuda.is_available() or mps_is_available() or xpu_is_available():
         default_gpu = 0
     else:
         default_gpu = -1

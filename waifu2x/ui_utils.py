@@ -9,7 +9,7 @@ from tqdm import tqdm
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from nunif.logger import logger
-from nunif.device import create_device
+from nunif.device import create_device, mps_is_available, xpu_is_available
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.filename import set_image_ext
 from nunif.utils.rgb_noise import rgb_noise_like, apply_rgb_noise
@@ -178,7 +178,11 @@ def load_files(txt):
 
 
 def create_parser(required_true=True):
-    default_gpu = 0 if (torch.cuda.is_available() or torch.backends.mps.is_available() or torch.xpu.is_available()) else -1
+    if torch.cuda.is_available() or mps_is_available() or xpu_is_available():
+        default_gpu = 0
+    else:
+        default_gpu = -1
+
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model-dir", type=str, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")

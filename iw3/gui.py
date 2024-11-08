@@ -16,6 +16,7 @@ from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
     has_rembg_model)
+from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.gui import (
@@ -494,9 +495,9 @@ class MainFrame(wx.Frame):
                 self.cbo_device.Append(device_name, i)
             if torch.cuda.device_count() > 0:
                 self.cbo_device.Append(T("All CUDA Device"), -2)
-        elif torch.mps.is_available():
+        elif mps_is_available():
             self.cbo_device.Append("MPS", 0)
-        elif torch.xpu.is_available():
+        elif xpu_is_available():
             for i in range(torch.xpu.device_count()):
                 device_name = torch.xpu.get_device_name(i)
                 self.cbo_device.Append(device_name, i)

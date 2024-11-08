@@ -26,6 +26,7 @@ from urllib.parse import (
 import uuid
 from nunif.logger import logger, set_log_level
 from nunif.utils.filename import set_image_ext
+from nunif.device import mps_is_available, xpu_is_available
 from ..utils import Waifu2x
 
 
@@ -93,8 +94,12 @@ class CacheGC():
             logger.info(f"diskcache: cache={self.disk_size_mb()}MB, RAM={self.ram_size_mb()}")
 
 
-def setup()
-    default_gpu = 0 if (torch.cuda.is_available() or torch.backends.mps.is_available() or torch.xpu.is_available()) else -1:
+def setup():
+    if torch.cuda.is_available() or mps_is_available() or xpu_is_available():
+        default_gpu = 0
+    else:
+        default_gpu = -1
+
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
                         help="0.0.0.0 for global, 127.0.0.1 for local")

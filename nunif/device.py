@@ -1,6 +1,14 @@
 import torch
 
 
+def mps_is_available():
+    return torch.backends.mps.is_available()
+
+
+def xpu_is_available():
+    return hasattr(torch, "xpu") and torch.xpu.is_available()
+
+
 def create_device_name(device_id):
     if isinstance(device_id, (list, tuple)):
         assert len(device_id) > 0
@@ -10,12 +18,13 @@ def create_device_name(device_id):
     else:
         if torch.cuda.is_available():
             device_name = 'cuda:%d' % device_id
-        elif torch.mps.is_available():
+        elif mps_is_available():
             device_name = 'mps:%d' % device_id
-        elif hasattr(torch, "xpu") and torch.xpu.is_available():
+        elif xpu_is_available():
             device_name = 'xpu:%d' % device_id
         else:
             raise ValueError("No cuda/mps/xpu available. Use `--gpu -1` for CPU.")
+
     return device_name
 
 
