@@ -303,7 +303,7 @@ def _gen_window_score_bias_input(window_size1, window_size2, reduction):
 
 
 class WindowScoreBias(nn.Module):
-    def __init__(self, window_size, hidden_dim=None, reduction=1):
+    def __init__(self, window_size, hidden_dim=None, reduction=1, num_heads=None):
         super().__init__()
         if isinstance(window_size, int):
             window_size1 = [window_size, window_size]
@@ -316,17 +316,22 @@ class WindowScoreBias(nn.Module):
 
         self.window_size1 = window_size1
         self.window_size2 = window_size2
+        self.num_heads = num_heads
 
         index, unique_delta = _gen_window_score_bias_input(self.window_size1, self.window_size2, reduction)
         self.register_buffer("index", index)
         self.register_buffer("delta", unique_delta)
         if hidden_dim is None:
             hidden_dim = int((self.window_size1[0] * self.window_size1[1]) ** 0.5) * 2
+        if self.num_heads is None:
+            output_dim = 1
+        else:
+            output_dim = num_heads
 
         self.to_bias = nn.Sequential(
             nn.Linear(2, hidden_dim, bias=True),
             nn.GELU(),
-            nn.Linear(hidden_dim, 1, bias=True))
+            nn.Linear(hidden_dim, output_dim, bias=True))
 
         basic_module_init(self)
 
@@ -334,8 +339,13 @@ class WindowScoreBias(nn.Module):
         N1 = self.window_size1[0] * self.window_size1[1]
         N2 = self.window_size2[0] * self.window_size2[1]
         bias = self.to_bias(self.delta)
-        # (N,N) float attention score bias
-        bias = bias[self.index].reshape(N1, N2)
+        bias = bias[self.index]
+        if self.num_heads is None:
+            # (N,N) float attention score bias
+            bias = bias.reshape(N1, N2)
+        else:
+            # (H,N,N) float attention score bias
+            bias = bias.permute(1, 0).contiguous().reshape(self.num_heads, N1, N2)
         return bias
 
 
