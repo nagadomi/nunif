@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
-from nunif.device import create_device, autocast, device_is_mps # noqa
+from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
 from nunif.models.data_parallel import DeviceSwitchInference
 from .dilation import dilate_edge
 
@@ -162,11 +162,8 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
     pad_scale_h = pad_src_h / (height + pad_src_h * 2)
     pad_scale_w = pad_src_w / (width + pad_src_w * 2)
 
-    # TODO: 'aten::_upsample_bilinear2d_aa.out' is not currently implemented for the MPS device
-    # This did not cause any performance problems, so I decided not to handle it.
-    # antialias = not device_is_mps(x.device)
-    antialias = True
-
+    # TODO: 'aten::_upsample_bilinear2d_aa.out' is not currently implemented for mps/xpu device
+    antialias = not (device_is_mps(x.device) or device_is_xpu(x.device))
     if new_h > new_w:
         pad_h = round(new_h * pad_scale_h)
         frame_h = new_h - pad_h * 2
