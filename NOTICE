@@ -75,5 +75,11 @@ nunif/modules/lpips.py
 https://github.com/facebookresearch/NeuralCompression
 Meta Platforms, Inc. and affiliates / MIT License
 
+---
+nunif/utils/superpoint.py
+From SuperPoint https://github.com/rpautrat/SuperPoint/
+Paul-Edouard Sarlin & Rémi Pautrat / MIT License
+
+
 ----
 Other libraries used are listed in `requirements.txt`.
