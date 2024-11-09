@@ -9,6 +9,8 @@ import torch.nn as nn
 import torch
 from collections import OrderedDict
 from types import SimpleNamespace
+import math
+import torch.nn.functional as F
 
 
 def sample_descriptors(keypoints, descriptors, s: int = 8):
@@ -106,7 +108,6 @@ class SuperPoint(nn.Module):
 
         self.requires_grad_(False)
 
-    @torch.inference_mode()
     def forward(self, image):
         if image.shape[1] == 3:  # RGB to gray
             scale = image.new_tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1)
@@ -170,44 +171,179 @@ class SuperPoint(nn.Module):
             "descriptors": descriptors,
         }
 
+# The code below here was written by nagadomi
+
     def load(self, map_location="cpu"):
         self.load_state_dict(torch.hub.load_state_dict_from_url(
             "https://github.com/nagadomi/nunif/releases/download/0.0.0/superpoint_v6_from_tf.pth",
             weights_only=True, map_location=map_location))
         return self
 
+    @torch.inference_mode()
+    def infer(self, x):
+        if x.ndim == 3:
+            x = x.unsqueeze(0)
+            batch = False
+        else:
+            batch = True
+
+        ret = self.forward(x)
+
+        # convert to batch-first structure
+        new_ret = []
+        for i in range(x.shape[0]):
+            new_ret.append({
+                "keypoints": ret["keypoints"][i],
+                "descriptors": ret["descriptors"][i],
+                "keypoint_scores": ret["keypoint_scores"][i]
+            })
+        if not batch:
+            new_ret = new_ret[0]
+
+        return new_ret
+
+
+def find_match_index(kp1, kp2, threshold=0.5):
+    d1 = kp1["descriptors"]
+    d2 = kp2["descriptors"]
+
+    cosine_similarity = d1 @ d2.t()
+    match_index = torch.argmax(cosine_similarity, dim=-1)
+    max_similarity = torch.gather(cosine_similarity, dim=1, index=match_index.view(-1, 1)).view(-1)
+    filter_index = max_similarity > 0.5
+    kp1_index = torch.arange(d1.shape[0], device=d1.device)[filter_index]
+    kp2_index = match_index[filter_index]
+
+    return kp1_index, kp2_index
+
+
+def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_scale_rotation=0.1, sigma=None,
+                         disable_shift=False, disable_scale=False, disable_rotate=False):
+    # TODO: batch
+    assert torch.is_grad_enabled()
+    xy1 = xy1.cpu()
+    xy2 = xy2.cpu()
+    translation = torch.zeros((1, 2), dtype=torch.float32, device=xy1.device, requires_grad=True)
+    scale = torch.ones((1, 1), dtype=torch.float32, device=xy1.device, requires_grad=True)
+    rotation = torch.zeros((1, 1), dtype=torch.float32, device=xy1.device, requires_grad=True)
+    if disable_shift:
+        translation.requires_grad_(False)
+    if disable_scale:
+        scale.requires_grad_(False)
+    if disable_rotate:
+        rotation.requires_grad_(False)
+
+    param_groups = [
+        {"params": [translation], "lr": lr_translation},
+        {"params": [scale, rotation], "lr": lr_scale_rotation},
+    ]
+    optimizer = torch.optim.Adam(param_groups, betas=(0.5, 0.9))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=n, eta_min=lr_scale_rotation * 1e-3)
+
+    if center is None:
+        center = xy1.mean(dim=0, keepdim=True).detach()
+    if not torch.is_tensor(center):
+        center = torch.tensor(center, dtype=torch.float32, device=xy1.device)
+
+    xy1 = xy1 - center
+    xy2 = xy2 - center
+    norm_scale = xy1.abs().max()
+    xy1 = xy1 / norm_scale
+    xy2 = xy2 / norm_scale
+
+    for i in range(n):
+        optimizer.zero_grad()
+        xy = xy1
+
+        # rotate
+        rcos = rotation.cos()
+        rsin = rotation.sin()
+        xy = torch.cat([xy[:, :1] * rcos - xy[:, 1:] * rsin,
+                        xy[:, :1] * rsin + xy[:, 1:] * rcos], dim=1)
+
+        # scale
+        xy = xy * scale
+
+        # translate
+        xy = xy
+        xy = xy + translation
+
+        if sigma is not None and i > 0:
+            loss = F.l1_loss(xy, xy2, reduction="none").mean(dim=1)
+            mean, stdv = torch.std_mean(loss)
+            mask = ((loss - mean) / stdv) < sigma
+            loss = loss[mask].mean()
+            # print(loss.item(), mask.sum() / xy.shape[0])
+        else:
+            loss = F.l1_loss(xy, xy2)
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+
+    shift = (translation.detach() * norm_scale).flatten().tolist()
+    scale = scale.detach().item()
+    angle = math.degrees(rotation.detach().item())
+    center = center.flatten().tolist()
+
+    return shift, scale, angle, center
+
+
+@torch.inference_mode()
+def apply_rigid_transform(x, shift, scale, angle, center, mode="bilinear", padding_mode="border"):
+    # TODO: batch
+    assert x.ndim == 3  # CHW
+    height, width = x.shape[1:]
+    center_normalized = (torch.tensor(center, device=x.device, dtype=x.dtype) /
+                         torch.tensor((width, height), device=x.device, dtype=x.dtype)) * 2.0 - 1.0
+    shift_normalized = (torch.tensor(shift, device=x.device, dtype=x.dtype) /
+                        torch.tensor((width, height), device=x.device, dtype=x.dtype)) * 2.0
+    angle = math.radians(angle)
+
+    # inverse params
+    shift_normalized = -shift_normalized
+    scale = 1.0 / scale
+    angle = -angle
+
+    # backward warping
+    py, px = torch.meshgrid(torch.linspace(-1, 1, height, device=x.device, dtype=x.dtype),
+                            torch.linspace(-1, 1, width, device=x.device, dtype=x.dtype), indexing="ij")
+
+    px = px - center_normalized[0]
+    py = py - center_normalized[1]
+    mesh_x = (px * math.cos(angle) - py * math.sin(angle))
+    mesh_y = (px * math.sin(angle) + py * math.cos(angle))
+
+    grid = torch.stack((mesh_x, mesh_y), 2).contiguous()
+    grid = grid * scale
+    grid = grid + (shift_normalized.view(1, 1, -1) + center_normalized.view(1, 1, -1))
+
+    x = F.grid_sample(x.unsqueeze(0), grid.unsqueeze(0), mode="bilinear", padding_mode=padding_mode, align_corners=False)
+    x = x[0]
+
+    return x
+
 
 def _visualize():
+    import time
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
-    import torch.nn.functional as F
     from PIL import ImageDraw
 
     x1 = (IO.read_image("cc0/dog2.jpg") / 255.0)
-    x1 = x1[:, :250, :250].unsqueeze(0)
-    x2 = F.pad(TF.resize(TF.rotate(x1, 30), (200, 200)), (25,) * 4)
+    x1 = x1[:, :250, :250]
+    x2 = TF.pad(TF.resize(TF.rotate(x1, 30), (200, 200)), (25,) * 4)
+    # x2 = F.pad(x1, [-25, 25, -5, 5])
 
-    x1 = x1.cuda()
-    x2 = x2.cuda()
+    x1 = x1.unsqueeze(0).cuda()
+    x2 = x2.unsqueeze(0).cuda()
     model = SuperPoint().load().cuda()
     with torch.autocast(device_type=x1.device.type):
-        ret1 = model(x1)
-        ret2 = model(x2)
-    d1 = ret1["descriptors"][0]
-    d2 = ret2["descriptors"][0]
-    distance = (d1.pow(2).sum(1, keepdim=True) - 2 * d1 @ d2.t() +
-                d2.pow(2).sum(1, keepdim=True).t())
-    match_index = torch.argmin(distance, dim=-1)
-    min_distance = torch.gather(distance, dim=1, index=match_index.view(-1, 1)).view(-1)
+        ret = model.infer(torch.cat([x1, x2], dim=0))
 
-    print("match score", "min", min_distance.min().item(), "max", min_distance.max().item(),
-          "mean", min_distance.mean().item(), "median", min_distance.median().item())
-
-    threshold = 10000.0  # min_distance.median()
-    filter_index = min_distance < threshold
-
-    k1 = ret1["keypoints"][0][filter_index]
-    k2 = ret2["keypoints"][0][match_index][filter_index]
+    # matching
+    kp1_index, kp2_index = find_match_index(ret[0], ret[1])
+    k1 = ret[0]["keypoints"][kp1_index]
+    k2 = ret[1]["keypoints"][kp2_index]
 
     img = TF.to_pil_image(torch.cat([x1, x2], dim=3).squeeze(0))
 
@@ -218,17 +354,31 @@ def _visualize():
     if False:
         # line
         for xy1, xy2 in zip(k1, k2):
-            x1, y1 = int(xy1[0].item()), int(xy1[1].item())
-            x2, y2 = int(xy2[0].item()) + k2_offset, int(xy2[1].item())
-            gc.line(((x1, y1), (x2, y2)), fill="green")
+            xx1, yy1 = int(xy1[0].item()), int(xy1[1].item())
+            xx2, yy2 = int(xy2[0].item()) + k2_offset, int(xy2[1].item())
+            gc.line(((xx1, yy1), (xx2, yy2)), fill="green")
+
     # points
     for xy1, xy2 in zip(k1, k2):
-        x1, y1 = int(xy1[0].item()), int(xy1[1].item())
-        x2, y2 = int(xy2[0].item()) + k2_offset, int(xy2[1].item())
-        gc.circle((x1, y1), radius=2, fill="red")
-        gc.circle((x2, y2), radius=2, fill="blue")
+        xx1, yy1 = int(xy1[0].item()), int(xy1[1].item())
+        xx2, yy2 = int(xy2[0].item()) + k2_offset, int(xy2[1].item())
+        gc.circle((xx1, yy1), radius=2, fill="red")
+        gc.circle((xx2, yy2), radius=2, fill="blue")
 
+    # show matching
     img.show()
+    time.sleep(1)
+
+    # estimate transform
+    # TODO: The shift is slightly out of alignment, but I still can't figure out the cause.
+    shift, scale, angle, center = find_rigid_transform(k1, k2)
+    # apply transform
+    x3 = apply_rigid_transform(x1.squeeze(0), shift=shift, scale=scale, angle=angle, center=center)
+    # show
+    TF.to_pil_image(x2.squeeze(0)).show()
+    time.sleep(1)
+    TF.to_pil_image(x3).show()
+    time.sleep(1)
 
 
 def _benchmark():
@@ -250,13 +400,13 @@ def _benchmark():
     N = 100
     with torch.autocast(device_type=x.device.type):
         for _ in range(N):
-            model(x)
+            model.infer(x)
     torch.cuda.synchronize()
     print(1 / ((time.time() - t) / (B * N)), "FPS")
 
-    # 800FPS on RTX3070ti
+    # 850FPS on RTX3070ti
 
 
 if __name__ == "__main__":
     _visualize()
-    _benchmark()
+    # _benchmark()
