@@ -92,7 +92,7 @@ def main():
     if path.isdir(args.output):
         os.makedirs(args.output, exist_ok=True)
         output_dir = args.output
-        output_file_path = path.join(output_dir, path.splitext(path.basename(args.input))[0] + ".mp4")
+        output_file_path = path.join(output_dir, path.splitext(path.basename(args.input))[0] + "_vidstab.mp4")
     else:
         os.makedirs(path.dirname(args.output), exist_ok=True)
         output_dir = path.dirname(args.output)
