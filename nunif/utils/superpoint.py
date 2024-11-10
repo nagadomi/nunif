@@ -203,18 +203,20 @@ class SuperPoint(nn.Module):
         return new_ret
 
 
-def find_match_index(kp1, kp2, threshold=0.5):
+def find_match_index(kp1, kp2, threshold=0.5, return_score=False):
     d1 = kp1["descriptors"]
     d2 = kp2["descriptors"]
 
     cosine_similarity = d1 @ d2.t()
     match_index = torch.argmax(cosine_similarity, dim=-1)
     max_similarity = torch.gather(cosine_similarity, dim=1, index=match_index.view(-1, 1)).view(-1)
-    filter_index = max_similarity > 0.5
+    filter_index = max_similarity > threshold
     kp1_index = torch.arange(d1.shape[0], device=d1.device)[filter_index]
     kp2_index = match_index[filter_index]
-
-    return kp1_index, kp2_index
+    if return_score:
+        return kp1_index, kp2_index, max_similarity[filter_index]
+    else:
+        return kp1_index, kp2_index
 
 
 def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_scale_rotation=0.1, sigma=None,
