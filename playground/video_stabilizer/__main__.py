@@ -92,12 +92,13 @@ def main():
     if path.isdir(args.output):
         os.makedirs(args.output, exist_ok=True)
         output_dir = args.output
+        output_file_path = path.join(output_dir, path.splitext(path.basename(args.input))[0] + ".mp4")
     else:
         os.makedirs(path.dirname(args.output), exist_ok=True)
         output_dir = path.dirname(args.output)
+        output_file_path = args.output
 
     keypoint_file_path = path.join(output_dir, path.basename(args.input) + f"{args.max_fps}.keypoints.gz")
-    output_file_path = path.join(output_dir, path.splitext(path.basename(args.input))[0] + ".mp4")
     keypoints = []
 
     def config_callback(stream):
@@ -106,7 +107,7 @@ def main():
             fps = args.max_fps
         return VU.VideoOutputConfig(
             fps=fps,
-            options={"preset": "ultrafast", "crf": "16"}
+            options={"preset": "medium", "crf": "16"}
         )
 
     kp_seam = [None]
