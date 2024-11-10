@@ -240,8 +240,6 @@ def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_sca
     optimizer = torch.optim.Adam(param_groups, betas=(0.5, 0.9))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=n, eta_min=lr_scale_rotation * 1e-3)
 
-    if center is None:
-        center = xy1.mean(dim=0, keepdim=True).detach()
     if not torch.is_tensor(center):
         center = torch.tensor(center, dtype=torch.float32, device=xy1.device)
 
@@ -293,29 +291,29 @@ def apply_rigid_transform(x, shift, scale, angle, center, mode="bilinear", paddi
     # TODO: batch
     assert x.ndim == 3  # CHW
     height, width = x.shape[1:]
-    center_normalized = (torch.tensor(center, device=x.device, dtype=x.dtype) /
-                         torch.tensor((width, height), device=x.device, dtype=x.dtype)) * 2.0 - 1.0
-    shift_normalized = (torch.tensor(shift, device=x.device, dtype=x.dtype) /
-                        torch.tensor((width, height), device=x.device, dtype=x.dtype)) * 2.0
+    center = torch.tensor(center, device=x.device, dtype=x.dtype)
+    shift = torch.tensor(shift, device=x.device, dtype=x.dtype)
     angle = math.radians(angle)
 
     # inverse params
-    shift_normalized = -shift_normalized
+    shift = -shift
     scale = 1.0 / scale
     angle = -angle
 
     # backward warping
-    py, px = torch.meshgrid(torch.linspace(-1, 1, height, device=x.device, dtype=x.dtype),
-                            torch.linspace(-1, 1, width, device=x.device, dtype=x.dtype), indexing="ij")
+    py, px = torch.meshgrid(torch.linspace(0, height - 1, height, device=x.device, dtype=x.dtype),
+                            torch.linspace(0, width - 1, width, device=x.device, dtype=x.dtype), indexing="ij")
 
-    px = px - center_normalized[0]
-    py = py - center_normalized[1]
+    px = px - center[0]
+    py = py - center[1]
     mesh_x = (px * math.cos(angle) - py * math.sin(angle))
     mesh_y = (px * math.sin(angle) + py * math.cos(angle))
 
     grid = torch.stack((mesh_x, mesh_y), 2).contiguous()
     grid = grid * scale
-    grid = grid + (shift_normalized.view(1, 1, -1) + center_normalized.view(1, 1, -1))
+    grid = grid + (shift.view(1, 1, -1) + center.view(1, 1, -1))
+
+    grid = (grid / torch.tensor([width - 1, height - 1], device=x.device, dtype=x.dtype).view(1, 1, -1)) * 2.0 - 1.0
 
     x = F.grid_sample(x.unsqueeze(0), grid.unsqueeze(0), mode="bilinear", padding_mode=padding_mode, align_corners=False)
     x = x[0]
@@ -332,6 +330,7 @@ def _visualize():
     x1 = (IO.read_image("cc0/dog2.jpg") / 255.0)
     x1 = x1[:, :250, :250]
     x2 = TF.pad(TF.resize(TF.rotate(x1, 30), (200, 200)), (25,) * 4)
+    # x2 = TF.rotate(x1, 180)  # This will not result in {scale = 1, rotate = 180}, but {scale = -1, rotate=0}
     # x2 = F.pad(x1, [-25, 25, -5, 5])
 
     x1 = x1.unsqueeze(0).cuda()
@@ -370,8 +369,8 @@ def _visualize():
     time.sleep(1)
 
     # estimate transform
-    # TODO: The shift is slightly out of alignment, but I still can't figure out the cause.
-    shift, scale, angle, center = find_rigid_transform(k1, k2)
+    shift, scale, angle, center = find_rigid_transform(k1, k2, center=[x1.shape[3] // 2, x1.shape[2] // 2])
+    print(shift, scale, angle, center)
     # apply transform
     x3 = apply_rigid_transform(x1.squeeze(0), shift=shift, scale=scale, angle=angle, center=center)
     # show
