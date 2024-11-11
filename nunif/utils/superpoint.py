@@ -285,7 +285,8 @@ def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_sca
 
     shift = (translation.detach() * norm_scale).flatten().tolist()
     scale = scale.detach().item()
-    angle = math.degrees(rotation.detach().item())
+    angle = rotation.detach().item()
+    angle = math.degrees(math.atan2(math.sin(angle), math.cos(angle)))
     center = center.flatten().tolist()
 
     return shift, scale, angle, center
