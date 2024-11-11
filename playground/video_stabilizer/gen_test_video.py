@@ -37,7 +37,12 @@ if __name__ == "__main__":
     parser.add_argument("--input", "-i", type=str, nargs="+", required=True, help="input image path")
     parser.add_argument("--output", "-o", type=str, required=True, help="output path")
     parser.add_argument("--noise-scale", type=float, default=10.0)
+    parser.add_argument("--disable-shift", action="store_true")
+    parser.add_argument("--disable-rotate", action="store_true")
+
     args = parser.parse_args()
+    shift_weight = 0.0 if args.disable_shift else 1.0
+    rotate_weight = 0.0 if args.disable_rotate else 1.0
 
     frames = [load_frame(src) for src in args.input]
     assert all([frame.shape[1] == frames[0].shape[1] and frame.shape[2] == frames[0].shape[2] for frame in frames])
@@ -50,12 +55,12 @@ if __name__ == "__main__":
         output_width=frames[0].shape[2],
         output_height=frames[0].shape[1],
     )
-    noise_x1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.8
-    noise_x2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.2
-    noise_y1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.8
-    noise_y2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.2
-    noise_r1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.1 * 0.4
-    noise_r2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.1 * 0.1
+    noise_x1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.8 * shift_weight
+    noise_x2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.2 * shift_weight
+    noise_y1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.8 * shift_weight
+    noise_y2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.2 * shift_weight
+    noise_r1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.05 * 0.8 * rotate_weight
+    noise_r2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.05 * 0.2 * rotate_weight
 
     gaussian_kernel3 = gen_gaussian_kernel(3, "cpu")
     gaussian_kernel15 = gen_gaussian_kernel(15, "cpu")
