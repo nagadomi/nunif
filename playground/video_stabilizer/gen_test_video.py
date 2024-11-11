@@ -34,24 +34,28 @@ def gen_gaussian_kernel(kernel_size, device):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True, help="input image path")
+    parser.add_argument("--input", "-i", type=str, nargs="+", required=True, help="input image path")
     parser.add_argument("--output", "-o", type=str, required=True, help="output path")
     parser.add_argument("--noise-scale", type=float, default=10.0)
     args = parser.parse_args()
 
-    frame = load_frame(args.input)
+    frames = [load_frame(src) for src in args.input]
+    assert all([frame.shape[1] == frames[0].shape[1] and frame.shape[2] == frames[0].shape[2] for frame in frames])
+
+    BASE_FRAMES = 30 * 5
+    FRAMES = BASE_FRAMES * len(frames)
     config = VU.VideoOutputConfig(
         fps=30,
         options={"preset": "medium", "crf": "20"},
-        output_width=frame.shape[2],
-        output_height=frame.shape[1],
+        output_width=frames[0].shape[2],
+        output_height=frames[0].shape[1],
     )
-    noise_x1 = torch.randn((1, 1, 30 * 10)) * args.noise_scale * 0.8
-    noise_x2 = torch.randn((1, 1, 30 * 10)) * args.noise_scale * 0.2
-    noise_y1 = torch.randn((1, 1, 30 * 10)) * args.noise_scale * 0.8
-    noise_y2 = torch.randn((1, 1, 30 * 10)) * args.noise_scale * 0.2
-    noise_r1 = torch.randn((1, 1, 30 * 10)) * args.noise_scale * 0.1 * 0.4
-    noise_r2 = torch.randn((1, 1, 30 * 10)) * args.noise_scale * 0.1 * 0.1
+    noise_x1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.8
+    noise_x2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.2
+    noise_y1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.8
+    noise_y2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.2
+    noise_r1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.1 * 0.4
+    noise_r2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.1 * 0.1
 
     gaussian_kernel3 = gen_gaussian_kernel(3, "cpu")
     gaussian_kernel15 = gen_gaussian_kernel(15, "cpu")
@@ -61,11 +65,12 @@ if __name__ == "__main__":
     noise_r = (F.conv1d(noise_r1, weight=gaussian_kernel3) + F.conv1d(noise_r2, weight=gaussian_kernel15)).flatten()
 
     def frame_generator():
-        for x, y, r in zip(noise_x, noise_y, noise_r):
+        for i, (x, y, r) in enumerate(zip(noise_x, noise_y, noise_r)):
             x = x.item()
             y = y.item()
             r = r.item()
 
+            frame = frames[i // BASE_FRAMES]
             new_frame = KU.apply_rigid_transform(
                 frame, shift=[x, y], scale=1.0, angle=r,
                 center=[frame.shape[2] // 2, frame.shape[1] // 2]
