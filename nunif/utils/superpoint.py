@@ -203,7 +203,7 @@ class SuperPoint(nn.Module):
         return new_ret
 
 
-def find_match_index(kp1, kp2, threshold=0.5, return_score=False):
+def find_match_index(kp1, kp2, threshold=0.5, return_score=False, return_score_all=False):
     d1 = kp1["descriptors"]
     d2 = kp2["descriptors"]
 
@@ -213,8 +213,11 @@ def find_match_index(kp1, kp2, threshold=0.5, return_score=False):
     filter_index = max_similarity > threshold
     kp1_index = torch.arange(d1.shape[0], device=d1.device)[filter_index]
     kp2_index = match_index[filter_index]
-    if return_score:
-        return kp1_index, kp2_index, max_similarity[filter_index]
+    if return_score or return_score_all:
+        if return_score_all:
+            return kp1_index, kp2_index, max_similarity
+        else:
+            return kp1_index, kp2_index, max_similarity[filter_index]
     else:
         return kp1_index, kp2_index
 
