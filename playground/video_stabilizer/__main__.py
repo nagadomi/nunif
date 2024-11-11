@@ -3,8 +3,9 @@
 # python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/
 # python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/ --debug
 # https://github.com/user-attachments/assets/7cdff090-7293-4054-a265-ca355883f2d6
-# TODO: 1. detect scene change and reset state
-#       2. padding before transform and unpadding after transform
+# TODO: correctly calculate the mean of angle. for example, mean([359, 0, 1]) should be 0.
+#       padding before transform and unpadding after transform
+#       batch processing (find_match_index, find_rigid_transform, apply_rigid_transform)
 import os
 from os import path
 import torch
@@ -72,6 +73,27 @@ def smoothing(x, weight, kernel_size, center_value=0.0):
     return x
 
 
+def calc_scene_weight(mean_match_scores, device=None):
+    # mean_match_scores: mean of best match keypoint's cosine similarity
+    # when score < 0.5, it is highly likely that scene change has occurred
+    # when score < 0.65, scene change possibly has occurred
+    # when score > 0.75, it is probably safe range
+    if torch.is_tensor(mean_match_scores):
+        score = mean_match_scores
+    else:
+        score = torch.tensor(mean_match_scores, dtype=torch.float32, device=device)
+
+    max_score = 0.75
+    min_score = 0.5
+    weight = ((score - min_score) / (max_score - min_score)).clamp(0, 1)
+    weight = weight ** 2
+
+    # score  = [1.0000, 0.9000, 0.8000, 0.7500, 0.7000, 0.6500, 0.6000, 0.5000, 0.4000]
+    # weight = [1.0000, 1.0000, 1.0000, 1.0000, 0.6400, 0.3600, 0.1600, 0.0000, 0.0000]
+
+    return weight
+
+
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input video path")
@@ -98,8 +120,9 @@ def main():
         output_dir = path.dirname(args.output)
         output_file_path = args.output
 
-    keypoint_file_path = path.join(output_dir, path.basename(args.input) + f"{args.max_fps}.keypoints.gz")
-    keypoints = []
+    transforms_file_path = path.join(output_dir, path.basename(args.input) + f"_{args.max_fps}.transforms.gz")
+    score_file_path = path.join(output_dir, path.basename(args.input) + f"_{args.max_fps}.scores.gz")
+    transforms = []
 
     def config_callback(stream):
         fps = VU.get_fps(stream)
@@ -111,7 +134,8 @@ def main():
         )
 
     kp_seam = [None]
-    keypoints = []
+    transforms = []
+    mean_match_scores = []
 
     def keypoint_callback(x, pts):
         x, resize_scale = resize(x, KEYPOINT_PROCESS_SIZE)
@@ -121,32 +145,36 @@ def main():
 
         kp_batch.insert(0, kp_seam[0])
         kp_seam[0] = kp_batch[-1]
-        default_keypoint_rec = ([0.0, 0.0], 1.0, 0.0, [0.0, 0.0], resize_scale)
+        default_keypoint_rec = ([0.0, 0.0], 1.0, 0.0, center, resize_scale)
         for i in range(1, len(kp_batch)):
             if kp_batch[i - 1] is None:
-                keypoints.append(default_keypoint_rec)
+                mean_match_scores.append(0.0)
+                transforms.append(default_keypoint_rec)
                 continue
 
             if kp_batch[i - 1]["keypoints"].shape[0] == 0 or kp_batch[i]["keypoints"].shape[0] == 0:
-                keypoints.append(default_keypoint_rec)
+                mean_match_scores.append(0.0)
+                transforms.append(default_keypoint_rec)
                 continue
 
-            index1, index2 = KU.find_match_index(kp_batch[i - 1], kp_batch[i], threshold=0.5)
+            index1, index2, match_score = KU.find_match_index(kp_batch[i - 1], kp_batch[i], threshold=0.5, return_score_all=True)
+
+            mean_match_scores.append(match_score.mean().item())
             kp1 = kp_batch[i - 1]["keypoints"][index1]
             kp2 = kp_batch[i]["keypoints"][index2]
 
             if kp1.shape[0] == 0:
-                keypoints.append(default_keypoint_rec)
+                transforms.append(default_keypoint_rec)
                 continue
 
-            # plot_keypoints(x[i - 1], kp2).save(path.join(output_dir, f"debug_keypoint_{pts[i - 1]}.png"))
+            # plot_transforms(x[i - 1], kp2).save(path.join(output_dir, f"debug_keypoint_{pts[i - 1]}.png"))
 
             shift, scale, angle, center = KU.find_rigid_transform(kp1, kp2, center=center, sigma=2.0,
                                                                   disable_scale=True)
             # fix input size scale
-            keypoints.append((shift, scale, angle, center, resize_scale))
+            transforms.append((shift, scale, angle, center, resize_scale))
 
-    if args.debug or not path.exists(keypoint_file_path):
+    if args.debug or not path.exists(transforms_file_path):
         keypoint_callback_pool = VU.FrameCallbackPool(
             keypoint_callback,
             require_pts=True,
@@ -157,15 +185,28 @@ def main():
         VU.hook_frame(args.input, keypoint_callback_pool,
                       config_callback=config_callback,
                       title="Tracking")
-        with gzip.open(keypoint_file_path, "wt") as f:
-            f.write(json.dumps(keypoints))
+        with gzip.open(transforms_file_path, "wt") as f:
+            f.write(json.dumps(transforms))
+        with gzip.open(score_file_path, "wt") as f:
+            f.write(json.dumps(mean_match_scores))
 
-    with gzip.open(keypoint_file_path, "rt") as f:
-        keypoints = json.load(f)
+    with gzip.open(transforms_file_path, "rt") as f:
+        transforms = json.load(f)
+    with gzip.open(score_file_path, "rt") as f:
+        mean_match_scores = json.load(f)
 
-    shift_x = torch.tensor([rec[0][0] for rec in keypoints], dtype=torch.float64, device=device)
-    shift_y = torch.tensor([rec[0][1] for rec in keypoints], dtype=torch.float64, device=device)
-    rotate = torch.tensor([rec[2] for rec in keypoints], dtype=torch.float64, device=device)
+    # stabilize
+
+    assert len(transforms) == len(mean_match_scores)
+
+    shift_x = torch.tensor([rec[0][0] for rec in transforms], dtype=torch.float64, device=device)
+    shift_y = torch.tensor([rec[0][1] for rec in transforms], dtype=torch.float64, device=device)
+    rotate = torch.tensor([rec[2] for rec in transforms], dtype=torch.float64, device=device)
+
+    # TODO: fix angle
+    # adaptive_weight = calc_scene_weight(mean_match_scores, device=device)
+    # shift_x = shift_x * adaptive_weight # + 0 * (1 - adaptive_weight)
+    # shift_y = shift_y * adaptive_weight # + 0 * (1 - adaptive_weight)
 
     shift_x = shift_x.cumsum(dim=0).reshape(1, 1, -1)
     shift_y = shift_y.cumsum(dim=0).reshape(1, 1, -1)
@@ -197,14 +238,14 @@ def main():
         if frame is None:
             return None
         i = index[0]
-        if i >= len(keypoints):
+        if i >= len(transforms):
             return None
 
         im = frame.to_image()
         x = TF.to_tensor(im).to(device)
 
-        center = keypoints[i][3]
-        resize_scale = keypoints[i][4]
+        center = transforms[i][3]
+        resize_scale = transforms[i][4]
         z = KU.apply_rigid_transform(
             x,
             shift=[shift_x_fix[i].item() * resize_scale, shift_y_fix[i].item() * resize_scale],
