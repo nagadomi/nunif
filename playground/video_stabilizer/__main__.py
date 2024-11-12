@@ -105,7 +105,7 @@ def video_config_callback(args, fps_hook=None):
             fps_hook(fps)
         return VU.VideoOutputConfig(
             fps=fps,
-            options={"preset": "medium", "crf": "16"}
+            options={"preset": args.preset, "crf": "16"}
         )
     return callback
 
@@ -207,7 +207,6 @@ def pass2(points1, points2, center, resize_scale, args, device):
 
         shift, scale, angle, center = KU.find_rigid_transform(kp1, kp2, center=center, sigma=2.0,
                                                               disable_scale=True)
-        # fix input size scale
         transforms.append((shift, scale, angle, center, resize_scale))
 
     return transforms
@@ -260,33 +259,38 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
 
     index = [0]
 
-    def stabilizer_callback(frame):
-        if frame is None:
-            return None
+    def stabilizer_callback(x):
+        B = x.shape[0]
         i = index[0]
-        if i >= len(transforms):
-            return None
-        x = VU.to_tensor(frame, device=device)
+        index[0] += x.shape[0]
 
+        # assume all values are the same
         center = transforms[i][3]
         resize_scale = transforms[i][4]
-        z = KU.apply_rigid_transform(
-            x,
-            shift=[shift_x_fix[i].item() * resize_scale, shift_y_fix[i].item() * resize_scale],
-            scale=1.0,
-            angle=angle_fix[i].item(),
-            center=[center[0] * resize_scale, center[1] * resize_scale],
-            padding_mode=args.border,
-        )
-        index[0] += 1
+
+        shifts = torch.tensor([[shift_x_fix[i + j].item() * resize_scale,
+                                shift_y_fix[i + j].item() * resize_scale] for j in range(B)],
+                              dtype=x.dtype, device=x.device)
+        centers = torch.tensor([center for _ in range(B)], dtype=x.dtype, device=x.device)
+        angles = torch.tensor([angle_fix[i + j] for j in range(B)],
+                              dtype=x.dtype, device=x.device)
+        scales = torch.ones((B,), dtype=x.dtype, device=x.device)
+
+        z = KU.apply_rigid_transform(x, shifts, scales, angles, centers, padding_mode=args.border)
 
         if args.debug:
-            z = torch.cat([x, z], dim=2)
+            z = torch.cat([x, z], dim=3)
 
-        return VU.to_frame(z)
+        return z
 
+    stabilizer_callback_pool = VU.FrameCallbackPool(
+        stabilizer_callback,
+        batch_size=args.batch_size,
+        device=device,
+        max_workers=0,
+    )
     VU.process_video(args.input, output_file_path,
-                     stabilizer_callback,
+                     stabilizer_callback_pool,
                      config_callback=video_config_callback(args),
                      test_callback=test_callback,
                      title="pass 3/3")
@@ -305,6 +309,10 @@ def main():
     parser.add_argument("--strength", type=float, default=1.0, help="influence 0.0-1.0")
     parser.add_argument("--no-cache", action="store_true", help="do not use first pass cache")
     parser.add_argument("--resolution", type=int, default=320, help="resolution to perform processing")
+    parser.add_argument("--preset", type=str, default="medium",
+                        choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
+                                 "medium", "slow", "slower", "veryslow", "placebo"],
+                        help="encoder preset option for video")
 
     args = parser.parse_args()
     assert 0 <= args.strength <= 1.0 and args.strength
