@@ -274,7 +274,7 @@ def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_sca
 
         if sigma is not None and i > 0:
             loss = F.l1_loss(xy, xy2, reduction="none").mean(dim=1)
-            mean, stdv = torch.std_mean(loss)
+            stdv, mean = torch.std_mean(loss)
             mask = ((loss - mean) / stdv) < sigma
             loss = loss[mask].mean()
             # print(loss.item(), mask.sum() / xy.shape[0])
