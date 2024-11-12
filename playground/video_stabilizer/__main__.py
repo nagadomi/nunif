@@ -116,13 +116,41 @@ def list_chunk(seq, size):
 
 def pass1(args, device):
     keypoint_model = KU.SuperPoint(**SUPERPOINT_CONF).load().to(device)
-    keypoints = []
+    mean_match_scores = []
+    points1 = []
+    points2 = []
+    kp_seam = [None]
+    center = [[0, 0]]
+    resize_scale = [1.0]
 
     def keypoint_callback(x, pts):
         with torch.inference_mode(), torch.autocast(device_type=device.type):
-            x, resize_scale = resize(x, args.resolution)
-            center = [x.shape[3] // 2, x.shape[2] // 2]
-            keypoints.append((pts[0], [keypoint_model.infer(x), center, resize_scale]))
+            x, resize_scale[0] = resize(x, args.resolution)
+            center[0] = [x.shape[3] // 2, x.shape[2] // 2]
+            kp_batch = keypoint_model.infer(x)
+
+        kp_batch.insert(0, kp_seam[0])
+        kp_seam[0] = kp_batch[-1]
+
+        for i in range(1, len(kp_batch)):
+            kp1 = kp_batch[i - 1]
+            kp2 = kp_batch[i]
+            if kp1 is None or (kp1["keypoints"].shape[0] == 0 or kp2["keypoints"].shape[0] == 0):
+                zero_points = torch.zeros((0, 2), dtype=x.dtype, device=device)
+                mean_match_scores.append(0.0)
+                points1.append(zero_points)
+                points2.append(zero_points)
+                continue
+
+            index1, index2, match_score = KU.find_match_index(
+                kp1, kp2,
+                threshold=0.6, return_score_all=True)
+            kp1 = kp1["keypoints"][index1]
+            kp2 = kp2["keypoints"][index2]
+
+            mean_match_scores.append(match_score.mean().item())
+            points1.append(kp1)
+            points2.append(kp2)
 
     fps_value = [0]
 
@@ -134,25 +162,14 @@ def pass1(args, device):
         require_pts=True,
         batch_size=args.batch_size,
         device=device,
-        max_workers=8)
+        max_workers=0,  # must be sequential
+    )
 
     VU.hook_frame(args.input, keypoint_callback_pool,
                   config_callback=video_config_callback(args, fps_hook),
-                  title="pass 1/4")
+                  title="pass 1/3")
 
-    keypoints = sorted(keypoints, key=lambda rec: rec[0])
-    if len(keypoints):
-        center = keypoints[0][1][1]
-        resize_scale = keypoints[0][1][2]
-    else:
-        center = [0, 0]
-        resize_scale = 1.0
-
-    sorted_keypoints = []
-    for pts, value in keypoints:
-        sorted_keypoints += value[0]
-
-    return sorted_keypoints, center, resize_scale, fps_value[0]
+    return points1, points2, mean_match_scores, center[0], resize_scale[0], fps_value[0]
 
 
 def pack_descriptors(batch1, batch2):
@@ -176,54 +193,14 @@ def pack_descriptors(batch1, batch2):
     return torch.stack(fixed_batch1), torch.stack(fixed_batch2)
 
 
-def pass2(keypoints, args, device):
-    if len(keypoints) == 0:
-        return [], [], []
-
-    mean_match_scores = []
-    points1 = []
-    points2 = []
-    zero_points = torch.zeros((0, 2), dtype=keypoints[0]["keypoints"][0].dtype, device=device)
-
-    # add frame 0
-    mean_match_scores.append(0.0)
-    points1.append(zero_points)
-    points2.append(zero_points)
-
-    prev_frames = keypoints[:-1]
-    current_frames = keypoints[1:]
-    for prev_frame, current_frame in tqdm(zip(prev_frames, current_frames),
-                                          total=len(prev_frames), ncols=80, desc="pass 2/4"):
-        kp1 = prev_frame
-        kp2 = current_frame
-
-        if kp1["keypoints"].shape[0] == 0 or kp2["keypoints"].shape[0] == 0:
-            mean_match_scores.append(0.0)
-            points1.append(zero_points)
-            points2.append(zero_points)
-            continue
-
-        index1, index2, match_score = KU.find_match_index(
-            kp1, kp2,
-            threshold=0.6, return_score_all=True)
-        kp1 = kp1["keypoints"][index1]
-        kp2 = kp2["keypoints"][index2]
-
-        mean_match_scores.append(match_score.mean().item())
-        points1.append(kp1)
-        points2.append(kp2)
-
-    return points1, points2, mean_match_scores
-
-
-def pass3(points1, points2, center, resize_scale, args, device):
+def pass2(points1, points2, center, resize_scale, args, device):
     if len(points1) == 0:
         return []
 
     default_keypoint_rec = ([0.0, 0.0], 1.0, 0.0, center, resize_scale)
     transforms = []
 
-    for kp1, kp2 in tqdm(zip(points1, points2), total=len(points1), ncols=80, desc="pass 3/4"):
+    for kp1, kp2 in tqdm(zip(points1, points2), total=len(points1), ncols=80, desc="pass 2/3"):
         if kp1.shape[0] == 0 or kp2.shape[0] == 0:
             transforms.append(default_keypoint_rec)
             continue
@@ -236,7 +213,7 @@ def pass3(points1, points2, center, resize_scale, args, device):
     return transforms
 
 
-def pass4(transforms, mean_match_scores, kernel_size, args, device):
+def pass3(transforms, mean_match_scores, kernel_size, args, device):
     if path.isdir(args.output):
         os.makedirs(args.output, exist_ok=True)
         output_dir = args.output
@@ -312,7 +289,7 @@ def pass4(transforms, mean_match_scores, kernel_size, args, device):
                      stabilizer_callback,
                      config_callback=video_config_callback(args),
                      test_callback=test_callback,
-                     title="pass 4/4")
+                     title="pass 3/3")
 
 
 def main():
@@ -334,24 +311,21 @@ def main():
 
     device = torch.device("cuda")
 
-    # detect keypoints
-    keypoints, center, resize_scale, fps = pass1(args=args, device=device)
+    # detect keypoints and matching
+    points1, points2, mean_match_scores, center, resize_scale, fps = pass1(args=args, device=device)
 
     # select smoothing kernel size
     kernel_size = int(args.smoothing * float(fps))
     if kernel_size % 2 == 0:
         kernel_size = kernel_size + 1
 
-    # match keypoints
-    points1, points2, mean_match_scores = pass2(keypoints, args=args, device=device)
-
     # calculate optical flow (rigid transform)
-    transforms = pass3(points1, points2, center, resize_scale, args=args, device=device)
+    transforms = pass2(points1, points2, center, resize_scale, args=args, device=device)
 
     assert len(transforms) == len(mean_match_scores)
 
     # stabilize
-    pass4(transforms, mean_match_scores, kernel_size, args=args, device=device)
+    pass3(transforms, mean_match_scores, kernel_size, args=args, device=device)
 
 
 if __name__ == "__main__":
