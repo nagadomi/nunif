@@ -223,15 +223,28 @@ def find_match_index(kp1, kp2, threshold=0.5, return_score=False, return_score_a
         return kp1_index, kp2_index
 
 
-def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_scale_rotation=0.1, sigma=None,
+def find_rigid_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1, lr_scale_rotation=0.1, sigma=None,
                          disable_shift=False, disable_scale=False, disable_rotate=False):
-    # TODO: batch
+    if xy1.ndim == 2:
+        batch = False
+        xy1 = xy1.cpu()  # for non-batch case, cpu is faster
+        xy2 = xy2.cpu()
+        xy1 = xy1.unsqueeze(0)
+        xy2 = xy2.unsqueeze(0)
+        if not torch.is_tensor(center):
+            center = torch.tensor(center, dtype=torch.float32, device=xy1.device)
+        center = center.view(1, 1, 2)
+    else:
+        batch = True
+
+    if mask is None:
+        mask = torch.ones_like(xy1, dtype=torch.bool, device=xy1.device)
+
+    B = xy1.shape[0]
     assert torch.is_grad_enabled()
-    xy1 = xy1.cpu()
-    xy2 = xy2.cpu()
-    translation = torch.zeros((1, 2), dtype=torch.float32, device=xy1.device, requires_grad=True)
-    scale = torch.ones((1, 1), dtype=torch.float32, device=xy1.device, requires_grad=True)
-    rotation = torch.zeros((1, 1), dtype=torch.float32, device=xy1.device, requires_grad=True)
+    translation = torch.zeros((B, 1, 2), dtype=torch.float32, device=xy1.device, requires_grad=True)
+    scale = torch.ones((B, 1, 1), dtype=torch.float32, device=xy1.device, requires_grad=True)
+    rotation = torch.zeros((B, 1, 1), dtype=torch.float32, device=xy1.device, requires_grad=True)
     if disable_shift:
         translation.requires_grad_(False)
     if disable_scale:
@@ -244,26 +257,24 @@ def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_sca
         {"params": [scale, rotation], "lr": lr_scale_rotation},
     ]
     optimizer = torch.optim.Adam(param_groups, betas=(0.5, 0.9))
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=n, eta_min=lr_scale_rotation * 1e-3)
-
-    if not torch.is_tensor(center):
-        center = torch.tensor(center, dtype=torch.float32, device=xy1.device)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=iteration, eta_min=lr_scale_rotation * 1e-3)
 
     xy1 = xy1 - center
     xy2 = xy2 - center
-    norm_scale = xy1.abs().max()
+    norm_scale = torch.nan_to_num(xy1).abs().amax(dim=[1, 2]).view(B, 1, 1)
     xy1 = xy1 / norm_scale
     xy2 = xy2 / norm_scale
 
-    for i in range(n):
+    for i in range(iteration):
         optimizer.zero_grad()
         xy = xy1
 
         # rotate
         rcos = rotation.cos()
         rsin = rotation.sin()
-        xy = torch.cat([xy[:, :1] * rcos - xy[:, 1:] * rsin,
-                        xy[:, :1] * rsin + xy[:, 1:] * rcos], dim=1)
+        xy = torch.cat([xy[:, :, :1] * rcos - xy[:, :, 1:] * rsin,
+                        xy[:, :, :1] * rsin + xy[:, :, 1:] * rcos], dim=2)
 
         # scale
         xy = xy * scale
@@ -273,22 +284,35 @@ def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_sca
         xy = xy + translation
 
         if sigma is not None and i > 0:
-            loss = F.l1_loss(xy, xy2, reduction="none").mean(dim=1)
-            stdv, mean = torch.std_mean(loss)
-            mask = ((loss - mean) / stdv) < sigma
-            loss = loss[mask].mean()
-            # print(loss.item(), mask.sum() / xy.shape[0])
+            loss = F.l1_loss(xy, xy2, reduction="none")
+
+            loss_tmp = loss.detach().clone()
+            loss_tmp[torch.logical_not(mask)] = torch.nan
+            mean = loss_tmp.nanmean(dim=[1, 2], keepdim=True)
+            stdv = (loss_tmp - mean).pow(2).nanmean(dim=[1, 2], keepdim=True).sqrt()
+            outlier_mask = ((loss_tmp - mean) / stdv) < sigma
+
+            loss = loss[torch.logical_and(mask, outlier_mask)].mean()
+
+            # print(outlier_mask.sum() / mask.sum())
         else:
-            loss = F.l1_loss(xy, xy2)
+            loss = F.l1_loss(xy[mask], xy2[mask])
         loss.backward()
         optimizer.step()
         scheduler.step()
 
-    shift = (translation.detach() * norm_scale).flatten().tolist()
-    scale = scale.detach().item()
-    angle = rotation.detach().item()
-    angle = math.degrees(math.atan2(math.sin(angle), math.cos(angle)))
-    center = center.flatten().tolist()
+    if batch:
+        shift = (translation.detach() * norm_scale).reshape(B, 2)
+        scale = scale.detach().reshape(B, 1)
+        angle = rotation.detach().reshape(B, 1)
+        angle = torch.atan2(angle.sin(), angle.cos()).rad2deg()
+        center = center.detach().reshape(B, 2)
+    else:
+        shift = (translation.detach() * norm_scale).flatten().tolist()
+        scale = scale.detach().item()
+        angle = rotation.detach().item()
+        angle = math.degrees(math.atan2(math.sin(angle), math.cos(angle)))
+        center = center.detach().flatten().tolist()
 
     return shift, scale, angle, center
 
