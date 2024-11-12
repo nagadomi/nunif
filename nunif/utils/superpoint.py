@@ -145,7 +145,7 @@ class SuperPoint(nn.Module):
             idxs = torch.where(scores > self.conf.detection_threshold)
 
         # Convert (i, j) to (x, y)
-        keypoints_all = torch.stack(idxs[-2:], dim=-1).flip(1).float()
+        keypoints_all = torch.stack(idxs[-2:], dim=-1).flip(1).to(scores.dtype)
         scores_all = scores[idxs]
 
         keypoints = []
@@ -203,6 +203,7 @@ class SuperPoint(nn.Module):
         return new_ret
 
 
+@torch.inference_mode()
 def find_match_index(kp1, kp2, threshold=0.5, return_score=False, return_score_all=False):
     d1 = kp1["descriptors"]
     d2 = kp2["descriptors"]
