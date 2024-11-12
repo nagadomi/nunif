@@ -295,37 +295,53 @@ def find_rigid_transform(xy1, xy2, center=None, n=50, lr_translation=0.1, lr_sca
 
 @torch.inference_mode()
 def apply_rigid_transform(x, shift, scale, angle, center, mode="bilinear", padding_mode="border"):
-    # TODO: batch
-    assert x.ndim == 3  # CHW
-    height, width = x.shape[1:]
-    center = torch.tensor(center, device=x.device, dtype=x.dtype)
-    shift = torch.tensor(shift, device=x.device, dtype=x.dtype)
-    angle = math.radians(angle)
+    if x.ndim == 3:
+        x = x.unsqueeze(0)
+        center = torch.tensor(center, dtype=x.dtype, device=x.device)
+        shift = torch.tensor(shift, dtype=x.dtype, device=x.device)
+        scale = torch.tensor(scale, dtype=x.dtype, device=x.device)
+        angle = torch.tensor(angle, dtype=x.dtype, device=x.device)
+        batch = False
+    else:
+        batch = True
+        assert x.ndim == 4
+        assert x.shape[0] == shift.shape[0] == scale.shape[0] == angle.shape[0] == center.shape[0]
+
+    B = x.shape[0]
+    height, width = x.shape[2:]
+    center = center.reshape(B, 1, 1, -1)
+    axis_scale = torch.tensor([width - 1, height - 1], device=x.device, dtype=x.dtype).view(1, 1, 1, -1)
 
     # inverse params
-    shift = -shift
-    scale = 1.0 / scale
-    angle = -angle
+    shift = shift.neg().reshape(B, 1, 1, -1)
+    scale = scale.reciprocal().view(B, 1, 1, 1)
+    angle = angle.deg2rad().neg().reshape(B, 1, 1, 1)
 
     # backward warping
     py, px = torch.meshgrid(torch.linspace(0, height - 1, height, device=x.device, dtype=x.dtype),
                             torch.linspace(0, width - 1, width, device=x.device, dtype=x.dtype), indexing="ij")
 
-    px = px - center[0]
-    py = py - center[1]
-    mesh_x = (px * math.cos(angle) - py * math.sin(angle))
-    mesh_y = (px * math.sin(angle) + py * math.cos(angle))
+    px = px.reshape(1, height, width, 1).expand(B, height, width, 1)
+    py = py.reshape(1, height, width, 1).expand(B, height, width, 1)
+    px = px - center[:, :, :, 0:1]
+    py = py - center[:, :, :, 1:2]
 
-    grid = torch.stack((mesh_x, mesh_y), 2).contiguous()
+    asin = angle.sin()
+    acos = angle.cos()
+    mesh_x = (px * acos - py * asin)
+    mesh_y = (px * asin + py * acos)
+
+    grid = torch.cat((mesh_x, mesh_y), dim=3)
     grid = grid * scale
-    grid = grid + (shift.view(1, 1, -1) + center.view(1, 1, -1))
+    grid = grid + (shift + center)
+    grid = (grid / (axis_scale * 0.5)) - 1.0
 
-    grid = (grid / torch.tensor([width - 1, height - 1], device=x.device, dtype=x.dtype).view(1, 1, -1)) * 2.0 - 1.0
+    x = F.grid_sample(x, grid, mode="bilinear", padding_mode=padding_mode, align_corners=False)
 
-    x = F.grid_sample(x.unsqueeze(0), grid.unsqueeze(0), mode="bilinear", padding_mode=padding_mode, align_corners=False)
-    x = x[0]
-
-    return x
+    if batch:
+        return x
+    else:
+        return x[0]
 
 
 def _visualize():
