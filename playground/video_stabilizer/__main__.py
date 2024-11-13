@@ -278,6 +278,10 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
             return None
         im = frame.to_image()
         x = TF.to_tensor(im).to(device)
+
+        if args.border == "expand":
+            padding = int(max(x.shape[1], x.shape[2]) * args.padding_ratio)
+            x = F.pad(x, (padding,) * 4, mode="constant", value=0)
         if args.debug:
             z = torch.cat([x, x], dim=2)
             return VU.to_frame(z)
@@ -297,10 +301,15 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
         resize_scale = transforms[i][4]
 
         if args.border == "buffer":
-            padding = int(max(x.shape[2], x.shape[3]) * args.buffer_padding_ratio)
+            padding = int(max(x.shape[2], x.shape[3]) * args.padding_ratio)
             x_input = F.pad(x, (padding,) * 4, mode="constant", value=torch.nan)
             center = [center[0] + padding, center[1] + padding]
             padding_mode = "reflection"
+        elif args.border == "expand":
+            padding = int(max(x.shape[2], x.shape[3]) * args.padding_ratio)
+            x_input = F.pad(x, (padding,) * 4, mode="constant", value=0)
+            center = [center[0] + padding, center[1] + padding]
+            padding_mode = "zeros"
         else:
             padding = 0
             x_input = x
@@ -332,8 +341,9 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
             z = z.clamp(0, 1)
 
         if args.debug:
+            if args.border == "expand":
+                x = x_input
             z = torch.cat([x, z], dim=3)
-
 
         return z
 
@@ -365,10 +375,10 @@ def main():
     parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
     parser.add_argument("--filter", type=str, default="savgol", choices=["gaussian", "savgol"], help="smoothing filter")
 
-    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer"],
+    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand"],
                         default="zeros", help="border padding mode")
-    parser.add_argument("--buffer-padding-ratio", type=float, default=0.1,
-                        help="pre-padding ratio for --border=buffer")
+    parser.add_argument("--padding-ratio", type=float, default=0.1,
+                        help="pre-padding ratio for --border=buffer|expand")
     parser.add_argument("--buffer-decay", type=float, default=0.75,
                         help="buffer decay factor for --border=buffer")
 
