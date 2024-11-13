@@ -1,9 +1,9 @@
 # wip video stabilizer
 #
 # python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/
-# python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/ --debug
-# https://github.com/user-attachments/assets/7cdff090-7293-4054-a265-ca355883f2d6
-# TODO: padding before transform and unpadding after transform
+# python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/ --border buffer --debug
+# sample: https://github.com/user-attachments/assets/abded633-58ec-42d8-9510-0c7adf043326
+# TODO: smoothing with current velocity
 import os
 from os import path
 import torch
@@ -148,7 +148,7 @@ def pass1(args, device):
             kp1 = kp_batch[i - 1]
             kp2 = kp_batch[i]
             if kp1 is None or (kp1["keypoints"].shape[0] == 0 or kp2["keypoints"].shape[0] == 0):
-                zero_points = torch.zeros((0, 2), dtype=x.dtype, device=device)
+                zero_points = torch.zeros((0, 2), dtype=x.dtype, device=torch.device("cpu"))
                 mean_match_scores.append(0.0)
                 points1.append(zero_points)
                 points2.append(zero_points)
@@ -161,8 +161,8 @@ def pass1(args, device):
             kp2 = kp2["keypoints"][index2]
 
             mean_match_scores.append(match_score.mean().item())
-            points1.append(kp1)
-            points2.append(kp2)
+            points1.append(kp1.cpu())
+            points2.append(kp2.cpu())
 
     fps_value = [0]
 
@@ -217,6 +217,7 @@ def pass2(points1, points2, center, resize_scale, args, device):
 
     pbar = tqdm(total=len(points1), ncols=80, desc="pass 2/3")
     for kp1, kp2, mask in zip(points1.split(batch_size), points2.split(batch_size), masks.split(batch_size)):
+        kp1, kp2, mask = kp1.to(device), kp2.to(device), mask.to(device)
         center_batch = torch.tensor(center, dtype=torch.float32, device=device).view(1, 2).expand(kp1.shape[0], 1, 2)
         shift, scale, angle, center_batch = KU.find_rigid_transform(
             kp1, kp2, center=center_batch, mask=mask,
@@ -245,10 +246,10 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
     # limit angle
     angle = angle.clamp(-ANGLE_MAX_HARD, ANGLE_MAX_HARD)
 
-    weight = calc_scene_weight(mean_match_scores, device=device) * args.strength
-    shift_x = shift_x * weight  # + 0 * (1 - weight)
-    shift_y = shift_y * weight
-    angle = angle * weight
+    scene_weight = calc_scene_weight(mean_match_scores, device=device) * args.strength
+    shift_x = shift_x * scene_weight  # + 0 * (1 - scene_weight)
+    shift_y = shift_y * scene_weight
+    angle = angle * scene_weight
 
     shift_x = shift_x.cumsum(dim=0).reshape(1, 1, -1)
     shift_y = shift_y.cumsum(dim=0).reshape(1, 1, -1)
@@ -275,6 +276,7 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
             return VU.to_frame(x)
 
     index = [0]
+    buffer = [None]
 
     def stabilizer_callback(x):
         B = x.shape[0]
@@ -285,6 +287,16 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
         center = transforms[i][3]
         resize_scale = transforms[i][4]
 
+        if args.border == "buffer":
+            padding = int(max(x.shape[2], x.shape[3]) * args.buffer_padding_ratio)
+            x_input = F.pad(x, (padding,) * 4, mode="constant", value=torch.nan)
+            center = [center[0] + padding, center[1] + padding]
+            padding_mode = "reflection"
+        else:
+            padding = 0
+            x_input = x
+            padding_mode = args.border
+
         shifts = torch.tensor([[shift_x_fix[i + j].item() * resize_scale,
                                 shift_y_fix[i + j].item() * resize_scale] for j in range(B)],
                               dtype=x.dtype, device=x.device)
@@ -293,10 +305,24 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
                               dtype=x.dtype, device=x.device)
         scales = torch.ones((B,), dtype=x.dtype, device=x.device)
 
-        z = KU.apply_rigid_transform(x, shifts, scales, angles, centers, padding_mode=args.border)
+        z = KU.apply_rigid_transform(x_input, shifts, scales, angles, centers, padding_mode=padding_mode)
+
+        if args.border == "buffer":
+            z = F.pad(z, (-padding,) * 4)
+            # Update EMA frame buffer
+            for j in range(z.shape[0]):
+                if buffer[0] is None or scene_weight[i + j] < 0.01:
+                    # reset buffer
+                    buffer[0] = x[j].clone()
+                mask = torch.isnan(z[j])
+                mask_not = torch.logical_not(mask)
+                buffer[0][mask_not] = buffer[0][mask_not] * args.buffer_decay + z[j][mask_not] * (1.0 - args.buffer_decay)
+                z[j][mask] = buffer[0][mask]
 
         if args.debug:
             z = torch.cat([x, z], dim=3)
+
+        z.clamp_(0, 1)
 
         return z
 
@@ -326,8 +352,14 @@ def main():
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="batch size")
     parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
-    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection"],
+
+    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer"],
                         default="zeros", help="border padding mode")
+    parser.add_argument("--buffer-padding-ratio", type=float, default=0.1,
+                        help="pre-padding ratio for --border=buffer")
+    parser.add_argument("--buffer-decay", type=float, default=0.75,
+                        help="buffer decay factor for --border=buffer")
+
     parser.add_argument("--debug", action="store_true", help="debug output original+stabilized")
     parser.add_argument("--strength", type=float, default=1.0, help="influence 0.0-1.0")
     parser.add_argument("--resolution", type=int, default=320, help="resolution to perform processing")
@@ -340,7 +372,6 @@ def main():
                         help="encoder preset option for video")
     parser.add_argument("--crf", type=int, default=16,
                         help="constant quality value for video. smaller value is higher quality")
-
 
     args = parser.parse_args()
     assert 0 <= args.strength <= 1.0 and args.strength
