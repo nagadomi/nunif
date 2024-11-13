@@ -3,7 +3,6 @@
 # python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/
 # python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/ --border buffer --debug
 # sample: https://github.com/user-attachments/assets/abded633-58ec-42d8-9510-0c7adf043326
-# TODO: smoothing with current velocity
 import os
 from os import path
 import torch
@@ -15,6 +14,7 @@ import nunif.utils.video as VU
 import nunif.utils.superpoint as KU
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from tqdm import tqdm
+import scipy
 
 
 SUPERPOINT_CONF = {
@@ -65,6 +65,11 @@ def gen_gaussian_kernel(kernel_size, device):
     return gaussian_kernel.reshape(1, 1, -1)
 
 
+def gen_savgol_kernel(kernel_size, device):
+    kernel = scipy.signal.savgol_coeffs(kernel_size, polyorder=2)
+    return torch.from_numpy(kernel).to(device).reshape(1, 1, -1)
+
+
 def replication_pad1d_naive(x, padding, detach=False):
     assert x.ndim == 3 and len(padding) == 4
     left, right, top, bottom = padding
@@ -82,7 +87,7 @@ def replication_pad1d_naive(x, padding, detach=False):
     return x.contiguous()
 
 
-def smoothing(x, weight, center_value=0.0):
+def smoothing(x, weight):
     kernel_size = weight.shape[2]
     padding = (kernel_size - 1) // 2
     x = replication_pad1d_naive(x, (padding, padding, 0, 0))
@@ -255,10 +260,14 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
     shift_y = shift_y.cumsum(dim=0).reshape(1, 1, -1)
     angle = angle.cumsum(dim=0).reshape(1, 1, -1)
 
-    gaussian_kernel = gen_gaussian_kernel(kernel_size, device)
-    shift_x_smooth = smoothing(shift_x, gaussian_kernel)
-    shift_y_smooth = smoothing(shift_y, gaussian_kernel)
-    angle_smooth = smoothing(angle, gaussian_kernel)
+    if args.filter == "gaussian":
+        kernel = gen_gaussian_kernel(kernel_size, device)
+    else:
+        kernel = gen_savgol_kernel(kernel_size, device)
+
+    shift_x_smooth = smoothing(shift_x, kernel)
+    shift_y_smooth = smoothing(shift_y, kernel)
+    angle_smooth = smoothing(angle, kernel)
 
     shift_x_fix = (shift_x_smooth - shift_x).flatten()
     shift_y_fix = (shift_y_smooth - shift_y).flatten()
@@ -318,11 +327,13 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
                 mask_not = torch.logical_not(mask)
                 buffer[0][mask_not] = buffer[0][mask_not] * args.buffer_decay + z[j][mask_not] * (1.0 - args.buffer_decay)
                 z[j][mask] = buffer[0][mask]
+            z.clamp_(0, 1)
+        else:
+            z = z.clamp(0, 1)
 
         if args.debug:
             z = torch.cat([x, z], dim=3)
 
-        z.clamp_(0, 1)
 
         return z
 
@@ -352,6 +363,7 @@ def main():
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="batch size")
     parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
+    parser.add_argument("--filter", type=str, default="savgol", choices=["gaussian", "savgol"], help="smoothing filter")
 
     parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer"],
                         default="zeros", help="border padding mode")
