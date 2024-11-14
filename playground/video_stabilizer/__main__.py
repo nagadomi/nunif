@@ -282,6 +282,10 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
         if args.border == "expand":
             padding = int(max(x.shape[1], x.shape[2]) * args.padding)
             x = F.pad(x, (padding,) * 4, mode="constant", value=0)
+        elif args.border == "crop":
+            padding = int(max(x.shape[1], x.shape[2]) * args.padding)
+            x = F.pad(x, (-padding,) * 4)
+
         if args.debug:
             z = torch.cat([x, x], dim=2)
             return VU.to_frame(z)
@@ -310,6 +314,10 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
             x_input = F.pad(x, (padding,) * 4, mode="constant", value=0)
             center = [center[0] + padding, center[1] + padding]
             padding_mode = "zeros"
+        elif args.border == "crop":
+            padding = 0
+            x_input = x
+            padding_mode = "reflection"
         else:
             padding = 0
             x_input = x
@@ -337,12 +345,17 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
                 buffer[0][mask_not] = buffer[0][mask_not] * args.buffer_decay + z[j][mask_not] * (1.0 - args.buffer_decay)
                 z[j][mask] = buffer[0][mask]
             z.clamp_(0, 1)
+        elif args.border == "crop":
+            padding = int(max(z.shape[2], z.shape[3]) * args.padding)
+            z = F.pad(z, (-padding,) * 4).clamp_(0, 1)
         else:
             z = z.clamp(0, 1)
 
         if args.debug:
             if args.border == "expand":
                 x = x_input
+            elif args.border == "crop":
+                x = F.pad(x_input, (-padding,) * 4)
             z = torch.cat([x, z], dim=3)
 
         return z
@@ -375,10 +388,10 @@ def main():
     parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
     parser.add_argument("--filter", type=str, default="savgol", choices=["gaussian", "savgol"], help="smoothing filter")
 
-    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand"],
+    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand", "crop"],
                         default="zeros", help="border padding mode")
     parser.add_argument("--padding", type=float, default=0.05,
-                        help="pre-padding ratio for --border=buffer|expand")
+                        help="pre-padding ratio for --border=buffer|expand|crop")
     parser.add_argument("--buffer-decay", type=float, default=0.75,
                         help="buffer decay factor for --border=buffer")
 
