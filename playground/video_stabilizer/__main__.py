@@ -70,6 +70,15 @@ def gen_savgol_kernel(kernel_size, device):
     return torch.from_numpy(kernel).to(device).reshape(1, 1, -1)
 
 
+def gen_smoothing_kernel(name, kernel_size, device):
+    if name == "gaussian":
+        return gen_gaussian_kernel(kernel_size, device)
+    elif name == "savgol":
+        return gen_savgol_kernel(kernel_size, device)
+    else:
+        raise NotImplementedError(f"--filter {name}")
+
+
 def replication_pad1d_naive(x, padding, detach=False):
     assert x.ndim == 3 and len(padding) == 4
     left, right, top, bottom = padding
@@ -235,7 +244,7 @@ def pass2(points1, points2, center, resize_scale, args, device):
     return transforms
 
 
-def pass3(transforms, mean_match_scores, kernel_size, args, device):
+def pass3(transforms, mean_match_scores, fps, args, device):
     if path.isdir(args.output):
         os.makedirs(args.output, exist_ok=True)
         output_dir = args.output
@@ -260,14 +269,18 @@ def pass3(transforms, mean_match_scores, kernel_size, args, device):
     shift_y = shift_y.cumsum(dim=0).reshape(1, 1, -1)
     angle = angle.cumsum(dim=0).reshape(1, 1, -1)
 
-    if args.filter == "gaussian":
-        kernel = gen_gaussian_kernel(kernel_size, device)
-    else:
-        kernel = gen_savgol_kernel(kernel_size, device)
-
-    shift_x_smooth = smoothing(shift_x, kernel)
-    shift_y_smooth = smoothing(shift_y, kernel)
-    angle_smooth = smoothing(angle, kernel)
+    # smoothing
+    shift_x_smooth = shift_x
+    shift_y_smooth = shift_y
+    angle_smooth = angle
+    for kernel_sec in args.smoothing:
+        kernel_size = int(kernel_sec * float(fps))
+        if kernel_size % 2 == 0:
+            kernel_size = kernel_size + 1
+        kernel = gen_smoothing_kernel(name=args.filter, kernel_size=kernel_size, device=device)
+        shift_x_smooth = smoothing(shift_x_smooth, kernel)
+        shift_y_smooth = smoothing(shift_y_smooth, kernel)
+        angle_smooth = smoothing(angle_smooth, kernel)
 
     shift_x_fix = (shift_x_smooth - shift_x).flatten()
     shift_y_fix = (shift_y_smooth - shift_y).flatten()
@@ -385,7 +398,7 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="batch size")
-    parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
+    parser.add_argument("--smoothing", type=float, nargs="+", default=[2.0], help="seconds to smoothing")
     parser.add_argument("--filter", type=str, default="savgol", choices=["gaussian", "savgol"], help="smoothing filter")
 
     parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand", "crop"],
@@ -416,18 +429,13 @@ def main():
     # detect keypoints and matching
     points1, points2, mean_match_scores, center, resize_scale, fps = pass1(args=args, device=device)
 
-    # select smoothing kernel size
-    kernel_size = int(args.smoothing * float(fps))
-    if kernel_size % 2 == 0:
-        kernel_size = kernel_size + 1
-
     # calculate optical flow (rigid transform)
     transforms = pass2(points1, points2, center, resize_scale, args=args, device=device)
 
     assert len(transforms) == len(mean_match_scores)
 
     # stabilize
-    pass3(transforms, mean_match_scores, kernel_size, args=args, device=device)
+    pass3(transforms, mean_match_scores, fps=fps, args=args, device=device)
 
 
 if __name__ == "__main__":
