@@ -223,7 +223,15 @@ def find_match_index(kp1, kp2, threshold=0.5, return_score=False, return_score_a
         return kp1_index, kp2_index
 
 
-def find_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1, lr_scale_rotation=0.1, sigma=None,
+def cosine_annealing(min_v, max_v, t, max_t):
+    if max_t > t:
+        return min_v + 0.5 * (max_v - min_v) * (1.0 + math.cos((t / max_t) * math.pi))
+    else:
+        return min_v
+
+
+def find_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1, lr_scale_rotation=0.1,
+                   sigma=None, sigma_min=None, sigma_max=2.0,
                    disable_shift=False, disable_scale=False, disable_rotate=False):
     if xy1.ndim == 2:
         batch = False
@@ -283,7 +291,9 @@ def find_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1
         xy = xy
         xy = xy + translation
 
-        if sigma is not None and i > 0:
+        if (sigma_min is not None or sigma is not None) and i > 0:
+            if sigma_min is not None:
+                sigma = cosine_annealing(sigma_min, sigma_max, i, iteration)
             loss = F.l1_loss(xy, xy2, reduction="none")
 
             loss_tmp = loss.detach().clone()
