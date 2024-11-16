@@ -76,7 +76,7 @@ if __name__ == "__main__":
             r = r.item()
 
             frame = frames[i // BASE_FRAMES]
-            new_frame = KU.apply_rigid_transform(
+            new_frame = KU.apply_transform(
                 frame, shift=[x, y], scale=1.0, angle=r,
                 center=[frame.shape[2] // 2, frame.shape[1] // 2]
                 # when the camera is held in the right hand

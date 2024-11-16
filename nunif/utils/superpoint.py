@@ -223,8 +223,8 @@ def find_match_index(kp1, kp2, threshold=0.5, return_score=False, return_score_a
         return kp1_index, kp2_index
 
 
-def find_rigid_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1, lr_scale_rotation=0.1, sigma=None,
-                         disable_shift=False, disable_scale=False, disable_rotate=False):
+def find_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1, lr_scale_rotation=0.1, sigma=None,
+                   disable_shift=False, disable_scale=False, disable_rotate=False):
     if xy1.ndim == 2:
         batch = False
         xy1 = xy1.cpu()  # for non-batch case, cpu is faster
@@ -318,7 +318,7 @@ def find_rigid_transform(xy1, xy2, center, mask=None, iteration=50, lr_translati
 
 
 @torch.inference_mode()
-def apply_rigid_transform(x, shift, scale, angle, center, mode="bilinear", padding_mode="border"):
+def apply_transform(x, shift, scale, angle, center, mode="bilinear", padding_mode="border"):
     if x.ndim == 3:
         x = x.unsqueeze(0)
         center = torch.tensor(center, dtype=x.dtype, device=x.device)
@@ -416,10 +416,10 @@ def _visualize():
     time.sleep(1)
 
     # estimate transform
-    shift, scale, angle, center = find_rigid_transform(k1, k2, center=[x1.shape[3] // 2, x1.shape[2] // 2])
+    shift, scale, angle, center = find_transform(k1, k2, center=[x1.shape[3] // 2, x1.shape[2] // 2])
     print(shift, scale, angle, center)
     # apply transform
-    x3 = apply_rigid_transform(x1.squeeze(0), shift=shift, scale=scale, angle=angle, center=center)
+    x3 = apply_transform(x1.squeeze(0), shift=shift, scale=scale, angle=angle, center=center)
     # show
     TF.to_pil_image(x2.squeeze(0)).show()
     time.sleep(1)

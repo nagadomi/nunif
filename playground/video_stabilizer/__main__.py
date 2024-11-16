@@ -233,7 +233,7 @@ def pass2(points1, points2, center, resize_scale, args, device):
     for kp1, kp2, mask in zip(points1.split(batch_size), points2.split(batch_size), masks.split(batch_size)):
         kp1, kp2, mask = kp1.to(device), kp2.to(device), mask.to(device)
         center_batch = torch.tensor(center, dtype=torch.float32, device=device).view(1, 2).expand(kp1.shape[0], 1, 2)
-        shift, scale, angle, center_batch = KU.find_rigid_transform(
+        shift, scale, angle, center_batch = KU.find_transform(
             kp1, kp2, center=center_batch, mask=mask,
             iteration=args.iteration, sigma=2.0,
             disable_scale=True)
@@ -344,7 +344,7 @@ def pass3(transforms, mean_match_scores, fps, args, device):
                               dtype=x.dtype, device=x.device)
         scales = torch.ones((B,), dtype=x.dtype, device=x.device)
 
-        z = KU.apply_rigid_transform(x_input, shifts, scales, angles, centers, padding_mode=padding_mode)
+        z = KU.apply_transform(x_input, shifts, scales, angles, centers, padding_mode=padding_mode)
 
         if args.border == "buffer":
             z = F.pad(z, (-padding,) * 4)
@@ -429,7 +429,7 @@ def main():
     # detect keypoints and matching
     points1, points2, mean_match_scores, center, resize_scale, fps = pass1(args=args, device=device)
 
-    # calculate optical flow (rigid transform)
+    # calculate optical flow (transform)
     transforms = pass2(points1, points2, center, resize_scale, args=args, device=device)
 
     assert len(transforms) == len(mean_match_scores)
