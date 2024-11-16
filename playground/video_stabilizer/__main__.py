@@ -316,6 +316,7 @@ def pass3(transforms, mean_match_scores, fps, args, device):
         # assume all values are the same
         center = transforms[i][3]
         resize_scale = transforms[i][4]
+        center = [center[0] * resize_scale, center[1] * resize_scale]
 
         if args.border == "buffer":
             padding = int(max(x.shape[2], x.shape[3]) * args.padding)
