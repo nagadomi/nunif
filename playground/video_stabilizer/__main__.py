@@ -170,7 +170,7 @@ def pass1(args, device):
 
             index1, index2, match_score = KU.find_match_index(
                 kp1, kp2,
-                threshold=0.3, return_score_all=True)
+                threshold=0.5, return_score_all=True)
             kp1 = kp1["keypoints"][index1]
             kp2 = kp2["keypoints"][index2]
 
@@ -235,7 +235,7 @@ def pass2(points1, points2, center, resize_scale, args, device):
         center_batch = torch.tensor(center, dtype=torch.float32, device=device).view(1, 2).expand(kp1.shape[0], 1, 2)
         shift, scale, angle, center_batch = KU.find_transform(
             kp1, kp2, center=center_batch, mask=mask,
-            iteration=args.iteration, sigma_min=0.0, sigma_max=2.0,
+            iteration=args.iteration, sigma=2.0,
             disable_scale=True)
         for i in range(kp1.shape[0]):
             transforms.append((shift[i].tolist(), scale[i].item(), angle[i].item(), center, resize_scale))
@@ -413,7 +413,7 @@ def main():
     parser.add_argument("--strength", type=float, default=1.0, help="influence 0.0-1.0")
     parser.add_argument("--resolution", type=int, default=320, help="resolution to perform processing")
     parser.add_argument("--iteration", type=int, default=50, help="iteration count of frame transform optimization")
-    parser.add_argument("--max-fps", type=float, default=30.0,
+    parser.add_argument("--max-fps", type=float, default=60.0,
                         help="max framerate for video. output fps = min(fps, --max-fps)")
     parser.add_argument("--preset", type=str, default="medium",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
