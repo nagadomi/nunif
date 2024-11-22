@@ -29,3 +29,4 @@ numba # only for iww3 sbs training
 av >= 12.2.0
 rembg # for --remove-bg
 truststore
+pillow_heif
