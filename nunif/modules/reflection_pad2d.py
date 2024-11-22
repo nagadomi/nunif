@@ -38,9 +38,9 @@ def reflection_pad2d_naive(x, padding: tuple[int, int, int, int], detach: bool =
 
 def _loop_step(pad: int, base: int) -> tuple[int, int]:
     remain = 0
-    if pad > base:
-        remain = pad - base
-        pad = base
+    if pad > (base - 1):
+        remain = pad - (base - 1)
+        pad = (base - 1)
     return pad, remain
 
 
@@ -126,7 +126,7 @@ def _test_grad():
     print(x.grad)
 
 
-def _test_loop():
+def _vis_loop():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
@@ -137,8 +137,41 @@ def _test_loop():
     TF.to_pil_image(x[0]).show()
 
 
+def _vis_loop2():
+    import torchvision.transforms.functional as TF
+    import time
+
+    x = torch.zeros((1, 1, 4, 4))
+    x[:, :, :, 0] = 1.0
+    x[:, :, :, 2] = 1.0
+
+    x = reflection_pad2d_loop(x, (10,) * 4)
+    TF.to_pil_image(x[0]).show()
+    time.sleep(2)
+
+    x = torch.zeros((1, 1, 5, 5))
+    x[:, :, :, 0] = 1.0
+    x[:, :, :, 2] = 1.0
+    x[:, :, :, 4] = 1.0
+
+    x = reflection_pad2d_loop(x, (10,) * 4)
+    TF.to_pil_image(x[0]).show()
+
+
+def _test_loop():
+    import torch.nn.functional as F
+    for i in range(20):
+        padding = (i, i, i, i)
+        x = torch.rand((4, 3, 8, 8)).cuda()
+        y1 = reflection_pad2d_loop(x, padding)
+        y2 = F.pad(x, padding, mode="replicate")
+        assert y1.shape == y2.shape
+
+
 if __name__ == "__main__":
-    # _test()
+    _test()
     # _test_grad()
     # _test_vis()
-    _test_loop()
+    # _vis_loop()
+    # _vis_loop2()
+    # _test_loop()
