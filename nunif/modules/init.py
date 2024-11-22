@@ -41,4 +41,5 @@ def icnr_init(m, scale_factor):
             weight = F.pixel_unshuffle(weight, scale_factor)
             weight = weight.permute(1, 0, 2, 3)
         m.weight.data.copy_(weight)
-        nn.init.constant_(m.bias, 0)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)

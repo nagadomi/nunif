@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.utils.ui import HiddenPrints, TorchHubDir
-from nunif.device import create_device, autocast, device_is_mps # noqa
+from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
 from nunif.models.data_parallel import DeviceSwitchInference
 from .dilation import dilate_edge
 
@@ -147,10 +147,8 @@ def batch_preprocess(x, lower_bound=392):
     if new_w < lower_bound:
         new_w = lower_bound
 
-    # TODO: 'aten::_upsample_bilinear2d_aa.out' is not currently implemented for the MPS device
-    # This did not cause any performance problems, so I decided not to handle it.
-    # antialias = not device_is_mps(x.device)
-    antialias = True
+    # TODO: 'aten::_upsample_bilinear2d_aa.out' is not currently implemented for mps/xpu device
+    antialias = not (device_is_mps(x.device) or device_is_xpu(x.device))
     x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False, antialias=antialias)
     x.clamp_(0, 1)
 

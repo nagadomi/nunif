@@ -587,7 +587,7 @@ class Waifu2xTrainer(Trainer):
                 worker_init_fn=dataset.worker_init,
                 shuffle=False,
                 num_workers=self.args.num_workers,
-                drop_last=False,
+                drop_last=bool(self.args.drop_last),
                 **dataloader_extra_options)
             return dataloader
 
@@ -716,6 +716,9 @@ def register(subparsers, default_parser):
                         help="input size")
     parser.add_argument("--num-samples", type=int, default=50000,
                         help="number of samples for each epoch")
+    parser.add_argument("--drop-last", action="store_true",
+                        help="force drop_last=True for DataLoader")
+
     parser.add_argument("--loss", type=str,
                         choices=list(LOSS_FUNCTIONS.keys()),
                         help="loss function")
@@ -822,6 +825,7 @@ def register(subparsers, default_parser):
         optimizer="adamw",
         learning_rate=0.0002,
         scheduler="cosine",
+        learning_rate_cosine_min=1e-8,
         learning_rate_cycles=5,
         learning_rate_decay=0.995,
         learning_rate_decay_step=[1],
