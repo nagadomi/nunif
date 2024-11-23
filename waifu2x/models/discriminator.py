@@ -8,8 +8,15 @@ from nunif.modules.dinov2 import DINOEmbedding, dinov2_normalize, dinov2_pad, DI
 from torch.nn.utils.parametrizations import spectral_norm
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init, icnr_init
-from dctorch.functional import dct2
+from dctorch.functional import dct2, idct2
 from nunif.modules.permute import window_partition2d, window_reverse2d
+from nunif.modules.color import rgb_to_ycbcr, rgb_to_yrgb
+import os
+
+
+# Compiling the discriminator is disabled due to VRAM memory leak.
+# I guess it is because the discriminator is sometimes used and sometimes not used.
+# os.environ["NUNIF_DISC_COMPILE"] = "1"
 
 
 def normalize(x):
@@ -25,6 +32,14 @@ def modcrop(x, n):
     if x.shape[2] % n != 0:
         unpad = (n - x.shape[2] % n) // 2
         x = F.pad(x, (-unpad,) * 4)
+    return x
+
+
+def modpad(x, n):
+    rem = n - input.shape[2] % n
+    pad1 = rem // 2
+    pad2 = rem - pad1
+    x = F.pad(x, (pad1, pad2, pad1, pad2))
     return x
 
 
@@ -47,7 +62,7 @@ class ImageToCondition(nn.Module):
             for out_channels in outputs])
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x):
         B = x.shape[0]
         x = normalize(x)
@@ -65,26 +80,23 @@ class ImageToConditionPatch(nn.Module):
     def __init__(self, embed_dim, outputs):
         super().__init__()
         self.features = nn.Sequential(
-            nn.AvgPool2d((2, 2)),
-            nn.PixelUnshuffle(2),
-            nn.Conv2d(3 * 4, embed_dim, kernel_size=1, stride=1, padding=0),
+            nn.AvgPool2d((4, 4)),
+            spectral_norm(nn.Conv2d(3, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate")),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
-            nn.GroupNorm(4, embed_dim),
-            nn.LeakyReLU(0.2, inplace=True),
-            ResBlockGNLReLU(embed_dim, embed_dim),
+            ResBlockSNLReLU(embed_dim, embed_dim),
+            ResBlockSNLReLU(embed_dim, embed_dim),
         )
-        self.conv = nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, padding_mode="replicate")
+        self.conv = spectral_norm(nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, padding_mode="replicate"))
         self.fc = nn.ModuleList([
             nn.Sequential(
-                nn.Conv2d(embed_dim, embed_dim, kernel_size=1, stride=1, padding=0),
+                spectral_norm(nn.Conv2d(embed_dim, embed_dim, kernel_size=1, stride=1, padding=0)),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0)
             )
             for out_channels in outputs])
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x):
         # expect (64 * 4 - offset * 2) or (112 * 4 - offset * 2)
         avg_6x6 = x.shape[2] > 64 * 4
@@ -146,8 +158,14 @@ def fit_to_size(x, cond):
 
 
 def add_bias(x, cond):
-    cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
+    cond = F.interpolate(cond, size=x.shape[2:], mode="bilinear", align_corners=False)
     return x + cond
+
+
+def apply_attention(x, cond):
+    cond = torch.sigmoid(cond)
+    cond = F.interpolate(cond, size=x.shape[2:], mode="bilinear", align_corners=False)
+    return x * cond
 
 
 def dinov2_add_patch(x, cond):
@@ -208,7 +226,7 @@ class L3Discriminator(Discriminator):
             nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0))
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
         x = self.features(self.first_layer(x))
@@ -224,7 +242,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [64, 256])
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         cond = self.to_cond(c)
         x = normalize(x)
@@ -256,7 +274,7 @@ class V1Discriminator(Discriminator):
         )
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         x = normalize(x)
         x = self.features(self.first_layer(x))
@@ -272,7 +290,7 @@ class V1ConditionalDiscriminator(V1Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [64, 128])
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         cond = self.to_cond(c)
         x = normalize(x)
@@ -400,16 +418,15 @@ class U3ConditionalDiscriminator(Discriminator):
             SNSEBlock(128, bias=True),
             spectral_norm(nn.Conv2d(128, out_channels, kernel_size=3, stride=1, padding=0)),
         )
-        basic_module_init(self.enc1)
+        basic_module_init(self)
         icnr_init(self.up1[0], scale_factor=2)
         icnr_init(self.up2[0], scale_factor=2)
         self.to_cond = ImageToConditionPatch(64, [128])
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         x = modcrop(x, 8)
         cond = self.to_cond(fit_to_size(x, c))
-        x = normalize(x)
         x1 = self.enc1(x)
         x2 = self.enc2(x1)
         x2 = F.leaky_relu(add_bias(x2, cond[0]), 0.2, inplace=True)
@@ -420,51 +437,57 @@ class U3ConditionalDiscriminator(Discriminator):
         z2 = self.class2(x4)
         z3 = self.class3(self.dec2(self.up2(x4) + x1))
 
-        return clamp(z1), clamp(z2), clamp(z3)
+        return z1, z2, z3
 
 
 @register_model
-class DCTDiscriminator(Discriminator):
-    name = "waifu2x.dct_discriminator"
+class DCTConditionalDiscriminator(Discriminator):
+    name = "waifu2x.dct_conditional_discriminator"
 
     def __init__(self, in_channels=3, out_channels=1):
-        super().__init__(locals(), loss_weights=(1,))
+        super().__init__(locals())
         dim = 256
         self.features = nn.Sequential(
             spectral_norm(nn.Conv2d(in_channels * 8 * 8, dim, kernel_size=1, stride=1, padding=0)),
             ResBlockSNLReLU(dim, dim),
-            SNSEBlock(dim, bias=True),
             ResBlockSNLReLU(dim, dim),
         )
         self.classifier = nn.Sequential(
             ResBlockSNLReLU(dim, dim),
             SNSEBlock(dim, bias=True),
             ResBlockSNLReLU(dim, dim),
+            SNSEBlock(dim, bias=True),
+            ResBlockSNLReLU(dim, dim),
             spectral_norm(nn.Conv2d(dim, out_channels, kernel_size=3, stride=1, padding=0)),
         )
-        self.to_cond = ImageToConditionPatch(64, [dim])
+        self.to_cond = ImageToConditionPatch(32, [dim])
 
     @staticmethod
-    def window_dct(x, window_size):
-        z = window_partition2d(x, window_size=window_size)
-        B, N, C, H, W = z.shape
-        z = z.reshape(B * N, C, H, W)
-        z = dct2(z)
-        z = z.reshape(B, N, C, H, W)
-        z = window_reverse2d(z, x.shape, window_size=window_size)
-        z = F.pixel_unshuffle(z, window_size)
-        return z.contiguous()
+    def window_dct(x, window_size, stride):
+        B, C, H, W = x.shape
+        x = F.unfold(x, kernel_size=window_size, stride=stride, padding=0)
+        x = x.view(B, C, window_size, window_size, -1).permute(0, 4, 1, 2, 3)
+        N = x.shape[1]
+        x = x.reshape(B * N, C, window_size, window_size).contiguous()
+        # use idct
+        x = dct2(x)
+        C2 = C * window_size * window_size
+        x = x.view(B, N, C2).permute(0, 2, 1).view(B, C2, int(N ** 0.5), int(N ** 0.5)).contiguous()
+        return x
+
+    @conditional_compile("NUNIF_DISC_COMPILE")
+    def _forward(self, x, dct, c=None, scale_factor=None):
+        c = fit_to_size(x, c)
+        cond = self.to_cond(c)
+        x = self.features(dct)
+        x = apply_attention(x, cond[0])
+        z = self.classifier(x)
+        return z
 
     def forward(self, x, c=None, scale_factor=None):
         x = modcrop(x, 8)
-        c = fit_to_size(x, c)
-        cond = self.to_cond(c)
-        x = self.window_dct(x, window_size=8)
-        x = self.features(x)
-        x = add_bias(x, cond[0])
-        z = self.classifier(x)
-
-        return z
+        dct = self.window_dct(x, window_size=8, stride=4)
+        return self._forward(x, dct, c, scale_factor)
 
 
 if __name__ == "__main__":
@@ -474,7 +497,7 @@ if __name__ == "__main__":
     l3v1c = L3V1ConditionalDiscriminator()
     l3v1dino = L3V1DINOConditionalDiscriminator()
     u3c = U3ConditionalDiscriminator()
-    dct = DCTDiscriminator()
+    dct = DCTConditionalDiscriminator()
 
     S = 64 * 4 - 38 * 2
     x = torch.zeros((1, 3, S, S))
