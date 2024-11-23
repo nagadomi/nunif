@@ -106,6 +106,19 @@ LOSS_FUNCTIONS = {
 }
 
 
+def diff_pair_random_noise(input, target, strength=0.01, p=0.1):
+    # NOTE: only applies to the discriminator input.
+    if random.uniform(0., 1.) < p:
+        B, C, H, W = input.shape
+        noise1x = torch.randn((B, C, H, W), dtype=input.dtype, device=input.device)
+        noise2x = torch.randn((B, C, H // 2, W // 2), dtype=input.dtype, device=input.device)
+        noise2x = torch.nn.functional.interpolate(noise2x, size=(H, W), mode="nearest")
+        noise = ((noise1x + noise2x) * (strength / 2.0)).detach()
+        return input + noise, target + noise
+    else:
+        return input, target
+
+
 def create_criterion(loss):
     if loss in LOSS_FUNCTIONS:
         criterion = LOSS_FUNCTIONS[loss]()
@@ -144,14 +157,15 @@ def get_last_layer(model):
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x",
                       "waifu2x.swin_unet_8x",
-                      "waifu2x.winc_unet_1x",
-                      "waifu2x.winc_unet_2x",
-                      "waifu2x.winc_unet_1x_small",
-                      "waifu2x.winc_unet_2x_small",
                       }:
         return model.unet.to_image.proj.weight
-    elif model.name in {"waifu2x.winc_unet_4x"}:
-        return model.unet.to_image.conv.weight
+    elif model.name in {"waifu2x.winc_unet_4x",
+                        "waifu2x.winc_unet_1x",
+                        "waifu2x.winc_unet_2x",
+                        "waifu2x.winc_unet_1x_small",
+                        "waifu2x.winc_unet_2x_small",
+                        }:
+        return model.unet.to_residual_image.proj.weight
     elif model.name in {"waifu2x.cunet", "waifu2x.upcunet"}:
         return model.unet2.conv_bottom.weight
     elif model.name in {"waifu2x.upconv_7", "waifu2x.vgg_7"}:
@@ -299,15 +313,27 @@ class Waifu2xEnv(LuminancePSNREnv):
                 # discriminator step
                 self.discriminator.requires_grad_(True)
                 if isinstance(self.discriminator, SelfSupervisedDiscriminator):
-                    *z_fake, fake_ss_loss = self.discriminator(torch.clamp(fake.detach(), 0, 1),
-                                                               y, scale_factor, train=True)
-                    *z_real, real_ss_loss = self.discriminator(y, y, scale_factor, train=True)
+                    if self.use_diff_aug:
+                        fake_aug, y_aug = diff_pair_random_noise(fake.detach(), y)
+                        *z_fake, fake_ss_loss = self.discriminator(fake_aug, y_aug, scale_factor, train=True)
+                        *z_real, real_ss_loss = self.discriminator(y_aug, y_aug, scale_factor, train=True)
+                    else:
+                        *z_fake, fake_ss_loss = self.discriminator(torch.clamp(fake.detach(), 0, 1),
+                                                                   y, scale_factor, train=True)
+                        *z_real, real_ss_loss = self.discriminator(y, y, scale_factor, train=True)
+
                     if len(z_fake) == 1:
                         z_fake = z_fake[0]
                         z_real = z_real[0]
                 else:
-                    z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
-                    z_real = self.discriminator(y, y, scale_factor)
+                    if self.use_diff_aug:
+                        # No clamp
+                        fake_aug, y_aug = diff_pair_random_noise(fake.detach(), y)
+                        z_fake = self.discriminator(fake_aug, y_aug, scale_factor)
+                        z_real = self.discriminator(y_aug, y_aug, scale_factor)
+                    else:
+                        z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
+                        z_real = self.discriminator(y, y, scale_factor)
                     fake_ss_loss = real_ss_loss = 0
 
                 discriminator_loss = (self.discriminator_criterion(z_real, z_fake) +
