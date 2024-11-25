@@ -318,13 +318,13 @@ NR_RATE = {
     0: 0.1,
     1: 0.1,
     2: 0.5,
-    3: 1,
+    3: 0.95,
 }
 STRENGTH_FACTOR = {
     0: 0.25,
     1: 0.5,
     2: 1.0,
-    3: 1.5,
+    3: 1.2,
 }
 
 
@@ -338,7 +338,9 @@ class RandomPhotoNoiseX():
         noise_level = self.noise_level
         if not self.force:
             if random.uniform(0, 1) > NR_RATE[noise_level]:
-                noise_level = random.randint(-1, noise_level - 1)
+                cond = list(range(-1, noise_level - 1))
+                prob = [i for i in range(1, len(cond) + 1)]
+                noise_level = random.choices(cond, prob, k=1)[0]
                 if noise_level == -1:
                     # do nothing
                     return x, y
@@ -358,7 +360,7 @@ class RandomPhotoNoiseX():
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[noise_level]
             x = grain_noise1(x, strength=strength)
         elif method == 2:
-            strength = random.uniform(0.05, 0.15) * STRENGTH_FACTOR[noise_level]
+            strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[noise_level]
             x = grain_noise2(x, strength=strength)
         elif method == 3:
             strength = random.uniform(0.02, 0.1) * STRENGTH_FACTOR[noise_level]
