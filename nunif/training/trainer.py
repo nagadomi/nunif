@@ -370,9 +370,9 @@ def create_trainer_default_parser():
                         help="Skip eval")
     parser.add_argument("--ema-model", action="store_true",
                         help="Use AveragedModel and save EMA model checkpoint")
-    parser.add_argument("--ema-decay", type=float, default=0.98,
+    parser.add_argument("--ema-decay", type=float, default=0.999,
                         help="decay parameter for EMA model")
-    parser.add_argument("--ema-step", type=int, default=8,
+    parser.add_argument("--ema-step", type=int, default=1,
                         help="Update interval for EMA model")
 
     return parser
