@@ -1,14 +1,14 @@
-from . import zoedepth_model as ZU
-from . import depth_anything_model as DU
-from . import depth_pro_model as PU
+from .zoedepth_model import ZoeDepthModel
+from .depth_anything_model import DepthAnythingModel
+from .depth_pro_model import DepthProModel
 
 
 def main():
-    ZU.force_update()
-    DU.force_update()
-    PU.force_update()
-    if not ZU.has_model():
-        ZU.load_model(gpu=-1)
+    ZoeDepthModel.force_update()
+    DepthAnythingModel.force_update()
+    DepthProModel.force_update()
+    if not ZoeDepthModel.has_checkpoint_file("ZoeD_N"):
+        ZoeDepthModel("ZoeD_N").load(gpu=-1)
 
 
 if __name__ == "__main__":

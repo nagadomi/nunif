@@ -22,6 +22,7 @@ from . dilation import dilate_edge
 from . forward_warp import apply_divergence_forward_warp
 from . anaglyph import apply_anaglyph_redcyan
 from . mapper import get_mapper, resolve_mapper_name
+from . depth_model_factory import create_depth_model
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -541,13 +542,9 @@ def debug_depth_image(depth, args, ema=False):
 def process_image(im, args, depth_model, side_model, return_tensor=False):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = args.state["depth_utils"].batch_infer(
-            depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-            int16=False, enable_amp=not args.disable_amp,
-            output_device=im.device,
-            device=im.device,
-            edge_dilation=args.edge_dilation,
-            resize_depth=False)
+        depth = depth_model.infer(im, tta=args.tta, low_vram=args.low_vram,
+                                  enable_amp=not args.disable_amp,
+                                  edge_dilation=args.edge_dilation)
         if not args.debug_depth:
             left_eye, right_eye = apply_divergence(depth, im_org, args, side_model)
             sbs = postprocess_image(left_eye, right_eye, args)
@@ -704,13 +701,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             else:
                 x_orgs = x
             with depth_lock[device_index]:
-                depths = args.state["depth_utils"].batch_infer(
-                    depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-                    int16=False, enable_amp=not args.disable_amp,
-                    output_device=x.device,
-                    device=x.device,
-                    edge_dilation=args.edge_dilation,
-                    resize_depth=False)
+                depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
+                                           enable_amp=not args.disable_amp,
+                                           edge_dilation=args.edge_dilation)
             if args.method in {"forward", "forward_fill"}:
                 # Lock all threads
                 # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
@@ -880,14 +873,9 @@ def export_images(args):
                 continue
             im = TF.to_tensor(im).to(args.state["device"])
             im_org, im = preprocess_image(im, args)
-            depth = args.state["depth_utils"].batch_infer(
-                depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-                int16=False, enable_amp=not args.disable_amp,
-                output_device=im.device,
-                device=im.device,
-                edge_dilation=edge_dilation,
-                resize_depth=False)
-
+            depth = depth_model.infer(im, tta=args.tta, low_vram=args.low_vram,
+                                      enable_amp=not args.disable_amp,
+                                      edge_dilation=edge_dilation)
             depth = normalize_depth(depth)
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
@@ -1024,16 +1012,9 @@ def export_video(args):
             x_orgs = x
 
         with depth_lock[device_index]:
-            depths = args.state["depth_utils"].batch_infer(
-                depth_model, x,
-                int16=False,
-                flip_aug=args.tta, low_vram=args.low_vram,
-                enable_amp=not args.disable_amp,
-                output_device=x.device,
-                device=x.device,
-                edge_dilation=edge_dilation,
-                resize_depth=False)
-
+            depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
+                                       enable_amp=not args.disable_amp,
+                                       edge_dilation=edge_dilation)
             for i in range(depths.shape[0]):
                 depth_min, depth_max = depths[i].min(), depths[i].max()
                 if ema_normalize:
@@ -1525,16 +1506,8 @@ class EMAMinMax():
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspend_event=None):
-    from . import zoedepth_model as ZU
-    from . import depth_anything_model as DU
-    from . import depth_pro_model as PU
-
-    if args.depth_model in ZU.MODEL_FILES:
-        depth_utils = ZU
-    elif args.depth_model in DU.MODEL_FILES:
-        depth_utils = DU
-    elif args.depth_model in PU.MODEL_FILES:
-        depth_utils = PU
+    if depth_model is None:
+        depth_model = create_depth_model(args.depth_model)
 
     if args.export_disparity:
         args.export = True
@@ -1564,7 +1537,6 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         "ema": EMAMinMax(alpha=args.ema_decay),
         "device": create_device(args.gpu),
         "devices": [create_device(gpu_id) for gpu_id in args.gpu],
-        "depth_utils": depth_utils
     }
     return args
 
@@ -1597,9 +1569,6 @@ def iw3_main(args):
         # For GPU round-robin on thread pool
         args.max_workers = len(args.gpu)
 
-    if args.update:
-        args.state["depth_utils"].force_update()
-
     if path.normpath(args.input) == path.normpath(args.output):
         raise ValueError("input and output must be different file")
 
@@ -1621,23 +1590,23 @@ def iw3_main(args):
     else:
         args.bg_session = None
 
+    assert args.state["depth_model"] is not None
+    depth_model = args.state["depth_model"]
+    if args.update:
+        depth_model.force_update()
+
     if args.edge_dilation is None:
-        if args.state["depth_utils"].get_name() in {"DepthAnything", "DepthPro"}:
+        if depth_model.get_name() in {"DepthAnything", "DepthPro"}:
             # TODO: This may not be a sensible choice
             args.edge_dilation = 2
         else:
             args.edge_dilation = 0
 
     if not is_yaml(args.input):
-        if args.state["depth_model"] is not None:
-            depth_model = args.state["depth_model"]
-        else:
-            depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
-                                                               height=args.zoed_height)
-            args.state["depth_model"] = depth_model
+        if not depth_model.loaded():
+            depth_model.load(gpu=args.gpu, resolution=args.zoed_height)
 
-        is_metric = (args.state["depth_utils"].get_name() in {"ZoeDepth"} or
-                     (args.state["depth_utils"].get_name() == "DepthAnything" and args.state["depth_model"].metric_depth))
+        is_metric = depth_model.is_metric()
         args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                           metric_depth=is_metric)
     else:

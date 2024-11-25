@@ -153,32 +153,29 @@ def gen_convergence():
         return random.uniform(0., 1.)
 
 
-def gen_mapper(model_type):
-    if model_type.startswith("ZoeD"):
+def gen_mapper(is_metric):
+    if is_metric:
         if random.uniform(0, 1) < 0.7:
             return "div_6"
         else:
             return random.choice(["none", "div_25", "div_10", "div_4", "div_2", "div_1"])
-    elif model_type.startswith("Any"):
+    else:
         if random.uniform(0, 1) < 0.7:
             return "none"
         else:
             return random.choice(["inv_mul_1", "inv_mul_2", "inv_mul_3", "mul_1", "mul_2", "mul_3"])
-    else:
-        raise ValueError(model_type)
 
 
 def gen_edge_dilation(model_type):
     if model_type.startswith("ZoeD"):
         return random.choice([0] * 7 + [1, 2, 3, 4])
-    elif model_type.startswith("Any"):
+    else:
         return random.choice([2] * 7 + [0, 1, 3, 4])
 
 
 def main(args):
     import numba
-    from ... import zoedepth_model as ZU
-    from ... import depth_anything_model as DU
+    from ...depth_model_factory import create_depth_model
     # force_update_midas()
     # force_update_zoedepth()
 
@@ -186,14 +183,9 @@ def main(args):
     numba.set_num_threads(max_workers)
 
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
-    if args.model_type in ZU.MODEL_FILES:
-        depth_utils = ZU
-    elif args.model_type in DU.MODEL_FILES:
-        depth_utils = DU
-    else:
-        raise ValueError(f"unknown model_type = {args.model_type}")
+    model = create_depth_model(args.model_type)
+    model.load(gpu=args.gpu, resolution=args.zoed_height)
 
-    model = depth_utils.load_model(model_type=args.model_type, gpu=args.gpu, height=args.zoed_height)
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)
@@ -219,7 +211,7 @@ def main(args):
                 if min(im.size) < args.min_size:
                     continue
                 for _ in range(args.times):
-                    mapper = gen_mapper(args.model_type) if args.mapper == "random" else args.mapper
+                    mapper = gen_mapper(model.is_metric()) if args.mapper == "random" else args.mapper
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
                     divergence = gen_divergence(im_s.width)
@@ -229,9 +221,9 @@ def main(args):
                     enable_amp = True
 
                     with torch.inference_mode():
-                        depth = depth_utils.batch_infer(model, im_s, int16=True, normalize_int16=True,
-                                                        flip_aug=flip_aug, enable_amp=enable_amp,
-                                                        edge_dilation=edge_dilation)
+                        depth = model.infer_raw(im_s, int16=True, normalize_int16=True,
+                                                flip_aug=flip_aug, enable_amp=enable_amp,
+                                                edge_dilation=edge_dilation)
                         np_depth16 = depth.clone().squeeze(0).numpy().astype(np.uint16)
 
                     if args.method == "polylines":

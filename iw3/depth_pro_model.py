@@ -1,17 +1,14 @@
 import os
 from os import path
 import gc
-import pickle
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
-from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast, device_is_mps # noqa
-from nunif.models.data_parallel import DeviceSwitchInference
 from .dilation import dilate_edge
+from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 
 
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 NAME_MAP = {
     "DepthPro": 384,
     "DepthPro_HD": 256,
@@ -24,82 +21,16 @@ MODEL_FILES = {
 }
 
 
-def get_name():
-    return "DepthPro"
-
-
-def load_model(model_type="DepthPro", gpu=0, **kwargs):
-    assert model_type in MODEL_FILES
-    device = create_device(gpu)
-    dtype = torch.float16
-
-    with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
-        try:
-            encoder = NAME_MAP[model_type]
-            if not os.getenv("IW3_DEBUG"):
-                model, _ = torch.hub.load("nagadomi/ml-depth-pro_iw3:main",
-                                          "DepthPro", img_size=encoder, device=device, dtype=dtype,
-                                          verbose=False, trust_repo=True)
-            else:
-                assert path.exists("../ml-depth-pro_iw3/hubconf.py")
-                model, _ = torch.hub.load("../ml-depth-pro_iw3",
-                                          "DepthPro", img_size=encoder, device=device, dtype=dtype,
-                                          source="local", verbose=False, trust_repo=True)
-        except (RuntimeError, pickle.PickleError) as e:
-            if isinstance(e, RuntimeError):
-                do_handle = "PytorchStreamReader" in repr(e)
-            else:
-                do_handle = True
-            if do_handle:
-                try:
-                    # delete corrupted file
-                    os.unlink(MODEL_FILES[model_type])
-                except:  # noqa
-                    pass
-                raise RuntimeError(
-                    f"File `{MODEL_FILES[model_type]}` is corrupted. "
-                    "This error may occur when the network is unstable or the disk is full. "
-                    "Try again."
-                )
-            else:
-                raise
-
-    model.device = device
-    model.metric_depth = True
-    # delete unused fov model
-    delattr(model, "fov")
-    if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
-        model = DeviceSwitchInference(model, device_ids=gpu)
-
-    # Release VRAM (there are many unused parameters that have not been released)
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    return model
-
-
-def has_model(model_type):
-    assert model_type in MODEL_FILES
-    return path.exists(MODEL_FILES[model_type])
-
-
-def force_update():
-    with TorchHubDir(HUB_MODEL_DIR):
-        torch.hub.help("nagadomi/ml-depth-pro_iw3:main", "DepthPro",
-                       force_reload=True, trust_repo=True)
-
-
-def normalize(x):
-    mean = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
-    stdv = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
-    x.sub_(mean).div_(stdv)
-    return x
-
-
 def batch_preprocess(x, img_size=1536, padding=False):
     # x: BCHW float32 0-1
     B, C, H, W = x.shape
+
+    def normalize(x):
+        mean = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
+        stdv = torch.tensor([0.5, 0.5, 0.5], dtype=x.dtype, device=x.device).reshape(1, 3, 1, 1)
+        x.sub_(mean).div_(stdv)
+        return x
+
     antialias = False
     if not padding:
         x = normalize(x.clone())
@@ -196,7 +127,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
     if int16:
         if normalize_int16:
             max_v, min_v = z.max(), z.min()
-            print(max_v, min_v, z.mean())
             uint16_max = 0xffff
             if max_v - min_v > 0:
                 z = uint16_max * ((z - min_v) / (max_v - min_v))
@@ -209,17 +139,91 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
     return z
 
 
+class DepthProModel(BaseDepthModel):
+    def __init__(self, model_type):
+        super().__init__(model_type)
+
+    def load_model(self, model_type, resolution=None, device=None):
+        assert model_type in MODEL_FILES
+        dtype = torch.float16
+        encoder = NAME_MAP[model_type]
+        if not os.getenv("IW3_DEBUG"):
+            model, _ = torch.hub.load("nagadomi/ml-depth-pro_iw3:main",
+                                      "DepthPro", img_size=encoder, device=device, dtype=dtype,
+                                      verbose=False, trust_repo=True)
+        else:
+            assert path.exists("../ml-depth-pro_iw3/hubconf.py")
+            model, _ = torch.hub.load("../ml-depth-pro_iw3",
+                                      "DepthPro", img_size=encoder, device=device, dtype=dtype,
+                                      source="local", verbose=False, trust_repo=True)
+
+        model.device = device
+        model.metric_depth = False
+
+        # delete unused fov model
+        delattr(model, "fov")
+
+        # Release VRAM (there are many unused parameters that have not been released)
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return model
+
+    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):
+        if not torch.is_tensor(x):
+            x = TF.to_tensor(x).to(self.device)
+        return batch_infer(
+            self.model, x, flip_aug=tta, low_vram=low_vram,
+            int16=False, enable_amp=enable_amp,
+            output_device=x.device,
+            device=x.device,
+            edge_dilation=edge_dilation,
+            resize_depth=False)
+
+    @classmethod
+    def get_name(cls):
+        return "DepthPro"
+
+    @classmethod
+    def has_checkpoint_file(cls, model_type):
+        return cls.supported(model_type) and path.exists(MODEL_FILES[model_type])
+
+    @classmethod
+    def supported(cls, model_type):
+        return model_type in MODEL_FILES
+
+    @classmethod
+    def get_model_path(cls, model_type):
+        return MODEL_FILES[model_type]
+
+    def is_metric(self):
+        return False  # use inverse_depth
+
+    @classmethod
+    def multi_gpu_supported(cls, model_type):
+        return False  # TODO: not tested
+
+    @classmethod
+    def force_update(cls):
+        BaseDepthModel.force_update_hub("nagadomi/ml-depth-pro_iw3:main", "DepthPro")
+
+    def infer_raw(self, *args, **kwargs):
+        return batch_infer(self.model, *args, **kwargs)
+
+
 def _bench():
     import time
 
     N = 10
-    model = load_model(model_type="DepthPro", gpu=0)
+    model = DepthProModel("DepthPro")
+    model.load(gpu=0)
     x = torch.randn((1, 3, 1536, 1536)).cuda()
     torch.cuda.synchronize()
     with torch.no_grad():
         t = time.time()
         for _ in range(N):
-            _forward(model, x)
+            _forward(model.get_model(), x)
         torch.cuda.synchronize()
         print(round((time.time() - t) / N, 4))
 
@@ -229,14 +233,15 @@ def _test():
     import cv2
     import numpy as np
 
-    model = load_model(model_type="DepthPro_HD")
+    model = DepthProModel("DepthPro")
+    model.load(gpu=0)
     im = Image.open("cc0/dog2.jpg").convert("RGB")
-    out = batch_infer(model, im, flip_aug=False, int16=True,
+    out = batch_infer(model.get_model(), im, flip_aug=False, int16=True,
                       enable_amp=True, output_device="cpu", device="cuda")
     out = out.squeeze(0).numpy().astype(np.uint16)
     cv2.imwrite("./tmp/depth_pro_out.png", out)
 
 
 if __name__ == "__main__":
-    # _test()
-    _bench()
+    _test()
+    # _bench()
