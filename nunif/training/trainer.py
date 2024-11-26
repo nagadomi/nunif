@@ -207,10 +207,12 @@ class Trainer(ABC):
                     gamma=self.args.learning_rate_decay)
         elif self.args.scheduler in {"cosine", "cosine_wd", "cosine_fixed_wd"}:
             step = self.args.learning_rate_cycles
-            t_0 = self.args.max_epoch // step
-            old_max_epoch = self.args.max_epoch
+            if not hasattr(self.args, "original_max_epoch"):
+                self.args.original_max_epoch = self.args.max_epoch
+            t_0 = self.args.original_max_epoch // step
+            old_max_epoch = self.args.original_max_epoch
             # Adjust epoch to keep the final epoch to the minimum LR
-            self.args.max_epoch -= (self.args.max_epoch % step) + 1
+            self.args.max_epoch = self.args.original_max_epoch - ((self.args.original_max_epoch % step) + 1)
             print(f"scheduler=cosine: max_epoch: {old_max_epoch} -> {self.args.max_epoch}")
             eta_min = self.args.learning_rate_cosine_min
             if self.args.scheduler == "cosine":
