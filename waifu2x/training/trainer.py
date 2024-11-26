@@ -21,7 +21,7 @@ from nunif.modules import (
     DiscriminatorHingeLoss,
     MultiscaleLoss,
 )
-from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP
+from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP, YRGBFlatLBP
 from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
@@ -48,6 +48,7 @@ LOSS_FUNCTIONS = {
     "lbp5m": lambda: MultiscaleLoss(YLBP(kernel_size=5), mode="avg"),
     "rgb_l1lbp": lambda: YRGBL1LBP(kernel_size=3, weight=0.4),
     "rgb_l1lbp5": lambda: YRGBL1LBP(kernel_size=5, weight=0.4),
+    "rgb_flatlbp5": lambda: YRGBFlatLBP(kernel_size=5, weight=0.4),
     "rgb_lbp5": lambda: YRGBLBP(kernel_size=5),
 
     "dct24lbp5": lambda: WeightedLoss(

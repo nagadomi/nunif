@@ -7,6 +7,7 @@ from .clamp_loss import ClampLoss
 from .channel_weighted_loss import LuminanceWeightedLoss, AverageWeightedLoss
 from .compile_wrapper import conditional_compile
 from .color import rgb_to_yrgb
+from .flat_color_loss import FlatColorWeightedLoss
 
 
 def generate_lbp_kernel(in_channels, out_channels, kernel_size=3, seed=71):
@@ -66,7 +67,7 @@ class YRGBL1LBP(nn.Module):
     def __init__(self, kernel_size=5, weight=0.4):
         super().__init__()
         self.lbp = YRGBLBP(kernel_size=kernel_size)
-        self.l1 = ClampLoss(LuminanceWeightedLoss(torch.nn.L1Loss()))
+        self.l1 = ClampLoss(torch.nn.L1Loss())
         self.weight = weight
 
     @conditional_compile("NUNIF_TRAIN")
@@ -74,6 +75,20 @@ class YRGBL1LBP(nn.Module):
         lbp_loss = self.lbp(input, target)
         l1_loss = self.l1(input, target)
         return l1_loss + lbp_loss * self.weight
+
+
+class YRGBFlatLBP(nn.Module):
+    def __init__(self, kernel_size=5, weight=0.4):
+        super().__init__()
+        self.lbp = YRGBLBP(kernel_size=kernel_size)
+        self.flat_l1l2 = ClampLoss(FlatColorWeightedLoss())
+        self.weight = weight
+
+    @conditional_compile("NUNIF_TRAIN")
+    def forward(self, input, target):
+        lbp_loss = self.lbp(input, target)
+        flat_loss = self.flat_l1l2(input, target)
+        return flat_loss + lbp_loss * self.weight
 
 
 def _check_gradient_norm():
