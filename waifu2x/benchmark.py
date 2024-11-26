@@ -10,8 +10,10 @@ import nunif.transforms.image_magick as IM
 from nunif.logger import logger
 from nunif.device import device_is_cuda
 from nunif.utils.image_loader import ImageLoader
+from nunif.modules.flat_color_loss import get_flat_color_mask
 from tqdm import tqdm
 import time
+import warnings
 
 
 def load_files(txt):
@@ -23,9 +25,20 @@ def load_files(txt):
     return files
 
 
-def MSE(x1, x2, min_mse=1):
-    mse = (x1 - x2).pow_(2).mean().clamp(min=min_mse).item()
-    return mse
+def MSE(x1, x2, min_mse=1, mask=None):
+    ignore = False
+    if mask is None:
+        mse = (x1 - x2).pow_(2).mean().clamp(min=min_mse).item()
+    else:
+        mask = mask.expand_as(x1)
+        diff = (x1[mask] - x2[mask]).pow_(2)
+        if diff.shape[0] == 0:
+            mse = min_mse
+            ignore = True
+        else:
+            mse = diff.mean().clamp(min=min_mse).item()
+
+    return mse, ignore
 
 
 def MSE2PSNR(mse):
@@ -79,21 +92,27 @@ def remove_border(x, border):
     return NF.crop(x, border, border, x.shape[1] - border, x.shape[2] - border)
 
 
-def psnr256(x1, x2, color):
+def psnr256(x1, x2, color, flat_only):
     assert (color in ("rgb", "y", "y_matlab"))
     assert (x1.shape == x2.shape)
+    if flat_only:
+        # x1 = GT...
+        mask = get_flat_color_mask(x1.unsqueeze(0)).squeeze(0).to(torch.bool)
+    else:
+        mask = None
+
     if color == "rgb":
-        mse = MSE(NF.quantize256_f(x1), NF.quantize256_f(x2))
+        mse, ignore = MSE(NF.quantize256_f(x1), NF.quantize256_f(x2), mask=mask)
         psnr = MSE2PSNR(mse)
-        return psnr, mse
+        return psnr, mse, ignore
     elif color == "y":
-        mse = MSE(NF.quantize256_f(NF.rgb2y(x1)), NF.quantize256_f(NF.rgb2y(x2)))
+        mse, ignore = MSE(NF.quantize256_f(NF.rgb2y(x1)), NF.quantize256_f(NF.rgb2y(x2)), mask=mask)
         psnr = MSE2PSNR(mse)
-        return psnr, mse
+        return psnr, mse, ignore
     elif color == "y_matlab":
-        mse = MSE(NF.rgb2y_matlab(x1).float(), NF.rgb2y_matlab(x2).float())
+        mse, ignore = MSE(NF.rgb2y_matlab(x1).float(), NF.rgb2y_matlab(x2).float(), mask=mask)
         psnr = MSE2PSNR(mse)
-        return psnr, mse
+        return psnr, mse, ignore
 
 
 def parse_args():
@@ -147,6 +166,8 @@ def parse_args():
                         help="Use float16 model. AMP will be disabled.")
     parser.add_argument("--compile", action="store_true",
                         help="Use torch.compile if possible")
+    parser.add_argument("--flat-only", action="store_true",
+                        help="Only evaluate flat color area (for color change caused by GAN)")
     args = parser.parse_args()
     logger.debug(vars(args))
 
@@ -159,6 +180,10 @@ def main():
     args = parse_args()
     ctx = Waifu2x(model_dir=args.model_dir, gpus=args.gpu)
     model_method = args.model_method if args.model_method is not None else args.method
+
+    if args.flat_only and args.color != "rgb":
+        warnings.warn("Use --color rgb for --flat-only")
+        args.color = "rgb"
 
     ctx.load_model(model_method, args.noise_level)
     if args.half:
@@ -198,14 +223,16 @@ def main():
 
             time_sum += time.time() - t
             if args.border > 0:
-                psnr, mse = psnr256(remove_border(groundtruth, args.border),
-                                    remove_border(z, args.border), args.color)
+                psnr, mse, ignore = psnr256(remove_border(groundtruth, args.border),
+                                            remove_border(z, args.border), args.color, args.flat_only)
             else:
-                psnr, mse = psnr256(groundtruth, z, args.color)
-            psnr_sum += psnr
-            mse_sum += mse
+                psnr, mse, ignore = psnr256(groundtruth, z, args.color, args.flat_only)
+            if not ignore:
+                psnr_sum += psnr
+                mse_sum += mse
+                count += 1
 
-            if args.baseline:
+            if not ignore and args.baseline:
                 t = time.time()
                 if args.method in ("scale", "noise_scale"):
                     z = IM.scale(x, 2, filter_type=args.baseline_filter, blur=args.blur)
@@ -216,18 +243,17 @@ def main():
                 baseline_time_sum += time.time() - t
                 if args.border > 0:
                     psnr, mse = psnr256(remove_border(groundtruth, args.border),
-                                        remove_border(z, args.border), args.color)
+                                        remove_border(z, args.border), args.color, args.flat_only)
                 else:
-                    psnr, mse = psnr256(groundtruth, z, args.color)
+                    psnr, mse = psnr256(groundtruth, z, args.color, args.flat_only)
                 baseline_psnr_sum += psnr
                 baseline_mse_sum += mse
-            count += 1
 
         mpsnr = round(psnr_sum / count, 4)
         rmse = round(math.sqrt(mse_sum / count), 4)
         fps = round(count / time_sum, 4)
         print(f"* {args.model_dir}")
-        print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(time_sum, 4)} ({fps} FPS)")
+        print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(time_sum, 4)} ({fps} FPS), images: {count}")
         if args.baseline:
             mpsnr = round(baseline_psnr_sum / count, 4)
             rmse = round(math.sqrt(baseline_mse_sum / count), 4)
@@ -240,7 +266,8 @@ def main():
                 print("* jpeg")
             print(f"PSNR: {mpsnr}, RMSE: {rmse}, time: {round(baseline_time_sum, 4)} ({fps} FPS)")
         if device_is_cuda(ctx.device):
-            print("GPU Max Memory Allocated", int(torch.cuda.max_memory_allocated(ctx.device) / (1024*1024)), "MB")
+            print("GPU Max Memory Allocated", int(torch.cuda.max_memory_allocated(ctx.device) / (1024 * 1024)), "MB")
+
 
 if __name__ == "__main__":
     main()
