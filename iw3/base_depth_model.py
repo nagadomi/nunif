@@ -6,9 +6,39 @@ from os import path
 import pickle
 import torch
 from nunif.device import create_device
+import numpy as np
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+
+
+class EMAMinMax():
+    def __init__(self, alpha=0.75):
+        self.min_value = None
+        self.max_value = None
+        self.alpha = alpha
+
+    def update(self, min_value, max_value):
+        if self.min_value is None:
+            self.min_value = float(min_value)
+            self.max_value = float(max_value)
+        else:
+            self.min_value = self.alpha * self.min_value + (1. - self.alpha) * float(min_value)
+            self.max_value = self.alpha * self.max_value + (1. - self.alpha) * float(max_value)
+
+        # print(round(float(min_value), 3), round(float(max_value), 3), round(self.min_value, 3), round(self.max_value, 3))
+
+        return self.min_value, self.max_value
+
+    def __call__(self, min_value, max_value):
+        return self.update(min_value, max_value)
+
+    def reset(self):
+        self.min_value = self.max_value = None
+
+    def set_alpha(self, alpha):
+        self.alpha = alpha
+        self.reset()
 
 
 class BaseDepthModel(metaclass=ABCMeta):
@@ -16,6 +46,8 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.device = None
         self.model = None
         self.model_type = model_type
+        self.ema_minmax = EMAMinMax()
+        self.ema_minmax_enabled = False
 
     @classmethod
     @abstractmethod
@@ -104,6 +136,65 @@ class BaseDepthModel(metaclass=ABCMeta):
     @abstractmethod
     def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):
         pass
+
+    def enable_ema_minmax(self, alpha):
+        self.ema_minmax.set_alpha(alpha)
+        self.ema_minmax_enabled = True
+
+    def disable_ema_minmax(self):
+        self.ema_minmax_enabled = False
+        self.ema_minmax.reset()
+
+    def reset_ema_minmax(self):
+        self.ema_minmax.reset()
+
+    def minmax_normalize_chw(self, depth):
+        min_value = depth.amin()
+        max_value = depth.amax()
+        if self.ema_minmax_enabled:
+            min_value, max_value = self.ema_minmax(min_value, max_value)
+
+        # TODO: `1 - normalized_metric_depth` is wrong
+        depth = 1.0 - ((depth - min_value) / (max_value - min_value))
+        depth = depth.clamp(0, 1)
+        depth = depth.nan_to_num()
+        return depth
+
+    def minmax_normalize(self, depth):
+        if depth.ndim == 3:
+            return self.minmax_normalize_chw(depth)
+        else:
+            assert depth.ndim == 4
+            return torch.stack([self.minmax_normalize_chw(depth[i]) for i in range(depth.shape[0])]).contiguous()
+
+    @staticmethod
+    def normalized_depth_to_uint16_numpy(depth):
+        uint16_max = 0xffff
+        depth = uint16_max * depth
+        depth = depth.to(torch.int16).numpy().astype(np.uint16)
+        return depth
+
+    def minmax_normalize_int16_numpy(depth):
+        depth = self.minmax_normalize(depth)
+        depth = self.depth_to_int16_numpy(depth)
+        return depth
+
+    @staticmethod
+    def int16_depth_to_float32(depth):
+        if depth.dtype != torch.float32:
+            # 16bit image
+            depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+
+        if depth.shape[0] != 1:
+            # Maybe 24bpp
+            # TODO: color depth support?
+            depth = torch.mean(depth, dim=0, keepdim=True)
+
+        # TODO: remove this. related to minmax_normalize_chw
+        # invert
+        depth = 1. - depth
+
+        return depth
 
 
 def _test():
