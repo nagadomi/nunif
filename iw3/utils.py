@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import threading
 import math
 from tqdm import tqdm
-from PIL import ImageDraw, Image
+from PIL import ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
@@ -328,10 +328,11 @@ def get_image_ext(format):
         raise NotImplementedError(format)
 
 
-def save_image(im, output_filename, format="png"):
+def save_image(im, output_filename, format="png", png_info=None):
     if format == "png":
         options = {
-            "compress_level": 6
+            "compress_level": 6,
+            "pnginfo": png_info,
         }
     elif format == "webp":
         options = {
@@ -348,6 +349,12 @@ def save_image(im, output_filename, format="png"):
         raise NotImplementedError(format)
 
     im.save(output_filename, format=format, **options)
+
+
+def depth_load_func(fn):
+    depth = BaseDepthModel.load_depth(fn)
+    meta = {"filename": fn}
+    return depth, meta
 
 
 def remove_bg_from_image(im, bg_session):
@@ -503,10 +510,10 @@ def debug_depth_image(depth, args):
     out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
-    #gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
-    #                   f"max={round(float(depth_max), 4)}\n"
-    #                   f"mean={round(float(mean_depth), 4)}\n"
-    #                   f"std={round(float(std_depth), 4)}"), "gray")
+    # gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
+    #                    f"max={round(float(depth_max), 4)}\n"
+    #                    f"mean={round(float(mean_depth), 4)}\n"
+    #                    f"std={round(float(std_depth), 4)}"), "gray")
 
     return out
 
@@ -863,9 +870,7 @@ def export_images(args):
             depth = depth_model.minmax_normalize(depth)
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
-            depth = depth_model.normalized_depth_to_uint16_numpy(depth.detach().cpu()[0])
-            depth = Image.fromarray(depth)
-            futures.append(pool.submit(save_image, depth, depth_file))
+            futures.append(pool.submit(depth_model.save_depth, depth, depth_file, normalize=False))
             pbar.update(1)
             if suspend_event is not None:
                 suspend_event.wait()
@@ -956,10 +961,6 @@ def export_video(args):
     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
         return
 
-    ema_normalize = args.ema_normalize and args.max_fps >= 15
-    if ema_normalize:
-        depth_model.enable_ema_minmax(args.ema_decay)
-
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -980,6 +981,9 @@ def export_video(args):
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     streams = threading.local()
     depth_model = args.state["depth_model"]
+    ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if ema_normalize:
+        depth_model.enable_ema_minmax(args.ema_decay)
 
     @torch.inference_mode()
     def __batch_callback(x, pts):
@@ -1008,9 +1012,7 @@ def export_video(args):
 
         for x, depth, seq in zip(x_orgs, depths, pts):
             seq = str(seq).zfill(8)
-            depth = depth_model.normalized_depth_to_uint16_numpy(depth[0])
-            dpeth = Image.fromarray(depth)
-            dpeth.save(path.join(depth_dir, f"{seq}.png"))
+            depth_model.save_depth(depth[0], path.join(depth_dir, f"{seq}.png"), normalize=False)
             rgb = TF.to_pil_image(x)
             rgb.save(path.join(rgb_dir, f"{seq}.png"))
 
@@ -1086,9 +1088,7 @@ def process_config_video(config, args, side_model):
         load_func_kwargs={"color": "rgb"})
     depth_loader = ImageLoader(
         files=depth_files,
-        load_func=load_image_simple,
-        load_func_kwargs={"color": "any"})
-
+        load_func=depth_load_func)
     sbs_lock = threading.Lock()
 
     @torch.inference_mode()
@@ -1104,9 +1104,8 @@ def process_config_video(config, args, side_model):
 
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
-        depth = load_image_simple(depth_file, color="any")[0]
+        depth = BaseDepthModel.load_depth(depth_file).to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
-        depth = BaseDepthModel.int16_depth_to_float32(TF.pil_to_tensor(depth)).to(args.state["device"])
         frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0))
         return frame.shape[2:]
 
@@ -1117,9 +1116,8 @@ def process_config_video(config, args, side_model):
         depth_batch = []
         for rgb, depth in zip(rgb_loader, depth_loader):
             rgb = TF.to_tensor(rgb[0])
-            depth = BaseDepthModel.int16_depth_to_float32(TF.pil_to_tensor(depth[0]))
             rgb_batch.append(rgb)
-            depth_batch.append(depth)
+            depth_batch.append(depth[0])
             if len(rgb_batch) == minibatch_size:
                 frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
                                         torch.stack(depth_batch).to(args.state["device"]))
@@ -1196,6 +1194,7 @@ def process_config_images(config, args, side_model):
     os.makedirs(output_dir, exist_ok=True)
     rgb_files = ImageLoader.listdir(rgb_dir)
     depth_files = ImageLoader.listdir(depth_dir)
+
     if args.resume:
         # skip existing output files
         remaining_files = []
@@ -1226,8 +1225,7 @@ def process_config_images(config, args, side_model):
         load_func_kwargs={"color": "rgb"})
     depth_loader = ImageLoader(
         files=depth_files,
-        load_func=load_image_simple,
-        load_func_kwargs={"color": "any"})
+        load_func=depth_load_func)
 
     original_mapper = args.mapper
     try:
@@ -1250,7 +1248,7 @@ def process_config_images(config, args, side_model):
                 if rgb_filename != depth_filename:
                     raise ValueError(f"No match {rgb_filename} and {depth_filename}")
                 rgb = TF.to_tensor(rgb).to(args.state["device"])
-                depth = BaseDepthModel.int16_depth_to_float32(TF.pil_to_tensor(depth)).to(args.state["device"])
+                depth = depth.to(args.state["device"])
                 if not config.skip_edge_dilation and args.edge_dilation > 0:
                     depth = -dilate_edge(-depth.unsqueeze(0), args.edge_dilation).squeeze(0)
 

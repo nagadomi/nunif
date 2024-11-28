@@ -6,7 +6,9 @@ from os import path
 import pickle
 import torch
 from nunif.device import create_device
-import numpy as np
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
+from torchvision.transforms import functional as TF
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -158,43 +160,58 @@ class BaseDepthModel(metaclass=ABCMeta):
         depth = 1.0 - ((depth - min_value) / (max_value - min_value))
         depth = depth.clamp(0, 1)
         depth = depth.nan_to_num()
-        return depth
+        return depth, min_value, max_value
 
     def minmax_normalize(self, depth):
         if depth.ndim == 3:
-            return self.minmax_normalize_chw(depth)
+            return self.minmax_normalize_chw(depth)[0]
         else:
             assert depth.ndim == 4
-            return torch.stack([self.minmax_normalize_chw(depth[i]) for i in range(depth.shape[0])]).contiguous()
+            return torch.stack([self.minmax_normalize_chw(depth[i])[0] for i in range(depth.shape[0])]).contiguous()
+
+    def save_depth(self, depth, file_path, png_info={}, normalize=True):
+        # not batch
+        assert depth.ndim in {3, 2}
+        if normalize:
+            depth, min_depth_value, max_depth_value = self.minmax_normalize_chw(depth)
+            png_info.update(min_depth_value=min_depth_value.item(), max_depth_value=max_depth_value.item())
+        else:
+            min_depth_value = depth.amin()
+            max_depth_value = depth.amax()
+            if not (0 - 1e-6 <= min_depth_value and max_depth_value <= 1.0 + 1e-6):
+                raise ValueError("depth is not normalized and normalize=False."
+                                 f"min={min_depth_value}, max={max_depth_value}")
+
+        depth_int = (0xffff * depth).to(torch.uint16).squeeze(0).cpu().numpy()
+        metadata = PngInfo()
+        for k, v in png_info.items():
+            metadata.add_text(k, str(v))
+
+        im = Image.fromarray(depth_int)
+        im.save(file_path, pnginfo=metadata)
 
     @staticmethod
-    def normalized_depth_to_uint16_numpy(depth):
-        uint16_max = 0xffff
-        depth = uint16_max * depth
-        depth = depth.to(torch.int16).numpy().astype(np.uint16)
-        return depth
+    def load_depth(file_path):
+        with Image.open(file_path) as im:
+            if "min_depth_value" in im.text and "max_depth_value" in im.text:
+                try:
+                    min_depth_value = float(im.text["min_depth_value"])
+                    max_depth_value = float(im.text["min_depth_value"])
+                except (ValueError, TypeError):
+                    min_depth_value = max_depth_value = None
+            else:
+                min_depth_value = max_depth_value = None
 
-    def minmax_normalize_int16_numpy(depth):
-        depth = self.minmax_normalize(depth)
-        depth = self.depth_to_int16_numpy(depth)
-        return depth
+            depth = TF.pil_to_tensor(im)
+            if depth.dtype != torch.float32:
+                depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+            if depth.shape[0] != 1:
+                depth = torch.mean(depth, dim=0, keepdim=True)
 
-    @staticmethod
-    def int16_depth_to_float32(depth):
-        if depth.dtype != torch.float32:
-            # 16bit image
-            depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+            if min_depth_value is not None and max_depth_value is not None:
+                depth = depth * (max_depth_value - min_depth_value) + min_depth_value
 
-        if depth.shape[0] != 1:
-            # Maybe 24bpp
-            # TODO: color depth support?
-            depth = torch.mean(depth, dim=0, keepdim=True)
-
-        # TODO: remove this. related to minmax_normalize_chw
-        # invert
-        depth = 1. - depth
-
-        return depth
+            return depth
 
 
 def _test():
