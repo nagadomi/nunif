@@ -68,9 +68,9 @@ def _forward(model, x, min_dist=0.1, max_dist=40.0):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=True,
-                edge_dilation=2, resize_depth=True,
+def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
+                output_device="cpu", device=None,
+                edge_dilation=2,
                 **kwargs):
     device = device if device is not None else model.device
     batch = False
@@ -85,7 +85,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
-    org_size = x.shape[-2:]
     x, unpad = batch_preprocess(x, model.img_size)
 
     if not low_vram:
@@ -105,9 +104,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
 
     if edge_dilation > 0:
         out = dilate_edge(out, edge_dilation)
-    if resize_depth and out.shape[-2:] != org_size:
-        out = F.interpolate(out, size=(org_size[0], org_size[1]),
-                            mode="bilinear", align_corners=False, antialias=True)
     out.neg_()
 
     if flip_aug:
@@ -123,16 +119,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
     if not batch:
         assert z.shape[0] == 1
         z = z.squeeze(0)
-
-    if int16:
-        if normalize_int16:
-            max_v, min_v = z.max(), z.min()
-            uint16_max = 0xffff
-            if max_v - min_v > 0:
-                z = uint16_max * ((z - min_v) / (max_v - min_v))
-            else:
-                z = torch.zeros_like(z)
-        z = z.to(torch.int16)
 
     z = z.to(output_device)
 
@@ -175,11 +161,10 @@ class DepthProModel(BaseDepthModel):
             x = TF.to_tensor(x).to(self.device)
         return batch_infer(
             self.model, x, flip_aug=tta, low_vram=low_vram,
-            int16=False, enable_amp=enable_amp,
+            enable_amp=enable_amp,
             output_device=x.device,
             device=x.device,
-            edge_dilation=edge_dilation,
-            resize_depth=False)
+            edge_dilation=edge_dilation)
 
     @classmethod
     def get_name(cls):

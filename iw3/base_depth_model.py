@@ -211,7 +211,11 @@ class BaseDepthModel(metaclass=ABCMeta):
             if min_depth_value is not None and max_depth_value is not None:
                 depth = depth * (max_depth_value - min_depth_value) + min_depth_value
 
-            return depth
+            metadata = {}
+            metadata.update(im.text)
+            metadata.update({"filename": file_path})
+
+            return depth, metadata
 
 
 def _test():

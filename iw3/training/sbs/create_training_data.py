@@ -11,12 +11,13 @@ import random
 from torchvision.transforms import (
     functional as TF,
     InterpolationMode)
+import torch.nn.functional as F
 from nunif.utils.pil_io import load_image_simple
 from PIL.PngImagePlugin import PngInfo
 from nunif.utils.image_loader import ImageLoader, list_images
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
-from iw3.utils import get_mapper, normalize_depth
+from iw3.utils import get_mapper
 from iw3.forward_warp import apply_divergence_forward_warp
 from .stereoimage_generation import create_stereoimages
 
@@ -131,10 +132,6 @@ def random_resize(im, min_size, max_size):
 
 
 def apply_mapper(depth, mapper):
-    if depth.dtype == torch.int16:
-        # signed int16 to unsigned long
-        depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
-    depth = normalize_depth(depth)
     return get_mapper(mapper)(depth)
 
 
@@ -221,10 +218,12 @@ def main(args):
                     enable_amp = True
 
                     with torch.inference_mode():
-                        depth = model.infer_raw(im_s, int16=True, normalize_int16=True,
-                                                flip_aug=flip_aug, enable_amp=enable_amp,
-                                                edge_dilation=edge_dilation)
-                        np_depth16 = depth.clone().squeeze(0).numpy().astype(np.uint16)
+                        depth = model.infer(im_s, tta=flip_aug, enable_amp=enable_amp,
+                                            edge_dilation=edge_dilation)
+                        depth = F.interpolate(depth.unsqueeze(0), (im_s.height, im_s.width),
+                                              mode="bilinear", align_corners=False, antialias=True).squeeze(0)
+                        depth = model.minmax_normalize(depth)
+                        np_depth16 = (depth * 0xffff).to(torch.uint16).squeeze(0).cpu().numpy()
 
                     if args.method == "polylines":
                         np_depth_f = apply_mapper(depth, mapper).squeeze(0).numpy().astype(np.float64)
@@ -234,7 +233,7 @@ def main(args):
                             divergence, modes=["left-right"],
                             convergence=convergence)[0]
                     elif args.method == "forward_fill":
-                        c = TF.to_tensor(im_s).unsqueeze(0)
+                        c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
                         depth_f = apply_mapper(depth, mapper).unsqueeze(0)
                         left_eye, right_eye = apply_divergence_forward_warp(c, depth_f, divergence, convergence, method="forward_fill")
                         sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)

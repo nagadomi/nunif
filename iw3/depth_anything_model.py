@@ -90,9 +90,8 @@ def _forward(model, x, enable_amp):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=True,
-                edge_dilation=2, resize_depth=True,
+def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
+                output_device="cpu", device=None, edge_dilation=2,
                 **kwargs):
     device = device if device is not None else model.device
     batch = False
@@ -107,7 +106,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
-    org_size = x.shape[-2:]
     x = batch_preprocess(x, model.prep_lower_bound)
 
     if not low_vram:
@@ -127,9 +125,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out = dilate_edge(out, edge_dilation)
         else:
             out = dilate_edge(out.neg_(), edge_dilation).neg_()
-    if resize_depth and out.shape[-2:] != org_size:
-        out = F.interpolate(out, size=(org_size[0], org_size[1]),
-                            mode="bilinear", align_corners=False, antialias=True)
 
     if not model.metric_depth:
         # invert for zoedepth compatibility
@@ -148,21 +143,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
     if not batch:
         assert z.shape[0] == 1
         z = z.squeeze(0)
-
-    if int16:
-        # 1. ignore normalize_int16
-        # 2. DepthAnything output is relative depth so normalize
-        # TODO: torch.uint16 will be implemented.
-        #       For now, use numpy to save uint16 png.
-        #  torch.tensor([0, 1, 65534], dtype=torch.float32).to(torch.int16).numpy().astype(np.uint16)
-        # >array([    0,     1, 65534], dtype=uint16)
-        max_v, min_v = z.max(), z.min()
-        uint16_max = 0xffff
-        if max_v - min_v > 0:
-            z = uint16_max * ((z - min_v) / (max_v - min_v))
-        else:
-            z = torch.zeros_like(z)
-        z = z.to(torch.int16)
 
     z = z.to(output_device)
 
@@ -212,7 +192,7 @@ class DepthAnythingModel(BaseDepthModel):
             x = TF.to_tensor(x).to(self.device)
         return batch_infer(
             self.model, x, flip_aug=tta, low_vram=low_vram,
-            int16=False, enable_amp=enable_amp,
+            enable_amp=enable_amp,
             output_device=x.device,
             device=x.device,
             edge_dilation=edge_dilation,

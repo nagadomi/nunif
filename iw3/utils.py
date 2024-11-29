@@ -47,13 +47,8 @@ def make_divergence_feature_value(divergence, convergence, image_width):
 
 
 def make_input_tensor(c, depth, divergence, convergence,
-                      image_width, depth_min=None, depth_max=None,
-                      mapper="pow2", normalize=True):
-    if normalize:
-        # TODO
-        raise NotImplementedError()
-    else:
-        depth = depth.squeeze(0)  # CHW -> HW
+                      image_width, mapper="pow2"):
+    depth = depth.squeeze(0)  # CHW -> HW
     depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
     divergence_feat = torch.full_like(depth, divergence_value, device=depth.device)
@@ -182,8 +177,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
                                        divergence=divergence,
                                        convergence=convergence,
                                        image_width=W,
-                                       mapper=mapper,
-                                       normalize=False)  # already normalized
+                                       mapper=mapper)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
@@ -208,8 +202,7 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
                                        divergence=divergence,
                                        convergence=convergence,
                                        image_width=W,
-                                       mapper=mapper,
-                                       normalize=False)  # already normalized
+                                       mapper=mapper)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
@@ -349,12 +342,6 @@ def save_image(im, output_filename, format="png", png_info=None):
         raise NotImplementedError(format)
 
     im.save(output_filename, format=format, **options)
-
-
-def depth_load_func(fn):
-    depth = BaseDepthModel.load_depth(fn)
-    meta = {"filename": fn}
-    return depth, meta
 
 
 def remove_bg_from_image(im, bg_session):
@@ -1088,7 +1075,7 @@ def process_config_video(config, args, side_model):
         load_func_kwargs={"color": "rgb"})
     depth_loader = ImageLoader(
         files=depth_files,
-        load_func=depth_load_func)
+        load_func=BaseDepthModel.load_depth)
     sbs_lock = threading.Lock()
 
     @torch.inference_mode()
@@ -1104,7 +1091,7 @@ def process_config_video(config, args, side_model):
 
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
-        depth = BaseDepthModel.load_depth(depth_file).to(args.state["device"])
+        depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
         frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0))
         return frame.shape[2:]
@@ -1225,7 +1212,7 @@ def process_config_images(config, args, side_model):
         load_func_kwargs={"color": "rgb"})
     depth_loader = ImageLoader(
         files=depth_files,
-        load_func=depth_load_func)
+        load_func=BaseDepthModel.load_depth)
 
     original_mapper = args.mapper
     try:
