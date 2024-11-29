@@ -888,8 +888,8 @@ def export_images(args):
 
 
 def get_resume_seq(depth_dir, rgb_dir):
-    depth_files = sorted(os.listdir(depth_dir))
-    rgb_files = sorted(os.listdir(rgb_dir))
+    depth_files = sorted([path.basename(fn) for fn in ImageLoader.listdir(depth_dir)])
+    rgb_files = sorted([path.basename(fn) for fn in ImageLoader.listdir(rgb_dir)])
     if rgb_files and depth_files:
         last_seq = int(path.splitext(min(rgb_files[-1], depth_files[-1]))[0], 10)
     else:
