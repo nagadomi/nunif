@@ -27,7 +27,9 @@ from nunif.utils.gui import (
     set_icon_ex, start_file, load_icon)
 from .locales import LOCALES
 from . import models # noqa
-from .depth_anything_model import MODEL_FILES as DEPTH_ANYTHING_MODELS, has_model as depth_anything_has_model
+from .depth_anything_model import DepthAnythingModel
+from .depth_pro_model import DepthProModel
+from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
 import torch
 
@@ -219,19 +221,20 @@ class MainFrame(wx.Frame):
         depth_models = [
             "ZoeD_N", "ZoeD_K", "ZoeD_NK",
             "ZoeD_Any_N", "ZoeD_Any_K",
+            "DepthPro_SD", "DepthPro_HD", "DepthPro",
             "Any_S", "Any_B", "Any_L",
             "Any_V2_S",
         ]
-        if depth_anything_has_model("Any_V2_B"):
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_B"):
             depth_models.append("Any_V2_B")
-        if depth_anything_has_model("Any_V2_L"):
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
             depth_models.append("Any_V2_L")
 
         depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
-        if depth_anything_has_model("Any_V2_N_L"):
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):
             depth_models.append("Any_V2_N_L")
         depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
-        if depth_anything_has_model("Any_V2_K_L"):
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
             depth_models.append("Any_V2_K_L")
 
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
@@ -797,12 +800,18 @@ class MainFrame(wx.Frame):
 
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
-        if name in DEPTH_ANYTHING_MODELS:
+        if (DepthAnythingModel.supported(name) or DepthProModel.supported(name) or name.startswith("ZoeD_Any_")):
             self.chk_edge_dilation.SetValue(True)
             self.cbo_edge_dilation.Enable()
         else:
             self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
+        if name in DEPTH_PRO_MODELS:
+            self.cbo_zoed_resolution.Disable()
+            self.chk_fp16.Disable()
+        else:
+            self.cbo_zoed_resolution.Enable()
+            self.chk_fp16.Enable()
 
     def update_video_format(self):
         name = self.cbo_video_format.GetValue()
@@ -1202,7 +1211,7 @@ class MainFrame(wx.Frame):
         self.prg_tqdm.SetValue(0)
         self.SetStatusText("...")
 
-        if args.state["depth_utils"].has_model(args.depth_model):
+        if args.state["depth_model"].has_checkpoint_file(args.depth_model):
             # Realod depth model
             self.SetStatusText(f"Loading {args.depth_model}...")
             if args.remove_bg and not has_rembg_model(args.bg_model):

@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import threading
 import math
 from tqdm import tqdm
-from PIL import ImageDraw, Image
+from PIL import ImageDraw
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
@@ -22,6 +22,8 @@ from . dilation import dilate_edge
 from . forward_warp import apply_divergence_forward_warp
 from . anaglyph import apply_anaglyph_redcyan
 from . mapper import get_mapper, resolve_mapper_name
+from . depth_model_factory import create_depth_model
+from . base_depth_model import BaseDepthModel
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -35,26 +37,6 @@ ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0
 IMAGE_IO_QUEUE_MAX = 100
 
 
-def normalize_depth(depth, depth_min=None, depth_max=None):
-    depth = depth.float()
-    if depth_min is None:
-        depth_min = depth.min()
-        depth_max = depth.max()
-
-    if depth_max - depth_min > 0:
-        depth = 1. - ((depth - depth_min) / (depth_max - depth_min))
-    else:
-        depth = torch.zeros_like(depth)
-    return torch.clamp(depth, 0., 1.)
-
-
-def convert_normalized_depth_to_uint16_numpy(depth):
-    uint16_max = 0xffff
-    depth = uint16_max * depth
-    depth = depth.to(torch.int16).numpy().astype(np.uint16)
-    return depth
-
-
 def make_divergence_feature_value(divergence, convergence, image_width):
     # assert image_width <= 2048
     divergence_pix = divergence * 0.5 * 0.01 * image_width
@@ -65,12 +47,8 @@ def make_divergence_feature_value(divergence, convergence, image_width):
 
 
 def make_input_tensor(c, depth, divergence, convergence,
-                      image_width, depth_min=None, depth_max=None,
-                      mapper="pow2", normalize=True):
-    if normalize:
-        depth = normalize_depth(depth.squeeze(0), depth_min, depth_max)
-    else:
-        depth = depth.squeeze(0)  # CHW -> HW
+                      image_width, mapper="pow2"):
+    depth = depth.squeeze(0)  # CHW -> HW
     depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
     divergence_feat = torch.full_like(depth, divergence_value, device=depth.device)
@@ -199,8 +177,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
                                        divergence=divergence,
                                        convergence=convergence,
                                        image_width=W,
-                                       mapper=mapper,
-                                       normalize=False)  # already normalized
+                                       mapper=mapper)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
@@ -225,8 +202,7 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
                                        divergence=divergence,
                                        convergence=convergence,
                                        image_width=W,
-                                       mapper=mapper,
-                                       normalize=False)  # already normalized
+                                       mapper=mapper)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
@@ -345,10 +321,11 @@ def get_image_ext(format):
         raise NotImplementedError(format)
 
 
-def save_image(im, output_filename, format="png"):
+def save_image(im, output_filename, format="png", png_info=None):
     if format == "png":
         options = {
-            "compress_level": 6
+            "compress_level": 6,
+            "pnginfo": png_info,
         }
     elif format == "webp":
         options = {
@@ -407,7 +384,7 @@ def preprocess_image(im, args):
     return im_org, im
 
 
-def apply_divergence(depth, im_org, args, side_model, ema=False):
+def apply_divergence(depth, im_org, args, side_model):
     batch = True
     if depth.ndim != 4:
         # CHW
@@ -417,12 +394,6 @@ def apply_divergence(depth, im_org, args, side_model, ema=False):
     else:
         # BCHW
         pass
-
-    for i in range(depth.shape[0]):
-        depth_min, depth_max = depth[i].min(), depth[i].max()
-        if ema:
-            depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
-        depth[i] = normalize_depth(depth[i], depth_min=depth_min, depth_max=depth_max)
 
     if args.method in {"grid_sample", "backward"}:
         depth = get_mapper(args.mapper)(depth)
@@ -519,21 +490,17 @@ def postprocess_image(left_eye, right_eye, args):
     return sbs
 
 
-def debug_depth_image(depth, args, ema=False):
+def debug_depth_image(depth, args):
     depth = depth.float()
-    depth_min, depth_max = depth.min(), depth.max()
-    if ema:
-        depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
     mean_depth, std_depth = depth.mean().item(), depth.std().item()
-    depth = normalize_depth(depth, depth_min=depth_min, depth_max=depth_max)
     depth2 = get_mapper(args.mapper)(depth)
     out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
     gc = ImageDraw.Draw(out)
-    gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
-                       f"max={round(float(depth_max), 4)}\n"
-                       f"mean={round(float(mean_depth), 4)}\n"
-                       f"std={round(float(std_depth), 4)}"), "gray")
+    # gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
+    #                    f"max={round(float(depth_max), 4)}\n"
+    #                    f"mean={round(float(mean_depth), 4)}\n"
+    #                    f"std={round(float(std_depth), 4)}"), "gray")
 
     return out
 
@@ -541,13 +508,10 @@ def debug_depth_image(depth, args, ema=False):
 def process_image(im, args, depth_model, side_model, return_tensor=False):
     with torch.inference_mode():
         im_org, im = preprocess_image(im, args)
-        depth = args.state["depth_utils"].batch_infer(
-            depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-            int16=False, enable_amp=not args.disable_amp,
-            output_device=im.device,
-            device=im.device,
-            edge_dilation=args.edge_dilation,
-            resize_depth=False)
+        depth = depth_model.infer(im, tta=args.tta, low_vram=args.low_vram,
+                                  enable_amp=not args.disable_amp,
+                                  edge_dilation=args.edge_dilation)
+        depth = depth_model.minmax_normalize(depth)
         if not args.debug_depth:
             left_eye, right_eye = apply_divergence(depth, im_org, args, side_model)
             sbs = postprocess_image(left_eye, right_eye, args)
@@ -555,10 +519,12 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
                 sbs = TF.to_pil_image(sbs)
             return sbs
         else:
-            return debug_depth_image(depth, args, args.ema_normalize)
+            return debug_depth_image(depth, args)
 
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
+    # disable ema minmax for each process
+    depth_model.disable_ema_minmax()
     os.makedirs(output_dir, exist_ok=True)
 
     if args.resume:
@@ -617,6 +583,9 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if ema_normalize:
+        depth_model.enable_ema_minmax(args.ema_decay)
+
     if side_model is not None:
         # TODO: sometimes ERROR RUNNING GUARDS forward error happen
         # side_model = compile_model(side_model, dynamic=True)
@@ -660,7 +629,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         frame = VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
                                           return_tensor=True))
         if ema_normalize:
-            args.state["ema"].clear()
+            # reset ema to avoid affecting test frames
+            depth_model.reset_ema_minmax()
         return frame
 
     if args.low_vram or args.debug_depth:
@@ -704,21 +674,19 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             else:
                 x_orgs = x
             with depth_lock[device_index]:
-                depths = args.state["depth_utils"].batch_infer(
-                    depth_model, x, flip_aug=args.tta, low_vram=args.low_vram,
-                    int16=False, enable_amp=not args.disable_amp,
-                    output_device=x.device,
-                    device=x.device,
-                    edge_dilation=args.edge_dilation,
-                    resize_depth=False)
+                depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
+                                           enable_amp=not args.disable_amp,
+                                           edge_dilation=args.edge_dilation)
+                depths = depth_model.minmax_normalize(depths)
+
             if args.method in {"forward", "forward_fill"}:
                 # Lock all threads
                 # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
                 with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
-                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
+                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
             else:
                 with sbs_lock[device_index]:
-                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model, ema_normalize)
+                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
 
             return torch.stack([
                 postprocess_image(left_eyes[i], right_eyes[i], args)
@@ -794,6 +762,9 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
 
 
 def process_video(input_filename, output_path, args, depth_model, side_model):
+    # disable ema minmax for each process
+    depth_model.disable_ema_minmax()
+
     if args.keyframe:
         process_video_keyframes(input_filename, output_path, args, depth_model, side_model)
     else:
@@ -880,20 +851,13 @@ def export_images(args):
                 continue
             im = TF.to_tensor(im).to(args.state["device"])
             im_org, im = preprocess_image(im, args)
-            depth = args.state["depth_utils"].batch_infer(
-                depth_model, im, flip_aug=args.tta, low_vram=args.low_vram,
-                int16=False, enable_amp=not args.disable_amp,
-                output_device=im.device,
-                device=im.device,
-                edge_dilation=edge_dilation,
-                resize_depth=False)
-
-            depth = normalize_depth(depth)
+            depth = depth_model.infer(im, tta=args.tta, low_vram=args.low_vram,
+                                      enable_amp=not args.disable_amp,
+                                      edge_dilation=edge_dilation)
+            depth = depth_model.minmax_normalize(depth)
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
-            depth = convert_normalized_depth_to_uint16_numpy(depth.detach().cpu()[0])
-            depth = Image.fromarray(depth)
-            futures.append(pool.submit(save_image, depth, depth_file))
+            futures.append(pool.submit(depth_model.save_depth, depth, depth_file, normalize=False))
             pbar.update(1)
             if suspend_event is not None:
                 suspend_event.wait()
@@ -984,10 +948,6 @@ def export_video(args):
     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
         return
 
-    ema_normalize = args.ema_normalize and args.max_fps >= 15
-    if ema_normalize:
-        args.state["ema"].clear()
-
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -1008,6 +968,9 @@ def export_video(args):
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     streams = threading.local()
     depth_model = args.state["depth_model"]
+    ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if ema_normalize:
+        depth_model.enable_ema_minmax(args.ema_decay)
 
     @torch.inference_mode()
     def __batch_callback(x, pts):
@@ -1024,33 +987,19 @@ def export_video(args):
             x_orgs = x
 
         with depth_lock[device_index]:
-            depths = args.state["depth_utils"].batch_infer(
-                depth_model, x,
-                int16=False,
-                flip_aug=args.tta, low_vram=args.low_vram,
-                enable_amp=not args.disable_amp,
-                output_device=x.device,
-                device=x.device,
-                edge_dilation=edge_dilation,
-                resize_depth=False)
-
-            for i in range(depths.shape[0]):
-                depth_min, depth_max = depths[i].min(), depths[i].max()
-                if ema_normalize:
-                    depth_min, depth_max = args.state["ema"].update(depth_min, depth_max)
-                depth = normalize_depth(depths[i], depth_min=depth_min, depth_max=depth_max)
-                if args.export_disparity:
-                    depth = get_mapper(args.mapper)(depth)
-                depths[i] = depth
+            depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
+                                       enable_amp=not args.disable_amp,
+                                       edge_dilation=edge_dilation)
+            depths = depth_model.minmax_normalize(depths)
+            if args.export_disparity:
+                depths = torch.stack([get_mapper(args.mapper)(depths[i]) for i in range(depths.shape[0])])
 
         depths = depths.detach().cpu()
         x_orgs = x_orgs.detach().cpu()
 
         for x, depth, seq in zip(x_orgs, depths, pts):
             seq = str(seq).zfill(8)
-            depth = convert_normalized_depth_to_uint16_numpy(depth[0])
-            dpeth = Image.fromarray(depth)
-            dpeth.save(path.join(depth_dir, f"{seq}.png"))
+            depth_model.save_depth(depth[0], path.join(depth_dir, f"{seq}.png"), normalize=False)
             rgb = TF.to_pil_image(x)
             rgb.save(path.join(rgb_dir, f"{seq}.png"))
 
@@ -1092,20 +1041,6 @@ def export_video(args):
     config.save(config_file)
 
 
-def to_float32_grayscale_depth(depth):
-    if depth.dtype != torch.float32:
-        # 16bit image
-        depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
-
-    if depth.shape[0] != 1:
-        # Maybe 24bpp
-        # TODO: color depth support?
-        depth = torch.mean(depth, dim=0, keepdim=True)
-    # invert
-    depth = 1. - depth
-    return depth
-
-
 def process_config_video(config, args, side_model):
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, audio_file = config.resolve_paths(base_dir)
@@ -1140,9 +1075,7 @@ def process_config_video(config, args, side_model):
         load_func_kwargs={"color": "rgb"})
     depth_loader = ImageLoader(
         files=depth_files,
-        load_func=load_image_simple,
-        load_func_kwargs={"color": "any"})
-
+        load_func=BaseDepthModel.load_depth)
     sbs_lock = threading.Lock()
 
     @torch.inference_mode()
@@ -1158,9 +1091,8 @@ def process_config_video(config, args, side_model):
 
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
-        depth = load_image_simple(depth_file, color="any")[0]
+        depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
-        depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth)).to(args.state["device"])
         frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0))
         return frame.shape[2:]
 
@@ -1171,9 +1103,8 @@ def process_config_video(config, args, side_model):
         depth_batch = []
         for rgb, depth in zip(rgb_loader, depth_loader):
             rgb = TF.to_tensor(rgb[0])
-            depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth[0]))
             rgb_batch.append(rgb)
-            depth_batch.append(depth)
+            depth_batch.append(depth[0])
             if len(rgb_batch) == minibatch_size:
                 frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
                                         torch.stack(depth_batch).to(args.state["device"]))
@@ -1250,6 +1181,7 @@ def process_config_images(config, args, side_model):
     os.makedirs(output_dir, exist_ok=True)
     rgb_files = ImageLoader.listdir(rgb_dir)
     depth_files = ImageLoader.listdir(depth_dir)
+
     if args.resume:
         # skip existing output files
         remaining_files = []
@@ -1280,8 +1212,7 @@ def process_config_images(config, args, side_model):
         load_func_kwargs={"color": "rgb"})
     depth_loader = ImageLoader(
         files=depth_files,
-        load_func=load_image_simple,
-        load_func_kwargs={"color": "any"})
+        load_func=BaseDepthModel.load_depth)
 
     original_mapper = args.mapper
     try:
@@ -1304,7 +1235,7 @@ def process_config_images(config, args, side_model):
                 if rgb_filename != depth_filename:
                     raise ValueError(f"No match {rgb_filename} and {depth_filename}")
                 rgb = TF.to_tensor(rgb).to(args.state["device"])
-                depth = to_float32_grayscale_depth(TF.pil_to_tensor(depth)).to(args.state["device"])
+                depth = depth.to(args.state["device"])
                 if not config.skip_edge_dilation and args.edge_dilation > 0:
                     depth = -dilate_edge(-depth.unsqueeze(0), args.edge_dilation).squeeze(0)
 
@@ -1401,6 +1332,7 @@ def create_parser(required_true=True):
                                  "Any_V2_N", "Any_V2_K",
                                  "Any_V2_N_S", "Any_V2_N_B", "Any_V2_N_L",
                                  "Any_V2_K_S", "Any_V2_K_B", "Any_V2_K_L",
+                                 "DepthPro", "DepthPro_HD", "DepthPro_SD",
                                  ],
                         help="depth model name")
     parser.add_argument("--remove-bg", action="store_true",
@@ -1434,7 +1366,7 @@ def create_parser(required_true=True):
                                  "inv_mul_1", "inv_mul_2", "inv_mul_3",
                                  ],
                         help=("(re-)mapper function for depth. "
-                              "if auto, div_6 for ZoeDepth model, none for DepthAnything model. "
+                              "if auto, div_6 for ZoeDepth model, none for DepthAnything/DepthPro model. "
                               "directly using this option is deprecated. "
                               "use --foreground-scale instead."))
     parser.add_argument("--foreground-scale", type=float, choices=[Range(-3.0, 3.0)], default=0,
@@ -1524,12 +1456,8 @@ class EMAMinMax():
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspend_event=None):
-    from . import zoedepth_model as ZU
-    from . import depth_anything_model as DU
-    if args.depth_model in ZU.MODEL_FILES:
-        depth_utils = ZU
-    elif args.depth_model in DU.MODEL_FILES:
-        depth_utils = DU
+    if depth_model is None:
+        depth_model = create_depth_model(args.depth_model)
 
     if args.export_disparity:
         args.export = True
@@ -1556,10 +1484,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         "suspend_event": suspend_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
-        "ema": EMAMinMax(alpha=args.ema_decay),
         "device": create_device(args.gpu),
         "devices": [create_device(gpu_id) for gpu_id in args.gpu],
-        "depth_utils": depth_utils
     }
     return args
 
@@ -1592,9 +1518,6 @@ def iw3_main(args):
         # For GPU round-robin on thread pool
         args.max_workers = len(args.gpu)
 
-    if args.update:
-        args.state["depth_utils"].force_update()
-
     if path.normpath(args.input) == path.normpath(args.output):
         raise ValueError("input and output must be different file")
 
@@ -1616,23 +1539,23 @@ def iw3_main(args):
     else:
         args.bg_session = None
 
+    assert args.state["depth_model"] is not None
+    depth_model = args.state["depth_model"]
+    if args.update:
+        depth_model.force_update()
+
     if args.edge_dilation is None:
-        if args.state["depth_utils"].get_name() == "DepthAnything":
+        if depth_model.get_name() in {"DepthAnything", "DepthPro"}:
             # TODO: This may not be a sensible choice
             args.edge_dilation = 2
         else:
             args.edge_dilation = 0
 
     if not is_yaml(args.input):
-        if args.state["depth_model"] is not None:
-            depth_model = args.state["depth_model"]
-        else:
-            depth_model = args.state["depth_utils"].load_model(model_type=args.depth_model, gpu=args.gpu,
-                                                               height=args.zoed_height)
-            args.state["depth_model"] = depth_model
+        if not depth_model.loaded():
+            depth_model.load(gpu=args.gpu, resolution=args.zoed_height)
 
-        is_metric = (args.state["depth_utils"].get_name() == "ZoeDepth" or
-                     (args.state["depth_utils"].get_name() == "DepthAnything" and args.state["depth_model"].metric_depth))
+        is_metric = depth_model.is_metric()
         args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                           metric_depth=is_metric)
     else:

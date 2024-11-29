@@ -10,7 +10,6 @@ from os import path
 import random
 from PIL import Image
 from ... import utils as US
-import numpy as np
 
 
 def load_images(org_file, side=None):
@@ -42,6 +41,15 @@ def load_images(org_file, side=None):
             raise RuntimeError(f"load error {org_file}")
         assert im_org.size == im_depth.size and im_org.size == im_side.size
         return im_org, im_depth, im_side
+
+
+def depth_pil_to_tensor(im_depth, depth_min, depth_max):
+    # depth is already normalized. expect depth_min=0 and depth_max=0xffff
+    # pil_to_tensor() -> torch.uint16
+    depth = TF.pil_to_tensor(im_depth).to(torch.float32)
+    depth = torch.clamp((depth - depth_min) / (depth_max - depth_min), 0, 1)
+    depth = torch.nan_to_num(depth)
+    return depth
 
 
 class SBSDataset(Dataset):
@@ -87,16 +95,12 @@ class SBSDataset(Dataset):
         (depth_max, depth_min, original_image_width,
          divergence, convergence, mapper) = self.get_metadata(im_depth)
 
-        depth = TF.to_tensor(im_depth)
-        if depth.dtype == torch.int16:
-            depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
-
+        depth = depth_pil_to_tensor(im_depth, depth_min=depth_min, depth_max=depth_max)
         x = US.make_input_tensor(
             TF.to_tensor(im_org),
             depth,
             divergence, convergence,
             original_image_width,
-            depth_min=depth_min, depth_max=depth_max,
             mapper=mapper,
         )
         left = TF.to_tensor(TF.crop(im_left, self.model_offset, self.model_offset,
@@ -123,15 +127,12 @@ class SBSDataset(Dataset):
             im_depth = TF.hflip(im_depth)
             im_side = TF.hflip(im_side)
 
-        depth = TF.to_tensor(im_depth)
-        if depth.dtype == torch.int16:
-            depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
+        depth = depth_pil_to_tensor(im_depth, depth_min=depth_min, depth_max=depth_max)
         x = US.make_input_tensor(
             TF.to_tensor(im_org),
             depth,
             divergence, convergence,
             original_image_width,
-            depth_min=depth_min, depth_max=depth_max,
             mapper=mapper,
         )
         y = TF.to_tensor(TF.crop(im_side, self.model_offset, self.model_offset,
