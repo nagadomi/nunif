@@ -380,8 +380,18 @@ class Waifu2xEnv(LuminancePSNREnv):
                 else:
                     weight = 10.0  # inf
                 recon_weight = 1.0 / weight
-                if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
-                                             generator_loss > 0.95):
+                if self.trainer.args.generator_start_epoch is not None:
+                    if self.trainer.epoch >= self.trainer.args.generator_start_epoch:
+                        use_disc_loss = True
+                    else:
+                        use_disc_loss = False
+                else:
+                    if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
+                                                 generator_loss > 0.95):
+                        use_disc_loss = True
+                    else:
+                        use_disc_loss = False
+                if use_disc_loss:
                     g_loss = (recon_loss * recon_weight + generator_loss * self.trainer.args.discriminator_weight) * 0.5
                 else:
                     g_loss = recon_loss * recon_weight * 0.5
@@ -840,6 +850,10 @@ def register(subparsers, default_parser):
                               " stops training of the generator."
                               " This is the limit to prevent too strong generator."
                               " Also do not hit the newbie discriminator."))
+    parser.add_argument("--generator-start-epoch", type=int, default=None,
+                        help=("When the epoch is less than the specified value,"
+                              " stops training of the generator."
+                              " And --generator-start-criteria will be ignored."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--reconstruction-loss-scale", type=float, default=10.0,
