@@ -384,7 +384,7 @@ def pass3(transforms, mean_match_scores, fps, args, device):
         elif args.border == "crop":
             padding = 0
             x_input = x
-            padding_mode = "reflection"
+            padding_mode = "zeros"
         else:
             padding = 0
             x_input = x
