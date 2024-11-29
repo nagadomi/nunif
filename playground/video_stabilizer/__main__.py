@@ -244,6 +244,72 @@ def pass2(points1, points2, center, resize_scale, args, device):
     return transforms
 
 
+def conv1d_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, device):
+    shift_x_smooth = shift_x
+    shift_y_smooth = shift_y
+    angle_smooth = angle
+    for kernel_sec in smoothing_seconds:
+        kernel_size = int(kernel_sec * float(fps))
+        if kernel_size % 2 == 0:
+            kernel_size = kernel_size + 1
+        kernel = gen_smoothing_kernel(name=method, kernel_size=kernel_size, device=device)
+        shift_x_smooth = smoothing(shift_x_smooth, kernel)
+        shift_y_smooth = smoothing(shift_y_smooth, kernel)
+        angle_smooth = smoothing(angle_smooth, kernel)
+
+    shift_x_fix = (shift_x_smooth - shift_x).flatten()
+    shift_y_fix = (shift_y_smooth - shift_y).flatten()
+    angle_fix = (angle_smooth - angle).flatten()
+
+    return shift_x_fix, shift_y_fix, angle_fix
+
+
+def grad_opt(tx, ty, ta, resolution, iteration=200, penalty_weight=2e-3):
+    """
+    The basic idea is from: "Auto-Directed Video Stabilization with Robust L1 Optimal Camera Paths"
+    But not L1 or Optimal solution.
+    """
+    tx = replication_pad1d_naive(tx, (0, 3, 0, 0)).flatten()
+    ty = replication_pad1d_naive(ty, (0, 3, 0, 0)).flatten()
+    ta = replication_pad1d_naive(ta, (0, 3, 0, 0)).flatten()
+
+    px = tx.clone().requires_grad_(True)
+    py = ty.clone().requires_grad_(True)
+    pa = ta.clone().requires_grad_(True)
+
+    optimizer = torch.optim.LBFGS([px, py, pa], history_size=10, max_iter=4)
+
+    def f():
+        optimizer.zero_grad()
+        loss = 0.0
+        for x, t in zip((px, py, pa), (tx, ty, ta)):
+            fx1 = x[:-1] - x[1:]
+            fx2 = fx1[:-1] - fx1[1:]
+            fx3 = fx2[:-1] - fx2[1:]
+            grad_loss = fx1.pow(2).mean() + fx2.pow(2).mean() + fx3.pow(2).mean()
+            penalty = (x - t).pow(2).mean()
+            loss = loss + grad_loss + penalty * penalty_weight
+        # print(i, loss.item())
+        loss.backward()
+        return loss
+
+    for i in tqdm(range(iteration), ncols=80, desc="pass 2.5/3"):
+        optimizer.step(f)
+
+    px = px[:-3].detach() - tx[:-3]
+    py = py[:-3].detach() - ty[:-3]
+    pa = pa[:-3].detach() - ta[:-3]
+
+    return px, py, pa
+
+
+def pass3_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, resolution, device):
+    if method in {"gaussian", "savgol"}:
+        return conv1d_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, device)
+    elif method == "grad_opt":
+        return grad_opt(shift_x, shift_y, angle, resolution, penalty_weight=4e-3 / smoothing_seconds[0])
+
+
 def pass3(transforms, mean_match_scores, fps, args, device):
     if path.isdir(args.output):
         os.makedirs(args.output, exist_ok=True)
@@ -268,23 +334,10 @@ def pass3(transforms, mean_match_scores, fps, args, device):
     shift_x = shift_x.cumsum(dim=0).reshape(1, 1, -1)
     shift_y = shift_y.cumsum(dim=0).reshape(1, 1, -1)
     angle = angle.cumsum(dim=0).reshape(1, 1, -1)
-
-    # smoothing
-    shift_x_smooth = shift_x
-    shift_y_smooth = shift_y
-    angle_smooth = angle
-    for kernel_sec in args.smoothing:
-        kernel_size = int(kernel_sec * float(fps))
-        if kernel_size % 2 == 0:
-            kernel_size = kernel_size + 1
-        kernel = gen_smoothing_kernel(name=args.filter, kernel_size=kernel_size, device=device)
-        shift_x_smooth = smoothing(shift_x_smooth, kernel)
-        shift_y_smooth = smoothing(shift_y_smooth, kernel)
-        angle_smooth = smoothing(angle_smooth, kernel)
-
-    shift_x_fix = (shift_x_smooth - shift_x).flatten()
-    shift_y_fix = (shift_y_smooth - shift_y).flatten()
-    angle_fix = (angle_smooth - angle).flatten()
+    shift_x_fix, shift_y_fix, angle_fix = pass3_smoothing(
+        shift_x, shift_y, angle, resolution=args.resolution,
+        method=args.filter, smoothing_seconds=args.smoothing, fps=fps,
+        device=device)
 
     def test_callback(frame):
         if frame is None:
@@ -400,7 +453,8 @@ def main():
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="batch size")
     parser.add_argument("--smoothing", type=float, nargs="+", default=[2.0], help="seconds to smoothing")
-    parser.add_argument("--filter", type=str, default="savgol", choices=["gaussian", "savgol"], help="smoothing filter")
+    parser.add_argument("--filter", type=str, default="savgol",
+                        choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter")
 
     parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand", "crop"],
                         default="zeros", help="border padding mode")
