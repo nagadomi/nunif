@@ -221,7 +221,7 @@ class MainFrame(wx.Frame):
         depth_models = [
             "ZoeD_N", "ZoeD_K", "ZoeD_NK",
             "ZoeD_Any_N", "ZoeD_Any_K",
-            "DepthPro_SD", "DepthPro_HD", "DepthPro",
+#            "DepthPro_SD", "DepthPro_HD", "DepthPro",
             "Any_S", "Any_B", "Any_L",
             "Any_V2_S",
         ]
