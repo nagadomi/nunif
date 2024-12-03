@@ -15,6 +15,11 @@ import nunif.utils.superpoint as KU
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from tqdm import tqdm
 import scipy
+from fractions import Fraction
+import hashlib
+
+
+CACHE_VERSION = 1.0
 
 
 SUPERPOINT_CONF = {
@@ -28,6 +33,7 @@ SUPERPOINT_CONF = {
 
 
 ANGLE_MAX_HARD = 90.0
+DEFAULT_RESOLUTION = 320
 
 
 def resize(x, size):
@@ -80,8 +86,8 @@ def gen_smoothing_kernel(name, kernel_size, device):
 
 
 def replication_pad1d_naive(x, padding, detach=False):
-    assert x.ndim == 3 and len(padding) == 4
-    left, right, top, bottom = padding
+    assert x.ndim == 3 and len(padding) == 2
+    left, right = padding
 
     detach_fn = lambda t: t.detach() if detach else t
     if left > 0:
@@ -99,7 +105,7 @@ def replication_pad1d_naive(x, padding, detach=False):
 def smoothing(x, weight):
     kernel_size = weight.shape[2]
     padding = (kernel_size - 1) // 2
-    x = replication_pad1d_naive(x, (padding, padding, 0, 0))
+    x = replication_pad1d_naive(x, (padding, padding))
     x = F.conv1d(x, weight=weight, stride=1, padding=0)
     return x
 
@@ -193,7 +199,7 @@ def pass1(args, device):
 
     VU.hook_frame(args.input, keypoint_callback_pool,
                   config_callback=video_config_callback(args, fps_hook),
-                  title="pass 1/3")
+                  title="pass 1/4")
 
     return points1, points2, mean_match_scores, center[0], resize_scale[0], fps_value[0]
 
@@ -229,7 +235,7 @@ def pass2(points1, points2, center, resize_scale, args, device):
     points1, points2, masks = pack_points(points1, points2)
     batch_size = args.batch_size * 32
 
-    pbar = tqdm(total=len(points1), ncols=80, desc="pass 2/3")
+    pbar = tqdm(total=len(points1), ncols=80, desc="pass 2/4")
     for kp1, kp2, mask in zip(points1.split(batch_size), points2.split(batch_size), masks.split(batch_size)):
         kp1, kp2, mask = kp1.to(device), kp2.to(device), mask.to(device)
         center_batch = torch.tensor(center, dtype=torch.float32, device=device).view(1, 2).expand(kp1.shape[0], 1, 2)
@@ -244,18 +250,78 @@ def pass2(points1, points2, center, resize_scale, args, device):
     return transforms
 
 
+def make_output_path(args):
+    if path.isdir(args.output):
+        os.makedirs(args.output, exist_ok=True)
+        output_dir = args.output
+        output_path = path.join(output_dir, path.splitext(path.basename(args.input))[0] + "_vidstab.mp4")
+    else:
+        output_dir = path.dirname(args.output)
+        output_path = args.output
+
+    return output_path
+
+
+def make_cache_path(args):
+    output_path = make_output_path(args)
+    cache_path = path.join(path.dirname(output_path), path.splitext("." + path.basename(output_path))[0] + ".stlizer")
+    return cache_path
+
+
+def sha256(s):
+    return hashlib.sha256(s.encode()).digest()
+
+
+def save_cache(cache_path, transforms, mean_match_scores, fps, args):
+    if isinstance(fps, Fraction):
+        fps = f"{fps.numerator}/{fps.denominator}"
+    else:
+        fps = float(fps)
+
+    torch.save({"transforms": transforms,
+                "mean_match_scores": mean_match_scores,
+                "max_fps": args.max_fps,
+                "fps": fps,
+                "resolution": args.resolution,
+                "input_file": sha256(path.basename(args.input)),
+                "version": args.cache_version
+                }, cache_path)
+
+
+def try_load_cache(cache_path, args):
+    if path.exists(cache_path):
+        data = torch.load(cache_path, map_location="cpu", weights_only=True)
+        if "version" not in data:
+            return None
+        if args.max_fps != data["max_fps"]:
+            return None
+        if args.resolution != data["resolution"]:
+            return None
+        if sha256(path.basename(args.input)) != data["input_file"]:
+            return None
+        if isinstance(data["fps"], str):
+            numerator, denominator = data["fps"].split("/")
+            numerator = int(numerator)
+            denominator = int(denominator)
+            data["fps"] = Fraction(numerator, denominator)
+
+        return data
+    else:
+        return None
+
+
 def conv1d_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, device):
     shift_x_smooth = shift_x
     shift_y_smooth = shift_y
     angle_smooth = angle
-    for kernel_sec in smoothing_seconds:
-        kernel_size = int(kernel_sec * float(fps))
-        if kernel_size % 2 == 0:
-            kernel_size = kernel_size + 1
-        kernel = gen_smoothing_kernel(name=method, kernel_size=kernel_size, device=device)
-        shift_x_smooth = smoothing(shift_x_smooth, kernel)
-        shift_y_smooth = smoothing(shift_y_smooth, kernel)
-        angle_smooth = smoothing(angle_smooth, kernel)
+    kernel_sec = smoothing_seconds
+    kernel_size = int(kernel_sec * float(fps))
+    if kernel_size % 2 == 0:
+        kernel_size = kernel_size + 1
+    kernel = gen_smoothing_kernel(name=method, kernel_size=kernel_size, device=device)
+    shift_x_smooth = smoothing(shift_x_smooth, kernel)
+    shift_y_smooth = smoothing(shift_y_smooth, kernel)
+    angle_smooth = smoothing(angle_smooth, kernel)
 
     shift_x_fix = (shift_x_smooth - shift_x).flatten()
     shift_y_fix = (shift_y_smooth - shift_y).flatten()
@@ -264,69 +330,52 @@ def conv1d_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, de
     return shift_x_fix, shift_y_fix, angle_fix
 
 
-def grad_opt(tx, ty, ta, resolution, iteration=200, penalty_weight=2e-3):
+def grad_opt(tx, ty, ta, scene_weight, resolution, iteration=100, penalty_weight=1e-3):
     """
     The basic idea is from: "Auto-Directed Video Stabilization with Robust L1 Optimal Camera Paths"
     But not L1 or Optimal solution.
     """
-    tx = replication_pad1d_naive(tx, (0, 3, 0, 0)).flatten()
-    ty = replication_pad1d_naive(ty, (0, 3, 0, 0)).flatten()
-    ta = replication_pad1d_naive(ta, (0, 3, 0, 0)).flatten()
+    resolution_weight = resolution / DEFAULT_RESOLUTION
+
+    tx = replication_pad1d_naive(tx, (0, 3)).flatten() * resolution_weight
+    ty = replication_pad1d_naive(ty, (0, 3)).flatten() * resolution_weight
+    ta = replication_pad1d_naive(ta, (0, 3)).flatten()
+    sw = F.pad(scene_weight, (0, 3), mode="constant", value=0).flatten()
 
     px = tx.clone().requires_grad_(True)
     py = ty.clone().requires_grad_(True)
     pa = ta.clone().requires_grad_(True)
 
     optimizer = torch.optim.LBFGS([px, py, pa], history_size=10, max_iter=4)
+    grad_weight = 1.0 / 9.0  # 3grad * 3axis
 
     def f():
         optimizer.zero_grad()
         loss = 0.0
         for x, t in zip((px, py, pa), (tx, ty, ta)):
-            fx1 = x[:-1] - x[1:]
-            fx2 = fx1[:-1] - fx1[1:]
-            fx3 = fx2[:-1] - fx2[1:]
-            grad_loss = fx1.pow(2).mean() + fx2.pow(2).mean() + fx3.pow(2).mean()
+            fx1 = x[1:] - x[:-1]
+            fx2 = fx1[1:] - fx1[:-1]
+            fx3 = fx2[1:] - fx2[:-1]
+            grad_loss = (fx1.pow(2).mul(sw[:fx1.shape[0]]).mean() +
+                         fx2.pow(2).mul(sw[:fx2.shape[0]]).mean() +
+                         fx3.pow(2).mul(sw[:fx3.shape[0]]).mean())
             penalty = (x - t).pow(2).mean()
-            loss = loss + grad_loss + penalty * penalty_weight
+            loss = loss + grad_loss * grad_weight + penalty * penalty_weight
         # print(i, loss.item())
         loss.backward()
         return loss
 
-    for i in tqdm(range(iteration), ncols=80, desc="pass 2.5/3"):
+    for i in tqdm(range(iteration), ncols=80, desc="pass 3/4"):
         optimizer.step(f)
 
-    px = px[:-3].detach() - tx[:-3]
-    py = py[:-3].detach() - ty[:-3]
-    pa = pa[:-3].detach() - ta[:-3]
+    px = (px[:-3].detach() - tx[:-3]) / resolution_weight
+    py = (py[:-3].detach() - ty[:-3]) / resolution_weight
+    pa = (pa[:-3].detach() - ta[:-3])
 
     return px, py, pa
 
 
-def pass3_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, resolution, device):
-    if method in {"gaussian", "savgol"}:
-        return conv1d_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, device)
-    elif method == "grad_opt":
-        return grad_opt(shift_x, shift_y, angle, resolution, penalty_weight=4e-3 / smoothing_seconds[0])
-
-
-def pass3(transforms, mean_match_scores, fps, args, device):
-    if path.isdir(args.output):
-        os.makedirs(args.output, exist_ok=True)
-        output_dir = args.output
-        output_file_path = path.join(output_dir, path.splitext(path.basename(args.input))[0] + "_vidstab.mp4")
-    else:
-        output_dir = path.dirname(args.output)
-        os.makedirs(output_dir, exist_ok=True)
-        output_file_path = args.output
-
-    shift_x = torch.tensor([rec[0][0] for rec in transforms], dtype=torch.float64, device=device)
-    shift_y = torch.tensor([rec[0][1] for rec in transforms], dtype=torch.float64, device=device)
-    angle = torch.tensor([rec[2] for rec in transforms], dtype=torch.float64, device=device)
-    # limit angle
-    angle = angle.clamp(-ANGLE_MAX_HARD, ANGLE_MAX_HARD)
-
-    scene_weight = calc_scene_weight(mean_match_scores, device=device) * args.strength
+def pass3_smoothing(shift_x, shift_y, angle, scene_weight, method, smoothing_seconds, fps, resolution, device):
     shift_x = shift_x * scene_weight  # + 0 * (1 - scene_weight)
     shift_y = shift_y * scene_weight
     angle = angle * scene_weight
@@ -334,10 +383,30 @@ def pass3(transforms, mean_match_scores, fps, args, device):
     shift_x = shift_x.cumsum(dim=0).reshape(1, 1, -1)
     shift_y = shift_y.cumsum(dim=0).reshape(1, 1, -1)
     angle = angle.cumsum(dim=0).reshape(1, 1, -1)
+
+    if method in {"gaussian", "savgol"}:
+        return conv1d_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, device)
+    elif method == "grad_opt":
+        return grad_opt(shift_x, shift_y, angle, scene_weight, resolution, penalty_weight=2e-3 / smoothing_seconds)
+
+
+def pass3(transforms, scene_weight, fps, args, device):
+    shift_x = torch.tensor([rec[0][0] for rec in transforms], dtype=torch.float64, device=device)
+    shift_y = torch.tensor([rec[0][1] for rec in transforms], dtype=torch.float64, device=device)
+    angle = torch.tensor([rec[2] for rec in transforms], dtype=torch.float64, device=device)
+    # limit angle
+    angle = angle.clamp(-ANGLE_MAX_HARD, ANGLE_MAX_HARD)
+
     shift_x_fix, shift_y_fix, angle_fix = pass3_smoothing(
-        shift_x, shift_y, angle, resolution=args.resolution,
+        shift_x, shift_y, angle, scene_weight, resolution=args.resolution,
         method=args.filter, smoothing_seconds=args.smoothing, fps=fps,
         device=device)
+
+    return shift_x_fix, shift_y_fix, angle_fix
+
+
+def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, device):
+    output_path = make_output_path(args)
 
     def test_callback(frame):
         if frame is None:
@@ -433,11 +502,11 @@ def pass3(transforms, mean_match_scores, fps, args, device):
         device=device,
         max_workers=0,
     )
-    VU.process_video(args.input, output_file_path,
+    VU.process_video(args.input, output_path,
                      stabilizer_callback_pool,
                      config_callback=video_config_callback(args),
                      test_callback=test_callback,
-                     title="pass 3/3")
+                     title="pass 4/4")
 
 
 def main():
@@ -452,7 +521,7 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="batch size")
-    parser.add_argument("--smoothing", type=float, nargs="+", default=[2.0], help="seconds to smoothing")
+    parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
     parser.add_argument("--filter", type=str, default="savgol",
                         choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter")
 
@@ -464,8 +533,7 @@ def main():
                         help="buffer decay factor for --border=buffer")
 
     parser.add_argument("--debug", action="store_true", help="debug output original+stabilized")
-    parser.add_argument("--strength", type=float, default=1.0, help="influence 0.0-1.0")
-    parser.add_argument("--resolution", type=int, default=320, help="resolution to perform processing")
+    parser.add_argument("--resolution", type=int, default=DEFAULT_RESOLUTION, help="resolution to perform processing")
     parser.add_argument("--iteration", type=int, default=50, help="iteration count of frame transform optimization")
     parser.add_argument("--max-fps", type=float, default=60.0,
                         help="max framerate for video. output fps = min(fps, --max-fps)")
@@ -475,22 +543,42 @@ def main():
                         help="encoder preset option for video")
     parser.add_argument("--crf", type=int, default=16,
                         help="constant quality value for video. smaller value is higher quality")
+    parser.add_argument("--disable-cache", action="store_true",
+                        help="disable pass1-2 cache")
+    parser.add_argument("--drop-cache", action="store_true",
+                        help="Delete pass1-2 cache first")
 
     args = parser.parse_args()
-    assert 0 <= args.strength <= 1.0 and args.strength
+    args.cache_version = CACHE_VERSION
 
     device = create_device(args.gpu)
+    cache_path = make_cache_path(args)
+    if args.drop_cache and path.exists(cache_path):
+        os.unlink(cache_path)
 
-    # detect keypoints and matching
-    points1, points2, mean_match_scores, center, resize_scale, fps = pass1(args=args, device=device)
+    cache_data = try_load_cache(cache_path, args)
+    if cache_data is None or args.disable_cache:
+        # detect keypoints and matching
+        points1, points2, mean_match_scores, center, resize_scale, fps = pass1(args=args, device=device)
 
-    # calculate optical flow (transform)
-    transforms = pass2(points1, points2, center, resize_scale, args=args, device=device)
+        # calculate optical flow (transform)
+        transforms = pass2(points1, points2, center, resize_scale, args=args, device=device)
 
-    assert len(transforms) == len(mean_match_scores)
+        assert len(transforms) == len(mean_match_scores)
+
+        if not args.disable_cache:
+            save_cache(cache_path, transforms, mean_match_scores, fps, args)
+    else:
+        transforms = cache_data["transforms"]
+        mean_match_scores = cache_data["mean_match_scores"]
+        fps = cache_data["fps"]
 
     # stabilize
-    pass3(transforms, mean_match_scores, fps=fps, args=args, device=device)
+    scene_weight = calc_scene_weight(mean_match_scores, device=device)
+    shift_x_fix, shift_y_fix, angle_fix = pass3(transforms, scene_weight, fps=fps, args=args, device=device)
+
+    # encode
+    pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args=args, device=device)
 
 
 if __name__ == "__main__":
