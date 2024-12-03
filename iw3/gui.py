@@ -242,11 +242,11 @@ class MainFrame(wx.Frame):
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(0)
 
-        self.lbl_zoed_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
-        self.cbo_zoed_resolution = EditableComboBox(self.grp_stereo,
-                                                    choices=["Default", "512"],
-                                                    name="cbo_zoed_resolution")
-        self.cbo_zoed_resolution.SetSelection(0)
+        self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
+        self.cbo_resolution = EditableComboBox(self.grp_stereo,
+                                               choices=["Default", "512"],
+                                               name="cbo_zoed_resolution")
+        self.cbo_resolution.SetSelection(0)
 
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
         self.cbo_foreground_scale = EditableComboBox(self.grp_stereo,
@@ -303,8 +303,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_stereo_width, 1, wx.EXPAND)
         layout.Add(self.lbl_depth_model, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_depth_model, 1, wx.EXPAND)
-        layout.Add(self.lbl_zoed_resolution, 0, wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_resolution, 1, wx.EXPAND)
+        layout.Add(self.lbl_resolution, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_resolution, 1, wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, 1, wx.EXPAND)
         layout.Add(self.chk_edge_dilation, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -508,12 +508,12 @@ class MainFrame(wx.Frame):
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
 
-        self.lbl_zoed_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
-        self.cbo_zoed_batch_size = wx.ComboBox(self.grp_processor,
-                                               choices=[str(n) for n in (64, 32, 16, 8, 4, 2, 1)],
-                                               style=wx.CB_READONLY, name="cbo_zoed_batch_size")
-        self.cbo_zoed_batch_size.SetToolTip(T("Video Only"))
-        self.cbo_zoed_batch_size.SetSelection(5)
+        self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
+        self.cbo_batch_size = wx.ComboBox(self.grp_processor,
+                                          choices=[str(n) for n in (64, 32, 16, 8, 4, 2, 1)],
+                                          style=wx.CB_READONLY, name="cbo_zoed_batch_size")
+        self.cbo_batch_size.SetToolTip(T("Video Only"))
+        self.cbo_batch_size.SetSelection(5)
 
         self.lbl_max_workers = wx.StaticText(self.grp_processor, label=T("Worker Threads"))
         self.cbo_max_workers = wx.ComboBox(self.grp_processor,
@@ -535,8 +535,8 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), (0, 3), flag=wx.EXPAND)
-        layout.Add(self.lbl_zoed_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_zoed_batch_size, (1, 1), (0, 3), flag=wx.EXPAND)
+        layout.Add(self.lbl_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_batch_size, (1, 1), (0, 3), flag=wx.EXPAND)
         layout.Add(self.lbl_max_workers, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_max_workers, (2, 1), (0, 3), flag=wx.EXPAND)
         layout.Add(self.chk_low_vram, (3, 0), flag=wx.EXPAND)
@@ -621,7 +621,7 @@ class MainFrame(wx.Frame):
         editable_comboxes = [
             self.cbo_divergence,
             self.cbo_convergence,
-            self.cbo_zoed_resolution,
+            self.cbo_resolution,
             self.cbo_stereo_width,
             self.cbo_edge_dilation,
             self.cbo_ema_decay,
@@ -807,10 +807,10 @@ class MainFrame(wx.Frame):
             self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
         if name in DEPTH_PRO_MODELS:
-            self.cbo_zoed_resolution.Disable()
+            self.cbo_resolution.Disable()
             self.chk_fp16.Disable()
         else:
-            self.cbo_zoed_resolution.Enable()
+            self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
 
     def update_video_format(self):
@@ -1033,14 +1033,14 @@ class MainFrame(wx.Frame):
             self.show_validation_error_message(T("Foreground Scale"), -3, 3)
             return None
 
-        zoed_height = self.cbo_zoed_resolution.GetValue()
-        if zoed_height == "Default" or zoed_height == "":
-            zoed_height = None
+        resolution = self.cbo_resolution.GetValue()
+        if resolution == "Default" or resolution == "":
+            resolution = None
         else:
-            if not validate_number(zoed_height, 384, 8190, is_int=True, allow_empty=False):
+            if not validate_number(resolution, 384, 8190, is_int=True, allow_empty=False):
                 self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 384, 8190)
                 return
-            zoed_height = int(zoed_height)
+            resolution = int(resolution)
 
         stereo_width = self.cbo_stereo_width.GetValue()
         if stereo_width == "Default" or stereo_width == "":
@@ -1101,7 +1101,7 @@ class MainFrame(wx.Frame):
         depth_model_type = self.cbo_depth_model.GetValue()
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
                                          self.depth_model_device_id != device_id or
-                                         self.depth_model_height != zoed_height)):
+                                         self.depth_model_height != resolution)):
             self.depth_model = None
             self.depth_model_type = None
             self.depth_model_device_id = None
@@ -1172,8 +1172,8 @@ class MainFrame(wx.Frame):
             keep_aspect_ratio=self.chk_keep_aspect_ratio.GetValue(),
 
             gpu=device_id,
-            zoed_batch_size=int(self.cbo_zoed_batch_size.GetValue()),
-            zoed_height=zoed_height,
+            batch_size=int(self.cbo_batch_size.GetValue()),
+            resolution=resolution,
             stereo_width=stereo_width,
             max_workers=int(self.cbo_max_workers.GetValue()),
             tta=self.chk_tta.GetValue(),
@@ -1229,7 +1229,7 @@ class MainFrame(wx.Frame):
             self.depth_model = args.state["depth_model"]
             self.depth_model_type = args.depth_model
             self.depth_model_device_id = args.gpu
-            self.depth_model_height = args.zoed_height
+            self.depth_model_height = args.resolution
 
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())

@@ -260,8 +260,8 @@ def make_output_filename(input_filename, args, video=False):
         return s
 
     if args.metadata == "filename":
-        if args.zoed_height:
-            resolution = f"{args.zoed_height}_"
+        if args.resolution:
+            resolution = f"{args.resolution}_"
         else:
             resolution = ""
         if args.tta:
@@ -653,7 +653,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                          start_time=args.start_time,
                          end_time=args.end_time)
     else:
-        minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+        minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
         preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
         depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
         sbs_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
@@ -930,7 +930,7 @@ def export_video(args):
     os.makedirs(depth_dir, exist_ok=True)
 
     if args.resume:
-        resume_seq = get_resume_seq(depth_dir, rgb_dir) - args.zoed_batch_size
+        resume_seq = get_resume_seq(depth_dir, rgb_dir) - args.batch_size
     else:
         resume_seq = -1
 
@@ -963,7 +963,7 @@ def export_video(args):
 
         return video_output_config
 
-    minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+    minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
     preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     streams = threading.local()
@@ -1096,7 +1096,7 @@ def process_config_video(config, args, side_model):
         frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0))
         return frame.shape[2:]
 
-    minibatch_size = args.zoed_batch_size // 2 or 1 if args.tta else args.zoed_batch_size
+    minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
 
     def generator():
         rgb_batch = []
@@ -1304,10 +1304,8 @@ def create_parser(required_true=True):
                         help="process all subdirectories")
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
-    parser.add_argument("--batch-size", type=int, default=16, choices=[Range(1, 256)],
-                        help="batch size for RowFlow model, 256x256 tiled input. !!DEPRECATED!!")
-    parser.add_argument("--zoed-batch-size", type=int, default=2, choices=[Range(1, 64)],
-                        help="batch size for ZoeDepth model. ignored when --low-vram")
+    parser.add_argument("--batch-size", type=int, default=2, choices=[Range(1, 64)],
+                        help="batch size. ignored when --low-vram")
     parser.add_argument("--max-fps", type=float, default=30,
                         help="max framerate for video. output fps = min(fps, --max-fps)")
     parser.add_argument("--profile-level", type=str, help="h264 profile level")
@@ -1399,7 +1397,7 @@ def create_parser(required_true=True):
                         help="set the start time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--end-time", type=str,
                         help="set the end time offset for video. hh:mm:ss or mm:ss format")
-    parser.add_argument("--zoed-height", type=int,
+    parser.add_argument("--resolution", type=int,
                         help="input resolution(small side) for depth model")
     parser.add_argument("--stereo-width", type=int,
                         help="input width for row_flow_v3/row_flow_v2 model")
@@ -1553,7 +1551,7 @@ def iw3_main(args):
 
     if not is_yaml(args.input):
         if not depth_model.loaded():
-            depth_model.load(gpu=args.gpu, resolution=args.zoed_height)
+            depth_model.load(gpu=args.gpu, resolution=args.resolution)
 
         is_metric = depth_model.is_metric()
         args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
