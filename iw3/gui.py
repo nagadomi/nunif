@@ -240,7 +240,7 @@ class MainFrame(wx.Frame):
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
                                            choices=depth_models,
                                            style=wx.CB_READONLY, name="cbo_depth_model")
-        self.cbo_depth_model.SetSelection(0)
+        self.cbo_depth_model.SetSelection(3)
 
         self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
         self.cbo_resolution = EditableComboBox(self.grp_stereo,
