@@ -18,7 +18,7 @@ NR_RATE = {
     "photo": {
         0: 0.3,
         1: 0.6,
-        2: 0.9,
+        2: 0.95,
         3: 0.95,
     }
 }
@@ -35,7 +35,7 @@ EVAL_QUALITY = {
     "photo": {
         0: [90],
         1: [80],
-        2: [70],
+        2: [60, 90],
         3: [60, 90],
     }
 }
@@ -135,17 +135,22 @@ def choose_jpeg_quality(style, noise_level):
                 qualities.append(random.randint(37, 70))
             else:
                 qualities.append(random.randint(90, 98))
-        else:
-            if noise_level == 3 or random.uniform(0, 1) < 0.6:
-                if random.uniform(0, 1) < 0.05:
-                    quality1 = random.randint(52, 95)
-                else:
-                    quality1 = random.randint(37, 70)
-                qualities.append(quality1)
-                if random.uniform(0, 1) < 0.2:
-                    qualities.append(random.randint(70, 90))
+        elif noise_level == 2:
+            if random.uniform(0, 1) < 0.05:
+                quality1 = random.randint(52, 95)
             else:
-                qualities.append(random.randint(90, 98))
+                quality1 = random.randint(37, 70)
+            qualities.append(quality1)
+            if random.uniform(0, 1) < 0.2:
+                qualities.append(random.randint(70, 90))
+        elif noise_level == 3:
+            if random.uniform(0, 1) < 0.05:
+                quality1 = random.randint(52, 95)
+            else:
+                quality1 = random.randint(37, 70)
+            qualities.append(quality1)
+            if random.uniform(0, 1) < 0.2:
+                qualities.append(random.randint(37, 90))
     else:
         raise NotImplementedError()
 
@@ -228,7 +233,13 @@ class RandomJPEGNoiseX():
             # this is the fix for a problem in the original waifu2x
             # that lower level noise cannot be denoised with higher level denoise model.
             min_level = -1 if self.noise_level < 2 else 0
-            noise_level = random.randint(min_level, self.noise_level - 1)
+            if self.style == "art":
+                noise_level = random.randint(min_level, self.noise_level - 1)
+            elif self.style == "photo":
+                cond = list(range(min_level, self.noise_level - 1))
+                prob = [i for i in range(1, len(cond) + 1)]
+                noise_level = random.choices(cond, prob, k=1)[0]
+
             if noise_level == -1:
                 # do nothing
                 return x, y
