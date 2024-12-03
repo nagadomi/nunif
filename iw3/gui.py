@@ -269,16 +269,24 @@ class MainFrame(wx.Frame):
             choices=["Full SBS", "Half SBS",
                      "Full TB", "Half TB",
                      "VR90",
+                     "Anaglyph",
                      "Export", "Export disparity",
-                     "Anaglyph dubois",
-                     "Anaglyph dubois2",
-                     "Anaglyph color", "Anaglyph gray",
-                     "Anaglyph half-color",
-                     "Anaglyph wimmer", "Anaglyph wimmer2",
                      "Debug Depth",
                      ],
             style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
+
+        self.lbl_anaglyph_method = wx.StaticText(self.grp_stereo, label=T("Anaglyph Method"))
+        self.cbo_anaglyph_method = wx.ComboBox(
+            self.grp_stereo,
+            choices=["dubois", "dubois2",
+                     "color", "gray",
+                     "half-color",
+                     "wimmer", "wimmer2"],
+            style=wx.CB_READONLY, name="cbo_anaglyph_method")
+        self.cbo_anaglyph_method.SetSelection(0)
+        self.lbl_anaglyph_method.Hide()
+        self.cbo_anaglyph_method.Hide()
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
                                              label=T("Flicker Reduction"),
@@ -290,7 +298,7 @@ class MainFrame(wx.Frame):
 
         self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
 
-        layout = wx.FlexGridSizer(rows=11, cols=2, vgap=4, hgap=4)
+        layout = wx.FlexGridSizer(rows=12, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -313,6 +321,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_ema_decay, 1, wx.EXPAND)
         layout.Add(self.lbl_stereo_format, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
+        layout.Add(self.lbl_anaglyph_method, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_anaglyph_method, 1, wx.EXPAND)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -642,6 +652,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
         self.update_rembg_state()
         self.update_input_option_state()
+        self.update_anaglyph_state()
         if not self.chk_edge_dilation.IsChecked():
             self.update_model_selection()
         self.update_edge_dilation()
@@ -650,8 +661,8 @@ class MainFrame(wx.Frame):
         self.update_video_codec()
 
     def get_anaglyph_method(self):
-        if "Anaglyph" in self.cbo_stereo_format.GetValue():
-            anaglyph = self.cbo_stereo_format.GetValue().split(" ")[-1]
+        if self.cbo_stereo_format.GetValue() == "Anaglyph":
+            anaglyph = self.cbo_anaglyph_method.GetValue()
         else:
             anaglyph = None
         return anaglyph
@@ -941,11 +952,20 @@ class MainFrame(wx.Frame):
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
 
+    def update_anaglyph_state(self):
+        if self.cbo_stereo_format.GetValue() == "Anaglyph":
+            self.lbl_anaglyph_method.Show()
+            self.cbo_anaglyph_method.Show()
+        else:
+            self.lbl_anaglyph_method.Hide()
+            self.cbo_anaglyph_method.Hide()
+
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
 
     def on_selected_index_changed_cbo_stereo_format(self, event):
         self.update_input_option_state()
+        self.update_anaglyph_state()
 
     def on_selected_index_changed_cbo_video_format(self, event):
         self.update_video_format()
