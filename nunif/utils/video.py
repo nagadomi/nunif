@@ -1,5 +1,6 @@
 import av
 from av.video.reformatter import ColorRange, Colorspace
+from packaging import version as packaging_version
 import os
 from os import path
 import math
@@ -51,9 +52,11 @@ ADDITIONAL_COLORSPACE_VALUES = {
     "SMPTE240M_2": 7,  # smpte240m is defined as 5 in libsws
     "BT2020": 9,
 }
-for name, value in ADDITIONAL_COLORSPACE_VALUES.items():
-    if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and value not in Colorspace._by_value:
-        Colorspace._create(name, value)
+AV_VERSION_14 = packaging_version.parse(av.__version__).major >= 14
+if not AV_VERSION_14:
+    for name, value in ADDITIONAL_COLORSPACE_VALUES.items():
+        if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and value not in Colorspace._by_value:
+            Colorspace._create(name, value)
 
 
 COLORSPACE_UNSPECIFIED = 2
@@ -62,6 +65,14 @@ COLORSPACE_SMPTE240M = 7
 COLORSPACE_BT2020 = 9
 KNOWN_COLORSPACES = {Colorspace.ITU601.value, Colorspace.ITU709.value,
                      COLORSPACE_SMPTE170M, COLORSPACE_SMPTE240M, COLORSPACE_BT2020}
+
+
+def add_stream_from_template(container, template):
+    # wrapper for av >= 14 compatibility
+    if AV_VERSION_14:
+        return container.add_stream_from_template(template)
+    else:
+        return container.add_stream(template=template)
 
 
 def is_bt709(stream):
@@ -678,7 +689,7 @@ def process_video(input_path, output_path,
             audio_copy = False
         else:
             try:
-                audio_output_stream = output_container.add_stream(template=audio_input_stream)
+                audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
                 audio_copy = True
             except ValueError:
                 audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
@@ -794,7 +805,7 @@ def generate_video(output_path,
                 audio_copy = False
             else:
                 try:
-                    audio_output_stream = output_container.add_stream(template=audio_input_stream)
+                    audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
                     audio_copy = True
                 except ValueError:
                     audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
@@ -1004,7 +1015,7 @@ def export_audio(input_path, output_path, start_time=None, end_time=None,
         audio_copy = False
     else:
         try:
-            audio_output_stream = output_container.add_stream(template=audio_input_stream)
+            audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
             audio_copy = True
         except ValueError:
             audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
