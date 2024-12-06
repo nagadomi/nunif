@@ -209,3 +209,21 @@ class RandomGrayscale():
 
             x = x.clamp(0, 1)
             return TF.to_pil_image(x)
+
+
+class SizeCondition():
+    def __init__(self, threshold_size, lt_transform, gt_transform):
+        self.threshold_size = threshold_size
+        self.lt_transform = lt_transform
+        self.gt_transform = gt_transform
+
+    def __call__(self, x):
+        if torch.is_tensor(x):
+            _, H, W = x.shape
+        else:
+            W, H = x.size
+        min_size = min(H, W)
+        if min_size <= self.threshold_size:
+            return self.lt_transform(x)
+        else:
+            return self.gt_transform(x)
