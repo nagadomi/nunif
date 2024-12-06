@@ -325,16 +325,17 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomApply([TS.RandomJPEG(min_quality=92, max_quality=99)], p=da_jpeg_p),
                 T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5, blur_p=0.2)], p=da_cutmix_p),
+                TS.SizeCondition(y_min_size * 2, TS.ModCrop(mul=scale_factor), T.RandomCrop(y_min_size * 2)),
             ])
             self.gt_gen_transforms = T.Compose([
                 T.RandomApply([RandomOverlay()], p=da_mixup_p),
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomInvert(p=0.5),
                 T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5)], p=da_cutmix_p),
+                TS.SizeCondition(y_min_size * 2, TS.ModCrop(mul=scale_factor), T.RandomCrop(y_min_size * 2)),
             ])
 
             self.transforms = TP.Compose([
-                TP.RandomHardExampleCrop(size=y_min_size, samples=crop_samples),
                 random_downscale_x,
                 photo_noise,
                 rotate_transform,
