@@ -11,11 +11,13 @@ from .flat_color_loss import FlatColorWeightedLoss
 
 
 def generate_lbp_kernel(in_channels, out_channels, kernel_size=3, seed=71):
-    kernel = generate_lbcnn_filters((out_channels, in_channels, kernel_size, kernel_size), seed=seed)
-    # [0] = identity filter
-    kernel[0] = 0
-    kernel[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
-    return kernel
+    with torch.no_grad():
+        kernel = generate_lbcnn_filters((out_channels, in_channels, kernel_size, kernel_size), seed=seed)
+        # [0] = identity filter
+        kernel[0] = 0
+        kernel[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
+        kernel = kernel / kernel_size
+        return kernel
 
 
 class LBPLoss(nn.Module):
