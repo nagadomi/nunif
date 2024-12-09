@@ -2,7 +2,7 @@ from .std import (
     Identity, RandomFlip,
     RandomJPEG, RandomDownscale, RandomChannelShuffle,
     RandomSRHardExampleCrop, ReflectionResize, ModCrop,
-    RandomUnsharpMask, RandomGrayscale,
+    RandomUnsharpMask, RandomGrayscale, SizeCondition,
 )
 
 
@@ -11,4 +11,5 @@ __all__ = [
     "RandomJPEG", "RandomDownscale", "RandomChannelShuffle",
     "RandomSRHardExampleCrop", "ReflectionResize", "ModCrop",
     "RandomUnsharpMask", "RandomGrayscale",
+    "SizeCondition",
 ]

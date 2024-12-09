@@ -11,33 +11,43 @@ from .flat_color_loss import FlatColorWeightedLoss
 
 
 def generate_lbp_kernel(in_channels, out_channels, kernel_size=3, seed=71):
-    kernel = generate_lbcnn_filters((out_channels, in_channels, kernel_size, kernel_size), seed=seed)
-    # [0] = identity filter
-    kernel[0] = 0
-    kernel[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
-    return kernel
+    with torch.no_grad():
+        kernel = generate_lbcnn_filters((out_channels, in_channels, kernel_size, kernel_size), seed=seed)
+        # [0] = identity filter
+        kernel[0] = 0
+        kernel[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
+        kernel = kernel / kernel_size
+        return kernel
 
 
 class LBPLoss(nn.Module):
-    def __init__(self, in_channels, out_channels=64, kernel_size=3, loss=None, seed=71):
+    def __init__(self, in_channels, out_channels=64, kernel_size=3, loss=None, seed=71, num_kernels=32):
         super().__init__()
         self.groups = in_channels
-        self.register_buffer(
-            "kernel",
+        self.num_kernels = num_kernels
+        kernels = torch.stack([
             generate_lbp_kernel(in_channels, out_channels - out_channels % in_channels,
-                                kernel_size, seed=seed))
+                                kernel_size, seed=seed + i)
+            for i in range(num_kernels)])
+        self.register_buffer("kernels", kernels)
         if loss is None:
             self.loss = CharbonnierLoss()
         else:
             self.loss = loss
 
-    def conv(self, x):
-        return F.conv2d(x, weight=self.kernel, bias=None, stride=1, padding=0, groups=self.groups)
-
     @conditional_compile("NUNIF_TRAIN")
+    def conv(self, x, i):
+        return F.conv2d(x, weight=self.kernels[i], bias=None, stride=1, padding=0, groups=self.groups)
+
     def forward(self, input, target):
         b, ch, *_ = input.shape
-        return self.loss(self.conv(input), self.conv(target))
+
+        if self.training:
+            i = torch.randint(low=0, high=self.num_kernels, size=(1,)).item()
+        else:
+            i = 0
+
+        return self.loss(self.conv(input, i), self.conv(target, i))
 
 
 def YLBP(kernel_size=3, out_channels=64):

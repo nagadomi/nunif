@@ -133,7 +133,7 @@ class Trainer(ABC):
                     backward_step=self.args.backward_step,
                 )
                 if not self.args.skip_eval:
-                    if self.epoch % self.args.eval_step == 0:
+                    if self.epoch % self.args.eval_step == 0 or self.epoch == self.args.max_epoch:
                         print("--\n eval")
                         loss = self.env.eval(self.eval_loader)
                         if loss is None:

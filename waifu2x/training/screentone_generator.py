@@ -94,7 +94,7 @@ def gen_color(disable_color):
             bg2 = [c, c, c]
         if disable_color or random.uniform(0, 1) < 0.5:
             # black ink
-            c = random.randint(0, 16)
+            c = random.randint(0, 16) if random.random() < 0.8 else random.randint(0, 128)
             fg = [c, c, c]
             line = fg
             if random.uniform(0, 1) < 0.25:
@@ -239,7 +239,7 @@ def perlin_noise(size, resolution=1, threshold=0.1, invert=False):
 
 def gen_sand_mask(size=400):
     resolution = random.choice([2, 3, 4, 5, 6, 7, 8, 9])
-    threshold = random.uniform(0.05, 0.5)
+    threshold = random.uniform(-0.5, 0.5)
     invert = random.choice([True, False])
     if resolution >= 5 and random.uniform(0, 1) < 0.2:
         scale = random.uniform(0.5, 1.0)
@@ -291,11 +291,15 @@ def gen_line_overlay(size, line_scale=1):
     return window
 
 
-IMAGE_SIZE = 640
-WINDOW_SIZE = 400  # 320 < WINDOW_SIZE
+CROP_IMAGE_SIZE = 640
+N_CROP = 4
+IMAGE_SIZE = 900
 
 
 def gen(disable_color, disable_sand):
+    WINDOW_SIZE = random.randint(400, 900) if random.choice([True, False]) else random.randint(640, 900)
+    WINDOW_SIZE -= WINDOW_SIZE % 4
+
     fg_color, window_bg_color, bg_color, line_color, line_overlay_color, line_masking = gen_color(disable_color)
     bg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), window_bg_color)
     fg = Image.new("RGB", (WINDOW_SIZE * 2, WINDOW_SIZE * 2), fg_color)
@@ -303,9 +307,9 @@ def gen(disable_color, disable_sand):
     line_pattern = False
     random_rotate = random.uniform(0, 1) < 0.25
     p = random.uniform(0, 1)
-    if p < 0.7:
+    if p < 0.6:
         mask = gen_dot_mask(WINDOW_SIZE * 2, allow_small=not random_rotate)
-    elif p < 0.75:
+    elif p < 0.65:
         mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=1)
         line_pattern = True
     else:
@@ -340,7 +344,7 @@ def gen(disable_color, disable_sand):
         screen = TF.rotate(screen, angle=angle, interpolation=random_interpolation(rotate=True), fill=bg_color)
     screen = TF.resize(screen, (IMAGE_SIZE, IMAGE_SIZE), interpolation=random_interpolation(), antialias=True)
 
-    return screen
+    return [random_crop(screen, (CROP_IMAGE_SIZE, CROP_IMAGE_SIZE)) for i in range(N_CROP)]
 
 
 def main():
@@ -354,13 +358,15 @@ def main():
     parser.add_argument("--output-dir", "-o", type=str, required=True,
                         help="output directory")
     args = parser.parse_args()
+    assert args.num_samples % N_CROP == 0
     random.seed(args.seed)
     os.makedirs(args.output_dir, exist_ok=True)
 
     postfix = "_" + args.postfix if args.postfix else ""
-    for i in tqdm(range(args.num_samples), ncols=80):
-        im = gen(disable_color=not args.use_color, disable_sand=args.disable_sand)
-        im.save(path.join(args.output_dir, f"__SCREENTONE_{i}{postfix}.png"))
+    for i in tqdm(range(args.num_samples // N_CROP), ncols=80):
+        ims = gen(disable_color=not args.use_color, disable_sand=args.disable_sand)
+        for j, im in enumerate(ims):
+            im.save(path.join(args.output_dir, f"__SCREENTONE_{i * N_CROP + j}{postfix}.png"))
 
 
 def _test_perlin():
