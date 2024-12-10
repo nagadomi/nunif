@@ -181,7 +181,7 @@ def main(args):
 
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     model = create_depth_model(args.model_type)
-    model.load(gpu=args.gpu, resolution=args.zoed_height)
+    model.load(gpu=args.gpu, resolution=args.resolution)
 
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
@@ -264,7 +264,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--times", type=int, default=4,
                         help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
-    parser.add_argument("--zoed-height", type=int, help="input height for ZoeDepth model")
+    parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
     parser.add_argument("--mapper", type=str, default="random", help="depth mapper function")
     parser.add_argument("--method", type=str, default="forward_fill", choices=["forward_fill", "polylines"], help="divergence method")

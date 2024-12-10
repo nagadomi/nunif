@@ -7,8 +7,8 @@ def main():
     ZoeDepthModel.force_update()
     DepthAnythingModel.force_update()
     DepthProModel.force_update()
-    if not ZoeDepthModel.has_checkpoint_file("ZoeD_N"):
-        ZoeDepthModel("ZoeD_N").load(gpu=-1)
+    if not ZoeDepthModel.has_checkpoint_file("ZoeD_Any_N"):
+        ZoeDepthModel("ZoeD_Any_N").load(gpu=-1)
 
 
 if __name__ == "__main__":
