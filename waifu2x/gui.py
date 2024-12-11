@@ -14,12 +14,12 @@ from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
 from .ui_utils import (
     create_parser, set_state_args, waifu2x_main,
-    is_video, is_output_dir, is_text, is_image,
+    is_video, is_output_dir, is_text, is_image, make_output_filename,
     MODEL_DIR, DEFAULT_ART_MODEL_DIR,
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
-from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS
+from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -27,6 +27,7 @@ from nunif.gui import (
     resolve_default_dir, extension_list_to_wildcard,
     validate_number,
     set_icon_ex, start_file, load_icon,
+    VideoEncodingBox,
 )
 from .locales import LOCALES
 from . import models # noqa
@@ -183,67 +184,7 @@ class MainFrame(wx.Frame):
 
         # video encoding
         # max-fps, crf, preset, tune
-        self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
-
-        self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
-        self.cbo_fps = EditableComboBox(
-            self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
-            name="cbo_fps")
-        self.cbo_fps.SetSelection(3)
-
-        self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
-        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=["yuv420p", "yuv444p", "rgb24"],
-                                       style=wx.CB_READONLY, name="cbo_pix_fmt")
-        self.cbo_pix_fmt.SetSelection(0)
-
-        self.lbl_colorspace = wx.StaticText(self.grp_video, label=T("Colorspace"))
-        self.cbo_colorspace = wx.ComboBox(
-            self.grp_video,
-            choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
-            style=wx.CB_READONLY, name="cbo_colorspace")
-        self.cbo_colorspace.SetSelection(1)
-
-        self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
-        self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28 + 1)],
-                                        name="cbo_crf")
-        self.cbo_crf.SetSelection(4)
-
-        self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
-        self.cbo_preset = wx.ComboBox(
-            self.grp_video, choices=[
-                "ultrafast", "superfast", "veryfast", "faster", "fast",
-                "medium", "slow", "slower", "veryslow", "placebo"],
-            style=wx.CB_READONLY, name="cbo_preset")
-        self.cbo_preset.SetSelection(0)
-
-        self.lbl_tune = wx.StaticText(self.grp_video, label=T("Tune"))
-        self.cbo_tune = wx.ComboBox(
-            self.grp_video, choices=["", "film", "animation", "grain", "stillimage", "psnr"],
-            style=wx.CB_READONLY, name="cbo_tune")
-        self.cbo_tune.SetSelection(0)
-        self.chk_tune_fastdecode = wx.CheckBox(self.grp_video, label=T("fastdecode"),
-                                               name="chk_tune_fastdecode")
-        self.chk_tune_zerolatency = wx.CheckBox(self.grp_video, label=T("zerolatency"),
-                                                name="chk_tune_zerolatency")
-
-        layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.lbl_fps, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_fps, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_pix_fmt, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pix_fmt, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_colorspace, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_colorspace, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_crf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_crf, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_preset, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_preset, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_tune, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_tune, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_fastdecode, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_zerolatency, (7, 1), flag=wx.EXPAND)
-
-        sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
-        sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
+        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T, has_nvenc=has_nvenc())
 
         # input video filter
         # deinterlace, rotate, vf
@@ -355,7 +296,7 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(wx.HORIZONTAL)
         layout.Add(sizer_sr, (0, 0), (0, 4), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_processor, (1, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_video, (1, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(self.grp_video.sizer, (1, 1), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_video_filter, (1, 2), flag=wx.ALL | wx.EXPAND, border=4)
         self.pnl_options.SetSizer(layout)
 
@@ -413,8 +354,7 @@ class MainFrame(wx.Frame):
         self.btn_cancel.Disable()
 
         editable_comboxes = [
-            self.cbo_fps,
-            self.cbo_crf,
+            *self.grp_video.get_editable_comboboxes(),
             self.cbo_grain_noise,
         ]
         self.persistence_manager = persist.PersistenceManager.Get()
@@ -429,6 +369,7 @@ class MainFrame(wx.Frame):
         self.update_upscaling_state()
         self.update_noise_level_state()
         self.update_input_option_state()
+        self.grp_video.update_controls()
 
     def on_close(self, event):
         self.persistence_manager.SaveAndUnregister()
@@ -488,11 +429,11 @@ class MainFrame(wx.Frame):
         self.update_noise_level_state()
 
     def set_same_output_dir(self):
-        selected_path = self.txt_input.GetValue()
-        if path.isdir(selected_path):
-            self.txt_output.SetValue(path.join(selected_path, "waifu2x"))
+        input_path = self.txt_input.GetValue()
+        if path.isdir(input_path) or is_text(input_path):
+            self.txt_output.SetValue(path.join(input_path, "waifu2x"))
         else:
-            self.txt_output.SetValue(path.join(path.dirname(selected_path), "waifu2x"))
+            self.txt_output.SetValue(path.join(path.dirname(input_path), "waifu2x"))
 
     def on_click_btn_input_file(self, event):
         wildcard = (f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
@@ -530,14 +471,11 @@ class MainFrame(wx.Frame):
         output_path = self.txt_output.GetValue()
 
         if is_output_dir(output_path):
-            if is_video(input_path):
-                output_path = path.join(
-                    output_path,
-                    path.splitext(path.basename(input_path))[0] + ".mp4")
-            elif is_image(input_path):
-                output_path = path.join(
-                    output_path,
-                    path.splitext(path.basename(input_path))[0] + ".png")
+            args = self.parse_args()
+            video = is_video(input_path)
+            output_path = path.join(
+                output_path,
+                make_output_filename(input_path, args, video=video))
 
         if path.exists(output_path):
             start_file(output_path)
@@ -566,12 +504,12 @@ class MainFrame(wx.Frame):
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
 
-    def confirm_overwrite(self):
+    def confirm_overwrite(self, args):
         input_path = self.txt_input.GetValue()
         output_path = self.txt_output.GetValue()
 
         if is_output_dir(output_path):
-            output_path = path.join(output_path, path.basename(input_path))
+            output_path = path.join(output_path, make_output_filename(input_path, args, video=is_video(input_path)))
         else:
             output_path = output_path
 
@@ -591,35 +529,19 @@ class MainFrame(wx.Frame):
                 style=wx.OK) as dlg:
             dlg.ShowModal()
 
-    def on_click_btn_start(self, event):
-        if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
+    def parse_args(self):
+        if not validate_number(self.grp_video.max_fps, 0.25, 1000.0, allow_empty=False):
             self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
-            return
-        if not validate_number(self.cbo_crf.GetValue(), 0, 30, is_int=True):
-            self.show_validation_error_message(T("CRF"), 0, 30)
-            return
+            return None
+        if not validate_number(self.grp_video.crf, 0, 51, is_int=True):
+            self.show_validation_error_message(T("CRF"), 0, 51)
+            return None
         if self.chk_grain_noise.GetValue():
             if not validate_number(self.cbo_grain_noise.GetValue(), 0.0, 1.0):
                 self.show_validation_error_message(T("Add Noise"), 0.0, 1.0)
-                return
-
-        if not self.confirm_overwrite():
-            return
-        self.btn_start.Disable()
-        self.btn_cancel.Enable()
-        self.stop_event.clear()
-        self.prg_tqdm.SetValue(0)
-        self.SetStatusText("...")
-
+                return None
         parser = create_parser(required_true=False)
 
-        tune = set()
-        if self.chk_tune_zerolatency.GetValue():
-            tune.add("zerolatency")
-        if self.chk_tune_fastdecode.GetValue():
-            tune.add("fastdecode")
-        if self.cbo_tune.GetValue():
-            tune.add(self.cbo_tune.GetValue())
         rot = self.cbo_rotate.GetClientData(self.cbo_rotate.GetSelection())
         rotate_left = rotate_right = None
         if rot == "left":
@@ -667,12 +589,16 @@ class MainFrame(wx.Frame):
             noise_level=noise_level,
             method=method,
             yes=True,  # TODO: remove this
-            max_fps=float(self.cbo_fps.GetValue()),
-            pix_fmt=self.cbo_pix_fmt.GetValue(),
-            colorspace=self.cbo_colorspace.GetValue(),
-            crf=int(self.cbo_crf.GetValue()),
-            preset=self.cbo_preset.GetValue(),
-            tune=list(tune),
+
+            max_fps=self.grp_video.max_fps,
+            pix_fmt=self.grp_video.pix_fmt,
+            colorspace=self.grp_video.colorspace,
+            video_format=self.grp_video.video_format,
+            video_codec=self.grp_video.video_codec,
+            crf=self.grp_video.crf,
+            profile_level=self.grp_video.profile_level,
+            preset=self.grp_video.preset,
+            tune=self.grp_video.tune,
 
             rotate_right=rotate_right,
             rotate_left=rotate_left,
@@ -697,6 +623,20 @@ class MainFrame(wx.Frame):
             args,
             stop_event=self.stop_event,
             tqdm_fn=functools.partial(TQDMGUI, self))
+        return args
+
+    def on_click_btn_start(self, event):
+        args = self.parse_args()
+        if args is None:
+            return
+        if not self.confirm_overwrite(args):
+            return
+        self.btn_start.Disable()
+        self.btn_cancel.Enable()
+        self.stop_event.clear()
+        self.prg_tqdm.SetValue(0)
+        self.SetStatusText("...")
+
         startWorker(self.on_exit_worker, waifu2x_main, wargs=(args,))
         self.processing = True
 
