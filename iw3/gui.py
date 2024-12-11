@@ -19,7 +19,7 @@ from .utils import (
 from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
-from nunif.utils.gui import (
+from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
     persistent_manager_register_all, persistent_manager_restore_all, persistent_manager_register,
