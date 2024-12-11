@@ -45,6 +45,23 @@ def replication_pad2d_naive(x, padding, detach=False):
     return x.contiguous()
 
 
+def replication_pad1d_naive(x, padding, detach=False):
+    assert x.ndim == 3 and len(padding) == 2
+    left, right = padding
+
+    detach_fn = lambda t: t.detach() if detach else t
+    if left > 0:
+        x = torch.cat((*((detach_fn(x[:, :, :1]),) * left), x), dim=2)
+    elif left < 0:
+        x = x[:, :, -left:]
+    if right > 0:
+        x = torch.cat((x, *((detach_fn(x[:, :, -1:]),) * right)), dim=2)
+    elif right < 0:
+        x = x[:, :, :right]
+
+    return x.contiguous()
+
+
 class ReplicationPad2dNaive(nn.Module):
     def __init__(self, padding, detach=False):
         super().__init__()
@@ -54,6 +71,17 @@ class ReplicationPad2dNaive(nn.Module):
 
     def forward(self, x):
         return replication_pad2d_naive(x, self.padding, detach=self.detach)
+
+
+class ReplicationPad1dNaive(nn.Module):
+    def __init__(self, padding, detach=False):
+        super().__init__()
+        assert isinstance(padding, (list, tuple)) and len(padding) == 2
+        self.padding = padding
+        self.detach = detach
+
+    def forward(self, x):
+        return replication_pad1d_naive(x, self.padding, detach=self.detach)
 
 
 def _test():
