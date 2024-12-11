@@ -12,6 +12,8 @@ import torchvision.transforms.functional as TF
 from PIL import ImageDraw
 import nunif.utils.video as VU
 import nunif.utils.superpoint as KU
+from nunif.modules.gaussian_filter import get_gaussian_kernel1d
+from nunif.modules.replication_pad2d import replication_pad1d_naive
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from tqdm import tqdm
 import scipy
@@ -62,15 +64,6 @@ def plot_keypoints(x, kp):
     return img
 
 
-def gen_gaussian_kernel(kernel_size, device):
-    sigma = kernel_size * 0.15 + 0.35
-    ksize_half = (kernel_size - 1) * 0.5
-    x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size, dtype=torch.float64, device=device)
-    gaussian_kernel = torch.exp(-0.5 * (x / sigma).pow(2))
-    gaussian_kernel = gaussian_kernel / gaussian_kernel.sum()
-    return gaussian_kernel.reshape(1, 1, -1)
-
-
 def gen_savgol_kernel(kernel_size, device):
     kernel = scipy.signal.savgol_coeffs(kernel_size, polyorder=2)
     return torch.from_numpy(kernel).to(device).reshape(1, 1, -1)
@@ -78,28 +71,11 @@ def gen_savgol_kernel(kernel_size, device):
 
 def gen_smoothing_kernel(name, kernel_size, device):
     if name == "gaussian":
-        return gen_gaussian_kernel(kernel_size, device)
+        return get_gaussian_kernel1d(kernel_size, dtype=torch.float64, device=device).reshape(1, 1, -1)
     elif name == "savgol":
         return gen_savgol_kernel(kernel_size, device)
     else:
         raise NotImplementedError(f"--filter {name}")
-
-
-def replication_pad1d_naive(x, padding, detach=False):
-    assert x.ndim == 3 and len(padding) == 2
-    left, right = padding
-
-    detach_fn = lambda t: t.detach() if detach else t
-    if left > 0:
-        x = torch.cat((*((detach_fn(x[:, :, :1]),) * left), x), dim=2)
-    elif left < 0:
-        x = x[:, :, -left:]
-    if right > 0:
-        x = torch.cat((x, *((detach_fn(x[:, :, -1:]),) * right)), dim=2)
-    elif right < 0:
-        x = x[:, :, :right]
-
-    return x.contiguous()
 
 
 def smoothing(x, weight):

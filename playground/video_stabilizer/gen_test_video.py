@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import torchvision.io as IO
 import nunif.utils.video as VU
 import nunif.utils.superpoint as KU
+from nunif.modules.gaussian_filter import get_gaussian_kernel1d
 
 
 def load_frame(path):
@@ -21,15 +22,6 @@ def load_frame(path):
         x = F.pad(x, (0, -pad_x, 0, -pad_y))
 
     return x
-
-
-def gen_gaussian_kernel(kernel_size, device):
-    sigma = kernel_size * 0.15 + 0.35
-    ksize_half = (kernel_size - 1) * 0.5
-    x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size, dtype=torch.float32, device=device)
-    gaussian_kernel = torch.exp(-0.5 * (x / sigma).pow(2))
-    gaussian_kernel = gaussian_kernel / gaussian_kernel.sum()
-    return gaussian_kernel.reshape(1, 1, -1)
 
 
 if __name__ == "__main__":
@@ -62,8 +54,8 @@ if __name__ == "__main__":
     noise_r1 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.05 * 0.8 * rotate_weight
     noise_r2 = torch.randn((1, 1, FRAMES)) * args.noise_scale * 0.05 * 0.2 * rotate_weight
 
-    gaussian_kernel3 = gen_gaussian_kernel(3, "cpu")
-    gaussian_kernel15 = gen_gaussian_kernel(15, "cpu")
+    gaussian_kernel3 = get_gaussian_kernel1d(3, device="cpu").reshape(1, 1, -1)
+    gaussian_kernel15 = get_gaussian_kernel1d(15, device="cpu").reshape(1, 1, -1)
     gaussian_kernel3 = F.pad(gaussian_kernel3, (6, 6, 0, 0))
     noise_x = (F.conv1d(noise_x1, weight=gaussian_kernel3) + F.conv1d(noise_x2, weight=gaussian_kernel15)).flatten()
     noise_y = (F.conv1d(noise_y1, weight=gaussian_kernel3) + F.conv1d(noise_y2, weight=gaussian_kernel15)).flatten()
