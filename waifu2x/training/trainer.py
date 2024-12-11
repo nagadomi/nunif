@@ -46,10 +46,11 @@ LOSS_FUNCTIONS = {
     "lbpm": lambda: MultiscaleLoss(YLBP(), mode="avg"),
     "lbp5": lambda: YLBP(kernel_size=5),
     "lbp5m": lambda: MultiscaleLoss(YLBP(kernel_size=5), mode="avg"),
-    "rgb_l1lbp": lambda: YRGBL1LBP(kernel_size=3, weight=0.4),
-    "rgb_l1lbp5": lambda: YRGBL1LBP(kernel_size=5, weight=0.4),
-    "rgb_flatlbp5": lambda: YRGBFlatLBP(kernel_size=5, weight=0.4),
-    "rgb_lbp5": lambda: YRGBLBP(kernel_size=5),
+
+    "yrgb_l1lbp5": lambda: YRGBL1LBP(kernel_size=5, weight=0.4),
+    "yrgb_flatlbp5": lambda: YRGBFlatLBP(kernel_size=5, weight=0.4),
+    "yrgb_lbp5": lambda: YRGBLBP(kernel_size=5),
+    "yrgb_lbp": lambda: YRGBLBP(kernel_size=3),
 
     "dct24lbp5": lambda: WeightedLoss(
         (DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
