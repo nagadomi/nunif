@@ -24,7 +24,9 @@ from nunif.gui import (
     EditableComboBox, EditableComboBoxPersistentHandler,
     persistent_manager_register_all, persistent_manager_restore_all, persistent_manager_register,
     resolve_default_dir, extension_list_to_wildcard, validate_number,
-    set_icon_ex, start_file, load_icon)
+    set_icon_ex, start_file, load_icon,
+    VideoEncodingBox,
+)
 from .locales import LOCALES
 from . import models # noqa
 from .depth_anything_model import DepthAnythingModel
@@ -42,21 +44,6 @@ os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
 
 
 LAYOUT_DEBUG = False
-
-
-LEVEL_LIBX264 = ["3.0", "3.1", "3.2", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2", "6.0", "6.2"]
-LEVEL_LIBX265 = ["3.0", "3.1", "4.0", "4.1", "5.0", "5.1", "5.2", "6.0", "6.1", "6.2", "8.5"]
-LEVEL_ALL = ["auto"] + sorted(list(set(LEVEL_LIBX264) | set(LEVEL_LIBX265)), key=lambda v: float(v))
-
-TUNE_LIBX264 = ["film", "animation", "grain", "stillimage", "psnr"]
-TUNE_LIBX265 = ["grain", "animation", "psnr", "fastdecode", "zerolatency"]
-TUNE_NVENC = ["hq", "ll", "ull"]
-TUNE_ALL = [""] + sorted(list(set(TUNE_LIBX264) | set(TUNE_LIBX265)))
-
-PRESET_LIBX264 = ["ultrafast", "superfast", "veryfast", "faster", "fast",
-                  "medium", "slow", "slower", "veryslow", "placebo"]
-PRESET_NVENC = ["fast", "medium", "slow"]
-PRESET_ALL = PRESET_LIBX264
 
 
 class IW3App(wx.App):
@@ -330,89 +317,7 @@ class MainFrame(wx.Frame):
         # video encoding
         # sbs/vr180, padding
         # max-fps, crf, preset, tune
-        self.grp_video = wx.StaticBox(self.pnl_options, label=T("Video Encoding"))
-
-        self.lbl_video_format = wx.StaticText(self.grp_video, label=T("Video Format"))
-        self.cbo_video_format = wx.ComboBox(self.grp_video, choices=["mp4", "mkv", "avi"],
-                                            style=wx.CB_READONLY, name="cbo_video_format")
-        self.cbo_video_format.SetSelection(0)
-
-        self.lbl_video_codec = wx.StaticText(self.grp_video, label=T("Video Codec"))
-        self.cbo_video_codec = EditableComboBox(
-            self.grp_video, choices=["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"],
-            name="cbo_video_codec")
-        self.cbo_video_codec.SetSelection(0)
-
-        self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
-        self.cbo_fps = EditableComboBox(
-            self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
-            name="cbo_fps")
-        self.cbo_fps.SetSelection(3)
-
-        self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
-        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=["yuv420p", "yuv444p", "rgb24"],
-                                       style=wx.CB_READONLY, name="cbo_pix_fmt")
-        self.cbo_pix_fmt.SetSelection(0)
-
-        self.lbl_colorspace = wx.StaticText(self.grp_video, label=T("Colorspace"))
-        self.cbo_colorspace = wx.ComboBox(
-            self.grp_video,
-            choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
-            style=wx.CB_READONLY, name="cbo_colorspace")
-        self.cbo_colorspace.SetSelection(1)
-
-        self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
-        self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
-                                        name="cbo_crf")
-        self.cbo_crf.SetSelection(4)
-
-        self.lbl_profile_level = wx.StaticText(self.grp_video, label=T("Level"))
-        self.cbo_profile_level = EditableComboBox(self.grp_video, choices=LEVEL_ALL, name="cbo_profile_level")
-        self.cbo_profile_level.SetSelection(0)
-
-        self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
-        self.cbo_preset = wx.ComboBox(
-            self.grp_video, choices=PRESET_ALL,
-            style=wx.CB_READONLY, name="cbo_preset")
-        self.cbo_preset.SetSelection(0)
-
-        self.lbl_tune = wx.StaticText(self.grp_video, label=T("Tune"))
-        self.cbo_tune = wx.ComboBox(
-            self.grp_video, choices=TUNE_ALL,
-            style=wx.CB_READONLY, name="cbo_tune")
-        self.cbo_tune.SetSelection(0)
-        self.chk_tune_fastdecode = wx.CheckBox(self.grp_video, label=T("fastdecode"),
-                                               name="chk_tune_fastdecode")
-        self.chk_tune_fastdecode.SetValue(False)
-        self.chk_tune_zerolatency = wx.CheckBox(self.grp_video, label=T("zerolatency"),
-                                                name="chk_tune_zerolatency")
-        self.chk_tune_zerolatency.SetValue(False)
-
-        layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.lbl_fps, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_fps, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_video_format, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_video_format, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_video_codec, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_video_codec, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_pix_fmt, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pix_fmt, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_colorspace, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_colorspace, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_crf, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_crf, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_profile_level, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_profile_level, (6, 1), flag=wx.EXPAND)
-
-        layout.Add(self.lbl_preset, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_preset, (7, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_tune, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_tune, (8, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_fastdecode, (9, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_tune_zerolatency, (10, 1), flag=wx.EXPAND)
-
-        sizer_video = wx.StaticBoxSizer(self.grp_video, wx.VERTICAL)
-        sizer_video.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
+        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T, has_nvenc=has_nvenc())
 
         # background removal
         self.grp_rembg = wx.StaticBox(self.pnl_options, label=T("Background Removal"))
@@ -559,7 +464,7 @@ class MainFrame(wx.Frame):
 
         layout = wx.GridBagSizer(wx.HORIZONTAL)
         layout.Add(sizer_stereo, (0, 0), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_video, (0, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(self.grp_video.sizer, (0, 1), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_rembg, (1, 1), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_video_filter, (0, 2), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_processor, (1, 2), flag=wx.ALL | wx.EXPAND, border=4)
@@ -605,8 +510,6 @@ class MainFrame(wx.Frame):
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
 
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
-        self.cbo_video_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_video_format)
-        self.cbo_video_codec.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_video_codec)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -635,10 +538,7 @@ class MainFrame(wx.Frame):
             self.cbo_stereo_width,
             self.cbo_edge_dilation,
             self.cbo_ema_decay,
-            self.cbo_fps,
-            self.cbo_crf,
-            self.cbo_profile_level,
-            self.cbo_video_codec,
+            *self.grp_video.get_editable_comboboxes(),
             self.cbo_foreground_scale,
         ]
         self.persistence_manager = persist.PersistenceManager.Get()
@@ -657,8 +557,7 @@ class MainFrame(wx.Frame):
             self.update_model_selection()
         self.update_edge_dilation()
         self.update_ema_normalize()
-        self.update_video_format()
-        self.update_video_codec()
+        self.grp_video.update_controls()
 
     def get_anaglyph_method(self):
         if self.cbo_stereo_format.GetValue() == "Anaglyph":
@@ -824,134 +723,6 @@ class MainFrame(wx.Frame):
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
 
-    def update_video_format(self):
-        name = self.cbo_video_format.GetValue()
-        if name == "avi":
-            self.cbo_profile_level.Disable()
-            self.cbo_crf.Disable()
-            self.cbo_preset.Disable()
-            self.cbo_tune.Disable()
-            self.chk_tune_fastdecode.Disable()
-            self.chk_tune_zerolatency.Disable()
-        else:
-            self.cbo_profile_level.Enable()
-            self.cbo_crf.Enable()
-            self.cbo_preset.Enable()
-            self.cbo_tune.Enable()
-            self.chk_tune_fastdecode.Enable()
-            self.chk_tune_zerolatency.Enable()
-
-        # codec
-        if name == "avi":
-            choices = ["utvideo"]
-        else:
-            choices = ["libx264", "libx265"]
-            if has_nvenc():
-                choices += ["h264_nvenc", "hevc_nvenc"]
-
-        user_codec = self.cbo_video_codec.GetValue()
-        if user_codec not in {"libx265", "libx264", "h264_nvenc", "hevc_nvenc", "utvideo"}:
-            choices.append(user_codec)
-        self.cbo_video_codec.SetItems(choices)
-        if user_codec in choices:
-            self.cbo_video_codec.SetSelection(choices.index(user_codec))
-        else:
-            self.cbo_video_codec.SetSelection(0)
-        self.update_video_codec()
-
-    def update_video_codec(self):
-        container_format = self.cbo_video_format.GetValue()
-        codec = self.cbo_video_codec.GetValue()
-
-        # level
-        user_level = self.cbo_profile_level.GetValue()
-        if codec in {"libx264", "h264_nvenc"}:
-            choices = ["auto"] + LEVEL_LIBX264
-        elif codec in {"libx265", "hevc_nvenc"}:
-            choices = ["auto"] + LEVEL_LIBX265
-        else:
-            choices = LEVEL_ALL
-
-        self.cbo_profile_level.SetItems(choices)
-        if user_level in choices:
-            self.cbo_profile_level.SetSelection(choices.index(user_level))
-        else:
-            self.cbo_profile_level.SetSelection(0)
-
-        # preset
-        if container_format in {"mp4", "mkv"}:
-            preset = self.cbo_preset.GetValue()
-            if codec in {"libx265", "libx264"}:
-                # preset
-                choices = PRESET_LIBX264
-                default_preset = "ultrafast"
-            elif codec in {"h264_nvenc", "hevc_nvenc"}:
-                choices = PRESET_NVENC
-                default_preset = "medium"
-            else:
-                choices = PRESET_ALL
-                default_preset = "ultrafast"
-
-            self.cbo_preset.SetItems(choices)
-            if preset in choices:
-                self.cbo_preset.SetSelection(choices.index(preset))
-            else:
-                self.cbo_preset.SetSelection(choices.index(default_preset))
-        # tune
-        if container_format in {"mp4", "mkv"}:
-            if codec == "libx265":
-                # tune
-                tune = []
-                if self.chk_tune_zerolatency.IsChecked():
-                    tune.append("zerolatency")
-                if self.chk_tune_fastdecode.IsChecked():
-                    tune.append("fastdecode")
-                tune.append(self.cbo_tune.GetValue())
-
-                choices = [""] + TUNE_LIBX265
-                self.cbo_tune.SetItems(choices)
-                if tune[0] in choices:
-                    self.cbo_tune.SetSelection(choices.index(tune[0]))
-                else:
-                    self.cbo_tune.SetSelection(0)
-
-                self.chk_tune_fastdecode.SetValue(False)
-                self.chk_tune_fastdecode.Disable()
-                self.chk_tune_zerolatency.SetValue(False)
-                self.chk_tune_zerolatency.Disable()
-
-            elif codec == "libx264":
-                tune = []
-                tune.append(self.cbo_tune.GetValue())
-                if self.chk_tune_zerolatency.IsChecked():
-                    tune.append("zerolatency")
-                if self.chk_tune_fastdecode.IsChecked():
-                    tune.append("fastdecode")
-
-                choices = [""] + TUNE_LIBX264
-                self.cbo_tune.SetItems(choices)
-                if tune[0] in choices:
-                    self.cbo_tune.SetSelection(choices.index(tune[0]))
-                else:
-                    self.cbo_tune.SetSelection(0)
-
-                self.chk_tune_fastdecode.Enable()
-                self.chk_tune_fastdecode.SetValue("fastdecode" in tune)
-                self.chk_tune_zerolatency.Enable()
-                self.chk_tune_zerolatency.SetValue("zerolatency" in tune)
-            elif codec in {"h264_nvenc", "hevc_nvenc"}:
-                tune = self.cbo_tune.GetValue()
-                choices = [""] + TUNE_NVENC
-                self.cbo_tune.SetItems(choices)
-                if tune in choices:
-                    self.cbo_tune.SetSelection(choices.index(tune))
-                else:
-                    self.cbo_tune.SetSelection(0)
-                self.chk_tune_fastdecode.SetValue(False)
-                self.chk_tune_fastdecode.Disable()
-                self.chk_tune_zerolatency.SetValue(False)
-                self.chk_tune_zerolatency.Disable()
-
     def update_anaglyph_state(self):
         if self.cbo_stereo_format.GetValue() == "Anaglyph":
             self.lbl_anaglyph_method.Show()
@@ -1040,10 +811,10 @@ class MainFrame(wx.Frame):
         if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
             return None
-        if not validate_number(self.cbo_fps.GetValue(), 0.25, 1000.0, allow_empty=False):
+        if not validate_number(self.grp_video.max_fps, 0.25, 1000.0, allow_empty=False):
             self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
             return None
-        if not validate_number(self.cbo_crf.GetValue(), 0, 51, is_int=True):
+        if not validate_number(self.grp_video.crf, 0, 51, is_int=True):
             self.show_validation_error_message(T("CRF"), 0, 51)
             return None
         if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
@@ -1081,17 +852,6 @@ class MainFrame(wx.Frame):
         export = self.cbo_stereo_format.GetValue() == "Export"
         export_disparity = self.cbo_stereo_format.GetValue() == "Export disparity"
         debug_depth = self.cbo_stereo_format.GetValue() == "Debug Depth"
-
-        tune = set()
-        if self.chk_tune_zerolatency.GetValue():
-            tune.add("zerolatency")
-        if self.chk_tune_fastdecode.GetValue():
-            tune.add("fastdecode")
-        if self.cbo_tune.GetValue():
-            tune.add(self.cbo_tune.GetValue())
-        profile_level = self.cbo_profile_level.GetValue()
-        if not profile_level or profile_level == "auto":
-            profile_level = None
 
         if self.cbo_pad.GetValue():
             pad = float(self.cbo_pad.GetValue())
@@ -1168,16 +928,17 @@ class MainFrame(wx.Frame):
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
 
-            max_fps=float(self.cbo_fps.GetValue()),
-            pix_fmt=self.cbo_pix_fmt.GetValue(),
-            colorspace=self.cbo_colorspace.GetValue(),
-            video_format=self.cbo_video_format.GetValue(),
             format=self.cbo_image_format.GetValue(),
-            video_codec=self.cbo_video_codec.GetValue(),
-            crf=int(self.cbo_crf.GetValue()),
-            profile_level=profile_level,
-            preset=self.cbo_preset.GetValue(),
-            tune=list(tune),
+
+            max_fps=self.grp_video.max_fps,
+            pix_fmt=self.grp_video.pix_fmt,
+            colorspace=self.grp_video.colorspace,
+            video_format=self.grp_video.video_format,
+            video_codec=self.grp_video.video_codec,
+            crf=self.grp_video.crf,
+            profile_level=self.grp_video.profile_level,
+            preset=self.grp_video.preset,
+            tune=self.grp_video.tune,
 
             remove_bg=remove_bg,
             bg_model=bg_model_type,
