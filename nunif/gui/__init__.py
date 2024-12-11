@@ -13,6 +13,7 @@ from .common import (
     set_icon_ex, load_icon,
     start_file,
 )
+from .video_encoding_box import VideoEncodingBox
 
 __all__ = [
     "EVT_TQDM", "TQDMEvent", "TQDMGUI",
@@ -28,4 +29,5 @@ __all__ = [
     "extension_list_to_wildcard",
     "set_icon_ex", "load_icon",
     "start_file",
+    "VideoEncodingBox",
 ]
