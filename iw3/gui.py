@@ -114,39 +114,6 @@ class MainFrame(wx.Frame):
         self.btn_output_play = GenBitmapButton(self.pnl_file, bitmap=load_icon("media-playback-start.png"))
         self.btn_output_play.SetToolTip(T("Play"))
 
-        self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
-        self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
-        self.chk_resume.SetValue(True)
-
-        self.chk_recursive = wx.CheckBox(self.pnl_file, label=T("Process all subfolders"),
-                                         name="chk_recursive")
-        self.chk_recursive.SetValue(False)
-
-        self.chk_exif_transpose = wx.CheckBox(self.pnl_file, label=T("EXIF Transpose"),
-                                              name="chk_exif_transpose")
-        self.chk_exif_transpose.SetValue(True)
-        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
-
-        self.chk_metadata = wx.CheckBox(self.pnl_file, label=T("Add metadata to filename"),
-                                        name="chk_metadata")
-        self.chk_metadata.SetValue(False)
-
-        self.sep_image_format = wx.StaticLine(self.pnl_file, size=(2, 16), style=wx.LI_VERTICAL)
-        self.lbl_image_format = wx.StaticText(self.pnl_file, label=" " + T("Image Format"))
-        self.cbo_image_format = wx.ComboBox(self.pnl_file, choices=["png", "jpeg", "webp"],
-                                            style=wx.CB_READONLY, name="cbo_image_format")
-        self.cbo_image_format.SetSelection(0)
-        self.cbo_image_format.SetToolTip(T("Output Image Format"))
-
-        sublayout = wx.BoxSizer(wx.HORIZONTAL)
-        sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.chk_metadata, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.sep_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.lbl_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.cbo_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_input, (0, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
@@ -159,10 +126,43 @@ class MainFrame(wx.Frame):
         layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.btn_output_play, (1, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(sublayout, (2, 1), flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-
         layout.AddGrowableCol(1)
         self.pnl_file.SetSizer(layout)
+
+        self.pnl_file_option = wx.Panel(self)
+        self.chk_resume = wx.CheckBox(self.pnl_file_option, label=T("Resume"), name="chk_resume")
+        self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
+        self.chk_resume.SetValue(True)
+
+        self.chk_recursive = wx.CheckBox(self.pnl_file_option, label=T("Process all subfolders"),
+                                         name="chk_recursive")
+        self.chk_recursive.SetValue(False)
+
+        self.chk_exif_transpose = wx.CheckBox(self.pnl_file_option, label=T("EXIF Transpose"),
+                                              name="chk_exif_transpose")
+        self.chk_exif_transpose.SetValue(True)
+        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
+
+        self.chk_metadata = wx.CheckBox(self.pnl_file_option, label=T("Add metadata to filename"),
+                                        name="chk_metadata")
+        self.chk_metadata.SetValue(False)
+
+        self.sep_image_format = wx.StaticLine(self.pnl_file_option, size=(2, 16), style=wx.LI_VERTICAL)
+        self.lbl_image_format = wx.StaticText(self.pnl_file_option, label=" " + T("Image Format"))
+        self.cbo_image_format = wx.ComboBox(self.pnl_file_option, choices=["png", "jpeg", "webp"],
+                                            style=wx.CB_READONLY, name="cbo_image_format")
+        self.cbo_image_format.SetSelection(0)
+        self.cbo_image_format.SetToolTip(T("Output Image Format"))
+
+        layout = wx.BoxSizer(wx.HORIZONTAL)
+        layout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_metadata, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        self.pnl_file_option.SetSizer(layout)
 
         # options panel
 
@@ -490,6 +490,7 @@ class MainFrame(wx.Frame):
 
         layout = wx.BoxSizer(wx.VERTICAL)
         layout.Add(self.pnl_file, 0, wx.ALL | wx.EXPAND, 8)
+        layout.Add(self.pnl_file_option, 0, wx.ALL | wx.EXPAND, 4)
         layout.Add(self.pnl_options, 1, wx.ALL | wx.EXPAND, 8)
         layout.Add(self.pnl_process, 0, wx.ALL | wx.EXPAND, 8)
         self.SetSizer(layout)
