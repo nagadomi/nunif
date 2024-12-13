@@ -14,6 +14,7 @@ from .common import (
     start_file,
 )
 from .video_encoding_box import VideoEncodingBox
+from .io_path_panel import IOPathPanel
 
 __all__ = [
     "EVT_TQDM", "TQDMEvent", "TQDMGUI",
@@ -30,4 +31,5 @@ __all__ = [
     "set_icon_ex", "load_icon",
     "start_file",
     "VideoEncodingBox",
+    "IOPathPanel",
 ]
