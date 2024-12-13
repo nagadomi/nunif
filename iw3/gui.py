@@ -486,20 +486,7 @@ class MainFrame(wx.Frame):
         self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
-        self.SetDropTarget(FileDropCallback(self.on_drop_files))
-        # Disable default drop target
-        for control in (self.pnl_file.input_path_widget, self.pnl_file.output_path_widget, self.txt_vf,
-                        self.cbo_divergence, self.cbo_convergence, self.cbo_pad):
-            control.SetDropTarget(FileDropCallback(self.on_drop_files))
-
-        # Fix Frame and Panel background colors are different in windows
-        self.SetBackgroundColour(self.pnl_file_option.GetBackgroundColour())
-
-        # state
-        self.btn_cancel.Disable()
-        self.btn_suspend.Disable()
-
-        editable_comboxes = [
+        editable_comboboxes = [
             self.cbo_divergence,
             self.cbo_convergence,
             self.cbo_resolution,
@@ -509,11 +496,25 @@ class MainFrame(wx.Frame):
             *self.grp_video.get_editable_comboboxes(),
             self.cbo_foreground_scale,
         ]
+
+        self.SetDropTarget(FileDropCallback(self.on_drop_files))
+        # Disable default drop target
+        for control in (self.pnl_file.input_path_widget, self.pnl_file.output_path_widget, self.txt_vf,
+                        self.cbo_pad, self.txt_start_time, self.txt_end_time, *editable_comboboxes):
+            control.SetDropTarget(FileDropCallback(self.on_drop_files))
+
+        # Fix Frame and Panel background colors are different in windows
+        self.SetBackgroundColour(self.pnl_file_option.GetBackgroundColour())
+
+        # state
+        self.btn_cancel.Disable()
+        self.btn_suspend.Disable()
+
         self.persistence_manager = persist.PersistenceManager.Get()
         self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
         self.persistence_manager.SetPersistenceFile(CONFIG_PATH)
         persistent_manager_register_all(self.persistence_manager, self)
-        for control in editable_comboxes:
+        for control in editable_comboboxes:
             persistent_manager_register(self.persistence_manager, control, EditableComboBoxPersistentHandler)
         persistent_manager_restore_all(self.persistence_manager)
 
