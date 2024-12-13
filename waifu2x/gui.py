@@ -9,12 +9,11 @@ from time import time
 import threading
 from pprint import pprint # noqa
 import wx
-from wx.lib.buttons import GenBitmapButton
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
 from .ui_utils import (
     create_parser, set_state_args, waifu2x_main,
-    is_video, is_output_dir, is_text, is_image, make_output_filename,
+    is_video, is_output_dir, is_text, make_output_filename,
     MODEL_DIR, DEFAULT_ART_MODEL_DIR,
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.device import mps_is_available, xpu_is_available
@@ -24,10 +23,10 @@ from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
     persistent_manager_register_all, persistent_manager_restore_all, persistent_manager_register,
-    resolve_default_dir, extension_list_to_wildcard,
+    extension_list_to_wildcard,
     validate_number,
-    set_icon_ex, start_file, load_icon,
-    VideoEncodingBox,
+    set_icon_ex,
+    VideoEncodingBox, IOPathPanel
 )
 from .locales import LOCALES
 from . import models # noqa
@@ -78,59 +77,35 @@ class MainFrame(wx.Frame):
 
         # input output panel
 
-        self.pnl_file = wx.Panel(self)
-        if LAYOUT_DEBUG:
-            self.pnl_file.SetBackgroundColour("#ccf")
+        input_wildcard = (f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
+                          f"|Video files|{VIDEO_EXTENSIONS}"
+                          f"|Image files|{IMAGE_EXTENSIONS}"
+                          "|All Files|*.*")
+        self.pnl_file = IOPathPanel(
+            self,
+            input_wildcard=input_wildcard,
+            default_output_dir_name="waifu2x",
+            resolve_output_path=self.resolve_output_path,
+            translate_function=T,
+        )
 
-        self.lbl_input = wx.StaticText(self.pnl_file, label=T("Input"))
-        self.txt_input = wx.TextCtrl(self.pnl_file, name="txt_input")
-        self.btn_input_file = GenBitmapButton(self.pnl_file, bitmap=load_icon("image-open.png"))
-        self.btn_input_file.SetToolTip(T("Choose a file"))
-        self.btn_input_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
-        self.btn_input_dir.SetToolTip(T("Choose a directory"))
-        self.btn_input_play = GenBitmapButton(self.pnl_file, bitmap=load_icon("media-playback-start.png"))
-        self.btn_input_play.SetToolTip(T("Play"))
-
-        self.lbl_output = wx.StaticText(self.pnl_file, label=T("Output"))
-        self.txt_output = wx.TextCtrl(self.pnl_file, name="txt_output")
-        self.btn_same_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("emblem-symbolic-link.png"))
-        self.btn_same_output_dir.SetToolTip(T("Set the same directory"))
-        self.btn_output_dir = GenBitmapButton(self.pnl_file, bitmap=load_icon("folder-open.png"))
-        self.btn_output_dir.SetToolTip(T("Choose a directory"))
-        self.btn_output_play = GenBitmapButton(self.pnl_file, bitmap=load_icon("media-playback-start.png"))
-        self.btn_output_play.SetToolTip(T("Play"))
-
-        self.chk_resume = wx.CheckBox(self.pnl_file, label=T("Resume"), name="chk_resume")
+        self.pnl_file_option = wx.Panel(self)
+        self.chk_resume = wx.CheckBox(self.pnl_file_option, label=T("Resume"), name="chk_resume")
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
-        self.chk_recursive = wx.CheckBox(self.pnl_file, label=T("Process all subfolders"),
+        self.chk_recursive = wx.CheckBox(self.pnl_file_option, label=T("Process all subfolders"),
                                          name="chk_recursive")
         self.chk_recursive.SetValue(False)
-        self.chk_exif_transpose = wx.CheckBox(self.pnl_file, label=T("EXIF Transpose"),
+        self.chk_exif_transpose = wx.CheckBox(self.pnl_file_option, label=T("EXIF Transpose"),
                                               name="chk_exif_transpose")
         self.chk_exif_transpose.SetValue(True)
         self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
 
-        sublayout = wx.BoxSizer(wx.HORIZONTAL)
-        sublayout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        sublayout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-
-        layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.lbl_input, (0, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_input, (0, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
-        layout.Add(self.btn_input_file, (0, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_input_dir, (0, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_input_play, (0, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_output, (1, 0), flag=wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_output, (1, 1), flag=wx.ALIGN_CENTER_VERTICAL | wx.EXPAND)
-        layout.Add(self.btn_same_output_dir, (1, 2), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_output_dir, (1, 3), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.btn_output_play, (1, 4), flag=wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(sublayout, (2, 1), flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-
-        layout.AddGrowableCol(1)
-        self.pnl_file.SetSizer(layout)
+        layout = wx.BoxSizer(wx.HORIZONTAL)
+        layout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        self.pnl_file_option.SetSizer(layout)
 
         # options panel
 
@@ -317,21 +292,15 @@ class MainFrame(wx.Frame):
         # main layout
 
         layout = wx.BoxSizer(wx.VERTICAL)
-        layout.Add(self.pnl_file, 0, wx.ALL | wx.EXPAND, 8)
+        layout.Add(self.pnl_file.panel, 0, wx.ALL | wx.EXPAND, 8)
+        layout.Add(self.pnl_file_option, 0, wx.ALL | wx.EXPAND, 4)
         layout.Add(self.pnl_options, 1, wx.ALL | wx.EXPAND, 8)
         layout.Add(self.pnl_process, 0, wx.ALL | wx.EXPAND, 8)
         self.SetSizer(layout)
 
         # bind
-        self.btn_input_file.Bind(wx.EVT_BUTTON, self.on_click_btn_input_file)
-        self.btn_input_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_input_dir)
-        self.btn_input_play.Bind(wx.EVT_BUTTON, self.on_click_btn_input_play)
-        self.btn_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_output_dir)
-        self.btn_same_output_dir.Bind(wx.EVT_BUTTON, self.on_click_btn_same_output_dir)
-        self.btn_output_play.Bind(wx.EVT_BUTTON, self.on_click_btn_output_play)
-
-        self.txt_input.Bind(wx.EVT_TEXT, self.on_text_changed_txt_input)
-        self.txt_output.Bind(wx.EVT_TEXT, self.on_text_changed_txt_output)
+        self.pnl_file.bind_input_path_changed(self.on_text_changed_txt_input)
+        self.pnl_file.bind_output_path_changed(self.on_text_changed_txt_output)
 
         self.opt_model.Bind(wx.EVT_RADIOBOX, self.on_selected_index_changed_opt_model)
         self.opt_upscaling.Bind(wx.EVT_RADIOBOX, self.on_selected_index_changed_opt_upscaling)
@@ -342,26 +311,29 @@ class MainFrame(wx.Frame):
         self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
+        editable_comboboxes = [
+            *self.grp_video.get_editable_comboboxes(),
+            self.cbo_grain_noise,
+        ]
+
         self.SetDropTarget(FileDropCallback(self.on_drop_files))
         # Disable default drop target
-        for control in (self.txt_input, self.txt_output, self.txt_vf):
+        for control in (self.pnl_file.input_path_widget, self.pnl_file.output_path_widget, self.txt_vf,
+                        self.txt_start_time, self.txt_end_time,
+                        *editable_comboboxes):
             control.SetDropTarget(FileDropCallback(self.on_drop_files))
 
         # Fix Frame and Panel background colors are different in windows
-        self.SetBackgroundColour(self.pnl_file.GetBackgroundColour())
+        self.SetBackgroundColour(self.pnl_file_option.GetBackgroundColour())
 
         # state
         self.btn_cancel.Disable()
 
-        editable_comboxes = [
-            *self.grp_video.get_editable_comboboxes(),
-            self.cbo_grain_noise,
-        ]
         self.persistence_manager = persist.PersistenceManager.Get()
         self.persistence_manager.SetManagerStyle(persist.PM_DEFAULT_STYLE)
         self.persistence_manager.SetPersistenceFile(CONFIG_PATH)
         persistent_manager_register_all(self.persistence_manager, self)
-        for control in editable_comboxes:
+        for control in editable_comboboxes:
             persistent_manager_register(self.persistence_manager, control, EditableComboBoxPersistentHandler)
         persistent_manager_restore_all(self.persistence_manager)
 
@@ -377,9 +349,7 @@ class MainFrame(wx.Frame):
 
     def on_drop_files(self, x, y, filenames):
         if filenames:
-            self.txt_input.SetValue(filenames[0])
-            if not self.txt_output.GetValue():
-                self.set_same_output_dir()
+            self.pnl_file.set_input_path(filenames[0])
         return True
 
     def update_upscaling_state(self):
@@ -401,13 +371,13 @@ class MainFrame(wx.Frame):
 
     def update_start_button_state(self):
         if not self.processing:
-            if self.txt_input.GetValue() and self.txt_output.GetValue():
+            if self.pnl_file.input_path and self.pnl_file.output_path:
                 self.btn_start.Enable()
             else:
                 self.btn_start.Disable()
 
     def update_input_option_state(self):
-        input_path = self.txt_input.GetValue()
+        input_path = self.pnl_file.input_path
         if path.isdir(input_path) or is_text(input_path):
             self.chk_resume.Enable()
             self.chk_recursive.Enable()
@@ -428,73 +398,14 @@ class MainFrame(wx.Frame):
     def on_selected_index_changed_opt_upscaling(self, event):
         self.update_noise_level_state()
 
-    def set_same_output_dir(self):
-        input_path = self.txt_input.GetValue()
-        if path.isdir(input_path) or is_text(input_path):
-            self.txt_output.SetValue(path.join(input_path, "waifu2x"))
-        else:
-            self.txt_output.SetValue(path.join(path.dirname(input_path), "waifu2x"))
-
-    def on_click_btn_input_file(self, event):
-        wildcard = (f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
-                    f"|Video files|{VIDEO_EXTENSIONS}"
-                    f"|Image files|{IMAGE_EXTENSIONS}"
-                    "|All Files|*.*")
-        default_dir = resolve_default_dir(self.txt_input.GetValue())
-        with wx.FileDialog(self.pnl_file, T("Choose a file"),
-                           wildcard=wildcard, defaultDir=default_dir,
-                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dlg_file:
-            if dlg_file.ShowModal() == wx.ID_CANCEL:
-                return
-            selected_path = dlg_file.GetPath()
-            self.txt_input.SetValue(selected_path)
-            if not self.txt_output.GetValue():
-                self.set_same_output_dir()
-
-    def on_click_btn_input_dir(self, event):
-        default_dir = resolve_default_dir(self.txt_input.GetValue())
-        with wx.DirDialog(self.pnl_file, T("Choose a directory"),
-                          defaultPath=default_dir,
-                          style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST) as dlg_dir:
-            if dlg_dir.ShowModal() == wx.ID_CANCEL:
-                return
-            selected_path = dlg_dir.GetPath()
-            self.txt_input.SetValue(selected_path)
-            if not self.txt_output.GetValue():
-                self.set_same_output_dir()
-
-    def on_click_btn_input_play(self, event):
-        start_file(self.txt_input.GetValue())
-
-    def on_click_btn_output_play(self, event):
-        input_path = self.txt_input.GetValue()
-        output_path = self.txt_output.GetValue()
-
+    def resolve_output_path(self, input_path, output_path):
         if is_output_dir(output_path):
             args = self.parse_args()
             video = is_video(input_path)
             output_path = path.join(
                 output_path,
                 make_output_filename(input_path, args, video=video))
-
-        if path.exists(output_path):
-            start_file(output_path)
-        elif path.exists(path.dirname(output_path)):
-            start_file(path.dirname(output_path))
-
-    def on_click_btn_same_output_dir(self, event):
-        self.set_same_output_dir()
-
-    def on_click_btn_output_dir(self, event):
-        default_dir = resolve_default_dir(self.txt_output.GetValue())
-        if not path.exists(default_dir):
-            default_dir = path.dirname(default_dir)
-        with wx.DirDialog(self.pnl_file, T("Choose a directory"),
-                          defaultPath=default_dir,
-                          style=wx.DD_DEFAULT_STYLE) as dlg_dir:
-            if dlg_dir.ShowModal() == wx.ID_CANCEL:
-                return
-            self.txt_output.SetValue(dlg_dir.GetPath())
+        return output_path
 
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
@@ -505,8 +416,8 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
 
     def confirm_overwrite(self, args):
-        input_path = self.txt_input.GetValue()
-        output_path = self.txt_output.GetValue()
+        input_path = self.pnl_file.input_path
+        output_path = self.pnl_file.output_path
 
         if is_output_dir(output_path):
             output_path = path.join(output_path, make_output_filename(input_path, args, video=is_video(input_path)))
@@ -575,7 +486,7 @@ class MainFrame(wx.Frame):
             else:
                 method = f"scale{scale}x"
 
-        input_path = self.txt_input.GetValue()
+        input_path = self.pnl_file.input_path
         resume = (path.isdir(input_path) or is_text(input_path)) and self.chk_resume.GetValue()
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
@@ -584,7 +495,7 @@ class MainFrame(wx.Frame):
 
         parser.set_defaults(
             input=input_path,
-            output=self.txt_output.GetValue(),
+            output=self.pnl_file.output_path,
             model_dir=self.model_dirs[self.opt_model.GetSelection()],
             noise_level=noise_level,
             method=method,
