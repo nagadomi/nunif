@@ -309,11 +309,6 @@ def make_video_codec_option(args):
     if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
         options = {"preset": args.preset, "crf": str(args.crf)}
 
-        if args.tb or args.half_tb:
-            options["frame-packing"] = "4"
-        elif not args.anaglyph:
-            options["frame-packing"] = "3"
-
         if args.tune:
             options["tune"] = ",".join(set(args.tune))
 
@@ -325,6 +320,11 @@ def make_video_codec_option(args):
             if args.profile_level:
                 x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
             options["x265-params"] = ":".join(x265_params)
+        elif args.video_codec == "libx264":
+            if args.tb or args.half_tb:
+                options["x264-params"] = "frame-packing=4"
+            elif not args.anaglyph:
+                options["x264-params"] = "frame-packing=3"
         elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
             options["rc"] = "constqp"
             options["qp"] = str(args.crf)
