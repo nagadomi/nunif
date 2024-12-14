@@ -28,5 +28,5 @@ timm
 numba # only for iww3 sbs training
 av >= 12.2.0, < 14.0.0
 rembg # for --remove-bg
-truststore
+truststore; python_version >= '3.10'
 pillow_heif
