@@ -183,6 +183,23 @@ def inf_loss():
     return float(-time() / 1000000000)
 
 
+def fit_size(z, y):
+    if isinstance(z, (tuple, list)):
+        if z[0].shape[2] != y[0].shape[2] or z[0].shape[3] != y.shape[3]:
+            pad_h = (y.shape[2] - z[0].shape[2]) // 2
+            pad_w = (y.shape[3] - z[0].shape[3]) // 2
+            assert pad_h >= 0 or pad_w >= 0
+            y = torch.nn.functional.pad(y, (-pad_w, -pad_w, -pad_h, -pad_h))
+    else:
+        if z.shape[2] != y.shape[2] or z.shape[3] != y.shape[3]:
+            pad_h = (y.shape[2] - z.shape[2]) // 2
+            pad_w = (y.shape[3] - z.shape[3]) // 2
+            assert pad_h >= 0 or pad_w >= 0
+            y = torch.nn.functional.pad(y, (-pad_w, -pad_w, -pad_h, -pad_h))
+
+    return z, y
+
+
 class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
@@ -274,8 +291,10 @@ class Waifu2xEnv(LuminancePSNREnv):
             if self.discriminator is None:
                 if not self.trainer.args.privilege:
                     z = self.model(x)
+                    z, y = fit_size(z, y)
                 else:
                     z = self.model(x, self.to_device(privilege))
+                    z, y = fit_size(z, y)
                 if isinstance(z, (list, tuple)) and self.use_diff_aug:
                     raise ValueError(f"--diff-aug does not support {self.model.name}")
                 z, y = self.diff_aug(z, y)
@@ -287,8 +306,10 @@ class Waifu2xEnv(LuminancePSNREnv):
                     self.discriminator.requires_grad_(False)
                     if not self.trainer.args.privilege:
                         z = self.model(x)
+                        z, y = fit_size(z, y)
                     else:
                         z = self.model(x, self.to_device(privilege))
+                        z, y = fit_size(z, y)
                     if isinstance(z, (list, tuple)):
                         # NOTE: models using auxiliary loss return tuple.
                         #       first element is SR result.
@@ -312,6 +333,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 else:
                     with torch.inference_mode():
                         z = self.model(x)
+                        z, y = fit_size(z, y)
                         fake = z[0] if isinstance(z, (list, tuple)) else z
                     recon_loss = generator_loss = torch.zeros(1, dtype=x.dtype, device=x.device)
 
@@ -455,6 +477,7 @@ class Waifu2xEnv(LuminancePSNREnv):
         with self.autocast():
             if self.trainer.args.update_criterion in {"psnr", "all"}:
                 z = model(x)
+                z, y = fit_size(z, y)
                 psnr = self.eval_criterion(z, y)
                 if self.trainer.args.update_criterion == "psnr":
                     loss = psnr
@@ -462,6 +485,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     loss = torch.tensor(inf_loss())
             elif self.trainer.args.update_criterion == "loss":
                 z = model(x)
+                z, y = fit_size(z, y)
                 # TODO: AuxiliaryLoss does not work
                 psnr = self.eval_criterion(z, y)
                 loss = self.criterion(z, y)
