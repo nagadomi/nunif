@@ -232,6 +232,11 @@ See https://github.com/nagadomi/nunif/issues/97#issuecomment-2027349722 for deta
 
 ## Trouble shooting
 
+### Output video is not SBS
+
+Some software, such as Windows Photo, shows only one side of side-by-side layout.
+Try playing it with other video players.
+
 ### Very flat foreground
 
 This tends to happen with outdoor scene photos.
