@@ -185,7 +185,7 @@ def inf_loss():
 
 def fit_size(z, y):
     if isinstance(z, (tuple, list)):
-        if z[0].shape[2] != y[0].shape[2] or z[0].shape[3] != y.shape[3]:
+        if z[0].shape[2] != y.shape[2] or z[0].shape[3] != y.shape[3]:
             pad_h = (y.shape[2] - z[0].shape[2]) // 2
             pad_w = (y.shape[3] - z[0].shape[3]) // 2
             assert pad_h >= 0 or pad_w >= 0
