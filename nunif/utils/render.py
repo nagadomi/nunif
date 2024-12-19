@@ -6,9 +6,17 @@ from .seam_blending import SeamBlending
 
 
 def tiled_render(x, model, tile_size=None, batch_size=None, enable_amp=False):
-    return SeamBlending.tiled_render(
-        x, model,
-        tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp)
+    if hasattr(model, "has_callback") and model.has_callback():
+        return SeamBlending.tiled_render(
+            x, model, tile_size=tile_size, batch_size=batch_size,
+            config_callback=getattr(model, "config_callback", None),
+            preprocess_callback=getattr(model, "preprocess_callback", None),
+            input_callback=getattr(model, "input_callback", None),
+            enable_amp=enable_amp)
+    else:
+        return SeamBlending.tiled_render(
+            x, model, tile_size=tile_size, batch_size=batch_size,
+            enable_amp=enable_amp)
 
 
 def simple_render(x, model, enable_amp=False, offset=None):
