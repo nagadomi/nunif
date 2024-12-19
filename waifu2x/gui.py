@@ -102,6 +102,7 @@ class MainFrame(wx.Frame):
         self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
 
         layout = wx.BoxSizer(wx.HORIZONTAL)
+        layout.AddSpacer(4)
         layout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
@@ -292,6 +293,7 @@ class MainFrame(wx.Frame):
         # main layout
 
         layout = wx.BoxSizer(wx.VERTICAL)
+        layout.AddSpacer(8)
         layout.Add(self.pnl_file.panel, 0, wx.ALL | wx.EXPAND, 8)
         layout.Add(self.pnl_file_option, 0, wx.ALL | wx.EXPAND, 4)
         layout.Add(self.pnl_options, 1, wx.ALL | wx.EXPAND, 8)
