@@ -638,6 +638,7 @@ class MainFrame(wx.Frame):
         else:
             self.lbl_anaglyph_method.Hide()
             self.cbo_anaglyph_method.Hide()
+        self.GetSizer().Layout()
 
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
