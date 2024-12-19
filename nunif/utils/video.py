@@ -11,6 +11,7 @@ import re
 import torch
 from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
+import time
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -611,6 +612,19 @@ def configure_video_codec(config):
             config.pix_fmt = "gbrp"
 
 
+def try_replace(output_path_tmp, output_path):
+    try_count = 4
+    while try_count >= 0:
+        try:
+            os.replace(output_path_tmp, output_path)
+            break
+        except: # noqa
+            time.sleep(2)
+            try_count -= 1
+            if try_count <= 0:
+                raise
+
+
 def process_video(input_path, output_path,
                   frame_callback,
                   config_callback=default_config_callback,
@@ -762,7 +776,7 @@ def process_video(input_path, output_path,
     if not (stop_event is not None and stop_event.is_set()):
         # success
         if path.exists(output_path_tmp):
-            os.replace(output_path_tmp, output_path)
+            try_replace(output_path_tmp, output_path)
 
 
 def generate_video(output_path,
@@ -877,7 +891,7 @@ def generate_video(output_path,
     if not (stop_event is not None and stop_event.is_set()):
         # success
         if path.exists(output_path_tmp):
-            os.replace(output_path_tmp, output_path)
+            try_replace(output_path_tmp, output_path)
 
 
 def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None, suspend_event=None):
