@@ -72,7 +72,7 @@ class LPIPSWith(nn.Module):
         # Override foward method
         self.lpips.__class__ = LPIPSFix
 
-    def train(mode=True):
+    def train(self, mode=True):
         super().train(False)
 
     def forward(self, input, target):
