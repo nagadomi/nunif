@@ -174,7 +174,7 @@ class BaseDepthModel(metaclass=ABCMeta):
         assert depth.ndim in {3, 2}
         if normalize:
             depth, min_depth_value, max_depth_value = self.minmax_normalize_chw(depth)
-            png_info.update(min_depth_value=min_depth_value.item(), max_depth_value=max_depth_value.item())
+            png_info.update(iw3_min_depth_value=min_depth_value.item(), iw3_max_depth_value=max_depth_value.item())
         else:
             min_depth_value = depth.amin()
             max_depth_value = depth.amax()
@@ -193,10 +193,10 @@ class BaseDepthModel(metaclass=ABCMeta):
     @staticmethod
     def load_depth(file_path):
         with Image.open(file_path) as im:
-            if "min_depth_value" in im.text and "max_depth_value" in im.text:
+            if "iw3_min_depth_value" in im.text and "iw3_max_depth_value" in im.text:
                 try:
-                    min_depth_value = float(im.text["min_depth_value"])
-                    max_depth_value = float(im.text["min_depth_value"])
+                    min_depth_value = float(im.text["iw3_min_depth_value"])
+                    max_depth_value = float(im.text["iw3_min_depth_value"])
                 except (ValueError, TypeError):
                     min_depth_value = max_depth_value = None
             else:
