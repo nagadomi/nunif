@@ -1,5 +1,6 @@
 import os
 from os import path
+import warnings
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -298,7 +299,7 @@ def make_video_codec_option(args):
             options["x265-params"] = ":".join(x265_params)
         elif args.video_codec == "libx264":
             # TODO:
-            #if args.tb or args.half_tb:
+            # if args.tb or args.half_tb:
             #    options["x264-params"] = "frame-packing=4"
             if args.half_sbs:
                 options["x264-params"] = "frame-packing=3"
@@ -1429,6 +1430,12 @@ def create_parser(required_true=True):
                         choices=["unspecified", "auto",
                                  "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
                         help="video colorspace")
+    # Deprecated
+    parser.add_argument("--zoed-batch-size", type=int,
+                        help="Deprecated. Use --batch-size instead")
+    parser.add_argument("--zoed-height", type=int,
+                        help="Deprecated. Use --resolution instead")
+
     return parser
 
 
@@ -1477,6 +1484,14 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
 
     if not args.profile_level or args.profile_level == "auto":
         args.profile_level = None
+
+    # deprecated options
+    if args.zoed_batch_size is not None:
+        args.batch_size = args.zoed_batch_size
+        warnings.warn("--zoed-batch-size is deprecated. Use --batch-size instead")
+    if args.zoed_height is not None:
+        args.resolution = args.zoed_height
+        warnings.warn("--zoed-height is deprecated. Use --resolution instead")
 
     args.state = {
         "stop_event": stop_event,
