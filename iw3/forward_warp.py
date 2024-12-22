@@ -16,10 +16,9 @@ def blur_blend(x, mask):
 
 
 def shift_fill(x, max_tries=100):
-    # TODO: If holes exist between different depth layers, they are not masked and may cause artifact
     mask = x < 0
     shift = 1
-    while mask.sum() > 0 and max_tries > 0:
+    while mask.any().item() and max_tries > 0:
         if shift > 0:
             x[mask] = F.pad(x[:, :, :, 1:], (0, 1, 0, 0))[mask]
         else:
@@ -27,6 +26,24 @@ def shift_fill(x, max_tries=100):
         mask = x < 0
         shift = 0 if shift == 1 else 1
         max_tries = max_tries - 1
+
+
+def fix_layered_holes(side_image, index_image, sign, max_tries=100):
+    # NOTE: I still don't understand what it means to separate by sign(left/right), but this works.
+    if sign > 0:
+        mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (0, 1, 0, 0))
+        while mask.any().item() and max_tries > 0:
+            side_image[mask.expand_as(side_image)] = -1  # set undefined value
+            index_image[mask] = F.pad(index_image[:, :, :, 1:], (0, 1, 0, 0))[mask]
+            mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (0, 1, 0, 0))
+            max_tries -= 1
+    else:
+        mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (1, 0, 0, 0))
+        while mask.any().item() and max_tries > 0:
+            side_image[mask.expand_as(side_image)] = -1
+            index_image[mask] = F.pad(index_image[:, :, :, :-1], (1, 0, 0, 0))[mask]
+            mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (1, 0, 0, 0))
+            max_tries -= 1
 
 
 def to_flat_index(batch, width, height, index):
@@ -116,12 +133,25 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
     x_index = torch.arange(0, W, device=c.device).view(1, 1, W).expand(B, H, W)
     src_index = to_flat_index(B, W, H, x_index)
     index_order = torch.argsort(depth.view(-1), dim=0)
+
+    c = torch.cat([c, x_index.view(B, 1, H, W).to(c.dtype)], dim=1)  # warp width index together
     left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
     right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
+    left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
+    right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
 
     # unpad
     left_eye = unpad(left_eye)
     right_eye = unpad(right_eye)
+    left_eye_index = unpad(left_eye_index)
+    right_eye_index = unpad(right_eye_index)
+
+    # Fix layered holes
+    # inspired by @math-artist patch: https://github.com/nagadomi/nunif/discussions/274
+    shift_fill(left_eye_index)
+    shift_fill(right_eye_index)
+    fix_layered_holes(left_eye, left_eye_index, 1)
+    fix_layered_holes(right_eye, right_eye_index, -1)
 
     if fill:
         # super simple inpainting
@@ -132,7 +162,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         left_eye = torch.clamp(left_eye, 0, 1)
         right_eye = torch.clamp(right_eye, 0, 1)
 
-    return left_eye, right_eye
+    return left_eye.contiguous(), right_eye.contiguous()
 
 
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None):
