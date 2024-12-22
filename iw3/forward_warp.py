@@ -170,22 +170,29 @@ def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=fill)
 
-
-if __name__ == "__main__":
-    # 400 FPS on RTX3070Ti
+def _bench():
+    # 350 FPS on RTX3070Ti
     import time
+    from nunif.modules.gaussian_filter import GaussianFilter2d
     device = "cuda:0"
     B = 4
     N = 100
 
     rgb = torch.zeros((B, 3, 512, 512)).to(device)
     depth = torch.rand((B, 1, 512, 512)).to(device)
-    divergence = 2.0
+    smooth = GaussianFilter2d(1, kernel_size=15, padding=1).to(device)
+    depth = smooth(depth)
+    depth = depth / depth.max()
+    divergence = 5.0
     convergence = 0.5
 
     # benchmark
     t = time.time()
     for _ in range(N):
-        apply_divergence_forward_warp(rgb, depth, divergence, convergence, method="forward")
+        apply_divergence_forward_warp(rgb, depth, divergence, convergence, method="forward_fill")
     torch.cuda.synchronize()
     print(1 / ((time.time() - t) / (B * N)), "FPS")
+
+
+if __name__ == "__main__":
+    _bench()
