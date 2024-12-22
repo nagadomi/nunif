@@ -290,7 +290,7 @@ def make_video_codec_option(args):
             options["tune"] = ",".join(set(args.tune))
 
         if args.profile_level:
-            options["level"] = args.profile_level
+            options["level"] = str(int(float(args.profile_level) * 10))
 
         if args.video_codec == "libx265":
             x265_params = ["log-level=warning", "high-tier=enabled"]

@@ -120,7 +120,7 @@ def process_video(ctx, input_filename, output_path, args):
                 options["tune"] = ",".join(tune)
 
             if args.profile_level:
-                options["level"] = args.profile_level
+                options["level"] = str(int(float(args.profile_level) * 10))
 
             if args.video_codec == "libx265":
                 x265_params = ["log-level=warning", "high-tier=enabled"]
