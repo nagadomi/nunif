@@ -3,7 +3,7 @@ from . import models # noqa
 
 
 def addon_config():
-    return SBS3DAddon()
+    return [SBS3DAddon(), InpaintAddon()]
 
 
 class SBS3DAddon(Addon):
@@ -16,4 +16,13 @@ class SBS3DAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.sbs.trainer import register
+        return register(subparsers, default_parser)
+
+
+class InpaintAddon(Addon):
+    def __init__(self):
+        super().__init__("inpaint")
+
+    def register_train(self, subparsers, default_parser):
+        from .training.inpaint.trainer import register
         return register(subparsers, default_parser)
