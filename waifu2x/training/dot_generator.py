@@ -21,17 +21,22 @@ def exec_prob(prob):
     return random.uniform(0, 1) < prob
 
 
+def highcolor(black):
+    v = random.uniform(0, 0.08)
+    if black:
+        return v
+    else:
+        return 1 - v
+
+
 def gen_color(black):
     if exec_prob(0.2):
-        if black:
-            return (0.0, 0.0, 0.0)
-        else:
-            return (1.0, 1.0, 1.0)
+        return (highcolor(black), highcolor(black), highcolor(black))
     else:
         rgb = []
         for _ in range(3):
             if exec_prob(0.3):
-                v = float(random.randint(0, 1))
+                v = highcolor(black)
             else:
                 v = random.uniform(0, 1)
             rgb.append(v)
