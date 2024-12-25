@@ -63,7 +63,7 @@ def resize(im, size, filter_type, blur,
         im = _resize(im, (step1_h, step1_w), filter_type, 1)
         im = _resize(im, size, filter_type, blur)
         return im
-    elif enable_no_antialias and random.uniform(0, 1) < no_antialias_p:
+    elif enable_no_antialias and random.uniform(0, 1) < no_antialias_p and filter_type != INTERPOLATION_NEAREST:
         filter_type = random.choice(["vision.bilinear_no_antialias", "vision.bicubic_no_antialias"])
         return _resize(im, size, filter_type, blur)
     else:
@@ -132,8 +132,8 @@ class RandomDownscaleX():
                 blur = 1 + self.fixed_blur_shift
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
                        filter_type=interpolation, blur=blur,
-                       enable_step=self.training or fixed_interpolation, step_p=self.resize_step_p,
-                       enable_no_antialias=self.training, no_antialias_p=self.resize_no_antialias_p)
+                       enable_step=self.training and not fixed_interpolation, step_p=self.resize_step_p,
+                       enable_no_antialias=self.training and not fixed_interpolation, no_antialias_p=self.resize_no_antialias_p)
             x = pil_io.to_image(x)
         elif self.scale_factor == 8:
             # wand 8x downscale is very slow for some reason
@@ -305,6 +305,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                                                       resize_step_p=resize_step_p,
                                                       resize_no_antialias_p=resize_no_antialias_p)
                 random_downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
+                                                              resize_blur_p=0,
                                                               interpolation=INTERPOLATION_NEAREST)
             else:
                 random_downscale_x = TP.Identity()
@@ -347,9 +348,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             self.transforms_nearest = TP.Compose([
                 random_downscale_x_nearest,
                 jpeg_transform,
-                TP.RandomHardExampleCrop(size=tile_size,
-                                         y_scale=scale_factor,
-                                         samples=crop_samples),
+                TP.RandomCrop(size=tile_size, y_scale=scale_factor),
                 random_flip,
             ])
         else:
@@ -364,6 +363,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                                                training=False)
                 downscale_x_nearest = RandomDownscaleX(scale_factor=scale_factor,
                                                        interpolation=INTERPOLATION_NEAREST,
+                                                       resize_blur_p=0,
                                                        training=False)
             else:
                 downscale_x = TP.Identity()
