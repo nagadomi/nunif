@@ -52,14 +52,15 @@ def gen_dot_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_
         use_cross_and_skip = False
     else:
         size = random.randint(1, 5)
-        use_cross_and_skip = exec_prob(0.5)
-    use_random_size = exec_prob(0.9)
+        use_cross_and_skip = exec_prob(0.25)
+    use_random_size = exec_prob(0.75)
 
-    xm = random.randint(2, 4)
-    ym = random.randint(2, 4)
+    xm_shift = random.randint(0, 1)
+    xm = random.randint(1, 4)
+    ym = random.randint(1, 4)
 
-    def mod(x, y):
-        return x % xm == 0 and y % ym == 0
+    def mod(y, x):
+        return (x + (y % 2) * xm_shift) % xm == 0 and y % ym == 0
 
     if bg_color is not None:
         bg = bg_color
@@ -286,7 +287,7 @@ def main():
         dot = gen(cols_scale=cols_scale, rotate=rotate, dot_scale=args.dot_scale)
 
         hole = random.choice([True, False, False])
-        rotate2 = random.choice([True, False, False]) if args.rotate else False
+        rotate2 = random.choice([True, False, False, False]) if args.rotate else False
         rotate = rotate or rotate2
         if hole:
             hole_scale = 4 if rotate else 1
