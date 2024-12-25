@@ -898,8 +898,9 @@ def register(subparsers, default_parser):
         learning_rate_cycles=5,
         learning_rate_decay=0.995,
         learning_rate_decay_step=[1],
-        # for adamw
+        # for adamw cosine_wd
         weight_decay=0.001,
+        weight_decay_end=0.01,
     )
     parser.set_defaults(handler=train)
 
