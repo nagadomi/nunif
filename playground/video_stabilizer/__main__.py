@@ -12,9 +12,11 @@ import torchvision.transforms.functional as TF
 from PIL import ImageDraw
 import nunif.utils.video as VU
 import nunif.utils.superpoint as KU
+from nunif.models import load_model
 from nunif.modules.gaussian_filter import get_gaussian_kernel1d
 from nunif.modules.replication_pad2d import replication_pad1d_naive
 from nunif.device import mps_is_available, xpu_is_available, create_device
+from iw3.models.light_inpaint_v1 import LightInpaintV1
 from tqdm import tqdm
 import scipy
 from fractions import Fraction
@@ -36,6 +38,7 @@ SUPERPOINT_CONF = {
 
 ANGLE_MAX_HARD = 90.0
 DEFAULT_RESOLUTION = 320
+LIGHT_INAPINT_V1_URL = "models/light_inpant_x3/inpaint.light_inpaint_v1.pth" # tmp
 
 
 def resize(x, size):
@@ -381,8 +384,27 @@ def pass3(transforms, scene_weight, fps, args, device):
     return shift_x_fix, shift_y_fix, angle_fix
 
 
+def outpaint(x, mask, model, device):
+    H, W = x.shape[-2:]
+    if W > 1920 or H > 1080:
+        results = []
+        for i in range(x.shape[0]):
+            x_i = x[i:i+1, :, :, :]
+            mask_i = mask[i:i+1, :, :, :]
+            with torch.inference_mode(), torch.autocast(device_type=device.type):
+                x[i:i+1, :, :, :] = model.infer(x_i, mask_i)
+    else:
+        with torch.inference_mode(), torch.autocast(device_type=device.type):
+            return model.infer(x, mask)
+
+
 def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, device):
     output_path = make_output_path(args)
+    if args.border == "outpaint":
+        outpaint_model, _ = load_model(OUTPAINT_MODEL_URL, device_ids=[-1])
+        outpaint_model = outpaint_model.eval().to(device)
+    else:
+        outpaint_model = None
 
     def test_callback(frame):
         if frame is None:
@@ -416,7 +438,7 @@ def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, d
         resize_scale = transforms[i][4]
         center = [center[0] * resize_scale, center[1] * resize_scale]
 
-        if args.border == "buffer":
+        if args.border in {"buffer", "outpaint"}:
             padding = int(max(x.shape[2], x.shape[3]) * args.padding)
             x_input = F.pad(x, (padding,) * 4, mode="constant", value=torch.nan)
             center = [center[0] + padding, center[1] + padding]
@@ -456,6 +478,12 @@ def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, d
                 mask_not = torch.logical_not(mask)
                 buffer[0][mask_not] = buffer[0][mask_not] * args.buffer_decay + z[j][mask_not] * (1.0 - args.buffer_decay)
                 z[j][mask] = buffer[0][mask]
+            z.clamp_(0, 1)
+        elif args.border == "outpaint":
+            z = F.pad(z, (-padding,) * 4)
+            mask = torch.isnan(z)
+            z[mask] = 0
+            z = outpaint(z, mask[:, 0:1, :, :], outpaint_model, device)
             z.clamp_(0, 1)
         elif args.border == "crop":
             padding = int(max(z.shape[2], z.shape[3]) * args.padding)
@@ -501,7 +529,8 @@ def main():
     parser.add_argument("--filter", type=str, default="savgol",
                         choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter")
 
-    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand", "crop"],
+    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand", "crop",
+                                                       "outpaint"],
                         default="zeros", help="border padding mode")
     parser.add_argument("--padding", type=float, default=0.05,
                         help="pre-padding ratio for --border=buffer|expand|crop")
