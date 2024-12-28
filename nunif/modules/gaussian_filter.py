@@ -30,7 +30,7 @@ class GaussianFilter2d(nn.Module):
         with torch.no_grad():
             kernel = get_gaussian_kernel2d(kernel_size)
             kernel = kernel.reshape(1, 1, *kernel.shape)
-            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:])
+            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
         self.register_buffer("kernel", kernel)
 
         if padding is not None:
@@ -50,7 +50,7 @@ class GaussianFilter1d(nn.Module):
         with torch.no_grad():
             kernel = get_gaussian_kernel1d(kernel_size)
             kernel = kernel.reshape(1, 1, *kernel.shape)
-            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:])
+            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
         self.register_buffer("kernel", kernel)
 
         if padding is not None:
