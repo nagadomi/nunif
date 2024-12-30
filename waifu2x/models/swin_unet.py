@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import copy
 from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.norm import LayerNormNoBias
+from nunif.modules.compile_wrapper import conditional_compile
 from torchvision.models.swin_transformer import (
     # use SwinTransformer V1
     SwinTransformerBlock as SwinTransformerBlockV1,
@@ -51,6 +52,7 @@ class PatchDown(nn.Module):
         nn.init.kaiming_normal_(self.conv.weight, mode='fan_out', nonlinearity='relu')
         nn.init.constant_(self.conv.bias, 0)
 
+    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
         B, H, W, C = x.shape
         x = x.permute(0, 3, 1, 2).contiguous()  # BHWC->BCHW
@@ -70,6 +72,7 @@ class PatchUp(nn.Module):
         nn.init.xavier_uniform_(self.proj.weight)
         nn.init.constant_(self.proj.bias, 0)
 
+    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
         x = self.proj(x)
         x = x.permute(0, 3, 1, 2)  # BHWC->BCHW
@@ -103,6 +106,7 @@ class ToImage(nn.Module):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.constant_(m.bias, 0)
 
+    @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
         x = self.proj(x)
         x = x.permute(0, 3, 1, 2).contiguous()  # BCHW
@@ -442,22 +446,28 @@ def _bench(name, compile):
     import torch
     from nunif.models import create_model
     import time
+
+    N = 100
+    B = 4
+    S = (256, 256)
     device = "cuda:0"
     model = create_model(name, in_channels=3, out_channels=3).to(device).eval()
     if compile:
         model = torch.compile(model)
-    x = torch.rand((4, 3, 256, 256)).to(device)
+    x = torch.rand((B, 3, *S)).to(device)
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z = model(x)
         print(z.shape)
         param = sum([p.numel() for p in model.parameters()])
         print(model.name, model.i2i_offset, model.i2i_scale, f"{param:,}", f"compile={compile}")
 
+    torch.cuda.synchronize()
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
-        for _ in range(100):
+        for _ in range(N):
             z = model(x)
-    print(time.time() - t)
+    torch.cuda.synchronize()
+    print(1 / ((time.time() - t) / (B * N)), "FPS")
 
 
 if __name__ == "__main__":
