@@ -68,6 +68,8 @@ class Waifu2x():
                 model_tile_size = model.find_valid_tile_size(tile_size)
             if batch_size is None:
                 model_batch_size = model.i2i_default_batch_size
+            else:
+                model_batch_size = batch_size
 
             for j, bs in enumerate(reversed(range(1, model_batch_size + 1))):
                 x = torch.zeros((bs, 3, model_tile_size, model_tile_size),
