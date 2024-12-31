@@ -1,7 +1,7 @@
 # wip video stabilizer
 #
 # python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/
-# python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/ --border buffer --debug
+# python -m playground.video_stabilizer -i ./tmp/test_videos/bottle_vidstab.mp4 -o ./tmp/vidstab/ --border outpaint --debug
 # sample: https://github.com/user-attachments/assets/abded633-58ec-42d8-9510-0c7adf043326
 import os
 from os import path
@@ -16,7 +16,8 @@ from nunif.models import load_model
 from nunif.modules.gaussian_filter import get_gaussian_kernel1d
 from nunif.modules.replication_pad2d import replication_pad1d_naive
 from nunif.device import mps_is_available, xpu_is_available, create_device
-from iw3.models.light_inpaint_v1 import LightInpaintV1
+from nunif.utils.ui import TorchHubDir
+from . import models  # noqa
 from tqdm import tqdm
 import scipy
 from fractions import Fraction
@@ -38,7 +39,8 @@ SUPERPOINT_CONF = {
 
 ANGLE_MAX_HARD = 90.0
 DEFAULT_RESOLUTION = 320
-LIGHT_INAPINT_V1_URL = "models/light_inpant_x3/inpaint.light_inpaint_v1.pth" # tmp
+TORCH_HUB_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+OUTPAINT_MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/torchhub/stlizer_light_outpaint_v1_20241230.pth"
 
 
 def resize(x, size):
@@ -384,24 +386,16 @@ def pass3(transforms, scene_weight, fps, args, device):
     return shift_x_fix, shift_y_fix, angle_fix
 
 
-def outpaint(x, mask, model, device):
-    H, W = x.shape[-2:]
-    if W > 1920 or H > 1080:
-        results = []
-        for i in range(x.shape[0]):
-            x_i = x[i:i+1, :, :, :]
-            mask_i = mask[i:i+1, :, :, :]
-            with torch.inference_mode(), torch.autocast(device_type=device.type):
-                x[i:i+1, :, :, :] = model.infer(x_i, mask_i)
-    else:
-        with torch.inference_mode(), torch.autocast(device_type=device.type):
-            return model.infer(x, mask)
+def outpaint(x, mask, model, device, composite):
+    with torch.inference_mode(), torch.autocast(device_type=device.type):
+        return model.infer(x, mask, max_size=640, composite=composite)
 
 
-def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, device):
+def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, fps, args, device):
     output_path = make_output_path(args)
-    if args.border == "outpaint":
-        outpaint_model, _ = load_model(OUTPAINT_MODEL_URL, device_ids=[-1])
+    if args.border in {"outpaint", "expand_outpaint"}:
+        with TorchHubDir(TORCH_HUB_DIR):
+            outpaint_model, _ = load_model(OUTPAINT_MODEL_URL, device_ids=[-1])
         outpaint_model = outpaint_model.eval().to(device)
     else:
         outpaint_model = None
@@ -412,7 +406,7 @@ def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, d
         im = frame.to_image()
         x = TF.to_tensor(im).to(device)
 
-        if args.border == "expand":
+        if args.border in {"expand", "expand_outpaint"}:
             padding = int(max(x.shape[1], x.shape[2]) * args.padding)
             x = F.pad(x, (padding,) * 4, mode="constant", value=0)
         elif args.border == "crop":
@@ -438,11 +432,11 @@ def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, d
         resize_scale = transforms[i][4]
         center = [center[0] * resize_scale, center[1] * resize_scale]
 
-        if args.border in {"buffer", "outpaint"}:
+        if args.border in {"outpaint", "expand_outpaint"}:
             padding = int(max(x.shape[2], x.shape[3]) * args.padding)
             x_input = F.pad(x, (padding,) * 4, mode="constant", value=torch.nan)
             center = [center[0] + padding, center[1] + padding]
-            padding_mode = "reflection"
+            padding_mode = "border"
         elif args.border == "expand":
             padding = int(max(x.shape[2], x.shape[3]) * args.padding)
             x_input = F.pad(x, (padding,) * 4, mode="constant", value=0)
@@ -467,24 +461,35 @@ def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, d
 
         z = KU.apply_transform(x_input, shifts, scales, angles, centers, padding_mode=padding_mode)
 
-        if args.border == "buffer":
-            z = F.pad(z, (-padding,) * 4)
-            # Update EMA frame buffer
-            for j in range(z.shape[0]):
-                if buffer[0] is None or scene_weight[i + j] < 0.01:
-                    # reset buffer
-                    buffer[0] = x[j].clone()
-                mask = torch.isnan(z[j])
-                mask_not = torch.logical_not(mask)
-                buffer[0][mask_not] = buffer[0][mask_not] * args.buffer_decay + z[j][mask_not] * (1.0 - args.buffer_decay)
-                z[j][mask] = buffer[0][mask]
-            z.clamp_(0, 1)
-        elif args.border == "outpaint":
-            z = F.pad(z, (-padding,) * 4)
-            mask = torch.isnan(z)
-            z[mask] = 0
-            z = outpaint(z, mask[:, 0:1, :, :], outpaint_model, device)
-            z.clamp_(0, 1)
+        if args.border in {"outpaint", "expand_outpaint"}:
+            if args.border == "outpaint":
+                z = F.pad(z, (-padding,) * 4)
+            else:
+                z = z.clone()
+            masks = torch.isnan(z)
+            z[masks] = 0
+
+            if args.buffer_decay > 0.0:
+                buffer_decay = (1.0 - args.buffer_decay) * (29.97 / float(fps))
+                buffer_decay = min(max(0.5, buffer_decay), 1.0)
+                buffer_decay = 1.0 - buffer_decay
+
+                coarse_view = outpaint(z, masks[:, 0:1, :, :], outpaint_model, device, composite=False)
+                z = z.clone()
+                # Update EMA frame buffer
+                for j in range(z.shape[0]):
+                    if buffer[0] is None or scene_weight[i + j] < 0.01:
+                        # reset buffer
+                        buffer[0] = coarse_view[j].clone()
+                    mask = masks[j]
+                    mask_not = torch.logical_not(mask)
+                    buffer[0].mul_(buffer_decay)
+                    buffer[0].add_(coarse_view[j], alpha=(1.0 - buffer_decay))
+                    z[j][mask] = buffer[0][mask]
+                z.clamp_(0, 1)
+            else:
+                z = outpaint(z, masks[:, 0:1, :, :], outpaint_model, device, composite=True)
+
         elif args.border == "crop":
             padding = int(max(z.shape[2], z.shape[3]) * args.padding)
             z = F.pad(z, (-padding,) * 4).clamp_(0, 1)
@@ -492,7 +497,7 @@ def pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args, d
             z = z.clamp(0, 1)
 
         if args.debug:
-            if args.border == "expand":
+            if args.border in {"expand", "expand_outpaint"}:
                 x = x_input
             elif args.border == "crop":
                 x = F.pad(x_input, (-padding,) * 4)
@@ -529,13 +534,13 @@ def main():
     parser.add_argument("--filter", type=str, default="savgol",
                         choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter")
 
-    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "buffer", "expand", "crop",
-                                                       "outpaint"],
+    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "expand", "crop",
+                                                       "outpaint", "expand_outpaint"],
                         default="zeros", help="border padding mode")
     parser.add_argument("--padding", type=float, default=0.05,
-                        help="pre-padding ratio for --border=buffer|expand|crop")
+                        help="pre-padding ratio for --border=expand|expand_outpaint|crop")
     parser.add_argument("--buffer-decay", type=float, default=0.75,
-                        help="buffer decay factor for --border=buffer")
+                        help="buffer decay factor for outpaint|expand_outpaint")
 
     parser.add_argument("--debug", action="store_true", help="debug output original+stabilized")
     parser.add_argument("--resolution", type=int, default=DEFAULT_RESOLUTION, help="resolution to perform processing")
@@ -583,7 +588,7 @@ def main():
     shift_x_fix, shift_y_fix, angle_fix = pass3(transforms, scene_weight, fps=fps, args=args, device=device)
 
     # encode
-    pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, args=args, device=device)
+    pass4(shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, fps=fps, args=args, device=device)
 
 
 if __name__ == "__main__":
