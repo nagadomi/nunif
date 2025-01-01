@@ -230,7 +230,7 @@ def gen_dot_grid(block_size, scale, cols, rotate=False):
 COLS_MAP = {2: 4, 4: 2, 8: 1}
 
 
-def gen(cell=40, cols_scale=1, rotate=False, dot_scale=2):
+def gen(cols_scale=1, rotate=False, dot_scale=2):
     assert isinstance(cols_scale, int)
     assert dot_scale in {2, 4}
     line_block = exec_prob(0.2)
@@ -239,7 +239,9 @@ def gen(cell=40, cols_scale=1, rotate=False, dot_scale=2):
     elif dot_scale == 4:
         scale = random.choices((4, 8), weights=(1, 1), k=1)[0]
     cols = COLS_MAP[scale]
-    return gen_dot_grid(cell, scale, cols * cols_scale, rotate=rotate)
+    block_size = random.choice([40, 40, 40, 20, 20, 10])
+    block_size_scale = 40 // block_size
+    return gen_dot_grid(block_size, scale, cols * cols_scale * block_size_scale, rotate=rotate)
 
 
 def _validate():
