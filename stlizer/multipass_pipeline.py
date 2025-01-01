@@ -249,7 +249,7 @@ def conv1d_smoothing(shift_x, shift_y, angle, method, smoothing_seconds, fps, de
 def grad_opt(tx, ty, ta, scene_weight, resolution, iteration=100, penalty_weight=1e-3):
     """
     The basic idea is from: "Auto-Directed Video Stabilization with Robust L1 Optimal Camera Paths"
-    But not L1 or Optimal solution.
+    But not L1 or Exact solution.
     """
     resolution_weight = resolution / DEFAULT_RESOLUTION
 
@@ -370,24 +370,26 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
         resize_scale = transforms[i][4]
         center = [center[0] * resize_scale, center[1] * resize_scale]
 
-        if args.border in {"outpaint", "expand_outpaint"}:
+        if args.border == "black":
+            padding = 0
+            x_input = x
+            padding_mode = "zeros"
+        elif args.border in {"outpaint", "expand_outpaint"}:
             padding = int(max(x.shape[2], x.shape[3]) * args.padding)
             x_input = F.pad(x, (padding,) * 4, mode="constant", value=torch.nan)
             center = [center[0] + padding, center[1] + padding]
             padding_mode = "border"
+        elif args.border == "crop":
+            padding = 0
+            x_input = x
+            padding_mode = "zeros"
         elif args.border == "expand":
             padding = int(max(x.shape[2], x.shape[3]) * args.padding)
             x_input = F.pad(x, (padding,) * 4, mode="constant", value=0)
             center = [center[0] + padding, center[1] + padding]
             padding_mode = "zeros"
-        elif args.border == "crop":
-            padding = 0
-            x_input = x
-            padding_mode = "zeros"
         else:
-            padding = 0
-            x_input = x
-            padding_mode = args.border
+            raise ValueError(f"Unknown --border mode {args.border}")
 
         shifts = torch.tensor([[shift_x_fix[i + j].item() * resize_scale,
                                 shift_y_fix[i + j].item() * resize_scale] for j in range(B)],

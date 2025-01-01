@@ -32,9 +32,8 @@ def create_parser(required_true=True):
     parser.add_argument("--filter", type=str, default="savgol",
                         choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter")
 
-    parser.add_argument("--border", type=str, choices=["zeros", "border", "reflection", "expand", "crop",
-                                                       "outpaint", "expand_outpaint"],
-                        default="zeros", help="border padding mode")
+    parser.add_argument("--border", type=str, choices=["black", "outpaint", "crop", "expand", "expand_outpaint"],
+                        default="black", help="border padding mode")
     parser.add_argument("--padding", type=float, default=0.05,
                         help="pre-padding ratio for --border=expand|expand_outpaint|crop")
     parser.add_argument("--buffer-decay", type=float, default=0.75,
