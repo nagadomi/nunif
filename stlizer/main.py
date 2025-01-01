@@ -9,11 +9,7 @@ from .multipass_pipeline import (
     pass1, pass2, pass3, pass4,
     DEFAULT_RESOLUTION,
 )
-from .cache import (
-    try_load_cache,
-    save_cache, make_cache_path,
-    CACHE_VERSION,
-)
+from .cache import try_load_cache, save_cache, purge_cache
 
 
 def create_parser(required_true=True):
@@ -52,15 +48,13 @@ def create_parser(required_true=True):
                         help="constant quality value for video. smaller value is higher quality")
     parser.add_argument("--disable-cache", action="store_true",
                         help="disable pass1-2 cache")
-    parser.add_argument("--drop-cache", action="store_true",
+    parser.add_argument("--purge-cache", action="store_true",
                         help="Delete pass1-2 cache first")
 
     return parser
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None, suspend_event=None):
-    args.cache_version = CACHE_VERSION
-
     if is_video(args.output):
         # replace --video-format when filename is specified
         ext = path.splitext(args.output)[-1]
@@ -105,14 +99,13 @@ def make_output_path(args):
 
 def stlizer_main(args):
     output_path = make_output_path(args)
-    cache_path = make_cache_path(output_path)
-    if args.drop_cache and path.exists(cache_path):
-        os.unlink(cache_path)
+    if args.purge_cache:
+        purge_cache(args.input)
 
     device = args.state["device"]
 
-    cache_data = try_load_cache(cache_path, args)
-    if cache_data is None or args.disable_cache:
+    cache_data = try_load_cache(args.input, args) if not args.disable_cache else None
+    if cache_data is None:
         # detect keypoints and matching
         points1, points2, mean_match_scores, center, resize_scale, fps = pass1(args=args)
 
@@ -122,7 +115,7 @@ def stlizer_main(args):
         assert len(transforms) == len(mean_match_scores)
 
         if not args.disable_cache:
-            save_cache(cache_path, transforms, mean_match_scores, fps, args)
+            save_cache(args.input, transforms, mean_match_scores, fps, args)
     else:
         transforms = cache_data["transforms"]
         mean_match_scores = cache_data["mean_match_scores"]

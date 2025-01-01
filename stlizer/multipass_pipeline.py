@@ -1,4 +1,3 @@
-import os
 from os import path
 import torch
 import torch.nn.functional as F

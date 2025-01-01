@@ -1,22 +1,31 @@
+import os
 from os import path
 import torch
 from fractions import Fraction
 import hashlib
+from platformdirs import user_cache_dir
 
 
 CACHE_VERSION = 1.0
+MD5_SALT = "stlizer"
 
 
-def make_cache_path(output_path):
-    cache_path = path.join(path.dirname(output_path), path.splitext("." + path.basename(output_path))[0] + ".stlizer")
+def get_cache_path(input_video_path):
+    cache_dir = user_cache_dir(appname="stlizer", appauthor="nunif")
+    if not path.exists(cache_dir):
+        os.makedirs(cache_dir, exist_ok=True)
+
+    cache_filename = md5(path.abspath(input_video_path)) + ".stlizer"
+    cache_path = path.join(cache_dir, cache_filename)
     return cache_path
 
 
-def sha256(s):
-    return hashlib.sha256(s.encode()).digest()
+def md5(s):
+    return hashlib.md5((s + MD5_SALT).encode()).hexdigest()
 
 
-def save_cache(cache_path, transforms, mean_match_scores, fps, args):
+def save_cache(input_video_path, transforms, mean_match_scores, fps, args):
+    cache_path = get_cache_path(input_video_path)
     if isinstance(fps, Fraction):
         fps = f"{fps.numerator}/{fps.denominator}"
     else:
@@ -27,12 +36,12 @@ def save_cache(cache_path, transforms, mean_match_scores, fps, args):
                 "max_fps": args.max_fps,
                 "fps": fps,
                 "resolution": args.resolution,
-                "input_file": sha256(path.basename(args.input)),
-                "version": args.cache_version
+                "version": CACHE_VERSION,
                 }, cache_path)
 
 
-def try_load_cache(cache_path, args):
+def try_load_cache(input_video_path, args):
+    cache_path = get_cache_path(input_video_path)
     if path.exists(cache_path):
         data = torch.load(cache_path, map_location="cpu", weights_only=True)
         if "version" not in data:
@@ -40,8 +49,6 @@ def try_load_cache(cache_path, args):
         if args.max_fps != data["max_fps"]:
             return None
         if args.resolution != data["resolution"]:
-            return None
-        if sha256(path.basename(args.input)) != data["input_file"]:
             return None
         if isinstance(data["fps"], str):
             numerator, denominator = data["fps"].split("/")
@@ -52,3 +59,9 @@ def try_load_cache(cache_path, args):
         return data
     else:
         return None
+
+
+def purge_cache(input_video_path):
+    cache_path = get_cache_path(input_video_path)
+    if path.exists(cache_path):
+        os.unlink(cache_path)
