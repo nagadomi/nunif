@@ -17,6 +17,7 @@ pyyaml
 onnx
 onnxconverter_common
 lpips
+platformdirs
 # opencv-python
 packaging
 
