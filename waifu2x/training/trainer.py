@@ -612,7 +612,6 @@ class Waifu2xTrainer(Trainer):
                 da_no_rotate=self.args.da_no_rotate,
                 da_cutmix_p=self.args.da_cutmix_p,
                 da_mixup_p=self.args.da_mixup_p,
-                fixed_deblur=self.args.fixed_deblur,
                 deblur=self.args.deblur,
                 resize_blur_range=self.args.resize_blur_range,
                 resize_blur_p=self.args.resize_blur_p,
@@ -642,7 +641,6 @@ class Waifu2xTrainer(Trainer):
                 style=self.args.style,
                 noise_level=self.args.noise_level,
                 tile_size=self.args.size,
-                fixed_deblur=self.args.fixed_deblur,
                 deblur=self.args.deblur,
                 resize_blur_range=self.args.resize_blur_range,
                 return_no_offset_y=False,
@@ -813,18 +811,15 @@ def register(subparsers, default_parser):
     parser.add_argument("--da-mixup-p", type=float, default=0.0,
                         help="random mixup(overlay) data augmentation for gt image")
 
-    parser.add_argument("--fixed-deblur", type=float, default=0.0,
-                        help=("fixed shift parameter of resize blur."
-                              "deblur = 1 + fixed_deblur"))
     parser.add_argument("--deblur", type=float, default=0.0,
                         help=("shift parameter of random resize blur."
                               " 0.0-0.05 is a reasonable value. "
                               "see --resize-blur-range for details"))
     parser.add_argument("--resize-blur-range", type=float, nargs="+", default=[0.05],
                         help=("max shift of random resize blur."
-                              " blur = 1 + fixed_deblur + uniform(-resize_blur_range + deblur, resize_blur_range + deblur)."
+                              " blur = 1 + uniform(-resize_blur_range + deblur, resize_blur_range + deblur)."
                               " or "
-                              " blur = 1 + fixed_deblur + uniform(resize_blur_range[0] + deblur, resize_blur_range[1] + deblur)."
+                              " blur = 1 + uniform(resize_blur_range[0] + deblur, resize_blur_range[1] + deblur)."
                               " blur >= 1 is blur, blur <= 1 is sharpen. mean 1 by default"))
     parser.add_argument("--resize-blur-p", type=float, default=0.1,
                         help=("probability that resize blur should be used"))

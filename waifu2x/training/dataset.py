@@ -87,14 +87,13 @@ def pil_resize(im, size, filter_type):
 
 class RandomDownscaleX():
     def __init__(self, scale_factor,
-                 fixed_blur_shift=0, blur_shift=0, resize_blur_p=0.1, resize_blur_range=0.05,
+                 blur_shift=0, resize_blur_p=0.1, resize_blur_range=0.05,
                  resize_step_p=0, resize_no_antialias_p=0,
                  interpolation=None, training=True):
         assert scale_factor in {2, 4, 8}
         self.interpolation = interpolation
         self.scale_factor = scale_factor
         self.blur_shift = blur_shift
-        self.fixed_blur_shift = fixed_blur_shift
         self.training = training
         if isinstance(resize_blur_range, (list, tuple)):
             if len(resize_blur_range) == 1:
@@ -123,13 +122,12 @@ class RandomDownscaleX():
         if self.scale_factor in {2, 4}:
             x = pil_io.to_tensor(x)
             if not self.training:
-                blur = 1 + self.fixed_blur_shift
+                blur = 1
             elif random.uniform(0, 1) < self.resize_blur_p:
-                blur = 1 + self.fixed_blur_shift
-                blur = blur + random.uniform(self.resize_blur_range[0] + self.blur_shift,
-                                             self.resize_blur_range[1] + self.blur_shift)
+                blur = 1 + random.uniform(self.resize_blur_range[0] + self.blur_shift,
+                                          self.resize_blur_range[1] + self.blur_shift)
             else:
-                blur = 1 + self.fixed_blur_shift
+                blur = 1
             x = resize(x, size=(h // self.scale_factor, w // self.scale_factor),
                        filter_type=interpolation, blur=blur,
                        enable_step=self.training and not fixed_interpolation, step_p=self.resize_step_p,
@@ -229,7 +227,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  skip_screentone=False,
                  skip_dot=False,
                  crop_samples=4,
-                 fixed_deblur=0, deblur=0, resize_blur_p=0.1, resize_blur_range=0.05,
+                 deblur=0, resize_blur_p=0.1, resize_blur_range=0.05,
                  resize_step_p=0, resize_no_antialias_p=0,
                  noise_level=-1, style=None,
                  return_no_offset_y=False,
@@ -298,7 +296,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                     interpolation = None  # random
                 random_downscale_x = RandomDownscaleX(scale_factor=scale_factor,
                                                       interpolation=interpolation,
-                                                      fixed_blur_shift=fixed_deblur,
                                                       blur_shift=deblur,
                                                       resize_blur_p=resize_blur_p,
                                                       resize_blur_range=resize_blur_range,
@@ -357,7 +354,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             interpolation = INTERPOLATION_BICUBIC
             if scale_factor > 1:
                 downscale_x = RandomDownscaleX(scale_factor=scale_factor,
-                                               fixed_blur_shift=fixed_deblur,
                                                blur_shift=deblur,
                                                interpolation=interpolation,
                                                training=False)
