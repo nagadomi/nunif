@@ -11,6 +11,11 @@ debug_log="--debug"
 recaptcha=""
 #recaptcha="--enable-recaptcha --config ./waifu2x/web/config.ini"
 
+# Specify this option if you want to full compile the model.
+# The first compile takes several minutes, but the second and subsequent compiles take about 20 seconds with pytorch >= 2.5.1.
+# example: python3 -u -m waifu2x.web ${compile_flags}
+compile_flags=" --compile --warmup --batch-size 1"
+
 if [ $# -eq 2 ]; then
     gpu=$1
     port=$2
