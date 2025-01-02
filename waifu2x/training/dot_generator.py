@@ -70,16 +70,26 @@ def gen_dot_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_
     if bg_color is not None:
         bg = bg_color
         fg = gen_color(black=bg_color_black)
+        fg2 = gen_color(black=bg_color_black)
     else:
         if exec_prob(0.5):
             fg = gen_color(black=False)
+            fg2 = gen_color(black=False)
             bg = gen_color(black=True)
         else:
             fg = gen_color(black=True)
+            fg2 = gen_color(black=True)
             bg = gen_color(black=False)
+
+    use_fg2 = random.choice([0, 0, 1, 2])
 
     block[:, :] = bg
     for y in range(y_margin, block_size - y_margin):
+        if use_fg2 == 1:
+            cfg = fg if (y // ym) % 2 == 0 else fg2
+        else:
+            cfg = fg
+
         if use_random_size:
             if rotate:
                 size = random.randint(3, 5)
@@ -90,13 +100,17 @@ def gen_dot_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_
         if use_cross_and_skip and exec_prob(0.5):
             b = random.randint(0, 1)
         for x in range(y_margin, block_size - y_margin):
+            if use_fg2 == 2:
+                cfg = fg if (x // xm) % 2 == 0 else fg2
+            else:
+                cfg = fg
             xc = math.floor(x / size)
             if use_cross_and_skip:
                 if exec_prob(0.75) and mod(yc + b, xc + b):
-                    block[y, x, :] = fg
+                    block[y, x, :] = cfg
             else:
                 if mod(yc + b, xc + b):
-                    block[y, x, :] = fg
+                    block[y, x, :] = cfg
 
     block = (block * 255).astype(np.uint8)
     im = Image.fromarray(block)
