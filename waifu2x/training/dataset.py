@@ -325,14 +325,19 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5, blur_p=0.2)], p=da_cutmix_p),
                 TS.SizeCondition(y_min_size * 2, TS.ModCrop(mul=scale_factor), T.RandomCrop(y_min_size * 2)),
             ])
-            self.gt_gen_transforms = T.Compose([
+            self.gt_transforms_gen = T.Compose([
                 T.RandomApply([RandomOverlay()], p=da_mixup_p),
                 T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
                 T.RandomInvert(p=0.5),
                 T.RandomApply([CutMix(mask_min=0.2, mask_max=0.5, rotate_p=0.5)], p=da_cutmix_p),
                 TS.SizeCondition(y_min_size * 2, TS.ModCrop(mul=scale_factor), T.RandomCrop(y_min_size * 2)),
             ])
-
+            self.gt_transforms_nearest = T.Compose([
+                T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)],
+                              p=da_color_p),
+                T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
+                T.RandomApply([TS.RandomGrayscale()], p=da_grayscale_p),
+            ])
             self.transforms = TP.Compose([
                 random_downscale_x,
                 photo_noise,
@@ -350,7 +355,9 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             ])
         else:
             self.gt_transforms = TS.Identity()
-            self.gt_gen_transforms = TS.Identity()
+            self.gt_transforms_gen = TS.Identity()
+            self.gt_transforms_nearest = TS.Identity()
+
             interpolation = INTERPOLATION_BICUBIC
             if scale_factor > 1:
                 downscale_x = RandomDownscaleX(scale_factor=scale_factor,
@@ -380,14 +387,26 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         im, _ = pil_io.load_image_simple(filename, color="rgb")
         if im is None:
             raise RuntimeError(f"Unable to load image: {filename}")
-        if NEAREST_PREFIX in filename:
-            x, y = self.transforms_nearest(im, im)
-        elif SCREENTONE_PREFIX in filename or DOT_PREFIX in filename:
-            im = self.gt_gen_transforms(im)
-            x, y = self.transforms(im, im)
+        if self.training:
+            if NEAREST_PREFIX in filename and random.random() < 0.9:
+                im = self.gt_transforms_nearest(im)
+                x, y = self.transforms_nearest(im, im)
+            elif (SCREENTONE_PREFIX in filename or DOT_PREFIX in filename) and random.random() < 0.9:
+                im = self.gt_transforms_gen(im)
+                x, y = self.transforms(im, im)
+            else:
+                im = self.gt_transforms(im)
+                x, y = self.transforms(im, im)
         else:
-            im = self.gt_transforms(im)
-            x, y = self.transforms(im, im)
+            if NEAREST_PREFIX in filename:
+                im = self.gt_transforms_nearest(im)
+                x, y = self.transforms_nearest(im, im)
+            elif (SCREENTONE_PREFIX in filename or DOT_PREFIX in filename):
+                im = self.gt_transforms_gen(im)
+                x, y = self.transforms(im, im)
+            else:
+                im = self.gt_transforms(im)
+                x, y = self.transforms(im, im)
 
         if not self.training:
             if self.noise_level >= 0:
