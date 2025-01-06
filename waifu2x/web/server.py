@@ -90,6 +90,8 @@ class CacheGC():
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
+                torch._dynamo.reset()
             self.last_expired_at = time()
             logger.info(f"diskcache: cache={self.disk_size_mb()}MB, RAM={self.ram_size_mb()}")
 
