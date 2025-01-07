@@ -391,7 +391,7 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             if NEAREST_PREFIX in filename and random.random() < 0.9:
                 im = self.gt_transforms_nearest(im)
                 x, y = self.transforms_nearest(im, im)
-            elif (SCREENTONE_PREFIX in filename or DOT_PREFIX in filename) and random.random() < 0.9:
+            elif (SCREENTONE_PREFIX in filename or DOT_PREFIX in filename):
                 im = self.gt_transforms_gen(im)
                 x, y = self.transforms(im, im)
             else:
