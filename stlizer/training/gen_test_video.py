@@ -1,5 +1,5 @@
 # test video generator
-# python -m playground.video_stabilizer.gen_test_video -i ./cc0/bottle_small.png -o ./tmp/bottle_vidstab.mp4
+# python -m stlizer.training.gen_test_video -i ./cc0/bottle_small.png -o ./tmp/bottle_vidstab.mp4
 #
 # sample: https://github.com/user-attachments/assets/98e13148-5645-4873-865f-c00db077a0ce
 # NOTE: There are no individual movements for each object.
