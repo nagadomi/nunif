@@ -1,4 +1,5 @@
-# Masked Autoencoders
+# A rough implementation of Masked Autoencoders https://arxiv.org/abs/2111.06377
+# for CIFAR10
 # python -m playground.mae.train_cifar10 --data-dir ./data/cifar10 --model-dir ./models/mae
 # reconstruction result will be stored in ./models/mae/eval
 # https://github.com/user-attachments/assets/18c38401-4c44-4f93-ac91-e497c6ec0e7a

@@ -1,5 +1,6 @@
-# Have simply attempted simsiam
-# Current implementation only achieves CIFAR10 80% accuracy with linear classifiers
+# A rough implementation of SimSiam https://arxiv.org/abs/2011.10566
+# for CIFAR10
+# Current implementation only achieves CIFAR10 80% accuracy with linear classifier
 # python -m playground.simsiam.train_cifar10 --data-dir ./data/cifar10 --model-dir ./models/simsima
 from torchvision.datasets import CIFAR10
 from torchvision import transforms as T
