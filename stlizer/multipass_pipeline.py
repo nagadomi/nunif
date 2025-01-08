@@ -28,6 +28,7 @@ SUPERPOINT_CONF = {
 
 
 ANGLE_MAX_HARD = 90.0
+KEYPOINT_COSINE_THRESHOLD = 0.3
 
 TORCH_HUB_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 OUTPAINT_MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/torchhub/stlizer_light_outpaint_v1_20241230.pth"
@@ -183,7 +184,7 @@ def pass1(args):
 
             index1, index2, match_score = KU.find_match_index(
                 kp1, kp2,
-                threshold=0.5, return_score_all=True)
+                threshold=KEYPOINT_COSINE_THRESHOLD, return_score_all=True)
             kp1 = kp1["keypoints"][index1]
             kp2 = kp2["keypoints"][index2]
 
