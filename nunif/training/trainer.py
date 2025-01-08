@@ -142,7 +142,10 @@ class Trainer(ABC):
                             print("* best model updated")
                             self.best_loss = loss
                             self.save_best_model()
+                    else:
+                        self.env.eval_begin()
                 else:
+                    self.env.eval_begin()
                     self.save_best_model()
                 self.save_checkpoint()
                 try:
