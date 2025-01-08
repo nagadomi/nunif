@@ -54,8 +54,8 @@ def try_load_cache(input_video_path, args):
             return None
         if args.resolution != data["resolution"]:
             return None
-        vf = md5(data.get("vf", None))
-        if md5(args.vf) != vf:
+        vf = data.get("vf", None)
+        if vf is not None and md5(args.vf) != vf:
             return None
         if isinstance(data["fps"], str):
             numerator, denominator = data["fps"].split("/")
