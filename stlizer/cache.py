@@ -21,7 +21,10 @@ def get_cache_path(input_video_path):
 
 
 def md5(s):
-    return hashlib.md5((s + MD5_SALT).encode()).hexdigest()
+    if s:
+        return hashlib.md5((s + MD5_SALT).encode()).hexdigest()
+    else:
+        return ""
 
 
 def save_cache(input_video_path, transforms, mean_match_scores, fps, args):
@@ -35,6 +38,7 @@ def save_cache(input_video_path, transforms, mean_match_scores, fps, args):
                 "mean_match_scores": mean_match_scores,
                 "max_fps": args.max_fps,
                 "fps": fps,
+                "vf": md5(args.vf),
                 "resolution": args.resolution,
                 "version": CACHE_VERSION,
                 }, cache_path)
@@ -49,6 +53,9 @@ def try_load_cache(input_video_path, args):
         if args.max_fps != data["max_fps"]:
             return None
         if args.resolution != data["resolution"]:
+            return None
+        vf = md5(data.get("vf", None))
+        if md5(args.vf) != vf:
             return None
         if isinstance(data["fps"], str):
             numerator, denominator = data["fps"].split("/")
