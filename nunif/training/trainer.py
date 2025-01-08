@@ -17,9 +17,13 @@ from ..optim import Lion
 from ..models import create_model, save_model, load_model
 from ..initializer import set_seed
 from ..device import create_device
-from .weight_decay_config import configure_adamw
+from .weight_decay_config import configure_optim_groups, configure_adamw
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+try:
+    import schedulefree
+except ModuleNotFoundError:
+    schedulefree = None
 
 
 class Trainer(ABC):
@@ -125,6 +129,9 @@ class Trainer(ABC):
                 print("-" * 64)
                 print(f" epoch: {self.epoch}, lr: {self._lr_format(self.schedulers)}")
                 print("--\n train")
+                for optimizer in self.optimizers:
+                    if hasattr(optimizer, "train") and callable(optimizer.train):
+                        optimizer.train()
                 train_loss = self.env.train(
                     loader=self.train_loader,
                     optimizers=self.optimizers,
@@ -132,6 +139,9 @@ class Trainer(ABC):
                     grad_scaler=self.grad_scaler,
                     backward_step=self.args.backward_step,
                 )
+                for optimizer in self.optimizers:
+                    if hasattr(optimizer, "eval") and callable(optimizer.eval):
+                        optimizer.eval()
                 if not self.args.skip_eval:
                     if self.epoch % self.args.eval_step == 0 or self.epoch == self.args.max_epoch:
                         print("--\n eval")
@@ -169,6 +179,7 @@ class Trainer(ABC):
         lr = lr if lr is not None else self.args.learning_rate
         weight_decay = weight_decay if weight_decay is not None else self.args.weight_decay
         adam_beta1 = adam_beta1 if adam_beta1 is not None else self.args.adam_beta1
+        num_samples = self.args.num_samples if hasattr(self.args, "num_samples") else 0
 
         if optimizer_type == "adam":
             return optim.Adam(model.parameters(), lr=lr,
@@ -185,6 +196,23 @@ class Trainer(ABC):
                 lr=lr,
                 momentum=self.args.momentum,
                 weight_decay=weight_decay)
+        elif optimizer_type == "sgd_schedulefree":
+            assert schedulefree is not None
+            return schedulefree.SGDScheduleFree(
+                model.parameters(), lr=lr, momentum=self.args.momentum,
+                weight_decay=weight_decay,
+                warmup_steps=self.args.warmup_epoch * num_samples // self.args.batch_size)
+        elif optimizer_type == "adamw_schedulefree":
+            assert schedulefree is not None
+            optim_groups = configure_optim_groups(model, weight_decay=weight_decay)
+            optimizer = schedulefree.AdamWScheduleFree(
+                optim_groups, lr=lr, betas=(adam_beta1, 0.999),
+                warmup_steps=self.args.warmup_epoch * num_samples // self.args.batch_size)
+            return optimizer
+        elif optimizer_type == "radam_schedulefree":
+            assert schedulefree is not None
+            return schedulefree.RAdamScheduleFree(model.parameters(), lr=lr,
+                                                  betas=(adam_beta1, 0.999))
         elif optimizer_type == "lion":
             return Lion(model.parameters(),
                         lr=lr,
@@ -193,7 +221,10 @@ class Trainer(ABC):
             raise NotImplementedError(f"optimizer = {optimizer_type}")
 
     def create_schedulers(self, optimizers):
-        return [self.create_scheduler(optimizer) for optimizer in optimizers]
+        if self.args.optimizer in {"sgd_schedulefree", "adamw_schedulefree", "radam_schedulefree"}:
+            return []
+        else:
+            return [self.create_scheduler(optimizer) for optimizer in optimizers]
 
     def create_scheduler(self, optimizer):
         # TODO: support more schedulers if needed
@@ -321,7 +352,9 @@ def create_trainer_default_parser():
     parser.add_argument("--eval-step", type=int, default=1,
                         help="eval interval")
 
-    parser.add_argument("--optimizer", type=str, choices=["adam", "adamw", "sgd", "lion"], default="adam",
+    parser.add_argument("--optimizer", type=str,
+                        choices=["adam", "adamw", "sgd", "lion",
+                                 "sgd_schedulefree", "adamw_schedulefree", "radam_schedulefree"], default="adam",
                         help="optimizer")
     parser.add_argument("--weight-decay", type=float, default=1e-4,
                         help="weight decay coefficient for adamw, sgd")
