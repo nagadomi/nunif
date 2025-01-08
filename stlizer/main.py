@@ -4,6 +4,7 @@ from os import path
 import argparse
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.utils.ui import is_video
+import nunif.utils.video as VU
 from .multipass_pipeline import (
     calc_scene_weight,
     pass1, pass2, pass3, pass4,
@@ -25,7 +26,7 @@ def create_parser(required_true=True):
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="base batch size")
     parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
-    parser.add_argument("--filter", type=str, default="savgol",
+    parser.add_argument("--filter", type=str, default="grad_opt",
                         choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter")
 
     parser.add_argument("--border", type=str, choices=["black", "outpaint", "crop", "expand", "expand_outpaint"],
@@ -38,18 +39,39 @@ def create_parser(required_true=True):
     parser.add_argument("--debug", action="store_true", help="debug output original+stabilized")
     parser.add_argument("--resolution", type=int, default=DEFAULT_RESOLUTION, help="resolution to perform processing")
     parser.add_argument("--iteration", type=int, default=50, help="iteration count of frame transform optimization")
-    parser.add_argument("--max-fps", type=float, default=60.0,
-                        help="max framerate for video. output fps = min(fps, --max-fps)")
-    parser.add_argument("--preset", type=str, default="medium",
-                        choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
-                                 "medium", "slow", "slower", "veryslow", "placebo"],
-                        help="encoder preset option for video")
-    parser.add_argument("--crf", type=int, default=20,
-                        help="constant quality value for video. smaller value is higher quality")
     parser.add_argument("--disable-cache", action="store_true",
                         help="disable pass1-2 cache")
     parser.add_argument("--purge-cache", action="store_true",
                         help="Delete pass1-2 cache first")
+
+    # video encoding
+
+    parser.add_argument("--max-fps", type=float, default=60.0,
+                        help="max framerate for video. output fps = min(fps, --max-fps)")
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
+                        help="pixel format")
+    parser.add_argument("--profile-level", type=str, help="h264 profile level")
+    parser.add_argument("--crf", type=int, default=20,
+                        help="constant quality value for video. smaller value is higher quality")
+    parser.add_argument("--preset", type=str, default="medium",
+                        choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
+                                 "medium", "slow", "slower", "veryslow", "placebo"],
+                        help="encoder preset option for video")
+    parser.add_argument("--tune", type=str, nargs="+", default=[],
+                        choices=["film", "animation", "grain", "stillimage", "psnr",
+                                 "fastdecode", "zerolatency"],
+                        help="encoder tunings option for video")
+    parser.add_argument("--vf", type=str, default="",
+                        help="video filter options for ffmpeg.")
+    parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
+                        help="video container format")
+    parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
+
+    # TODO: Change the default value from "unspecified" to "auto"
+    parser.add_argument("--colorspace", type=str, default="unspecified",
+                        choices=["unspecified", "auto",
+                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                        help="video colorspace")
 
     return parser
 
@@ -65,14 +87,12 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, suspend_event=None):
         elif ext == ".avi":
             args.video_format = "avi"
 
-    """
     args.video_extension = "." + args.video_format
     if args.video_codec is None:
         args.video_codec = VU.get_default_video_codec(args.video_format)
 
     if not args.profile_level or args.profile_level == "auto":
         args.profile_level = None
-    """
 
     device = create_device(args.gpu)
     args.state = {
@@ -89,7 +109,10 @@ def make_output_path(args):
     if path.isdir(args.output):
         os.makedirs(args.output, exist_ok=True)
         output_dir = args.output
-        output_path = path.join(output_dir, path.splitext(path.basename(args.input))[0] + "_vidstab.mp4")
+        output_path = path.join(
+            output_dir,
+            path.splitext(path.basename(args.input))[0] + "_stlizer" + args.video_extension
+        )
     else:
         output_dir = path.dirname(args.output)
         output_path = args.output

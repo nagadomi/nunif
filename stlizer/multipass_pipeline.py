@@ -99,6 +99,30 @@ def calc_scene_weight(mean_match_scores, device=None):
     return weight
 
 
+def make_video_codec_option(args):
+    if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
+        options = {"preset": args.preset, "crf": str(args.crf)}
+
+        if args.tune:
+            options["tune"] = ",".join(set(args.tune))
+
+        if args.profile_level:
+            options["level"] = str(int(float(args.profile_level) * 10))
+
+        if args.video_codec == "libx265":
+            x265_params = ["log-level=warning", "high-tier=enabled"]
+            if args.profile_level:
+                x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
+            options["x265-params"] = ":".join(x265_params)
+        elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
+            options["rc"] = "constqp"
+            options["qp"] = str(args.crf)
+    else:
+        options = {}
+
+    return options
+
+
 def video_config_callback(args, fps_hook=None):
     def callback(stream):
         fps = VU.get_fps(stream)
@@ -106,9 +130,15 @@ def video_config_callback(args, fps_hook=None):
             fps = args.max_fps
         if fps_hook is not None:
             fps_hook(fps)
+
         return VU.VideoOutputConfig(
             fps=fps,
-            options={"preset": args.preset, "crf": str(args.crf)}
+            container_format=args.video_format,
+            video_codec=args.video_codec,
+            pix_fmt=args.pix_fmt,
+            colorspace=args.colorspace,
+            options=make_video_codec_option(args),
+            container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
     return callback
 
@@ -172,6 +202,10 @@ def pass1(args):
 
     VU.hook_frame(args.input, keypoint_callback_pool,
                   config_callback=video_config_callback(args, fps_hook),
+                  vf=args.vf,
+                  stop_event=args.state["stop_event"],
+                  suspend_event=args.state["suspend_event"],
+                  tqdm_fn=args.state["tqdm_fn"],
                   title="pass 1/4")
 
     return points1, points2, mean_match_scores, center[0], resize_scale[0], fps_value[0]
@@ -453,4 +487,8 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
                      stabilizer_callback_pool,
                      config_callback=video_config_callback(args),
                      test_callback=test_callback,
+                     vf=args.vf,
+                     stop_event=args.state["stop_event"],
+                     suspend_event=args.state["suspend_event"],
+                     tqdm_fn=args.state["tqdm_fn"],
                      title="pass 4/4")
