@@ -96,6 +96,10 @@ def calc_scene_weight(mean_match_scores, device=None):
     weight = ((score - min_score) / (max_score - min_score)).clamp(0, 1)
     weight[weight < 0.65] = weight[weight < 0.65] ** 2
 
+    # Set start and end frames to 0
+    weight[0] = 0.0
+    weight[-1] = 0.0
+
     return weight
 
 
