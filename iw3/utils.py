@@ -225,6 +225,7 @@ FULL_SBS_SUFFIX = "_LRF_Full_SBS"
 HALF_SBS_SUFFIX = "_LR"
 FULL_TB_SUFFIX = "_TBF_fulltb"
 HALF_TB_SUFFIX = "_TB"
+CROSS_EYED_SUFFIX = "_RLF_cross"
 
 VR180_SUFFIX = "_180x180_LR"
 ANAGLYPH_SUFFIX = "_redcyan"
@@ -247,6 +248,8 @@ def make_output_filename(input_filename, args, video=False):
         auto_detect_suffix = FULL_TB_SUFFIX
     elif args.half_tb:
         auto_detect_suffix = HALF_TB_SUFFIX
+    elif args.cross_eyed:
+        auto_detect_suffix = CROSS_EYED_SUFFIX
     elif args.anaglyph:
         auto_detect_suffix = ANAGLYPH_SUFFIX + f"_{args.anaglyph}"
     elif args.debug_depth:
@@ -465,8 +468,11 @@ def postprocess_image(left_eye, right_eye, args):
         sbs = apply_anaglyph_redcyan(left_eye, right_eye, args.anaglyph)
     elif args.tb or args.half_tb:
         # TopBottom
-        # SideBySide
         sbs = torch.cat([left_eye, right_eye], dim=1)
+        sbs = torch.clamp(sbs, 0., 1.)
+    elif args.cross_eyed:
+        # Reverse SideBySide
+        sbs = torch.cat([right_eye, left_eye], dim=2)
         sbs = torch.clamp(sbs, 0., 1.)
     else:
         # SideBySide
@@ -1381,6 +1387,7 @@ def create_parser(required_true=True):
     parser.add_argument("--anaglyph", type=str, nargs="?", default=None, const="dubois",
                         choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois", "dubois2"],
                         help="output in anaglyph 3d")
+    parser.add_argument("--cross-eyed", action="store_true", help="output for cross-eyed viewing")
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
                         help="pixel format (video only)")
     parser.add_argument("--tta", action="store_true",
@@ -1524,9 +1531,7 @@ def is_yaml(filename):
 
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
-    assert not (args.half_sbs and args.vr180)
-    assert not (args.half_sbs and args.anaglyph)
-    assert not (args.vr180 and args.anaglyph)
+    assert sum([1 for flag in (args.half_sbs, args.vr180, args.anaglyph, args.tb, args.half_tb, args.cross_eyed) if flag]) < 2
 
     if len(args.gpu) > 1 and len(args.gpu) > args.max_workers:
         # For GPU round-robin on thread pool

@@ -231,6 +231,7 @@ class MainFrame(wx.Frame):
             choices=["Full SBS", "Half SBS",
                      "Full TB", "Half TB",
                      "VR90",
+                     "Cross Eyed",
                      "Anaglyph",
                      "Export", "Export disparity",
                      "Debug Depth",
@@ -759,6 +760,7 @@ class MainFrame(wx.Frame):
         half_sbs = self.cbo_stereo_format.GetValue() == "Half SBS"
         tb = self.cbo_stereo_format.GetValue() == "Full TB"
         half_tb = self.cbo_stereo_format.GetValue() == "Half TB"
+        cross_eyed = self.cbo_stereo_format.GetValue() == "Cross Eyed"
         anaglyph = self.get_anaglyph_method()
         export = self.cbo_stereo_format.GetValue() == "Export"
         export_disparity = self.cbo_stereo_format.GetValue() == "Export disparity"
@@ -832,6 +834,7 @@ class MainFrame(wx.Frame):
             half_sbs=half_sbs,
             tb=tb,
             half_tb=half_tb,
+            cross_eyed=cross_eyed,
             anaglyph=anaglyph,
             export=export,
             export_disparity=export_disparity,
