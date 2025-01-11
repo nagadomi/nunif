@@ -249,9 +249,10 @@ class VideoOutputConfig():
     def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={},
                  output_width=None, output_height=None, colorspace=None,
                  container_format=None,
-                 video_codec=None):
+                 video_codec=None, output_fps=None):
         self.pix_fmt = pix_fmt
         self.fps = fps
+        self.output_fps = output_fps
         self.options = options
         self.container_options = container_options
         self.output_width = output_width
@@ -664,6 +665,7 @@ def process_video(input_path, output_path,
 
     config = config_callback(video_input_stream)
     config.fps = convert_known_fps(config.fps)
+    config.output_fps = convert_known_fps(config.output_fps)
 
     if not config.container_format:
         config.container_format = path.splitext(output_path)[-1].lower()[1:]
@@ -681,7 +683,8 @@ def process_video(input_path, output_path,
             test_callback = frame_callback
         output_size = test_output_size(test_callback, video_input_stream, vf)
 
-    video_output_stream = output_container.add_stream(config.video_codec, config.fps)
+    output_fps = config.output_fps or config.fps
+    video_output_stream = output_container.add_stream(config.video_codec, output_fps)
     configure_colorspace(video_output_stream, video_input_stream, config)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
@@ -713,7 +716,7 @@ def process_video(input_path, output_path,
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     # TODO: `total` may be less when start_time is specified
-    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time,
+    total = guess_frames(video_input_stream, output_fps, start_time=start_time, end_time=end_time,
                          container_duration=container_duration)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
