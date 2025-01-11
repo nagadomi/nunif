@@ -317,13 +317,13 @@ def structured_noise(x, strength=0.15):
 NR_RATE = {
     0: 0.1,
     1: 0.1,
-    2: 0.5,
+    2: 0.9,
     3: 0.95,
 }
 STRENGTH_FACTOR = {
     0: 0.25,
     1: 0.5,
-    2: 1.0,
+    2: 0.8,
     3: 1.2,
 }
 
