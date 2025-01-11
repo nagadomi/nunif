@@ -338,7 +338,7 @@ class RandomPhotoNoiseX():
         noise_level = self.noise_level
         if not self.force:
             if random.uniform(0, 1) > NR_RATE[noise_level]:
-                cond = list(range(-1, noise_level - 1))
+                cond = list(range(-1, noise_level))
                 prob = [i for i in range(1, len(cond) + 1)]
                 noise_level = random.choices(cond, prob, k=1)[0]
                 if noise_level == -1:
