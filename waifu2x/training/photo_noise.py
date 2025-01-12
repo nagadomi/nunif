@@ -318,13 +318,13 @@ NR_RATE = {
     0: 0.1,
     1: 0.1,
     2: 0.9,
-    3: 0.95,
+    3: 0.9,
 }
 STRENGTH_FACTOR = {
     0: 0.25,
     1: 0.5,
-    2: 0.8,
-    3: 1.2,
+    2: 1.2,
+    3: 1.8,
 }
 
 
@@ -386,10 +386,11 @@ def add_validation_noise(x, noise_level, index):
         if index % 10 == 0:
             x = _add_gaussian_noise(x, 0.05 * STRENGTH_FACTOR[noise_level])
     elif noise_level == 2:
-        if index % 2 == 0:
+        if index % 10 != 0:
             x = _add_gaussian_noise(x, 0.05 * STRENGTH_FACTOR[noise_level])
     elif noise_level == 3:
-        x = _add_gaussian_noise(x, 0.05 * STRENGTH_FACTOR[noise_level])
+        if index % 10 != 0:
+            x = _add_gaussian_noise(x, 0.05 * STRENGTH_FACTOR[noise_level])
     return x
 
 
