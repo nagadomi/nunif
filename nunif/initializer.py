@@ -3,6 +3,7 @@ import torch
 import random
 import numpy as np
 import secrets
+import gc
 
 
 def disable_image_lib_threads():
@@ -35,3 +36,16 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
     random.seed(seed)
     np.random.seed(seed)
+
+
+def gc_collect():
+    gc.collect()
+
+    if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
+        torch._dynamo.reset()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        torch.xpu.empty_cache()
