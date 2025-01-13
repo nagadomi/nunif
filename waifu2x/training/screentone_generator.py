@@ -306,15 +306,17 @@ def gen(disable_color, disable_sand):
 
     line_pattern = False
     random_rotate = random.uniform(0, 1) < 0.25
+    allow_small = False if random_rotate else random.choice([True, False])
+
     p = random.uniform(0, 1)
     if p < 0.6:
-        mask = gen_dot_mask(WINDOW_SIZE * 2, allow_small=not random_rotate)
+        mask = gen_dot_mask(WINDOW_SIZE * 2, allow_small=allow_small)
     elif p < 0.65:
         mask = gen_line_overlay(WINDOW_SIZE * 2, line_scale=1)
         line_pattern = True
     else:
         if disable_sand or random.uniform(0, 1) < 0.5:
-            mask = gen_dot_gradient_mask(WINDOW_SIZE * 2, allow_small=not random_rotate)
+            mask = gen_dot_gradient_mask(WINDOW_SIZE * 2, allow_small=allow_small)
         else:
             mask = gen_sand_mask(WINDOW_SIZE * 2)
 
