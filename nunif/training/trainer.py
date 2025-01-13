@@ -201,13 +201,13 @@ class Trainer(ABC):
             return schedulefree.SGDScheduleFree(
                 model.parameters(), lr=lr, momentum=self.args.momentum,
                 weight_decay=weight_decay,
-                warmup_steps=self.args.warmup_epoch * num_samples // self.args.batch_size)
+                warmup_steps=self.args.warmup_epoch * num_samples // (self.args.batch_size * self.args.backward_step))
         elif optimizer_type == "adamw_schedulefree":
             assert schedulefree is not None
             optim_groups = configure_optim_groups(model, weight_decay=weight_decay)
             optimizer = schedulefree.AdamWScheduleFree(
                 optim_groups, lr=lr, betas=(adam_beta1, 0.999),
-                warmup_steps=self.args.warmup_epoch * num_samples // self.args.batch_size)
+                warmup_steps=self.args.warmup_epoch * num_samples // (self.args.batch_size * self.args.backward_step))
             return optimizer
         elif optimizer_type == "radam_schedulefree":
             assert schedulefree is not None
