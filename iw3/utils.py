@@ -10,6 +10,7 @@ import threading
 import math
 from tqdm import tqdm
 from PIL import ImageDraw, Image
+from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 from nunif.models import load_model  # , compile_model
@@ -1673,10 +1674,12 @@ def iw3_main(args):
         if not args.recursive:
             image_files = ImageLoader.listdir(args.input)
             process_images(image_files, args.output, args, depth_model, side_model, title="Images")
+            gc_collect()
             for video_file in VU.list_videos(args.input):
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     return args
                 process_video(video_file, args.output, args, depth_model, side_model)
+                gc_collect()
         else:
             subdirs = list_subdir(args.input, include_root=True, excludes=args.output)
             for input_dir in subdirs:
@@ -1685,10 +1688,12 @@ def iw3_main(args):
                 if image_files:
                     process_images(image_files, output_dir, args, depth_model, side_model,
                                    title=path.relpath(input_dir, args.input))
+                    gc_collect()
                 for video_file in VU.list_videos(input_dir):
                     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                         return args
                     process_video(video_file, output_dir, args, depth_model, side_model)
+                    gc_collect()
 
     elif is_yaml(args.input):
         config = export_config.ExportConfig.load(args.input)
@@ -1712,6 +1717,7 @@ def iw3_main(args):
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return args
             process_video(video_file, args.output, args, depth_model, side_model)
+            gc_collect()
     elif is_video(args.input):
         process_video(args.input, args.output, args, depth_model, side_model)
     elif is_image(args.input):

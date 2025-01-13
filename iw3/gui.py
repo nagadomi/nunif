@@ -3,7 +3,6 @@ import locale
 import sys
 import os
 from os import path
-import gc
 import traceback
 import functools
 from time import time
@@ -16,6 +15,7 @@ from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
     has_rembg_model)
+from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
@@ -1096,9 +1096,7 @@ class MainFrame(wx.Frame):
             self.depth_model = None
             self.depth_model_type = None
             self.depth_model_device_id = None
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            gc_collect()
 
         remove_bg = self.chk_rembg.GetValue()
         bg_model_type = self.cbo_bg_model.GetValue()
@@ -1241,9 +1239,7 @@ class MainFrame(wx.Frame):
         self.update_start_button_state()
 
         # free vram
-        gc.collect()
-        if torch.cuda.is_available:
-            torch.cuda.empty_cache()
+        gc_collect()
 
     def on_click_btn_cancel(self, event):
         self.suspend_event.set()
