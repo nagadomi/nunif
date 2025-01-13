@@ -52,42 +52,20 @@ LOSS_FUNCTIONS = {
     "yrgb_lbp5": lambda: YRGBLBP(kernel_size=5),
     "yrgb_lbp": lambda: YRGBLBP(kernel_size=3),
 
-    "dct24lbp5": lambda: WeightedLoss(
-        (DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-         YRGBLBP(kernel_size=5)),
-        weights=(0.6, 0.4)),
-
     "alex11": lambda: ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
     "y_l1fftgrad": lambda: YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
-    "dct": lambda: DCTLoss(clamp=True),
-    "dct4": lambda: DCTLoss(window_size=4, clamp=True),
-    "dct8": lambda: DCTLoss(window_size=8, clamp=True),
 
-    "dctm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True),
-                                  DCTLoss(window_size=24, clamp=True),
-                                  DCTLoss(clamp=True)),
-                                 (0.2, 0.2, 0.6)),
-    "dctdm": lambda: WeightedLoss((DCTLoss(window_size=4, clamp=True),
-                                   DCTLoss(window_size=24, clamp=True, diag=True),
-                                   DCTLoss(clamp=True, diag=True)),
-                                  (0.2, 0.2, 0.6)),
-    "dctrm": lambda: WeightedLoss(
-        (DCTLoss(window_size=4, clamp=True),
-         DCTLoss(window_size=24, clamp=True, random_rotate=True),
-         DCTLoss(clamp=True, random_rotate=True)),
-        weights=(0.2, 0.2, 0.6),
-        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True)),
+    "dct": lambda: DCTLoss(clamp=True),
     "dctirm": lambda: WeightedLoss(
         (DCTLoss(window_size=4, clamp=True),
          DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
          DCTLoss(clamp=True, random_instance_rotate=True)),
         weights=(0.2, 0.2, 0.6),
         preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)),
-    "dctrm4-24": lambda: WeightedLoss(
-        (DCTLoss(window_size=4, clamp=True),
-         DCTLoss(window_size=24, clamp=True, random_rotate=True)),
-        weights=(0.4, 0.6),
-        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True)),
+    "dctir24": lambda: WeightedLoss(
+        (DCTLoss(window_size=24, clamp=True, random_rotate=True, overlap=True),),
+        weights=(1.0,),
+        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)),
 
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
@@ -736,6 +714,8 @@ def train(args):
             args.loss = "lbp5"
         elif args.arch in {"waifu2x.swin_unet_8x"}:
             args.loss = "y_charbonnier"
+        elif args.arch.startswith("waifu2x.winc_unet"):
+            args.loss = "dctirm"
         else:
             args.loss = "y_charbonnier"
 
