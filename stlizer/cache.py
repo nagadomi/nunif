@@ -15,7 +15,7 @@ def get_cache_path(input_video_path):
     if not path.exists(cache_dir):
         os.makedirs(cache_dir, exist_ok=True)
 
-    cache_filename = md5(path.abspath(input_video_path)) + ".stlizer"
+    cache_filename = filepath_md5(input_video_path) + ".stlizer"
     cache_path = path.join(cache_dir, cache_filename)
     return cache_path
 
@@ -25,6 +25,12 @@ def md5(s):
         return hashlib.md5((s + MD5_SALT).encode()).hexdigest()
     else:
         return ""
+
+
+def filepath_md5(filepath):
+    filepath = path.abspath(filepath)
+    size = path.getsize(filepath)
+    return md5(f"{filepath}_{str(size)}")
 
 
 def save_cache(input_video_path, transforms, mean_match_scores, fps, args):
