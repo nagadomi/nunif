@@ -10,7 +10,7 @@ from .multipass_pipeline import (
     pass1, pass2, pass3, pass4,
     DEFAULT_RESOLUTION,
 )
-from .cache import try_load_cache, save_cache, purge_cache
+from .cache import try_load_cache, save_cache
 
 
 def create_parser(required_true=True):
@@ -41,8 +41,6 @@ def create_parser(required_true=True):
     parser.add_argument("--iteration", type=int, default=50, help="iteration count of frame transform optimization")
     parser.add_argument("--disable-cache", action="store_true",
                         help="disable pass1-2 cache")
-    parser.add_argument("--purge-cache", action="store_true",
-                        help="Delete pass1-2 cache first")
 
     # video encoding
 
@@ -122,9 +120,6 @@ def make_output_path(args):
 
 def stlizer_main(args):
     output_path = make_output_path(args)
-    if args.purge_cache:
-        purge_cache(args.input)
-
     device = args.state["device"]
 
     cache_data = try_load_cache(args.input, args) if not args.disable_cache else None
