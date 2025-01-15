@@ -42,7 +42,7 @@ The output resolution will be smaller then the input video.
 
 ### `--border expand`
 
-Simply fill with black color. Add border padding secified by `--padding`(default 0.05 = 5% addtional border).
+Simply fill with black color. Add border padding specified by `--padding`(default 0.05 = 5% addtional border).
 
 The output resolution will be larger then the input video.
 There is less potential for some pixels of the frame to be cut off.
