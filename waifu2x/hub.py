@@ -197,7 +197,7 @@ def _test():
                 continue
             # Load a model with fixed method and noise_level
             model = torch.hub.load(
-                ROOT_DIR, "waifu2x", keep_alpha=False,
+                ROOT_DIR, "waifu2x", keep_alpha=True,
                 model_type=model_type, method=method, noise_level=3,
                 source="local", trust_repo=True)
             model = model.to("cuda")
@@ -207,7 +207,7 @@ def _test():
     # Load all method and noise_level models
     lock = threading.RLock()
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", keep_alpha=False,
+        ROOT_DIR, "waifu2x", keep_alpha=True,
         model_type="art_scan",
         source="local", trust_repo=True).to("cuda")
     for noise_level in (0, 1, 2, 3):
