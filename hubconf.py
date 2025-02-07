@@ -1,9 +1,13 @@
-try:
-    import packaging as _packaging
-except ImportError:
-    raise RuntimeError("Missing dependencies `packaging`. Try `pip install packaging`")
+import importlib
 
-dependencies = ["torch", "torchvision", "packaging"]
+dependencies_pip = ["packaging", "requests", "tqdm"]
+dependencies = ["torch", "torchvision"] + dependencies_pip
+
+for mod in dependencies_pip:
+    try:
+        _ = importlib.import_module(mod)
+    except ImportError:
+        raise RuntimeError(f"Missing dependencies `{mod}`. Try `pip install {mod}`")
 
 
 def waifu2x(model_type="art",
