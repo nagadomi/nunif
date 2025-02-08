@@ -2,7 +2,8 @@
 # for CIFAR10
 # python -m playground.mae.train_cifar10 --data-dir ./data/cifar10 --model-dir ./models/mae
 # reconstruction result will be stored in ./models/mae/eval
-# https://github.com/user-attachments/assets/18c38401-4c44-4f93-ac91-e497c6ec0e7a
+# MHA var : https://github.com/user-attachments/assets/cde096ca-aee4-4c95-b3b1-b436bae737ef
+# gMLP var: https://github.com/user-attachments/assets/7ecf39e5-e68d-477e-8145-f03e48eb2668
 from os import path
 import os
 from torchvision.datasets import CIFAR10
@@ -15,7 +16,7 @@ from torch import nn
 from torch.nn import functional as F
 from nunif.models import Model
 from nunif.modules.init import basic_module_init
-from nunif.modules.attention import MHA
+from nunif.modules.attention import MHA, GMLP
 from nunif.training.env import RGBPSNREnv
 from nunif.training.trainer import Trainer, create_trainer_default_parser
 from torchvision.utils import make_grid
@@ -25,6 +26,7 @@ IMG_SIZE = 64
 EVAL_N = 32
 PATCH_SIZE = 4
 MASK_RATIO = 0.7
+USE_GMLP = False  # When True, faster and better. experimental version.
 
 
 class CIFAR10Dataset(torch.utils.data.Dataset):
@@ -47,7 +49,7 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
                     T.ToTensor()
                 ])
             self.cifar10 = CIFAR10(root, train=train, transform=transform, download=True)
-            self.eval_index = torch.randperm(len(self.cifar10))[:EVAL_N]
+            self.eval_index = [int(i * (len(self.cifar10) // EVAL_N)) for i in range(0, EVAL_N)]
 
     def __len__(self):
         if self.train:
@@ -89,6 +91,17 @@ class TransformerBlock(nn.Module):
         return x
 
 
+class GMLPBlock(nn.Module):
+    def __init__(self, embed_dim, seq_len, mlp_ratio=4):
+        super().__init__()
+        self.gmlp = GMLP(embed_dim, seq_len=seq_len)
+        self.norm1 = nn.LayerNorm(embed_dim, bias=False)
+        self.norm2 = nn.LayerNorm(embed_dim, bias=False)
+
+    def forward(self, x):
+        return self.gmlp(x, self.norm1, self.norm2)
+
+
 class Encoder(nn.Module):
     def __init__(self, embed_dim, mask_ratio, num_blocks, image_size, patch_size):
         super().__init__()
@@ -99,7 +112,12 @@ class Encoder(nn.Module):
                                stride=patch_size, padding=0, bias=False)
         # NOTE: No cls token
         self.pos_bias = nn.Parameter(torch.randn((1, self.num_patches, embed_dim)) * 0.01)
-        self.blocks = nn.ModuleList([TransformerBlock(embed_dim=embed_dim) for _ in range(num_blocks)])
+
+        if USE_GMLP:
+            self.blocks = nn.ModuleList([GMLPBlock(embed_dim=embed_dim, seq_len=self.masked_num_patches, mlp_ratio=4)
+                                         for _ in range(num_blocks)])
+        else:
+            self.blocks = nn.ModuleList([TransformerBlock(embed_dim=embed_dim) for _ in range(num_blocks)])
 
         basic_module_init(self.patch)
 
@@ -150,7 +168,11 @@ class Decoder(nn.Module):
         self.num_patches = (image_size // patch_size) ** 2
         self.pos_bias = nn.Parameter(torch.randn((1, self.num_patches, embed_dim)) * 0.01)
         self.mask_bias = nn.Parameter(torch.zeros((1, 1, embed_dim)))
-        self.blocks = nn.ModuleList([TransformerBlock(embed_dim=embed_dim) for _ in range(num_blocks)])
+        if USE_GMLP:
+            self.blocks = nn.ModuleList([GMLPBlock(embed_dim=embed_dim, seq_len=self.num_patches, mlp_ratio=4)
+                                         for _ in range(num_blocks)])
+        else:
+            self.blocks = nn.ModuleList([TransformerBlock(embed_dim=embed_dim) for _ in range(num_blocks)])
         self.to_image = ToImage(embed_dim, scale_factor=patch_size)
 
     def forward(self, x, index_restore):
