@@ -451,6 +451,39 @@ def window_distance_matrix(window_size):
     return distance
 
 
+class GMLP(nn.Module):
+    # gMLP
+    def __init__(self, embed_dim, seq_len, mlp_ratio=1):
+        super().__init__()
+        self.proj_in = nn.Linear(embed_dim, int(embed_dim * mlp_ratio * 2))
+        self.proj_spatial = nn.Conv1d(seq_len, seq_len, kernel_size=1, stride=1, bias=True)
+        self.proj_out = nn.Linear(int(embed_dim * mlp_ratio * 2) // 2, embed_dim)
+
+        basic_module_init(self.proj_in)
+        basic_module_init(self.proj_out)
+        nn.init.uniform_(self.proj_spatial.weight, -1e-3 / embed_dim, 1e-3 / embed_dim)
+        nn.init.constant_(self.proj_spatial.bias, 1.0)
+
+    def forward(self, x, norm1=None, norm2=None):
+        # B, N, C = x.shape
+        shortcut = x
+        if norm1 is not None:
+            x = norm1(x)
+        x = self.proj_in(x)
+        x = F.gelu(x)
+
+        u, v = x.chunk(2, dim=-1)
+        if norm2 is not None:
+            v = norm2(v)
+        v = self.proj_spatial(v)
+        x = u * v
+
+        x = self.proj_out(x)
+        x = x + shortcut
+
+        return x
+
+
 def _test_bias():
     mha = WindowMHA2d(64, 4, window_size=8).cuda().eval()
     x = torch.zeros((4, 64, 32, 32)).cuda()
