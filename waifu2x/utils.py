@@ -282,7 +282,8 @@ class Waifu2x():
                 if model is not None:
                     alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
                     alpha = tiled_render(alpha, model,
-                                         tile_size=tile_size, batch_size=batch_size).mean(0, keepdim=True)
+                                         tile_size=tile_size, batch_size=batch_size,
+                                         enable_amp=enable_amp).mean(0, keepdim=True)
                 else:
                     scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
                     alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor,
