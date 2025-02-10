@@ -211,7 +211,7 @@ DepthAnythingの出力は精度が高いですが、ステレオ生成におい�
 
 `Full TB`,`Half TB`はトップ・ボトムです。3DTV(Polarized/Passive 3D system)では、トップ・ボトムのほうがサイド・バイ・サイドよりも高い解像度で再生できることがあります。
 
-`VR90`は、正面90°のみを描画したVR180フォーマット(Equirectangular)です。再生時の操作が制限されるので通常はオススメしません。使用しているVR機器や投稿サイト等の都合で使いたい場合に指定してください。
+`VR90`は、正面90°のみを描画したVR180フォーマット(Equirectangular)です。再生時の操作が制限されるので通常はオススメしません。使用しているVR機器や投稿サイト等の都合で使いたい場合に指定してください。Youtubeのメタデータ設定は https://github.com/nagadomi/nunif/issues/268 を見てください。
 
 `Anaglyph *`は、Red-Cyan Anaglyph 3D formatです。
 

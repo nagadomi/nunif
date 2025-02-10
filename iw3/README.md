@@ -177,7 +177,7 @@ When `--vr180` option is specified, the video is output in VR180 format (equirec
 
 This is usually not recommended because of poor usability during playback.
 
-This is useful if your video player does not have the ability to play Full SBS 3D videos or if you want to post the video on Youtube.
+This is useful if your video player does not have the ability to play Full SBS 3D videos or if you want to post the video on Youtube (See https://github.com/nagadomi/nunif/issues/268 ) .
 
 ## Half SBS format
 
