@@ -25,22 +25,32 @@ def replication_pad2d_naive(x, padding, detach=False):
     left, right, top, bottom = padding
 
     detach_fn = lambda t: t.detach() if detach else t
-    if left > 0:
-        x = torch.cat((*((detach_fn(x[:, :, :, :1]),) * left), x), dim=3)
-    elif left < 0:
-        x = x[:, :, :, -left:]
-    if right > 0:
-        x = torch.cat((x, *((detach_fn(x[:, :, :, -1:]),) * right)), dim=3)
-    elif right < 0:
-        x = x[:, :, :, :right]
-    if top > 0:
-        x = torch.cat((*((detach_fn(x[:, :, :1, :]),) * top), x), dim=2)
-    elif top < 0:
-        x = x[:, :, -top:, :]
-    if bottom > 0:
-        x = torch.cat((x, *((detach_fn(x[:, :, -1:, :]),) * bottom)), dim=2)
-    elif bottom < 0:
-        x = x[:, :, :bottom, :]
+    if left > 0 and right > 0:
+        pad_l = (detach_fn(x[:, :, :, :1]),) * left
+        pad_r = (detach_fn(x[:, :, :, -1:]),) * right
+        x = torch.cat((*pad_l, x, *pad_r), dim=3)
+    else:
+        if left > 0:
+            x = torch.cat((*((detach_fn(x[:, :, :, :1]),) * left), x), dim=3)
+        elif left < 0:
+            x = x[:, :, :, -left:]
+        if right > 0:
+            x = torch.cat((x, *((detach_fn(x[:, :, :, -1:]),) * right)), dim=3)
+        elif right < 0:
+            x = x[:, :, :, :right]
+    if top > 0 and bottom > 0:
+        pad_t = (detach_fn(x[:, :, :1, :]),) * top
+        pad_b = (detach_fn(x[:, :, -1:, :]),) * bottom
+        x = torch.cat((*pad_t, x, *pad_b), dim=2)
+    else:
+        if top > 0:
+            x = torch.cat((*((detach_fn(x[:, :, :1, :]),) * top), x), dim=2)
+        elif top < 0:
+            x = x[:, :, -top:, :]
+        if bottom > 0:
+            x = torch.cat((x, *((detach_fn(x[:, :, -1:, :]),) * bottom)), dim=2)
+        elif bottom < 0:
+            x = x[:, :, :bottom, :]
 
     return x.contiguous()
 
