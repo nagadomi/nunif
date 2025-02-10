@@ -75,6 +75,34 @@ class RMSNorm1(nn.Module):
         return x * scale.to(x.dtype)
 
 
+class FastLayerNorm(nn.LayerNorm):
+    """
+    Idea from timm fast_layer_norm.
+    Stop upcasting to fp32 when autocast.
+    """
+    def forward(self, input):
+        if torch.jit.is_scripting():
+            return super().forward(input)
+
+        if torch.is_autocast_enabled(input.device.type):
+            dtype = torch.get_autocast_dtype(input.device.type)
+            input = input.to(dtype)
+            weight = self.weight.to(dtype)
+            if self.bias is not None:
+                bias = self.bias.to(dtype)
+            else:
+                bias = None
+            with torch.amp.autocast(device_type=input.device.type, enabled=False):
+                return F.layer_norm(input, self.normalized_shape, weight, bias, self.eps)
+        else:
+            return super().forward(input)
+
+
+class FastLayerNorm2d(FastLayerNorm):
+    def forward(self, x):
+        return bhwc_to_bchw(super().forward(bchw_to_bhwc(x)))
+
+
 def _test_l2norm():
     x = torch.randn((1, 4, 2, 2))
     model = L2Normalize()

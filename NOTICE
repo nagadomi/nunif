@@ -85,6 +85,10 @@ nunif/utils/superpoint.py
 From SuperPoint https://github.com/rpautrat/SuperPoint/
 Paul-Edouard Sarlin & Rémi Pautrat / MIT License
 
+---
+nunif/modules/norm.py: FastLayerNorm
+From timm https://github.com/huggingface/pytorch-image-models
+Ross Wightman / Apache License Version 2.0
 
 ----
 Other libraries used are listed in `requirements.txt`.
