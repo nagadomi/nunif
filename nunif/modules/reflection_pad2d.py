@@ -16,22 +16,32 @@ def reflection_pad2d_naive(x, padding: tuple[int, int, int, int], detach: bool =
     assert padding[2] <= x.shape[2] and padding[3] <= x.shape[2]
     left, right, top, bottom = padding
 
-    if left > 0:
-        x = torch.cat((torch.flip(_detach_fn(x[:, :, :, 1:left + 1], detach), dims=[3]), x), dim=3)
-    elif left < 0:
-        x = x[:, :, :, -left:]
-    if right > 0:
-        x = torch.cat((x, torch.flip(_detach_fn(x[:, :, :, -right - 1:-1], detach), dims=[3])), dim=3)
-    elif right < 0:
-        x = x[:, :, :, :right]
-    if top > 0:
-        x = torch.cat((torch.flip(_detach_fn(x[:, :, 1:top + 1, :], detach), dims=[2]), x), dim=2)
-    elif top < 0:
-        x = x[:, :, -top:, :]
-    if bottom > 0:
-        x = torch.cat((x, torch.flip(_detach_fn(x[:, :, -bottom - 1:-1, :], detach), dims=[2])), dim=2)
-    elif bottom < 0:
-        x = x[:, :, :bottom, :]
+    if left > 0 and right > 0:
+        pad_l = torch.flip(_detach_fn(x[:, :, :, 1:left + 1], detach), dims=[3])
+        pad_r = torch.flip(_detach_fn(x[:, :, :, -right - 1:-1], detach), dims=[3])
+        x = torch.cat((pad_l, x, pad_r), dim=3)
+    else:
+        if left > 0:
+            x = torch.cat((torch.flip(_detach_fn(x[:, :, :, 1:left + 1], detach), dims=[3]), x), dim=3)
+        elif left < 0:
+            x = x[:, :, :, -left:]
+        if right > 0:
+            x = torch.cat((x, torch.flip(_detach_fn(x[:, :, :, -right - 1:-1], detach), dims=[3])), dim=3)
+        elif right < 0:
+            x = x[:, :, :, :right]
+    if top > 0 and bottom > 0:
+        pad_t = torch.flip(_detach_fn(x[:, :, 1:top + 1, :], detach), dims=[2])
+        pad_b = torch.flip(_detach_fn(x[:, :, -bottom - 1:-1, :], detach), dims=[2])
+        x = torch.cat((pad_t, x, pad_b), dim=2)
+    else:
+        if top > 0:
+            x = torch.cat((torch.flip(_detach_fn(x[:, :, 1:top + 1, :], detach), dims=[2]), x), dim=2)
+        elif top < 0:
+            x = x[:, :, -top:, :]
+        if bottom > 0:
+            x = torch.cat((x, torch.flip(_detach_fn(x[:, :, -bottom - 1:-1, :], detach), dims=[2])), dim=2)
+        elif bottom < 0:
+            x = x[:, :, :bottom, :]
 
     return x.contiguous()
 
