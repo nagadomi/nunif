@@ -116,22 +116,32 @@ class WindowMHA2d(nn.Module):
     """ WindowMHA
     BCHW input/output
     """
-    def __init__(self, in_channels, num_heads, window_size=(4, 4), qkv_dim=None):
+    def __init__(self, in_channels, num_heads, window_size=(4, 4), qkv_dim=None, shift=False):
         super().__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
+        self.shift = shift
+        if self.shift:
+            assert self.window_size[0] % 2 == 0 and self.window_size[1] % 2 == 0
+            self.pad_h = self.window_size[0] // 2
+            self.pad_w = self.window_size[1] // 2
+
         self.num_heads = num_heads
         self.mha = MHA(in_channels, num_heads, qkv_dim)
         basic_module_init(self)
 
     def forward(self, x, attn_mask=None, layer_norm=None):
-        src = x
-        out_shape = src.shape
+        if self.shift:
+            x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h), mode="constant", value=0)
+
+        out_shape = x.shape
         x = bchw_to_bnc(x, self.window_size)
         if layer_norm is not None:
             x = layer_norm(x)
         x = self.mha(x, attn_mask=attn_mask)
         x = bnc_to_bchw(x, out_shape, self.window_size)
+        if self.shift:
+            x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h))
 
         return x
 
@@ -480,6 +490,39 @@ class GMLP(nn.Module):
 
         x = self.proj_out(x)
         x = x + shortcut
+
+        return x
+
+
+class WindowGMLP2d(nn.Module):
+    """
+    WindowGMLP2d
+    BCHW input/output
+    """
+    def __init__(self, in_channels, window_size=(4, 4), mlp_ratio=2, shift=False):
+        super().__init__()
+        self.window_size = (window_size if isinstance(window_size, (tuple, list))
+                            else (window_size, window_size))
+        self.shift = shift
+        if self.shift:
+            assert self.window_size[0] % 2 == 0 and self.window_size[1] % 2 == 0
+            self.pad_h = self.window_size[0] // 2
+            self.pad_w = self.window_size[1] // 2
+
+        self.seq_len = self.window_size[0] * self.window_size[1]
+        self.gmlp = GMLP(in_channels, seq_len=self.seq_len, mlp_ratio=mlp_ratio)
+
+    def forward(self, x, norm1=None, norm2=None):
+        if self.shift:
+            x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h), mode="constant", value=0)
+
+        out_shape = x.shape
+        x = bchw_to_bnc(x, self.window_size)
+        x = self.gmlp(x, norm1, norm2)
+        x = bnc_to_bchw(x, out_shape, self.window_size)
+
+        if self.shift:
+            x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h))
 
         return x
 
