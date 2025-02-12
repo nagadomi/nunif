@@ -78,6 +78,12 @@ class BaseDepthModel(metaclass=ABCMeta):
     def is_metric(self):
         pass
 
+    def is_image_supported(self):
+        return True
+
+    def is_video_supported(self):
+        return True
+
     @staticmethod
     def force_update_hub(github, model):
         with TorchHubDir(HUB_MODEL_DIR):

@@ -1613,28 +1613,32 @@ def iw3_main(args):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
         if not args.recursive:
-            image_files = ImageLoader.listdir(args.input)
-            process_images(image_files, args.output, args, depth_model, side_model, title="Images")
-            gc_collect()
-            for video_file in VU.list_videos(args.input):
-                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                    return args
-                process_video(video_file, args.output, args, depth_model, side_model)
+            if depth_model.is_image_supported():
+                image_files = ImageLoader.listdir(args.input)
+                process_images(image_files, args.output, args, depth_model, side_model, title="Images")
                 gc_collect()
+            if depth_model.is_video_supported():
+                for video_file in VU.list_videos(args.input):
+                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                        return args
+                    process_video(video_file, args.output, args, depth_model, side_model)
+                    gc_collect()
         else:
             subdirs = list_subdir(args.input, include_root=True, excludes=args.output)
             for input_dir in subdirs:
                 output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
-                image_files = ImageLoader.listdir(input_dir)
-                if image_files:
-                    process_images(image_files, output_dir, args, depth_model, side_model,
-                                   title=path.relpath(input_dir, args.input))
-                    gc_collect()
-                for video_file in VU.list_videos(input_dir):
-                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                        return args
-                    process_video(video_file, output_dir, args, depth_model, side_model)
-                    gc_collect()
+                if depth_model.is_image_supported():
+                    image_files = ImageLoader.listdir(input_dir)
+                    if image_files:
+                        process_images(image_files, output_dir, args, depth_model, side_model,
+                                       title=path.relpath(input_dir, args.input))
+                        gc_collect()
+                if depth_model.is_video_supported():
+                    for video_file in VU.list_videos(input_dir):
+                        if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                            return args
+                        process_video(video_file, output_dir, args, depth_model, side_model)
+                        gc_collect()
 
     elif is_yaml(args.input):
         config = export_config.ExportConfig.load(args.input)
@@ -1651,17 +1655,23 @@ def iw3_main(args):
                 line = line.strip()
                 if not line.startswith("#"):
                     files.append(line.strip())
-        image_files = [f for f in files if is_image(f)]
-        process_images(image_files, args.output, args, depth_model, side_model, title="Images")
-        video_files = [f for f in files if is_video(f)]
-        for video_file in video_files:
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                return args
-            process_video(video_file, args.output, args, depth_model, side_model)
-            gc_collect()
+        if depth_model.is_image_supported():
+            image_files = [f for f in files if is_image(f)]
+            process_images(image_files, args.output, args, depth_model, side_model, title="Images")
+        if depth_model.is_video_supported():
+            video_files = [f for f in files if is_video(f)]
+            for video_file in video_files:
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return args
+                process_video(video_file, args.output, args, depth_model, side_model)
+                gc_collect()
     elif is_video(args.input):
+        if not depth_model.is_video_supported():
+            raise ValueError(f"{args.depth_model} does not support video input")
         process_video(args.input, args.output, args, depth_model, side_model)
     elif is_image(args.input):
+        if not depth_model.is_image_supported():
+            raise ValueError(f"{args.depth_model} does not support image input")
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
             output_filename = path.join(
