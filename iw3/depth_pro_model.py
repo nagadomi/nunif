@@ -11,13 +11,11 @@ from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 
 NAME_MAP = {
     "DepthPro": 384,
-    "DepthPro_HD": 256,
-    "DepthPro_SD": 128,
+    "DepthPro_S": 256,
 }
 MODEL_FILES = {
     "DepthPro": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
-    "DepthPro_HD": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
-    "DepthPro_SD": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
+    "DepthPro_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
 }
 
 
@@ -48,22 +46,27 @@ def batch_preprocess(x, img_size=1536, padding=False):
     return x, pad
 
 
-def _forward(model, x, min_dist=0.1, max_dist=40.0):
+def _forward(model, x, input_shape, min_dist=0.1, max_dist=40.0):
     if x.dtype != torch.float16:
         x = x.half()
-    H, W = x.shape[2:]
-    canonical_inverse_depth, _ = model(x)
+    H, W = input_shape[2:]
+    canonical_inverse_depth, fov_deg = model(x)
     canonical_inverse_depth = canonical_inverse_depth.to(torch.float32)
 
-    if False:
+    if True:
         # distance
-        inverse_depth = canonical_inverse_depth.mul_(0.6115)
+        f_px = 0.5 * W / torch.tan(0.5 * torch.deg2rad(fov_deg.to(torch.float)))
+        inverse_depth = canonical_inverse_depth * (W / f_px)
         depth = 1.0 / torch.clamp(inverse_depth, min=1.0 / max_dist, max=1.0 / min_dist)
     else:
         # inverse distance
-        # Fov=70mm fixed to avoid fov flicking
-        inverse_depth = canonical_inverse_depth.mul_(0.6115)
-        depth = torch.clamp(inverse_depth, max=1.0 / min_dist)
+        f_px = 0.5 * W / torch.tan(0.5 * torch.deg2rad(fov_deg.to(torch.float)))
+        inverse_depth = canonical_inverse_depth * (W / f_px)
+        depth = torch.clamp(inverse_depth, min=1.0 / max_dist, max=1.0 / min_dist)
+
+    if H < x.shape[2] or W < x.shape[3]:
+        depth = F.interpolate(depth, size=(H, W), mode="bilinear", align_corners=False)
+
     return depth
 
 
@@ -85,26 +88,26 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
+    input_shape = x.shape
     x, unpad = batch_preprocess(x, model.img_size)
 
     if not low_vram:
         if flip_aug:
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
-        out = _forward(model, x, enable_amp)
+        out = _forward(model, x, input_shape, enable_amp)
     else:
         x_org = x
-        out = _forward(model, x, enable_amp)
+        out = _forward(model, x, input_shape, enable_amp)
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
-            out2 = _forward(model, x, enable_amp)
+            out2 = _forward(model, x, input_shape, enable_amp)
             out = torch.cat([out, out2], dim=0)
 
     if unpad > 0:
         out = out[:, :, unpad:-unpad, unpad:-unpad]
 
     if edge_dilation > 0:
-        out = dilate_edge(out, edge_dilation)
-    out.neg_()
+        out = -dilate_edge(-out, edge_dilation)
 
     if flip_aug:
         if batch:
@@ -119,6 +122,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
     if not batch:
         assert z.shape[0] == 1
         z = z.squeeze(0)
+
+    # print(out.min(), out.max())
 
     z = z.to(output_device)
 
@@ -147,7 +152,7 @@ class DepthProModel(BaseDepthModel):
         model.metric_depth = False
 
         # delete unused fov model
-        delattr(model, "fov")
+        # delattr(model, "fov")
 
         # Release VRAM (there are many unused parameters that have not been released)
         gc.collect()
@@ -183,7 +188,10 @@ class DepthProModel(BaseDepthModel):
         return MODEL_FILES[model_type]
 
     def is_metric(self):
-        return False  # use inverse_depth
+        return True
+
+    def is_video_supported(self):
+        return False
 
     @classmethod
     def multi_gpu_supported(cls, model_type):
