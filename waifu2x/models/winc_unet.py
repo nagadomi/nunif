@@ -8,6 +8,7 @@ from nunif.modules.attention import WindowMHA2d, WindowScoreBias
 from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive, replication_pad2d_naive
 from nunif.modules.init import icnr_init, basic_module_init
 from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.norm import FastLayerNorm
 
 
 class GLUConvMLP(nn.Module):
@@ -66,20 +67,23 @@ class MLP(nn.Module):
 class WACBlock(nn.Module):
     """ Window MHA + Multi Layer Conv2d
     """
-    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2, padding=True, conv_mlp=True):
+    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2,
+                 padding=True, conv_mlp=True, shift=False):
         super(WACBlock, self).__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
         self.padding = padding
-        self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size)
+        self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size,
+                               shift=shift, shift_mask_token=False)
         self.relative_bias = WindowScoreBias(self.window_size)
+        self.norm = FastLayerNorm(in_channels, bias=False)
         if conv_mlp:
             self.conv_mlp = GLUConvMLP(in_channels, in_channels, kernel_size=3, mlp_ratio=mlp_ratio, padding=padding)
         else:
             self.conv_mlp = MLP(in_channels, in_channels, mlp_ratio=mlp_ratio)
 
     def forward(self, x):
-        x1 = self.mha(x, attn_mask=self.relative_bias())
+        x1 = self.mha(x, attn_mask=self.relative_bias(), layer_norm=self.norm)
         x = x + x1
         if isinstance(self.conv_mlp, GLUConvMLP):
             if self.padding:
@@ -93,7 +97,7 @@ class WACBlock(nn.Module):
 
 class WACBlocks(nn.Module):
     def __init__(self, in_channels, num_heads=4, qkv_dim=None,
-                 window_size=8, mlp_ratio=2, num_layers=2, padding=True, conv_mlp=True):
+                 window_size=8, mlp_ratio=2, num_layers=2, padding=True, conv_mlp=True, shift=None):
         super(WACBlocks, self).__init__()
         if isinstance(window_size, int):
             window_size = [window_size] * num_layers
@@ -101,10 +105,13 @@ class WACBlocks(nn.Module):
             padding = [padding] * num_layers
         if isinstance(conv_mlp, bool):
             conv_mlp = [conv_mlp] * num_layers
+        if shift is None:
+            shift = [i % 2 == 1 for i in range(num_layers)]
 
         self.blocks = nn.Sequential(
             *[WACBlock(in_channels, window_size=window_size[i],
-                       num_heads=num_heads, qkv_dim=qkv_dim, mlp_ratio=mlp_ratio, padding=padding[i], conv_mlp=conv_mlp[i])
+                       num_heads=num_heads, qkv_dim=qkv_dim, mlp_ratio=mlp_ratio,
+                       padding=padding[i], conv_mlp=conv_mlp[i], shift=shift[i])
               for i in range(num_layers)])
 
     def forward(self, x):
@@ -162,28 +169,56 @@ class IR(nn.Module):
 
 
 class PatchDown(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, residual=False):
         super().__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0)
+        self.out_channels = out_channels
+        if residual:
+            assert in_channels * 4 % out_channels == 0
+            self.group_size = in_channels * 4 // out_channels
+        self.residual = residual
         basic_module_init(self.conv)
 
     @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
-        x = F.leaky_relu(self.conv(x), 0.2, inplace=True)
-        return x
+        if self.residual:
+            # pixel unshuffle channel averaging from Deep Compression Autoencoder
+            shortcut = F.pixel_unshuffle(x, 2)
+            B, C, H, W = shortcut.shape
+            shortcut = shortcut.view(B, self.out_channels, self.group_size, H, W)
+            shortcut = shortcut.mean(dim=2)
+
+            x = shortcut + F.leaky_relu(self.conv(x), 0.2, inplace=True)
+            return x
+        else:
+            x = F.leaky_relu(self.conv(x), 0.2, inplace=True)
+            return x
 
 
 class PatchUp(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, residual=False):
         super().__init__()
         self.proj = nn.Conv2d(in_channels, out_channels * 4, kernel_size=1, stride=1, padding=0)
+        if residual:
+            assert out_channels * 4 % in_channels == 0
+            self.repeats = out_channels * 4 // in_channels
+        self.residual = residual
         icnr_init(self.proj, scale_factor=2)
 
     @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
-        x = F.leaky_relu(self.proj(x), 0.2, inplace=True)
-        x = F.pixel_shuffle(x, 2)
-        return x
+        if self.residual:
+            # channel duplicating pixel shuffle from Deep Compression Autoencoder
+            shortcut = x.repeat_interleave(self.repeats, dim=1)
+            shortcut = F.pixel_shuffle(shortcut, 2)
+
+            x = F.leaky_relu(self.proj(x), 0.2, inplace=True)
+            x = shortcut + F.pixel_shuffle(x, 2)
+            return x
+        else:
+            x = F.leaky_relu(self.proj(x), 0.2, inplace=True)
+            x = F.pixel_shuffle(x, 2)
+            return x
 
 
 class ToImage(nn.Module):
@@ -246,6 +281,15 @@ class SourceResidual(nn.Module):
         return x
 
 
+def get_shift_config(num_layers, last=False):
+    if last:
+        shift = tuple([i % 2 == 1 for i in range(num_layers)])
+    else:
+        shift = tuple(reversed([i % 2 == 1 for i in range(num_layers)]))
+    # print(shift)
+    return shift
+
+
 class WincUNetBase(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96,
                  lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
@@ -266,24 +310,25 @@ class WincUNetBase(nn.Module):
 
         # encoder
         self.wac1 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=[8, 6] * first_layers, num_heads=HEADS, num_layers=first_layers)
-        self.down1 = PatchDown(C, C2)
+                              window_size=[8, 6], num_heads=HEADS, num_layers=first_layers,
+                              shift=get_shift_config(first_layers))
+        self.down1 = PatchDown(C, C2, residual=True)
         self.wac2 = WACBlocks(C2, mlp_ratio=lv2_mlp_ratio,
-                              window_size=[8, 12, 8, 6], num_heads=HEADS2, num_layers=4)
+                              window_size=8, num_heads=HEADS2, num_layers=4,
+                              shift=get_shift_config(4))
         # decoder
-        self.up1 = PatchUp(C2, C)
-        self.wac1_proj = nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0)
+        self.up1 = PatchUp(C2, C, residual=True)
         self.wac3 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=[8, 6] * last_layers, num_heads=HEADS, num_layers=last_layers,
-                              conv_mlp=[True] * (last_layers - 1) + [False])
-        self.res_mlp = MLPBlocks(C, mlp_ratio=lv1_mlp_ratio, num_layers=1)
+                              window_size=8, num_heads=HEADS, num_layers=last_layers,
+                              conv_mlp=[True] * (last_layers - 1) + [False],
+                              shift=get_shift_config(last_layers))
         self.to_residual_image = ToImage(C, out_channels, scale_factor=scale_factor)
         self.to_image = SourceResidual(out_channels, scale_factor=scale_factor)
 
         basic_module_init(self.patch)
-        basic_module_init(self.wac1_proj)
 
         self.tile_mode = False
+        self.tick = 1
 
     def set_tile_mode(self):
         self.tile_mode = True
@@ -296,9 +341,8 @@ class WincUNetBase(nn.Module):
         x = self.down1(x1)
         x = self.wac2(x)
         x = self.up1(x)
-        x = x + self.wac1_proj(x1)
+        x = x + x1
         x = self.wac3(x)
-        x = self.res_mlp(x)
         x = self.to_residual_image(x)
         z = self.to_image(x, src)
 
@@ -336,8 +380,9 @@ class WincUNetBase(nn.Module):
             if self.scale_factor == 4:
                 assert H == 112 and W == H
                 if self.training:
-                    # randomly use 64x64 2x2 tile and 112x112 1x1 tile
-                    if torch.rand((1,)).item() > 0.5:
+                    #  use 64x64 2x2 tile and 112x112 1x1 tile alternately
+                    self.tick += 1
+                    if self.tick % 2 == 0:
                         # 112 -> 110
                         x = F.pad(x, (-1,) * 4)
                         src = F.pad(src, (-1,) * 4)
@@ -394,7 +439,7 @@ class WincUNet1x(I2IBaseModel):
     name = "waifu2x.winc_unet_1x"
 
     def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
+                 base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
                  first_layers=2, last_layers=3,
                  **kwargs):
         super(WincUNet1x, self).__init__(locals(), scale=1, offset=9, in_channels=in_channels, blend_size=4)
@@ -418,7 +463,7 @@ class WincUNet2x(I2IBaseModel):
     name = "waifu2x.winc_unet_2x"
 
     def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
+                 base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
                  **kwargs):
         super(WincUNet2x, self).__init__(locals(), scale=2, offset=18, in_channels=in_channels, blend_size=8)
         self.register_tile_size_validator(tile_size_validator)
@@ -440,7 +485,7 @@ class WincUNet4x(I2IBaseModel):
     name = "waifu2x.winc_unet_4x"
 
     def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=3,
+                 base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
                  **kwargs):
         super(WincUNet4x, self).__init__(locals(), scale=4, offset=36, in_channels=in_channels, blend_size=16)
         self.register_tile_size_validator(tile_size_validator)
@@ -449,7 +494,7 @@ class WincUNet4x(I2IBaseModel):
         self.unet = WincUNetBase(in_channels, out_channels=out_channels,
                                  base_dim=base_dim,
                                  lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                 scale_factor=4, last_layers=3)
+                                 scale_factor=4)
 
     def forward(self, x):
         if x.shape[1] == 16 + 3:
