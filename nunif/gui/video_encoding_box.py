@@ -1,6 +1,6 @@
 import wx
 from .common import EditableComboBox
-
+import av
 
 LEVEL_LIBX264 = ["3.0", "3.1", "3.2", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2", "6.0", "6.2"]
 LEVEL_LIBX265 = ["3.0", "3.1", "4.0", "4.1", "5.0", "5.1", "5.2", "6.0", "6.1", "6.2", "8.5"]
@@ -16,9 +16,15 @@ PRESET_LIBX264 = ["ultrafast", "superfast", "veryfast", "faster", "fast",
 PRESET_NVENC = ["fast", "medium", "slow"]
 PRESET_ALL = PRESET_LIBX264
 
+CODEC_ALL = ["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"]
+
 
 def empty_translate_function(s):
     return s
+
+
+def codecs_available(codecs):
+    return [codec for codec in codecs if codec in av.codec.codecs_available]
 
 
 class VideoEncodingBox():
@@ -36,7 +42,7 @@ class VideoEncodingBox():
 
         self.lbl_video_codec = wx.StaticText(self.grp_video, label=T("Video Codec"))
         self.cbo_video_codec = EditableComboBox(
-            self.grp_video, choices=["libx264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"],
+            self.grp_video, choices=CODEC_ALL,
             name=f"{prefix}cbo_video_codec")
         self.cbo_video_codec.SetSelection(0)
 
@@ -202,14 +208,14 @@ class VideoEncodingBox():
 
         # codec
         if name == "avi":
-            choices = ["utvideo"]
+            choices = codecs_available(["utvideo"])
         else:
-            choices = ["libx264", "libx265"]
+            choices = codecs_available(["libx264", "libopenh264", "libx265"])
             if self.has_nvenc:
-                choices += ["h264_nvenc", "hevc_nvenc"]
+                choices += codecs_available(["h264_nvenc", "hevc_nvenc"])
 
         user_codec = self.cbo_video_codec.GetValue()
-        if user_codec not in {"libx265", "libx264", "h264_nvenc", "hevc_nvenc", "utvideo"}:
+        if user_codec not in {"libx265", "libx264", "libopenh264", "h264_nvenc", "hevc_nvenc", "utvideo"}:
             choices.append(user_codec)
         self.cbo_video_codec.SetItems(choices)
         if user_codec in choices:
@@ -240,7 +246,7 @@ class VideoEncodingBox():
         # preset
         if container_format in {"mp4", "mkv"}:
             preset = self.cbo_preset.GetValue()
-            if codec in {"libx265", "libx264"}:
+            if codec in {"libx265", "libx264", "libopenh264"}:
                 # preset
                 choices = PRESET_LIBX264
                 default_preset = "ultrafast"
@@ -279,7 +285,7 @@ class VideoEncodingBox():
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
 
-            elif codec == "libx264":
+            elif codec in {"libx264", "libopenh264"}:
                 tune = []
                 tune.append(self.cbo_tune.GetValue())
                 if self.chk_tune_zerolatency.IsChecked():

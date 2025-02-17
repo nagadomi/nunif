@@ -68,6 +68,14 @@ KNOWN_COLORSPACES = {Colorspace.ITU601.value, Colorspace.ITU709.value,
                      COLORSPACE_SMPTE170M, COLORSPACE_SMPTE240M, COLORSPACE_BT2020}
 
 
+if "libx264" in av.codecs_available:
+    LIBH264 = "libx264"
+elif "libopenh264" in av.codecs_available:
+    LIBH264 = "libopenh264"
+else:
+    LIBH264 = ""
+
+
 def add_stream_from_template(container, template):
     # wrapper for av >= 14 compatibility
     if AV_VERSION_14:
@@ -278,7 +286,7 @@ class VideoOutputConfig():
 
 def get_default_video_codec(container_format):
     if container_format in {"mp4", "mkv"}:
-        return "libx264"
+        return LIBH264
     elif container_format == "avi":
         return "utvideo"
     else:
@@ -1277,8 +1285,8 @@ def _test_reencode():
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
                         help="colorspace")
-    parser.add_argument("--video-codec", type=str, default="libx264",
-                        choices=["libx264", "libx265", "h264_nvenc", "hevc_nvenc"],
+    parser.add_argument("--video-codec", type=str, default=LIBH264,
+                        choices=["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc"],
                         help="video codec")
     parser.add_argument("--max-workers", type=int, default=0, help="max worker threads")
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")

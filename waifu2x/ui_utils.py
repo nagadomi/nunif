@@ -110,7 +110,7 @@ def process_video(ctx, input_filename, output_path, args):
         if float(fps) > args.max_fps:
             fps = args.max_fps
 
-        if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
+        if args.video_codec in {"libx264", "libopenh264", "libx265", "hevc_nvenc", "h264_nvenc"}:
             options = {"preset": args.preset, "crf": str(args.crf)}
             tune = []
             if args.tune:
@@ -127,6 +127,9 @@ def process_video(ctx, input_filename, output_path, args):
                 if args.profile_level:
                     x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
                 options["x265-params"] = ":".join(x265_params)
+            elif args.video_codec == "libopenh264":
+                # TODO: most options do not work
+                options["b"] = "8M"
             elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
                 options["rc"] = "constqp"
                 options["qp"] = str(args.crf)

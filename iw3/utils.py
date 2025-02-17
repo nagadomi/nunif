@@ -287,7 +287,7 @@ def make_output_filename(input_filename, args, video=False):
 
 
 def make_video_codec_option(args):
-    if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
+    if args.video_codec in {"libx264", "libopenh264", "libx265", "hevc_nvenc", "h264_nvenc"}:
         options = {"preset": args.preset, "crf": str(args.crf)}
 
         if args.tune:
@@ -307,6 +307,9 @@ def make_video_codec_option(args):
             #    options["x264-params"] = "frame-packing=4"
             if args.half_sbs:
                 options["x264-params"] = "frame-packing=3"
+        elif args.video_codec == "libopenh264":
+            # TODO: most options do not work
+            options["b"] = "8M"
         elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
             options["rc"] = "constqp"
             options["qp"] = str(args.crf)
