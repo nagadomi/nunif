@@ -57,3 +57,13 @@ We usually support the latest version. If there are bugs or compatibility issues
 - [INSTALL-ubuntu](INSTALL-ubuntu.md)
 - [INSTALL-windows](INSTALL-windows.md)
 - [INSTALL-macos](INSTALL-macos.md)
+
+
+### License Notes
+
+Note that if you distribute binary builds, it is possible that it will be GPL.
+
+This is due to PyAV(av) wheel package containing the GPL version of ffmpeg library.
+You can build PyAV with the LGPL version of ffmpeg library.
+
+If you load this repository with torch.hub.load for waifu2x Python API etc, this problem does not exist because PyAV is not a dependent package.
