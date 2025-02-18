@@ -616,7 +616,7 @@ def configure_video_codec(config):
                 # TODO: change pix_fmt
                 config.video_codec = "libx265"
 
-    if config.video_codec == "libx265":
+    if config.video_codec in {"libx265", "h264_nvenc", "hevc_nvenc"}:
         if config.pix_fmt == "rgb24":
             config.pix_fmt = "gbrp"
 
