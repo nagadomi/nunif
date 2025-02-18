@@ -848,6 +848,7 @@ class MainFrame(wx.Frame):
             video_format=self.grp_video.video_format,
             video_codec=self.grp_video.video_codec,
             crf=self.grp_video.crf,
+            video_bitrate=self.grp_video.bitrate,
             profile_level=self.grp_video.profile_level,
             preset=self.grp_video.preset,
             tune=self.grp_video.tune,

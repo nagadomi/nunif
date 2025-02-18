@@ -110,7 +110,7 @@ def process_video(ctx, input_filename, output_path, args):
         if float(fps) > args.max_fps:
             fps = args.max_fps
 
-        if args.video_codec in {"libx264", "libopenh264", "libx265", "hevc_nvenc", "h264_nvenc"}:
+        if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
             options = {"preset": args.preset, "crf": str(args.crf)}
             tune = []
             if args.tune:
@@ -127,12 +127,12 @@ def process_video(ctx, input_filename, output_path, args):
                 if args.profile_level:
                     x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
                 options["x265-params"] = ":".join(x265_params)
-            elif args.video_codec == "libopenh264":
-                # TODO: most options do not work
-                options["b"] = "8M"
             elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
                 options["rc"] = "constqp"
                 options["qp"] = str(args.crf)
+        elif args.video_codec == "libopenh264":
+            # NOTE: It seems libopenh264 does not support most options.
+            options = {"b": args.video_bitrate}
         else:
             options = {}
 
@@ -262,6 +262,8 @@ def create_parser(required_true=True):
     parser.add_argument("--profile-level", type=str, help="h264 profile level")
     parser.add_argument("--crf", type=int, default=20,
                         help="constant quality value. smaller value is higher quality (video only)")
+    parser.add_argument("--video-bitrate", type=str, default="8M",
+                        help="bitrate option for libopenh264")
     parser.add_argument("--preset", type=str, default="ultrafast",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
                                  "medium", "slow", "slower", "veryslow", "placebo"],
