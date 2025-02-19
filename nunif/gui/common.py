@@ -106,6 +106,11 @@ def persistent_manager_restore_all(manager):
         manager.Restore(obj.GetWindow())
 
 
+def persistent_manager_unregister_all(manager):
+    for name, obj in list(manager._persistentObjects.items()):  # NOTE: private attribute
+        manager.Unregister(obj.GetWindow())
+
+
 def persistent_manager_register(manager, window, handler):
     # override
     manager.Unregister(window)

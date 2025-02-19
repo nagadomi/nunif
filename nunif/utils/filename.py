@@ -42,6 +42,20 @@ def filename2key(filename, subdir_level=0, sep="."):
         return basename_without_ext(filename)
 
 
+# SMB Invalid characters
+# Linux SMB replaces file names with random strings if they contain these invalid characters
+# So need to remove these for the filenaming rules.
+SMB_INVALID_CHARS = '\\/:*?"<>|'
+
+
+def sanitize_filename(filename):
+    # NOTE: Implemented without much deep thought.
+    #       Should not be used on servers.
+    filename = filename.strip()
+    filename = filename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
+    return filename
+
+
 if __name__ == "__main__":
     print(set_image_ext("poko/piyo.jpg", format="png"))
     print(set_image_ext("poko/piyo.jpg.webp", format="png"))
