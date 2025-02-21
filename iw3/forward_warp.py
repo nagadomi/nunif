@@ -115,10 +115,15 @@ def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
     return out
 
 
-def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True):
+def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True, synthetic_view="both"):
+    src_image = c
+    assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
         depth = F.interpolate(depth, size=c.shape[-2:],
                               mode="bilinear", align_corners=True, antialias=False)
+    if synthetic_view != "both":
+        divergence *= 2
+
     # pad
     org_width = c.shape[3]
     padding_size = int(org_width * divergence * 0.01 + 2)
@@ -137,36 +142,62 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
     index_order = torch.argsort(depth.view(-1), dim=0)
 
     c = torch.cat([c, x_index.view(B, 1, H, W).to(c.dtype)], dim=1)  # warp width index together
-    left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
-    right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
 
-    # unpad
-    left_eye = unpad(left_eye)
-    right_eye = unpad(right_eye)
-    left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
-    right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
+    if synthetic_view == "both":
+        left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
+        right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
 
-    # Fix layered holes
-    # inspired by @math-artist patch: https://github.com/nagadomi/nunif/discussions/274
-    left_eye_index, right_eye_index = shift_fill(torch.cat([left_eye_index, right_eye_index], dim=1)).chunk(2, dim=1)
-    fix_layered_holes(left_eye, left_eye_index, 1)
-    fix_layered_holes(right_eye, right_eye_index, -1)
+        # unpad
+        left_eye = unpad(left_eye)
+        right_eye = unpad(right_eye)
+        left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
+        right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
 
-    if fill:
-        # super simple inpainting
-        left_eye, right_eye = shift_fill(torch.cat([left_eye, right_eye], dim=1)).chunk(2, dim=1)
-    else:
-        # drop undefined values
-        left_eye = torch.clamp(left_eye, 0, 1)
-        right_eye = torch.clamp(right_eye, 0, 1)
+        # Fix layered holes
+        # inspired by @math-artist patch: https://github.com/nagadomi/nunif/discussions/274
+        left_eye_index, right_eye_index = shift_fill(torch.cat([left_eye_index, right_eye_index], dim=1)).chunk(2, dim=1)
+        fix_layered_holes(left_eye, left_eye_index, 1)
+        fix_layered_holes(right_eye, right_eye_index, -1)
 
-    return left_eye.contiguous(), right_eye.contiguous()
+        if fill:
+            # super simple inpainting
+            left_eye, right_eye = shift_fill(torch.cat([left_eye, right_eye], dim=1)).chunk(2, dim=1)
+        else:
+            # drop undefined values
+            left_eye = torch.clamp(left_eye, 0, 1)
+            right_eye = torch.clamp(right_eye, 0, 1)
+
+        return left_eye.contiguous(), right_eye.contiguous()
+    elif synthetic_view == "right":
+        right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
+        right_eye = unpad(right_eye)
+        right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
+        right_eye_index = shift_fill(right_eye_index)
+        fix_layered_holes(right_eye, right_eye_index, -1)
+        if fill:
+            right_eye = shift_fill(right_eye)
+        else:
+            right_eye = torch.clamp(right_eye, 0, 1)
+        return src_image, right_eye.contiguous()
+    elif synthetic_view == "left":
+        left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
+        left_eye = unpad(left_eye)
+        left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
+        left_eye_index = shift_fill(left_eye_index)
+        fix_layered_holes(left_eye, left_eye_index, 1)
+        if fill:
+            left_eye = shift_fill(left_eye)
+        else:
+            left_eye = torch.clamp(left_eye, 0, 1)
+
+        return left_eye.contiguous(), src_image
 
 
-def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None):
+def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None, synthetic_view="both"):
     fill = (method == "forward_fill")
     with torch.inference_mode():
-        return depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=fill)
+        return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
+                                                 fill=fill, synthetic_view=synthetic_view)
 
 
 def _bench():
@@ -174,6 +205,7 @@ def _bench():
     import torchvision.transforms.functional as TF
     from nunif.modules.gaussian_filter import GaussianFilter2d
 
+    synthetic_view = "both"  # both, right, left
     device = "cuda:0"
     B = 4
     N = 100
@@ -194,11 +226,13 @@ def _bench():
     convergence = 0.5
 
     # benchmark
-    apply_divergence_forward_warp(rgb, depth, divergence, convergence, method="forward_fill")
+    apply_divergence_forward_warp(rgb, depth, divergence, convergence,
+                                  method="forward_fill", synthetic_view=synthetic_view)
     torch.cuda.synchronize()
     t = time.time()
     for _ in range(N):
-        apply_divergence_forward_warp(rgb, depth, divergence, convergence, method="forward_fill")
+        apply_divergence_forward_warp(rgb, depth, divergence, convergence,
+                                      method="forward_fill", synthetic_view=synthetic_view)
     torch.cuda.synchronize()
     print(1 / ((time.time() - t) / (B * N)), "FPS")
     max_vram_mb = int(torch.cuda.max_memory_allocated(device) / (1024 * 1024))

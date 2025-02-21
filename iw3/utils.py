@@ -141,28 +141,54 @@ def make_grid(batch, width, height, device):
     return grid
 
 
-def apply_divergence_grid_sample(c, depth, divergence, convergence):
+def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_view):
+    assert synthetic_view in {"both", "right", "left"}
     # BCHW
     B, _, H, W = depth.shape
+
+    if synthetic_view != "both":
+        divergence = divergence * 2
+
     shift_size = divergence * 0.01
     index_shift = depth * shift_size - (shift_size * convergence)
     delta = torch.cat([index_shift, torch.zeros_like(index_shift)], dim=1)
     grid = make_grid(B, W, H, c.device)
-    left_eye = backward_warp(c, grid, -delta, 1)
-    right_eye = backward_warp(c, grid, delta, 1)
+
+    if synthetic_view == "both":
+        left_eye = backward_warp(c, grid, -delta, 1)
+        right_eye = backward_warp(c, grid, delta, 1)
+    elif synthetic_view == "right":
+        left_eye = c
+        right_eye = backward_warp(c, grid, delta, 1)
+    elif synthetic_view == "left":
+        left_eye = backward_warp(c, grid, -delta, 1)
+        right_eye = c
 
     return left_eye, right_eye
 
 
 def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
-                           mapper, enable_amp):
+                           mapper, synthetic_view, enable_amp):
+    assert synthetic_view in {"both", "right", "left"}
     if getattr(model, "symmetric", False):
-        left_eye, right_eye = apply_divergence_nn_symmetric(model, c, depth, divergence, convergence, mapper, enable_amp)
+        left_eye, right_eye = apply_divergence_nn_symmetric(
+            model, c, depth, divergence, convergence,
+            mapper=mapper, synthetic_view=synthetic_view, enable_amp=enable_amp)
     else:
-        left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                       mapper, -1, enable_amp)
-        right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                        mapper, 1, enable_amp)
+        if synthetic_view == "both":
+            left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                           mapper, -1, enable_amp)
+            right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+                                            mapper, 1, enable_amp)
+        elif synthetic_view == "right":
+            left_eye = c
+            right_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence,
+                                            mapper, 1, enable_amp)
+        elif synthetic_view == "left":
+            left_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence,
+                                           mapper, -1, enable_amp)
+            right_eye = c
+
     return left_eye, right_eye
 
 
@@ -194,11 +220,15 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
 
 
 def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
-                                  mapper, enable_amp):
+                                  mapper, synthetic_view, enable_amp):
     # BCHW
+    assert synthetic_view in {"both", "right", "left"}
     assert model.delta_output
     assert model.symmetric
     B, _, H, W = depth.shape
+
+    if synthetic_view != "both":
+        divergence *= 2
 
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
@@ -210,8 +240,16 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
         delta = model(x)
     grid = make_grid(B, W, H, c.device)
     delta_scale = 1.0 / (W // 2 - 1)
-    left_eye = backward_warp(c, grid, delta, delta_scale)
-    right_eye = backward_warp(c, grid, -delta, delta_scale)
+
+    if synthetic_view == "both":
+        left_eye = backward_warp(c, grid, delta, delta_scale)
+        right_eye = backward_warp(c, grid, -delta, delta_scale)
+    elif synthetic_view == "right":
+        left_eye = c
+        right_eye = backward_warp(c, grid, -delta, delta_scale)
+    elif synthetic_view == "left":
+        left_eye = backward_warp(c, grid, delta, delta_scale)
+        right_eye = c
 
     return left_eye, right_eye
 
@@ -408,13 +446,14 @@ def apply_divergence(depth, im_org, args, side_model):
         depth = get_mapper(args.mapper)(depth)
         left_eye, right_eye = apply_divergence_grid_sample(
             im_org, depth,
-            args.divergence, convergence=args.convergence)
+            args.divergence, convergence=args.convergence,
+            synthetic_view=args.synthetic_view)
     elif args.method in {"forward", "forward_fill"}:
         depth = get_mapper(args.mapper)(depth)
         left_eye, right_eye = apply_divergence_forward_warp(
             im_org, depth,
             args.divergence, convergence=args.convergence,
-            method=args.method)
+            method=args.method, synthetic_view=args.synthetic_view)
     else:
         if args.stereo_width is not None:
             # NOTE: use src aspect ratio instead of depth aspect ratio
@@ -430,6 +469,7 @@ def apply_divergence(depth, im_org, args, side_model):
             side_model, im_org, depth,
             args.divergence, args.convergence,
             mapper=args.mapper,
+            synthetic_view=args.synthetic_view,
             enable_amp=not args.disable_amp)
 
     if not batch:
@@ -1306,6 +1346,10 @@ def create_parser(required_true=True):
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
                         help="left-right divergence method")
+    parser.add_argument("--synthetic-view", type=str, default="both", choices=["both", "right", "left"],
+                        help=("the side that generates synthetic view."
+                              "when `right`, the left view will be the original input image/frame"
+                              " and only the right will be synthesized."))
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect. 0-2 is reasonable value"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5,

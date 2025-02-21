@@ -235,7 +235,8 @@ def main(args):
                     elif args.method == "forward_fill":
                         c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
                         depth_f = apply_mapper(depth, mapper).unsqueeze(0)
-                        left_eye, right_eye = apply_divergence_forward_warp(c, depth_f, divergence, convergence, method="forward_fill")
+                        left_eye, right_eye = apply_divergence_forward_warp(c, depth_f, divergence, convergence,
+                                                                            method="forward_fill", synthetic_view="both")
                         sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
                         sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
 
