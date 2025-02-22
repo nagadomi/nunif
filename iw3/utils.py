@@ -906,6 +906,9 @@ def export_images(args):
             depth = depth_model.infer(im, tta=args.tta, low_vram=args.low_vram,
                                       enable_amp=not args.disable_amp,
                                       edge_dilation=edge_dilation)
+            if args.export_depth_fit:
+                depth = F.interpolate(depth.unsqueeze(0), size=(im_org.shape[1], im_org.shape[2]),
+                                      mode="bilinear", align_corners=True).squeeze(0)
             depth = depth_model.minmax_normalize(depth)
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
@@ -1053,6 +1056,9 @@ def export_video(args):
             depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                        enable_amp=not args.disable_amp,
                                        edge_dilation=edge_dilation)
+            if args.export_depth_fit:
+                depths = F.interpolate(depths, size=(x_orgs.shape[2], x_orgs.shape[3]),
+                                       mode="bilinear", align_corners=True)
             depths = depth_model.minmax_normalize(depths)
             if args.export_disparity:
                 depths = torch.stack([get_mapper(args.mapper)(depths[i]) for i in range(depths.shape[0])])
@@ -1429,6 +1435,8 @@ def create_parser(required_true=True):
                               "this means applying --mapper and --foreground-scale."))
     parser.add_argument("--export-depth-only", action="store_true",
                         help=("output only depth image and omits rgb image"))
+    parser.add_argument("--export-depth-fit", action="store_true",
+                        help=("fit depth image size to rgb image"))
     parser.add_argument("--mapper", type=str,
                         choices=["auto", "pow2", "softplus", "softplus2",
                                  "div_6", "div_4", "div_2", "div_1",
@@ -1540,6 +1548,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         args.export = True
     if args.export_depth_only and not args.export:
         raise ValueError("--export-depth-only must be specified together with --export or --export-disparity")
+    if args.export_depth_fit and not args.export:
+        raise ValueError("--export-depth-fit must be specified together with --export or --export-disparity")
 
     if is_video(args.output):
         # replace --video-format when filename is specified
