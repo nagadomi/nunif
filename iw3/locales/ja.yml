@@ -46,6 +46,10 @@
 "Anaglyph Method": "アナグリフ方式"
 "Flicker Reduction": "ちらつき軽減"
 "(experimental)": "(実験的)"
+"Depth Only": "深度画像のみ"
+"Exporting depth images only.\nNote that exporting with this option cannot be imported.": "深度画像のみエクスポート\nこのオプションでエクスポートするとインポートできないことに注意"
+"Resize to fit": "サイズを合わせる"
+"Resize depth images to the same size as rgb images.": "深度画像をRGB画像と同じサイズにリサイズ"
 
 "Video Encoding": "動画圧縮"
 

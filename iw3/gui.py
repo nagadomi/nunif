@@ -264,10 +264,20 @@ class MainFrame(wx.Frame):
         self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.99", "0.9", "0.75", "0.5"],
                                               name="cbo_ema_decay")
         self.cbo_ema_decay.SetSelection(2)
-
         self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
 
-        layout = wx.FlexGridSizer(rows=12, cols=2, vgap=4, hgap=4)
+        self.chk_export_depth_only = wx.CheckBox(self.grp_stereo, label=T("Depth Only"), name="chk_export_depth_only")
+        self.chk_export_depth_only.SetValue(False)
+        self.chk_export_depth_only.SetToolTip(T("Exporting depth images only.\n"
+                                                "Note that exporting with this option cannot be imported."))
+        self.chk_export_depth_only.Hide()
+
+        self.chk_export_depth_fit = wx.CheckBox(self.grp_stereo, label=T("Resize to fit"), name="chk_export_depth_fit")
+        self.chk_export_depth_fit.SetValue(False)
+        self.chk_export_depth_fit.SetToolTip(T("Resize depth images to the same size as rgb images."))
+        self.chk_export_depth_fit.Hide()
+
+        layout = wx.FlexGridSizer(rows=13, cols=2, vgap=4, hgap=4)
         layout.Add(self.lbl_divergence, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_divergence, 1, wx.EXPAND)
         layout.Add(self.lbl_convergence, 0, wx.ALIGN_CENTER_VERTICAL)
@@ -292,6 +302,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_stereo_format, 1, wx.EXPAND)
         layout.Add(self.lbl_anaglyph_method, 0, wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_anaglyph_method, 1, wx.EXPAND)
+        layout.Add(self.chk_export_depth_only, 0, wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_export_depth_fit, 1, wx.ALIGN_CENTER_VERTICAL)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -540,6 +552,8 @@ class MainFrame(wx.Frame):
         self.update_rembg_state()
         self.update_input_option_state()
         self.update_anaglyph_state()
+        self.update_export_option_state()
+
         if not self.chk_edge_dilation.IsChecked():
             self.update_model_selection()
         self.update_edge_dilation()
@@ -672,12 +686,22 @@ class MainFrame(wx.Frame):
             self.cbo_anaglyph_method.Hide()
         self.GetSizer().Layout()
 
+    def update_export_option_state(self):
+        if self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}:
+            self.chk_export_depth_only.Show()
+            self.chk_export_depth_fit.Show()
+        else:
+            self.chk_export_depth_only.Hide()
+            self.chk_export_depth_fit.Hide()
+        self.GetSizer().Layout()
+
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
 
     def on_selected_index_changed_cbo_stereo_format(self, event):
         self.update_input_option_state()
         self.update_anaglyph_state()
+        self.update_export_option_state()
 
     def on_selected_index_changed_cbo_video_format(self, event):
         self.update_video_format()
@@ -793,6 +817,13 @@ class MainFrame(wx.Frame):
         anaglyph = self.get_anaglyph_method()
         export = self.cbo_stereo_format.GetValue() == "Export"
         export_disparity = self.cbo_stereo_format.GetValue() == "Export disparity"
+        if export or export_disparity:
+            export_depth_only = self.chk_export_depth_only.IsChecked()
+            export_depth_fit = self.chk_export_depth_fit.IsChecked()
+        else:
+            export_depth_only = None
+            export_depth_fit = None
+
         debug_depth = self.cbo_stereo_format.GetValue() == "Debug Depth"
 
         if self.cbo_pad.GetValue():
@@ -863,8 +894,12 @@ class MainFrame(wx.Frame):
             half_tb=half_tb,
             cross_eyed=cross_eyed,
             anaglyph=anaglyph,
+
             export=export,
             export_disparity=export_disparity,
+            export_depth_only=export_depth_only,
+            export_depth_fit=export_depth_fit,
+
             debug_depth=debug_depth,
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
