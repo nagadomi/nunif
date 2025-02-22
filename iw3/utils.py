@@ -605,7 +605,9 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
     pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
     stop_event = args.state["stop_event"]
     suspend_event = args.state["suspend_event"]
-    with PoolExecutor(max_workers=4) as pool:
+
+    max_workers = max(args.max_workers, 8)
+    with PoolExecutor(max_workers=max_workers) as pool:
         for im, meta in loader:
             filename = meta["filename"]
             output_filename = path.join(
@@ -793,7 +795,9 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
     if output_dir.endswith("_LRF"):
         output_dir = output_dir[:-4]
     os.makedirs(output_dir, exist_ok=True)
-    with PoolExecutor(max_workers=4) as pool:
+
+    max_workers = max(args.max_workers, 8)
+    with PoolExecutor(max_workers=max_workers) as pool:
         futures = []
 
         def frame_callback(frame):
@@ -894,7 +898,9 @@ def export_images(args):
     pbar = tqdm_fn(ncols=80, total=len(files), desc="Images")
     stop_event = args.state["stop_event"]
     suspend_event = args.state["suspend_event"]
-    with PoolExecutor(max_workers=4) as pool, torch.inference_mode():
+
+    max_workers = max(args.max_workers, 8)
+    with PoolExecutor(max_workers=max_workers) as pool, torch.inference_mode():
         for im, meta in loader:
             basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
             depth_file = path.join(depth_dir, basename)
@@ -1066,12 +1072,20 @@ def export_video(args):
         depths = depths.detach().cpu()
         x_orgs = x_orgs.detach().cpu()
 
-        for x, depth, seq in zip(x_orgs, depths, pts):
-            seq = str(seq).zfill(8)
-            depth_model.save_depth(depth[0], path.join(depth_dir, f"{seq}.png"), normalize=False)
-            if not args.export_depth_only:
-                rgb = TF.to_pil_image(x)
-                rgb.save(path.join(rgb_dir, f"{seq}.png"))
+        max_workers = max(8 - args.max_workers, 1)
+        with PoolExecutor(max_workers=max_workers) as pool:  # io thread
+            futures = []
+            for x, depth, seq in zip(x_orgs, depths, pts):
+                seq = str(seq).zfill(8)
+                futures.append(
+                    pool.submit(depth_model.save_depth, depth[0],
+                                path.join(depth_dir, f"{seq}.png"), normalize=False))
+                if not args.export_depth_only:
+                    rgb = TF.to_pil_image(x)
+                    futures.append(pool.submit(save_image, rgb, path.join(rgb_dir, f"{seq}.png")))
+            # sync and check exception
+            for f in futures:
+                f.result()
 
     def _batch_callback(x, pts):
         if args.cuda_stream and device_is_cuda(x.device):
