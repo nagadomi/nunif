@@ -269,7 +269,7 @@ class MainFrame(wx.Frame):
         self.chk_export_depth_only = wx.CheckBox(self.grp_stereo, label=T("Depth Only"), name="chk_export_depth_only")
         self.chk_export_depth_only.SetValue(False)
         self.chk_export_depth_only.SetToolTip(T("Exporting depth images only.\n"
-                                                "Note that exporting with this option cannot be imported."))
+                                                "Note that exported data with this option cannot be imported."))
         self.chk_export_depth_only.Hide()
 
         self.chk_export_depth_fit = wx.CheckBox(self.grp_stereo, label=T("Resize to fit"), name="chk_export_depth_fit")
