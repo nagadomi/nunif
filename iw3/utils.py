@@ -927,12 +927,15 @@ def export_images(args):
 
 
 def get_resume_seq(depth_dir, rgb_dir):
+    last_seq = -1
     depth_files = sorted([path.basename(fn) for fn in ImageLoader.listdir(depth_dir)])
-    rgb_files = sorted([path.basename(fn) for fn in ImageLoader.listdir(rgb_dir)])
-    if rgb_files and depth_files:
-        last_seq = int(path.splitext(min(rgb_files[-1], depth_files[-1]))[0], 10)
+    if rgb_dir:
+        rgb_files = sorted([path.basename(fn) for fn in ImageLoader.listdir(rgb_dir)])
+        if rgb_files and depth_files:
+            last_seq = int(path.splitext(min(rgb_files[-1], depth_files[-1]))[0], 10)
     else:
-        last_seq = -1
+        if depth_files:
+            last_seq = int(path.splitext(depth_files[-1])[0], 10)
 
     return last_seq
 
@@ -959,6 +962,7 @@ def export_video(args):
             "export_options": {
                 "depth_model": args.depth_model,
                 "export_disparity": args.export_disparity,
+                "export_depth_only": args.export_depth_only,
                 "mapper": args.mapper,
                 "edge_dilation": args.edge_dilation,
                 "max_fps": args.max_fps,
@@ -978,7 +982,11 @@ def export_video(args):
         if y not in {"y", "ye", "yes"}:
             return
 
-    os.makedirs(rgb_dir, exist_ok=True)
+    if args.export_depth_only:
+        rgb_dir = None
+        config.rgb_dir = None
+    else:
+        os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
     if args.resume:
@@ -989,11 +997,14 @@ def export_video(args):
     if resume_seq > 0 and path.exists(audio_file):
         has_audio = True
     else:
-        has_audio = VU.export_audio(args.input, audio_file,
-                                    start_time=args.start_time, end_time=args.end_time,
-                                    title="Audio",
-                                    stop_event=args.state["stop_event"], suspend_event=args.state["suspend_event"],
-                                    tqdm_fn=args.state["tqdm_fn"])
+        if args.export_depth_only:
+            has_audio = False
+        else:
+            has_audio = VU.export_audio(args.input, audio_file,
+                                        start_time=args.start_time, end_time=args.end_time,
+                                        title="Audio",
+                                        stop_event=args.state["stop_event"], suspend_event=args.state["suspend_event"],
+                                        tqdm_fn=args.state["tqdm_fn"])
     if not has_audio:
         config.audio_file = None
 
@@ -1052,8 +1063,9 @@ def export_video(args):
         for x, depth, seq in zip(x_orgs, depths, pts):
             seq = str(seq).zfill(8)
             depth_model.save_depth(depth[0], path.join(depth_dir, f"{seq}.png"), normalize=False)
-            rgb = TF.to_pil_image(x)
-            rgb.save(path.join(rgb_dir, f"{seq}.png"))
+            if not args.export_depth_only:
+                rgb = TF.to_pil_image(x)
+                rgb.save(path.join(rgb_dir, f"{seq}.png"))
 
     def _batch_callback(x, pts):
         if args.cuda_stream and device_is_cuda(x.device):
@@ -1415,6 +1427,8 @@ def create_parser(required_true=True):
     parser.add_argument("--export-disparity", action="store_true",
                         help=("export dispary instead of depth. "
                               "this means applying --mapper and --foreground-scale."))
+    parser.add_argument("--export-depth-only", action="store_true",
+                        help=("output only depth image and omits rgb image"))
     parser.add_argument("--mapper", type=str,
                         choices=["auto", "pow2", "softplus", "softplus2",
                                  "div_6", "div_4", "div_2", "div_1",
@@ -1524,6 +1538,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
 
     if args.export_disparity:
         args.export = True
+    if args.export_depth_only and not args.export:
+        raise ValueError("--export-depth-only must be specified together with --export or --export-disparity")
 
     if is_video(args.output):
         # replace --video-format when filename is specified
