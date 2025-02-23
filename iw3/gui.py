@@ -10,6 +10,7 @@ import threading
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
+import wx.lib.stattext as stattext
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
@@ -91,7 +92,11 @@ class MainFrame(wx.Frame):
         self.initialize_component()
 
     def initialize_component(self):
-        self.SetFont(wx.Font(10, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        NORMAL_FONT = wx.Font(10, family=wx.FONTFAMILY_MODERN, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_NORMAL)
+        WARNING_FONT = wx.Font(8, family=wx.FONTFAMILY_MODERN, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_NORMAL)
+        WARNING_COLOR = (0xcc, 0x33, 0x33)
+
+        self.SetFont(NORMAL_FONT)
         self.CreateStatusBar()
 
         # input output panel
@@ -158,6 +163,11 @@ class MainFrame(wx.Frame):
         self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
         self.cbo_divergence = EditableComboBox(self.grp_stereo, choices=["5.0", "4.0", "3.0", "2.5", "2.0", "1.0"],
                                                name="cbo_divergence")
+        self.lbl_divergence_warning = stattext.GenStaticText(self.grp_stereo, label="")
+        self.lbl_divergence_warning.SetFont(WARNING_FONT)
+        self.lbl_divergence_warning.SetForegroundColour(WARNING_COLOR)
+        self.lbl_divergence_warning.Hide()
+
         self.cbo_divergence.SetToolTip("Divergence")
         self.cbo_divergence.SetSelection(4)
 
@@ -171,6 +181,12 @@ class MainFrame(wx.Frame):
         # SpinCtrlDouble is better, but cannot save with PersistenceManager
         self.sld_ipd_offset = wx.SpinCtrl(self.grp_stereo, value="0", min=-10, max=20, name="sld_ipd_offset")
         self.sld_ipd_offset.SetToolTip("IPD Offset")
+
+        self.lbl_synthetic_view = wx.StaticText(self.grp_stereo, label=T("Synthetic View"))
+        self.cbo_synthetic_view = wx.ComboBox(self.grp_stereo,
+                                              choices=["both", "right", "left"],
+                                              style=wx.CB_READONLY, name="cbo_synthetic_view")
+        self.cbo_synthetic_view.SetSelection(0)
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
@@ -280,32 +296,36 @@ class MainFrame(wx.Frame):
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.SetEmptyCellSize((0, 0))
 
-        layout.Add(self.lbl_divergence, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_divergence, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_convergence, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_convergence, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_ipd_offset, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.sld_ipd_offset, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_method, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_method, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stereo_width, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stereo_width, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_depth_model, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_depth_model, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_resolution, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_resolution, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_foreground_scale, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_foreground_scale, (7, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_edge_dilation, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_edge_dilation, (8, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_ema_normalize, (9, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_ema_decay, (9, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stereo_format, (10, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stereo_format, (10, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_anaglyph_method, (11, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_anaglyph_method, (11, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_export_depth_only, (12, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_export_depth_fit, (12, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        i = 0
+        layout.Add(self.lbl_divergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_divergence, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_convergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_convergence, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_ipd_offset, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sld_ipd_offset, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_synthetic_view, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_synthetic_view, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_method, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stereo_width, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stereo_width, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_depth_model, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_resolution, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_foreground_scale, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stereo_format, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_anaglyph_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_anaglyph_method, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_export_depth_only, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_export_depth_fit, (i, 1), flag=wx.ALIGN_CENTER_VERTICAL)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -516,6 +536,11 @@ class MainFrame(wx.Frame):
         self.pnl_file.bind_input_path_changed(self.on_text_changed_txt_input)
         self.pnl_file.bind_output_path_changed(self.on_text_changed_txt_output)
 
+        self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
+        self.cbo_synthetic_view.Bind(wx.EVT_TEXT, self.update_divergence_warning)
+        self.cbo_method.Bind(wx.EVT_TEXT, self.update_divergence_warning)
+        self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
+
         self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
         self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
@@ -561,6 +586,8 @@ class MainFrame(wx.Frame):
         self.update_edge_dilation()
         self.update_ema_normalize()
         self.grp_video.update_controls()
+
+        self.update_divergence_warning()
 
     def get_editable_comboboxes(self):
         editable_comboboxes = [
@@ -886,6 +913,7 @@ class MainFrame(wx.Frame):
             divergence=float(self.cbo_divergence.GetValue()),
             convergence=float(self.cbo_convergence.GetValue()),
             ipd_offset=float(self.sld_ipd_offset.GetValue()),
+            synthetic_view=self.cbo_synthetic_view.GetValue(),
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
             foreground_scale=float(self.cbo_foreground_scale.GetValue()),
@@ -1162,6 +1190,45 @@ class MainFrame(wx.Frame):
     def on_click_btn_delete_preset(self, event):
         self.delete_preset(self.cbo_app_preset.GetValue())
         event.Skip()
+
+    def on_click_divergence_warning(self, event):
+        self.lbl_divergence_warning.Hide()
+        self.GetSizer().Layout()
+
+    def update_divergence_warning(self, *args, **kwargs):
+        try:
+            divergence = float(self.cbo_divergence.GetValue())
+            method = self.cbo_method.GetValue()
+            synthetic_view = self.cbo_synthetic_view.GetValue()
+            max_divergence = float("inf")
+
+            if method in {"row_flow_v3", "row_flow_v3_sym"}:
+                if synthetic_view == "both":
+                    max_divergence = 5.0
+                else:
+                    max_divergence = 5.0 * 0.5
+            elif method == "row_flow_v2":
+                if synthetic_view == "both":
+                    max_divergence = 2.5
+                else:
+                    max_divergence = 2.5 * 0.5
+
+            if divergence > max_divergence:
+                self.lbl_divergence_warning.SetLabel(
+                    f"{divergence}: " + T("Out of range of training data") + f": {method}, {synthetic_view}"
+                )
+                self.lbl_divergence_warning.SetToolTip(
+                    T("This result could be unstable"),
+                )
+                self.lbl_divergence_warning.Show()
+            else:
+                self.lbl_divergence_warning.SetLabel("")
+                self.lbl_divergence_warning.SetToolTip("")
+                self.lbl_divergence_warning.Hide()
+
+            self.GetSizer().Layout()
+        except ValueError:
+            pass
 
 
 LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
