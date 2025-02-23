@@ -77,6 +77,16 @@ You can adjust the screen position by zoom-in/zoom-out on the VR Video Player.
 
 This may be adjustable on the VR Player. If so, set it to 0 (by default).
 
+### What is `--synthetic-view` option?
+
+With `both`, generate views for both eyes. With `left` or `right`, only one view is generated. The other side view will be the original image/frame.
+
+When `both` is specified, artifacts/distortions are balanced across the left and right eyes. This reduces the artifacts, but may cause artifacts seen in both eyes.
+
+When `left` or `right` is specified, one eye view will have no artifact/distortion because it is the original image, but the opposite eye view will have twice as much artifact/distortion. Whether `left` or `right` is better depends on your dominant eye.
+
+At the moment, I recommend `both`. `both` by default.
+
 ### What is `--foreground-scale` option?
 
 When specifying a positive value (1 .. 3), foreground depth is scaled up and background depth is scaled down.
