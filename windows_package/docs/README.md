@@ -78,3 +78,22 @@ The batch file is a text file, so you can view its contents in notepad or other 
 
 These actions do not intentionally access outside the folder. 
 
+## dev branch
+
+You can switch to `dev` branch by following steps.
+
+1. Run `nunif-prompt.bat`
+2. Type `git checkout -B dev origin/dev` on console and push Enter key.
+3. Run `update.bat`
+
+If it is successful, `(dev)` label is added to the title of the GUI window.
+
+### Switch back to master branch
+
+You can switch back to `master` branch (default branch) by following steps.
+
+1. Run `nunif-prompt.bat`
+2. Type `git checkout master` on the console and push Enter key.
+3. Run `update.bat`
+
+If it is successful, `(dev)` label is removed from the title of the GUI window.
