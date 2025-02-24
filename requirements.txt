@@ -9,7 +9,7 @@ wand >= 0.6.10
 fonttools
 scipy
 waitress
-bottle
+bottle==0.12.25
 diskcache
 flake8
 psutil
