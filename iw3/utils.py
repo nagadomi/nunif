@@ -453,7 +453,8 @@ def apply_divergence(depth, im_org, args, side_model):
         left_eye, right_eye = apply_divergence_forward_warp(
             im_org, depth,
             args.divergence, convergence=args.convergence,
-            method=args.method, synthetic_view=args.synthetic_view)
+            method=args.method, synthetic_view=args.synthetic_view,
+            inpaint_model=args.state["inpaint_model"])
     else:
         if args.stereo_width is not None:
             # NOTE: use src aspect ratio instead of depth aspect ratio
@@ -1378,6 +1379,8 @@ def create_parser(required_true=True):
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
                         help="left-right divergence method")
+    parser.add_argument("--inpaint-model", type=str, default=None,
+                        help="path for inpaint model")
     parser.add_argument("--synthetic-view", type=str, default="both", choices=["both", "right", "left"],
                         help=("the side that generates synthetic view."
                               "when `right`, the left view will be the original input image/frame"
@@ -1558,6 +1561,11 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
     if depth_model is None:
         depth_model = create_depth_model(args.depth_model)
 
+    if args.inpaint_model is not None:
+        inpaint_model = load_model(args.inpaint_model, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+    else:
+        inpaint_model = None
+
     if args.export_disparity:
         args.export = True
     if args.export_depth_only and not args.export:
@@ -1595,9 +1603,13 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         "suspend_event": suspend_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
+        "inpaint_model": inpaint_model,
         "device": create_device(args.gpu),
         "devices": [create_device(gpu_id) for gpu_id in args.gpu],
     }
+
+    gc_collect()
+
     return args
 
 

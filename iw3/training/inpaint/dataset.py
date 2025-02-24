@@ -54,7 +54,7 @@ def random_edge(x):
 
     n = random.randint(1, 2)
     for i in range(n):
-        step = random.randint(2, 16)
+        step = random.randint(2, 32)
         sign = random.choice([-1, 1])
         if horizontal:
             edge = edge | F.pad(F.pad(edge, (step * sign, 0, 0, 0)), (0, step * sign * -1, 0, 0))
@@ -94,7 +94,7 @@ def draw_line(block, p1, p2, fg, size, size_step):
 
 def draw_random_line(x, fg, size):
     block_size = min(x.shape[1], x.shape[2])
-    num_points = random.randint(2, 12)
+    num_points = random.randint(2, 32)
     points = []
     for i in range(num_points):
         points.append([random.randint(0, block_size - 1), random.randint(0, block_size - 1)])
@@ -152,7 +152,7 @@ def apply_random_mask(x):
     elif method == 2:
         mask = random_edge(x)
     elif method == 3:
-        size = random.randint(1, 8)
+        size = random.randint(1, 32)
         mask = draw_random_line(x, 1.0, size)
 
     if random.random() < 0.1:

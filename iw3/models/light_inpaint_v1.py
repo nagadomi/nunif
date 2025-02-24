@@ -3,36 +3,48 @@ import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model
 from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
-from nunif.modules.replication_pad2d import replication_pad2d_naive
+from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
 from nunif.modules.init import basic_module_init, icnr_init
 from nunif.modules.compile_wrapper import conditional_compile
-from nunif.modules.norm import RMSNorm1
+from nunif.modules.norm import FastLayerNorm
+from nunif.modules.attention import WindowGMLP2d
 
 
-class PoolBlock(nn.Module):
-    def __init__(self, in_channels, kernel_size=5, mlp_ratio=2, layer_norm=False):
+class GLUConvMLP(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, mlp_ratio=2, padding=True):
         super().__init__()
-        self.pooling = nn.AvgPool2d(kernel_size, stride=1, padding=kernel_size // 2, count_include_pad=False)
-        self.mlp = nn.ModuleList([
-            nn.Conv2d(in_channels, in_channels * mlp_ratio, kernel_size=1, stride=1, padding=0),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(in_channels * mlp_ratio, in_channels * mlp_ratio,
-                      kernel_size=3, stride=1, padding=0, groups=in_channels * mlp_ratio),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(in_channels * mlp_ratio, in_channels, kernel_size=1, stride=1, padding=0),
-        ])
-        if layer_norm:
-            self.norm = RMSNorm1((1, in_channels, 1, 1), dim=1)
+        mid = int(out_channels * mlp_ratio)
+        # assert kernel_size % 2 == 1
+        if padding:
+            self.pad = ReplicationPad2dNaive(((kernel_size - 1) // 2,) * 4, detach=True)
         else:
-            self.norm = nn.Identity()
+            self.pad = nn.Identity()
+        self.w1 = nn.Conv2d(in_channels, mid, kernel_size=1, stride=1, padding=0)
+        self.w2 = nn.Conv2d(mid // 2, out_channels, kernel_size=kernel_size, stride=1, padding=0)
+        basic_module_init(self)
 
     @conditional_compile(["NUNIF_TRAIN", "IW3_MAIN"])
     def forward(self, x):
-        x1 = self.norm(x)
-        x1 = self.pooling(x1) - x1
-        for block in self.mlp:
-            x1 = block(x1)
-        x = F.pad(x, (-1,) * 4) + x1
+        x = self.w1(x)
+        x = F.glu(x, dim=1)
+        x = self.pad(x)
+        x = self.w2(x)
+        x = F.leaky_relu(x, 0.2, inplace=True)
+        return x
+
+
+class GMLPBlock(nn.Module):
+    def __init__(self, in_channels, window_size, mlp_ratio=2, shift=False):
+        super().__init__()
+        self.gmlp = WindowGMLP2d(in_channels, window_size=window_size, shift=shift, mlp_ratio=mlp_ratio)
+        self.norm1 = FastLayerNorm(in_channels, bias=False)
+        self.norm2 = FastLayerNorm(in_channels, bias=False)
+        self.glu_conv = GLUConvMLP(in_channels, in_channels, mlp_ratio=mlp_ratio)
+
+    @conditional_compile(["NUNIF_TRAIN", "IW3_MAIN"])
+    def forward(self, x):
+        x = x + self.gmlp(x, self.norm1, self.norm2)
+        x = x + self.glu_conv(x)
         return x
 
 
@@ -41,26 +53,28 @@ class LightInpaintV1(I2IBaseModel):
     name = "inpaint.light_inpaint_v1"
 
     def __init__(self):
-        super(LightInpaintV1, self).__init__(locals(), scale=1, offset=12, in_channels=3, blend_size=8)
+        super(LightInpaintV1, self).__init__(locals(), scale=1, offset=0, in_channels=3, blend_size=8)
         self.downscaling_factor = 4
-        self.mod = 4
+        self.mod = 24
         pack = self.downscaling_factor ** 2
-        C = 64
+        C = 96
+        self.patch = nn.Conv2d(3 * pack, C, kernel_size=1, stride=1, padding=0)
         self.blocks = nn.ModuleList([
-            nn.Conv2d(5 * pack, C, kernel_size=1, stride=1, padding=0),
-            nn.LeakyReLU(0.2, inplace=True),
-            PoolBlock(C),
-            PoolBlock(C),
-            PoolBlock(C),
+            GMLPBlock(C, window_size=24, mlp_ratio=1, shift=False),
+            GMLPBlock(C, window_size=24, mlp_ratio=1, shift=True),
+            GMLPBlock(C, window_size=24, mlp_ratio=1, shift=False),
             nn.Conv2d(C, 3 * pack, kernel_size=1, stride=1, padding=0),
         ])
+        self.mask_bias = nn.Parameter(torch.zeros(1, C, 1, 1))
+        nn.init.trunc_normal_(self.mask_bias, 0, 0.01)
         basic_module_init(self)
         icnr_init(self.blocks[-1], scale_factor=4)
 
     def _forward(self, x, mask_f):
-        ones = torch.ones_like(mask_f)
-        x = torch.cat([x, ones, ones * mask_f], dim=1)
         x = pixel_unshuffle(x, self.downscaling_factor)
+        x = self.patch(x)
+        mask_f = mask_f.expand_as(x)
+        x = x * (1 - mask_f) + mask_f * self.mask_bias.to(x.dtype)
         for block in self.blocks:
             x = block(x)
         x = pixel_shuffle(x, self.downscaling_factor)
@@ -76,8 +90,11 @@ class LightInpaintV1(I2IBaseModel):
 
         mask_f = mask.to(x.dtype)
         mask_f = replication_pad2d_naive(mask_f, padding, detach=True)
+        mask_f = F.max_pool2d(mask_f, kernel_size=self.downscaling_factor, stride=self.downscaling_factor)
         x = self._forward(x, mask_f)
         x = F.pad(x, (0, -pad1, 0, -pad2))
+        mask = F.interpolate(mask_f, scale_factor=self.downscaling_factor, mode="nearest") > 0.5
+        mask = F.pad(mask, (0, -pad1, 0, -pad2))
 
         if not self.training:
             x.clamp_(0, 1)
@@ -89,25 +106,6 @@ class LightInpaintV1(I2IBaseModel):
 
         return src
 
-    @torch.inference_mode()
-    def infer(self, x, mask):
-        src = x
-        input_height, input_width = x.shape[2:]
-        pad1 = (self.mod * self.downscaling_factor) - input_width % (self.mod * self.downscaling_factor)
-        pad2 = (self.mod * self.downscaling_factor) - input_height % (self.mod * self.downscaling_factor)
-        padding = (self.i2i_offset, pad1 + self.i2i_offset, self.i2i_offset, pad2 + self.i2i_offset)
-        x = replication_pad2d_naive(x, padding, detach=True)
-
-        mask_f = mask.to(x.dtype)
-        mask_f = replication_pad2d_naive(mask_f, padding, detach=True)
-        x = self._forward(x, mask_f)
-        x = F.pad(x, (0, -pad1, 0, -pad2))
-
-        mask = mask.expand_as(src)
-        src[mask] = x[mask].clamp(0, 1).to(src.dtype)
-
-        return src
-
 
 def _bench(name):
     from nunif.models import create_model
@@ -116,10 +114,10 @@ def _bench(name):
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 20
     B = 1
-    # S = (4320, 7680)  # 8K, 9FPS, 2.3GB VRAM
-    S = (2160, 3840)  # 4K, 35FPS, 590MB VRAM
-    # S = (1080, 1920)  # HD, 130FPS, 150MB VRAM
-    # S = (320, 320) # tile, 1350FPS, 9MB VRAM
+    # S = (4320, 7680)  # 8K, 4.7FPS, 4.5GB VRAM
+    S = (2160, 3840)  # 4K, 18.3FPS, 900MB VRAM
+    # S = (1080, 1920)  # HD, 70FPS, 240MB VRAM
+    # S = (320, 320) # tile, 714FPS, 28MB VRAM
 
     model = create_model(name).to(device).eval()
     if do_compile:
@@ -127,7 +125,7 @@ def _bench(name):
     x = torch.zeros((B, 3, *S)).to(device)
     mask = torch.zeros((B, 1, *S), dtype=torch.bool).to(device)
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
-        z, *_ = model.infer(x, mask)
+        z, *_ = model(x, mask)
         print(z.shape)
         params = sum([p.numel() for p in model.parameters()])
         print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
@@ -137,7 +135,7 @@ def _bench(name):
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
-            z = model.infer(x, mask)
+            z = model(x, mask)
     torch.cuda.synchronize()
     print(1 / ((time.time() - t) / (B * N)), "FPS")
     max_vram_mb = int(torch.cuda.max_memory_allocated(device) / (1024 * 1024))

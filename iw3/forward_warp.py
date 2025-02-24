@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from nunif.modules.replication_pad2d import ReplicationPad2d
+from nunif.device import autocast
 
 
 def box_blur(x, kernel_size=7):
@@ -115,7 +116,8 @@ def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
     return out
 
 
-def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True, synthetic_view="both"):
+def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
+                                      synthetic_view="both", inpaint_model=None):
     src_image = c
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
@@ -160,8 +162,13 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         fix_layered_holes(right_eye, right_eye_index, -1)
 
         if fill:
-            # super simple inpainting
-            left_eye, right_eye = shift_fill(torch.cat([left_eye, right_eye], dim=1)).chunk(2, dim=1)
+            if inpaint_model is None:
+                # super simple inpainting
+                left_eye, right_eye = shift_fill(torch.cat([left_eye, right_eye], dim=1)).chunk(2, dim=1)
+            else:
+                with autocast(device=left_eye.device, enabled=True):
+                    left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
+                    right_eye = inpaint_model(right_eye, (right_eye < 0)[:, 0:1, :, :])
         else:
             # drop undefined values
             left_eye = torch.clamp(left_eye, 0, 1)
@@ -175,7 +182,11 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         right_eye_index = shift_fill(right_eye_index)
         fix_layered_holes(right_eye, right_eye_index, -1)
         if fill:
-            right_eye = shift_fill(right_eye)
+            if inpaint_model is None:
+                right_eye = shift_fill(right_eye)
+            else:
+                with autocast(device=right_eye.device, enabled=True):
+                    right_eye = inpaint_model(right_eye, (right_eye < 0)[:, 0:1, :, :])
         else:
             right_eye = torch.clamp(right_eye, 0, 1)
         return src_image, right_eye.contiguous()
@@ -186,18 +197,24 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         left_eye_index = shift_fill(left_eye_index)
         fix_layered_holes(left_eye, left_eye_index, 1)
         if fill:
-            left_eye = shift_fill(left_eye)
+            if inpaint_model is None:
+                left_eye = shift_fill(left_eye)
+            else:
+                with autocast(device=left_eye.device, enabled=True):
+                    left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
         else:
             left_eye = torch.clamp(left_eye, 0, 1)
 
         return left_eye.contiguous(), src_image
 
 
-def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None, synthetic_view="both"):
+def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None,
+                                  synthetic_view="both", inpaint_model=None):
     fill = (method == "forward_fill")
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
-                                                 fill=fill, synthetic_view=synthetic_view)
+                                                 fill=fill, synthetic_view=synthetic_view,
+                                                 inpaint_model=inpaint_model)
 
 
 def _bench():
