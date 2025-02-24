@@ -918,7 +918,7 @@ def export_images(input_path, output_dir, args, title=None):
                                       edge_dilation=edge_dilation)
             if args.export_depth_fit:
                 depth = F.interpolate(depth.unsqueeze(0), size=(im_org.shape[1], im_org.shape[2]),
-                                      mode="bilinear", align_corners=True).squeeze(0)
+                                      mode="bilinear", antialias=True, align_corners=True).squeeze(0)
             depth = depth_model.minmax_normalize(depth)
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
@@ -1069,7 +1069,7 @@ def export_video(input_filename, output_dir, args, title=None):
                                        edge_dilation=edge_dilation)
             if args.export_depth_fit:
                 depths = F.interpolate(depths, size=(x_orgs.shape[2], x_orgs.shape[3]),
-                                       mode="bilinear", align_corners=True)
+                                       mode="bilinear", antialias=True, align_corners=True)
             depths = depth_model.minmax_normalize(depths)
             if args.export_disparity:
                 depths = torch.stack([get_mapper(args.mapper)(depths[i]) for i in range(depths.shape[0])])
