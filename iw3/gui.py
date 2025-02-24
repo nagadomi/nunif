@@ -637,29 +637,24 @@ class MainFrame(wx.Frame):
 
     def update_input_option_state(self):
         input_path = self.pnl_file.input_path
-        is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
-        if is_export:
-            self.chk_resume.Enable()
-            self.chk_recursive.Disable()
-        else:
-            if is_yaml(input_path):
-                try:
-                    config = export_config.ExportConfig.load(input_path)
-                    if config.type == export_config.IMAGE_TYPE:
-                        self.chk_resume.Enable()
-                        self.chk_recursive.Disable()
-                    else:
-                        self.chk_resume.Disable()
-                        self.chk_recursive.Disable()
-                except:  # noqa
+        if is_yaml(input_path):
+            try:
+                config = export_config.ExportConfig.load(input_path)
+                if config.type == export_config.IMAGE_TYPE:
+                    self.chk_resume.Enable()
+                    self.chk_recursive.Disable()
+                else:
                     self.chk_resume.Disable()
                     self.chk_recursive.Disable()
-            elif path.isdir(input_path) or is_text(input_path):
-                self.chk_resume.Enable()
-                self.chk_recursive.Enable()
-            else:
+            except:  # noqa
                 self.chk_resume.Disable()
                 self.chk_recursive.Disable()
+        elif path.isdir(input_path) or is_text(input_path):
+            self.chk_resume.Enable()
+            self.chk_recursive.Enable()
+        else:
+            self.chk_resume.Disable()
+            self.chk_recursive.Disable()
         self.chk_recursive.SetValue(False)
 
     def reset_time_range(self):

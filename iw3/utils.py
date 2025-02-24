@@ -828,14 +828,18 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
         process_video_full(input_filename, output_path, args, depth_model, side_model)
 
 
-def export_images(args):
-    if path.isdir(args.input):
-        files = ImageLoader.listdir(args.input)
-        rgb_dir = path.normpath(path.abspath(args.input))
+def export_images(input_path, output_dir, args, title=None):
+    if path.isdir(input_path):
+        files = ImageLoader.listdir(input_path)
+        rgb_dir = path.normpath(path.abspath(input_path))
     else:
-        assert is_image(args.input)
-        files = [args.input]
-        rgb_dir = path.normpath(path.abspath(path.dirname(args.input)))
+        assert is_image(input_path)
+        files = [input_path]
+        rgb_dir = path.normpath(path.abspath(path.dirname(input_path)))
+
+    if not files:
+        # no image files
+        return
 
     if args.export_disparity:
         mapper = "none"
@@ -866,7 +870,6 @@ def export_images(args):
     )
     config.rgb_dir = rgb_dir
     config.audio_file = None
-    output_dir = args.output
     depth_dir = path.join(output_dir, config.depth_dir)
     config_file = path.join(output_dir, export_config.FILENAME)
 
@@ -896,7 +899,7 @@ def export_images(args):
         load_func_kwargs={"color": "rgb", "exif_transpose": not args.disable_exif_transpose})
     futures = []
     tqdm_fn = args.state["tqdm_fn"] or tqdm
-    pbar = tqdm_fn(ncols=80, total=len(files), desc="Images")
+    pbar = tqdm_fn(ncols=80, total=len(files), desc=title or "Images")
     stop_event = args.state["stop_event"]
     suspend_event = args.state["suspend_event"]
 
@@ -950,8 +953,9 @@ def get_resume_seq(depth_dir, rgb_dir):
     return last_seq
 
 
-def export_video(args):
-    basename = path.splitext(path.basename(args.input))[0]
+def export_video(input_filename, output_dir, args, title=None):
+    basename = path.splitext(path.basename(input_filename))[0]
+    title = title or path.basename(input_filename)
     if args.export_disparity:
         mapper = "none"
         edge_dilation = args.edge_dilation
@@ -981,7 +985,7 @@ def export_video(args):
         }
     )
     # NOTE: Windows does not allow creating folders with trailing spaces. basename.strip()
-    output_dir = path.join(args.output, basename.strip())
+    output_dir = path.join(output_dir, basename.strip())
     rgb_dir = path.join(output_dir, config.rgb_dir)
     depth_dir = path.join(output_dir, config.depth_dir)
     audio_file = path.join(output_dir, config.audio_file)
@@ -1010,9 +1014,9 @@ def export_video(args):
         if args.export_depth_only:
             has_audio = False
         else:
-            has_audio = VU.export_audio(args.input, audio_file,
+            has_audio = VU.export_audio(input_filename, audio_file,
                                         start_time=args.start_time, end_time=args.end_time,
-                                        title="Audio",
+                                        title=f"{title} Audio",
                                         stop_event=args.state["stop_event"], suspend_event=args.state["suspend_event"],
                                         tqdm_fn=args.state["tqdm_fn"])
     if not has_audio:
@@ -1112,14 +1116,14 @@ def export_video(args):
         require_pts=True,
         skip_pts=resume_seq
     )
-    VU.hook_frame(args.input,
+    VU.hook_frame(input_filename,
                   config_callback=config_callback,
                   frame_callback=frame_callback,
                   vf=args.vf,
                   stop_event=args.state["stop_event"],
                   suspend_event=args.state["suspend_event"],
                   tqdm_fn=args.state["tqdm_fn"],
-                  title=path.basename(args.input),
+                  title=title,
                   start_time=args.start_time,
                   end_time=args.end_time)
     frame_callback.shutdown()
@@ -1614,15 +1618,50 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
 
 
 def export_main(args):
-    if args.recursive:
-        raise NotImplementedError("`--recursive --export` is not supported")
     if is_text(args.input):
         raise NotImplementedError("--export with text format input is not supported")
 
-    if path.isdir(args.input) or is_image(args.input):
-        export_images(args)
+    depth_model = args.state["depth_model"]
+
+    if path.isdir(args.input):
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
+        if not args.recursive:
+            if depth_model.is_image_supported():
+                export_images(args.input, args.output, args)
+                gc_collect()
+            if depth_model.is_video_supported():
+                for video_file in VU.list_videos(args.input):
+                    if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                        return args
+                    export_video(video_file, args.output, args)
+                    gc_collect()
+        else:
+            subdirs = list_subdir(args.input, include_root=True, excludes=args.output)
+            for input_dir in subdirs:
+                output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
+                if depth_model.is_image_supported():
+                    export_images(input_dir, output_dir, args, title=path.relpath(input_dir, args.input))
+                    gc_collect()
+                if depth_model.is_video_supported():
+                    for video_file in VU.list_videos(input_dir):
+                        if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                            return args
+                        export_video(video_file, output_dir, args)
+                        gc_collect()
+
+    elif is_image(args.input):
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
+        if not depth_model.is_image_supported():
+            raise ValueError(f"{args.depth_model} does not support image input")
+        export_images(args.input, args.output, args)
     elif is_video(args.input):
-        export_video(args)
+        if not is_output_dir(args.output):
+            raise ValueError("-o must be a directory")
+        if not depth_model.is_video_supported():
+            raise ValueError(f"{args.depth_model} not support video input")
+        export_video(args.input, args.output, args)
     else:
         raise ValueError("Unrecognized file type")
 
