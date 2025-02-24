@@ -20,6 +20,7 @@ from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.filename import sanitize_filename
+from nunif.utils.git import get_current_branch
 from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -71,10 +72,16 @@ class IW3App(wx.App):
 
 class MainFrame(wx.Frame):
     def __init__(self):
+        branch_name = get_current_branch()
+        if branch_name is None or branch_name in {"master", "main"}:
+            branch_tag = ""
+        else:
+            branch_tag = f" ({branch_name})"
+
         super(MainFrame, self).__init__(
             None,
             name="iw3-gui",
-            title=T("iw3-gui"),
+            title=T("iw3-gui") + branch_tag,
             size=(1100, 720),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
