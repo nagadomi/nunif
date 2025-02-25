@@ -69,12 +69,13 @@ class WindowDCT(nn.Module):
 
 
 class ChannelIDCT(nn.Module):
-    def __init__(self, in_channels, out_channels, window_size, project=True):
+    def __init__(self, in_channels, out_channels, window_size, project=True, bias=True):
         super().__init__()
         self.out_channels = out_channels
         self.window_size = window_size
         if project:
-            self.proj = nn.Conv2d(in_channels, out_channels * window_size ** 2, kernel_size=1, stride=1, padding=0)
+            self.proj = nn.Conv2d(in_channels, out_channels * window_size ** 2,
+                                  kernel_size=1, stride=1, padding=0, bias=bias)
         else:
             self.proj = nn.Identity()
             assert in_channels == out_channels * window_size ** 2
