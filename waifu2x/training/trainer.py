@@ -558,7 +558,7 @@ class Waifu2xTrainer(Trainer):
             scale_factor = 4
         elif self.args.method in {"scale8x", "noise_scale8x"}:
             scale_factor = 8
-        elif self.args.method in {"noise"}:
+        elif self.args.method in {"noise", "ae"}:
             scale_factor = 1
         else:
             raise NotImplementedError()
@@ -653,6 +653,8 @@ class Waifu2xTrainer(Trainer):
             return f"noise{self.args.noise_level}_scale8x"
         elif self.args.method == "noise":
             return f"noise{self.args.noise_level}"
+        elif self.args.method == "ae":
+            return "ae"
         else:
             raise NotImplementedError()
 
@@ -705,7 +707,7 @@ def train(args):
     if args.pre_antialias and args.arch != "waifu2x.swin_unet_4x":
         raise ValueError("--pre-antialias is only supported for waifu2x.swin_unet_4x")
 
-    if args.method in {"scale", "scale4x", "scale8x"}:
+    if args.method in {"scale", "scale4x", "scale8x", "ae"}:
         # disable
         args.noise_level = -1
 
@@ -745,7 +747,7 @@ def register(subparsers, default_parser):
     waifu2x_models = sorted([name for name in get_model_names() if name.startswith("waifu2x.")])
 
     parser.add_argument("--method", type=str,
-                        choices=["noise", "scale", "noise_scale",
+                        choices=["noise", "scale", "noise_scale", "ae",
                                  "scale4x", "noise_scale4x",
                                  "scale8x", "noise_scale8x"],
                         required=True,
