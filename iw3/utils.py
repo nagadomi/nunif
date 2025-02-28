@@ -1077,20 +1077,12 @@ def export_video(input_filename, output_dir, args, title=None):
         depths = depths.detach().cpu()
         x_orgs = x_orgs.detach().cpu()
 
-        max_workers = max(8 - args.max_workers, 1)
-        with PoolExecutor(max_workers=max_workers) as pool:  # io thread
-            futures = []
-            for x, depth, seq in zip(x_orgs, depths, pts):
-                seq = str(seq).zfill(8)
-                futures.append(
-                    pool.submit(depth_model.save_depth, depth[0],
-                                path.join(depth_dir, f"{seq}.png"), normalize=False))
-                if not args.export_depth_only:
-                    rgb = TF.to_pil_image(x)
-                    futures.append(pool.submit(save_image, rgb, path.join(rgb_dir, f"{seq}.png")))
-            # sync and check exception
-            for f in futures:
-                f.result()
+        for x, depth, seq in zip(x_orgs, depths, pts):
+            seq = str(seq).zfill(8)
+            depth_model.save_depth(depth[0], path.join(depth_dir, f"{seq}.png"), normalize=False)
+            if not args.export_depth_only:
+                rgb = TF.to_pil_image(x)
+                save_image(rgb, path.join(rgb_dir, f"{seq}.png"))
 
     def _batch_callback(x, pts):
         if args.cuda_stream and device_is_cuda(x.device):
