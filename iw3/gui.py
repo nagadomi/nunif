@@ -644,6 +644,8 @@ class MainFrame(wx.Frame):
 
     def update_input_option_state(self):
         input_path = self.pnl_file.input_path
+        is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
+
         if is_yaml(input_path):
             try:
                 config = export_config.ExportConfig.load(input_path)
@@ -660,7 +662,10 @@ class MainFrame(wx.Frame):
             self.chk_resume.Enable()
             self.chk_recursive.Enable()
         else:
-            self.chk_resume.Disable()
+            if is_export:
+                self.chk_resume.Enable()
+            else:
+                self.chk_resume.Disable()
             self.chk_recursive.Disable()
         self.chk_recursive.SetValue(False)
 
