@@ -354,8 +354,29 @@ def scale_16x(im, meta):
 
 
 @bottle.get("/api")
-def api_get_error():
-    bottle.abort(405, "Method Not Allowed")
+def api_get():
+    last_request = request.get_cookie("last_request", secret=request.headers.get("User-Agent"))
+    if not isinstance(last_request, dict):
+        bottle.abort(400, "Bad Request")
+
+    key = last_request.get("key", None)
+    image_format = last_request.get("image_format", None)
+    output_filename = last_request.get("output_filename", None)
+
+    if not (key and image_format and output_filename):
+        bottle.abort(400, "Bad Request")
+
+    if image_format not in {"png", "webp"}:
+        bottle.abort(400, "Bad Request")
+
+    image_data = cache.get(key, None)
+    if image_data is None:
+        bottle.abort(400, "Bad Request")
+
+    res = HTTPResponse(status=200, body=image_data)
+    res.set_header("Content-Type", f"image/{image_format}")
+    res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
+    return res
 
 
 @bottle.post("/api")
@@ -431,6 +452,11 @@ def api():
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", f"image/{image_format}")
     res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
+
+    # Store the last request info to cookie for redisplay on GET request
+    res.set_cookie("last_request",
+                   {"key": key, "image_format": image_format, "output_filename": output_filename},
+                   secret=request.headers.get("User-Agent"))  # scrambling
 
     return res
 
