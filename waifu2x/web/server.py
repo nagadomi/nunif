@@ -361,6 +361,7 @@ def api_get():
 
     key = last_request.get("key", None)
     image_format = last_request.get("image_format", None)
+    scale = last_request.get("scale", None)
     output_filename = last_request.get("output_filename", None)
 
     if not (key and image_format and output_filename):
@@ -372,6 +373,12 @@ def api_get():
     image_data = cache.get(key, None)
     if image_data is None:
         bottle.abort(400, "Bad Request")
+
+    if scale == ScaleOption.X16:
+        im, meta = IL.decode_image(image_data, keep_alpha=True)
+        im = scale_16x(im, meta)
+        image_data = IL.encode_image(im, format=image_format, meta=meta)
+        im.close()
 
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", f"image/{image_format}")
@@ -455,7 +462,7 @@ def api():
 
     # Store the last request info to cookie for redisplay on GET request
     res.set_cookie("last_request",
-                   {"key": key, "image_format": image_format, "output_filename": output_filename},
+                   {"key": key, "image_format": image_format, "scale": scale, "output_filename": output_filename},
                    secret=request.headers.get("User-Agent"))  # scrambling
 
     return res
