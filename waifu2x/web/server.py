@@ -357,7 +357,7 @@ def scale_16x(im, meta):
 def api_get():
     last_request = request.get_cookie("last_request", secret=request.headers.get("User-Agent"))
     if not isinstance(last_request, dict):
-        bottle.abort(400, "Bad Request")
+        bottle.redirect("/")
 
     key = last_request.get("key", None)
     image_format = last_request.get("image_format", None)
@@ -365,14 +365,14 @@ def api_get():
     output_filename = last_request.get("output_filename", None)
 
     if not (key and image_format and output_filename):
-        bottle.abort(400, "Bad Request")
+        bottle.redirect("/")
 
     if image_format not in {"png", "webp"}:
-        bottle.abort(400, "Bad Request")
+        bottle.redirect("/")
 
     image_data = cache.get(key, None)
     if image_data is None:
-        bottle.abort(400, "Bad Request")
+        bottle.redirect("/")
 
     if scale == ScaleOption.X16:
         im, meta = IL.decode_image(image_data, keep_alpha=True)
