@@ -57,7 +57,7 @@ pip3 install -r requirements-gui.txt
 If want to use NVENC(`h264_nvenc` and `hevc_nvenc`) in iw3, install PyAV from source code.
 ```
 sudo apt-get install ffmpeg libavcodec-dev libavformat-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev
-pip3 install av --force-reinstall --no-binary av
+pip3 install av==13.1.0 --force-reinstall --no-binary av
 ```
 
 ## 5. Download pre-trained models
