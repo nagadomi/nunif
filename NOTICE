@@ -90,5 +90,10 @@ nunif/modules/norm.py: FastLayerNorm
 From timm https://github.com/huggingface/pytorch-image-models
 Ross Wightman / Apache License Version 2.0
 
+---
+nunif/utils/transnetv2.py
+From TransNetV2 https://github.com/soCzech/TransNetV2
+Tomáš Souček / MIT License
+
 ----
 Other libraries used are listed in `requirements.txt`.
