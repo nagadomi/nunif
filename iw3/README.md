@@ -338,7 +338,7 @@ If the results are acceptable, process the full video.
 
 ## Limitation
 
-`--method row_flow`(by default) is currently only trained for the range `0.0 <= divergence <= 2.5` and `0.0 <= convergence <= 1.0`.
+`--method row_flow_v3`(by default) is currently only trained for the range `0.0 <= divergence <= 5.0` and `0.0 <= convergence <= 1.0`.
 
 ## About row_flow model and its training
 
