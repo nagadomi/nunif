@@ -238,7 +238,8 @@ class FixedFPSFilter():
         video_filters = self.parse_vf_option(vf)
         if colorspace is not None:
             video_filters.append(("colorspace", colorspace))
-        video_filters.append(("fps", str(fps)))
+        if fps is not None:
+            video_filters.append(("fps", str(fps)))
         video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
         self.build_graph(self.graph, video_stream, video_filters)
 
