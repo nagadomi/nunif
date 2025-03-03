@@ -51,11 +51,11 @@ class TransNetV2(nn.Module):
         self.eval()
 
     def forward(self, inputs):
-        assert isinstance(inputs, torch.Tensor) and list(inputs.shape[2:]) == [27, 48, 3] and inputs.dtype == torch.uint8, \
-            "incorrect input type and/or shape"
-        # uint8 of shape [B, T, H, W, 3] to float of shape [B, 3, T, H, W]
-        x = inputs.permute([0, 4, 1, 2, 3]).float()
-        x = x.div_(255.)
+        assert (isinstance(inputs, torch.Tensor) and
+                list(inputs.shape[2:]) == [27, 48, 3] and
+                inputs.dtype in {torch.float32, torch.float16}), "incorrect input type and/or shape"
+        # shape [B, T, H, W, 3] to float of shape [B, 3, T, H, W]
+        x = inputs.permute([0, 4, 1, 2, 3])
 
         block_features = []
         for block in self.SDDCNN:
@@ -87,6 +87,12 @@ class TransNetV2(nn.Module):
             return one_hot, {"many_hot": self.cls_layer2(x)}
 
         return one_hot
+
+    def load(self, map_location="cpu"):
+        self.load_state_dict(torch.hub.load_state_dict_from_url(
+            "https://github.com/nagadomi/nunif/releases/download/0.0.0/transnetv2-pytorch-weights.pth",
+            weights_only=True, map_location=map_location))
+        return self
 
 
 class StackedDDCNNV2(nn.Module):
@@ -318,3 +324,10 @@ class ColorHistograms(nn.Module):
         if self.fc is not None:
             return functional.relu(self.fc(similarities))
         return similarities
+
+
+if __name__ == "__main__":
+    device = torch.device("cuda")
+    model = TransNetV2().load().eval().to(device)
+
+    # See nunif/cli/split_video.py
