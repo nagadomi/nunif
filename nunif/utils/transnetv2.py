@@ -4,11 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
-import random
-
-
 class TransNetV2(nn.Module):
-
     def __init__(self,
                  F=16, L=3, S=2, D=1024,
                  use_many_hot_targets=True,
@@ -51,11 +47,13 @@ class TransNetV2(nn.Module):
         self.eval()
 
     def forward(self, inputs):
-        assert (isinstance(inputs, torch.Tensor) and
-                list(inputs.shape[2:]) == [27, 48, 3] and
-                inputs.dtype in {torch.float32, torch.float16}), "incorrect input type and/or shape"
-        # shape [B, T, H, W, 3] to float of shape [B, 3, T, H, W]
-        x = inputs.permute([0, 4, 1, 2, 3])
+        assert torch.is_tensor(inputs) and inputs.dtype in {torch.float32, torch.float16}
+        if inputs.ndim == 4 and inputs.shape[1:] == (3, 27, 48):
+            inputs = inputs.unsqueeze(0).permute(0, 1, 3, 4, 2)
+        else:
+            assert inputs.ndim == 5 and inputs.shape[2:] == (3, 27, 48), "incorrect input type and/or shape"
+            inputs = inputs.permute(0, 1, 3, 4, 2)
+        x = inputs.permute([0, 4, 1, 2, 3]).contiguous()
 
         block_features = []
         for block in self.SDDCNN:
@@ -96,7 +94,6 @@ class TransNetV2(nn.Module):
 
 
 class StackedDDCNNV2(nn.Module):
-
     def __init__(self,
                  in_filters,
                  n_blocks,
@@ -135,13 +132,7 @@ class StackedDDCNNV2(nn.Module):
 
         if self.shortcut is not None:
             if self.stochastic_depth_drop_prob != 0.:
-                if self.training:
-                    if random.random() < self.stochastic_depth_drop_prob:
-                        x = shortcut
-                    else:
-                        x = x + shortcut
-                else:
-                    x = (1 - self.stochastic_depth_drop_prob) * x + shortcut
+                x = (1 - self.stochastic_depth_drop_prob) * x + shortcut
             else:
                 x += shortcut
 
@@ -150,7 +141,6 @@ class StackedDDCNNV2(nn.Module):
 
 
 class DilatedDCNNV2(nn.Module):
-
     def __init__(self,
                  in_filters,
                  filters,
