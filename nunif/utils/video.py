@@ -761,15 +761,18 @@ def process_video(input_path, output_path,
         if stop_event is not None and stop_event.is_set():
             break
 
-    frame = fps_filter.update(None)
-    if frame is not None:
-        frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
-        for new_frame in get_new_frames(frame_callback(frame)):
-            new_frame = reformatter(new_frame)
-            enc_packet = video_output_stream.encode(new_frame)
-            if enc_packet:
-                output_container.mux(enc_packet)
-            pbar.update(1)
+    while True:
+        frame = fps_filter.update(None)
+        if frame is not None:
+            frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+            for new_frame in get_new_frames(frame_callback(frame)):
+                new_frame = reformatter(new_frame)
+                enc_packet = video_output_stream.encode(new_frame)
+                if enc_packet:
+                    output_container.mux(enc_packet)
+                pbar.update(1)
+        else:
+            break
 
     for new_frame in get_new_frames(frame_callback(None)):
         new_frame = reformatter(new_frame)
@@ -996,11 +999,14 @@ def hook_frame(input_path,
         if stop_event is not None and stop_event.is_set():
             break
 
-    frame = fps_filter.update(None)
-    if frame is not None:
-        frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
-        frame_callback(frame)
-        pbar.update(1)
+    while True:
+        frame = fps_filter.update(None)
+        if frame is not None:
+            frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+            frame_callback(frame)
+            pbar.update(1)
+        else:
+            break
 
     frame_callback(None)
     input_container.close()
