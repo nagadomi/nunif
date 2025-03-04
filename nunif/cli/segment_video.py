@@ -122,8 +122,6 @@ def close_output_video(output_container):
 def segment_video(pts, args):
     if args.codec == "ffv1":
         ext = ".mkv"
-    elif args.codec == "utvideo":
-        ext = ".avi"
     else:
         ext = ".mp4"
     input_container = av.open(args.input)
@@ -196,7 +194,7 @@ def main():
     parser.add_argument("--threshold", type=float, default=0.5, help="probability threshold")
     parser.add_argument("--reset-timestamp", action="store_true", help="reset timestamp")
     parser.add_argument("--crf", type=int, default=0, help="crf")
-    parser.add_argument("--codec", type=str, default=VU.LIBH264, choices=["libx264", "libopenh264", "ffv1", "utvideo"])
+    parser.add_argument("--codec", type=str, default=VU.LIBH264, choices=["libx264", "libopenh264", "ffv1"])
     args = parser.parse_args()
 
     os.makedirs(args.output, exist_ok=True)
