@@ -254,6 +254,18 @@ class FixedFPSFilter():
             return None
 
 
+class VideoFilter(FixedFPSFilter):
+    def __init__(self, video_stream, vf):
+        super().__init__(video_stream, fps=None, vf=vf)
+        self.dummy = not vf
+
+    def update(self, frame):
+        if self.dummy:
+            return frame
+        else:
+            return super().update(frame)
+
+
 class VideoOutputConfig():
     def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={},
                  output_width=None, output_height=None, colorspace=None,
