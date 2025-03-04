@@ -98,7 +98,7 @@ def open_output_video(output_path, ext, no, video_input_stream, audio_input_stre
     video_output_stream = output_container.add_stream(args.codec, rate=video_input_stream.guessed_rate)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = video_input_stream.pix_fmt
-    if args.max_height is None:
+    if args.max_height is None or args.max_height >= video_input_stream.height:
         video_output_stream.width = video_input_stream.width
         video_output_stream.height = video_input_stream.height
     else:
@@ -138,10 +138,10 @@ def close_output_video(output_container, video_filter):
 
 
 def create_video_filter(video_input_stream, args):
-    if args.max_height is not None:
-        return VU.VideoFilter(video_input_stream, vf=f"scale=-2:{args.max_height}:flags=bilinear")
-    else:
+    if args.max_height is None or args.max_height >= video_input_stream.height:
         return VU.VideoFilter(video_input_stream, vf="")  # dummy
+    else:
+        return VU.VideoFilter(video_input_stream, vf=f"scale=-2:{args.max_height}:flags=bilinear")
 
 
 def segment_video(pts, args):
