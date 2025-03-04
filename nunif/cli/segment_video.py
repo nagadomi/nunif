@@ -10,6 +10,7 @@ from os import path
 from tqdm import tqdm
 from nunif.device import create_device
 from nunif.logger import logger
+import math
 
 
 def source_fps_config(args, fps_hook=None):
@@ -73,7 +74,7 @@ def detect_segments(model, device, args):
     VU.hook_frame(args.input, callback_pool,
                   config_callback=source_fps_config(args),
                   title="Shot Boundary Detection",
-                  vf="scale=48:27")  # input size for TransNetV2
+                  vf="scale=48:27:flags=bilinear")  # input size for TransNetV2
 
     last_x = frames[-1][0][-1:]
     last_pts = frames[-1][1][-1:]
@@ -97,8 +98,15 @@ def open_output_video(output_path, ext, no, video_input_stream, audio_input_stre
     video_output_stream = output_container.add_stream(args.codec, rate=video_input_stream.guessed_rate)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = video_input_stream.pix_fmt
-    video_output_stream.width = video_input_stream.width
-    video_output_stream.height = video_input_stream.height
+    if args.max_height is None:
+        video_output_stream.width = video_input_stream.width
+        video_output_stream.height = video_input_stream.height
+    else:
+        width = math.ceil((args.max_height / video_input_stream.height) * video_input_stream.width)
+        if width % 2 != 0:
+            width -= 1
+        video_output_stream.width = width
+        video_output_stream.height = args.max_height
 
     if args.codec == "libx264":
         video_output_stream.options = {"crf": str(args.crf), "preset": "veryfast"}
@@ -112,11 +120,28 @@ def open_output_video(output_path, ext, no, video_input_stream, audio_input_stre
     return output_container
 
 
-def close_output_video(output_container):
+def close_output_video(output_container, video_filter):
+    while True:
+        frame = video_filter.update(None)
+        if frame is not None:
+            enc_packet = output_container.streams.video[0].encode(frame)
+            if enc_packet:
+                output_container.mux(enc_packet)
+        else:
+            break
+
     enc_packet = output_container.streams.video[0].encode(None)
     if enc_packet:
         output_container.mux(enc_packet)
+
     output_container.close()
+
+
+def create_video_filter(video_input_stream, args):
+    if args.max_height is not None:
+        return VU.VideoFilter(video_input_stream, vf=f"scale=-2:{args.max_height}:flags=bilinear")
+    else:
+        return VU.VideoFilter(video_input_stream, vf="")  # dummy
 
 
 def segment_video(pts, args):
@@ -144,16 +169,21 @@ def segment_video(pts, args):
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     audio_base_pts = video_base_pts = None
     prev_pts = -1
+    video_filter = create_video_filter(video_input_stream, args)
     for packet in input_container.demux(streams):
         if packet.stream.type == "video":
             for frame in packet.decode():
+                frame = video_filter.update(frame)
+                if frame is None:
+                    continue
                 if prev_pts in pts:
                     # next video
-                    close_output_video(output_container)
+                    close_output_video(output_container, video_filter)
                     video_no += 1
                     output_container = open_output_video(args.output, ext, video_no, video_input_stream, audio_input_stream,
                                                          args=args)
                     audio_base_pts = video_base_pts = None
+                    video_filter = create_video_filter(video_input_stream, args)
 
                 prev_pts = frame.pts
                 if video_base_pts is None:
@@ -179,7 +209,7 @@ def segment_video(pts, args):
                 packet.dts = None
             output_container.mux(packet)
 
-    close_output_video(output_container)
+    close_output_video(output_container, video_filter)
     input_container.close()
     pbar.close()
 
@@ -195,7 +225,11 @@ def main():
     parser.add_argument("--reset-timestamp", action="store_true", help="reset timestamp")
     parser.add_argument("--crf", type=int, default=0, help="crf")
     parser.add_argument("--codec", type=str, default=VU.LIBH264, choices=["libx264", "libopenh264", "ffv1"])
+    parser.add_argument("--max-height", type=int, help="max height px for downscaling")
     args = parser.parse_args()
+
+    if args.max_height is not None and args.max_height % 2 != 0:
+        raise ValueError("--max-height must be multiple of 2")
 
     os.makedirs(args.output, exist_ok=True)
 
