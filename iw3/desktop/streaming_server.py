@@ -25,9 +25,9 @@ class StreamingServer():
             frame_width, frame_height, fps,
             index_template,
             stream_uri="/stream.jpg", stream_content_type="image/jpeg",
-            auth=None):
+            auth=None, host=""):
         self.port = port
-        self.host = ""
+        self.host = host
         self.lock = lock
         self.op_lock = threading.Lock()
         self.frame_width = frame_width

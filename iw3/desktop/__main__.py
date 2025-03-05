@@ -16,6 +16,7 @@ from ..utils import (
     HUB_MODEL_DIR, resolve_mapper_name
 )
 import socket
+import struct
 from nunif.utils.ui import TorchHubDir
 from nunif.device import create_device
 from nunif.initializer import gc_collect
@@ -33,6 +34,22 @@ def get_local_address():
         return ip
     except: # noqa
         return "127.0.0.1"  # unknown
+
+
+def is_private_address(ip):
+    """ https://stackoverflow.com/a/8339939
+    """
+    f = struct.unpack("!I", socket.inet_pton(socket.AF_INET, ip))[0]
+    private = (
+        [2130706432, 4278190080],  # 127.0.0.0,   255.0.0.0   https://www.rfc-editor.org/rfc/rfc3330
+        [3232235520, 4294901760],  # 192.168.0.0, 255.255.0.0 https://www.rfc-editor.org/rfc/rfc1918
+        [2886729728, 4293918720],  # 172.16.0.0,  255.240.0.0 https://www.rfc-editor.org/rfc/rfc1918
+        [167772160, 4278190080],   # 10.0.0.0,    255.0.0.0   https://www.rfc-editor.org/rfc/rfc1918
+    )
+    for net in private:
+        if (f & net[1]) == net[0]:
+            return True
+    return False
 
 
 def load_side_model(args):
@@ -66,9 +83,12 @@ def take_screenshot(mouse_position=None):
 
 
 def main():
+    local_address = get_local_address()
     parser = create_parser(required_true=False)
     parser.add_argument("--port", type=int, default=1303,
                         help="HTTP listen port")
+    parser.add_argument("--bind-addr", type=str, default=local_address,
+                        help="HTTP listen address")
     parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")
     parser.add_argument("--password", type=str, help="HTTP Basic Authentication password")
     parser.add_argument("--stream-fps", type=int, default=15, help="Streaming FPS")
@@ -84,6 +104,10 @@ def main():
         ema_normalize=True,
     )
     args = parser.parse_args()
+    if args.bind_addr == "0.0.0.0":
+        pass  # Allows specifying undefined addresses
+    elif args.bind_addr == "127.0.0.1" or not is_private_address(args.bind_addr):
+        raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address. Specify --bind-addr option")
 
     # initialize
 
@@ -125,6 +149,7 @@ def main():
 
     lock = threading.Lock()
     server = StreamingServer(
+        host=args.bind_addr,
         port=args.port, lock=lock,
         frame_width=frame_width, frame_height=frame_height, fps=args.stream_fps,
         index_template=index_template,
@@ -135,7 +160,7 @@ def main():
     # main loop
     empty_app = wx.App()  # noqa: this is needed to initialize wx.GetMousePosition()
     server.start()
-    print(f"Open http://{get_local_address()}:{args.port}")
+    print(f"Open http://{args.bind_addr}:{args.port}")
     count = 0
     fps_counter = deque(maxlen=300)
     try:
