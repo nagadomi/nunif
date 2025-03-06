@@ -85,6 +85,9 @@ class StreamingServer():
         with self.lock:
             frame_data = self.frame_data
             self.frame_data = None  # handled
+            if callable(frame_data):
+                frame_data = frame_data()
+            assert isinstance(frame_data, (type(None), bytes))
             return frame_data
 
     def send_image_stream(self, start_response):

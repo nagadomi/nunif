@@ -84,6 +84,15 @@ def take_screenshot(mouse_position=None):
     return frame
 
 
+def to_jpeg_data(frame, quality):
+    bio = io.BytesIO()
+    # TODO: encode_jpeg has a bug with cuda, but that will be fixed in the next version.
+    frame = frame.mul(255).round_().to(torch.uint8).cpu()
+    frame = encode_jpeg(frame, quality=quality)
+    bio.write(frame.numpy())
+    return bio.getbuffer().tobytes()
+
+
 def main():
     local_address = get_local_address()
     parser = create_parser(required_true=False)
@@ -175,12 +184,7 @@ def main():
                                   interpolation=InterpolationMode.BILINEAR,
                                   antialias=True)
             sbs = process_image(frame, args, depth_model, side_model, return_tensor=True)
-            bio = io.BytesIO()
-            # TODO: encode_jpeg has a bug with cuda, but that will be fixed in the next version.
-            sbs = sbs.mul(255).round_().to(torch.uint8).cpu()
-            sbs = encode_jpeg(sbs, quality=args.stream_quality)
-            bio.write(sbs.numpy())
-            server.set_frame_data(bio.getbuffer().tobytes())
+            server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality))
             count += 1
             if count % 300 == 0:
                 gc_collect()
