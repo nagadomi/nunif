@@ -84,13 +84,13 @@ def take_screenshot(mouse_position=None):
     return frame
 
 
-def to_jpeg_data(frame, quality):
+def to_jpeg_data(frame, quality, tick):
     bio = io.BytesIO()
     # TODO: encode_jpeg has a bug with cuda, but that will be fixed in the next version.
     frame = frame.mul(255).round_().to(torch.uint8).cpu()
     frame = encode_jpeg(frame, quality=quality)
     bio.write(frame.numpy())
-    return bio.getbuffer().tobytes()
+    return (bio.getbuffer().tobytes(), tick)
 
 
 def main():
@@ -184,7 +184,7 @@ def main():
                                   interpolation=InterpolationMode.BILINEAR,
                                   antialias=True)
             sbs = process_image(frame, args, depth_model, side_model, return_tensor=True)
-            server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality))
+            server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
             count += 1
             if count % 300 == 0:
                 gc_collect()
@@ -193,10 +193,11 @@ def main():
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
             if count > 1:
                 fps_counter.append(process_time)
-                mean_processing_time = sum(fps_counter) / len(fps_counter)
-                estimated_fps = 1.0 / mean_processing_time
-                streaming_fps = server.get_fps() or 0
-                print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {streaming_fps:.02f}", end="")
+                if count % 4 == 0:
+                    mean_processing_time = sum(fps_counter) / len(fps_counter)
+                    estimated_fps = 1.0 / mean_processing_time
+                    streaming_fps = server.get_fps()
+                    print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {streaming_fps:.02f}", end="")
             time.sleep(wait_time)
     finally:
         server.stop()

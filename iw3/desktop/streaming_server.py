@@ -10,7 +10,7 @@ from wsgiref.simple_server import make_server, WSGIServer
 import random
 import json
 import base64
-from collections import deque
+from collections import deque, defaultdict
 
 
 STATUS_OK = "200 OK"
@@ -40,6 +40,7 @@ class StreamingServer():
         self.stream_content_type = stream_content_type
 
         self.frame_data = None
+        self.frame_data_raw = None
 
         self.server = None
         self.thread = None
@@ -80,33 +81,47 @@ class StreamingServer():
             self._start()
 
     def set_frame_data(self, frame_data):
+        # frame_data = (image_data, time) or
+        # frame_data = callable()->(image_data, time)
         with self.lock:
-            self.frame_data = frame_data
+            self.frame_data_raw = frame_data
 
     def get_frame_data(self):
         with self.lock:
-            frame_data = self.frame_data
-            self.frame_data = None  # handled
+            frame_data = self.frame_data_raw
+            self.frame_data_raw = None  # handled
             if callable(frame_data):
-                frame_data = frame_data()
-            assert isinstance(frame_data, (type(None), bytes))
-            return frame_data
+                self.frame_data = frame_data()
+            elif frame_data is not None:
+                self.frame_data = frame_data
+
+            return self.frame_data
 
     def get_fps(self):
-        diff = []
+        tid_times = defaultdict(lambda: [])
         with self.op_lock:
+            for tid, t in self.fps_counter:
+                tid_times[tid].append(t)
+
+        fps = []
+        for tid, times in tid_times.items():
             prev = None
-            for t in self.fps_counter:
+            diff = []
+            for t in times:
                 if prev is not None:
                     diff.append(t - prev)
                 prev = t
-        if diff:
-            return round(1.0 / (sum(diff) / len(diff)), 2)
+            if diff:
+                fps.append(1.0 / (sum(diff) / len(diff)))
+        if fps:
+            return sum(fps) / len(fps)
         else:
-            return None
+            return 0
 
     def send_image_stream(self, start_response):
         def gen():
+            generator_id = random.getrandbits(64)
+            data_tick = 0
             frame = None
             send_at = time.time()
             bio = io.BytesIO()
@@ -114,14 +129,17 @@ class StreamingServer():
             pos = bio.tell()
             while True:
                 try:
-                    frame = self.get_frame_data()
-                    if frame:
-                        with self.op_lock:
-                            self.fps_counter.append(time.time())
-                        bio.seek(pos, io.SEEK_SET)
-                        bio.truncate(pos)
-                        bio.write(frame)
-                        yield bio.getbuffer().tobytes()
+                    data = self.get_frame_data()
+                    if data is not None:
+                        frame, tick = data
+                        if tick > data_tick:
+                            data_tick = tick
+                            with self.op_lock:
+                                self.fps_counter.append((generator_id, time.time()))
+                            bio.seek(pos, io.SEEK_SET)
+                            bio.truncate(pos)
+                            bio.write(frame)
+                            yield bio.getbuffer().tobytes()
                     if self.shutdown_event.is_set():
                         break
                     if False:  # True if needed
