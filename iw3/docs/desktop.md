@@ -1,6 +1,6 @@
 # iw3 dekstop streaming
 
-(Warning: This is a very experimental tool developed in one day)
+(Warning: This is a very experimental tool)
 
 `iw3.desktop` is a tool that converts your PC desktop screen into 3D and streaming via WiFi.
 It can be viewed as side-by-side 3D from the browser on Meta Quest.
@@ -12,7 +12,7 @@ To control the PC, you will use the PC's keyboard and mouse. Audio is also used 
 Be careful of 3D sickness, as the depth estimation results for GUI windows and text are probably not good.
 Basically, iw3.desktop is designed to be used for full-screen playback for images and videos.
 
-## Security Warning
+## Security Notice
 
 iw3.desktop starts an HTTP server with no password by default.
 
@@ -33,7 +33,7 @@ If the server is successfully launched, a following message will be shown.
 
 ```
 Open http://192.168.11.6:1303
-Estimated FPS = 14.59
+Estimated FPS = 30.24, Streaming FPS = 0.00
 ```
 (`192.168.11.6` address depends on your network environment)
 
@@ -112,6 +112,8 @@ python -m iw3.desktop --stream-fps 30
 If `Estimated FPS` is significantly lower than the specified FPS, the PC performance is not sufficient to process the specified FPS.
 
 FPS will be much lower than the video conversion due to `--batch-size 1` processing.
+
+Also, probably due to browser limitations, higher than `Streaming FPS = 30` is not achievable.
 
 ### Stereo setting
 

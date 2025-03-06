@@ -1,6 +1,6 @@
 # iw3 desktop streaming
 
-(警告: これは一日で作った非常に実験的なツールです)
+(警告: これは非常に実験的なツールです)
 
 iw3.desktopはPCのデスクトップ画面を3D変換してWiFi経由でストリーミング配信するツールです。
 Meta Quest上のブラウザからサイドバイサイド3Dとして視聴できます。
@@ -33,7 +33,7 @@ Windows上でnunif-windows-packageを使っている場合は、`nunif-prompt.ba
 
 ```
 Open http://192.168.11.6:1303
-Estimated FPS = 14.59
+Estimated FPS = 30.24, Streaming FPS = 0.00
 ```
 (`192.168.11.6`のアドレス部分は、ネットワーク環境によって異なります)
 
@@ -109,6 +109,8 @@ python -m iw3.desktop --stream-fps 30
 `Estimated FPS`が指定されたFPSより著しく低い場合、PCの性能は指定されたFPSを処理するのに十分ではありません。
 
 `--batch-size 1`で処理している理由でFPSは動画変換時よりかなり低くなります。
+
+また、おそらくブラウザの制限により`Streaming FPS = 30`より高いFPSは達成できません。
 
 ### ステレオ設定
 
