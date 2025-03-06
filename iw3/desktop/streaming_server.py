@@ -10,6 +10,7 @@ from wsgiref.simple_server import make_server, WSGIServer
 import random
 import json
 import base64
+from collections import deque
 
 
 STATUS_OK = "200 OK"
@@ -44,6 +45,7 @@ class StreamingServer():
         self.thread = None
         self.process_token = None
         self.shutdown_event = threading.Event()
+        self.fps_counter = deque(maxlen=300)
 
         if auth is not None:
             user, password = auth
@@ -90,6 +92,19 @@ class StreamingServer():
             assert isinstance(frame_data, (type(None), bytes))
             return frame_data
 
+    def get_fps(self):
+        diff = []
+        with self.op_lock:
+            prev = None
+            for t in self.fps_counter:
+                if prev is not None:
+                    diff.append(t - prev)
+                prev = t
+        if diff:
+            return round(1.0 / (sum(diff) / len(diff)), 2)
+        else:
+            return None
+
     def send_image_stream(self, start_response):
         def gen():
             frame = None
@@ -101,6 +116,8 @@ class StreamingServer():
                 try:
                     frame = self.get_frame_data()
                     if frame:
+                        with self.op_lock:
+                            self.fps_counter.append(time.time())
                         bio.seek(pos, io.SEEK_SET)
                         bio.truncate(pos)
                         bio.write(frame)

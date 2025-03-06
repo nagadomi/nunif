@@ -195,7 +195,8 @@ def main():
                 fps_counter.append(process_time)
                 mean_processing_time = sum(fps_counter) / len(fps_counter)
                 estimated_fps = 1.0 / mean_processing_time
-                print(f"\rEstimated FPS = {round(estimated_fps, 2)}", end="")
+                streaming_fps = server.get_fps() or 0
+                print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {streaming_fps:.02f}", end="")
             time.sleep(wait_time)
     finally:
         server.stop()
