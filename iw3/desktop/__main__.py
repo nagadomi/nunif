@@ -6,6 +6,8 @@ import io
 import time
 from collections import deque
 import wx  # for mouse pointer
+import torch
+from torchvision.io import encode_jpeg
 from torchvision.transforms import (
     functional as TF,
     InterpolationMode)
@@ -172,9 +174,12 @@ def main():
                 frame = TF.resize(frame, size=(frame_height, frame_width),
                                   interpolation=InterpolationMode.BILINEAR,
                                   antialias=True)
-            sbs = process_image(frame, args, depth_model, side_model)
+            sbs = process_image(frame, args, depth_model, side_model, return_tensor=True)
             bio = io.BytesIO()
-            sbs.save(bio, format="jpeg", quality=args.stream_quality, subsampling="4:4:4")
+            # TODO: encode_jpeg has a bug with cuda, but that will be fixed in the next version.
+            sbs = sbs.mul(255).round_().to(torch.uint8).cpu()
+            sbs = encode_jpeg(sbs, quality=args.stream_quality)
+            bio.write(sbs.numpy())
             server.set_frame_data(bio.getbuffer().tobytes())
             count += 1
             if count % 300 == 0:
