@@ -1420,6 +1420,7 @@ def create_parser(required_true=True):
                                  "Any_V2_N_S", "Any_V2_N_B", "Any_V2_N_L",
                                  "Any_V2_K_S", "Any_V2_K_B", "Any_V2_K_L",
                                  "DepthPro", "DepthPro_S",
+                                 "NULL",
                                  ],
                         help="depth model name")
     parser.add_argument("--remove-bg", action="store_true",
