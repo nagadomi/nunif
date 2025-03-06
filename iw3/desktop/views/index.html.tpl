@@ -22,11 +22,11 @@
             const img = new Image();
             img.src = STREAM_URI;
             img.onload = () => {
-                setInterval(() => {
-	            if (canvas && ctx && !stop_update && !document.hidden){
-                        ctx.drawImage(img, 0, 0);
-                    };
-	        }, 1000 / FPS);
+                function render() {
+                    ctx.drawImage(img, 0, 0);
+                    requestAnimationFrame(render);
+                }
+                render();
             };
             // check server restart
             setInterval(() => {
