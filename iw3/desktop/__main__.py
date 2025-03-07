@@ -93,6 +93,81 @@ def to_jpeg_data(frame, quality, tick):
     return (bio.getbuffer().tobytes(), tick)
 
 
+class ScreenshotThread(threading.Thread):
+    def __init__(self, fps, frame_width, frame_height, device):
+        super().__init__()
+        self.fps = fps
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.device = device
+        self.frame_lock = threading.Lock()
+        self.fps_lock = threading.Lock()
+        self.frame = None
+        self.frame_event = threading.Event()
+        self.stop_event = threading.Event()
+        self.fps_counter = deque(maxlen=300)
+        if device.type == "cuda":
+            self.cuda_stream = torch.cuda.Stream(device=device)
+        else:
+            self.cuda_stream = None
+
+    def run(self):
+        while True:
+            tick = time.time()
+            frame = take_screenshot(wx.GetMousePosition())
+            if self.cuda_stream is not None:
+                with torch.cuda.stream(self.cuda_stream):
+                    frame = TF.to_tensor(frame).to(self.device)
+                    if frame.shape[2] > self.frame_height:
+                        frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
+                                          interpolation=InterpolationMode.BILINEAR,
+                                          antialias=True)
+                    self.cuda_stream.synchronize()
+            else:
+                frame = TF.to_tensor(frame).to(self.device)
+                if frame.shape[2] > self.frame_height:
+                    frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
+                                      interpolation=InterpolationMode.BILINEAR,
+                                      antialias=True)
+
+            with self.frame_lock:
+                self.frame = frame
+                self.frame_event.set()
+
+            process_time = time.time() - tick
+            wait_time = max((1 / (self.fps)) - process_time, 0)
+            with self.fps_lock:
+                self.fps_counter.append(process_time)
+
+            if self.stop_event.is_set():
+                break
+            time.sleep(wait_time)
+
+    def get_frame(self):
+        while True:
+            with self.frame_lock:
+                frame = self.frame
+                self.frame = None
+                self.frame_event.clear()
+
+            if frame is not None:
+                return frame
+            else:
+                self.frame_event.wait()
+
+    def get_fps(self):
+        with self.fps_lock:
+            if self.fps_counter:
+                mean_processing_time = sum(self.fps_counter) / len(self.fps_counter)
+                return 1 / mean_processing_time
+            else:
+                return 0
+
+    def stop(self):
+        self.stop_event.set()
+        self.join()
+
+
 def main():
     local_address = get_local_address()
     parser = create_parser(required_true=False)
@@ -118,13 +193,13 @@ def main():
     if args.bind_addr == "0.0.0.0":
         pass  # Allows specifying undefined addresses
     elif args.bind_addr == "127.0.0.1" or not is_private_address(args.bind_addr):
-        raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address. Specify --bind-addr option")
+        raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address."
+                           " Specify --bind-addr option")
 
     # initialize
-
     set_state_args(args)
-
     device = create_device(args.gpu)
+
     args.bg_session = None
     if args.edge_dilation is None:
         args.edge_dilation = 2
@@ -158,6 +233,7 @@ def main():
               mode="r", encoding="utf-8") as f:
         index_template = f.read()
 
+    empty_app = wx.App()  # noqa: this is needed to initialize wx.GetMousePosition()
     lock = threading.Lock()
     server = StreamingServer(
         host=args.bind_addr,
@@ -167,22 +243,20 @@ def main():
         stream_uri="/stream.jpg", stream_content_type="image/jpeg",
         auth=auth
     )
+    screenshot_thread = ScreenshotThread(fps=args.stream_fps,
+                                         frame_width=frame_width, frame_height=frame_height,
+                                         device=device)
 
     # main loop
-    empty_app = wx.App()  # noqa: this is needed to initialize wx.GetMousePosition()
     server.start()
+    screenshot_thread.start()
     print(f"Open http://{args.bind_addr}:{args.port}")
     count = 0
     fps_counter = deque(maxlen=300)
     try:
         while True:
             tick = time.time()
-            frame = take_screenshot(list(wx.GetMousePosition()))
-            frame = TF.to_tensor(frame).to(device)
-            if frame.shape[2] > frame_height:
-                frame = TF.resize(frame, size=(frame_height, frame_width),
-                                  interpolation=InterpolationMode.BILINEAR,
-                                  antialias=True)
+            frame = screenshot_thread.get_frame()
             sbs = process_image(frame, args, depth_model, side_model, return_tensor=True)
             server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
             count += 1
@@ -196,11 +270,11 @@ def main():
                 if count % 4 == 0:
                     mean_processing_time = sum(fps_counter) / len(fps_counter)
                     estimated_fps = 1.0 / mean_processing_time
-                    streaming_fps = server.get_fps()
-                    print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {streaming_fps:.02f}", end="")
+                    print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {server.get_fps():.02f}", end="")
             time.sleep(wait_time)
     finally:
         server.stop()
+        screenshot_thread.stop()
 
 
 if __name__ == "__main__":
