@@ -157,8 +157,8 @@ class ScreenshotThread(threading.Thread):
             else:
                 self.frame_event.wait()
 
-    def update_fps(self, fps):
-        self.adaptive_fps = self.adaptive_fps * 0.95 + fps * 0.05
+    def update_fps(self, fps, weight=0.05):
+        self.adaptive_fps = self.adaptive_fps * (1 - weight) + fps * weight
         self.adaptive_fps = min(self.adaptive_fps, self.fps)
 
     def get_fps(self):
@@ -275,7 +275,7 @@ def main():
                 fps_counter.append(process_time)
                 mean_processing_time = sum(fps_counter) / len(fps_counter)
                 estimated_fps = 1.0 / mean_processing_time
-                screenshot_thread.update_fps(estimated_fps)
+                screenshot_thread.update_fps(estimated_fps, weight=0.05 if count > 4 else 1.0)
                 if count % 4 == 0:
                     print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {server.get_fps():.02f}", end="")
             time.sleep(wait_time)
