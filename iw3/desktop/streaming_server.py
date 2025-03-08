@@ -150,6 +150,8 @@ class StreamingServer():
                     else:
                         # busy waiting
                         time.sleep(1 / 1000)
+                except GeneratorExit:
+                    raise
                 except:  # noqa
                     print("StreamingServer", sys.exc_info(), file=sys.stderr)
                     break
