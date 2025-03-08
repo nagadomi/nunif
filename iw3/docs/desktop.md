@@ -58,8 +58,8 @@ You can playback the video in 3D on Meta Quest by following the steps.
 2. Enter the server URL
 3. (Optional) Add URL to favorites
 4. Play the video
-5. Make the **video** full screen using the icon in the bottom right corner of the video.
-6. Make **Browser** full screen using the icon in the top right corner of Browser.
+5. Make **Browser** full screen using the icon in the top right corner of Browser.
+6. Make the **video** full screen using the icon in the bottom right corner of the video.
 7. Set to `Display Mode > 3D Side-by-Side` using the screen icon in the menu at the bottom of Browser
 8. (Optional) Set to Curve Window
 
