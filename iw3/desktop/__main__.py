@@ -176,7 +176,7 @@ def main():
                         help="HTTP listen address")
     parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")
     parser.add_argument("--password", type=str, help="HTTP Basic Authentication password")
-    parser.add_argument("--stream-fps", type=int, default=15, help="Streaming FPS")
+    parser.add_argument("--stream-fps", type=int, default=30, help="Streaming FPS")
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
