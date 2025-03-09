@@ -157,8 +157,7 @@ class StreamingServer():
             except:  # noqa
                 print("StreamingServer", sys.exc_info(), file=sys.stderr)
             finally:
-                with self.lock:
-                    self.frame_set_events.pop(generator_id, None)
+                self.frame_set_events.pop(generator_id, None)
             yield b""
 
         start_response(
