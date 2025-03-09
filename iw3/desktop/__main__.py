@@ -186,16 +186,23 @@ def main():
     parser.add_argument("--stream-fps", type=int, default=15, help="Streaming FPS")
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
+    parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
     parser.set_defaults(
         input="dummy",
         output="dummy",
         depth_model="Any_V2_S",
         divergence=1.0,
         convergence=1.0,
-        half_sbs=True,
         ema_normalize=True,
     )
     args = parser.parse_args()
+
+    if not args.full_sbs:
+        args.half_sbs = True
+        frame_width_scale = 1
+    else:
+        frame_width_scale = 2
+
     if args.bind_addr == "0.0.0.0":
         pass  # Allows specifying undefined addresses
     elif args.bind_addr == "127.0.0.1" or not is_private_address(args.bind_addr):
@@ -244,14 +251,17 @@ def main():
     server = StreamingServer(
         host=args.bind_addr,
         port=args.port, lock=lock,
-        frame_width=frame_width, frame_height=frame_height, fps=args.stream_fps,
+        frame_width=frame_width * frame_width_scale,
+        frame_height=frame_height,
+        fps=args.stream_fps,
         index_template=index_template,
         stream_uri="/stream.jpg", stream_content_type="image/jpeg",
         auth=auth
     )
-    screenshot_thread = ScreenshotThread(fps=args.stream_fps,
-                                         frame_width=frame_width, frame_height=frame_height,
-                                         device=device)
+    screenshot_thread = ScreenshotThread(
+        fps=args.stream_fps,
+        frame_width=frame_width, frame_height=frame_height,
+        device=device)
 
     # main loop
     server.start()
