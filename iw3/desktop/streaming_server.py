@@ -41,7 +41,6 @@ class StreamingServer():
 
         self.frame_data = None
         self.frame_data_raw = None
-        self.frame_set_events = {}
 
         self.server = None
         self.thread = None
@@ -57,16 +56,14 @@ class StreamingServer():
 
     def _stop(self):
         self.shutdown_event.set()
-        with self.lock:
-            for event in self.frame_set_events.values():
-                event.set()
-        time.sleep(0.1)
         if self.server is not None:
             self.server.shutdown()
             self.thread.join()
+            self.server.shutdown()
             self.thread = None
             self.server = None
         self.shutdown_event.clear()
+        time.sleep(0.1)
 
     def _start(self):
         self.server = make_server(self.host, self.port, self.handle, ThreadingWSGIServer)
@@ -88,11 +85,8 @@ class StreamingServer():
         # frame_data = callable()->(image_data, time)
         with self.lock:
             self.frame_data_raw = frame_data
-            for event in self.frame_set_events.values():
-                event.set()
 
-    def get_frame_data(self, generator_id):
-        self.frame_set_events[generator_id].wait()
+    def get_frame_data(self):
         with self.lock:
             frame_data = self.frame_data_raw
             self.frame_data_raw = None  # handled
@@ -100,9 +94,6 @@ class StreamingServer():
                 self.frame_data = frame_data()
             elif frame_data is not None:
                 self.frame_data = frame_data
-
-            if not self.shutdown_event.is_set():
-                self.frame_set_events[generator_id].clear()
 
             return self.frame_data
 
@@ -130,18 +121,15 @@ class StreamingServer():
     def send_image_stream(self, start_response):
         def gen():
             generator_id = random.getrandbits(64)
-            with self.lock:
-                self.frame_set_events[generator_id] = threading.Event()
             data_tick = 0
             frame = None
+            send_at = time.time()
             bio = io.BytesIO()
             bio.write(b'--frame\r\n' + f"Content-Type: {self.stream_content_type}".encode() + b'\r\n\r\n')
             pos = bio.tell()
-            try:
-                while True:
-                    data = self.get_frame_data(generator_id)
-                    if self.shutdown_event.is_set():
-                        break
+            while True:
+                try:
+                    data = self.get_frame_data()
                     if data is not None:
                         frame, tick = data
                         if tick > data_tick:
@@ -152,12 +140,21 @@ class StreamingServer():
                             bio.truncate(pos)
                             bio.write(frame)
                             yield bio.getbuffer().tobytes()
-            except GeneratorExit:
-                raise
-            except:  # noqa
-                print("StreamingServer", sys.exc_info(), file=sys.stderr)
-            finally:
-                self.frame_set_events.pop(generator_id, None)
+                    if self.shutdown_event.is_set():
+                        break
+                    if False:  # True if needed
+                        now = time.time()
+                        if now - send_at < self.delay:
+                            time.sleep(self.delay - (now - send_at))
+                        send_at = now
+                    else:
+                        # busy waiting
+                        time.sleep(1 / 1000)
+                except GeneratorExit:
+                    raise
+                except:  # noqa
+                    print("StreamingServer", sys.exc_info(), file=sys.stderr)
+                    break
             yield b""
 
         start_response(
