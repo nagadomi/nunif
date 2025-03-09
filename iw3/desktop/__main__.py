@@ -277,6 +277,7 @@ def main():
             tick = time.time()
             frame = screenshot_thread.get_frame()
             sbs = process_image(frame, args, depth_model, side_model, return_tensor=True)
+            torch.cuda.synchronize(device)
             server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
             count += 1
             if count % 300 == 0:
@@ -289,7 +290,9 @@ def main():
                 mean_processing_time = sum(fps_counter) / len(fps_counter)
                 estimated_fps = 1.0 / mean_processing_time
                 if count % 4 == 0:
-                    print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {server.get_fps():.02f}", end="")
+                    print(f"\rEstimated FPS = {estimated_fps:.02f}, "
+                          f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
+                          f"Streaming FPS = {server.get_fps():.02f}", end="")
             time.sleep(wait_time)
     finally:
         server.stop()
