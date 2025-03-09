@@ -1,6 +1,7 @@
 # iw3 desktop streaming
 
-(警告: これは非常に実験的なツールです)
+(警告: これは非常に実験的なツールです。
+ 今のところMeta QuestとPICO 4で動作することが分かっています。VisionProでは動作しません。)
 
 iw3.desktopはPCのデスクトップ画面を3D変換してWiFi経由でストリーミング配信するツールです。
 Meta Quest上のブラウザからサイドバイサイド3Dとして視聴できます。
@@ -67,28 +68,16 @@ Meta Quest上で以下の手順により動画を3D再生できます。
 
 ## オプション
 
-### ネットワーク
+### PICO 4用のオプション
 
-`--bind-addr`と`--port`オプションでHTTPサーバーを起動するアドレスを指定できます。
-```
-python -m iw3.desktop --port 7860
-```
+ユーザーからの報告によるとPICO 4のブラウザは動画をFull SBSで表示します。
 
-サーバーをインターネットに公開する場合 (オススメしません)
-```
-python -m iw3.desktop --bind-addr 0.0.0.0 --port 7860
-```
-
-### 認証
-
-`--user`と`--password`オプションでHTTPベーシック認証を設定できます。
+`--full-sbs`オプションでストリーミング動画をFull SBSに変更できます。
 
 ```
-python -m iw3.desktop --password iw3
+python -m iw3.desktop --full-sbs
 ```
-```
-python -m iw3.desktop --user admin --password 1234
-```
+デフォルトはHalf SBSです。Meta QuestのブラウザはHalf SBSにしか対応していません。
 
 ### 解像度
 
@@ -112,6 +101,14 @@ python -m iw3.desktop --stream-fps 30
 
 また、おそらくブラウザの制限により`Streaming FPS = 30`より高いFPSは達成できません。
 
+### MJPEG 設定
+
+`--stream-quality`でJPEG品質を指定できます。 (0-100)
+```
+python -m iw3.desktop --stream-quality 80
+```
+デフォルトは90です。低い値を指定すると、ネットワークトラフィックが削減されます。
+
 ### ステレオ設定
 
 GUI/CLIと同じオプションが指定できます。
@@ -121,3 +118,26 @@ python -m iw3.desktop --depth-model ZoeD_Any_N --divergence 2 --convergence 0.5 
 ```
 
 デフォルトは、`--depth-model Any_V2_S --divergence 1 --convergence 1`です。
+
+### ネットワーク
+
+`--bind-addr`と`--port`オプションでHTTPサーバーを起動するアドレスを指定できます。
+```
+python -m iw3.desktop --port 7860
+```
+
+サーバーをインターネットに公開する場合 (オススメしません)
+```
+python -m iw3.desktop --bind-addr 0.0.0.0 --port 7860
+```
+
+### 認証
+
+`--user`と`--password`オプションでHTTPベーシック認証を設定できます。
+
+```
+python -m iw3.desktop --password iw3
+```
+```
+python -m iw3.desktop --user admin --password 1234
+```
