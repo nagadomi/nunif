@@ -145,17 +145,14 @@ class ScreenshotThread(threading.Thread):
             self.frame_unset_event.wait()
 
     def get_frame(self):
-        while True:
-            with self.frame_lock:
-                frame = self.frame
-                self.frame = None
-                self.frame_set_event.clear()
-                self.frame_unset_event.set()
-
-            if frame is not None:
-                return frame
-            else:
-                self.frame_set_event.wait()
+        self.frame_set_event.wait()
+        with self.frame_lock:
+            frame = self.frame
+            self.frame = None
+            self.frame_set_event.clear()
+            self.frame_unset_event.set()
+        assert frame is not None
+        return frame
 
     def get_fps(self):
         with self.fps_lock:
