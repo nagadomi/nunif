@@ -6,6 +6,7 @@ import io
 import time
 from collections import deque
 import wx  # for mouse pointer
+import numpy as np
 import torch
 from torchvision.io import encode_jpeg
 from torchvision.transforms import (
@@ -93,6 +94,14 @@ def to_jpeg_data(frame, quality, tick):
     return (bio.getbuffer().tobytes(), tick)
 
 
+def to_tensor(pil_image, device):
+    # Transfer the image data to VRAM as uint8 first, then convert it to float.
+    x = np.array(pil_image)
+    x = torch.from_numpy(x).permute(2, 0, 1).contiguous().to(device)
+    x = x / 255.0  # to float
+    return x
+
+
 class ScreenshotThread(threading.Thread):
     def __init__(self, fps, frame_width, frame_height, device):
         super().__init__()
@@ -118,14 +127,14 @@ class ScreenshotThread(threading.Thread):
             frame = take_screenshot(wx.GetMousePosition())
             if self.cuda_stream is not None:
                 with torch.cuda.stream(self.cuda_stream):
-                    frame = TF.to_tensor(frame).to(self.device)
+                    frame = to_tensor(frame, self.device)
                     if frame.shape[2] > self.frame_height:
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
                                           antialias=True)
                     self.cuda_stream.synchronize()
             else:
-                frame = TF.to_tensor(frame).to(self.device)
+                frame = to_tensor(frame, self.device)
                 if frame.shape[2] > self.frame_height:
                     frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                       interpolation=InterpolationMode.BILINEAR,
