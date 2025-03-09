@@ -97,14 +97,14 @@ class ScreenshotThread(threading.Thread):
     def __init__(self, fps, frame_width, frame_height, device):
         super().__init__()
         self.fps = fps
-        self.adaptive_fps = fps
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.device = device
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
         self.frame = None
-        self.frame_event = threading.Event()
+        self.frame_unset_event = threading.Event()
+        self.frame_set_event = threading.Event()
         self.stop_event = threading.Event()
         self.fps_counter = deque(maxlen=300)
         if device.type == "cuda":
@@ -133,33 +133,29 @@ class ScreenshotThread(threading.Thread):
 
             with self.frame_lock:
                 self.frame = frame
-                self.frame_event.set()
+                self.frame_set_event.set()
+                self.frame_unset_event.clear()
 
             process_time = time.time() - tick
-            wait_time = max((1 / (self.adaptive_fps)) - process_time, 0)
-
             with self.fps_lock:
                 self.fps_counter.append(process_time)
 
             if self.stop_event.is_set():
                 break
-            time.sleep(wait_time)
+            self.frame_unset_event.wait()
 
     def get_frame(self):
         while True:
             with self.frame_lock:
                 frame = self.frame
                 self.frame = None
-                self.frame_event.clear()
+                self.frame_set_event.clear()
+                self.frame_unset_event.set()
 
             if frame is not None:
                 return frame
             else:
-                self.frame_event.wait()
-
-    def update_fps(self, fps, weight=0.05):
-        self.adaptive_fps = self.adaptive_fps * (1 - weight) + fps * weight
-        self.adaptive_fps = min(self.adaptive_fps, self.fps)
+                self.frame_set_event.wait()
 
     def get_fps(self):
         with self.fps_lock:
@@ -285,7 +281,6 @@ def main():
                 fps_counter.append(process_time)
                 mean_processing_time = sum(fps_counter) / len(fps_counter)
                 estimated_fps = 1.0 / mean_processing_time
-                screenshot_thread.update_fps(estimated_fps, weight=0.05 if count > 4 else 1.0)
                 if count % 4 == 0:
                     print(f"\rEstimated FPS = {estimated_fps:.02f}, Streaming FPS = {server.get_fps():.02f}", end="")
             time.sleep(wait_time)
