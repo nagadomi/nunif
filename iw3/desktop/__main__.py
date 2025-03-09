@@ -173,6 +173,7 @@ class ScreenshotThread(threading.Thread):
 
     def stop(self):
         self.stop_event.set()
+        self.frame_unset_event.set()
         self.join()
 
 
