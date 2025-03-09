@@ -46,7 +46,7 @@ class StreamingServer():
         self.thread = None
         self.process_token = None
         self.shutdown_event = threading.Event()
-        self.fps_counter = deque(maxlen=300)
+        self.fps_counter = deque(maxlen=120)
 
         if auth is not None:
             user, password = auth

@@ -106,7 +106,7 @@ class ScreenshotThread(threading.Thread):
         self.frame_unset_event = threading.Event()
         self.frame_set_event = threading.Event()
         self.stop_event = threading.Event()
-        self.fps_counter = deque(maxlen=300)
+        self.fps_counter = deque(maxlen=120)
         if device.type == "cuda":
             self.cuda_stream = torch.cuda.Stream(device=device)
         else:
@@ -261,7 +261,7 @@ def main():
     screenshot_thread.start()
     print(f"Open http://{args.bind_addr}:{args.port}")
     count = 0
-    fps_counter = deque(maxlen=300)
+    fps_counter = deque(maxlen=120)
     try:
         while True:
             tick = time.time()
