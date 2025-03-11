@@ -27,22 +27,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/nagadomi/nunif",
     license="MIT",
-    packages=[
-        "nunif",
-        "nunif.nunif",
-        "nunif.nunif.modules",
-        "nunif.nunif.training",
-        "nunif.waifu2x",
-        "nunif.waifu2x.models",
-        "nunif.cliqa",
-        "nunif.iw3",
-    ],
-    package_dir={
-        "nunif.nunif": "nunif",
-        "nunif.waifu2x": "waifu2x",
-        "nunif.cliqa": "cliqa",
-        "nunif.iw3": "iw3",
-    },
+    packages=setuptools.find_packages(),
     install_requires=requirements,
     classifiers=[
         "Programming Language :: Python :: 3",
