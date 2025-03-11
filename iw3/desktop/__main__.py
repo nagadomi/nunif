@@ -1,4 +1,3 @@
-from PIL import ImageGrab, ImageDraw
 import threading
 import math
 from os import path
@@ -6,12 +5,8 @@ import io
 import time
 from collections import deque
 import wx  # for mouse pointer
-import numpy as np
 import torch
 from torchvision.io import encode_jpeg
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode)
 from .. import models # noqa
 from ..utils import (
     create_parser, set_state_args, process_image,
@@ -25,6 +20,8 @@ from nunif.device import create_device
 from nunif.initializer import gc_collect
 from nunif.models import load_model
 from .streaming_server import StreamingServer
+from .screenshot_thread_pil import ScreenshotThreadPIL, take_screenshot
+from .screenshot_process import ScreenshotProcess
 
 
 def get_local_address():
@@ -74,107 +71,17 @@ def load_side_model(args):
     return side_model
 
 
-def take_screenshot(mouse_position=None):
-    frame = ImageGrab.grab(include_layered_windows=True)
-    if frame.mode != "RGB":
-        frame = frame.convert("RGB")
-    if mouse_position is not None:
-        gc = ImageDraw.Draw(frame)
-        gc.circle(mouse_position, radius=4, fill=None, outline=(0x33, 0x80, 0x80), width=2)
-
-    return frame
+def to_uint8_cpu(x):
+    return x.mul(255).round_().to(torch.uint8).cpu()
 
 
 def to_jpeg_data(frame, quality, tick):
     bio = io.BytesIO()
+    frame = to_uint8_cpu(frame)
     # TODO: encode_jpeg has a bug with cuda, but that will be fixed in the next version.
-    frame = frame.mul(255).round_().to(torch.uint8).cpu()
     frame = encode_jpeg(frame, quality=quality)
     bio.write(frame.numpy())
     return (bio.getbuffer().tobytes(), tick)
-
-
-def to_tensor(pil_image, device):
-    # Transfer the image data to VRAM as uint8 first, then convert it to float.
-    x = np.array(pil_image)
-    x = torch.from_numpy(x).permute(2, 0, 1).contiguous().to(device)
-    x = x / 255.0  # to float
-    return x
-
-
-class ScreenshotThread(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, device):
-        super().__init__()
-        self.fps = fps
-        self.frame_width = frame_width
-        self.frame_height = frame_height
-        self.device = device
-        self.frame_lock = threading.Lock()
-        self.fps_lock = threading.Lock()
-        self.frame = None
-        self.frame_unset_event = threading.Event()
-        self.frame_set_event = threading.Event()
-        self.stop_event = threading.Event()
-        self.fps_counter = deque(maxlen=120)
-        if device.type == "cuda":
-            self.cuda_stream = torch.cuda.Stream(device=device)
-        else:
-            self.cuda_stream = None
-
-    def run(self):
-        while True:
-            tick = time.time()
-            frame = take_screenshot(wx.GetMousePosition())
-            if self.cuda_stream is not None:
-                with torch.cuda.stream(self.cuda_stream):
-                    frame = to_tensor(frame, self.device)
-                    if frame.shape[2] > self.frame_height:
-                        frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
-                                          interpolation=InterpolationMode.BILINEAR,
-                                          antialias=True)
-                    self.cuda_stream.synchronize()
-            else:
-                frame = to_tensor(frame, self.device)
-                if frame.shape[2] > self.frame_height:
-                    frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
-                                      interpolation=InterpolationMode.BILINEAR,
-                                      antialias=True)
-
-            with self.frame_lock:
-                self.frame = frame
-                self.frame_set_event.set()
-                self.frame_unset_event.clear()
-
-            process_time = time.time() - tick
-            with self.fps_lock:
-                self.fps_counter.append(process_time)
-
-            if self.stop_event.is_set():
-                break
-            self.frame_unset_event.wait()
-
-    def get_frame(self):
-        self.frame_set_event.wait()
-        with self.frame_lock:
-            frame = self.frame
-            self.frame = None
-            self.frame_set_event.clear()
-            self.frame_unset_event.set()
-        assert frame is not None
-        return frame
-
-    def get_fps(self):
-        with self.fps_lock:
-            if self.fps_counter:
-                mean_processing_time = sum(self.fps_counter) / len(self.fps_counter)
-                return 1 / mean_processing_time
-            else:
-                return 0
-
-    def stop(self):
-        self.stop_event.set()
-        self.frame_unset_event.set()
-        self.join()
 
 
 def main():
@@ -190,6 +97,8 @@ def main():
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
+    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "pil_mp", "wc_mp"],
+                        help="Screenshot method")
     parser.set_defaults(
         input="dummy",
         output="dummy",
@@ -211,6 +120,13 @@ def main():
     elif args.bind_addr == "127.0.0.1" or not is_private_address(args.bind_addr):
         raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address."
                            " Specify --bind-addr option")
+
+    if args.screenshot == "pil":
+        screenshot_factory = ScreenshotThreadPIL
+    elif args.screenshot == "pil_mp":
+        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="pil")
+    elif args.screenshot == "wc_mp":
+        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="windows_capture")
 
     # initialize
     set_state_args(args)
@@ -261,7 +177,7 @@ def main():
         stream_uri="/stream.jpg", stream_content_type="image/jpeg",
         auth=auth
     )
-    screenshot_thread = ScreenshotThread(
+    screenshot_thread = screenshot_factory(
         fps=args.stream_fps,
         frame_width=frame_width, frame_height=frame_height,
         device=device)
@@ -277,7 +193,6 @@ def main():
             tick = time.time()
             frame = screenshot_thread.get_frame()
             sbs = process_image(frame, args, depth_model, side_model, return_tensor=True)
-            torch.cuda.synchronize(device)
             server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
             count += 1
             if count % 300 == 0:

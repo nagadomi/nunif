@@ -154,7 +154,7 @@ class StreamingServer():
                     raise
                 except:  # noqa
                     print("StreamingServer", sys.exc_info(), file=sys.stderr)
-                    break
+                    raise
             yield b""
 
         start_response(
