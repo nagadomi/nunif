@@ -72,6 +72,7 @@ def draw_cursor(x, pos, size=8):
 
 def get_screen_size():
     if sys.platform == "win32":
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
         user32 = ctypes.windll.user32
         return (user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
     else:
