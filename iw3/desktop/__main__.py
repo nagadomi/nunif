@@ -3,6 +3,7 @@ import math
 from os import path
 import io
 import time
+import sys
 from collections import deque
 import wx  # for mouse pointer
 import torch
@@ -22,6 +23,15 @@ from nunif.models import load_model
 from .streaming_server import StreamingServer
 from .screenshot_thread_pil import ScreenshotThreadPIL, take_screenshot
 from .screenshot_process import ScreenshotProcess
+
+
+if sys.platform == "win32":
+    try:
+        # Fix mouse position when Display Scaling is not 100%
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except: # noqa
+        pass
 
 
 def get_local_address():
