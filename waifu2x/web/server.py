@@ -16,6 +16,7 @@ import hashlib
 from configparser import ConfigParser
 from diskcache import Cache
 import psutil
+import filelock
 import gc
 from enum import Enum
 from urllib.parse import (
@@ -42,6 +43,7 @@ DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
+COMPILE_LOCK = path.join("tmp", "waifu2x_web_compile.lock")
 
 
 class ScaleOption(Enum):
@@ -149,21 +151,23 @@ def setup():
     photo_ctx.load_model_all(load_4x=False)
 
     if args.compile:
-        logger.info("Compiling models...")
-        art_ctx.compile()
-        art_scan_ctx.compile()
-        photo_ctx.compile()
-        if args.warmup:
-            if args.batch_size != 1:
-                logger.warning(("`--batch-size 1` is recommended."
-                                "large batch size makes startup very slow."))
-            art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                           enable_amp=not args.disable_amp)
-            art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                                enable_amp=not args.disable_amp)
-            photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                             enable_amp=not args.disable_amp)
-        logger.info("Done")
+        compile_lock = filelock.FileLock(COMPILE_LOCK)
+        with compile_lock:
+            logger.info("Compiling models...")
+            art_ctx.compile()
+            art_scan_ctx.compile()
+            photo_ctx.compile()
+            if args.warmup:
+                if args.batch_size != 1:
+                    logger.warning(("`--batch-size 1` is recommended."
+                                    "large batch size makes startup very slow."))
+                art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                               enable_amp=not args.disable_amp)
+                art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                                    enable_amp=not args.disable_amp)
+                photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                                 enable_amp=not args.disable_amp)
+            logger.info("Done")
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
     cache_gc = CacheGC(cache, args.cache_ttl * 60)
