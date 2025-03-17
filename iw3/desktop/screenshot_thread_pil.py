@@ -49,7 +49,7 @@ class ScreenshotThreadPIL(threading.Thread):
 
     def run(self):
         while True:
-            tick = time.time()
+            tick = time.perf_counter()
             frame = take_screenshot(wx.GetMousePosition())
             if self.cuda_stream is not None:
                 with torch.cuda.stream(self.cuda_stream):
@@ -71,7 +71,7 @@ class ScreenshotThreadPIL(threading.Thread):
                 self.frame_set_event.set()
                 self.frame_unset_event.clear()
 
-            process_time = time.time() - tick
+            process_time = time.perf_counter() - tick
             with self.fps_lock:
                 self.fps_counter.append(process_time)
 

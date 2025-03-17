@@ -42,7 +42,7 @@ class WindowsCapturePIL():
     def start(self):
         control = CaptureControlPIL()
         while True:
-            tick = time.time()
+            tick = time.perf_counter()
             frame = ImageGrab.grab()
             if frame.mode != "RGB":
                 frame.convert("RGB")
@@ -54,7 +54,7 @@ class WindowsCapturePIL():
                 self.on_closed()
                 break
 
-            process_time = time.time() - tick
+            process_time = time.perf_counter() - tick
             wait_time = max((1 / 60) - process_time, 0)
             time.sleep(wait_time)
 
@@ -182,7 +182,7 @@ class ScreenshotProcess(threading.Thread):
             while True:
                 if not self.process.is_alive():
                     break
-                tick = time.time()
+                tick = time.perf_counter()
                 self.process_frame_event.wait()
                 with self.process_frame_lock:
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
@@ -214,7 +214,7 @@ class ScreenshotProcess(threading.Thread):
                     self.frame_unset_event.clear()
                     self.frame_set_event.set()
 
-                process_time = time.time() - tick
+                process_time = time.perf_counter() - tick
                 with self.fps_lock:
                     self.fps_counter.append(process_time)
 

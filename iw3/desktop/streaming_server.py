@@ -123,7 +123,7 @@ class StreamingServer():
             generator_id = random.getrandbits(64)
             data_tick = 0
             frame = None
-            send_at = time.time()
+            send_at = time.perf_counter()
             bio = io.BytesIO()
             bio.write(b'--frame\r\n' + f"Content-Type: {self.stream_content_type}".encode() + b'\r\n\r\n')
             pos = bio.tell()
@@ -135,7 +135,7 @@ class StreamingServer():
                         if tick > data_tick:
                             data_tick = tick
                             with self.op_lock:
-                                self.fps_counter.append((generator_id, time.time()))
+                                self.fps_counter.append((generator_id, time.perf_counter()))
                             bio.seek(pos, io.SEEK_SET)
                             bio.truncate(pos)
                             bio.write(frame)
@@ -143,7 +143,7 @@ class StreamingServer():
                     if self.shutdown_event.is_set():
                         break
                     if False:  # True if needed
-                        now = time.time()
+                        now = time.perf_counter()
                         if now - send_at < self.delay:
                             time.sleep(self.delay - (now - send_at))
                         send_at = now

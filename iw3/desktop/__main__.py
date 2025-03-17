@@ -94,6 +94,13 @@ def to_jpeg_data(frame, quality, tick):
     return (bio.getbuffer().tobytes(), tick)
 
 
+def fps_sleep(start_time, fps, resolution=2e-4):
+    # currently not in used
+    end_diff_time = (1 / fps) - resolution
+    while time.perf_counter() - start_time < end_diff_time:
+        time.sleep(resolution)
+
+
 def main():
     local_address = get_local_address()
     parser = create_parser(required_true=False)
@@ -198,27 +205,33 @@ def main():
     print(f"Open http://{args.bind_addr}:{args.port}")
     count = 0
     fps_counter = deque(maxlen=120)
+    sleep_precision = deque(maxlen=120)
     try:
         while True:
-            tick = time.time()
+            tick = time.perf_counter()
             frame = screenshot_thread.get_frame()
             sbs = process_image(frame, args, depth_model, side_model, return_tensor=True)
             server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
-            count += 1
-            if count % 300 == 0:
-                gc_collect()
 
-            process_time = time.time() - tick
-            wait_time = max((1 / (args.stream_fps)) - process_time, 0)
-            if count > 1:
-                fps_counter.append(process_time)
+            if count % (args.stream_fps * 30) == 0:
+                gc_collect()
+            if count > 1 and count % args.stream_fps == 0:
                 mean_processing_time = sum(fps_counter) / len(fps_counter)
                 estimated_fps = 1.0 / mean_processing_time
-                if count % 4 == 0:
-                    print(f"\rEstimated FPS = {estimated_fps:.02f}, "
-                          f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                          f"Streaming FPS = {server.get_fps():.02f}", end="")
+                mean_sleep_precision = 1000.0 * sum(sleep_precision) / len(sleep_precision)
+                print(f"\rEstimated FPS = {estimated_fps:.02f}, "
+                      f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
+                      f"Sleep Precision = {mean_sleep_precision:.03f} ms, "
+                      f"Streaming FPS = {server.get_fps():.02f}", end="")
+
+            process_time = time.perf_counter() - tick
+            wait_time = max((1 / (args.stream_fps)) - process_time, 0)
             time.sleep(wait_time)
+            step_time = time.perf_counter() - tick
+            fps_counter.append(process_time)
+            sleep_precision.append(abs((1.0 / args.stream_fps) - step_time))
+            count += 1
+
     finally:
         server.stop()
         screenshot_thread.stop()
