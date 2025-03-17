@@ -49,7 +49,7 @@ MODEL_FILES = {
 }
 
 
-def batch_preprocess(x, lower_bound=392):
+def batch_preprocess(x, lower_bound=392, max_aspect_ratio=4):
     # x: BCHW float32 0-1
     B, C, H, W = x.shape
 
@@ -61,6 +61,13 @@ def batch_preprocess(x, lower_bound=392):
         scale_factor = lower_bound / H
     new_h = int(H * scale_factor)
     new_w = int(W * scale_factor)
+
+    # Limit aspect ratio to avoid OOM
+    if new_h < new_w:
+        new_w = min(new_w, int(max_aspect_ratio * new_h))
+    else:
+        new_h = min(new_h, int(max_aspect_ratio * new_w))
+
     new_h -= new_h % ensure_multiple_of
     new_w -= new_w % ensure_multiple_of
     if new_h < lower_bound:
