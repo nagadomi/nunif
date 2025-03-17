@@ -239,10 +239,11 @@ class Waifu2xDataset(Waifu2xDatasetBase):
         assert noise_level in {-1, 0, 1, 2, 3}
         assert style in {None, "art", "photo"}
         exclude_prefixes = []
-        if scale_factor in {1, 2}:
-            exclude_prefixes.append(DOT_SCALE4X_PREFIX)
-        else:
+        if scale_factor == 4:
             exclude_prefixes.append(DOT_SCALE2X_PREFIX)
+        elif scale_factor == 2:
+            exclude_prefixes.append(DOT_SCALE4X_PREFIX)
+
         if skip_screentone:
             exclude_prefixes.append(SCREENTONE_PREFIX)
         if skip_dot:
