@@ -25,15 +25,6 @@ from .screenshot_thread_pil import ScreenshotThreadPIL, take_screenshot
 from .screenshot_process import ScreenshotProcess
 
 
-if sys.platform == "win32":
-    try:
-        # Fix mouse position when Display Scaling is not 100%
-        import ctypes
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except: # noqa
-        pass
-
-
 def get_local_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -205,7 +196,6 @@ def main():
     print(f"Open http://{args.bind_addr}:{args.port}")
     count = 0
     fps_counter = deque(maxlen=120)
-    sleep_precision = deque(maxlen=120)
     try:
         while True:
             tick = time.perf_counter()
@@ -218,18 +208,14 @@ def main():
             if count > 1 and count % args.stream_fps == 0:
                 mean_processing_time = sum(fps_counter) / len(fps_counter)
                 estimated_fps = 1.0 / mean_processing_time
-                mean_sleep_precision = 1000.0 * sum(sleep_precision) / len(sleep_precision)
                 print(f"\rEstimated FPS = {estimated_fps:.02f}, "
                       f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                      f"Sleep Precision = {mean_sleep_precision:.03f} ms, "
                       f"Streaming FPS = {server.get_fps():.02f}", end="")
 
             process_time = time.perf_counter() - tick
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
             time.sleep(wait_time)
-            step_time = time.perf_counter() - tick
             fps_counter.append(process_time)
-            sleep_precision.append(abs((1.0 / args.stream_fps) - step_time))
             count += 1
 
     finally:
@@ -238,4 +224,19 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        import ctypes
+        try:
+            # Fix mouse position when Display Scaling is not 100%
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except: # noqa
+            pass
+
+        # if sys.version_info <= (3, 11):  # python 3.11 or later has high precision sleep.
+        try:
+            # Change timer/sleep precision
+            ctypes.windll.winmm.timeBeginPeriod(1)
+        except: # noqa
+            pass
+
     main()
