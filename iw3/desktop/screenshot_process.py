@@ -146,10 +146,9 @@ class ScreenshotProcess(threading.Thread):
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.device = device
+        self.frame = None
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
-        self.frame_set_event = threading.Event()
-        self.frame_unset_event = threading.Event()
         self.stop_event = threading.Event()
         self.fps_counter = deque(maxlen=120)
         if device.type == "cuda":
@@ -211,34 +210,27 @@ class ScreenshotProcess(threading.Thread):
 
                 with self.frame_lock:
                     self.frame = frame
-                    self.frame_unset_event.clear()
-                    self.frame_set_event.set()
 
                 process_time = time.perf_counter() - tick
                 with self.fps_lock:
                     self.fps_counter.append(process_time)
 
-                self.frame_unset_event.wait()
                 if self.stop_event.is_set():
                     break
         finally:
             self.process_stop_event.set()
             self.process.join()
             self.stop_event.set()
-            self.frame_set_event.set()
             self.process = None
 
     def get_frame(self):
-        self.frame_set_event.wait()
-        if self.stop_event.is_set():
-            raise RuntimeError("thread is already dead")
+        frame = None
+        while frame is None:
+            if self.stop_event.is_set():
+                raise RuntimeError("thread is already dead")
 
-        with self.frame_lock:
-            frame = self.frame
-            self.frame = None
-            self.frame_set_event.clear()
-            self.frame_unset_event.set()
-        assert frame is not None
+            with self.frame_lock:
+                frame = self.frame
         return frame
 
     def get_fps(self):
@@ -251,6 +243,5 @@ class ScreenshotProcess(threading.Thread):
 
     def stop(self):
         self.stop_event.set()
-        self.frame_unset_event.set()
         self.process_frame_event.set()
         self.join()
