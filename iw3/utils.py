@@ -1663,6 +1663,25 @@ def is_yaml(filename):
     return path.splitext(filename)[-1].lower() in {".yaml", ".yml"}
 
 
+def load_sbs_model(args):
+    with TorchHubDir(HUB_MODEL_DIR):
+        if args.method in {"row_flow_v3", "row_flow"}:
+            side_model = load_model(ROW_FLOW_V3_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = False
+            side_model.delta_output = True
+        elif args.method in {"row_flow_v3_sym", "row_flow_sym"}:
+            side_model = load_model(ROW_FLOW_V3_SYM_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = True
+            side_model.delta_output = True
+        elif args.method == "row_flow_v2":
+            side_model = load_model(ROW_FLOW_V2_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.delta_output = True
+        else:
+            side_model = None
+
+    return side_model
+
+
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
     assert sum([1 for flag in (args.half_sbs, args.vr180, args.anaglyph, args.tb, args.half_tb, args.cross_eyed) if flag]) < 2
@@ -1720,22 +1739,9 @@ def iw3_main(args):
         export_main(args)
         return args
 
-    with TorchHubDir(HUB_MODEL_DIR):
-        if args.method in {"row_flow_v3", "row_flow"}:
-            side_model = load_model(ROW_FLOW_V3_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
-            side_model.symmetric = False
-            side_model.delta_output = True
-        elif args.method in {"row_flow_v3_sym", "row_flow_sym"}:
-            side_model = load_model(ROW_FLOW_V3_SYM_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
-            side_model.symmetric = True
-            side_model.delta_output = True
-        elif args.method == "row_flow_v2":
-            side_model = load_model(ROW_FLOW_V2_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
-            side_model.delta_output = True
-        else:
-            side_model = None
-        if side_model is not None and len(args.gpu) > 1:
-            side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
+    side_model = load_sbs_model(args)
+    if side_model is not None and len(args.gpu) > 1:
+        side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
 
     if args.find_param:
         assert is_image(args.input) and (path.isdir(args.output) or not path.exists(args.output))
