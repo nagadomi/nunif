@@ -41,15 +41,18 @@ class WindowsCapturePIL():
 
     def start(self):
         control = CaptureControlPIL()
+        frame_buffer = None
         while True:
             tick = time.perf_counter()
             frame = ImageGrab.grab()
             if frame.mode != "RGB":
                 frame.convert("RGB")
             rgb = np.array(frame)
-            bgra = np.dstack((rgb[:, :, 2:3], rgb[:, :, 1:2], rgb[:, :, 0:1],
-                              np.zeros((rgb.shape[0], rgb.shape[1], 1), dtype=rgb.dtype)))
-            self.on_frame_arrived(FramePIL(bgra), control)
+            if frame_buffer is None:
+                frame_buffer = np.ones((rgb.shape[0], rgb.shape[1], 4), dtype=rgb.dtype)
+            # to BGRA
+            frame_buffer[:, :, 0:3] = rgb[:, :, ::-1]
+            self.on_frame_arrived(FramePIL(frame_buffer), control)
             if control._stop:
                 self.on_closed()
                 break
@@ -60,14 +63,14 @@ class WindowsCapturePIL():
 
 
 def draw_cursor(x, pos, size=8):
-    H, W, C = x.shape
+    C, H, W = x.shape
     r = size // 2
     rr = r // 2
     pos_x = min(max(pos[0], r), W - r)
     pos_y = min(max(pos[1], r), H - r)
-    px = x[pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr, :].copy()
-    x[pos_y - r: pos_y + r, pos_x - r: pos_x + r, :] = (0x33, 0x80, 0x80)
-    x[pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr, :] = px
+    px = x[:, pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr].clone()
+    x[:, pos_y - r: pos_y + r, pos_x - r: pos_x + r] = torch.tensor((0x33, 0x80, 0x80), dtype=px.dtype).view(3, 1, 1)
+    x[:, pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr] = px
 
 
 def get_screen_size():
@@ -177,6 +180,7 @@ class ScreenshotProcess(threading.Thread):
 
     def run(self):
         self.start_process()
+        frame_buffer = None
         try:
             while True:
                 if not self.process.is_alive():
@@ -187,22 +191,28 @@ class ScreenshotProcess(threading.Thread):
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
                                        dtype=np.uint8, buffer=self.process_frame_buffer.buf)
                     # deepcopy
-                    frame = np.dstack((frame[:, :, 2:3], frame[:, :, 1:2], frame[:, :, 0:1]))
+                    frame = torch.from_numpy(frame[:, :, 0:3])
+                    frame = frame[:, :, (2, 1, 0)].permute(2, 0, 1)
+                    if frame_buffer is None:
+                        frame_buffer = frame.clone().pin_memory()
+                    else:
+                        frame_buffer.copy_(frame)
                     self.process_frame_event.clear()
+
                 if self.backend == "pil":
                     # cursor for PIL
-                    draw_cursor(frame, wx.GetMousePosition())
+                    draw_cursor(frame_buffer, wx.GetMousePosition())
 
                 if self.cuda_stream is not None:
                     with torch.cuda.stream(self.cuda_stream):
-                        frame = torch.from_numpy(frame).permute(2, 0, 1).contiguous().to(self.device) / 255.0
+                        frame = frame_buffer.to(self.device) / 255.0
                         if frame.shape[2] > self.frame_height:
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
                                               antialias=True)
                         self.cuda_stream.synchronize()
                 else:
-                    frame = torch.from_numpy(frame).permute(2, 0, 1).contiguous().to(self.device) / 255.0
+                    frame = frame_buffer.to(self.device) / 255.0
                     if frame.shape[2] > self.frame_height:
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,

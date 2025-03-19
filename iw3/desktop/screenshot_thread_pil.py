@@ -21,10 +21,10 @@ def take_screenshot(mouse_position=None):
     return frame
 
 
-def to_tensor(pil_image, device):
+def to_tensor(pil_image, device, frame_buffer):
     # Transfer the image data to VRAM as uint8 first, then convert it to float.
     x = np.array(pil_image)
-    x = torch.from_numpy(x).permute(2, 0, 1).contiguous().to(device)
+    x = frame_buffer.copy_(torch.from_numpy(x).permute(2, 0, 1)).to(device)
     x = x / 255.0  # to float
     return x
 
@@ -48,19 +48,22 @@ class ScreenshotThreadPIL(threading.Thread):
             self.cuda_stream = None
 
     def run(self):
+        frame_buffer = None
         while True:
             tick = time.perf_counter()
             frame = take_screenshot(wx.GetMousePosition())
+            if frame_buffer is None:
+                frame_buffer = torch.ones((3, frame.height, frame.width), dtype=torch.uint8).pin_memory()
             if self.cuda_stream is not None:
                 with torch.cuda.stream(self.cuda_stream):
-                    frame = to_tensor(frame, self.device)
+                    frame = to_tensor(frame, self.device, frame_buffer)
                     if frame.shape[2] > self.frame_height:
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
                                           antialias=True)
                     self.cuda_stream.synchronize()
             else:
-                frame = to_tensor(frame, self.device)
+                frame = to_tensor(frame, self.device, frame_buffer)
                 if frame.shape[2] > self.frame_height:
                     frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                       interpolation=InterpolationMode.BILINEAR,
