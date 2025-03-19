@@ -22,11 +22,18 @@
             const img = new Image();
             img.src = STREAM_URI;
             img.onload = () => {
+                setInterval(() => {
+                    if (canvas && ctx && !stop_update && !document.hidden){
+                        ctx.drawImage(img, 0, 0);
+                    };
+                }, 1000 / FPS);
+                /*
                 function render() {
                     ctx.drawImage(img, 0, 0);
                     requestAnimationFrame(render);
                 }
                 render();
+                */
             };
             // check server restart
             setInterval(() => {
@@ -65,7 +72,7 @@
             const video = document.getElementById("player-canvas");
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, WIDTH, HEIGHT);
-            canvasStream = canvas.captureStream(FPS);
+            canvasStream = canvas.captureStream();  // auto sync when updating canvas
             video.srcObject = canvasStream;
         }
         setup_interval();
