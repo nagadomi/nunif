@@ -182,7 +182,9 @@ def set_icon_ex(main_frame, icon_path, app_id):
 
 
 def start_file(file_path):
-    if not path.exists(file_path):
+    if file_path.startswith("http://") or file_path.startswith("https://"):
+        pass
+    elif not path.exists(file_path):
         return
 
     fd = subprocess.DEVNULL
