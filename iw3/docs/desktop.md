@@ -38,6 +38,16 @@ Estimated FPS = 30.24, Streaming FPS = 0.00
 ```
 (`192.168.11.6` address depends on your network environment)
 
+
+(New) You can also launch GUI with the following command.
+
+```
+python -m iw3.desktop.gui
+```
+
+![iw3-desktop-gui](https://github.com/user-attachments/assets/1cd86b35-d258-45f2-8446-f0f0a4387b1c)
+
+
 If a Firewall dialog appears, allow it.
 
 Open the URL in your PC browser and check if the video can be played.

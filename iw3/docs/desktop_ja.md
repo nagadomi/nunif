@@ -38,6 +38,15 @@ Estimated FPS = 30.24, Streaming FPS = 0.00
 ```
 (`192.168.11.6`のアドレス部分は、ネットワーク環境によって異なります)
 
+(New) または以下のコマンドでGUIが起動します。
+
+```
+python -m iw3.desktop.gui
+```
+
+![iw3-desktop-gui](https://github.com/user-attachments/assets/9e4f28c2-8adf-4f51-82ff-20f909aef47d)
+
+
 ファイヤウォールのダイアログが表示された場合は許可してください。
 
 URLをPCのブラウザで開いて動画が再生できるかチェックしてください。ウェブページはGoogle ChromeとMeta Quest 2 Browserで動作確認しています。Firefoxでは動作しません。
