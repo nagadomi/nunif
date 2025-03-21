@@ -131,8 +131,11 @@ def capture_process(frame_size, frame_shm, frame_lock, frame_event, stop_event, 
     def on_closed():
         pass
 
-    # event loop
-    capture.start()
+    try:
+        # event loop
+        capture.start()
+    finally:
+        frame_event.set()
 
 
 def to_tensor(bgra, device):

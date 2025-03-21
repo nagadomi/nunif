@@ -85,6 +85,8 @@ class ScreenshotThreadPIL(threading.Thread):
             self.frame_unset_event.wait()
 
     def get_frame(self):
+        if not self.is_alive():
+            raise RuntimeError("thread is already dead")
         self.frame_set_event.wait()
         with self.frame_lock:
             frame = self.frame
