@@ -154,11 +154,6 @@ class MainFrame(wx.Frame):
         self.cbo_convergence.SetSelection(2)
         self.cbo_convergence.SetToolTip("Convergence")
 
-        self.lbl_ipd_offset = wx.StaticText(self.grp_stereo, label=T("Your Own Size"))
-        # SpinCtrlDouble is better, but cannot save with PersistenceManager
-        self.sld_ipd_offset = wx.SpinCtrl(self.grp_stereo, value="0", min=0, max=20, name="sld_ipd_offset")
-        self.sld_ipd_offset.SetToolTip("IPD Offset")
-
         self.lbl_synthetic_view = wx.StaticText(self.grp_stereo, label=T("Synthetic View"))
         self.cbo_synthetic_view = wx.ComboBox(self.grp_stereo,
                                               choices=["both", "right", "left"],
@@ -243,8 +238,6 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_convergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_convergence, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_ipd_offset, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.sld_ipd_offset, (i, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_synthetic_view, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_synthetic_view, (i, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -652,7 +645,6 @@ class MainFrame(wx.Frame):
             gpu=device_id,
             divergence=float(self.cbo_divergence.GetValue()),
             convergence=float(self.cbo_convergence.GetValue()),
-            ipd_offset=float(self.sld_ipd_offset.GetValue()),
             synthetic_view=self.cbo_synthetic_view.GetValue(),
             method=self.cbo_method.GetValue(),
             depth_model=depth_model_type,
