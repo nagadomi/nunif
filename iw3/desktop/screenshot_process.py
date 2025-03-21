@@ -186,10 +186,10 @@ class ScreenshotProcess(threading.Thread):
         frame_buffer = None
         try:
             while True:
-                if not self.process.is_alive():
-                    break
                 tick = time.perf_counter()
-                self.process_frame_event.wait()
+                while not self.process_frame_event.wait(1):
+                    if not self.process.is_alive():
+                        raise RuntimeError("thread is already dead")
                 with self.process_frame_lock:
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
                                        dtype=np.uint8, buffer=self.process_frame_buffer.buf)
