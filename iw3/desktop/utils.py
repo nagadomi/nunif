@@ -110,8 +110,10 @@ def create_parser():
     return parser
 
 
-def set_state_args(args):
-    IW3U.set_state_args(args)
+def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_model=None):
+    IW3U.set_state_args(args, stop_event=stop_event, depth_model=depth_model)
+    args.state["fps_event"] = fps_event
+    args.state["args_lock"] = args_lock if args_lock is not None else threading.Lock()
     args.bg_session = None
     if args.edge_dilation is None:
         args.edge_dilation = 2
@@ -124,6 +126,8 @@ def iw3_desktop_main(args, init_wxapp=True):
     else:
         frame_width_scale = 2
 
+    if args.bind_addr is None:
+        args.bind_addr = get_local_address()
     if args.bind_addr == "0.0.0.0":
         pass  # Allows specifying undefined addresses
     elif args.bind_addr == "127.0.0.1" or not is_private_address(args.bind_addr):
@@ -186,27 +190,35 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_width=frame_width, frame_height=frame_height,
         device=device)
 
-    # main loop
-    server.start()
-    screenshot_thread.start()
-    print(f"Open http://{args.bind_addr}:{args.port}")
-    count = 0
-    fps_counter = deque(maxlen=120)
     try:
-        while True:
-            tick = time.perf_counter()
-            frame = screenshot_thread.get_frame()
-            sbs = IW3U.process_image(frame, args, depth_model, side_model, return_tensor=True)
-            server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
+        # main loop
+        server.start()
+        screenshot_thread.start()
+        if args.state["fps_event"] is not None:
+            args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
+        else:
+            print(f"Open http://{args.bind_addr}:{args.port}")
+        count = 0
+        fps_counter = deque(maxlen=120)
 
-            if count % (args.stream_fps * 30) == 0:
-                gc_collect()
-            if count > 1 and count % args.stream_fps == 0:
-                mean_processing_time = sum(fps_counter) / len(fps_counter)
-                estimated_fps = 1.0 / mean_processing_time
-                print(f"\rEstimated FPS = {estimated_fps:.02f}, "
-                      f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                      f"Streaming FPS = {server.get_fps():.02f}", end="")
+        while True:
+            with args.state["args_lock"]:
+                tick = time.perf_counter()
+                frame = screenshot_thread.get_frame()
+                sbs = IW3U.process_image(frame, args, depth_model, side_model, return_tensor=True)
+                server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
+
+                if count % (args.stream_fps * 30) == 0:
+                    gc_collect()
+                if count > 1 and count % args.stream_fps == 0:
+                    mean_processing_time = sum(fps_counter) / len(fps_counter)
+                    estimated_fps = 1.0 / mean_processing_time
+                    if args.state["fps_event"] is not None:
+                        args.state["fps_event"].update(estimated_fps, screenshot_thread.get_fps(), server.get_fps())
+                    else:
+                        print(f"\rEstimated FPS = {estimated_fps:.02f}, "
+                              f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
+                              f"Streaming FPS = {server.get_fps():.02f}", end="")
 
             process_time = time.perf_counter() - tick
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
@@ -218,3 +230,8 @@ def iw3_desktop_main(args, init_wxapp=True):
     finally:
         server.stop()
         screenshot_thread.stop()
+
+    if args.state["stop_event"] and args.state["stop_event"].is_set():
+        args.state["stop_event"].clear()
+
+    return args

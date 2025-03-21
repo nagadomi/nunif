@@ -17,7 +17,7 @@ STATUS_OK = "200 OK"
 
 
 class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
-    pass
+    allow_reuse_address = True
 
 
 class StreamingServer():
@@ -56,17 +56,21 @@ class StreamingServer():
 
     def _stop(self):
         self.shutdown_event.set()
+        time.sleep(0.1)
         if self.server is not None:
             self.server.shutdown()
-            self.thread.join()
-            self.server.shutdown()
-            self.thread = None
             self.server = None
-        self.shutdown_event.clear()
+        if self.thread is not None:
+            if self.thread.ident is not None:
+                self.thread.join()
+            self.thread = None
         time.sleep(0.1)
+        self.shutdown_event.clear()
 
     def _start(self):
         self.server = make_server(self.host, self.port, self.handle, ThreadingWSGIServer)
+        # FIXME: sometimes `Address already in use` error occurs
+        self.allow_reuse_address = True
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.start()
         self.process_token = "%016x" % random.getrandbits(64)

@@ -103,4 +103,5 @@ class ScreenshotThreadPIL(threading.Thread):
     def stop(self):
         self.stop_event.set()
         self.frame_unset_event.set()
-        self.join()
+        if self.ident is not None:
+            self.join()

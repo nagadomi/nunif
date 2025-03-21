@@ -96,3 +96,19 @@
 "Video Only": "動画のみ"
 "Start": "開始"
 "Cancel": "キャンセル"
+
+
+# iw3.desktop
+"Network": "ネットワーク"
+"Address": "アドレス"
+"Port": "ポート"
+"Streaming FPS": "ストリーミング FPS"
+"MJPEG Quality": "MJPEG 品質"
+"Screenshot": "スクリーンショット"
+"Shutdown": "停止"
+"Basic Authentication": "ベーシック認証"
+"Username": "ユーザー"
+"Password": "パスワード"
+"Adjustment": "調節"
+"Detect": "検出"
+"Open in Browser": "ブラウザで開く"
