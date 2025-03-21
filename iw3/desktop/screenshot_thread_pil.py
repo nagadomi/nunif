@@ -53,7 +53,9 @@ class ScreenshotThreadPIL(threading.Thread):
             tick = time.perf_counter()
             frame = take_screenshot(wx.GetMousePosition())
             if frame_buffer is None:
-                frame_buffer = torch.ones((3, frame.height, frame.width), dtype=torch.uint8).pin_memory()
+                frame_buffer = torch.ones((3, frame.height, frame.width), dtype=torch.uint8)
+                if torch.cuda.is_available():
+                    frame_buffer = frame_buffer.pin_memory()
             if self.cuda_stream is not None:
                 with torch.cuda.stream(self.cuda_stream):
                     frame = to_tensor(frame, self.device, frame_buffer)

@@ -194,7 +194,9 @@ class ScreenshotProcess(threading.Thread):
                     frame = torch.from_numpy(frame[:, :, 0:3])
                     frame = frame[:, :, (2, 1, 0)].permute(2, 0, 1)
                     if frame_buffer is None:
-                        frame_buffer = frame.clone().pin_memory()
+                        frame_buffer = frame.clone()
+                        if torch.cuda.is_available():
+                            frame_buffer = frame_buffer.pin_memory()
                     else:
                         frame_buffer.copy_(frame)
                     self.process_frame_event.clear()
