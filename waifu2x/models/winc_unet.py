@@ -377,7 +377,7 @@ class WincUNetBase(nn.Module):
 
         if self.tile_mode:
             B, C, H, W = x.shape
-            if self.scale_factor == 4:
+            if self.scale_factor in {4, 2}:
                 assert H == 112 and W == H
                 if self.training:
                     #  use 64x64 2x2 tile and 112x112 1x1 tile alternately
@@ -478,6 +478,9 @@ class WincUNet2x(I2IBaseModel):
             return z
         else:
             return torch.clamp(z, 0., 1.)
+
+    def set_tile_mode(self):
+        self.unet.set_tile_mode()
 
 
 @register_model
