@@ -39,6 +39,13 @@ ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0
 IMAGE_IO_QUEUE_MAX = 100
 
 
+def to_pil_image(x):
+    # x is already clipped to 0-1
+    assert x.dtype in {torch.float32, torch.float16}
+    x = TF.to_pil_image((x * 255).round_().to(torch.uint8).cpu())
+    return x
+
+
 def make_divergence_feature_value(divergence, convergence, image_width):
     # assert image_width <= 2048
     divergence_pix = divergence * 0.5 * 0.01 * image_width
@@ -422,7 +429,7 @@ def remove_bg_from_image(im, bg_session):
     bg_color = torch.tensor((0.4, 0.4, 0.2)).view(3, 1, 1)
     im = im * mask + bg_color * (1.0 - mask)
     im = torch.clamp(im, 0, 1)
-    im = TF.to_pil_image(im)
+    im = to_pil_image(im)
 
     return im
 
@@ -450,7 +457,7 @@ def preprocess_image(im, args):
         im = torch.clamp(im, 0, 1)
     im_org = im
     if args.bg_session is not None:
-        im2 = remove_bg_from_image(TF.to_pil_image(im), args.bg_session)
+        im2 = remove_bg_from_image(to_pil_image(im), args.bg_session)
         im = TF.to_tensor(im2).to(im.device)
     return im_org, im
 
@@ -573,7 +580,7 @@ def debug_depth_image(depth, args):
     mean_depth, std_depth = depth.mean().item(), depth.std().item()
     depth2 = get_mapper(args.mapper)(depth)
     out = torch.cat([depth, depth2], dim=2).cpu()
-    out = TF.to_pil_image(out)
+    out = to_pil_image(out)
     # gc = ImageDraw.Draw(out)
     # gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
     #                    f"max={round(float(depth_max), 4)}\n"
@@ -594,7 +601,7 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
             left_eye, right_eye = apply_divergence(depth, im_org, args, side_model)
             sbs = postprocess_image(left_eye, right_eye, args)
             if not return_tensor:
-                sbs = TF.to_pil_image(sbs)
+                sbs = to_pil_image(sbs)
             return sbs
         else:
             return debug_depth_image(depth, args)
@@ -1106,7 +1113,7 @@ def export_video(input_filename, output_dir, args, title=None):
             seq = str(seq).zfill(8)
             depth_model.save_depth(depth[0], path.join(depth_dir, f"{seq}.png"), normalize=False)
             if not args.export_depth_only:
-                rgb = TF.to_pil_image(x)
+                rgb = to_pil_image(x)
                 save_image(rgb, path.join(rgb_dir, f"{seq}.png"))
 
     def _batch_callback(x, pts):
@@ -1347,7 +1354,7 @@ def process_config_images(config, args, side_model):
 
                 left_eye, right_eye = apply_divergence(depth, rgb, args, side_model)
                 sbs = postprocess_image(left_eye, right_eye, args)
-                sbs = TF.to_pil_image(sbs)
+                sbs = to_pil_image(sbs)
 
                 output_filename = path.join(
                     output_dir,
