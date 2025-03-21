@@ -49,12 +49,27 @@ def make_divergence_feature_value(divergence, convergence, image_width):
 
 
 def make_input_tensor(c, depth, divergence, convergence,
-                      image_width, mapper="pow2"):
+                      image_width, mapper="pow2", preserve_screen_border=False):
     depth = depth.squeeze(0)  # CHW -> HW
     depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
     divergence_feat = torch.full_like(depth, divergence_value, device=depth.device)
     convergence_feat = torch.full_like(depth, convergence_value, device=depth.device)
+
+    if preserve_screen_border:
+        # Force set screen border parallax to zero.
+        # Note that this does not work with tiled rendering (training code)
+        border_pix = round(divergence * 0.75 * 0.01 * image_width * (depth.shape[-1] / image_width))
+        border_weight_l = torch.linspace(0.0, 1.0, border_pix, device=depth.device)
+        border_weight_r = torch.linspace(1.0, 0.0, border_pix, device=depth.device)
+        divergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(divergence_feat[:, :border_pix]) *
+                                           divergence_feat[:, :border_pix])
+        divergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(divergence_feat[:, -border_pix:]) *
+                                            divergence_feat[:, -border_pix:])
+        convergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(convergence_feat[:, :border_pix]) *
+                                            convergence_feat[:, :border_pix])
+        convergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(convergence_feat[:, -border_pix:]) *
+                                             convergence_feat[:, -border_pix:])
 
     if c is not None:
         w, h = c.shape[2], c.shape[1]
@@ -168,7 +183,7 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_vi
 
 
 def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
-                           mapper, synthetic_view, enable_amp):
+                           mapper, synthetic_view, preserve_screen_border, enable_amp):
     assert synthetic_view in {"both", "right", "left"}
     if getattr(model, "symmetric", False):
         left_eye, right_eye = apply_divergence_nn_symmetric(
@@ -177,23 +192,31 @@ def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
     else:
         if synthetic_view == "both":
             left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                           mapper, -1, enable_amp)
+                                           mapper=mapper, shift=-1,
+                                           preserve_screen_border=preserve_screen_border,
+                                           enable_amp=enable_amp)
             right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
-                                            mapper, 1, enable_amp)
+                                            mapper=mapper, shift=1,
+                                            preserve_screen_border=preserve_screen_border,
+                                            enable_amp=enable_amp)
         elif synthetic_view == "right":
             left_eye = c
             right_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence,
-                                            mapper, 1, enable_amp)
+                                            mapper=mapper, shift=1,
+                                            preserve_screen_border=preserve_screen_border,
+                                            enable_amp=enable_amp)
         elif synthetic_view == "left":
             left_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence,
-                                           mapper, -1, enable_amp)
+                                           mapper=mapper, shift=-1,
+                                           preserve_screen_border=preserve_screen_border,
+                                           enable_amp=enable_amp)
             right_eye = c
 
     return left_eye, right_eye
 
 
 def apply_divergence_nn(model, c, depth, divergence, convergence,
-                        mapper, shift, enable_amp):
+                        mapper, shift, preserve_screen_border, enable_amp):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -205,7 +228,8 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
                                        divergence=divergence,
                                        convergence=convergence,
                                        image_width=W,
-                                       mapper=mapper)
+                                       mapper=mapper,
+                                       preserve_screen_border=preserve_screen_border)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
@@ -471,6 +495,7 @@ def apply_divergence(depth, im_org, args, side_model):
             args.divergence, args.convergence,
             mapper=args.mapper,
             synthetic_view=args.synthetic_view,
+            preserve_screen_border=args.preserve_screen_border,
             enable_amp=not args.disable_amp)
 
     if not batch:
@@ -549,7 +574,7 @@ def debug_depth_image(depth, args):
     depth2 = get_mapper(args.mapper)(depth)
     out = torch.cat([depth, depth2], dim=2).cpu()
     out = TF.to_pil_image(out)
-    gc = ImageDraw.Draw(out)
+    # gc = ImageDraw.Draw(out)
     # gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
     #                    f"max={round(float(depth_max), 4)}\n"
     #                    f"mean={round(float(mean_depth), 4)}\n"
@@ -1381,6 +1406,8 @@ def create_parser(required_true=True):
                         help=("the side that generates synthetic view."
                               "when `right`, the left view will be the original input image/frame"
                               " and only the right will be synthesized."))
+    parser.add_argument("--preserve-screen-border", action="store_true",
+                        help=("force set screen border parallax to zero"))
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect. 0-2 is reasonable value"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5,
