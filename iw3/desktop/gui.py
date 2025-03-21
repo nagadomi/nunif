@@ -287,6 +287,11 @@ class MainFrame(wx.Frame):
                                                name="cbo_stream_fps")
         self.cbo_stream_fps.SetSelection(0)
 
+        self.lbl_stream_height = wx.StaticText(self.grp_network, label=T("Streaming Resolution"))
+        self.cbo_stream_height = EditableComboBox(self.grp_network, choices=["1080", "720"],
+                                                  name="cbo_stream_height")
+        self.cbo_stream_height.SetSelection(0)
+
         self.lbl_stream_quality = wx.StaticText(self.grp_network, label=T("MJPEG Quality"))
         self.cbo_stream_quality = EditableComboBox(self.grp_network, choices=["100", "95", "90", "85", "80"],
                                                    name="cbo_stream_quality")
@@ -307,14 +312,16 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_port, (1, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_stream_fps, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stream_fps, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_quality, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_quality, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_height, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_height, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_quality, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_quality, (4, 1), flag=wx.EXPAND)
 
-        layout.Add(self.chk_auth, (4, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_auth, (5, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (7, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -478,6 +485,7 @@ class MainFrame(wx.Frame):
             self.cbo_ema_decay,
             self.cbo_foreground_scale,
             self.cbo_stream_fps,
+            self.cbo_stream_height,
         ]
         return editable_comboboxes
 
@@ -621,6 +629,9 @@ class MainFrame(wx.Frame):
         if not validate_number(self.cbo_stream_fps.GetValue(), 1, 60, allow_empty=False):
             self.show_validation_error_message(T("Streaming FPS"), 1, 60)
             return None
+        if not validate_number(self.cbo_stream_height.GetValue(), 320, 4320, allow_empty=False):
+            self.show_validation_error_message(T("Streaming Resolution"), 320, 4320)
+            return None
         if not validate_number(self.cbo_stream_quality.GetValue(), 1, 100, allow_empty=False):
             self.show_validation_error_message(T("MJPEG Quality"), 1, 100)
             return None
@@ -679,6 +690,7 @@ class MainFrame(wx.Frame):
             user=user,
             password=password,
             stream_fps=int(self.cbo_stream_fps.GetValue()),
+            stream_height=int(self.cbo_stream_height.GetValue()),
             stream_quality=int(self.cbo_stream_quality.GetValue()),
             screenshot=self.cbo_screenshot.GetValue(),
             full_sbs=full_sbs,
