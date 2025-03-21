@@ -146,12 +146,12 @@ class MainFrame(wx.Frame):
         self.lbl_divergence_warning.Hide()
 
         self.cbo_divergence.SetToolTip("Divergence")
-        self.cbo_divergence.SetSelection(4)
+        self.cbo_divergence.SetSelection(5)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
         self.cbo_convergence = EditableComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
                                                 name="cbo_convergence")
-        self.cbo_convergence.SetSelection(1)
+        self.cbo_convergence.SetSelection(2)
         self.cbo_convergence.SetToolTip("Convergence")
 
         self.lbl_ipd_offset = wx.StaticText(self.grp_stereo, label=T("Your Own Size"))
