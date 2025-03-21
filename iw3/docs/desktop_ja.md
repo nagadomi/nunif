@@ -44,7 +44,7 @@ Estimated FPS = 30.24, Streaming FPS = 0.00
 python -m iw3.desktop.gui
 ```
 
-![iw3-desktop-gui](https://github.com/user-attachments/assets/9e4f28c2-8adf-4f51-82ff-20f909aef47d)
+![iw3-desktop-gui](https://github.com/user-attachments/assets/18175b2a-a027-42ce-ae5c-a9ee7ae178e5)
 
 
 ファイヤウォールのダイアログが表示された場合は許可してください。
