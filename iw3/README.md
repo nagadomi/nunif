@@ -305,6 +305,10 @@ Use `--low-vram` option.
 I tested this program on RTX 3070 Ti (8GB VRAM, Linux) and GTX 1050 Ti (4GB VRAM, Laptop, Windows).
 Both work with the default option.
 
+### NVENC(`h264_nvenc`, `hevc_nvenc`) does not work
+
+Install NVIDIA driver 570 or newer.
+
 ### How to convert rotated(height width swapped) video correctly
 
 Use `--rotate-left`(rotate 90 degrees to counterclockwise) or `--rotate-right`(rotate 90 degrees to clockwise) option to fix the rotation.
