@@ -303,7 +303,8 @@ class MainFrame(wx.Frame):
 
         self.chk_export_depth_fit = wx.CheckBox(self.grp_stereo, label=T("Resize to fit"), name="chk_export_depth_fit")
         self.chk_export_depth_fit.SetValue(False)
-        self.chk_export_depth_fit.SetToolTip(T("Resize depth images to the same size as rgb images."))
+        self.chk_export_depth_fit.SetToolTip(T("Resize depth images to the same size as rgb images.\n"
+                                               "Note that the process may become very slow due to the output file becoming large."))
         self.chk_export_depth_fit.Hide()
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)

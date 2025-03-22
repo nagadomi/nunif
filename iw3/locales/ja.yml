@@ -54,7 +54,7 @@
 "Depth Only": "深度画像のみ"
 "Exporting depth images only.\nNote that exported data with this option cannot be imported.": "深度画像のみエクスポート\nこのオプションでエクスポートしたデータはインポートできないことに注意"
 "Resize to fit": "サイズを合わせる"
-"Resize depth images to the same size as rgb images.": "深度画像をRGB画像と同じサイズにリサイズ"
+"Resize depth images to the same size as rgb images.\nNote that the process may become very slow due to the output file becoming large.": "深度画像をRGB画像と同じサイズにリサイズ\n出力ファイルが大きくなることで処理が非常に遅くなることに注意"
 
 "Video Encoding": "動画圧縮"
 
