@@ -16,6 +16,7 @@ import hashlib
 from configparser import ConfigParser
 from diskcache import Cache
 import psutil
+import filelock
 import gc
 from enum import Enum
 from urllib.parse import (
@@ -42,6 +43,7 @@ DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
+COMPILE_LOCK = path.join("tmp", "waifu2x_web_compile.lock")
 
 
 class ScaleOption(Enum):
@@ -90,6 +92,8 @@ class CacheGC():
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
+                torch._dynamo.reset()
             self.last_expired_at = time()
             logger.info(f"diskcache: cache={self.disk_size_mb()}MB, RAM={self.ram_size_mb()}")
 
@@ -147,21 +151,23 @@ def setup():
     photo_ctx.load_model_all(load_4x=False)
 
     if args.compile:
-        logger.info("Compiling models...")
-        art_ctx.compile()
-        art_scan_ctx.compile()
-        photo_ctx.compile()
-        if args.warmup:
-            if args.batch_size != 1:
-                logger.warning(("`--batch-size 1` is recommended."
-                                "large batch size makes startup very slow."))
-            art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                           enable_amp=not args.disable_amp)
-            art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                                enable_amp=not args.disable_amp)
-            photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                             enable_amp=not args.disable_amp)
-        logger.info("Done")
+        compile_lock = filelock.FileLock(COMPILE_LOCK)
+        with compile_lock:
+            logger.info("Compiling models...")
+            art_ctx.compile()
+            art_scan_ctx.compile()
+            photo_ctx.compile()
+            if args.warmup:
+                if args.batch_size != 1:
+                    logger.warning(("`--batch-size 1` is recommended."
+                                    "large batch size makes startup very slow."))
+                art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                               enable_amp=not args.disable_amp)
+                art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                                    enable_amp=not args.disable_amp)
+                photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
+                                 enable_amp=not args.disable_amp)
+            logger.info("Done")
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
     cache_gc = CacheGC(cache, args.cache_ttl * 60)
@@ -352,8 +358,36 @@ def scale_16x(im, meta):
 
 
 @bottle.get("/api")
-def api_get_error():
-    bottle.abort(405, "Method Not Allowed")
+def api_get():
+    last_request = request.get_cookie("last_request", secret=request.headers.get("User-Agent"))
+    if not isinstance(last_request, dict):
+        bottle.redirect("/")
+
+    key = last_request.get("key", None)
+    image_format = last_request.get("image_format", None)
+    scale = last_request.get("scale", None)
+    output_filename = last_request.get("output_filename", None)
+
+    if not (key and image_format and output_filename):
+        bottle.redirect("/")
+
+    if image_format not in {"png", "webp"}:
+        bottle.redirect("/")
+
+    image_data = cache.get(key, None)
+    if image_data is None:
+        bottle.redirect("/")
+
+    if scale == ScaleOption.X16:
+        im, meta = IL.decode_image(image_data, keep_alpha=True)
+        im = scale_16x(im, meta)
+        image_data = IL.encode_image(im, format=image_format, meta=meta)
+        im.close()
+
+    res = HTTPResponse(status=200, body=image_data)
+    res.set_header("Content-Type", f"image/{image_format}")
+    res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
+    return res
 
 
 @bottle.post("/api")
@@ -429,6 +463,11 @@ def api():
     res = HTTPResponse(status=200, body=image_data)
     res.set_header("Content-Type", f"image/{image_format}")
     res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
+
+    # Store the last request info to cookie for redisplay on GET request
+    res.set_cookie("last_request",
+                   {"key": key, "image_format": image_format, "scale": scale, "output_filename": output_filename},
+                   secret=request.headers.get("User-Agent"))  # scrambling
 
     return res
 

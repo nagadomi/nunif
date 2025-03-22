@@ -9,7 +9,7 @@ wand >= 0.6.10
 fonttools
 scipy
 waitress
-bottle
+bottle==0.12.25
 diskcache
 flake8
 psutil
@@ -17,15 +17,18 @@ pyyaml
 onnx
 onnxconverter_common
 lpips
+platformdirs
 # opencv-python
 packaging
+filelock
 
 # https://github.com/GallagherCommaJack/dctorch
 dctorch
 
 # iw3
 timm
-numba # only for iww3 sbs training
-av >= 12.2.0, < 14.0.0
+numba # only for iw3 sbs training
+av==14.2.0
 rembg # for --remove-bg
 truststore; python_version >= '3.10'
+pillow_heif

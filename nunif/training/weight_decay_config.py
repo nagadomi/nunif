@@ -8,7 +8,7 @@ from ..modules.norm import LayerNormNoBias2d, RMSNorm, RMSNorm1
 from ..modules.fusion import Lerp, AdaptiveWeight, AdaptiveWeightedAdd
 
 
-def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
+def configure_optim_groups(model, weight_decay=0.01):
     """
     This long function is unfortunately doing something very simple and is being very defensive:
     We are separating out all parameters of the model into two buckets: those that will experience
@@ -22,6 +22,7 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
     whitelist_weight_modules = (
         torch.nn.Linear,
         torch.nn.Conv2d,
+        torch.nn.Conv1d,
         torch.nn.ConvTranspose2d,
     )
     blacklist_weight_modules = (
@@ -30,6 +31,7 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
         torch.nn.BatchNorm2d,
         torch.nn.BatchNorm1d,
         torch.nn.GroupNorm,
+        torch.nn.RMSNorm,
         LayerNormNoBias2d,
         RMSNorm,
         RMSNorm1,
@@ -96,5 +98,10 @@ def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
         {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": weight_decay},
         {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
     ]
+    return optim_groups
+
+
+def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01):
+    optim_groups = configure_optim_groups(model, weight_decay=weight_decay)
     optimizer = torch.optim.AdamW(optim_groups, lr=lr, betas=betas)
     return optimizer

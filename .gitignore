@@ -41,6 +41,7 @@ tmp
 /windows_package/nunif
 /iw3/pretrained_models/hub
 /iw3/pretrained_models/rembg
+/stlizer/pretrained_models/hub
 .python-version
 
 /cliqa/pretrained_models

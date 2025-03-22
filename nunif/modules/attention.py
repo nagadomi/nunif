@@ -88,6 +88,19 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, dropout_p=0.0, is_causal=Fals
     return x.permute(0, 2, 1, 3).reshape(B, QN, qkv_dim * num_heads)
 
 
+def pad_shift_mask_token(x, mask_token, window_size):
+    mask_token = mask_token.to(x.dtype)
+
+    B, C, H, W = x.shape
+    pad_w = mask_token.expand(B, C, H, window_size[1] // 2)
+    x = torch.cat((pad_w, x, pad_w), dim=3)
+
+    B, C, H, W = x.shape
+    pad_h = mask_token.expand(B, C, window_size[0] // 2, W)
+    x = torch.cat((pad_h, x, pad_h), dim=2)
+    return x
+
+
 class MHA(nn.Module):
     def __init__(self, embed_dim, num_heads, qkv_dim=None):
         super().__init__()
@@ -116,22 +129,41 @@ class WindowMHA2d(nn.Module):
     """ WindowMHA
     BCHW input/output
     """
-    def __init__(self, in_channels, num_heads, window_size=(4, 4), qkv_dim=None):
+    def __init__(self, in_channels, num_heads, window_size=(4, 4), qkv_dim=None, shift=False, shift_mask_token=False):
         super().__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
+        self.shift = shift
+        if self.shift:
+            assert self.window_size[0] % 2 == 0 and self.window_size[1] % 2 == 0
+            self.pad_h = self.window_size[0] // 2
+            self.pad_w = self.window_size[1] // 2
+            if shift_mask_token:
+                self.shift_mask_bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
+                nn.init.trunc_normal_(self.shift_mask_bias, 0, 0.01)
+
+        if not hasattr(self, "shift_mask_bias"):
+            self.shift_mask_bias = None
+
         self.num_heads = num_heads
         self.mha = MHA(in_channels, num_heads, qkv_dim)
         basic_module_init(self)
 
     def forward(self, x, attn_mask=None, layer_norm=None):
-        src = x
-        out_shape = src.shape
+        if self.shift:
+            if self.shift_mask_bias is not None:
+                x = pad_shift_mask_token(x, self.shift_mask_bias, self.window_size)
+            else:
+                x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h), mode="constant", value=0)
+
+        out_shape = x.shape
         x = bchw_to_bnc(x, self.window_size)
         if layer_norm is not None:
             x = layer_norm(x)
         x = self.mha(x, attn_mask=attn_mask)
         x = bnc_to_bchw(x, out_shape, self.window_size)
+        if self.shift:
+            x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h))
 
         return x
 
@@ -449,6 +481,81 @@ def window_distance_matrix(window_size):
                           for i in range(positions.shape[0])], dim=0)
     distance = distance.view(N, N)
     return distance
+
+
+class GMLP(nn.Module):
+    # gMLP
+    def __init__(self, embed_dim, seq_len, mlp_ratio=1):
+        super().__init__()
+        self.proj_in = nn.Linear(embed_dim, int(embed_dim * mlp_ratio * 2))
+        self.proj_spatial = nn.Conv1d(seq_len, seq_len, kernel_size=1, stride=1, bias=True)
+        self.proj_out = nn.Linear(int(embed_dim * mlp_ratio * 2) // 2, embed_dim)
+
+        basic_module_init(self.proj_in)
+        basic_module_init(self.proj_out)
+        nn.init.uniform_(self.proj_spatial.weight, -1e-3 / embed_dim, 1e-3 / embed_dim)
+        nn.init.constant_(self.proj_spatial.bias, 1.0)
+
+    def forward(self, x, norm1=None, norm2=None):
+        # B, N, C = x.shape
+        shortcut = x
+        if norm1 is not None:
+            x = norm1(x)
+        x = self.proj_in(x)
+        x = F.gelu(x)
+
+        u, v = x.chunk(2, dim=-1)
+        if norm2 is not None:
+            v = norm2(v)
+        v = self.proj_spatial(v)
+        x = u * v
+
+        x = self.proj_out(x)
+        x = x + shortcut
+
+        return x
+
+
+class WindowGMLP2d(nn.Module):
+    """
+    WindowGMLP2d
+    BCHW input/output
+    """
+    def __init__(self, in_channels, window_size=(4, 4), mlp_ratio=2, shift=False, shift_mask_token=False):
+        super().__init__()
+        self.window_size = (window_size if isinstance(window_size, (tuple, list))
+                            else (window_size, window_size))
+        self.shift = shift
+        if self.shift:
+            assert self.window_size[0] % 2 == 0 and self.window_size[1] % 2 == 0
+            self.pad_h = self.window_size[0] // 2
+            self.pad_w = self.window_size[1] // 2
+            if shift_mask_token:
+                self.shift_mask_bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
+                nn.init.trunc_normal_(self.shift_mask_bias, 0, 0.01)
+
+        if not hasattr(self, "shift_mask_bias"):
+            self.shift_mask_bias = None
+
+        self.seq_len = self.window_size[0] * self.window_size[1]
+        self.gmlp = GMLP(in_channels, seq_len=self.seq_len, mlp_ratio=mlp_ratio)
+
+    def forward(self, x, norm1=None, norm2=None):
+        if self.shift:
+            if self.shift_mask_bias is not None:
+                x = pad_shift_mask_token(x, self.shift_mask_bias, self.window_size)
+            else:
+                x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h), mode="constant", value=0)
+
+        out_shape = x.shape
+        x = bchw_to_bnc(x, self.window_size)
+        x = self.gmlp(x, norm1, norm2)
+        x = bnc_to_bchw(x, out_shape, self.window_size)
+
+        if self.shift:
+            x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h))
+
+        return x
 
 
 def _test_bias():

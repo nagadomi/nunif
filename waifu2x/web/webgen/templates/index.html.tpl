@@ -233,13 +233,6 @@
 	  <input id="submit-button" type="submit" class="button">
 	% end
 	<input id="download-button" type="submit" name="download" value="{{button_download}}" class="button">
-	<div class="bottom-hint">
-	  <ul>
-	    % for hint in hints:
-	      <li>{{hint}}</li>
-	    % end
-	  </ul>
-	</div>
       </form>
     </div>
     <div class="bottom-info address">

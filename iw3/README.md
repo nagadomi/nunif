@@ -10,7 +10,7 @@ This project is under construction.
 
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2).
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro).
 - Generating side-by-side image using grid_sample based lightweight model
 
 ## Usage
@@ -76,6 +76,16 @@ You can adjust the screen position by zoom-in/zoom-out on the VR Video Player.
 ![ipd-offset](https://github.com/nagadomi/nunif/assets/287255/9ae7c504-08eb-4105-af36-b5a9da5b5ed8)
 
 This may be adjustable on the VR Player. If so, set it to 0 (by default).
+
+### What is `--synthetic-view` option?
+
+With `both`, generate views for both eyes. With `left` or `right`, only one view is generated. The other side view will be the original image/frame.
+
+When `both` is specified, artifacts/distortions are balanced across the left and right eyes. This reduces the artifacts, but may cause artifacts seen in both eyes.
+
+When `left` or `right` is specified, one eye view will have no artifact/distortion because it is the original image, but the opposite eye view will have twice as much artifact/distortion. Whether `left` or `right` is better depends on your dominant eye.
+
+At the moment, I recommend `both`. `both` by default.
 
 ### What is `--foreground-scale` option?
 
@@ -151,15 +161,11 @@ I have tested the results with the following software.
 Pigasus works perfectly for SBS 3D videos, images, and Samba drive(SMB).
 However, I am not a big fan of its user interface and user experience.
 
-If you can only choose one software, I would recommend this one.
-
 ### SKYBOX VR Video Player
 
-With recent updates(v1.1.6), most features of 3D Full SBS are now working.
-However, the following features have not yet been implemented.
+With recent updates, most features of 3D Full SBS are now working.
 
-- No ability to navigate prev/next images with joystick
-- Screen height position is not adjustable
+To adjust the screen position, you must select `Cinema Scene > SELECT THEATER > VOID`.
 
 ## About file naming rule
 
@@ -181,7 +187,7 @@ When `--vr180` option is specified, the video is output in VR180 format (equirec
 
 This is usually not recommended because of poor usability during playback.
 
-This is useful if your video player does not have the ability to play Full SBS 3D videos or if you want to post the video on Youtube.
+This is useful if your video player does not have the ability to play Full SBS 3D videos or if you want to post the video on Youtube (See https://github.com/nagadomi/nunif/issues/268 ) .
 
 ## Half SBS format
 
@@ -195,6 +201,11 @@ When `--tb` or `--half-tb` option is specified, the video is output in TopBottom
 
 TopBottom format can be played back with higher resolution than SBS on some 3D TVs (Polarized/Passive 3D system).
 
+## Cross Eyed
+
+When `--cross-eyed` option is specified, the video/image is output for cross-eyed viewing method.
+
+Unlike the normal SBS format, the images are reversed left and right.
 
 ## Anaglyph 3D format
 
@@ -231,6 +242,11 @@ Export and Export Disparity are features to output depth and frame images.
 See https://github.com/nagadomi/nunif/issues/97#issuecomment-2027349722 for details at the moment.
 
 ## Trouble shooting
+
+### Output video is not SBS
+
+Some software, such as Windows Photo, shows only one side of side-by-side layout.
+Try playing it with other video players.
 
 ### Very flat foreground
 
@@ -290,6 +306,10 @@ Use `--low-vram` option.
 I tested this program on RTX 3070 Ti (8GB VRAM, Linux) and GTX 1050 Ti (4GB VRAM, Laptop, Windows).
 Both work with the default option.
 
+### NVENC(`h264_nvenc`, `hevc_nvenc`) does not work
+
+Install NVIDIA Driver 570 or newer.
+
 ### How to convert rotated(height width swapped) video correctly
 
 Use `--rotate-left`(rotate 90 degrees to counterclockwise) or `--rotate-right`(rotate 90 degrees to clockwise) option to fix the rotation.
@@ -327,7 +347,7 @@ If the results are acceptable, process the full video.
 
 ## Limitation
 
-`--method row_flow`(by default) is currently only trained for the range `0.0 <= divergence <= 2.5` and `0.0 <= convergence <= 1.0`.
+`--method row_flow_v3`(by default) is currently only trained for the range `0.0 <= divergence <= 5.0` and `0.0 <= convergence <= 1.0`.
 
 ## About row_flow model and its training
 
@@ -357,11 +377,15 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI small. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI base. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `DepthPro`  | Depth Pro model. 1536x1536 resolution. For image use.
+| `DepthPro_S`  | Depth Pro model. 1024x1024 modified resolution. For image use.
 
 Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
 For art/anime, DepthAnything is better than ZoeDepth.
+
+Regarding Depth Pro, distance is currently clipped at 40m. It is planned to become adjustable as an option.
 
 ### About `Any_V2_B` ,`Any_V2_L`, `Any_V2_N_L`, `Any_V2_K_L`
 
@@ -407,3 +431,7 @@ The command syncs the following repositories.
 - https://github.com/nagadomi/Depth-Anything_iw3
 
 If you already downloaded the model files (checkpoint filess), downloading model files will be skipped.
+
+## Sub Project
+
+[iw3-desktop](docs/desktop.md) is a tool that converts your PC desktop screen into 3D in realtime and streaming over WiFi.

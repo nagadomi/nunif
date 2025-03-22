@@ -76,7 +76,8 @@ class SeamBlending(torch.nn.Module):
         output_indexes = [None] * batch_size
 
         if preprocess_callback is not None:
-            x = preprocess_callback(x, seam_blending.pad)
+            with autocast(device, enabled=enable_amp):
+                x = preprocess_callback(x.to(device), seam_blending.pad)
         else:
             x = F.pad(x.unsqueeze(0), seam_blending.pad, mode='replicate')[0]
         for h_i in range(seam_blending.h_blocks):

@@ -19,10 +19,10 @@ def save_image(im, output):
 
 def make_loader(input_path):
     if path.isdir(input_path):
-        loader = ImageLoader(directory=input_path, max_queue_size=256)
+        loader = ImageLoader(directory=input_path, max_queue_size=256, load_func_kwargs={"color": "rgb"})
         is_dir = True
     else:
-        loader = ImageLoader(files=[input_path], max_queue_size=256)
+        loader = ImageLoader(files=[input_path], max_queue_size=256, load_func_kwargs={"color": "rgb"})
         is_dir = False
     return loader, is_dir
 

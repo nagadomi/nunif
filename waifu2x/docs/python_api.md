@@ -2,7 +2,7 @@
 
 ## Dependency modules
 
-`torch`, `torchvision`, `packaging`
+`torch`, `torchvision`, `packaging`, `tqdm`, `requests`
 
 ## Overview
 

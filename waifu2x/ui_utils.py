@@ -26,6 +26,19 @@ DEFAULT_ART_SCAN_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art_scan")
 DEFAULT_PHOTO_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "photo")
 
 
+SMB_INVALID_CHARS = '\\/:*?"<>|'
+
+
+def make_output_filename(input_filename, args, video=False):
+    basename = path.splitext(path.basename(input_filename))[0]
+    basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
+
+    if video:
+        return basename + args.video_extension
+    else:
+        return set_image_ext(basename, args.format)
+
+
 @torch.inference_mode()
 def process_image(ctx, im, meta, args):
     if args.rotate_left:
@@ -72,7 +85,7 @@ def process_images(ctx, files, output_dir, args, title=None):
         for im, meta in loader:
             output_filename = path.join(
                 output_dir,
-                set_image_ext(path.basename(meta["filename"]), format=args.format))
+                make_output_filename(meta["filename"], args, video=False))
             if args.resume and path.exists(output_filename):
                 continue
             output = process_image(ctx, im, meta, args)
@@ -97,19 +110,40 @@ def process_video(ctx, input_filename, output_path, args):
         if float(fps) > args.max_fps:
             fps = args.max_fps
 
-        options = {"preset": args.preset, "crf": str(args.crf)}
-        tune = []
-        if args.tune:
-            tune += args.tune
-        tune = set(tune)
-        if tune:
-            options["tune"] = ",".join(tune)
+        if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
+            options = {"preset": args.preset, "crf": str(args.crf)}
+            tune = []
+            if args.tune:
+                tune += args.tune
+            tune = set(tune)
+            if tune:
+                options["tune"] = ",".join(tune)
+
+            if args.profile_level:
+                options["level"] = str(int(float(args.profile_level) * 10))
+
+            if args.video_codec == "libx265":
+                x265_params = ["log-level=warning", "high-tier=enabled"]
+                if args.profile_level:
+                    x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
+                options["x265-params"] = ":".join(x265_params)
+            elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
+                options["rc"] = "constqp"
+                options["qp"] = str(args.crf)
+        elif args.video_codec == "libopenh264":
+            # NOTE: It seems libopenh264 does not support most options.
+            options = {"b": args.video_bitrate}
+        else:
+            options = {}
+
         return VU.VideoOutputConfig(
             fps=fps,
+            container_format=args.video_format,
+            video_codec=args.video_codec,
             pix_fmt=args.pix_fmt,
             colorspace=args.colorspace,
             options=options,
-            container_options={"movflags": "+faststart"}
+            container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
     @torch.inference_mode()
@@ -144,7 +178,7 @@ def process_video(ctx, input_filename, output_path, args):
         os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
             output_path,
-            path.splitext(path.basename(input_filename))[0] + ".mp4")
+            make_output_filename(input_filename, args, video=True))
     else:
         output_filename = output_path
 
@@ -219,10 +253,17 @@ def create_parser(required_true=True):
                         help="process all subdirectories")
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
+
+    parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
+                        help="video container format")
+    parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
     parser.add_argument("--max-fps", type=float, default=128,
                         help="max framerate. output fps = min(fps, --max-fps) (video only)")
+    parser.add_argument("--profile-level", type=str, help="h264 profile level")
     parser.add_argument("--crf", type=int, default=20,
                         help="constant quality value. smaller value is higher quality (video only)")
+    parser.add_argument("--video-bitrate", type=str, default="8M",
+                        help="bitrate option for libopenh264")
     parser.add_argument("--preset", type=str, default="ultrafast",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
                                  "medium", "slow", "slower", "veryslow", "placebo"],
@@ -231,6 +272,13 @@ def create_parser(required_true=True):
                         choices=["film", "animation", "grain", "stillimage", "psnr",
                                  "fastdecode", "zerolatency"],
                         help="encoder tunings option (video only)")
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
+                        help=("pixel format (video only)"))
+    parser.add_argument("--colorspace", type=str, default="unspecified",
+                        choices=["unspecified", "auto",
+                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                        help="video colorspace")
+
     parser.add_argument("--yes", "-y", action="store_true", default=False,
                         help="overwrite output files (video only)")
     parser.add_argument("--rotate-left", action="store_true",
@@ -247,12 +295,6 @@ def create_parser(required_true=True):
                         help=("noise strength"))
     parser.add_argument("--grain-speed", type=float, default=0.8,
                         help=("noise update speed (video only)"))
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24"],
-                        help=("pixel format (video only)"))
-    parser.add_argument("--colorspace", type=str, default="unspecified",
-                        choices=["unspecified", "auto",
-                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
-                        help="video colorspace")
     parser.add_argument("--start-time", type=str,
                         help="set the start time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--end-time", type=str,
@@ -263,6 +305,23 @@ def create_parser(required_true=True):
 
 def set_state_args(args, stop_event=None, tqdm_fn=None):
     device = create_device(args.gpu)
+    if not args.profile_level or args.profile_level == "auto":
+        args.profile_level = None
+
+    if is_video(args.output):
+        # replace --video-format when filename is specified
+        ext = path.splitext(args.output)[-1]
+        if ext == ".mp4":
+            args.video_format = "mp4"
+        elif ext == ".mkv":
+            args.video_format = "mkv"
+        elif ext == ".avi":
+            args.video_format = "avi"
+
+    args.video_extension = "." + args.video_format
+    if args.video_codec is None:
+        args.video_codec = VU.get_default_video_codec(args.video_format)
+
     args.state = {
         "device": device,
         "noise_buffer": torch.zeros((1, 1, 1), dtype=torch.float32, device=device),
@@ -350,7 +409,7 @@ def waifu2x_main(args):
             fmt = args.format
             output_filename = path.join(
                 args.output,
-                set_image_ext(path.basename(args.input), format=fmt))
+                make_output_filename(args.input, args, video=False))
         else:
             _, ext = path.splitext(args.output)
             fmt = ext.lower()[1:]

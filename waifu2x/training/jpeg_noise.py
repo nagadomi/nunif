@@ -19,7 +19,7 @@ NR_RATE = {
         0: 0.3,
         1: 0.6,
         2: 0.9,
-        3: 0.95,
+        3: 0.9,
     }
 }
 JPEG_CHROMA_SUBSAMPLING_RATE = 0.5
@@ -35,7 +35,7 @@ EVAL_QUALITY = {
     "photo": {
         0: [90],
         1: [80],
-        2: [70],
+        2: [60, 90],
         3: [60, 90],
     }
 }
@@ -52,7 +52,7 @@ else:
 def choose_validation_jpeg_quality(index, style, noise_level):
     mod100 = index % 100
     if mod100 > int(NR_RATE[style][noise_level] * 100):
-        min_level = -1 if noise_level < 2 else 0
+        min_level = -1 # if noise_level < 2 else 0
         cand = list(range(min_level, noise_level))
         noise_level = cand[index % len(cand)]
         if noise_level == -1:
@@ -135,17 +135,22 @@ def choose_jpeg_quality(style, noise_level):
                 qualities.append(random.randint(37, 70))
             else:
                 qualities.append(random.randint(90, 98))
-        else:
-            if noise_level == 3 or random.uniform(0, 1) < 0.6:
-                if random.uniform(0, 1) < 0.05:
-                    quality1 = random.randint(52, 95)
-                else:
-                    quality1 = random.randint(37, 70)
-                qualities.append(quality1)
-                if random.uniform(0, 1) < 0.2:
-                    qualities.append(random.randint(70, 90))
+        elif noise_level == 2:
+            if random.uniform(0, 1) < 0.05:
+                quality1 = random.randint(52, 95)
             else:
-                qualities.append(random.randint(90, 98))
+                quality1 = random.randint(37, 70)
+            qualities.append(quality1)
+            if random.uniform(0, 1) < 0.2:
+                qualities.append(random.randint(70, 90))
+        elif noise_level == 3:
+            if random.uniform(0, 1) < 0.05:
+                quality1 = random.randint(52, 95)
+            else:
+                quality1 = random.randint(37, 70)
+            qualities.append(quality1)
+            if random.uniform(0, 1) < 0.2:
+                qualities.append(random.randint(37, 90))
     else:
         raise NotImplementedError()
 
@@ -227,8 +232,14 @@ class RandomJPEGNoiseX():
             # use lower noise_level noise
             # this is the fix for a problem in the original waifu2x
             # that lower level noise cannot be denoised with higher level denoise model.
-            min_level = -1 if self.noise_level < 2 else 0
-            noise_level = random.randint(min_level, self.noise_level - 1)
+            min_level = -1 # if self.noise_level < 2 else 0
+            if self.style == "art":
+                noise_level = random.randint(min_level, self.noise_level - 1)
+            elif self.style == "photo":
+                cond = list(range(min_level, self.noise_level))
+                prob = [i for i in range(1, len(cond) + 1)]
+                noise_level = random.choices(cond, prob, k=1)[0]
+
             if noise_level == -1:
                 # do nothing
                 return x, y

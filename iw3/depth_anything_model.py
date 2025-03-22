@@ -1,16 +1,13 @@
 import os
 from os import path
-import pickle
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
-from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
-from nunif.models.data_parallel import DeviceSwitchInference
 from .dilation import dilate_edge
+from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 
 
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 NAME_MAP = {
     "Any_S": "vits",
     "Any_B": "vitb",
@@ -52,83 +49,7 @@ MODEL_FILES = {
 }
 
 
-def get_name():
-    return "DepthAnything"
-
-
-def load_model(model_type="Any_B", gpu=0, **kwargs):
-    assert model_type in MODEL_FILES
-    with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
-        try:
-            encoder = NAME_MAP[model_type]
-            if "hypersim" not in encoder and "vkitti" not in encoder:
-                # disparity model
-                if not os.getenv("IW3_DEBUG"):
-                    model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                           "DepthAnything", encoder=encoder,
-                                           verbose=False, trust_repo=True)
-                else:
-                    assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                    model = torch.hub.load("../Depth-Anything_iw3",
-                                           "DepthAnything", encoder=encoder, source="local",
-                                           verbose=False, trust_repo=True)
-            else:
-                # metric depth model
-                if not os.getenv("IW3_DEBUG"):
-                    model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                           "DepthAnythingMetricDepthV2", model_type=encoder,
-                                           verbose=False, trust_repo=True)
-                else:
-                    assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                    model = torch.hub.load("../Depth-Anything_iw3",
-                                           "DepthAnythingMetricDepthV2", model_type=encoder, source="local",
-                                           verbose=False, trust_repo=True)
-        except (RuntimeError, pickle.PickleError) as e:
-            if isinstance(e, RuntimeError):
-                do_handle = "PytorchStreamReader" in repr(e)
-            else:
-                do_handle = True
-            if do_handle:
-                try:
-                    # delete corrupted file
-                    os.unlink(MODEL_FILES[model_type])
-                except:  # noqa
-                    pass
-                raise RuntimeError(
-                    f"File `{MODEL_FILES[model_type]}` is corrupted. "
-                    "This error may occur when the network is unstable or the disk is full. "
-                    "Try again."
-                )
-            else:
-                raise
-
-    device = create_device(gpu)
-    model = model.to(device).eval()
-    model.device = device
-    model.metric_depth = getattr(model, "metric_depth", False)
-    model.prep_lower_bound = kwargs.get("height", None) or 392
-    if model.prep_lower_bound % 14 != 0:
-        # From GUI, 512 -> 518
-        model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
-
-    if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
-        model = DeviceSwitchInference(model, device_ids=gpu)
-
-    return model
-
-
-def has_model(model_type):
-    assert model_type in MODEL_FILES
-    return path.exists(MODEL_FILES[model_type])
-
-
-def force_update():
-    with TorchHubDir(HUB_MODEL_DIR):
-        torch.hub.help("nagadomi/Depth-Anything_iw3:main", "DepthAnything",
-                       force_reload=True, trust_repo=True)
-
-
-def batch_preprocess(x, lower_bound=392):
+def batch_preprocess(x, lower_bound=392, max_aspect_ratio=4):
     # x: BCHW float32 0-1
     B, C, H, W = x.shape
 
@@ -140,6 +61,13 @@ def batch_preprocess(x, lower_bound=392):
         scale_factor = lower_bound / H
     new_h = int(H * scale_factor)
     new_w = int(W * scale_factor)
+
+    # Limit aspect ratio to avoid OOM
+    if new_h < new_w:
+        new_w = min(new_w, int(max_aspect_ratio * new_h))
+    else:
+        new_h = min(new_h, int(max_aspect_ratio * new_w))
+
     new_h -= new_h % ensure_multiple_of
     new_w -= new_w % ensure_multiple_of
     if new_h < lower_bound:
@@ -169,9 +97,8 @@ def _forward(model, x, enable_amp):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp=False,
-                output_device="cpu", device=None, normalize_int16=True,
-                edge_dilation=2, resize_depth=True,
+def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
+                output_device="cpu", device=None, edge_dilation=2,
                 **kwargs):
     device = device if device is not None else model.device
     batch = False
@@ -186,7 +113,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
-    org_size = x.shape[-2:]
     x = batch_preprocess(x, model.prep_lower_bound)
 
     if not low_vram:
@@ -206,9 +132,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
             out = dilate_edge(out, edge_dilation)
         else:
             out = dilate_edge(out.neg_(), edge_dilation).neg_()
-    if resize_depth and out.shape[-2:] != org_size:
-        out = F.interpolate(out, size=(org_size[0], org_size[1]),
-                            mode="bilinear", align_corners=False, antialias=True)
 
     if not model.metric_depth:
         # invert for zoedepth compatibility
@@ -228,39 +151,111 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, int16=True, enable_amp
         assert z.shape[0] == 1
         z = z.squeeze(0)
 
-    if int16:
-        # 1. ignore normalize_int16
-        # 2. DepthAnything output is relative depth so normalize
-        # TODO: torch.uint16 will be implemented.
-        #       For now, use numpy to save uint16 png.
-        #  torch.tensor([0, 1, 65534], dtype=torch.float32).to(torch.int16).numpy().astype(np.uint16)
-        # >array([    0,     1, 65534], dtype=uint16)
-        max_v, min_v = z.max(), z.min()
-        uint16_max = 0xffff
-        if max_v - min_v > 0:
-            z = uint16_max * ((z - min_v) / (max_v - min_v))
-        else:
-            z = torch.zeros_like(z)
-        z = z.to(torch.int16)
-
     z = z.to(output_device)
 
     return z
 
 
+class DepthAnythingModel(BaseDepthModel):
+    def __init__(self, model_type):
+        super().__init__(model_type)
+
+    def load_model(self, model_type, resolution=None, device=None):
+        encoder = NAME_MAP[model_type]
+        if "hypersim" not in encoder and "vkitti" not in encoder:
+            # disparity model
+            if not os.getenv("IW3_DEBUG"):
+                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
+                                       "DepthAnything", encoder=encoder,
+                                       verbose=False, trust_repo=True)
+            else:
+                assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                model = torch.hub.load("../Depth-Anything_iw3",
+                                       "DepthAnything", encoder=encoder, source="local",
+                                       verbose=False, trust_repo=True)
+        else:
+            # metric depth model
+            if not os.getenv("IW3_DEBUG"):
+                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
+                                       "DepthAnythingMetricDepthV2", model_type=encoder,
+                                       verbose=False, trust_repo=True)
+            else:
+                assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                model = torch.hub.load("../Depth-Anything_iw3",
+                                       "DepthAnythingMetricDepthV2", model_type=encoder, source="local",
+                                       verbose=False, trust_repo=True)
+
+        model.metric_depth = getattr(model, "metric_depth", False)
+        model.prep_lower_bound = resolution or 392
+        if model.prep_lower_bound % 14 != 0:
+            # From GUI, 512 -> 518
+            model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
+        model.device = device
+
+        return model
+
+    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):
+        if not torch.is_tensor(x):
+            x = TF.to_tensor(x).to(self.device)
+        return batch_infer(
+            self.model, x, flip_aug=tta, low_vram=low_vram,
+            enable_amp=enable_amp,
+            output_device=x.device,
+            device=x.device,
+            edge_dilation=edge_dilation,
+            resize_depth=False)
+
+    @classmethod
+    def get_name(cls):
+        return "DepthAnything"
+
+    @classmethod
+    def has_checkpoint_file(cls, model_type):
+        return cls.supported(model_type) and path.exists(MODEL_FILES[model_type])
+
+    @classmethod
+    def supported(cls, model_type):
+        return model_type in MODEL_FILES
+
+    @classmethod
+    def get_model_path(cls, model_type):
+        return MODEL_FILES[model_type]
+
+    def is_metric(self):
+        if self.model is not None:
+            return self.model.metric_depth
+        else:
+            return self.model_type.startswith("Any_V2_N") or self.model_type.startswith("Any_V2_K")
+
+    @classmethod
+    def multi_gpu_supported(cls, model_type):
+        return True
+
+    @classmethod
+    def force_update(cls):
+        BaseDepthModel.force_update_hub("nagadomi/Depth-Anything_iw3:main", "DepthAnything")
+
+    def infer_raw(self, *args, **kwargs):
+        return batch_infer(self.model, *args, **kwargs)
+
+
 def _bench():
     import time
 
+    B = 4
     N = 100
+    model = DepthAnythingModel("Any_L")
+    model.load(gpu=0)
+    x = torch.randn((B, 3, 392, 392)).cuda()
+    model.infer(x)
+    torch.cuda.synchronize()
 
-    model = load_model(model_type="Any_L", gpu=0)
-    x = torch.randn((1, 3, 518, 784)).cuda()
     with torch.no_grad():
         t = time.time()
         for _ in range(N):
-            model(x)
-            torch.cuda.synchronize()
-        print(round((time.time() - t) / N, 4))
+            model.infer(x)
+        torch.cuda.synchronize()
+        print(round(1.0 / ((time.time() - t) / (B * N)), 4), "FPS")
 
 
 def _test():
@@ -268,14 +263,20 @@ def _test():
     import cv2
     import numpy as np
 
-    model = load_model()
+    model = DepthAnythingModel("Any_S")
+    model.load()
     im = Image.open("waifu2x/docs/images/miku_128.png").convert("RGB")
-    out = batch_infer(model, im, flip_aug=False, int16=True,
-                      enable_amp=True, output_device="cpu", device="cuda")
+    out = model.infer_raw(im, flip_aug=False, int16=True,
+                          enable_amp=True, output_device="cpu", device="cuda")
     out = out.squeeze(0).numpy().astype(np.uint16)
     cv2.imwrite("./tmp/depth_anything_out.png", out)
+
+
+def _test_model():
+    DepthAnythingModel()
 
 
 if __name__ == "__main__":
     # _test()
     _bench()
+    # _test_model()

@@ -21,17 +21,22 @@ def exec_prob(prob):
     return random.uniform(0, 1) < prob
 
 
+def highcolor(black):
+    v = random.uniform(0, 0.08)
+    if black:
+        return v
+    else:
+        return 1 - v
+
+
 def gen_color(black):
     if exec_prob(0.2):
-        if black:
-            return (0.0, 0.0, 0.0)
-        else:
-            return (1.0, 1.0, 1.0)
+        return (highcolor(black), highcolor(black), highcolor(black))
     else:
         rgb = []
         for _ in range(3):
             if exec_prob(0.3):
-                v = float(random.randint(0, 1))
+                v = highcolor(black)
             else:
                 v = random.uniform(0, 1)
             rgb.append(v)
@@ -52,28 +57,39 @@ def gen_dot_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_
         use_cross_and_skip = False
     else:
         size = random.randint(1, 5)
-        use_cross_and_skip = exec_prob(0.5)
-    use_random_size = exec_prob(0.9)
+        use_cross_and_skip = exec_prob(0.25)
+    use_random_size = exec_prob(0.75)
 
-    xm = random.randint(2, 4)
-    ym = random.randint(2, 4)
+    xm_shift = random.randint(0, 1)
+    xm = random.randint(1, 4)
+    ym = random.randint(1, 4)
 
-    def mod(x, y):
-        return x % xm == 0 and y % ym == 0
+    def mod(y, x):
+        return (x + (y % 2) * xm_shift) % xm == 0 and y % ym == 0
 
     if bg_color is not None:
         bg = bg_color
         fg = gen_color(black=bg_color_black)
+        fg2 = gen_color(black=bg_color_black)
     else:
         if exec_prob(0.5):
             fg = gen_color(black=False)
+            fg2 = gen_color(black=False)
             bg = gen_color(black=True)
         else:
             fg = gen_color(black=True)
+            fg2 = gen_color(black=True)
             bg = gen_color(black=False)
+
+    use_fg2 = random.choice([0, 0, 1, 2])
 
     block[:, :] = bg
     for y in range(y_margin, block_size - y_margin):
+        if use_fg2 == 1:
+            cfg = fg if (y // ym) % 2 == 0 else fg2
+        else:
+            cfg = fg
+
         if use_random_size:
             if rotate:
                 size = random.randint(3, 5)
@@ -84,13 +100,17 @@ def gen_dot_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_
         if use_cross_and_skip and exec_prob(0.5):
             b = random.randint(0, 1)
         for x in range(y_margin, block_size - y_margin):
+            if use_fg2 == 2:
+                cfg = fg if (x // xm) % 2 == 0 else fg2
+            else:
+                cfg = fg
             xc = math.floor(x / size)
             if use_cross_and_skip:
                 if exec_prob(0.75) and mod(yc + b, xc + b):
-                    block[y, x, :] = fg
+                    block[y, x, :] = cfg
             else:
                 if mod(yc + b, xc + b):
-                    block[y, x, :] = fg
+                    block[y, x, :] = cfg
 
     block = (block * 255).astype(np.uint8)
     im = Image.fromarray(block)
@@ -224,7 +244,7 @@ def gen_dot_grid(block_size, scale, cols, rotate=False):
 COLS_MAP = {2: 4, 4: 2, 8: 1}
 
 
-def gen(cell=40, cols_scale=1, rotate=False, dot_scale=2):
+def gen(cols_scale=1, rotate=False, dot_scale=2):
     assert isinstance(cols_scale, int)
     assert dot_scale in {2, 4}
     line_block = exec_prob(0.2)
@@ -233,7 +253,9 @@ def gen(cell=40, cols_scale=1, rotate=False, dot_scale=2):
     elif dot_scale == 4:
         scale = random.choices((4, 8), weights=(1, 1), k=1)[0]
     cols = COLS_MAP[scale]
-    return gen_dot_grid(cell, scale, cols * cols_scale, rotate=rotate)
+    block_size = random.choice([40, 40, 40, 20, 20, 10])
+    block_size_scale = 40 // block_size
+    return gen_dot_grid(block_size, scale, cols * cols_scale * block_size_scale, rotate=rotate)
 
 
 def _validate():
@@ -286,7 +308,7 @@ def main():
         dot = gen(cols_scale=cols_scale, rotate=rotate, dot_scale=args.dot_scale)
 
         hole = random.choice([True, False, False])
-        rotate2 = random.choice([True, False, False]) if args.rotate else False
+        rotate2 = random.choice([True, False, False, False]) if args.rotate else False
         rotate = rotate or rotate2
         if hole:
             hole_scale = 4 if rotate else 1

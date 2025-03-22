@@ -68,6 +68,8 @@ class Waifu2x():
                 model_tile_size = model.find_valid_tile_size(tile_size)
             if batch_size is None:
                 model_batch_size = model.i2i_default_batch_size
+            else:
+                model_batch_size = batch_size
 
             for j, bs in enumerate(reversed(range(1, model_batch_size + 1))):
                 x = torch.zeros((bs, 3, model_tile_size, model_tile_size),
@@ -101,6 +103,7 @@ class Waifu2x():
             self.scale_model = func(self.scale_model)
         if self.scale4x_model is not None:
             self.scale4x_model = func(self.scale4x_model)
+        self.alpha_pad = func(self.alpha_pad)
 
         for i in range(len(self.noise_models)):
             if self.noise_models[i] is not None:
@@ -257,10 +260,13 @@ class Waifu2x():
         assert (method in ("scale", "scale4x", "noise_scale", "noise_scale4x", "noise"))
         assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
 
+        x = x.to(self.device)
+
         if alpha is not None:
             # check all 1 alpha channel
             blank_alpha = torch.equal(alpha, torch.ones(alpha.shape, device=alpha.device, dtype=alpha.dtype))
         if alpha is not None and not blank_alpha:
+            alpha = alpha.to(self.device)
             x = self.alpha_pad(x, alpha, self._model_offset(method, noise_level))
         if tta:
             rgb = tta_merge([
@@ -276,7 +282,8 @@ class Waifu2x():
                 if model is not None:
                     alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
                     alpha = tiled_render(alpha, model,
-                                         tile_size=tile_size, batch_size=batch_size).mean(0, keepdim=True)
+                                         tile_size=tile_size, batch_size=batch_size,
+                                         enable_amp=enable_amp).mean(0, keepdim=True)
                 else:
                     scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
                     alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor,

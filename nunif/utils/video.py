@@ -1,5 +1,6 @@
 import av
 from av.video.reformatter import ColorRange, Colorspace
+from packaging import version as packaging_version
 import os
 from os import path
 import math
@@ -52,9 +53,11 @@ ADDITIONAL_COLORSPACE_VALUES = {
     "SMPTE240M_2": 7,  # smpte240m is defined as 5 in libsws
     "BT2020": 9,
 }
-for name, value in ADDITIONAL_COLORSPACE_VALUES.items():
-    if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and value not in Colorspace._by_value:
-        Colorspace._create(name, value)
+AV_VERSION_14 = packaging_version.parse(av.__version__).major >= 14
+if not AV_VERSION_14:
+    for name, value in ADDITIONAL_COLORSPACE_VALUES.items():
+        if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and value not in Colorspace._by_value:
+            Colorspace._create(name, value)
 
 
 COLORSPACE_UNSPECIFIED = 2
@@ -63,6 +66,22 @@ COLORSPACE_SMPTE240M = 7
 COLORSPACE_BT2020 = 9
 KNOWN_COLORSPACES = {Colorspace.ITU601.value, Colorspace.ITU709.value,
                      COLORSPACE_SMPTE170M, COLORSPACE_SMPTE240M, COLORSPACE_BT2020}
+
+
+if "libx264" in av.codecs_available:
+    LIBH264 = "libx264"
+elif "libopenh264" in av.codecs_available:
+    LIBH264 = "libopenh264"
+else:
+    LIBH264 = ""
+
+
+def add_stream_from_template(container, template):
+    # wrapper for av >= 14 compatibility
+    if AV_VERSION_14:
+        return container.add_stream_from_template(template)
+    else:
+        return container.add_stream(template=template)
 
 
 def is_bt709(stream):
@@ -219,7 +238,8 @@ class FixedFPSFilter():
         video_filters = self.parse_vf_option(vf)
         if colorspace is not None:
             video_filters.append(("colorspace", colorspace))
-        video_filters.append(("fps", str(fps)))
+        if fps is not None:
+            video_filters.append(("fps", str(fps)))
         video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
         self.build_graph(self.graph, video_stream, video_filters)
 
@@ -234,13 +254,26 @@ class FixedFPSFilter():
             return None
 
 
+class VideoFilter(FixedFPSFilter):
+    def __init__(self, video_stream, vf):
+        super().__init__(video_stream, fps=None, vf=vf)
+        self.dummy = not vf
+
+    def update(self, frame):
+        if self.dummy:
+            return frame
+        else:
+            return super().update(frame)
+
+
 class VideoOutputConfig():
     def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={},
                  output_width=None, output_height=None, colorspace=None,
                  container_format=None,
-                 video_codec=None):
+                 video_codec=None, output_fps=None):
         self.pix_fmt = pix_fmt
         self.fps = fps
+        self.output_fps = output_fps
         self.options = options
         self.container_options = container_options
         self.output_width = output_width
@@ -266,7 +299,7 @@ class VideoOutputConfig():
 
 def get_default_video_codec(container_format):
     if container_format in {"mp4", "mkv"}:
-        return "libx264"
+        return LIBH264
     elif container_format == "avi":
         return "utvideo"
     else:
@@ -596,7 +629,7 @@ def configure_video_codec(config):
                 # TODO: change pix_fmt
                 config.video_codec = "libx265"
 
-    if config.video_codec == "libx265":
+    if config.video_codec in {"libx265", "h264_nvenc", "hevc_nvenc"}:
         if config.pix_fmt == "rgb24":
             config.pix_fmt = "gbrp"
 
@@ -653,6 +686,7 @@ def process_video(input_path, output_path,
 
     config = config_callback(video_input_stream)
     config.fps = convert_known_fps(config.fps)
+    config.output_fps = convert_known_fps(config.output_fps)
 
     if not config.container_format:
         config.container_format = path.splitext(output_path)[-1].lower()[1:]
@@ -670,7 +704,8 @@ def process_video(input_path, output_path,
             test_callback = frame_callback
         output_size = test_output_size(test_callback, video_input_stream, vf)
 
-    video_output_stream = output_container.add_stream(config.video_codec, config.fps)
+    output_fps = config.output_fps or config.fps
+    video_output_stream = output_container.add_stream(config.video_codec, output_fps)
     configure_colorspace(video_output_stream, video_input_stream, config)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
@@ -692,7 +727,7 @@ def process_video(input_path, output_path,
             audio_copy = False
         else:
             try:
-                audio_output_stream = output_container.add_stream(template=audio_input_stream)
+                audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
                 audio_copy = True
             except ValueError:
                 audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
@@ -702,7 +737,7 @@ def process_video(input_path, output_path,
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     # TODO: `total` may be less when start_time is specified
-    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time,
+    total = guess_frames(video_input_stream, output_fps, start_time=start_time, end_time=end_time,
                          container_duration=container_duration)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
@@ -738,15 +773,18 @@ def process_video(input_path, output_path,
         if stop_event is not None and stop_event.is_set():
             break
 
-    frame = fps_filter.update(None)
-    if frame is not None:
-        frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
-        for new_frame in get_new_frames(frame_callback(frame)):
-            new_frame = reformatter(new_frame)
-            enc_packet = video_output_stream.encode(new_frame)
-            if enc_packet:
-                output_container.mux(enc_packet)
-            pbar.update(1)
+    while True:
+        frame = fps_filter.update(None)
+        if frame is not None:
+            frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+            for new_frame in get_new_frames(frame_callback(frame)):
+                new_frame = reformatter(new_frame)
+                enc_packet = video_output_stream.encode(new_frame)
+                if enc_packet:
+                    output_container.mux(enc_packet)
+                pbar.update(1)
+        else:
+            break
 
     for new_frame in get_new_frames(frame_callback(None)):
         new_frame = reformatter(new_frame)
@@ -808,7 +846,7 @@ def generate_video(output_path,
                 audio_copy = False
             else:
                 try:
-                    audio_output_stream = output_container.add_stream(template=audio_input_stream)
+                    audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
                     audio_copy = True
                 except ValueError:
                     audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
@@ -973,11 +1011,14 @@ def hook_frame(input_path,
         if stop_event is not None and stop_event.is_set():
             break
 
-    frame = fps_filter.update(None)
-    if frame is not None:
-        frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
-        frame_callback(frame)
-        pbar.update(1)
+    while True:
+        frame = fps_filter.update(None)
+        if frame is not None:
+            frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+            frame_callback(frame)
+            pbar.update(1)
+        else:
+            break
 
     frame_callback(None)
     input_container.close()
@@ -1018,7 +1059,7 @@ def export_audio(input_path, output_path, start_time=None, end_time=None,
         audio_copy = False
     else:
         try:
-            audio_output_stream = output_container.add_stream(template=audio_input_stream)
+            audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
             audio_copy = True
         except ValueError:
             audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
@@ -1263,8 +1304,8 @@ def _test_reencode():
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
                         help="colorspace")
-    parser.add_argument("--video-codec", type=str, default="libx264",
-                        choices=["libx264", "libx265", "h264_nvenc", "hevc_nvenc"],
+    parser.add_argument("--video-codec", type=str, default=LIBH264,
+                        choices=["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc"],
                         help="video codec")
     parser.add_argument("--max-workers", type=int, default=0, help="max worker threads")
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")

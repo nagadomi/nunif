@@ -55,6 +55,11 @@ https://github.com/LiheYoung/Depth-Anything
 Lihe Yang / Apache License Version 2.0
 
 ---
+iw3.cli and training code(synthetic data) uses forked version of Depth Pro
+https://github.com/apple/ml-depth-pro
+Apple Inc. / https://github.com/apple/ml-depth-pro/blob/main/LICENSE
+
+---
 iw3 can use U-2-Net's pretrained model via rembg module.
 https://github.com/xuebinqin/U-2-Net
 xuebinqin / Apache License Version 2.0
@@ -80,6 +85,15 @@ nunif/utils/superpoint.py
 From SuperPoint https://github.com/rpautrat/SuperPoint/
 Paul-Edouard Sarlin & Rémi Pautrat / MIT License
 
+---
+nunif/modules/norm.py: FastLayerNorm
+From timm https://github.com/huggingface/pytorch-image-models
+Ross Wightman / Apache License Version 2.0
+
+---
+nunif/utils/transnetv2.py
+From TransNetV2 https://github.com/soCzech/TransNetV2
+Tomáš Souček / MIT License
 
 ----
 Other libraries used are listed in `requirements.txt`.

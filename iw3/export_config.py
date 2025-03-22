@@ -40,7 +40,7 @@ class ExportConfig:
                 fps = self.fps.numerator
             else:
                 fps = f"{self.fps.numerator}/{self.fps.denominator}"
-        elif type(self.fps) in {int,}:
+        elif type(self.fps) in {int, }:
             fps = self.fps
         else:
             # NOTE: This can cause "Phyton in too large to convert to C long"
@@ -93,7 +93,7 @@ class ExportConfig:
                     # Fraction str. e.g, "30000/1001"
                     int_parts = [int(v) for v in fps.split("/")]
                     fps = Fraction(int_parts[0], int_parts[1])
-                elif type(fps) in {int,}:
+                elif type(fps) in {int, }:
                     pass
                 else:
                     fps = float(fps)
@@ -128,7 +128,6 @@ class ExportConfig:
                             rgb_dir=rgb_dir, depth_dir=depth_dir, audio_file=audio_file,
                             user_data=user_data, updated_at=updated_at,
                             source_color_range=source_color_range, output_colorspace=output_colorspace)
-
 
     def to_dict(self):
         return dict(

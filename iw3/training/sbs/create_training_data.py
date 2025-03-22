@@ -11,12 +11,13 @@ import random
 from torchvision.transforms import (
     functional as TF,
     InterpolationMode)
+import torch.nn.functional as F
 from nunif.utils.pil_io import load_image_simple
 from PIL.PngImagePlugin import PngInfo
 from nunif.utils.image_loader import ImageLoader, list_images
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
-from iw3.utils import get_mapper, normalize_depth
+from iw3.utils import get_mapper
 from iw3.forward_warp import apply_divergence_forward_warp
 from .stereoimage_generation import create_stereoimages
 
@@ -131,10 +132,6 @@ def random_resize(im, min_size, max_size):
 
 
 def apply_mapper(depth, mapper):
-    if depth.dtype == torch.int16:
-        # signed int16 to unsigned long
-        depth = torch.tensor(depth.numpy().astype(np.uint16).astype(np.int32), dtype=torch.long)
-    depth = normalize_depth(depth)
     return get_mapper(mapper)(depth)
 
 
@@ -153,32 +150,29 @@ def gen_convergence():
         return random.uniform(0., 1.)
 
 
-def gen_mapper(model_type):
-    if model_type.startswith("ZoeD"):
+def gen_mapper(is_metric):
+    if is_metric:
         if random.uniform(0, 1) < 0.7:
             return "div_6"
         else:
             return random.choice(["none", "div_25", "div_10", "div_4", "div_2", "div_1"])
-    elif model_type.startswith("Any"):
+    else:
         if random.uniform(0, 1) < 0.7:
             return "none"
         else:
             return random.choice(["inv_mul_1", "inv_mul_2", "inv_mul_3", "mul_1", "mul_2", "mul_3"])
-    else:
-        raise ValueError(model_type)
 
 
 def gen_edge_dilation(model_type):
     if model_type.startswith("ZoeD"):
         return random.choice([0] * 7 + [1, 2, 3, 4])
-    elif model_type.startswith("Any"):
+    else:
         return random.choice([2] * 7 + [0, 1, 3, 4])
 
 
 def main(args):
     import numba
-    from ... import zoedepth_model as ZU
-    from ... import depth_anything_model as DU
+    from ...depth_model_factory import create_depth_model
     # force_update_midas()
     # force_update_zoedepth()
 
@@ -186,14 +180,9 @@ def main(args):
     numba.set_num_threads(max_workers)
 
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
-    if args.model_type in ZU.MODEL_FILES:
-        depth_utils = ZU
-    elif args.model_type in DU.MODEL_FILES:
-        depth_utils = DU
-    else:
-        raise ValueError(f"unknown model_type = {args.model_type}")
+    model = create_depth_model(args.model_type)
+    model.load(gpu=args.gpu, resolution=args.resolution)
 
-    model = depth_utils.load_model(model_type=args.model_type, gpu=args.gpu, height=args.zoed_height)
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)
@@ -219,7 +208,7 @@ def main(args):
                 if min(im.size) < args.min_size:
                     continue
                 for _ in range(args.times):
-                    mapper = gen_mapper(args.model_type) if args.mapper == "random" else args.mapper
+                    mapper = gen_mapper(model.is_metric()) if args.mapper == "random" else args.mapper
                     im_s = random_resize(im, args.min_size, args.max_size)
                     output_base = path.join(output_dir, filename_prefix + str(seq))
                     divergence = gen_divergence(im_s.width)
@@ -229,10 +218,12 @@ def main(args):
                     enable_amp = True
 
                     with torch.inference_mode():
-                        depth = depth_utils.batch_infer(model, im_s, int16=True, normalize_int16=True,
-                                                        flip_aug=flip_aug, enable_amp=enable_amp,
-                                                        edge_dilation=edge_dilation)
-                        np_depth16 = depth.clone().squeeze(0).numpy().astype(np.uint16)
+                        depth = model.infer(im_s, tta=flip_aug, enable_amp=enable_amp,
+                                            edge_dilation=edge_dilation)
+                        depth = F.interpolate(depth.unsqueeze(0), (im_s.height, im_s.width),
+                                              mode="bilinear", align_corners=False, antialias=True).squeeze(0)
+                        depth = model.minmax_normalize(depth)
+                        np_depth16 = (depth * 0xffff).to(torch.uint16).squeeze(0).cpu().numpy()
 
                     if args.method == "polylines":
                         np_depth_f = apply_mapper(depth, mapper).squeeze(0).numpy().astype(np.float64)
@@ -242,9 +233,10 @@ def main(args):
                             divergence, modes=["left-right"],
                             convergence=convergence)[0]
                     elif args.method == "forward_fill":
-                        c = TF.to_tensor(im_s).unsqueeze(0)
+                        c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
                         depth_f = apply_mapper(depth, mapper).unsqueeze(0)
-                        left_eye, right_eye = apply_divergence_forward_warp(c, depth_f, divergence, convergence, method="forward_fill")
+                        left_eye, right_eye = apply_divergence_forward_warp(c, depth_f, divergence, convergence,
+                                                                            method="forward_fill", synthetic_view="both")
                         sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
                         sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
 
@@ -273,7 +265,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--times", type=int, default=4,
                         help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=8, help="max random crops")
-    parser.add_argument("--zoed-height", type=int, help="input height for ZoeDepth model")
+    parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
     parser.add_argument("--mapper", type=str, default="random", help="depth mapper function")
     parser.add_argument("--method", type=str, default="forward_fill", choices=["forward_fill", "polylines"], help="divergence method")

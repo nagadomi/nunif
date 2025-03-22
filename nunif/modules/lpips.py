@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import lpips
 from os import path
+from .compile_wrapper import conditional_compile
 
 
 # Patch `lpips.normalize_tensor`
@@ -19,6 +20,7 @@ def _upsample(in_tens, out_HW=(64, 64)):
 
 
 class LPIPSFix(lpips.LPIPS):
+    @conditional_compile(["NUNIF_TRAIN"])
     def forward(self, in0, in1, retPerLayer=False, normalize=False):
         # from https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/lpips.py
         if normalize:
@@ -72,7 +74,7 @@ class LPIPSWith(nn.Module):
         # Override foward method
         self.lpips.__class__ = LPIPSFix
 
-    def train(mode=True):
+    def train(self, mode=True):
         super().train(False)
 
     def forward(self, input, target):
