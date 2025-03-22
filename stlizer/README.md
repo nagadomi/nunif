@@ -15,6 +15,7 @@ I use this software just for watching videos or for pre-processing for other sof
 ```
 python3 -m stlizer -i input_video.mp4 -o output_video.mp4
 ```
+(If you are using nunif-windows-package on Windows, run `nunif-prompt.bat` and enter the command from the console.)
 
 Show all options
 ```
