@@ -8,9 +8,13 @@ This project is under construction.
 
 [日本語の説明](docs/gui_ja.md)
 
+## (New) Sub Project
+
+[iw3-desktop](docs/desktop.md) is a tool that converts your PC desktop screen into 3D in realtime and streaming over WiFi.
+
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2).
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro).
 - Generating side-by-side image using grid_sample based lightweight model
 
 ## Usage
@@ -368,11 +372,15 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI small. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI base. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `DepthPro`  | Depth Pro model. 1536x1536 resolution. For image use.
+| `DepthPro_S`  | Depth Pro model. 1024x1024 modified resolution. For image use.
 
 Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
 For art/anime, DepthAnything is better than ZoeDepth.
+
+Regarding Depth Pro, distance is currently clipped at 40m. It is planned to become adjustable as an option.
 
 ### About `Any_V2_B` ,`Any_V2_L`, `Any_V2_N_L`, `Any_V2_K_L`
 

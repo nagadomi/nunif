@@ -1,9 +1,11 @@
 # iw3 dekstop streaming
 
+[日本語の説明](desktop_ja.md)
+
 (Warning: This is a very experimental tool.
 Currently, it is known to work with MetaQuest and PICO 4, but not with VisionPro.)
 
-`iw3.desktop` is a tool that converts your PC desktop screen into 3D and streaming via WiFi.
+`iw3.desktop` is a tool that converts your PC desktop screen into 3D in realtime and streaming over WiFi.
 It can be viewed as side-by-side 3D from the browser on Meta Quest.
 
 You can watch any image and video displayed on your PC in realtime.

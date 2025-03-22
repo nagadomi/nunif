@@ -22,6 +22,20 @@ I want to watch any 2D video as 3D video on my VR device, so I developed this ve
 
 iw3 provides the ability to convert any 2D image/video into side-by-side 3D image/video.
 
+### iw3-desktop
+
+[iw3/docs/desktop.md](./iw3/docs/desktop.md)
+
+iw3.desktop is a tool that converts your PC desktop screen into 3D and streaming over WiFi.
+
+You can watch any image and video/live displayed on your PC as 3D in realtime.
+
+## stilizer
+
+[stlizer/README.md](./stlizer/README.md)
+
+stlizer is a fast conservative video stabilizer.
+
 ## cliqa
 
 [cliqa/README.md](./cliqa/README.md)

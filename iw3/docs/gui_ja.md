@@ -1,6 +1,6 @@
 # iw3-gui
 
-iw3-guiは実写のあらゆる画像・動画を3D画像・3D動画に変換するソフトウェアです。
+iw3-guiはあらゆる画像・動画を3D画像・3D動画に変換するソフトウェアです。
 VRで本当に見たかった画像・動画をVRデバイスで3Dメディアとして見れるようになります。
 
 インストールについては[nunif windows package](../../windows_package/docs/README_ja.md)を参照してください。
