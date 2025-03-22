@@ -49,6 +49,7 @@ python -m iw3.desktop.gui
 
 ![iw3-desktop-gui](https://github.com/user-attachments/assets/1cd86b35-d258-45f2-8446-f0f0a4387b1c)
 
+(If you are using nunif-windows-package on Windows, run `iw3-desktop-gui.bat`. If it does not exist, run `update-installer.bat` and `update.bat`.)
 
 If a Firewall dialog appears, allow it.
 

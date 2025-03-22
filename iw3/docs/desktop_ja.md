@@ -46,6 +46,7 @@ python -m iw3.desktop.gui
 
 ![iw3-desktop-gui](https://github.com/user-attachments/assets/18175b2a-a027-42ce-ae5c-a9ee7ae178e5)
 
+(Windowsでnunif-windows-packageを使っている場合は、`iw3-desktop-gui.bat`を実行してください。それがない場合は`update-installer.bat`と`update.bat`を実行すると現れます。)
 
 ファイヤウォールのダイアログが表示された場合は許可してください。
 

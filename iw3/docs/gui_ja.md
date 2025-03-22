@@ -224,6 +224,8 @@ DepthAnythingの出力は精度が高いですが、ステレオ生成におい�
 
 `VR90`は、正面90°のみを描画したVR180フォーマット(Equirectangular)です。再生時の操作が制限されるので通常はオススメしません。使用しているVR機器や投稿サイト等の都合で使いたい場合に指定してください。Youtubeのメタデータ設定は https://github.com/nagadomi/nunif/issues/268 を見てください。
 
+`Cross Eyed`は交差法用のSBSです。専用デバイスがなくても寄り目で画像を重ねると立体に見えます。通常のSBSと左右の画像が逆になっています。
+
 `Anaglyph *`は、Red-Cyan Anaglyph 3D formatです。
 
 `Export`と`Export Disparity`は、深度画像とフレーム画像を画像シーケンスとして出力/再入力する機能です。詳しくは https://github.com/nagadomi/nunif/issues/97#issuecomment-2027349722 を見てください。
@@ -274,6 +276,8 @@ DepthAnythingの出力は精度が高いですが、ステレオ生成におい�
 `libx265`はH.265用です。通常はH.264よりもファイルサイズが小さくなります。ただし古い機器では対応していないことがあります。
 
 `utvideo`はロスレス動画コーデックです。再生には[Ut Video Codec Suite](https://github.com/umezawatakeshi/utvideo/releases)のインストールが必要かもしれません。
+
+`h264_nvenc`, `hevc_nvenc`(H.265)は、NVIDIAのハードウェアエンコーダーです。
 
 ffmpegが対応しているコーデックを直接指定することもできますが、追加のオプションが指定できないのでうまく使えないかもしれません。
 
@@ -509,3 +513,11 @@ GPUのメモリ不足です。`深度バッチサイズ`を小さくするか`�
 作者はこのソフトウェアをRTX 3070 Ti(8GB VRAM, Linux)とGTX 1050 Ti(4GB VRAM, ノートPC, Windows)で動作確認していますが、どちらもデフォルトの設定で動作しています。
 
 ちなみに上記の環境では、RTX 3070 TiのマシンがGTX 1050 Tiのマシンの10倍速いので、もしこのソフトウェアを気に入って古いGPUを使っている場合はRTX 3070 Ti以上の購入をオススメします。10時間かかる動画変換処理が1時間で終わるかもしれません。（OSや本体の違いもあるので言い切ることはできません）
+
+### NVENC(`h264_nvenc` `hevc_nvenc`)が動作しない
+
+NVIDIA Driver 570 以降をインストールしてください。
+
+## サブプロジェクト
+
+[iw3-desktop](desktop_ja.md) はPCのデスクトップ画面を3D変換してWiFi経由でストリーミング配信するツールです。

@@ -8,10 +8,6 @@ This project is under construction.
 
 [日本語の説明](docs/gui_ja.md)
 
-## (New) Sub Project
-
-[iw3-desktop](docs/desktop.md) is a tool that converts your PC desktop screen into 3D in realtime and streaming over WiFi.
-
 ## Overview
 
 - Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro).
@@ -205,6 +201,11 @@ When `--tb` or `--half-tb` option is specified, the video is output in TopBottom
 
 TopBottom format can be played back with higher resolution than SBS on some 3D TVs (Polarized/Passive 3D system).
 
+## Cross Eyed
+
+When `--cross-eyed` option is specified, the video/image is output for cross-eyed viewing method.
+
+Unlike the normal SBS format, the images are reversed left and right.
 
 ## Anaglyph 3D format
 
@@ -307,7 +308,7 @@ Both work with the default option.
 
 ### NVENC(`h264_nvenc`, `hevc_nvenc`) does not work
 
-Install NVIDIA driver 570 or newer.
+Install NVIDIA Driver 570 or newer.
 
 ### How to convert rotated(height width swapped) video correctly
 
@@ -430,3 +431,7 @@ The command syncs the following repositories.
 - https://github.com/nagadomi/Depth-Anything_iw3
 
 If you already downloaded the model files (checkpoint filess), downloading model files will be skipped.
+
+## Sub Project
+
+[iw3-desktop](docs/desktop.md) is a tool that converts your PC desktop screen into 3D in realtime and streaming over WiFi.
