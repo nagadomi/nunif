@@ -6,9 +6,9 @@ torch; sys_platform == "darwin"
 torchvision; sys_platform == "darwin"
 
 # Linux
-torch==2.5.1+cu124; sys_platform == "linux"
-torchvision==0.20.1+cu124; sys_platform == "linux"
+torch==2.6.0+cu124; sys_platform == "linux"
+torchvision==0.21.0+cu124; sys_platform == "linux"
 
 # Windows
-torch==2.5.1+cu124; sys_platform == "win32"
-torchvision==0.20.1+cu124; sys_platform == "win32"
+torch==2.6.0+cu124; sys_platform == "win32"
+torchvision==0.21.0+cu124; sys_platform == "win32"
