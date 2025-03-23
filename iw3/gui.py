@@ -209,27 +209,8 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_width.SetToolTip(T("Only used for row_flow_v3 and row_flow_v2"))
 
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-        depth_models = [
-            "ZoeD_N", "ZoeD_K", "ZoeD_NK",
-            "ZoeD_Any_N", "ZoeD_Any_K",
-            "DepthPro", "DepthPro_S",
-            "Any_S", "Any_B", "Any_L",
-            "Any_V2_S",
-        ]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_B"):
-            depth_models.append("Any_V2_B")
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
-            depth_models.append("Any_V2_L")
-
-        depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):
-            depth_models.append("Any_V2_N_L")
-        depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
-            depth_models.append("Any_V2_K_L")
-
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
-                                           choices=depth_models,
+                                           choices=self.get_depth_models(),
                                            style=wx.CB_READONLY, name="cbo_depth_model")
         self.cbo_depth_model.SetSelection(3)
 
@@ -604,6 +585,33 @@ class MainFrame(wx.Frame):
 
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+
+    def get_depth_models(self):
+        depth_models = [
+            "ZoeD_N", "ZoeD_K", "ZoeD_NK",
+            "ZoeD_Any_N", "ZoeD_Any_K",
+            "DepthPro", "DepthPro_S",
+            "Any_S", "Any_B", "Any_L",
+            "Any_V2_S",
+        ]
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_B"):
+            depth_models.append("Any_V2_B")
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
+            depth_models.append("Any_V2_L")
+
+        depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):
+            depth_models.append("Any_V2_N_L")
+        depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
+            depth_models.append("Any_V2_K_L")
+
+        depth_models += ["Distill_Any_S"]
+        if DepthAnythingModel.has_checkpoint_file("Distill_Any_B"):
+            depth_models.append("Distill_Any_B")
+        if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
+            depth_models.append("Distill_Any_L")
+        return depth_models
 
     def get_editable_comboboxes(self):
         editable_comboboxes = [

@@ -1453,6 +1453,7 @@ def create_parser(required_true=True):
                                  "Any_V2_N", "Any_V2_K",
                                  "Any_V2_N_S", "Any_V2_N_B", "Any_V2_N_L",
                                  "Any_V2_K_S", "Any_V2_K_B", "Any_V2_K_L",
+                                 "Distill_Any_S", "Distill_Any_B", "Distill_Any_L",
                                  "DepthPro", "DepthPro_S",
                                  "NULL",
                                  ],

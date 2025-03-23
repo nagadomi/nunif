@@ -26,6 +26,11 @@ NAME_MAP = {
     # for compatibility
     "Any_V2_N": "hypersim_l",
     "Any_V2_K": "vkitti_l",
+
+    # Distill Any Depth
+    "Distill_Any_S": "distill_any_depth_s",
+    "Distill_Any_B": "distill_any_depth_b",
+    "Distill_Any_L": "distill_any_depth_l",
 }
 MODEL_FILES = {
     "Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_vits14.pth"),
@@ -46,6 +51,11 @@ MODEL_FILES = {
     # for compatibility
     "Any_V2_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitl.pth"),
     "Any_V2_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
+
+    # Distill Any Depth
+    "Distill_Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vits.safetensors"),
+    "Distill_Any_B": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitb.safetensors"),
+    "Distill_Any_L": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitl.safetensors"),
 }
 
 
@@ -162,19 +172,8 @@ class DepthAnythingModel(BaseDepthModel):
 
     def load_model(self, model_type, resolution=None, device=None):
         encoder = NAME_MAP[model_type]
-        if "hypersim" not in encoder and "vkitti" not in encoder:
-            # disparity model
-            if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                       "DepthAnything", encoder=encoder,
-                                       verbose=False, trust_repo=True)
-            else:
-                assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Depth-Anything_iw3",
-                                       "DepthAnything", encoder=encoder, source="local",
-                                       verbose=False, trust_repo=True)
-        else:
-            # metric depth model
+        if encoder.startswith("hypersim") or encoder.startswith("vkitti"):
+            # Depth-Anything V2 metric depth model
             if not os.getenv("IW3_DEBUG"):
                 model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
                                        "DepthAnythingMetricDepthV2", model_type=encoder,
@@ -183,6 +182,29 @@ class DepthAnythingModel(BaseDepthModel):
                 assert path.exists("../Depth-Anything_iw3/hubconf.py")
                 model = torch.hub.load("../Depth-Anything_iw3",
                                        "DepthAnythingMetricDepthV2", model_type=encoder, source="local",
+                                       verbose=False, trust_repo=True)
+        elif encoder.startswith("distill_any_depth"):
+            # Distill Any Depth
+            encoder = {"l": "v2_vitl", "b": "v2_vitb", "s": "v2_vits"}[encoder[-1]]
+            if not os.getenv("IW3_DEBUG"):
+                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
+                                       "DistillAnyDepth", encoder=encoder,
+                                       verbose=False, trust_repo=True)
+            else:
+                assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                model = torch.hub.load("../Depth-Anything_iw3",
+                                       "DistillAnyDepth", encoder=encoder, source="local",
+                                       verbose=False, trust_repo=True)
+        else:
+            # DepthAnything V1 or V2
+            if not os.getenv("IW3_DEBUG"):
+                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
+                                       "DepthAnything", encoder=encoder,
+                                       verbose=False, trust_repo=True)
+            else:
+                assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                model = torch.hub.load("../Depth-Anything_iw3",
+                                       "DepthAnything", encoder=encoder, source="local",
                                        verbose=False, trust_repo=True)
 
         model.metric_depth = getattr(model, "metric_depth", False)

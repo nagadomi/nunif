@@ -15,6 +15,10 @@ VRで本当に見たかった画像・動画をVRデバイスで3Dメディア�
 - 入力画像（動画フレーム）から深度(各ピクセルの奥行き)を推定します
 - 入力画像と推定した深度からステレオ画像(左右それぞれの目に映す画像)を生成します
 
+深度推定には以下の事前学習済みモデルが使用できます。
+
+[ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro) or [Distill Any Depth](https://github.com/Westlake-AGI-Lab/Distill-Any-Depth).
+
 ## 入力
 
 処理対象のファイルまたはフォルダを選択します。最初のボタンが`ファイル選択`で、次のボタンが`フォルダ選択`です。ファイルひとつの場合はドラッグアンドドップもできます。
@@ -148,6 +152,12 @@ Exportした深度画像を別のソフトウェアで処理するときにフ�
 | `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI small. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI base. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `DepthPro`  | Depth Pro model. 1536x1536 resolution. For image use.
+| `DepthPro_S`  | Depth Pro model. 1024x1024 modified resolution. For image use.
+| `Distill_Any_S`  | Distill Any Depth model small.
+| `Distill_Any_B`  | Distill Any Depth model base.
+| `Distill_Any_L`  | Distill Any Depth model large.
+
 
 通常は`ZoeD_N`か`Any_B`,または`ZoeD_Any_N`を選択してください。
 
@@ -180,6 +190,21 @@ DepthAnythingのほうが精度が高いですが、ステレオ生成の結果�
 
 これらのファイルは https://huggingface.co/depth-anything のModelsセクションからダウンロードできます。開いたページの`Files and versions`タブにあります。
 ファイルが存在する場合のみGUI上に表示されます。
+
+### `Distill_Any_B`, `Distill_Any_L` について
+
+これらのモデルはMIT Licenseとされていますが、cc-by-nc-4.0(非商用)であるDepth-Anythin V2を初期重みとして使用しています。
+
+使用したい場合は、自分でファイルを配置してください。
+
+| Short Name | ファイル |
+|------------|------|
+| `Distill_Any_B` | `iw3/pretrained_models/hub/checkpoints/distill_any_depth_vitb.safetensors`
+| `Distill_Any_L` | `iw3/pretrained_models/hub/checkpoints/distill_any_depth_vitl.safetensors`
+
+これらのファイルは https://github.com/Westlake-AGI-Lab/Distill-Any-Depth のPre-trained Modelセクションからダウンロードできます。
+
+これらのファイルは`.safetensors`形式です。`.pth`への変換は必要ありませんが、上記のファイル名にリネームする必要があります。
 
 ### 深度解像度
 
