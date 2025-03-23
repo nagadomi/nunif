@@ -193,7 +193,7 @@ DepthAnythingのほうが精度が高いですが、ステレオ生成の結果�
 
 ### `Distill_Any_B`, `Distill_Any_L` について
 
-これらのモデルはMIT Licenseとされていますが、cc-by-nc-4.0(非商用)であるDepth-Anythin V2を初期重みとして使用しています。
+これらのモデルはApache License 2.0とされていますが、cc-by-nc-4.0(非商用)であるDepth-Anythin V2を初期重みとして使用しています。
 
 使用したい場合は、自分でファイルを配置してください。
 

@@ -407,7 +407,7 @@ These files can be downloaded from Models section of https://huggingface.co/dept
 
 ### About `Distill_Any_B`, `Distill_Any_L`
 
-These models are stated to be under MIT license, but they use Depth-Anything-V2, which is licensed under cc-by-nc-4.0 (Non-Commercial), as the initial weights.
+These models are stated to be under Apache License 2.0, but they use Depth-Anything-V2, which is licensed under cc-by-nc-4.0 (Non Commercial), as the initial weights.
 
 If you want to use it, place the checkpoint file yourself.
 
