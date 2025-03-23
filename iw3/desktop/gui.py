@@ -166,25 +166,11 @@ class MainFrame(wx.Frame):
                                       style=wx.CB_READONLY, name="cbo_method")
         self.cbo_method.SetSelection(0)
 
+        self.chk_small_model_only = wx.CheckBox(self.grp_stereo, label=T("List small model only"), name="chk_small_model_only")
+        self.chk_small_model_only.SetValue(True)
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-        depth_models = [
-            "ZoeD_N", "ZoeD_K", "ZoeD_NK",
-            "ZoeD_Any_N", "ZoeD_Any_K",
-            "Any_S", "Any_B", "Any_L",
-            "Any_V2_S",
-        ]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_B"):
-            depth_models.append("Any_V2_B")
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
-            depth_models.append("Any_V2_L")
 
-        depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):
-            depth_models.append("Any_V2_N_L")
-        depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
-            depth_models.append("Any_V2_K_L")
-
+        depth_models = self.get_depth_models(small_only=False)
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
                                            choices=depth_models,
                                            style=wx.CB_READONLY, name="cbo_depth_model")
@@ -248,6 +234,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_synthetic_view, (i, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_method, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_small_model_only, (i := i + 1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_depth_model, (i, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -438,6 +425,7 @@ class MainFrame(wx.Frame):
         self.cbo_method.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_method)
         self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
 
+        self.chk_small_model_only.Bind(wx.EVT_CHECKBOX, self.update_depth_model_list)
         self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
@@ -465,6 +453,7 @@ class MainFrame(wx.Frame):
         self.load_preset()
 
         self.update_bind_addr_state()
+        self.update_depth_model_list()
         self.update_stereo_format()
         self.update_auth_state()
 
@@ -475,6 +464,30 @@ class MainFrame(wx.Frame):
 
         self.grp_adjustment.Hide()
         self.Fit()
+
+    def get_depth_models(self, small_only):
+        if small_only:
+            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Any_V2_K_S"]
+        else:
+            depth_models = [
+                "ZoeD_N", "ZoeD_K", "ZoeD_NK",
+                "ZoeD_Any_N", "ZoeD_Any_K",
+                "Any_S", "Any_B", "Any_L",
+                "Any_V2_S",
+            ]
+            if DepthAnythingModel.has_checkpoint_file("Any_V2_B"):
+                depth_models.append("Any_V2_B")
+            if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
+                depth_models.append("Any_V2_L")
+
+            depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
+            if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):
+                depth_models.append("Any_V2_N_L")
+            depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
+            if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
+                depth_models.append("Any_V2_K_L")
+
+            return depth_models
 
     def get_editable_comboboxes(self):
         editable_comboboxes = [
@@ -499,6 +512,18 @@ class MainFrame(wx.Frame):
                 time.sleep(0.01)
         self.save_preset()
         event.Skip()
+
+    def update_depth_model_list(self, *args, **kwargs):
+        default_model = "Any_V2_S"
+        small_only = self.chk_small_model_only.IsChecked()
+        depth_model = self.cbo_depth_model.GetValue()
+        choices = self.get_depth_models(small_only=small_only)
+        self.cbo_depth_model.SetItems(choices)
+
+        if depth_model in choices:
+            self.cbo_depth_model.SetSelection(choices.index(depth_model))
+        else:
+            self.cbo_depth_model.SetSelection(choices.index(default_model))
 
     def sync_adj_controls(self, to=True):
         if to:
