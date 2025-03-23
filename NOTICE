@@ -98,7 +98,7 @@ Tomáš Souček / MIT License
 ---
 iw3 can load Distill Any Depth checkpoints
 https://github.com/Westlake-AGI-Lab/Distill-Any-Depth
-AGI Lab, Westlake University / MIT License
+AGI Lab, Westlake University / Apache License Version 2.0
 
 ----
 Other libraries used are listed in `requirements.txt`.
