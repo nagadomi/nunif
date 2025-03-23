@@ -10,7 +10,7 @@ This project is under construction.
 
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro).
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro) or [Distill Any Depth](https://github.com/Westlake-AGI-Lab/Distill-Any-Depth).
 - Generating side-by-side image using grid_sample based lightweight model
 
 ## Usage
@@ -379,6 +379,9 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
 | `DepthPro`  | Depth Pro model. 1536x1536 resolution. For image use.
 | `DepthPro_S`  | Depth Pro model. 1024x1024 modified resolution. For image use.
+| `Distill_Any_S`  | Distill Any Depth model small.
+| `Distill_Any_B`  | Distill Any Depth model base.
+| `Distill_Any_L`  | Distill Any Depth model large.
 
 Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
@@ -401,6 +404,21 @@ If you want to use it, agree to the pre-trained model license and place the chec
 | `Any_V2_K_L` | `iw3/pretrained_models/hub/checkpoints/depth_anything_v2_metric_vkitti_vitl.pth`
 
 These files can be downloaded from Models section of https://huggingface.co/depth-anything .
+
+### About `Distill_Any_B`, `Distill_Any_L`
+
+These models are stated to be under MIT license, but they use Depth-Anything-V2, which is licensed under cc-by-nc-4.0 (Non-Commercial), as the initial weights.
+
+If you want to use it, place the checkpoint file yourself.
+
+| Short Name | Path |
+|------------|------|
+| `Distill_Any_B` | `iw3/pretrained_models/hub/checkpoints/distill_any_depth_vitb.safetensors`
+| `Distill_Any_L` | `iw3/pretrained_models/hub/checkpoints/distill_any_depth_vitl.safetensors`
+
+These files can be downloaded from Pre-trained Models section of https://github.com/Westlake-AGI-Lab/Distill-Any-Depth .
+
+These files are in `.safetensors` format, so conversion to `.pth` is not required. Renaming to an appropriate file name is required.
 
 ## Stereo Generation Method (Left-Right Image Generation)
 

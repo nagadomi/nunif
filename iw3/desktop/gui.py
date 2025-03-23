@@ -467,7 +467,7 @@ class MainFrame(wx.Frame):
 
     def get_depth_models(self, small_only):
         if small_only:
-            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Any_V2_K_S"]
+            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S"]
         else:
             depth_models = [
                 "ZoeD_N", "ZoeD_K", "ZoeD_NK",
@@ -486,6 +486,12 @@ class MainFrame(wx.Frame):
             depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
             if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
                 depth_models.append("Any_V2_K_L")
+
+            depth_models += ["Distill_Any_S"]
+            if DepthAnythingModel.has_checkpoint_file("Distill_Any_B"):
+                depth_models.append("Distill_Any_B")
+            if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
+                depth_models.append("Distill_Any_L")
 
             return depth_models
 

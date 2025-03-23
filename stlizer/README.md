@@ -87,5 +87,5 @@ When `--disable-cache` option is specified, the cache file is ignored and not cr
 
 All cache files can be deleted with the following command.
 ```
-pytyon3 -m stlizer.purge_cache
+python3 -m stlizer.purge_cache
 ```
