@@ -112,3 +112,4 @@ export LD_LIBRARY_PATH=~/opt/ffmpeg/lib:$LD_LIBRARY_PATH
 ```
 
 Binary builds of ffmpeg with various configurations and versions are available from https://github.com/BtbN/FFmpeg-Builds/releases .
+(`*-shared` version is required to build.)
