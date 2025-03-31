@@ -82,7 +82,7 @@ Since NVENC is included in the binary package from PyAV 14.2.0, there is no need
 
 If you want to use the LGPL version of ffmpeg or codecs that are not included in PyAV, you can build PyAV from source to link it with your local ffmpeg.
 
-PyAV supports to different FFmpeg versions depending on the PyAV version.
+PyAV supports different FFmpeg versions depending on the PyAV version.
 - `av==13.1.0` works with FFmpeg 6.x.x (I am not sure of the exact minor version).
 - `av==14.2.0` works with FFmpeg 7.1.x.
 
@@ -104,7 +104,7 @@ If you want to specify the path to ffmpeg, you can specify it with `PKG_CONFIG_L
 ```
 PKG_CONFIG_LIBDIR=~/opt/ffmpeg/lib/pkgconfig pip install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v14.2.0
 ```
-Note that in this case, setting `LD_LIBRARY_DIR` is required.
+Note that in this case, setting `LD_LIBRARY_DIR` is required at runtime.
 ```
 export LD_LIBRARY_PATH=~/opt/ffmpeg/lib:$LD_LIBRARY_PATH
 # if needed
