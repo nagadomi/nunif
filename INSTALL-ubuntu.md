@@ -54,11 +54,7 @@ sudo apt-get install libgtk-3-dev
 pip3 install -r requirements-gui.txt
 ```
 
-If want to use NVENC(`h264_nvenc` and `hevc_nvenc`) in iw3, install PyAV from source code.
-```
-sudo apt-get install ffmpeg libavcodec-dev libavformat-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev
-pip3 install av==13.1.0 --force-reinstall --no-binary av
-```
+For instructions on how to build PyAV from source, please refer to [Building PyAV from source](#building-pyav-from-source).
 
 ## 5. Download pre-trained models
 
@@ -78,3 +74,41 @@ python -m iw3.download_models
 ```
 
 See also [iw3 README.md](iw3/README.md).
+
+
+### Building PyAV from source
+
+Since NVENC is included in the binary package from PyAV 14.2.0, there is no need to build from source if you just want to use NVENC.
+
+If you want to use the LGPL version of ffmpeg or codecs that are not included in PyAV, you can build PyAV from source to link it with your local ffmpeg.
+
+PyAV supports to different FFmpeg versions depending on the PyAV version.
+- `av==13.1.0` works with FFmpeg 6.x.x (I am not sure of the exact minor version).
+- `av==14.2.0` works with FFmpeg 7.1.x.
+
+When use local ffmpeg package.
+```
+sudo apt-get install ffmpeg libavcodec-dev libavformat-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev
+pip3 install av==13.1.0 --force-reinstall --no-binary av
+```
+
+You can also specify a GitHub branch instead of using pip sdist.
+```
+pip3 install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v13.1.0
+```
+```
+pip3 install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v14.2.0
+```
+
+If you want to specify the path to ffmpeg, you can specify it with `PKG_CONFIG_LIBDIR`. (In the case of `~/opt/ffmpeg/`, for example)
+```
+PKG_CONFIG_LIBDIR=~/opt/ffmpeg/lib/pkgconfig pip install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v14.2.0
+```
+Note that in this case, setting `LD_LIBRARY_DIR` is required.
+```
+export LD_LIBRARY_PATH=~/opt/ffmpeg/lib:$LD_LIBRARY_PATH
+# if needed
+# export PATH=~/opt/ffmpeg/bin:$PATH
+```
+
+Binary builds of ffmpeg with various configurations and versions are available from https://github.com/BtbN/FFmpeg-Builds/releases .
