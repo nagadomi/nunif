@@ -1284,13 +1284,13 @@ def process_config_images(config, args, side_model):
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, _ = config.resolve_paths(base_dir)
 
-    def fix_rgb_depth_pair(files1, files2):
-        # files1 and file2 are sorted
-        db1 = {path.basename(fn): fn for fn in files1}
-        db2 = {path.basename(fn): fn for fn in files2}
-        files2 = [fn for key, fn in db2.items() if key in db1]
-        files1 = [fn for key, fn in db1.items() if key in db2]
-        return files1, files2
+    def fix_rgb_depth_pair(rgb_files, depth_files):
+        rgb_db = {path.splitext(path.basename(fn))[0]: fn for fn in rgb_files}
+        depth_db = {path.splitext(path.basename(fn))[0]: fn for fn in depth_files}
+        and_keys = sorted(list(rgb_db.keys() & depth_db.keys()))
+        rgb_files = [rgb_db[key] for key in and_keys if key in rgb_db]
+        depth_files = [depth_db[key] for key in and_keys if key in depth_db]
+        return rgb_files, depth_files
 
     output_dir = args.output
     os.makedirs(output_dir, exist_ok=True)
