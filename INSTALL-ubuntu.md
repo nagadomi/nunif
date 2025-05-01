@@ -84,7 +84,7 @@ If you want to use the LGPL version of ffmpeg or codecs that are not included in
 
 PyAV supports different FFmpeg versions depending on the PyAV version.
 - `av==13.1.0` works with FFmpeg 6.x.x (I am not sure of the exact minor version).
-- `av==14.2.0` works with FFmpeg 7.1.x.
+- `av==14.3.0` works with FFmpeg 7.1.x.
 
 When use local ffmpeg package.
 ```
@@ -97,12 +97,12 @@ You can also specify a GitHub branch instead of using pip sdist.
 pip3 install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v13.1.0
 ```
 ```
-pip3 install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v14.2.0
+pip3 install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v14.3.0
 ```
 
 If you want to specify the path to ffmpeg, you can specify it with `PKG_CONFIG_LIBDIR`. (In the case of `~/opt/ffmpeg/`, for example)
 ```
-PKG_CONFIG_LIBDIR=~/opt/ffmpeg/lib/pkgconfig pip install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v14.2.0
+PKG_CONFIG_LIBDIR=~/opt/ffmpeg/lib/pkgconfig pip install --force-reinstall git+https://github.com/PyAV-Org/PyAV.git@v14.3.0
 ```
 Note that in this case, setting `LD_LIBRARY_DIR` is required at runtime.
 ```
