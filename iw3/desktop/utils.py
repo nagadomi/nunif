@@ -8,6 +8,7 @@ import socket
 import struct
 from collections import deque
 import wx  # for mouse pointer
+from packaging.version import Version
 import torch
 from torchvision.io import encode_jpeg
 from .. import utils as IW3U
@@ -17,6 +18,10 @@ from .screenshot_process import ScreenshotProcess
 from .streaming_server import StreamingServer
 from nunif.device import create_device
 from nunif.initializer import gc_collect
+
+
+TORCH_VERSION = Version(torch.__version__)
+USE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
 
 
 def init_win32():
@@ -64,8 +69,8 @@ def is_private_address(ip):
     return False
 
 
-def to_uint8_cpu(x):
-    return x.mul(255).round_().to(torch.uint8).cpu()
+def to_uint8(x):
+    return x.mul(255).round_().to(torch.uint8)
 
 
 def fps_sleep(start_time, fps, resolution=2e-4):
@@ -75,11 +80,13 @@ def fps_sleep(start_time, fps, resolution=2e-4):
         time.sleep(resolution)
 
 
+_fps = 0.0
 def to_jpeg_data(frame, quality, tick):
     bio = io.BytesIO()
-    frame = to_uint8_cpu(frame)
-    # TODO: encode_jpeg has a bug with cuda, but that will be fixed in the next version.
-    frame = encode_jpeg(frame, quality=quality)
+    if USE_GPU_JPEG:
+        frame = encode_jpeg(to_uint8(frame), quality=quality).cpu()
+    else:
+        frame = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
     bio.write(frame.numpy())
     return (bio.getbuffer().tobytes(), tick)
 
