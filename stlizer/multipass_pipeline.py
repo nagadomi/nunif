@@ -122,6 +122,8 @@ def make_video_codec_option(args):
         elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
             options["rc"] = "constqp"
             options["qp"] = str(args.crf)
+            if torch.cuda.is_available() and args.gpu >= 0:
+                options["gpu"] = str(args.gpu)
     else:
         options = {}
 
