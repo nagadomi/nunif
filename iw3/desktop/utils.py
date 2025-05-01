@@ -80,10 +80,9 @@ def fps_sleep(start_time, fps, resolution=2e-4):
         time.sleep(resolution)
 
 
-_fps = 0.0
 def to_jpeg_data(frame, quality, tick):
     bio = io.BytesIO()
-    if USE_GPU_JPEG:
+    if USE_GPU_JPEG and frame.device.type == "cuda":
         frame = encode_jpeg(to_uint8(frame), quality=quality).cpu()
     else:
         frame = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
