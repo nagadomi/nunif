@@ -72,6 +72,7 @@ We usually support the latest version. If there are bugs or compatibility issues
 - [INSTALL-windows](INSTALL-windows.md)
 - [INSTALL-macos](INSTALL-macos.md)
 
+For Intel GPUs, additionally see section [INSTALL-xpu](INSTALL-xpu.md).
 
 ### License Notes
 
