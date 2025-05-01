@@ -749,7 +749,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         @torch.inference_mode()
         def __batch_callback(x):
             device_index = args.state["devices"].index(x.device)
-            if args.max_output_height is not None or args.bg_session is not None:
+            if (args.max_output_height is not None or
+                    args.bg_session is not None or
+                    args.rotate_right or args.rotate_left):
                 # TODO: batch preprocess_image
                 with preprocess_lock[device_index]:
                     xs = [preprocess_image(xx, args) for xx in x]
