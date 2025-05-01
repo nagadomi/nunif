@@ -1176,7 +1176,7 @@ class MainFrame(wx.Frame):
         if selected in choices:
             self.cbo_app_preset.SetSelection(choices.index(selected))
 
-    def load_preset(self, name=None):
+    def load_preset(self, name=None, exclude_names={}):
         if not name:
             restore_path = True
             name = ""
@@ -1196,7 +1196,7 @@ class MainFrame(wx.Frame):
             persistent_manager_register_all(manager, self)
             for control in self.get_editable_comboboxes():
                 persistent_manager_register(manager, control, EditableComboBoxPersistentHandler)
-            persistent_manager_restore_all(manager)
+            persistent_manager_restore_all(manager, exclude_names)
             persistent_manager_unregister_all(manager)
         finally:
             if not restore_path:
@@ -1218,7 +1218,7 @@ class MainFrame(wx.Frame):
         self.reload_preset()
 
     def on_click_btn_load_preset(self, event):
-        self.load_preset(self.cbo_app_preset.GetValue())
+        self.load_preset(self.cbo_app_preset.GetValue(), exclude_names={self.GetName()})
 
     def on_click_btn_save_preset(self, event):
         self.save_preset(self.cbo_app_preset.GetValue())
