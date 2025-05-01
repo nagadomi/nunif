@@ -233,7 +233,7 @@ class MainFrame(wx.Frame):
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
                 device_name = torch.cuda.get_device_properties(i).name
-                self.cbo_device.Append(device_name, i)
+                self.cbo_device.Append(f"{i}:{device_name}", i)
             if torch.cuda.device_count() > 0:
                 self.cbo_device.Append(T("All CUDA Device"), -2)
         elif mps_is_available():
@@ -241,7 +241,7 @@ class MainFrame(wx.Frame):
         elif xpu_is_available():
             for i in range(torch.xpu.device_count()):
                 device_name = torch.xpu.get_device_name(i)
-                self.cbo_device.Append(device_name, i)
+                self.cbo_device.Append(f"{i}:{device_name}", i)
 
         self.cbo_device.Append("CPU", -1)
         self.cbo_device.SetSelection(0)
