@@ -109,10 +109,11 @@ def persistent_manager_register_all(manager, window):
         persistent_manager_register_all(manager, child)
 
 
-def persistent_manager_restore_all(manager):
+def persistent_manager_restore_all(manager, exclude_names={}):
     # restore all registered controls
     for name, obj in list(manager._persistentObjects.items()):  # NOTE: private attribute
-        manager.Restore(obj.GetWindow())
+        if not name in exclude_names:
+            manager.Restore(obj.GetWindow())
 
 
 def persistent_manager_unregister_all(manager):

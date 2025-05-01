@@ -379,6 +379,8 @@ def make_video_codec_option(args):
         elif args.video_codec in {"hevc_nvenc", "h264_nvenc"}:
             options["rc"] = "constqp"
             options["qp"] = str(args.crf)
+            if torch.cuda.is_available() and args.gpu[0] >= 0:
+                options["gpu"] = str(args.gpu[0])
     elif args.video_codec == "libopenh264":
         # NOTE: It seems libopenh264 does not support most options.
         options = {"b": args.video_bitrate}
