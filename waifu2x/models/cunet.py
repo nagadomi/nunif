@@ -1,3 +1,4 @@
+# Cascaded U-Net
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -122,6 +123,16 @@ class UNet2(nn.Module):
 
 def tile_size_validator(size):
     return size % 4 == 0
+
+
+"""
+NOTE:
+  `no_clip` option was added due to my misunderstanding and is actually unnecessary,
+  but since it has been around for a long time, I’ve kept it just in case.
+  It should always be set to `True`.
+  Although the default value in the class constructor arguments is False,
+  it is overridden to True in `waifu2x/training/trainer.py`
+"""
 
 
 @register_model
