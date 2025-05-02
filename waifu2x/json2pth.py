@@ -45,7 +45,7 @@ def convert_cunet(waifu2x_model_dir, output_dir):
         out_dir = os.path.join(output_dir, "cunet", domain)
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
-            model = create_model("waifu2x.cunet", in_channels=3, out_channels=3)
+            model = create_model("waifu2x.cunet", in_channels=3, out_channels=3, no_clip=True)
             json_path = os.path.join(in_dir, f"noise{noise_level}_model.json")
             model = load_state_from_waifu2x_json(model, json_path)
             save_path = os.path.join(out_dir, f"noise{noise_level}.pth")
@@ -58,13 +58,13 @@ def convert_upcunet(waifu2x_model_dir, output_dir):
         out_dir = os.path.join(output_dir, "cunet", domain)
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
-            model = create_model("waifu2x.upcunet", in_channels=3, out_channels=3)
+            model = create_model("waifu2x.upcunet", in_channels=3, out_channels=3, no_clip=True)
             json_path = os.path.join(in_dir, f"noise{noise_level}_scale2.0x_model.json")
             model = load_state_from_waifu2x_json(model, json_path)
             save_path = os.path.join(out_dir, f"noise{noise_level}_scale2x.pth")
             save_model(model, save_path, updated_at=os.path.getmtime(json_path))
 
-        model = create_model("waifu2x.upcunet", in_channels=3, out_channels=3)
+        model = create_model("waifu2x.upcunet", in_channels=3, out_channels=3, no_clip=True)
         json_path = os.path.join(in_dir, "scale2.0x_model.json")
         model = load_state_from_waifu2x_json(model, json_path)
         save_path = os.path.join(out_dir, "scale2x.pth")

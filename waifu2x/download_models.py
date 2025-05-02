@@ -4,7 +4,7 @@ from nunif.utils.downloader import ArchiveDownloader
 from nunif.logger import logger
 
 
-VERSION = "20230504"
+VERSION = "20250502"
 MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models")
 VERSION_FILE = path.join(MODEL_DIR, VERSION)
 MODEL_URL = f"https://github.com/nagadomi/nunif/releases/download/0.0.0/waifu2x_pretrained_models_{VERSION}.zip"
