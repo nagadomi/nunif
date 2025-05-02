@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
+from contextlib import nullcontext
 from .permute import bchw_to_bnc, bnc_to_bchw, bchw_to_bhwc, bhwc_to_bchw, window_partition2d
 from .init import basic_module_init
 from .replication_pad2d import ReplicationPad2dNaive
@@ -12,7 +13,7 @@ try:
 
     def use_flash_attention(flag):
         if flag:
-            return sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH])
+            return nullcontext()
         else:
             return sdpa_kernel([SDPBackend.MATH])
 
