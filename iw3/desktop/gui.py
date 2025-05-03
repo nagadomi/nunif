@@ -33,7 +33,7 @@ from .utils import (
     init_win32,
     iw3_desktop_main,
     create_parser, set_state_args,
-    IW3U,
+    IW3U, ENABLE_GPU_JPEG,
 )
 
 
@@ -283,6 +283,10 @@ class MainFrame(wx.Frame):
         self.cbo_stream_quality = EditableComboBox(self.grp_network, choices=["100", "95", "90", "85", "80"],
                                                    name="cbo_stream_quality")
         self.cbo_stream_quality.SetSelection(2)
+        self.chk_gpu_jpeg = wx.CheckBox(self.grp_network, label=T("GPU JPEG"), name="chk_gpu_jpeg")
+        self.chk_gpu_jpeg.SetValue(False)
+        if not ENABLE_GPU_JPEG:
+            self.chk_gpu_jpeg.Disable()
 
         self.chk_auth = wx.CheckBox(self.grp_network, label=T("Basic Authentication"), name="chk_auth")
         self.lbl_auth_username = wx.StaticText(self.grp_network, label=T("Username"))
@@ -303,12 +307,13 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_stream_height, (3, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_stream_quality, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stream_quality, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_gpu_jpeg, (5, 1), flag=wx.ALIGN_CENTER_VERTICAL)
 
-        layout.Add(self.chk_auth, (5, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_auth, (6, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (8, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -723,6 +728,7 @@ class MainFrame(wx.Frame):
             stream_fps=int(self.cbo_stream_fps.GetValue()),
             stream_height=int(self.cbo_stream_height.GetValue()),
             stream_quality=int(self.cbo_stream_quality.GetValue()),
+            gpu_jpeg=self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             full_sbs=full_sbs,
         )

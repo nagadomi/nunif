@@ -21,7 +21,7 @@ from nunif.initializer import gc_collect
 
 
 TORCH_VERSION = Version(torch.__version__)
-USE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
+ENABLE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
 
 
 def init_win32():
@@ -80,9 +80,9 @@ def fps_sleep(start_time, fps, resolution=2e-4):
         time.sleep(resolution)
 
 
-def to_jpeg_data(frame, quality, tick):
+def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
     bio = io.BytesIO()
-    if USE_GPU_JPEG and frame.device.type == "cuda":
+    if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
         frame = encode_jpeg(to_uint8(frame), quality=quality).cpu()
     else:
         frame = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
@@ -105,6 +105,7 @@ def create_parser():
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
     parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "pil_mp", "wc_mp"],
                         help="Screenshot method")
+    parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
     parser.set_defaults(
         input="dummy",
         output="dummy",
@@ -212,7 +213,7 @@ def iw3_desktop_main(args, init_wxapp=True):
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
                 sbs = IW3U.process_image(frame, args, depth_model, side_model, return_tensor=True)
-                server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick))
+                server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
 
                 if count % (args.stream_fps * 30) == 0:
                     gc_collect()
