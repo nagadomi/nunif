@@ -83,11 +83,24 @@ def fps_sleep(start_time, fps, resolution=2e-4):
 def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
     bio = io.BytesIO()
     if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
-        frame = encode_jpeg(to_uint8(frame), quality=quality).cpu()
+        jpeg_data = encode_jpeg(to_uint8(frame), quality=quality).cpu()
     else:
-        frame = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
-    bio.write(frame.numpy())
-    return (bio.getbuffer().tobytes(), tick)
+        jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
+    bio.write(jpeg_data.numpy())
+    jpeg_data = bio.getbuffer().tobytes()
+    # debug_jpeg_data(frame, jpeg_data)
+    return (jpeg_data, tick)
+
+
+def debug_jpeg_data(frame, jpeg_data):
+    from torchvision.io import decode_jpeg
+    jpeg_data = torch.tensor(list(jpeg_data), dtype=torch.uint8)
+    try:
+        decodec_frame = decode_jpeg(jpeg_data).cpu() / 255.0
+        diff = (frame.cpu() - decodec_frame).abs().mean()
+        print(diff)
+    except RuntimeError as e:
+        print(e)
 
 
 def create_parser():
@@ -213,7 +226,10 @@ def iw3_desktop_main(args, init_wxapp=True):
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
                 sbs = IW3U.process_image(frame, args, depth_model, side_model, return_tensor=True)
-                server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                if args.gpu_jpeg:
+                    server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                else:
+                    server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
 
                 if count % (args.stream_fps * 30) == 0:
                     gc_collect()
