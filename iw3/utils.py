@@ -14,7 +14,7 @@ from PIL import ImageDraw
 from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.models import load_model  # , compile_model
+from nunif.models import load_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.device import create_device, autocast, device_is_mps, device_is_cuda, mps_is_available, xpu_is_available
@@ -675,10 +675,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     if ema_normalize:
         depth_model.enable_ema_minmax(args.ema_decay)
 
-    if side_model is not None:
-        # TODO: sometimes ERROR RUNNING GUARDS forward error happen
-        # side_model = compile_model(side_model, dynamic=True)
-        pass
+    if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
+        side_model = torch.compile(side_model)
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -730,17 +728,24 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
                                              return_tensor=True))
 
-        VU.process_video(input_filename, output_filename,
-                         config_callback=config_callback,
-                         frame_callback=frame_callback,
-                         test_callback=test_callback,
-                         vf=args.vf,
-                         stop_event=args.state["stop_event"],
-                         suspend_event=args.state["suspend_event"],
-                         tqdm_fn=args.state["tqdm_fn"],
-                         title=path.basename(input_filename),
-                         start_time=args.start_time,
-                         end_time=args.end_time)
+        try:
+            if args.compile:
+                depth_model.compile()
+            VU.process_video(input_filename, output_filename,
+                             config_callback=config_callback,
+                             frame_callback=frame_callback,
+                             test_callback=test_callback,
+                             vf=args.vf,
+                             stop_event=args.state["stop_event"],
+                             suspend_event=args.state["suspend_event"],
+                             tqdm_fn=args.state["tqdm_fn"],
+                             title=path.basename(input_filename),
+                             start_time=args.start_time,
+                             end_time=args.end_time)
+        finally:
+            if args.compile:
+                depth_model.clear_compile()
+
     else:
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
         preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
@@ -805,18 +810,24 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             max_workers=args.max_workers,
             max_batch_queue=args.max_workers + extra_queue,
         )
-        VU.process_video(input_filename, output_filename,
-                         config_callback=config_callback,
-                         frame_callback=frame_callback,
-                         test_callback=test_callback,
-                         vf=args.vf,
-                         stop_event=args.state["stop_event"],
-                         suspend_event=args.state["suspend_event"],
-                         tqdm_fn=args.state["tqdm_fn"],
-                         title=path.basename(input_filename),
-                         start_time=args.start_time,
-                         end_time=args.end_time)
-        frame_callback.shutdown()
+        try:
+            if args.compile:
+                depth_model.compile()
+            VU.process_video(input_filename, output_filename,
+                             config_callback=config_callback,
+                             frame_callback=frame_callback,
+                             test_callback=test_callback,
+                             vf=args.vf,
+                             stop_event=args.state["stop_event"],
+                             suspend_event=args.state["suspend_event"],
+                             tqdm_fn=args.state["tqdm_fn"],
+                             title=path.basename(input_filename),
+                             start_time=args.start_time,
+                             end_time=args.end_time)
+        finally:
+            frame_callback.shutdown()
+            if args.compile:
+                depth_model.clear_compile()
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
@@ -1405,6 +1416,7 @@ def create_parser(required_true=True):
                         help="output file or directory")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device id. -1 for CPU")
+    parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "backward", "forward", "forward_fill",
                                  "row_flow", "row_flow_sym",
