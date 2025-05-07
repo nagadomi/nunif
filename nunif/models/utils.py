@@ -118,13 +118,12 @@ def compile_model(model, **kwargs):
     if not is_compiled_model(model) and check_compile_support(get_model_device(model)):
         logger.debug(f"compile {model.__class__.__name__}, kwargs={kwargs}")
         model = torch.compile(model, **kwargs)
-        setattr(model, "__nunif_compiled_model", True)
     return model
 
 
 def is_compiled_model(model):
     # TODO: class name of compiled model is unclear
-    return hasattr(model, "__nunif_compiled_model")
+    return hasattr(model, "_orig_mod")
 
 
 def merge_state_dict(a, b, alpha=0.5):
@@ -154,14 +153,7 @@ def mean_state_dict(dicts):
     return mean
 
 
-def _test_compile():
-    model = torch.nn.Linear(32, 32, bias=False).cuda()
-    print(is_compiled_model(model))
-    model = compile_model(model)
-    print(is_compiled_model(model))
-    model(torch.zeros(1, 32).cuda())
-    print(is_compiled_model(model))
-
+def _test_check_compile():
     print(check_compile_support("cpu"))
     print(check_compile_support(torch.device("cpu")))
     print(check_compile_support(torch.device("cuda")))
@@ -173,5 +165,18 @@ def _test_compile():
     print(_COMPILER_SUPPORTED_DEVICES)
 
 
+def _test_is_compiled_model(device):
+    model = torch.nn.Linear(32, 32, bias=False).to(device)
+    assert not is_compiled_model(model)
+    compiled_model = compile_model(model)
+    assert is_compiled_model(compiled_model)
+    assert not is_compiled_model(model)
+    model(torch.zeros(1, 32).to(device))
+    assert is_compiled_model(compiled_model)
+    assert not is_compiled_model(model)
+
+
 if __name__ == "__main__":
-    _test_compile()
+    _test_check_compile()
+    _test_is_compiled_model("cpu")
+    _test_is_compiled_model("cuda")
