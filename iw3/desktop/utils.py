@@ -17,6 +17,8 @@ from .screenshot_thread_pil import ScreenshotThreadPIL, take_screenshot
 from .screenshot_process import ScreenshotProcess
 from .streaming_server import StreamingServer
 from nunif.device import create_device
+from nunif.models import compile_model
+from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.initializer import gc_collect
 
 
@@ -166,6 +168,7 @@ def iw3_desktop_main(args, init_wxapp=True):
     depth_model = args.state["depth_model"]
     if not depth_model.loaded():
         depth_model.load(gpu=args.gpu, resolution=args.resolution)
+
     # Use Flicker Reduction to prevent 3D sickness
     depth_model.enable_ema_minmax(args.ema_decay)
     args.mapper = IW3U.resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
@@ -211,6 +214,10 @@ def iw3_desktop_main(args, init_wxapp=True):
         device=device)
 
     try:
+        if args.compile:
+            depth_model.compile()
+            if side_model is not None and not isinstance(side_model, DeviceSwitchInference):
+                side_model = compile_model(side_model)
         # main loop
         server.start()
         screenshot_thread.start()
@@ -253,6 +260,7 @@ def iw3_desktop_main(args, init_wxapp=True):
     finally:
         server.stop()
         screenshot_thread.stop()
+        depth_model.clear_compiled_model()
 
     if args.state["stop_event"] and args.state["stop_event"].is_set():
         args.state["stop_event"].clear()
