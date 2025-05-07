@@ -16,7 +16,8 @@ from wx.lib.intctrl import IntCtrl
 import torch
 from nunif.utils.git import get_current_branch
 from nunif.initializer import gc_collect
-from nunif.device import mps_is_available, xpu_is_available
+from nunif.device import mps_is_available, xpu_is_available, create_device
+from nunif.models.utils import check_compile_support
 from nunif.utils.filename import sanitize_filename
 from nunif.gui import (
     IpAddrCtrl,
@@ -347,12 +348,17 @@ class MainFrame(wx.Frame):
                                           name="cbo_screenshot")
         self.cbo_screenshot.SetSelection(0)
 
+        self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
+        self.chk_compile.SetToolTip(T("Enable model compiling"))
+        self.chk_compile.SetValue(False)
+
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_screenshot, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_screenshot, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (2, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -437,6 +443,8 @@ class MainFrame(wx.Frame):
         self.chk_auth.Bind(wx.EVT_CHECKBOX, self.update_auth_state)
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.update_stereo_format)
 
+        self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
+
         self.sld_adj_divergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_convergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_edge_dilation.Bind(wx.EVT_SPINCTRL, self.update_args_adjustment)
@@ -466,6 +474,7 @@ class MainFrame(wx.Frame):
         self.update_ema_normalize()
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_compile()
 
         self.grp_adjustment.Hide()
         self.Fit()
@@ -720,6 +729,7 @@ class MainFrame(wx.Frame):
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
+            compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
 
             bind_addr=bind_addr,
             port=self.txt_port.GetValue(),
@@ -888,6 +898,22 @@ class MainFrame(wx.Frame):
             self.GetSizer().Layout()
         except ValueError:
             pass
+
+    def on_selected_index_changed_cbo_device(self, event):
+        self.update_compile()
+
+    def update_compile(self):
+        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        if device_id == -2:
+            # currently "All CUDA" does not support compile
+            self.chk_compile.Disable()
+        else:
+            # check compiler support
+            device = create_device(device_id)
+            if check_compile_support(device):
+                self.chk_compile.Enable()
+            else:
+                self.chk_compile.Disable()
 
 
 LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
