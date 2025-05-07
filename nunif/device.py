@@ -71,7 +71,7 @@ def autocast(device, dtype=None, enabled=True):
         if enabled:
             enabled = False
     elif device_is_cuda(device):
-        amp_device_type = device.type
+        amp_device_type = device.split(":")[0] if isinstance(device, str) else device.type
         amp_dtype = dtype
         if False:
             # TODO: I think better to do this, but leave it to the user (use --disable-amp option)
@@ -80,7 +80,7 @@ def autocast(device, dtype=None, enabled=True):
                 enabled = False
     else:
         # Unknown device
-        amp_device_type = device.type
+        amp_device_type = device.split(":")[0] if isinstance(device, str) else device.type
         amp_dtype = dtype
 
     return torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=enabled)

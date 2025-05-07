@@ -14,7 +14,7 @@ from PIL import ImageDraw
 from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.models import load_model
+from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.device import create_device, autocast, device_is_mps, device_is_cuda, mps_is_available, xpu_is_available
@@ -676,7 +676,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         depth_model.enable_ema_minmax(args.ema_decay)
 
     if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
-        side_model = torch.compile(side_model)
+        side_model = compile_model(side_model)
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -744,7 +744,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              end_time=args.end_time)
         finally:
             if args.compile:
-                depth_model.clear_compile()
+                depth_model.clear_compiled_model()
 
     else:
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -827,7 +827,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         finally:
             frame_callback.shutdown()
             if args.compile:
-                depth_model.clear_compile()
+                depth_model.clear_compiled_model()
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
