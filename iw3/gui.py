@@ -16,7 +16,8 @@ from .utils import (
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
     has_rembg_model)
 from nunif.initializer import gc_collect
-from nunif.device import mps_is_available, xpu_is_available
+from nunif.device import mps_is_available, xpu_is_available, create_device
+from nunif.models.utils import check_compile_support
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.filename import sanitize_filename
@@ -459,6 +460,10 @@ class MainFrame(wx.Frame):
         self.chk_cuda_stream.SetToolTip(T("Use per-thread CUDA Stream (experimental: fast or slow or crash)"))
         self.chk_cuda_stream.SetValue(False)
 
+        self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
+        self.chk_compile.SetToolTip(T("Enable model compiling"))
+        self.chk_compile.SetValue(False)
+
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), (0, 3), flag=wx.EXPAND)
@@ -470,6 +475,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
         layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
         layout.Add(self.chk_cuda_stream, (3, 3), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (4, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -543,6 +549,8 @@ class MainFrame(wx.Frame):
 
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
 
+        self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
+
         self.btn_load_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_load_preset)
         self.btn_save_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_save_preset)
         self.btn_delete_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_delete_preset)
@@ -585,6 +593,7 @@ class MainFrame(wx.Frame):
 
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_compile()
 
     def get_depth_models(self):
         depth_models = [
@@ -1004,6 +1013,7 @@ class MainFrame(wx.Frame):
             disable_amp=not self.chk_fp16.GetValue(),
             low_vram=self.chk_low_vram.GetValue(),
             cuda_stream=self.chk_cuda_stream.GetValue(),
+            compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
 
             resume=resume,
             recursive=recursive,
@@ -1265,6 +1275,22 @@ class MainFrame(wx.Frame):
             self.GetSizer().Layout()
         except ValueError:
             pass
+
+    def on_selected_index_changed_cbo_device(self, event):
+        self.update_compile()
+
+    def update_compile(self):
+        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        if device_id == -2:
+            # currently "All CUDA" does not support compile
+            self.chk_compile.Disable()
+        else:
+            # check compiler support
+            device = create_device(device_id)
+            if check_compile_support(device):
+                self.chk_compile.Enable()
+            else:
+                self.chk_compile.Disable()
 
 
 LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
