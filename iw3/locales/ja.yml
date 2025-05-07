@@ -95,6 +95,7 @@
 "Use flip augmentation to improve depth quality (slow)": "左右反転画像を使って深度の品質を改善 (遅い)"
 "Use FP16 (fast)": "FP16を使用 (速い)"
 "Use per-thread CUDA Stream (experimental: fast or slow or crash)": "スレッド毎のCUDA Streamを使う(実験的: 速いか遅いかクラッシュする)"
+"Enable model compiling": "モデルのコンパイルを有効化"
 "Video Only": "動画のみ"
 "Start": "開始"
 "Cancel": "キャンセル"
