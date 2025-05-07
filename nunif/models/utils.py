@@ -96,6 +96,10 @@ def get_model_device(model):
 _COMPILER_SUPPORTED_DEVICES = {}
 
 
+def _test_func(x):
+    return x + 1.0
+
+
 def check_compile_support(device):
     device_name = device if isinstance(device, str) else device.type
     if device_name not in _COMPILER_SUPPORTED_DEVICES:
@@ -103,8 +107,10 @@ def check_compile_support(device):
             model = torch.nn.Linear(32, 32, bias=False)
             model.weight.data.zero_()
             model = torch.compile(model.eval().to(device))
+            func = torch.compile(_test_func)
             with torch.inference_mode(), autocast(device):
                 model(torch.zeros((1, 32), device=device))
+                func(torch.zeros((32,), dtype=torch.float32, device=device))
             _COMPILER_SUPPORTED_DEVICES[device_name] = True
         except:  # noqa  #(RuntimeError, AssertionError):
             # import sys
