@@ -43,6 +43,20 @@ def init_win32():
             pass
 
 
+TORCH_NUM_THREADS = -1
+
+
+def init_num_threads(device_id):
+    global TORCH_NUM_THREADS
+    if TORCH_NUM_THREADS < 0:
+        TORCH_NUM_THREADS = torch.get_num_threads()
+    if device_id < 0:
+        # cpu
+        torch.set_num_threads(TORCH_NUM_THREADS)
+    else:
+        torch.set_num_threads(1)
+
+
 def get_local_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -142,6 +156,8 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
 
 
 def iw3_desktop_main(args, init_wxapp=True):
+    init_num_threads(args.gpu[0])
+
     if not args.full_sbs:
         args.half_sbs = True
         frame_width_scale = 1
