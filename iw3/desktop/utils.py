@@ -24,6 +24,7 @@ from nunif.initializer import gc_collect
 
 TORCH_VERSION = Version(torch.__version__)
 ENABLE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
+TORCH_NUM_THREADS = torch.get_num_threads()
 
 
 def init_win32():
@@ -43,13 +44,7 @@ def init_win32():
             pass
 
 
-TORCH_NUM_THREADS = -1
-
-
 def init_num_threads(device_id):
-    global TORCH_NUM_THREADS
-    if TORCH_NUM_THREADS < 0:
-        TORCH_NUM_THREADS = torch.get_num_threads()
     if device_id < 0:
         # cpu
         torch.set_num_threads(TORCH_NUM_THREADS)
