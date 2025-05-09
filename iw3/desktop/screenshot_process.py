@@ -119,11 +119,12 @@ def capture_process(frame_size, frame_shm, frame_lock, frame_event, stop_event, 
     @capture.event
     def on_frame_arrived(frame, capture_control):
         nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer  # noqa
-        with frame_lock:
-            if frame_buffer.shape != frame.frame_buffer.shape:
-                raise RuntimeError("Screen size missmatch")
-            frame_buffer[:] = frame.frame_buffer
-            frame_event.set()
+        if not frame_event.is_set():
+            with frame_lock:
+                if frame_buffer.shape != frame.frame_buffer.shape:
+                    raise RuntimeError("Screen size missmatch")
+                frame_buffer[:] = frame.frame_buffer
+                frame_event.set()
 
         if stop_event.is_set():
             capture_control.stop()
@@ -188,6 +189,7 @@ class ScreenshotProcess(threading.Thread):
         try:
             while True:
                 tick = time.perf_counter()
+                self.process_frame_event.clear()
                 while not self.process_frame_event.wait(1):
                     if not self.process.is_alive():
                         raise RuntimeError("thread is already dead")
@@ -202,7 +204,6 @@ class ScreenshotProcess(threading.Thread):
                             frame_buffer = frame_buffer.pin_memory()
                     else:
                         frame_buffer.copy_(frame)
-                    self.process_frame_event.clear()
 
                 if self.cuda_stream is not None:
                     with torch.cuda.stream(self.cuda_stream):
