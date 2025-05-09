@@ -211,7 +211,7 @@ class ScreenshotProcess(threading.Thread):
                         if self.backend == "pil":
                             # cursor for PIL
                             draw_cursor(frame, wx.GetMousePosition())
-                        if frame.shape[2] > self.frame_height:
+                        if frame.shape[1:] != (self.frame_height, self.frame_width):
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
                                               antialias=True)
@@ -221,8 +221,7 @@ class ScreenshotProcess(threading.Thread):
                     frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
                     if self.backend == "pil":
                         draw_cursor(frame, wx.GetMousePosition())
-
-                    if frame.shape[2] > self.frame_height:
+                    if frame.shape[1:] != (self.frame_height, self.frame_width):
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
                                           antialias=True)
