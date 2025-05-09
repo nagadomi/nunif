@@ -69,7 +69,8 @@ def draw_cursor(x, pos, size=8):
     pos_x = min(max(pos[0], r), W - r)
     pos_y = min(max(pos[1], r), H - r)
     px = x[:, pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr].clone()
-    x[:, pos_y - r: pos_y + r, pos_x - r: pos_x + r] = torch.tensor((0x33, 0x80, 0x80), dtype=px.dtype).view(3, 1, 1)
+    color = torch.tensor((0x33 / 255.0, 0x80 / 255.0, 0x80 / 255.0), dtype=px.dtype, device=px.device).view(3, 1, 1)
+    x[:, pos_y - r: pos_y + r, pos_x - r: pos_x + r] = color
     x[:, pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr] = px
 
 
@@ -117,7 +118,7 @@ def capture_process(frame_size, frame_shm, frame_lock, frame_event, stop_event, 
 
     @capture.event
     def on_frame_arrived(frame, capture_control):
-        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer
+        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer  # noqa
         with frame_lock:
             if frame_buffer.shape != frame.frame_buffer.shape:
                 raise RuntimeError("Screen size missmatch")
@@ -194,8 +195,7 @@ class ScreenshotProcess(threading.Thread):
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
                                        dtype=np.uint8, buffer=self.process_frame_buffer.buf)
                     # deepcopy
-                    frame = torch.from_numpy(frame[:, :, 0:3])
-                    frame = frame[:, :, (2, 1, 0)].permute(2, 0, 1)
+                    frame = torch.from_numpy(frame)
                     if frame_buffer is None:
                         frame_buffer = frame.clone()
                         if torch.cuda.is_available():
@@ -204,20 +204,24 @@ class ScreenshotProcess(threading.Thread):
                         frame_buffer.copy_(frame)
                     self.process_frame_event.clear()
 
-                if self.backend == "pil":
-                    # cursor for PIL
-                    draw_cursor(frame_buffer, wx.GetMousePosition())
-
                 if self.cuda_stream is not None:
                     with torch.cuda.stream(self.cuda_stream):
-                        frame = frame_buffer.to(self.device) / 255.0
+                        frame = frame_buffer.to(self.device)
+                        frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
+                        if self.backend == "pil":
+                            # cursor for PIL
+                            draw_cursor(frame, wx.GetMousePosition())
                         if frame.shape[2] > self.frame_height:
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
                                               antialias=True)
                         self.cuda_stream.synchronize()
                 else:
-                    frame = frame_buffer.to(self.device) / 255.0
+                    frame = frame_buffer.to(self.device)
+                    frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
+                    if self.backend == "pil":
+                        draw_cursor(frame, wx.GetMousePosition())
+
                     if frame.shape[2] > self.frame_height:
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
