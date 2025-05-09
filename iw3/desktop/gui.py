@@ -53,15 +53,17 @@ EVT_FPS = wx.PyEventBinder(myEVT_FPS, 0)
 
 
 class FPSEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, estimated_fps=None, screenshot_fps=None, streaming_fps=None, url=None):
+    def __init__(self, etype, eid, estimated_fps=None, screenshot_fps=None, streaming_fps=None,
+                 screen_size=None, url=None):
         super(FPSEvent, self).__init__(etype, eid)
         self.estimated_fps = estimated_fps
         self.screenshot_fps = screenshot_fps
         self.streaming_fps = streaming_fps
+        self.screen_size = screen_size
         self.url = url
 
     def GetValue(self):
-        return (self.estimated_fps, self.screenshot_fps, self.streaming_fps, self.url)
+        return (self.estimated_fps, self.screenshot_fps, self.streaming_fps, self.screen_size, self.url)
 
 
 class FPSGUI():
@@ -69,10 +71,11 @@ class FPSGUI():
         self.parent = parent
 
     def set_url(self, url):
-        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, None, None, None, url))
+        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, None, None, None, None, url))
 
-    def update(self, estimated_fps, screenshot_fps, streaming_fps):
-        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, estimated_fps, screenshot_fps, streaming_fps, None))
+    def update(self, estimated_fps, screenshot_fps, streaming_fps, screen_size):
+        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, estimated_fps, screenshot_fps, streaming_fps,
+                                           screen_size, None))
 
 
 class IW3DesktopApp(wx.App):
@@ -752,11 +755,12 @@ class MainFrame(wx.Frame):
         return args
 
     def on_fps(self, event):
-        estimated_fps, screenshot_fps, streaming_fps, url = event.GetValue()
+        estimated_fps, screenshot_fps, streaming_fps, screen_size, url = event.GetValue()
         if estimated_fps is not None and screenshot_fps is not None and streaming_fps is not None:
             self.SetStatusText(f"Estimated FPS: {estimated_fps:.02f},"
                                f" Screenshot FPS: {screenshot_fps:.02f},"
-                               f" Streaming FPS: {streaming_fps:.02f}")
+                               f" Streaming FPS: {streaming_fps:.02f},"
+                               f" Screen: {screen_size}")
         if url:
             self.txt_url.SetValue(url)
 

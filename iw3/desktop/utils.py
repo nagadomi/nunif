@@ -193,6 +193,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         auth = None
 
     frame = take_screenshot()
+    screen_size = frame.size
     if frame.height > args.stream_height:
         frame_height = args.stream_height
         frame_width = math.ceil((args.stream_height / frame.height) * frame.width)
@@ -254,12 +255,15 @@ def iw3_desktop_main(args, init_wxapp=True):
                 if count > 1 and count % args.stream_fps == 0:
                     mean_processing_time = sum(fps_counter) / len(fps_counter)
                     estimated_fps = 1.0 / mean_processing_time
+                    screen_size_tuple = (screen_size, (frame_width, frame_height))
                     if args.state["fps_event"] is not None:
-                        args.state["fps_event"].update(estimated_fps, screenshot_thread.get_fps(), server.get_fps())
+                        args.state["fps_event"].update(estimated_fps, screenshot_thread.get_fps(),
+                                                       server.get_fps(), screen_size_tuple)
                     else:
                         print(f"\rEstimated FPS = {estimated_fps:.02f}, "
                               f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                              f"Streaming FPS = {server.get_fps():.02f}", end="")
+                              f"Streaming FPS = {server.get_fps():.02f}, "
+                              f"Screen Size = {screen_size_tuple}", end="")
 
             process_time = time.perf_counter() - tick
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
