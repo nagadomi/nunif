@@ -14,7 +14,7 @@
 "Process all subfolders": "すべてのサブフォルダを処理"
 "Add metadata to filename": "ファイル名にメタデータを追加"
 "EXIF Transpose": "EXIF回転補正"
-"Transpose images according to EXIF Orientaion Tag": "EXIF Orientation Tagに従って画像を転置"
+"Transpose images according to EXIF Orientation Tag": "EXIF Orientation Tagに従って画像を転置"
 "Image Format": "画像フォーマット"
 "Play": "再生"
 
@@ -39,7 +39,7 @@
 "Method": "メソッド"
 "Depth Model": "深度推定モデル"
 "Depth Mapping": "深度の割当"
-"Stereo Procesing Width": "ステレオ処理幅"
+"Stereo Processing Width": "ステレオ処理幅"
 "Only used for row_flow_v3 and row_flow_v2": "row_flow_v3とrow_flow_v2でのみ使用"
 "Foreground Scale": "前景拡大"
 "Edge Fix": "境界修正"

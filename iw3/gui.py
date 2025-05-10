@@ -133,7 +133,7 @@ class MainFrame(wx.Frame):
         self.chk_exif_transpose = wx.CheckBox(self.pnl_file_option, label=T("EXIF Transpose"),
                                               name="chk_exif_transpose")
         self.chk_exif_transpose.SetValue(True)
-        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
+        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientation Tag"))
 
         self.chk_metadata = wx.CheckBox(self.pnl_file_option, label=T("Add metadata to filename"),
                                         name="chk_metadata")
@@ -202,7 +202,7 @@ class MainFrame(wx.Frame):
                                       style=wx.CB_READONLY, name="cbo_method")
         self.cbo_method.SetSelection(0)
 
-        self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Procesing Width"))
+        self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Processing Width"))
         self.cbo_stereo_width = EditableComboBox(self.grp_stereo,
                                                  choices=["Default", "1920", "1280", "640"],
                                                  name="cbo_stereo_width")
