@@ -33,13 +33,8 @@ def load_locales(locale_dir, webgen_locale_dir):
             locale = yaml.load(f.read(), Loader=yaml.SafeLoader)
             lang = path.splitext(path.basename(locale_file))[0]
             merge_locales(webgen_locales, locale, lang)
-            if "_LOCALE_LINUX" in locale:
-                name = locale["_LOCALE_LINUX"]
-                names = name if isinstance(name, (list, tuple)) else [name]
-                for name in names:
-                    locales[name] = locale
-            if "_LOCALE_WINDOWS" in locale:
-                name = locale["_LOCALE_WINDOWS"]
+            if "_LOCALE" in locale:
+                name = locale["_LOCALE"]
                 names = name if isinstance(name, (list, tuple)) else [name]
                 for name in names:
                     locales[name] = locale

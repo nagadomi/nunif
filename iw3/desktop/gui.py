@@ -920,7 +920,7 @@ class MainFrame(wx.Frame):
                 self.chk_compile.Disable()
 
 
-LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
+LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
 
 
 def T(s):
@@ -932,7 +932,7 @@ def main():
     import sys
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--lang", type=str, help="lang, ja_JP, en_US")
+    parser.add_argument("--lang", type=str, choices=list(LOCALES.keys()), help="translation language")
     args = parser.parse_args()
     if args.lang:
         global LOCALE_DICT

@@ -1,6 +1,5 @@
 ---
-"_LOCALE_LINUX": "ja_JP"
-"_LOCALE_WINDOWS": "Japanese_Japan"
+"_LOCALE": ["ja_JP"]
 
 "Load": "読み込み"
 "Save": "保存"
