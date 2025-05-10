@@ -1091,10 +1091,6 @@ def export_video(input_filename, output_dir, args, title=None):
     preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     streams = threading.local()
-    depth_model = args.state["depth_model"]
-    ema_normalize = args.ema_normalize and args.max_fps >= 15
-    if ema_normalize:
-        depth_model.enable_ema_minmax(args.ema_decay)
 
     @torch.inference_mode()
     def __batch_callback(x, pts):
@@ -1145,28 +1141,39 @@ def export_video(input_filename, output_dir, args, title=None):
         else:
             return __batch_callback(x, pts)
 
-    extra_queue = 1 if len(args.state["devices"]) == 1 else 0
-    frame_callback = VU.FrameCallbackPool(
-        _batch_callback,
-        batch_size=minibatch_size,
-        device=args.state["devices"],
-        max_workers=args.max_workers,
-        max_batch_queue=args.max_workers + extra_queue,
-        require_pts=True,
-        skip_pts=resume_seq
-    )
-    VU.hook_frame(input_filename,
-                  config_callback=config_callback,
-                  frame_callback=frame_callback,
-                  vf=args.vf,
-                  stop_event=args.state["stop_event"],
-                  suspend_event=args.state["suspend_event"],
-                  tqdm_fn=args.state["tqdm_fn"],
-                  title=title,
-                  start_time=args.start_time,
-                  end_time=args.end_time)
-    frame_callback.shutdown()
-    config.save(config_file)
+    depth_model = args.state["depth_model"]
+    ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if ema_normalize:
+        depth_model.enable_ema_minmax(args.ema_decay)
+    try:
+        if args.compile:
+            depth_model.compile()
+
+        extra_queue = 1 if len(args.state["devices"]) == 1 else 0
+        frame_callback = VU.FrameCallbackPool(
+            _batch_callback,
+            batch_size=minibatch_size,
+            device=args.state["devices"],
+            max_workers=args.max_workers,
+            max_batch_queue=args.max_workers + extra_queue,
+            require_pts=True,
+            skip_pts=resume_seq
+        )
+        VU.hook_frame(input_filename,
+                      config_callback=config_callback,
+                      frame_callback=frame_callback,
+                      vf=args.vf,
+                      stop_event=args.state["stop_event"],
+                      suspend_event=args.state["suspend_event"],
+                      tqdm_fn=args.state["tqdm_fn"],
+                      title=title,
+                      start_time=args.start_time,
+                      end_time=args.end_time)
+        frame_callback.shutdown()
+        config.save(config_file)
+    finally:
+        if args.compile:
+            depth_model.clear_compiled_model()
 
 
 def process_config_video(config, args, side_model):
