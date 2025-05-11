@@ -1,5 +1,8 @@
 ---
 "_LOCALE": ["zh_CN"]
+"_NAME": "简体中文"
+"Language": "语言"
+"The language setting will be applied after restarting": "重启后将应用语言设置"
 
 "Load": "加载"
 "Save": "保存"

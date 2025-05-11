@@ -31,7 +31,7 @@ from nunif.gui import (
     set_icon_ex,
     VideoEncodingBox, IOPathPanel
 )
-from .locales import LOCALES
+from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
 from .depth_anything_model import DepthAnythingModel
 from .depth_pro_model import DepthProModel
@@ -45,6 +45,7 @@ VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 YAML_EXTENSIONS = extension_list_to_wildcard((".yml", ".yaml"))
 CONFIG_DIR = path.join(path.dirname(__file__), "..", "tmp")
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui.cfg")
+LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(PRESET_DIR, exist_ok=True)
@@ -499,12 +500,31 @@ class MainFrame(wx.Frame):
         self.btn_save_preset = wx.Button(self.pnl_preset, label=T("Save"))
         self.btn_delete_preset = wx.Button(self.pnl_preset, label=T("Delete"))
 
+        # language
+        self.sep_language = wx.StaticLine(self.pnl_preset, size=(2, 20), style=wx.LI_VERTICAL)
+        self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
+        self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
+        lang_selection = 0
+        for i, lang in enumerate(LOCAL_LIST):
+            t = LOCALES.get(lang)
+            name = t.get("_NAME", "Undefined")
+            self.cbo_language.Append(name, lang)
+            if lang in LOCALE_DICT.get("_LOCALE", []):
+                lang_selection = i
+        self.cbo_language.SetSelection(lang_selection)
+
         layout = wx.BoxSizer(wx.HORIZONTAL)
-        layout.Add(self.lbl_preset, 0, wx.ALIGN_CENTER_VERTICAL, 2)
-        layout.Add(self.cbo_app_preset, 0, wx.ALL, 2)
-        layout.Add(self.btn_load_preset, 0, wx.ALL, 2)
-        layout.Add(self.btn_save_preset, 0, wx.ALL, 2)
-        layout.Add(self.btn_delete_preset, 0, wx.ALL, 2)
+        layout.Add(self.lbl_preset, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT, border=2)
+        layout.Add(self.cbo_app_preset, flag=wx.ALL, border=2)
+        layout.Add(self.btn_load_preset, flag=wx.ALL, border=2)
+        layout.Add(self.btn_save_preset, flag=wx.ALL, border=2)
+        layout.Add(self.btn_delete_preset, flag=wx.ALL, border=2)
+        layout.AddSpacer(2)
+        layout.Add(self.sep_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT)
+        layout.AddSpacer(4)
+        layout.Add(self.lbl_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT, border=2)
+        layout.Add(self.cbo_language, flag=wx.ALL, border=2)
+        layout.AddSpacer(8)
         self.pnl_preset.SetSizer(layout)
 
         # processing panel
@@ -527,7 +547,7 @@ class MainFrame(wx.Frame):
 
         layout = wx.BoxSizer(wx.VERTICAL)
         layout.AddSpacer(8)
-        layout.Add(self.pnl_preset, 0, wx.ALL | wx.EXPAND, 2)
+        layout.Add(self.pnl_preset, 0, wx.ALIGN_RIGHT, 2)
         layout.Add(self.pnl_file.panel, 0, wx.ALL | wx.EXPAND, 8)
         layout.Add(self.pnl_file_option, 0, wx.ALL | wx.EXPAND, 4)
         layout.Add(self.pnl_options, 1, wx.ALL | wx.EXPAND, 8)
@@ -554,6 +574,7 @@ class MainFrame(wx.Frame):
         self.btn_load_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_load_preset)
         self.btn_save_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_save_preset)
         self.btn_delete_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_delete_preset)
+        self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -1186,7 +1207,8 @@ class MainFrame(wx.Frame):
         if selected in choices:
             self.cbo_app_preset.SetSelection(choices.index(selected))
 
-    def load_preset(self, name=None, exclude_names={}):
+    def load_preset(self, name=None, exclude_names=set()):
+        exclude_names.add("cbo_language")  # ignore language
         if not name:
             restore_path = True
             name = ""
@@ -1236,6 +1258,14 @@ class MainFrame(wx.Frame):
     def on_click_btn_delete_preset(self, event):
         self.delete_preset(self.cbo_app_preset.GetValue())
         event.Skip()
+
+    def on_text_changed_cbo_language(self, event):
+        lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
+        save_language_setting(LANG_CONFIG_PATH, lang)
+        with wx.MessageDialog(None,
+                              message=T("The language setting will be applied after restarting"),
+                              style=wx.OK) as dlg:
+            dlg.ShowModal()
 
     def on_click_divergence_warning(self, event):
         self.lbl_divergence_warning.Hide()
@@ -1293,6 +1323,7 @@ class MainFrame(wx.Frame):
                 self.chk_compile.Disable()
 
 
+LOCAL_LIST = sorted(list(LOCALES.keys()))
 LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
 
 
@@ -1303,13 +1334,18 @@ def T(s):
 def main():
     import argparse
     import sys
+    global LOCALE_DICT
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--lang", type=str, choices=list(LOCALES.keys()), help="translation")
+    parser.add_argument("--lang", type=str, choices=LOCAL_LIST, help="translation")
     args = parser.parse_args()
     if args.lang:
-        global LOCALE_DICT
         LOCALE_DICT = LOCALES.get(args.lang, {})
+    else:
+        saved_lang = load_language_setting(LANG_CONFIG_PATH)
+        if saved_lang:
+            LOCALE_DICT = LOCALES.get(saved_lang, {})
+
     sys.argv = [sys.argv[0]]  # clear command arguments
 
     app = IW3App()

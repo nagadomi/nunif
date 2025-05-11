@@ -1,5 +1,8 @@
 ---
 "_LOCALE": ["ja_JP"]
+"_NAME": "日本語"
+"Language": "言語"
+"The language setting will be applied after restarting": "言語設定は再起動後に適用されます"
 
 "Load": "読み込み"
 "Save": "保存"

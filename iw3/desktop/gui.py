@@ -28,7 +28,7 @@ from nunif.gui import (
     set_icon_ex, load_icon, start_file,
 )
 from ..depth_anything_model import DepthAnythingModel
-from ..locales import LOCALES
+from ..locales import LOCALES, load_language_setting, save_language_setting
 from .utils import (
     get_local_address,
     init_win32,
@@ -40,6 +40,7 @@ from .utils import (
 
 CONFIG_DIR = path.join(path.dirname(__file__), "..", "..", "tmp")
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-desktop.cfg")
+LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-desktop-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(PRESET_DIR, exist_ok=True)
@@ -425,14 +426,37 @@ class MainFrame(wx.Frame):
         layout.Add(self.btn_url, (0, 3), flag=wx.EXPAND)
         self.pnl_process.SetSizer(layout)
 
+        # language panel
+        self.pnl_preset = wx.Panel(self)
+        # language
+        self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
+        self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
+        lang_selection = 0
+        for i, lang in enumerate(LOCAL_LIST):
+            t = LOCALES.get(lang)
+            name = t.get("_NAME", "Undefined")
+            self.cbo_language.Append(name, lang)
+            if lang in LOCALE_DICT.get("_LOCALE", []):
+                lang_selection = i
+        self.cbo_language.SetSelection(lang_selection)
+
+        layout = wx.BoxSizer(wx.HORIZONTAL)
+        layout.Add(self.lbl_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT, border=2)
+        layout.Add(self.cbo_language, flag=wx.ALL, border=2)
+        layout.AddSpacer(8)
+        self.pnl_preset.SetSizer(layout)
+
         # main layout
 
-        layout = wx.GridBagSizer(vgap=5, hgap=4)
-        layout.Add(self.pnl_options, (0, 0), flag=wx.ALL | wx.EXPAND, border=8)
-        layout.Add(self.pnl_process, (1, 0), flag=wx.ALL | wx.EXPAND, border=8)
+        layout = wx.GridBagSizer(vgap=0, hgap=0)
+        layout.SetEmptyCellSize((0, 0))
+        layout.Add(self.pnl_preset, (0, 0), flag=wx.ALIGN_RIGHT | wx.TOP, border=0)
+        layout.Add(self.pnl_options, (1, 0), flag=wx.ALL | wx.EXPAND, border=8)
+        layout.Add(self.pnl_process, (2, 0), flag=wx.ALL | wx.EXPAND, border=8)
         self.SetSizer(layout)
 
         # bind
+        self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
         self.cbo_synthetic_view.Bind(wx.EVT_TEXT, self.update_divergence_warning)
@@ -773,6 +797,7 @@ class MainFrame(wx.Frame):
         self.btn_start.Disable()
         self.btn_cancel.Enable()
         self.btn_url.Enable()
+        self.pnl_preset.Hide()
         self.grp_stereo.Hide()
         self.grp_processor.Hide()
         self.grp_network.Hide()
@@ -812,6 +837,7 @@ class MainFrame(wx.Frame):
         self.btn_start.Enable()
         self.txt_url.SetValue("")
         self.btn_url.Disable()
+        self.pnl_preset.Show()
         self.grp_stereo.Show()
         self.grp_processor.Show()
         self.grp_network.Show()
@@ -847,7 +873,8 @@ class MainFrame(wx.Frame):
             persistent_manager_register(manager, control, EditableComboBoxPersistentHandler)
         manager.SaveAndUnregister()
 
-    def load_preset(self, name=None):
+    def load_preset(self, name=None, exclude_names=set()):
+        exclude_names.add("cbo_language")  # ignore language
         if not name:
             name = ""
             config_file = CONFIG_PATH
@@ -861,7 +888,7 @@ class MainFrame(wx.Frame):
         persistent_manager_register_all(manager, self)
         for control in self.get_editable_comboboxes():
             persistent_manager_register(manager, control, EditableComboBoxPersistentHandler)
-        persistent_manager_restore_all(manager)
+        persistent_manager_restore_all(manager, exclude_names)
         persistent_manager_unregister_all(manager)
 
     def on_click_divergence_warning(self, event):
@@ -919,7 +946,16 @@ class MainFrame(wx.Frame):
             else:
                 self.chk_compile.Disable()
 
+    def on_text_changed_cbo_language(self, event):
+        lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
+        save_language_setting(LANG_CONFIG_PATH, lang)
+        with wx.MessageDialog(None,
+                              message=T("The language setting will be applied after restarting"),
+                              style=wx.OK) as dlg:
+            dlg.ShowModal()
 
+
+LOCAL_LIST = sorted(list(LOCALES.keys()))
 LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
 
 
@@ -930,13 +966,18 @@ def T(s):
 def main():
     import argparse
     import sys
+    global LOCALE_DICT
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--lang", type=str, choices=list(LOCALES.keys()), help="translation language")
     args = parser.parse_args()
     if args.lang:
-        global LOCALE_DICT
         LOCALE_DICT = LOCALES.get(args.lang, {})
+    else:
+        saved_lang = load_language_setting(LANG_CONFIG_PATH)
+        if saved_lang:
+            LOCALE_DICT = LOCALES.get(saved_lang, {})
+
     sys.argv = [sys.argv[0]]  # clear command arguments
 
     app = IW3DesktopApp()
