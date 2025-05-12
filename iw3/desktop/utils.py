@@ -13,8 +13,8 @@ import torch
 from torchvision.io import encode_jpeg
 from .. import utils as IW3U
 from .. import models  # noqa
-from .screenshot_thread_pil import ScreenshotThreadPIL, take_screenshot
-from .screenshot_process import ScreenshotProcess
+from .screenshot_thread_pil import ScreenshotThreadPIL
+from .screenshot_process import ScreenshotProcess, get_monitor_size_list
 from .streaming_server import StreamingServer
 from nunif.device import create_device
 from nunif.models import compile_model
@@ -130,6 +130,7 @@ def create_parser():
     parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "pil_mp", "wc_mp"],
                         help="Screenshot method")
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
+    parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
     parser.set_defaults(
         input="dummy",
         output="dummy",
@@ -192,15 +193,21 @@ def iw3_desktop_main(args, init_wxapp=True):
     else:
         auth = None
 
-    frame = take_screenshot()
-    screen_size = frame.size
-    if frame.height > args.stream_height:
+    if args.screenshot != "wc_mp" and args.monitor_index != 0:
+        raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
+    size_list = get_monitor_size_list()
+    if args.monitor_index >= len(size_list):
+        raise RuntimeError(f"monitor_index={args.monitor_index} not found")
+
+    monitor_width, monitor_height = size_list[args.monitor_index]
+    screen_size = (monitor_width, monitor_height)
+    if monitor_height > args.stream_height:
         frame_height = args.stream_height
-        frame_width = math.ceil((args.stream_height / frame.height) * frame.width)
+        frame_width = math.ceil((args.stream_height / monitor_height) * monitor_width)
         frame_width -= frame_width % 2
     else:
-        frame_height = frame.height
-        frame_width = frame.width
+        frame_height = monitor_height
+        frame_width = monitor_width
 
     with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
               mode="r", encoding="utf-8") as f:
@@ -223,6 +230,7 @@ def iw3_desktop_main(args, init_wxapp=True):
     screenshot_thread = screenshot_factory(
         fps=args.stream_fps,
         frame_width=frame_width, frame_height=frame_height,
+        monitor_index=args.monitor_index,
         device=device)
 
     try:

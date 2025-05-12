@@ -34,6 +34,7 @@ from .utils import (
     init_win32,
     iw3_desktop_main,
     create_parser, set_state_args,
+    get_monitor_size_list,
     IW3U, ENABLE_GPU_JPEG,
 )
 
@@ -350,7 +351,16 @@ class MainFrame(wx.Frame):
         self.cbo_screenshot = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
-        self.cbo_screenshot.SetSelection(0)
+        if sys.platform == "win32" and HAS_WINDOWS_CAPTURE:
+            self.cbo_screenshot.SetSelection(2)
+        else:
+            self.cbo_screenshot.SetSelection(0)
+
+        self.lbl_monitor_index = wx.StaticText(self.grp_processor, label=T("Monitor Index"))
+        self.cbo_monitor_index = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
+                                             choices=[str(i) for i in range(len(get_monitor_size_list()))],
+                                             name="cbo_monitor_index")
+        self.cbo_monitor_index.SetSelection(0)
 
         self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
         self.chk_compile.SetToolTip(T("Enable model compiling"))
@@ -362,7 +372,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_screenshot, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_screenshot, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_compile, (2, 0), flag=wx.EXPAND)
+        layout.Add(self.lbl_monitor_index, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_monitor_index, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (3, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -469,6 +481,7 @@ class MainFrame(wx.Frame):
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
         self.chk_auth.Bind(wx.EVT_CHECKBOX, self.update_auth_state)
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.update_stereo_format)
+        self.cbo_screenshot.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_screenshot)
 
         self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
 
@@ -501,6 +514,7 @@ class MainFrame(wx.Frame):
         self.update_ema_normalize()
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_monitor_index()
         self.update_compile()
 
         self.grp_adjustment.Hide()
@@ -743,6 +757,10 @@ class MainFrame(wx.Frame):
         else:
             user = password = None
 
+        monitor_index = int(self.cbo_monitor_index.GetValue())
+        if self.cbo_screenshot.GetValue() != "wc_mp":
+            monitor_index = 0
+
         parser.set_defaults(
             gpu=device_id,
             divergence=float(self.cbo_divergence.GetValue()),
@@ -767,6 +785,7 @@ class MainFrame(wx.Frame):
             stream_quality=int(self.cbo_stream_quality.GetValue()),
             gpu_jpeg=self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
+            monitor_index=monitor_index,
             full_sbs=full_sbs,
         )
         args = parser.parse_args()
@@ -953,6 +972,19 @@ class MainFrame(wx.Frame):
                               message=T("The language setting will be applied after restarting"),
                               style=wx.OK) as dlg:
             dlg.ShowModal()
+
+    def on_text_changed_cbo_screenshot(self, event):
+        self.update_monitor_index()
+
+    def update_monitor_index(self, *args, **kwargs):
+        if self.cbo_screenshot.GetValue() == "wc_mp":
+            self.lbl_monitor_index.Show()
+            self.cbo_monitor_index.Show()
+        else:
+            self.lbl_monitor_index.Hide()
+            self.cbo_monitor_index.Hide()
+
+        self.GetSizer().Layout()
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
