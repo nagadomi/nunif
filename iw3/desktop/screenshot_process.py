@@ -122,7 +122,7 @@ def capture_process(frame_size, monitor_index, frame_shm, frame_lock, frame_even
         if not frame_event.is_set():
             with frame_lock:
                 if frame_buffer.shape != frame.frame_buffer.shape:
-                    raise RuntimeError("Screen size missmatch")
+                    raise RuntimeError(f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={frame.frame_buffer.shape}")
                 frame_buffer[:] = frame.frame_buffer
                 frame_event.set()
 
