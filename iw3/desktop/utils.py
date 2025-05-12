@@ -58,7 +58,7 @@ def get_monitor_size_list():
         monitors = win32api.EnumDisplayMonitors()
         size_list = []
         for monitor in monitors:
-            sx, xy, width, height = monitor[2]
+            sx, sy, width, height = monitor[2]
             width = width - sx
             height = height - sy
             size_list.append((width, height))
