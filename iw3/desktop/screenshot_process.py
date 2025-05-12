@@ -8,7 +8,6 @@ from torchvision.transforms import (
 import multiprocessing as mp
 from multiprocessing import shared_memory
 import numpy as np
-import ctypes
 import sys
 import wx
 from PIL import ImageGrab
@@ -74,13 +73,25 @@ def draw_cursor(x, pos, size=8):
     x[:, pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr] = px
 
 
-def get_screen_size():
+def get_monitor_size_list():
     if sys.platform == "win32":
-        user32 = ctypes.windll.user32
-        return (user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
+        import win32api
+        monitors = win32api.EnumDisplayMonitors()
+        size_list = []
+        for monitor in monitors:
+            sx, sy, width, height = monitor[2]
+            width = width - sx
+            height = height - sy
+            size_list.append((width, height))
+        return size_list
     else:
         frame = ImageGrab.grab()
-        return frame.size
+        return [(frame.width, frame.height)]
+
+
+def get_screen_size(monitor_index):
+    size_list = get_monitor_size_list()
+    return size_list[monitor_index]
 
 
 def estimate_fps(fps_counter):
@@ -166,7 +177,7 @@ class ScreenshotProcess(threading.Thread):
             self.cuda_stream = None
 
     def start_process(self):
-        screen_size = get_screen_size()
+        screen_size = get_screen_size(self.monitor_index)
         self.screen_width = screen_size[0]
         self.screen_height = screen_size[1]
         template = np.zeros((self.screen_height, self.screen_width, 4), dtype=np.uint8)

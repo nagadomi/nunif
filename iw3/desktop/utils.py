@@ -13,8 +13,8 @@ import torch
 from torchvision.io import encode_jpeg
 from .. import utils as IW3U
 from .. import models  # noqa
-from .screenshot_thread_pil import ScreenshotThreadPIL, take_screenshot
-from .screenshot_process import ScreenshotProcess
+from .screenshot_thread_pil import ScreenshotThreadPIL
+from .screenshot_process import ScreenshotProcess, get_monitor_size_list
 from .streaming_server import StreamingServer
 from nunif.device import create_device
 from nunif.models import compile_model
@@ -50,22 +50,6 @@ def init_num_threads(device_id):
         torch.set_num_threads(TORCH_NUM_THREADS)
     else:
         torch.set_num_threads(1)
-
-
-def get_monitor_size_list():
-    if sys.platform == "win32":
-        import win32api
-        monitors = win32api.EnumDisplayMonitors()
-        size_list = []
-        for monitor in monitors:
-            sx, sy, width, height = monitor[2]
-            width = width - sx
-            height = height - sy
-            size_list.append((width, height))
-        return size_list
-    else:
-        frame = take_screenshot()
-        return [(frame.width, frame.height)]
 
 
 def get_local_address():
