@@ -97,7 +97,7 @@ def estimate_fps(fps_counter):
         return 0
 
 
-def capture_process(frame_size, frame_shm, frame_lock, frame_event, stop_event, backend="pil"):
+def capture_process(frame_size, monitor_index, frame_shm, frame_lock, frame_event, stop_event, backend="pil"):
     frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
 
     if backend == "pil":
@@ -112,7 +112,7 @@ def capture_process(frame_size, frame_shm, frame_lock, frame_event, stop_event, 
         capture = WindowsCapture(
             cursor_capture=None,
             draw_border=None,
-            monitor_index=None,
+            monitor_index=monitor_index + 1,  # 1 origin
             window_name=None,
         )
 
@@ -148,11 +148,12 @@ def to_tensor(bgra, device):
 
 
 class ScreenshotProcess(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, device, backend="pil"):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, device, backend="pil"):
         super().__init__()
         self.backend = backend
         self.frame_width = frame_width
         self.frame_height = frame_height
+        self.monitor_index = monitor_index
         self.device = device
         self.frame = None
         self.frame_lock = threading.Lock()
@@ -176,6 +177,7 @@ class ScreenshotProcess(threading.Thread):
         self.process = mp.Process(
             target=capture_process,
             args=(tuple(template.shape),
+                  self.monitor_index,
                   self.process_frame_buffer,
                   self.process_frame_lock,
                   self.process_frame_event,
