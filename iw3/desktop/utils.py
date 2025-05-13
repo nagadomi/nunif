@@ -14,7 +14,12 @@ from torchvision.io import encode_jpeg
 from .. import utils as IW3U
 from .. import models  # noqa
 from .screenshot_thread_pil import ScreenshotThreadPIL
-from .screenshot_process import ScreenshotProcess, get_monitor_size_list, get_window_rect_by_title
+from .screenshot_process import ( # noqa
+    ScreenshotProcess,
+    get_monitor_size_list,
+    get_window_rect_by_title,
+    enum_window_names,
+)
 from .streaming_server import StreamingServer
 from nunif.device import create_device
 from nunif.models import compile_model

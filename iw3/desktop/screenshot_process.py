@@ -101,19 +101,22 @@ DENY_WINDOW_NAMES = {
 
 
 def enum_window_names():
-    assert sys.platform == "win32"
-    import win32gui
+    if sys.platform == "win32":
+        import win32gui
 
-    window_names = []
+        window_names = []
 
-    def callback(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd):
-            title = win32gui.GetWindowText(hwnd)
-            if title and title not in DENY_WINDOW_NAMES:
-                window_names.append(title)
+        def callback(hwnd, _):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if title and title not in DENY_WINDOW_NAMES:
+                    window_names.append(title)
 
-    win32gui.EnumWindows(callback, None)
-    return sorted(window_names)
+        win32gui.EnumWindows(callback, None)
+        return sorted(window_names)
+    else:
+        # not implemented
+        return []
 
 
 def get_window_rect_by_title(title):

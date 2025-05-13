@@ -35,6 +35,7 @@ from .utils import (
     iw3_desktop_main,
     create_parser, set_state_args,
     get_monitor_size_list,
+    enum_window_names,
     IW3U, ENABLE_GPU_JPEG,
 )
 
@@ -362,6 +363,14 @@ class MainFrame(wx.Frame):
                                              name="cbo_monitor_index")
         self.cbo_monitor_index.SetSelection(0)
 
+        self.lbl_window_name = wx.StaticText(self.grp_processor, label=T("Window Name"))
+        self.cbo_window_name = EditableComboBox(self.grp_processor,
+                                                choices=[""],
+                                                name="cbo_window_name")
+        self.cbo_window_name.SetSelection(0)
+        self.btn_reload_window_name = GenBitmapButton(self.grp_processor, bitmap=load_icon("view-refresh.png"))
+        self.btn_reload_window_name.SetToolTip(T("Reload"))
+
         self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
@@ -374,7 +383,10 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_screenshot, (1, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_monitor_index, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_monitor_index, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_compile, (3, 0), flag=wx.EXPAND)
+        layout.Add(self.lbl_window_name, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_window_name, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.btn_reload_window_name, (3, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (4, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -482,6 +494,7 @@ class MainFrame(wx.Frame):
         self.chk_auth.Bind(wx.EVT_CHECKBOX, self.update_auth_state)
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.update_stereo_format)
         self.cbo_screenshot.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_screenshot)
+        self.btn_reload_window_name.Bind(wx.EVT_BUTTON, self.update_window_names)
 
         self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
 
@@ -515,6 +528,7 @@ class MainFrame(wx.Frame):
         self.update_divergence_warning()
         self.update_preserve_screen_border()
         self.update_monitor_index()
+        self.update_window_names()
         self.update_compile()
 
         self.grp_adjustment.Hide()
@@ -760,6 +774,9 @@ class MainFrame(wx.Frame):
         monitor_index = int(self.cbo_monitor_index.GetValue())
         if self.cbo_screenshot.GetValue() != "wc_mp":
             monitor_index = 0
+        window_name = self.cbo_window_name.GetValue()
+        if not window_name:
+            window_name = None
 
         parser.set_defaults(
             gpu=device_id,
@@ -786,6 +803,7 @@ class MainFrame(wx.Frame):
             gpu_jpeg=self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
+            window_name=window_name,
             full_sbs=full_sbs,
         )
         args = parser.parse_args()
@@ -975,6 +993,7 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_cbo_screenshot(self, event):
         self.update_monitor_index()
+        self.update_window_names()
 
     def update_monitor_index(self, *args, **kwargs):
         if self.cbo_screenshot.GetValue() == "wc_mp":
@@ -985,6 +1004,17 @@ class MainFrame(wx.Frame):
             self.cbo_monitor_index.Hide()
 
         self.GetSizer().Layout()
+
+    def update_window_names(self, *args, **kwargs):
+        if self.cbo_screenshot.GetValue() == "wc_mp":
+            self.lbl_window_name.Show()
+            self.cbo_window_name.Show()
+            self.btn_reload_window_name.Show()
+            self.cbo_window_name.SetItems([""] + enum_window_names())
+        else:
+            self.lbl_window_name.Hide()
+            self.cbo_window_name.Hide()
+            self.btn_reload_window_name.Hide()
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
