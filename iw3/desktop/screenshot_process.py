@@ -213,6 +213,7 @@ def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_loc
         capture.start()
     finally:
         frame_event.set()
+        time.sleep(0.1)
 
 
 def to_tensor(bgra, device):
@@ -323,8 +324,10 @@ class ScreenshotProcess(threading.Thread):
                     break
         finally:
             self.process_stop_event.set()
+            time.sleep(0.1)
             self.process.join()
             self.stop_event.set()
+            time.sleep(0.1)
             self.process = None
 
     def get_frame(self):
