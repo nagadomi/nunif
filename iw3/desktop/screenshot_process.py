@@ -94,6 +94,49 @@ def get_screen_size(monitor_index):
     return size_list[monitor_index]
 
 
+DENY_WINDOW_NAMES = {
+    "Microsoft Text Input Application",
+    "Program Manager"
+}
+
+
+def enum_window_names():
+    assert sys.platform == "win32"
+    import win32gui
+
+    window_names = []
+
+    def callback(hwnd, _):
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd)
+            if title and title not in DENY_WINDOW_NAMES:
+                window_names.append(title)
+
+    win32gui.EnumWindows(callback, None)
+    return sorted(window_names)
+
+
+def get_window_rect_by_title(title):
+    assert sys.platform == "win32"
+    import win32gui
+
+    hwnd = win32gui.FindWindow(None, title)
+    if hwnd == 0:
+        return None
+
+    rect = win32gui.GetWindowRect(hwnd)
+    left, top, right, bottom = rect
+    width = right - left
+    height = bottom - top
+
+    return {
+        "left": left,
+        "top": top,
+        "width": width,
+        "height": height
+    }
+
+
 def estimate_fps(fps_counter):
     diff = []
     prev = None
@@ -108,7 +151,7 @@ def estimate_fps(fps_counter):
         return 0
 
 
-def capture_process(frame_size, monitor_index, frame_shm, frame_lock, frame_event, stop_event, backend="pil"):
+def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_lock, frame_event, stop_event, backend="pil"):
     frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
 
     if backend == "pil":
@@ -120,11 +163,18 @@ def capture_process(frame_size, monitor_index, frame_shm, frame_lock, frame_even
             frame_event.set()
             raise
 
+        if window_name:
+            # ignore
+            monitor_index = None
+        else:
+            # 1 origin
+            monitor_index = monitor_index + 1
+
         capture = WindowsCapture(
             cursor_capture=None,
             draw_border=None,
-            monitor_index=monitor_index + 1,  # 1 origin
-            window_name=None,
+            monitor_index=monitor_index,
+            window_name=window_name,
         )
 
     @capture.event
@@ -159,12 +209,13 @@ def to_tensor(bgra, device):
 
 
 class ScreenshotProcess(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, device, backend="pil"):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="pil"):
         super().__init__()
         self.backend = backend
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.monitor_index = monitor_index
+        self.window_name = window_name
         self.device = device
         self.frame = None
         self.frame_lock = threading.Lock()
@@ -177,7 +228,13 @@ class ScreenshotProcess(threading.Thread):
             self.cuda_stream = None
 
     def start_process(self):
-        screen_size = get_screen_size(self.monitor_index)
+        if self.window_name:
+            rect = get_window_rect_by_title(self.window_name)
+            if rect is None:
+                raise RuntimeError(f"{self.window_name} not found")
+            screen_size = (rect["width"], rect["height"])
+        else:
+            screen_size = get_screen_size(self.monitor_index)
         self.screen_width = screen_size[0]
         self.screen_height = screen_size[1]
         template = np.zeros((self.screen_height, self.screen_width, 4), dtype=np.uint8)
@@ -189,6 +246,7 @@ class ScreenshotProcess(threading.Thread):
             target=capture_process,
             args=(tuple(template.shape),
                   self.monitor_index,
+                  self.window_name,
                   self.process_frame_buffer,
                   self.process_frame_lock,
                   self.process_frame_event,

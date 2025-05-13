@@ -30,11 +30,12 @@ def to_tensor(pil_image, device, frame_buffer):
 
 
 class ScreenshotThreadPIL(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, device):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device):
         super().__init__()
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.monitor_index = monitor_index  # TODO: not implemented
+        self.window_name = window_name  # TODO: not implemented
         self.device = device
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
