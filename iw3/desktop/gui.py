@@ -364,8 +364,7 @@ class MainFrame(wx.Frame):
         self.cbo_monitor_index.SetSelection(0)
 
         self.lbl_window_name = wx.StaticText(self.grp_processor, label=T("Window Name"))
-        self.cbo_window_name = EditableComboBox(self.grp_processor,
-                                                choices=[""],
+        self.cbo_window_name = EditableComboBox(self.grp_processor, size=(200, -1), choices=[""],
                                                 name="cbo_window_name")
         self.cbo_window_name.SetSelection(0)
         self.btn_reload_window_name = GenBitmapButton(self.grp_processor, bitmap=load_icon("view-refresh.png"))
@@ -1015,6 +1014,8 @@ class MainFrame(wx.Frame):
             self.lbl_window_name.Hide()
             self.cbo_window_name.Hide()
             self.btn_reload_window_name.Hide()
+
+        self.GetSizer().Layout()
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
