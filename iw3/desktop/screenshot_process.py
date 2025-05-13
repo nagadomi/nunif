@@ -153,6 +153,7 @@ def estimate_fps(fps_counter):
 
 def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_lock, frame_event, stop_event, backend="pil"):
     frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
+    frame_count = 0
 
     if backend == "pil":
         capture = WindowsCapturePIL()
@@ -179,12 +180,25 @@ def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_loc
 
     @capture.event
     def on_frame_arrived(frame, capture_control):
-        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer  # noqa
+        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer, window_name, frame_count  # noqa
         if not frame_event.is_set():
             with frame_lock:
                 if frame_buffer.shape != frame.frame_buffer.shape:
-                    raise RuntimeError(f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={frame.frame_buffer.shape}")
-                frame_buffer[:] = frame.frame_buffer
+                    if window_name is not None:
+                        # NOTE: The size may differ due to resizing, Window effects, etc.
+                        # I wanted to use replication padding, but since the edges of the Windows screen are black, it’s meaningless
+                        min_h = min(frame_buffer.shape[0], frame.frame_buffer.shape[0])
+                        min_w = min(frame_buffer.shape[1], frame.frame_buffer.shape[1])
+                        if frame_count % 30 == 0:
+                            frame_buffer[:] = 0.0
+                        frame_buffer[0:min_h, 0:min_w, :] = frame.frame_buffer[0:min_h, 0:min_w, :]
+                        frame_count += 1
+                        if frame_count > 0xffff:
+                            frame_count = 0
+                    else:
+                        raise RuntimeError(f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={frame.frame_buffer.shape}")
+                else:
+                    frame_buffer[:] = frame.frame_buffer
                 frame_event.set()
 
         if stop_event.is_set():
