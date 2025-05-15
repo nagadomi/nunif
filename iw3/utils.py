@@ -71,16 +71,17 @@ def make_input_tensor(c, depth, divergence, convergence,
         # Force set screen border parallax to zero.
         # Note that this does not work with tiled rendering (training code)
         border_pix = round(divergence * 0.75 * 0.01 * image_width * (depth.shape[-1] / image_width))
-        border_weight_l = torch.linspace(0.0, 1.0, border_pix, device=depth.device)
-        border_weight_r = torch.linspace(1.0, 0.0, border_pix, device=depth.device)
-        divergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(divergence_feat[:, :border_pix]) *
-                                           divergence_feat[:, :border_pix])
-        divergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(divergence_feat[:, -border_pix:]) *
-                                            divergence_feat[:, -border_pix:])
-        convergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(convergence_feat[:, :border_pix]) *
-                                            convergence_feat[:, :border_pix])
-        convergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(convergence_feat[:, -border_pix:]) *
-                                             convergence_feat[:, -border_pix:])
+        if border_pix > 0:
+            border_weight_l = torch.linspace(0.0, 1.0, border_pix, device=depth.device)
+            border_weight_r = torch.linspace(1.0, 0.0, border_pix, device=depth.device)
+            divergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(divergence_feat[:, :border_pix]) *
+                                               divergence_feat[:, :border_pix])
+            divergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(divergence_feat[:, -border_pix:]) *
+                                                divergence_feat[:, -border_pix:])
+            convergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(convergence_feat[:, :border_pix]) *
+                                                convergence_feat[:, :border_pix])
+            convergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(convergence_feat[:, -border_pix:]) *
+                                                 convergence_feat[:, -border_pix:])
 
     if c is not None:
         w, h = c.shape[2], c.shape[1]
