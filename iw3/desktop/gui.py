@@ -133,7 +133,6 @@ class MainFrame(wx.Frame):
         self.CreateStatusBar()
 
         # options panel
-
         self.pnl_options = wx.Panel(self)
         if LAYOUT_DEBUG:
             self.pnl_options.SetBackgroundColour("#cfc")
@@ -266,14 +265,15 @@ class MainFrame(wx.Frame):
             self.grp_network.SetBackgroundColour("#fcf")
 
         self.chk_bind_addr = wx.CheckBox(self.grp_network, label=T("Address"), name="chk_bind_addr")
-        self.txt_bind_addr = IpAddrCtrl(self.grp_network, size=(200, -1), name="txt_bind_addr")
+        self.txt_bind_addr = IpAddrCtrl(self.grp_network, size=self.FromDIP((200, -1)), name="txt_bind_addr")
+
         self.chk_bind_addr.SetValue(False)
         self.txt_bind_addr.SetValue("127.0.0.1")
         self.btn_detect_ip = GenBitmapButton(self.grp_network, bitmap=load_icon("view-refresh.png"))
         self.btn_detect_ip.SetToolTip(T("Detect"))
 
         self.lbl_port = wx.StaticText(self.grp_network, label=T("Port"))
-        self.txt_port = IntCtrl(self.grp_network, size=(200, -1),
+        self.txt_port = IntCtrl(self.grp_network, size=self.FromDIP((200, -1)),
                                 allow_none=False, min=1025, max=65535, name="txt_port")
         self.txt_port.SetValue(1303)
         self.lbl_stream_fps = wx.StaticText(self.grp_network, label=T("Streaming FPS"))
@@ -331,7 +331,7 @@ class MainFrame(wx.Frame):
             self.grp_processor.SetBackgroundColour("#fcf")
 
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), style=wx.CB_READONLY,
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), style=wx.CB_READONLY,
                                       name="cbo_device")
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
@@ -364,7 +364,7 @@ class MainFrame(wx.Frame):
         self.cbo_monitor_index.SetSelection(0)
 
         self.lbl_window_name = wx.StaticText(self.grp_processor, label=T("Window Name"))
-        self.cbo_window_name = EditableComboBox(self.grp_processor, size=(200, -1), choices=[""],
+        self.cbo_window_name = EditableComboBox(self.grp_processor, size=self.FromDIP((200, -1)), choices=[""],
                                                 name="cbo_window_name")
         self.cbo_window_name.SetSelection(0)
         self.btn_reload_window_name = GenBitmapButton(self.grp_processor, bitmap=load_icon("view-refresh.png"))
