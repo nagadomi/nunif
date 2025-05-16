@@ -496,6 +496,7 @@ class MainFrame(wx.Frame):
         self.btn_reload_window_name.Bind(wx.EVT_BUTTON, self.update_window_names)
 
         self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
+        self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
 
         self.sld_adj_divergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_convergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
@@ -969,18 +970,17 @@ class MainFrame(wx.Frame):
     def on_selected_index_changed_cbo_device(self, event):
         self.update_compile()
 
-    def update_compile(self):
+    def update_compile(self, *args, **kwargs):
         device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
         if device_id == -2:
             # currently "All CUDA" does not support compile
-            self.chk_compile.Disable()
+            self.chk_compile.SetValue(False)
         else:
             # check compiler support
-            device = create_device(device_id)
-            if check_compile_support(device):
-                self.chk_compile.Enable()
-            else:
-                self.chk_compile.Disable()
+            if self.chk_compile.IsChecked():
+                device = create_device(device_id)
+                if not check_compile_support(device):
+                    self.chk_compile.SetValue(False)
 
     def on_text_changed_cbo_language(self, event):
         lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
