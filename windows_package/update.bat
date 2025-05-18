@@ -9,9 +9,15 @@ if "%PYTHON_DIR%"=="" goto :on_error
 if "%MINGIT_DIR%"=="" goto :on_error
 if "%NUNIF_DIR%"=="" goto :on_error
 
+@rem update update-installer.bat
+copy /y "%NUNIF_DIR%\windows_package\update-installer.bat" "%~dp0\update-installer.bat"
+
 @rem copy new files if it does not exists
 if not exist "%~dp0\iw3-desktop-gui.bat" if exist "%NUNIF_DIR%\windows_package\iw3-desktop-gui.bat" (
-    copy /y "%NUNIF_DIR%\windows_package\iw3-desktop-gui.bat" "%~dp0\iw3-desktop-gui.bat"
+  copy /y "%NUNIF_DIR%\windows_package\iw3-desktop-gui.bat" "%~dp0\iw3-desktop-gui.bat"
+)
+if not exist "%~dp0\torch_compile" if exist "%NUNIF_DIR%\windows_package\torch_compile" (
+  xcopy "%NUNIF_DIR%\windows_package\torch_compile" "%~dp0\torch_compile" /E /H /Y /I
 )
 
 
