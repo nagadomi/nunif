@@ -1,5 +1,6 @@
 import os
 from os import path
+import warnings
 import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
@@ -102,7 +103,7 @@ def process_images(ctx, files, output_dir, args, title=None):
 
 
 def process_video(ctx, input_filename, output_path, args):
-    if not args.disable_compile:
+    if args.compile:
         ctx.compile()
 
     def config_callback(stream):
@@ -239,7 +240,7 @@ def create_parser(required_true=True):
                         help="input file or directory. (*.txt, *.csv) for image list")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
-    parser.add_argument("--disable-compile", action="store_true", help="disable torch.compile()")
+    parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
                         help="image library to encode/decode images")
     parser.add_argument("--depth", type=int,
@@ -302,11 +303,18 @@ def create_parser(required_true=True):
     parser.add_argument("--end-time", type=str,
                         help="set the end time offset for video. hh:mm:ss or mm:ss format")
 
+    # Deprecated
+    parser.add_argument("--disable-compile", action="store_true", help="disable torch.compile(). Deprecated")
+
     return parser
 
 
 def set_state_args(args, stop_event=None, tqdm_fn=None):
     device = create_device(args.gpu)
+
+    if args.disable_compile:
+        warnings.warn("--disable-compile is deprecated. It is disabled by default. Use --compile instead")
+
     if not args.profile_level or args.profile_level == "auto":
         args.profile_level = None
 

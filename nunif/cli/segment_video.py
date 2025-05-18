@@ -2,7 +2,7 @@
 # python -m nunif.cli.semgent_video -i input.mp4 -o output_dir
 import nunif.utils.video as VU
 import av
-from nunif.utils.transnetv2 import TransNetV2
+import nunif.utils.shot_boundary_detection as SBD
 import torch
 import argparse
 import os
@@ -11,86 +11,6 @@ from tqdm import tqdm
 from nunif.device import create_device
 from nunif.logger import logger
 import math
-
-
-def source_fps_config(args, fps_hook=None):
-    """ keep original frame rate
-    """
-    def callback(stream):
-        return VU.VideoOutputConfig(
-            fps=None,
-        )
-    return callback
-
-
-def detect_segments(model, device, args):
-    frames = []
-    results = []
-    first_frame = [True]
-    frame_count = [0]
-
-    def push_predict(x, pts):
-        # NOTE: No need autocast. Nothing improves.
-        with torch.inference_mode():
-            single_frame_pred, all_frame_pred = model(x)
-            single_frame_pred = torch.sigmoid(single_frame_pred).flatten()
-        results.append((
-            single_frame_pred[args.padding_size:-args.padding_size].cpu(),
-            pts[args.padding_size:-args.padding_size].cpu()
-        ))
-        for _ in range((args.window_size - args.padding_size * 2) // args.padding_size):
-            frames.pop(0)
-
-    def batch_callback(x, pts):
-        frame_count[0] += x.shape[0]
-        pts = torch.tensor(pts, dtype=torch.long)
-        if x.shape[0] < args.padding_size:
-            n = args.padding_size - x.shape[0]
-            pad_x = torch.cat((x[-1:],) * n, dim=0)
-            pad_pts = torch.cat((pts[-1:],) * n, dim=0)
-            x = torch.cat((x, pad_x), dim=0)
-            pts = torch.cat((pts, pad_pts), dim=0)
-
-        if first_frame[0]:
-            first_frame[0] = False
-            pad_x = torch.cat((x[0:1],) * args.padding_size, dim=0)
-            pad_pts = torch.cat((pts[0:1],) * args.padding_size, dim=0)
-            frames.append((pad_x, pad_pts))
-            frames.append((x, pts))
-        else:
-            frames.append((x, pts))
-
-        if len(frames) == args.window_size // args.padding_size:
-            push_predict(torch.cat([x_ for x_, _ in frames], dim=0),
-                         torch.cat([pts_ for _, pts_ in frames], dim=0))
-
-    callback_pool = VU.FrameCallbackPool(
-        batch_callback,
-        require_pts=True,
-        batch_size=args.padding_size,
-        device=device,
-        max_workers=0,  # must be sequential
-    )
-    VU.hook_frame(args.input, callback_pool,
-                  config_callback=source_fps_config(args),
-                  title="Shot Boundary Detection",
-                  vf="scale=48:27:flags=bilinear")  # input size for TransNetV2
-
-    last_x = frames[-1][0][-1:]
-    last_pts = frames[-1][1][-1:]
-    pad_x = torch.cat((last_x,) * args.padding_size, dim=0)
-    pad_pts = torch.cat((last_pts,) * args.padding_size, dim=0)
-    while (not results or results[-1][1][-1] != last_pts[0]):
-        frames.append((pad_x, pad_pts))
-        if len(frames) == args.window_size // args.padding_size:
-            push_predict(torch.cat([x_ for x_, _ in frames], dim=0),
-                         torch.cat([pts_ for _, pts_ in frames], dim=0))
-
-    frame_preds = torch.cat([pred for pred, pts in results], dim=0)[:frame_count[0]]
-    frame_pts = torch.cat([pts for pred, pts in results], dim=0)[:frame_count[0]]
-    segment_pts = frame_pts[frame_preds > args.threshold]
-
-    return segment_pts
 
 
 def open_output_video(output_path, ext, no, video_input_stream, audio_input_stream, args):
@@ -233,13 +153,15 @@ def main():
 
     os.makedirs(args.output, exist_ok=True)
 
-    assert (args.window_size % args.padding_size == 0 and
-            args.window_size // args.padding_size >= 3)  # pad1 + frames + pad2
-
     device = create_device(args.gpu)
-    model = TransNetV2().load().eval().to(device)
-    pts = detect_segments(model, device, args)
-    pts = pts.tolist()
+    pts = SBD.detect_boundary(
+        args.input,
+        device=device,
+        window_size=args.window_size,
+        padding_size=args.padding_size,
+        threshold=args.threshold,
+        max_fps=None,  # raw pts
+    )
     segment_video(pts, args)
 
     if device.type == "cuda":

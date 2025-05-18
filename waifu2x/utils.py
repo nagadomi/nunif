@@ -28,10 +28,11 @@ def can_compile(model):
     if isinstance(model, (torch.nn.DataParallel, DataParallelInference)):
         return False
     if not is_compiled_model(model):
-        if model.name.startswith("waifu2x.swin_unet"):
-            return CAN_COMPILE_SWIN_UNET
-        elif model.name.startswith("waifu2x.winc_unet"):
-            return CAN_COMPILE_WINC_UNET
+        if hasattr(model, "name"):
+            if model.name.startswith("waifu2x.swin_unet"):
+                return CAN_COMPILE_SWIN_UNET
+            elif model.name.startswith("waifu2x.winc_unet"):
+                return CAN_COMPILE_WINC_UNET
         else:
             return True
     else:

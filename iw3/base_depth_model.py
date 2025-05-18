@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.models.data_parallel import DeviceSwitchInference
+from nunif.models.utils import compile_model
 import os
 from os import path
 import pickle
@@ -47,6 +48,7 @@ class BaseDepthModel(metaclass=ABCMeta):
     def __init__(self, model_type):
         self.device = None
         self.model = None
+        self.model_backup = None  # for compile
         self.model_type = model_type
         self.ema_minmax = EMAMinMax()
         self.ema_minmax_enabled = False
@@ -140,6 +142,16 @@ class BaseDepthModel(metaclass=ABCMeta):
 
     def get_model(self):
         return self.model
+
+    def compile(self):
+        if self.model_backup is None and not isinstance(self.model, DeviceSwitchInference):
+            self.model_backup = self.model
+            self.model = compile_model(self.model)
+
+    def clear_compiled_model(self):
+        if self.model_backup is not None:
+            self.model = self.model_backup
+            self.model_backup = None
 
     @abstractmethod
     def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):

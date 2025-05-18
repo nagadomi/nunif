@@ -13,15 +13,23 @@ import torch
 from torchvision.io import encode_jpeg
 from .. import utils as IW3U
 from .. import models  # noqa
-from .screenshot_thread_pil import ScreenshotThreadPIL, take_screenshot
-from .screenshot_process import ScreenshotProcess
+from .screenshot_thread_pil import ScreenshotThreadPIL
+from .screenshot_process import ( # noqa
+    ScreenshotProcess,
+    get_monitor_size_list,
+    get_window_rect_by_title,
+    enum_window_names,
+)
 from .streaming_server import StreamingServer
 from nunif.device import create_device
+from nunif.models import compile_model
+from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.initializer import gc_collect
 
 
 TORCH_VERSION = Version(torch.__version__)
 ENABLE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
+TORCH_NUM_THREADS = torch.get_num_threads()
 
 
 def init_win32():
@@ -39,6 +47,14 @@ def init_win32():
             ctypes.windll.winmm.timeBeginPeriod(1)
         except: # noqa
             pass
+
+
+def init_num_threads(device_id):
+    if device_id < 0:
+        # cpu
+        torch.set_num_threads(TORCH_NUM_THREADS)
+    else:
+        torch.set_num_threads(1)
 
 
 def get_local_address():
@@ -119,6 +135,9 @@ def create_parser():
     parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "pil_mp", "wc_mp"],
                         help="Screenshot method")
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
+    parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
+    parser.add_argument("--window-name", type=str, help=("target window name for wc_mp."
+                                                         " When this is specified, --monitor-index is ignored"))
     parser.set_defaults(
         input="dummy",
         output="dummy",
@@ -140,6 +159,8 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
 
 
 def iw3_desktop_main(args, init_wxapp=True):
+    init_num_threads(args.gpu[0])
+
     if not args.full_sbs:
         args.half_sbs = True
         frame_width_scale = 1
@@ -166,6 +187,7 @@ def iw3_desktop_main(args, init_wxapp=True):
     depth_model = args.state["depth_model"]
     if not depth_model.loaded():
         depth_model.load(gpu=args.gpu, resolution=args.resolution)
+
     # Use Flicker Reduction to prevent 3D sickness
     depth_model.enable_ema_minmax(args.ema_decay)
     args.mapper = IW3U.resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
@@ -178,14 +200,30 @@ def iw3_desktop_main(args, init_wxapp=True):
     else:
         auth = None
 
-    frame = take_screenshot()
-    if frame.height > args.stream_height:
+    if args.screenshot != "wc_mp" and args.monitor_index != 0:
+        raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
+    if args.screenshot != "wc_mp" and args.window_name:
+        raise RuntimeError(f"{args.screenshot} does not support --window-name option")
+
+    if args.window_name:
+        rect = get_window_rect_by_title(args.window_name)
+        if rect is None:
+            raise RuntimeError(f"window_name={args.window_name} not found")
+        screen_width, screen_height = rect["width"], rect["height"]
+    else:
+        size_list = get_monitor_size_list()
+        if args.monitor_index >= len(size_list):
+            raise RuntimeError(f"monitor_index={args.monitor_index} not found")
+        screen_width, screen_height = size_list[args.monitor_index]
+
+    screen_size = (screen_width, screen_height)
+    if screen_height > args.stream_height:
         frame_height = args.stream_height
-        frame_width = math.ceil((args.stream_height / frame.height) * frame.width)
+        frame_width = math.ceil((args.stream_height / screen_height) * screen_width)
         frame_width -= frame_width % 2
     else:
-        frame_height = frame.height
-        frame_width = frame.width
+        frame_height = screen_height
+        frame_width = screen_width
 
     with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
               mode="r", encoding="utf-8") as f:
@@ -208,9 +246,14 @@ def iw3_desktop_main(args, init_wxapp=True):
     screenshot_thread = screenshot_factory(
         fps=args.stream_fps,
         frame_width=frame_width, frame_height=frame_height,
+        monitor_index=args.monitor_index, window_name=args.window_name,
         device=device)
 
     try:
+        if args.compile:
+            depth_model.compile()
+            if side_model is not None and not isinstance(side_model, DeviceSwitchInference):
+                side_model = compile_model(side_model)
         # main loop
         server.start()
         screenshot_thread.start()
@@ -218,7 +261,7 @@ def iw3_desktop_main(args, init_wxapp=True):
             args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
         else:
             print(f"Open http://{args.bind_addr}:{args.port}")
-        count = 0
+        count = last_status_time = 0
         fps_counter = deque(maxlen=120)
 
         while True:
@@ -233,15 +276,19 @@ def iw3_desktop_main(args, init_wxapp=True):
 
                 if count % (args.stream_fps * 30) == 0:
                     gc_collect()
-                if count > 1 and count % args.stream_fps == 0:
+                if count > 1 and tick - last_status_time > 1:
+                    last_status_time = tick
                     mean_processing_time = sum(fps_counter) / len(fps_counter)
                     estimated_fps = 1.0 / mean_processing_time
+                    screen_size_tuple = (screen_size, (frame_width, frame_height))
                     if args.state["fps_event"] is not None:
-                        args.state["fps_event"].update(estimated_fps, screenshot_thread.get_fps(), server.get_fps())
+                        args.state["fps_event"].update(estimated_fps, screenshot_thread.get_fps(),
+                                                       server.get_fps(), screen_size_tuple)
                     else:
                         print(f"\rEstimated FPS = {estimated_fps:.02f}, "
                               f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                              f"Streaming FPS = {server.get_fps():.02f}", end="")
+                              f"Streaming FPS = {server.get_fps():.02f}, "
+                              f"Screen Size = {screen_size_tuple}", end="")
 
             process_time = time.perf_counter() - tick
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
@@ -253,6 +300,7 @@ def iw3_desktop_main(args, init_wxapp=True):
     finally:
         server.stop()
         screenshot_thread.stop()
+        depth_model.clear_compiled_model()
 
     if args.state["stop_event"] and args.state["stop_event"].is_set():
         args.state["stop_event"].clear()

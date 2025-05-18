@@ -1,14 +1,12 @@
 from packaging import version as packaging_version
-import sys
 import torch
 from datetime import datetime, timezone
 from collections import OrderedDict
 import torch.nn as nn
 from . register import create_model
 from . model import Model
-from . data_parallel import DataParallelInference, DeviceSwitchInference
 from .. logger import logger
-from .. device import create_device
+from .. device import create_device, autocast
 
 
 PYTORCH2 = packaging_version.parse(torch.__version__).major >= 2
@@ -89,22 +87,49 @@ def get_model_kwargs(model, key=None):
 def get_model_device(model):
     if isinstance(model, nn.DataParallel):
         model = model.module
-    return model.get_device()
+    if hasattr(model, "get_device"):
+        return model.get_device()
+    else:
+        return next(model.parameters()).device
+
+
+_COMPILER_SUPPORTED_DEVICES = {}
+
+
+def _test_func(x):
+    return x + 1.0
+
+
+def check_compile_support(device):
+    device_name = device if isinstance(device, str) else device.type
+    if device_name not in _COMPILER_SUPPORTED_DEVICES:
+        try:
+            model = torch.nn.Linear(32, 32, bias=False)
+            model.weight.data.zero_()
+            model = torch.compile(model.eval().to(device))
+            func = torch.compile(_test_func)
+            with torch.inference_mode(), autocast(device):
+                model(torch.zeros((1, 32), device=device))
+                func(torch.zeros((32,), dtype=torch.float32, device=device))
+            _COMPILER_SUPPORTED_DEVICES[device_name] = True
+        except:  # noqa  #(RuntimeError, AssertionError):
+            # import sys
+            # print(device_name, sys.exc_info())
+            _COMPILER_SUPPORTED_DEVICES[device_name] = False
+
+    return _COMPILER_SUPPORTED_DEVICES[device_name]
 
 
 def compile_model(model, **kwargs):
-    # Windows not yet supported for torch.compile
-    if PYTORCH2 and sys.platform == "linux" and not is_compiled_model(model):
-        # only cuda
-        if get_model_device(model).type == "cuda":
-            logger.debug(f"compile {model.name}({model.__class__.__name__}), kwargs={kwargs}")
-            model = torch.compile(model, **kwargs)
+    if not is_compiled_model(model) and check_compile_support(get_model_device(model)):
+        logger.debug(f"compile {model.__class__.__name__}, kwargs={kwargs}")
+        model = torch.compile(model, **kwargs)
     return model
 
 
 def is_compiled_model(model):
     # TODO: class name of compiled model is unclear
-    return not isinstance(model, (Model, nn.DataParallel, DataParallelInference, DeviceSwitchInference))
+    return hasattr(model, "_orig_mod")
 
 
 def merge_state_dict(a, b, alpha=0.5):
@@ -132,3 +157,32 @@ def mean_state_dict(dicts):
             else:
                 mean[k] += d[k] * scale
     return mean
+
+
+def _test_check_compile():
+    print(check_compile_support("cpu"))
+    print(check_compile_support(torch.device("cpu")))
+    print(check_compile_support(torch.device("cuda")))
+    print(check_compile_support(torch.device("cuda:1")))
+    print(check_compile_support("cuda:0"))
+    print(check_compile_support("cuda:10"))
+    print(check_compile_support("mps"))
+    print(check_compile_support("xpu"))
+    print(_COMPILER_SUPPORTED_DEVICES)
+
+
+def _test_is_compiled_model(device):
+    model = torch.nn.Linear(32, 32, bias=False).to(device)
+    assert not is_compiled_model(model)
+    compiled_model = compile_model(model)
+    assert is_compiled_model(compiled_model)
+    assert not is_compiled_model(model)
+    model(torch.zeros(1, 32).to(device))
+    assert is_compiled_model(compiled_model)
+    assert not is_compiled_model(model)
+
+
+if __name__ == "__main__":
+    _test_check_compile()
+    _test_is_compiled_model("cpu")
+    _test_is_compiled_model("cuda")

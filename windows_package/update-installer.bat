@@ -13,5 +13,7 @@ copy /y "%NUNIF_DIR%\windows_package\iw3-desktop-gui.bat" "%~dp0\iw3-desktop-gui
 copy /y "%NUNIF_DIR%\windows_package\waifu2x-gui.bat" "%~dp0\waifu2x-gui.bat"
 copy /y "%NUNIF_DIR%\windows_package\waifu2x-web.bat" "%~dp0\waifu2x-web.bat"
 
+xcopy "%NUNIF_DIR%\windows_package\torch_compile" "%~dp0\torch_compile" /E /H /Y /I
+
 pause
 exit /b 0

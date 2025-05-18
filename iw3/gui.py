@@ -1,4 +1,5 @@
 import nunif.pythonw_fix  # noqa
+import nunif.gui.subprocess_patch  # noqa
 import locale
 import sys
 import os
@@ -16,7 +17,8 @@ from .utils import (
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
     has_rembg_model)
 from nunif.initializer import gc_collect
-from nunif.device import mps_is_available, xpu_is_available
+from nunif.device import mps_is_available, xpu_is_available, create_device
+from nunif.models.utils import check_compile_support
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.filename import sanitize_filename
@@ -30,7 +32,7 @@ from nunif.gui import (
     set_icon_ex,
     VideoEncodingBox, IOPathPanel
 )
-from .locales import LOCALES
+from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
 from .depth_anything_model import DepthAnythingModel
 from .depth_pro_model import DepthProModel
@@ -44,6 +46,7 @@ VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 YAML_EXTENSIONS = extension_list_to_wildcard((".yml", ".yaml"))
 CONFIG_DIR = path.join(path.dirname(__file__), "..", "tmp")
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui.cfg")
+LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(PRESET_DIR, exist_ok=True)
@@ -132,7 +135,7 @@ class MainFrame(wx.Frame):
         self.chk_exif_transpose = wx.CheckBox(self.pnl_file_option, label=T("EXIF Transpose"),
                                               name="chk_exif_transpose")
         self.chk_exif_transpose.SetValue(True)
-        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
+        self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientation Tag"))
 
         self.chk_metadata = wx.CheckBox(self.pnl_file_option, label=T("Add metadata to filename"),
                                         name="chk_metadata")
@@ -201,7 +204,7 @@ class MainFrame(wx.Frame):
                                       style=wx.CB_READONLY, name="cbo_method")
         self.cbo_method.SetSelection(0)
 
-        self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Procesing Width"))
+        self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Processing Width"))
         self.cbo_stereo_width = EditableComboBox(self.grp_stereo,
                                                  choices=["Default", "1920", "1280", "640"],
                                                  name="cbo_stereo_width")
@@ -459,6 +462,10 @@ class MainFrame(wx.Frame):
         self.chk_cuda_stream.SetToolTip(T("Use per-thread CUDA Stream (experimental: fast or slow or crash)"))
         self.chk_cuda_stream.SetValue(False)
 
+        self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
+        self.chk_compile.SetToolTip(T("Enable model compiling"))
+        self.chk_compile.SetValue(False)
+
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), (0, 3), flag=wx.EXPAND)
@@ -470,6 +477,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.chk_tta, (3, 1), flag=wx.EXPAND)
         layout.Add(self.chk_fp16, (3, 2), flag=wx.EXPAND)
         layout.Add(self.chk_cuda_stream, (3, 3), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (4, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -493,12 +501,31 @@ class MainFrame(wx.Frame):
         self.btn_save_preset = wx.Button(self.pnl_preset, label=T("Save"))
         self.btn_delete_preset = wx.Button(self.pnl_preset, label=T("Delete"))
 
+        # language
+        self.sep_language = wx.StaticLine(self.pnl_preset, size=(2, 20), style=wx.LI_VERTICAL)
+        self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
+        self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
+        lang_selection = 0
+        for i, lang in enumerate(LOCAL_LIST):
+            t = LOCALES.get(lang)
+            name = t.get("_NAME", "Undefined")
+            self.cbo_language.Append(name, lang)
+            if lang in LOCALE_DICT.get("_LOCALE", []):
+                lang_selection = i
+        self.cbo_language.SetSelection(lang_selection)
+
         layout = wx.BoxSizer(wx.HORIZONTAL)
-        layout.Add(self.lbl_preset, 0, wx.ALIGN_CENTER_VERTICAL, 2)
-        layout.Add(self.cbo_app_preset, 0, wx.ALL, 2)
-        layout.Add(self.btn_load_preset, 0, wx.ALL, 2)
-        layout.Add(self.btn_save_preset, 0, wx.ALL, 2)
-        layout.Add(self.btn_delete_preset, 0, wx.ALL, 2)
+        layout.Add(self.lbl_preset, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT, border=2)
+        layout.Add(self.cbo_app_preset, flag=wx.ALL, border=2)
+        layout.Add(self.btn_load_preset, flag=wx.ALL, border=2)
+        layout.Add(self.btn_save_preset, flag=wx.ALL, border=2)
+        layout.Add(self.btn_delete_preset, flag=wx.ALL, border=2)
+        layout.AddSpacer(2)
+        layout.Add(self.sep_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT)
+        layout.AddSpacer(4)
+        layout.Add(self.lbl_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT, border=2)
+        layout.Add(self.cbo_language, flag=wx.ALL, border=2)
+        layout.AddSpacer(8)
         self.pnl_preset.SetSizer(layout)
 
         # processing panel
@@ -521,7 +548,7 @@ class MainFrame(wx.Frame):
 
         layout = wx.BoxSizer(wx.VERTICAL)
         layout.AddSpacer(8)
-        layout.Add(self.pnl_preset, 0, wx.ALL | wx.EXPAND, 2)
+        layout.Add(self.pnl_preset, 0, wx.ALIGN_RIGHT, 2)
         layout.Add(self.pnl_file.panel, 0, wx.ALL | wx.EXPAND, 8)
         layout.Add(self.pnl_file_option, 0, wx.ALL | wx.EXPAND, 4)
         layout.Add(self.pnl_options, 1, wx.ALL | wx.EXPAND, 8)
@@ -543,9 +570,13 @@ class MainFrame(wx.Frame):
 
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
 
+        self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
+        self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
+
         self.btn_load_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_load_preset)
         self.btn_save_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_save_preset)
         self.btn_delete_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_delete_preset)
+        self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -585,6 +616,7 @@ class MainFrame(wx.Frame):
 
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_compile()
 
     def get_depth_models(self):
         depth_models = [
@@ -1004,6 +1036,7 @@ class MainFrame(wx.Frame):
             disable_amp=not self.chk_fp16.GetValue(),
             low_vram=self.chk_low_vram.GetValue(),
             cuda_stream=self.chk_cuda_stream.GetValue(),
+            compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
 
             resume=resume,
             recursive=recursive,
@@ -1176,7 +1209,8 @@ class MainFrame(wx.Frame):
         if selected in choices:
             self.cbo_app_preset.SetSelection(choices.index(selected))
 
-    def load_preset(self, name=None, exclude_names={}):
+    def load_preset(self, name=None, exclude_names=set()):
+        exclude_names.add("cbo_language")  # ignore language
         if not name:
             restore_path = True
             name = ""
@@ -1227,6 +1261,14 @@ class MainFrame(wx.Frame):
         self.delete_preset(self.cbo_app_preset.GetValue())
         event.Skip()
 
+    def on_text_changed_cbo_language(self, event):
+        lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
+        save_language_setting(LANG_CONFIG_PATH, lang)
+        with wx.MessageDialog(None,
+                              message=T("The language setting will be applied after restarting"),
+                              style=wx.OK) as dlg:
+            dlg.ShowModal()
+
     def on_click_divergence_warning(self, event):
         self.lbl_divergence_warning.Hide()
         self.GetSizer().Layout()
@@ -1266,8 +1308,24 @@ class MainFrame(wx.Frame):
         except ValueError:
             pass
 
+    def on_selected_index_changed_cbo_device(self, event):
+        self.update_compile()
 
-LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
+    def update_compile(self, *args, **kwargs):
+        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        if device_id == -2:
+            # currently "All CUDA" does not support compile
+            self.chk_compile.SetValue(False)
+        else:
+            # check compiler support
+            if self.chk_compile.IsChecked():
+                device = create_device(device_id)
+                if not check_compile_support(device):
+                    self.chk_compile.SetValue(False)
+
+
+LOCAL_LIST = sorted(list(LOCALES.keys()))
+LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
 
 
 def T(s):
@@ -1277,13 +1335,18 @@ def T(s):
 def main():
     import argparse
     import sys
+    global LOCALE_DICT
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--lang", type=str, help="lang, ja_JP, en_US")
+    parser.add_argument("--lang", type=str, choices=LOCAL_LIST, help="translation")
     args = parser.parse_args()
     if args.lang:
-        global LOCALE_DICT
         LOCALE_DICT = LOCALES.get(args.lang, {})
+    else:
+        saved_lang = load_language_setting(LANG_CONFIG_PATH)
+        if saved_lang:
+            LOCALE_DICT = LOCALES.get(saved_lang, {})
+
     sys.argv = [sys.argv[0]]  # clear command arguments
 
     app = IW3App()

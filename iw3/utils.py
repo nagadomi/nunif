@@ -14,7 +14,7 @@ from PIL import ImageDraw
 from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.models import load_model  # , compile_model
+from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.device import create_device, autocast, device_is_mps, device_is_cuda, mps_is_available, xpu_is_available
@@ -36,6 +36,10 @@ ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3
 ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
 ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240424.pth"
 
+ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
+ROW_FLOW_V3_MAX_DIVERGENCE = 5.0
+ROW_FLOW_V2_AUTO_STEP_DIVERGENCE = 2.0
+ROW_FLOW_V3_AUTO_STEP_DIVERGENCE = 4.0
 IMAGE_IO_QUEUE_MAX = 100
 
 
@@ -67,16 +71,17 @@ def make_input_tensor(c, depth, divergence, convergence,
         # Force set screen border parallax to zero.
         # Note that this does not work with tiled rendering (training code)
         border_pix = round(divergence * 0.75 * 0.01 * image_width * (depth.shape[-1] / image_width))
-        border_weight_l = torch.linspace(0.0, 1.0, border_pix, device=depth.device)
-        border_weight_r = torch.linspace(1.0, 0.0, border_pix, device=depth.device)
-        divergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(divergence_feat[:, :border_pix]) *
-                                           divergence_feat[:, :border_pix])
-        divergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(divergence_feat[:, -border_pix:]) *
-                                            divergence_feat[:, -border_pix:])
-        convergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(convergence_feat[:, :border_pix]) *
-                                            convergence_feat[:, :border_pix])
-        convergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(convergence_feat[:, -border_pix:]) *
-                                             convergence_feat[:, -border_pix:])
+        if border_pix > 0:
+            border_weight_l = torch.linspace(0.0, 1.0, border_pix, device=depth.device)
+            border_weight_r = torch.linspace(1.0, 0.0, border_pix, device=depth.device)
+            divergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(divergence_feat[:, :border_pix]) *
+                                               divergence_feat[:, :border_pix])
+            divergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(divergence_feat[:, -border_pix:]) *
+                                                divergence_feat[:, -border_pix:])
+            convergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(convergence_feat[:, :border_pix]) *
+                                                convergence_feat[:, :border_pix])
+            convergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(convergence_feat[:, -border_pix:]) *
+                                                 convergence_feat[:, -border_pix:])
 
     if c is not None:
         w, h = c.shape[2], c.shape[1]
@@ -189,31 +194,33 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_vi
     return left_eye, right_eye
 
 
-def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
+def apply_divergence_nn_LR(model, c, depth, divergence, convergence, steps,
                            mapper, synthetic_view, preserve_screen_border, enable_amp):
     assert synthetic_view in {"both", "right", "left"}
+    steps = 1 if steps is None else steps
+
     if getattr(model, "symmetric", False):
         left_eye, right_eye = apply_divergence_nn_symmetric(
             model, c, depth, divergence, convergence,
             mapper=mapper, synthetic_view=synthetic_view, enable_amp=enable_amp)
     else:
         if synthetic_view == "both":
-            left_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+            left_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                                            mapper=mapper, shift=-1,
                                            preserve_screen_border=preserve_screen_border,
                                            enable_amp=enable_amp)
-            right_eye = apply_divergence_nn(model, c, depth, divergence, convergence,
+            right_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                                             mapper=mapper, shift=1,
                                             preserve_screen_border=preserve_screen_border,
                                             enable_amp=enable_amp)
         elif synthetic_view == "right":
             left_eye = c
-            right_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence,
+            right_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
                                             mapper=mapper, shift=1,
                                             preserve_screen_border=preserve_screen_border,
                                             enable_amp=enable_amp)
         elif synthetic_view == "left":
-            left_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence,
+            left_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
                                            mapper=mapper, shift=-1,
                                            preserve_screen_border=preserve_screen_border,
                                            enable_amp=enable_amp)
@@ -222,7 +229,7 @@ def apply_divergence_nn_LR(model, c, depth, divergence, convergence,
     return left_eye, right_eye
 
 
-def apply_divergence_nn(model, c, depth, divergence, convergence,
+def apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                         mapper, shift, preserve_screen_border, enable_amp):
     # BCHW
     assert model.delta_output
@@ -231,18 +238,29 @@ def apply_divergence_nn(model, c, depth, divergence, convergence,
         depth = torch.flip(depth, (3,))
 
     B, _, H, W = depth.shape
-    x = torch.stack([make_input_tensor(None, depth[i],
-                                       divergence=divergence,
-                                       convergence=convergence,
-                                       image_width=W,
-                                       mapper=mapper,
-                                       preserve_screen_border=preserve_screen_border)
-                     for i in range(depth.shape[0])])
-    with autocast(device=depth.device, enabled=enable_amp):
-        delta = model(x)
+    divergence_step = divergence / steps
     grid = make_grid(B, W, H, c.device)
     delta_scale = 1.0 / (W // 2 - 1)
-    z = backward_warp(c, grid, delta, delta_scale)
+    depth_warp = depth
+    delta_steps = []
+    for j in range(steps):
+        x = torch.stack([make_input_tensor(None, depth_warp[i],
+                                           divergence=divergence_step,
+                                           convergence=convergence,
+                                           image_width=W,
+                                           mapper=mapper,
+                                           preserve_screen_border=preserve_screen_border)
+                         for i in range(depth_warp.shape[0])])
+        with autocast(device=depth.device, enabled=enable_amp):
+            delta = model(x)
+        delta_steps.append(delta)
+        if j + 1 < steps:
+            depth_warp = backward_warp(depth_warp, grid, delta, delta_scale)
+
+    c_warp = c
+    for delta in delta_steps:
+        c_warp = backward_warp(c_warp, grid, delta, delta_scale)
+    z = c_warp
 
     if shift > 0:
         z = torch.flip(z, (3,))
@@ -501,7 +519,7 @@ def apply_divergence(depth, im_org, args, side_model):
                 depth = torch.clamp(depth, 0, 1)
         left_eye, right_eye = apply_divergence_nn_LR(
             side_model, im_org, depth,
-            args.divergence, args.convergence,
+            args.divergence, args.convergence, args.warp_steps,
             mapper=args.mapper,
             synthetic_view=args.synthetic_view,
             preserve_screen_border=args.preserve_screen_border,
@@ -675,10 +693,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     if ema_normalize:
         depth_model.enable_ema_minmax(args.ema_decay)
 
-    if side_model is not None:
-        # TODO: sometimes ERROR RUNNING GUARDS forward error happen
-        # side_model = compile_model(side_model, dynamic=True)
-        pass
+    if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
+        side_model = compile_model(side_model)
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -730,17 +746,24 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
                                              return_tensor=True))
 
-        VU.process_video(input_filename, output_filename,
-                         config_callback=config_callback,
-                         frame_callback=frame_callback,
-                         test_callback=test_callback,
-                         vf=args.vf,
-                         stop_event=args.state["stop_event"],
-                         suspend_event=args.state["suspend_event"],
-                         tqdm_fn=args.state["tqdm_fn"],
-                         title=path.basename(input_filename),
-                         start_time=args.start_time,
-                         end_time=args.end_time)
+        try:
+            if args.compile:
+                depth_model.compile()
+            VU.process_video(input_filename, output_filename,
+                             config_callback=config_callback,
+                             frame_callback=frame_callback,
+                             test_callback=test_callback,
+                             vf=args.vf,
+                             stop_event=args.state["stop_event"],
+                             suspend_event=args.state["suspend_event"],
+                             tqdm_fn=args.state["tqdm_fn"],
+                             title=path.basename(input_filename),
+                             start_time=args.start_time,
+                             end_time=args.end_time)
+        finally:
+            if args.compile:
+                depth_model.clear_compiled_model()
+
     else:
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
         preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
@@ -805,18 +828,24 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             max_workers=args.max_workers,
             max_batch_queue=args.max_workers + extra_queue,
         )
-        VU.process_video(input_filename, output_filename,
-                         config_callback=config_callback,
-                         frame_callback=frame_callback,
-                         test_callback=test_callback,
-                         vf=args.vf,
-                         stop_event=args.state["stop_event"],
-                         suspend_event=args.state["suspend_event"],
-                         tqdm_fn=args.state["tqdm_fn"],
-                         title=path.basename(input_filename),
-                         start_time=args.start_time,
-                         end_time=args.end_time)
-        frame_callback.shutdown()
+        try:
+            if args.compile:
+                depth_model.compile()
+            VU.process_video(input_filename, output_filename,
+                             config_callback=config_callback,
+                             frame_callback=frame_callback,
+                             test_callback=test_callback,
+                             vf=args.vf,
+                             stop_event=args.state["stop_event"],
+                             suspend_event=args.state["suspend_event"],
+                             tqdm_fn=args.state["tqdm_fn"],
+                             title=path.basename(input_filename),
+                             start_time=args.start_time,
+                             end_time=args.end_time)
+        finally:
+            frame_callback.shutdown()
+            if args.compile:
+                depth_model.clear_compiled_model()
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
@@ -1080,10 +1109,6 @@ def export_video(input_filename, output_dir, args, title=None):
     preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     streams = threading.local()
-    depth_model = args.state["depth_model"]
-    ema_normalize = args.ema_normalize and args.max_fps >= 15
-    if ema_normalize:
-        depth_model.enable_ema_minmax(args.ema_decay)
 
     @torch.inference_mode()
     def __batch_callback(x, pts):
@@ -1134,28 +1159,39 @@ def export_video(input_filename, output_dir, args, title=None):
         else:
             return __batch_callback(x, pts)
 
-    extra_queue = 1 if len(args.state["devices"]) == 1 else 0
-    frame_callback = VU.FrameCallbackPool(
-        _batch_callback,
-        batch_size=minibatch_size,
-        device=args.state["devices"],
-        max_workers=args.max_workers,
-        max_batch_queue=args.max_workers + extra_queue,
-        require_pts=True,
-        skip_pts=resume_seq
-    )
-    VU.hook_frame(input_filename,
-                  config_callback=config_callback,
-                  frame_callback=frame_callback,
-                  vf=args.vf,
-                  stop_event=args.state["stop_event"],
-                  suspend_event=args.state["suspend_event"],
-                  tqdm_fn=args.state["tqdm_fn"],
-                  title=title,
-                  start_time=args.start_time,
-                  end_time=args.end_time)
-    frame_callback.shutdown()
-    config.save(config_file)
+    depth_model = args.state["depth_model"]
+    ema_normalize = args.ema_normalize and args.max_fps >= 15
+    if ema_normalize:
+        depth_model.enable_ema_minmax(args.ema_decay)
+    try:
+        if args.compile:
+            depth_model.compile()
+
+        extra_queue = 1 if len(args.state["devices"]) == 1 else 0
+        frame_callback = VU.FrameCallbackPool(
+            _batch_callback,
+            batch_size=minibatch_size,
+            device=args.state["devices"],
+            max_workers=args.max_workers,
+            max_batch_queue=args.max_workers + extra_queue,
+            require_pts=True,
+            skip_pts=resume_seq
+        )
+        VU.hook_frame(input_filename,
+                      config_callback=config_callback,
+                      frame_callback=frame_callback,
+                      vf=args.vf,
+                      stop_event=args.state["stop_event"],
+                      suspend_event=args.state["suspend_event"],
+                      tqdm_fn=args.state["tqdm_fn"],
+                      title=title,
+                      start_time=args.start_time,
+                      end_time=args.end_time)
+        frame_callback.shutdown()
+        config.save(config_file)
+    finally:
+        if args.compile:
+            depth_model.clear_compiled_model()
 
 
 def process_config_video(config, args, side_model):
@@ -1405,6 +1441,7 @@ def create_parser(required_true=True):
                         help="output file or directory")
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
                         help="GPU device id. -1 for CPU")
+    parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "backward", "forward", "forward_fill",
                                  "row_flow", "row_flow_sym",
@@ -1421,6 +1458,7 @@ def create_parser(required_true=True):
                         help=("force set screen border parallax to zero"))
     parser.add_argument("--divergence", "-d", type=float, default=2.0,
                         help=("strength of 3D effect. 0-2 is reasonable value"))
+    parser.add_argument("--warp-steps", type=int, help=("warp steps for row_flow_v3"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5,
                         help=("(normalized) distance of convergence plane(screen position). 0-1 is reasonable value"))
     parser.add_argument("--update", action="store_true",
@@ -1593,6 +1631,16 @@ class EMAMinMax():
         self.min = self.max = None
 
 
+def calc_auto_warp_steps(method, divergence, synthetic_view):
+    divergence = divergence if synthetic_view == "both" else divergence * 2
+    if method == "row_flow_v2" and divergence > ROW_FLOW_V2_MAX_DIVERGENCE:
+        return math.ceil(divergence / ROW_FLOW_V2_AUTO_STEP_DIVERGENCE)
+    if method in {"row_flow", "row_flow_v3"} and divergence > ROW_FLOW_V3_MAX_DIVERGENCE:
+        return math.ceil(divergence / ROW_FLOW_V3_AUTO_STEP_DIVERGENCE)
+
+    return None
+
+
 def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspend_event=None):
     if depth_model is None:
         depth_model = create_depth_model(args.depth_model)
@@ -1728,6 +1776,10 @@ def iw3_main(args):
     if len(args.gpu) > 1 and len(args.gpu) > args.max_workers:
         # For GPU round-robin on thread pool
         args.max_workers = len(args.gpu)
+
+    if args.warp_steps is None:
+        args.warp_steps = calc_auto_warp_steps(method=args.method, divergence=args.divergence,
+                                               synthetic_view=args.synthetic_view)
 
     if path.normpath(args.input) == path.normpath(args.output):
         raise ValueError("input and output must be different file")

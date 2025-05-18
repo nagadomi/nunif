@@ -1,4 +1,5 @@
 import nunif.pythonw_fix  # noqa
+import nunif.gui.subprocess_patch  # noqa
 import locale
 import sys
 import os
@@ -16,7 +17,8 @@ from wx.lib.intctrl import IntCtrl
 import torch
 from nunif.utils.git import get_current_branch
 from nunif.initializer import gc_collect
-from nunif.device import mps_is_available, xpu_is_available
+from nunif.device import mps_is_available, xpu_is_available, create_device
+from nunif.models.utils import check_compile_support
 from nunif.utils.filename import sanitize_filename
 from nunif.gui import (
     IpAddrCtrl,
@@ -27,18 +29,21 @@ from nunif.gui import (
     set_icon_ex, load_icon, start_file,
 )
 from ..depth_anything_model import DepthAnythingModel
-from ..locales import LOCALES
+from ..locales import LOCALES, load_language_setting, save_language_setting
 from .utils import (
     get_local_address,
     init_win32,
     iw3_desktop_main,
     create_parser, set_state_args,
+    get_monitor_size_list,
+    enum_window_names,
     IW3U, ENABLE_GPU_JPEG,
 )
 
 
 CONFIG_DIR = path.join(path.dirname(__file__), "..", "..", "tmp")
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-desktop.cfg")
+LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-desktop-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(PRESET_DIR, exist_ok=True)
@@ -52,15 +57,17 @@ EVT_FPS = wx.PyEventBinder(myEVT_FPS, 0)
 
 
 class FPSEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, estimated_fps=None, screenshot_fps=None, streaming_fps=None, url=None):
+    def __init__(self, etype, eid, estimated_fps=None, screenshot_fps=None, streaming_fps=None,
+                 screen_size=None, url=None):
         super(FPSEvent, self).__init__(etype, eid)
         self.estimated_fps = estimated_fps
         self.screenshot_fps = screenshot_fps
         self.streaming_fps = streaming_fps
+        self.screen_size = screen_size
         self.url = url
 
     def GetValue(self):
-        return (self.estimated_fps, self.screenshot_fps, self.streaming_fps, self.url)
+        return (self.estimated_fps, self.screenshot_fps, self.streaming_fps, self.screen_size, self.url)
 
 
 class FPSGUI():
@@ -68,10 +75,11 @@ class FPSGUI():
         self.parent = parent
 
     def set_url(self, url):
-        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, None, None, None, url))
+        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, None, None, None, None, url))
 
-    def update(self, estimated_fps, screenshot_fps, streaming_fps):
-        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, estimated_fps, screenshot_fps, streaming_fps, None))
+    def update(self, estimated_fps, screenshot_fps, streaming_fps, screen_size):
+        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, estimated_fps, screenshot_fps, streaming_fps,
+                                           screen_size, None))
 
 
 class IW3DesktopApp(wx.App):
@@ -126,7 +134,6 @@ class MainFrame(wx.Frame):
         self.CreateStatusBar()
 
         # options panel
-
         self.pnl_options = wx.Panel(self)
         if LAYOUT_DEBUG:
             self.pnl_options.SetBackgroundColour("#cfc")
@@ -259,14 +266,15 @@ class MainFrame(wx.Frame):
             self.grp_network.SetBackgroundColour("#fcf")
 
         self.chk_bind_addr = wx.CheckBox(self.grp_network, label=T("Address"), name="chk_bind_addr")
-        self.txt_bind_addr = IpAddrCtrl(self.grp_network, size=(200, -1), name="txt_bind_addr")
+        self.txt_bind_addr = IpAddrCtrl(self.grp_network, size=self.FromDIP((200, -1)), name="txt_bind_addr")
+
         self.chk_bind_addr.SetValue(False)
         self.txt_bind_addr.SetValue("127.0.0.1")
         self.btn_detect_ip = GenBitmapButton(self.grp_network, bitmap=load_icon("view-refresh.png"))
         self.btn_detect_ip.SetToolTip(T("Detect"))
 
         self.lbl_port = wx.StaticText(self.grp_network, label=T("Port"))
-        self.txt_port = IntCtrl(self.grp_network, size=(200, -1),
+        self.txt_port = IntCtrl(self.grp_network, size=self.FromDIP((200, -1)),
                                 allow_none=False, min=1025, max=65535, name="txt_port")
         self.txt_port.SetValue(1303)
         self.lbl_stream_fps = wx.StaticText(self.grp_network, label=T("Streaming FPS"))
@@ -324,7 +332,7 @@ class MainFrame(wx.Frame):
             self.grp_processor.SetBackgroundColour("#fcf")
 
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), style=wx.CB_READONLY,
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), style=wx.CB_READONLY,
                                       name="cbo_device")
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
@@ -345,7 +353,27 @@ class MainFrame(wx.Frame):
         self.cbo_screenshot = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
-        self.cbo_screenshot.SetSelection(0)
+        if sys.platform == "win32" and HAS_WINDOWS_CAPTURE:
+            self.cbo_screenshot.SetSelection(2)
+        else:
+            self.cbo_screenshot.SetSelection(0)
+
+        self.lbl_monitor_index = wx.StaticText(self.grp_processor, label=T("Monitor Index"))
+        self.cbo_monitor_index = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
+                                             choices=[str(i) for i in range(len(get_monitor_size_list()))],
+                                             name="cbo_monitor_index")
+        self.cbo_monitor_index.SetSelection(0)
+
+        self.lbl_window_name = wx.StaticText(self.grp_processor, label=T("Window Name"))
+        self.cbo_window_name = EditableComboBox(self.grp_processor, size=self.FromDIP((200, -1)), choices=[""],
+                                                name="cbo_window_name")
+        self.cbo_window_name.SetSelection(0)
+        self.btn_reload_window_name = GenBitmapButton(self.grp_processor, bitmap=load_icon("view-refresh.png"))
+        self.btn_reload_window_name.SetToolTip(T("Reload"))
+
+        self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
+        self.chk_compile.SetToolTip(T("Enable model compiling"))
+        self.chk_compile.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
@@ -353,6 +381,12 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_screenshot, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_screenshot, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_monitor_index, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_monitor_index, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_window_name, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_window_name, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.btn_reload_window_name, (3, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (4, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -416,14 +450,37 @@ class MainFrame(wx.Frame):
         layout.Add(self.btn_url, (0, 3), flag=wx.EXPAND)
         self.pnl_process.SetSizer(layout)
 
+        # language panel
+        self.pnl_preset = wx.Panel(self)
+        # language
+        self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
+        self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
+        lang_selection = 0
+        for i, lang in enumerate(LOCAL_LIST):
+            t = LOCALES.get(lang)
+            name = t.get("_NAME", "Undefined")
+            self.cbo_language.Append(name, lang)
+            if lang in LOCALE_DICT.get("_LOCALE", []):
+                lang_selection = i
+        self.cbo_language.SetSelection(lang_selection)
+
+        layout = wx.BoxSizer(wx.HORIZONTAL)
+        layout.Add(self.lbl_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT, border=2)
+        layout.Add(self.cbo_language, flag=wx.ALL, border=2)
+        layout.AddSpacer(8)
+        self.pnl_preset.SetSizer(layout)
+
         # main layout
 
-        layout = wx.GridBagSizer(vgap=5, hgap=4)
-        layout.Add(self.pnl_options, (0, 0), flag=wx.ALL | wx.EXPAND, border=8)
-        layout.Add(self.pnl_process, (1, 0), flag=wx.ALL | wx.EXPAND, border=8)
+        layout = wx.GridBagSizer(vgap=0, hgap=0)
+        layout.SetEmptyCellSize((0, 0))
+        layout.Add(self.pnl_preset, (0, 0), flag=wx.ALIGN_RIGHT | wx.TOP, border=0)
+        layout.Add(self.pnl_options, (1, 0), flag=wx.ALL | wx.EXPAND, border=8)
+        layout.Add(self.pnl_process, (2, 0), flag=wx.ALL | wx.EXPAND, border=8)
         self.SetSizer(layout)
 
         # bind
+        self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
         self.cbo_synthetic_view.Bind(wx.EVT_TEXT, self.update_divergence_warning)
@@ -436,6 +493,11 @@ class MainFrame(wx.Frame):
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
         self.chk_auth.Bind(wx.EVT_CHECKBOX, self.update_auth_state)
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.update_stereo_format)
+        self.cbo_screenshot.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_screenshot)
+        self.btn_reload_window_name.Bind(wx.EVT_BUTTON, self.update_window_names)
+
+        self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
+        self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
 
         self.sld_adj_divergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_convergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
@@ -466,6 +528,9 @@ class MainFrame(wx.Frame):
         self.update_ema_normalize()
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_monitor_index()
+        self.update_window_names()
+        self.update_compile()
 
         self.grp_adjustment.Hide()
         self.Fit()
@@ -707,6 +772,13 @@ class MainFrame(wx.Frame):
         else:
             user = password = None
 
+        monitor_index = int(self.cbo_monitor_index.GetValue())
+        if self.cbo_screenshot.GetValue() != "wc_mp":
+            monitor_index = 0
+        window_name = self.cbo_window_name.GetValue()
+        if not window_name:
+            window_name = None
+
         parser.set_defaults(
             gpu=device_id,
             divergence=float(self.cbo_divergence.GetValue()),
@@ -720,6 +792,7 @@ class MainFrame(wx.Frame):
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
+            compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
 
             bind_addr=bind_addr,
             port=self.txt_port.GetValue(),
@@ -730,6 +803,8 @@ class MainFrame(wx.Frame):
             stream_quality=int(self.cbo_stream_quality.GetValue()),
             gpu_jpeg=self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
+            monitor_index=monitor_index,
+            window_name=window_name,
             full_sbs=full_sbs,
         )
         args = parser.parse_args()
@@ -742,11 +817,12 @@ class MainFrame(wx.Frame):
         return args
 
     def on_fps(self, event):
-        estimated_fps, screenshot_fps, streaming_fps, url = event.GetValue()
+        estimated_fps, screenshot_fps, streaming_fps, screen_size, url = event.GetValue()
         if estimated_fps is not None and screenshot_fps is not None and streaming_fps is not None:
             self.SetStatusText(f"Estimated FPS: {estimated_fps:.02f},"
                                f" Screenshot FPS: {screenshot_fps:.02f},"
-                               f" Streaming FPS: {streaming_fps:.02f}")
+                               f" Streaming FPS: {streaming_fps:.02f},"
+                               f" Screen: {screen_size}")
         if url:
             self.txt_url.SetValue(url)
 
@@ -759,6 +835,7 @@ class MainFrame(wx.Frame):
         self.btn_start.Disable()
         self.btn_cancel.Enable()
         self.btn_url.Enable()
+        self.pnl_preset.Hide()
         self.grp_stereo.Hide()
         self.grp_processor.Hide()
         self.grp_network.Hide()
@@ -798,6 +875,7 @@ class MainFrame(wx.Frame):
         self.btn_start.Enable()
         self.txt_url.SetValue("")
         self.btn_url.Disable()
+        self.pnl_preset.Show()
         self.grp_stereo.Show()
         self.grp_processor.Show()
         self.grp_network.Show()
@@ -833,7 +911,8 @@ class MainFrame(wx.Frame):
             persistent_manager_register(manager, control, EditableComboBoxPersistentHandler)
         manager.SaveAndUnregister()
 
-    def load_preset(self, name=None):
+    def load_preset(self, name=None, exclude_names=set()):
+        exclude_names.add("cbo_language")  # ignore language
         if not name:
             name = ""
             config_file = CONFIG_PATH
@@ -847,7 +926,7 @@ class MainFrame(wx.Frame):
         persistent_manager_register_all(manager, self)
         for control in self.get_editable_comboboxes():
             persistent_manager_register(manager, control, EditableComboBoxPersistentHandler)
-        persistent_manager_restore_all(manager)
+        persistent_manager_restore_all(manager, exclude_names)
         persistent_manager_unregister_all(manager)
 
     def on_click_divergence_warning(self, event):
@@ -889,8 +968,59 @@ class MainFrame(wx.Frame):
         except ValueError:
             pass
 
+    def on_selected_index_changed_cbo_device(self, event):
+        self.update_compile()
 
-LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
+    def update_compile(self, *args, **kwargs):
+        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        if device_id == -2:
+            # currently "All CUDA" does not support compile
+            self.chk_compile.SetValue(False)
+        else:
+            # check compiler support
+            if self.chk_compile.IsChecked():
+                device = create_device(device_id)
+                if not check_compile_support(device):
+                    self.chk_compile.SetValue(False)
+
+    def on_text_changed_cbo_language(self, event):
+        lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
+        save_language_setting(LANG_CONFIG_PATH, lang)
+        with wx.MessageDialog(None,
+                              message=T("The language setting will be applied after restarting"),
+                              style=wx.OK) as dlg:
+            dlg.ShowModal()
+
+    def on_text_changed_cbo_screenshot(self, event):
+        self.update_monitor_index()
+        self.update_window_names()
+
+    def update_monitor_index(self, *args, **kwargs):
+        if self.cbo_screenshot.GetValue() == "wc_mp":
+            self.lbl_monitor_index.Show()
+            self.cbo_monitor_index.Show()
+        else:
+            self.lbl_monitor_index.Hide()
+            self.cbo_monitor_index.Hide()
+
+        self.GetSizer().Layout()
+
+    def update_window_names(self, *args, **kwargs):
+        if self.cbo_screenshot.GetValue() == "wc_mp":
+            self.lbl_window_name.Show()
+            self.cbo_window_name.Show()
+            self.btn_reload_window_name.Show()
+            self.cbo_window_name.SetItems([""] + enum_window_names())
+        else:
+            self.lbl_window_name.Hide()
+            self.cbo_window_name.Hide()
+            self.btn_reload_window_name.Hide()
+
+        self.GetSizer().Layout()
+
+
+LOCAL_LIST = sorted(list(LOCALES.keys()))
+LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
 
 
 def T(s):
@@ -900,13 +1030,18 @@ def T(s):
 def main():
     import argparse
     import sys
+    global LOCALE_DICT
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--lang", type=str, help="lang, ja_JP, en_US")
+    parser.add_argument("--lang", type=str, choices=list(LOCALES.keys()), help="translation language")
     args = parser.parse_args()
     if args.lang:
-        global LOCALE_DICT
         LOCALE_DICT = LOCALES.get(args.lang, {})
+    else:
+        saved_lang = load_language_setting(LANG_CONFIG_PATH)
+        if saved_lang:
+            LOCALE_DICT = LOCALES.get(saved_lang, {})
+
     sys.argv = [sys.argv[0]]  # clear command arguments
 
     app = IW3DesktopApp()

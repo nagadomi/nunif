@@ -16,3 +16,18 @@ set PIP_TARGET=
 
 @rem git env
 set GIT_CONFIG_NOSYSTEM=1
+
+@rem set msvc variables for torch.compile if it is available
+set VCVARS2022_PATH=C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat
+set VCVARS2019_PATH=C:/Program Files/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/vcvars64.bat
+if exist "%VCVARS2022_PATH%" (
+  call "%VCVARS2022_PATH%"
+) else (
+  if exist "%VCVARS2019_PATH%" (
+     call "%VCVARS2019_PATH%"
+  )
+)
+
+@rem set vslang to English to avoid UnicodeDecodeError
+@rem note that this will not work unless the English language package is installed
+set VSLANG=1033
