@@ -310,6 +310,9 @@ Both work with the default option.
 
 Install NVIDIA Driver 570 or newer.
 
+It's also important to note that hardware encoders have resolution limitations, and exceeding those limits can cause encoding to fail with an error.
+This issue is particularly common with VR90 (--vr180), as it produces very large video resolutions that are more likely to exceed hardware encoder limits.
+
 ### How to convert rotated(height width swapped) video correctly
 
 Use `--rotate-left`(rotate 90 degrees to counterclockwise) or `--rotate-right`(rotate 90 degrees to clockwise) option to fix the rotation.
