@@ -261,7 +261,7 @@ def iw3_desktop_main(args, init_wxapp=True):
             args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
         else:
             print(f"Open http://{args.bind_addr}:{args.port}")
-        count = 0
+        count = last_status_time = 0
         fps_counter = deque(maxlen=120)
 
         while True:
@@ -276,7 +276,8 @@ def iw3_desktop_main(args, init_wxapp=True):
 
                 if count % (args.stream_fps * 30) == 0:
                     gc_collect()
-                if count > 1 and count % args.stream_fps == 0:
+                if count > 1 and tick - last_status_time > 1:
+                    last_status_time = tick
                     mean_processing_time = sum(fps_counter) / len(fps_counter)
                     estimated_fps = 1.0 / mean_processing_time
                     screen_size_tuple = (screen_size, (frame_width, frame_height))
