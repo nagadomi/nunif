@@ -1,4 +1,5 @@
 import nunif.pythonw_fix  # noqa
+import nunif.gui.subprocess_patch  # noqa
 import locale
 import sys
 import os
