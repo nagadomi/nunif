@@ -14,6 +14,7 @@ from PIL import ImageDraw
 from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+import nunif.utils.shot_boundary_detection as SBD
 from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
@@ -595,12 +596,15 @@ def postprocess_image(left_eye, right_eye, args):
     return sbs
 
 
-def debug_depth_image(depth, args):
+def debug_depth_image(depth, args, return_tensor=False):
     depth = depth.float()
     mean_depth, std_depth = depth.mean().item(), depth.std().item()
     depth2 = get_mapper(args.mapper)(depth)
     out = torch.cat([depth, depth2], dim=2).cpu()
-    out = to_pil_image(out)
+    if not return_tensor:
+        out = to_pil_image(out)
+    else:
+        out = out.repeat((3, 1, 1))
     # gc = ImageDraw.Draw(out)
     # gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
     #                    f"max={round(float(depth_max), 4)}\n"
@@ -624,7 +628,7 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
                 sbs = to_pil_image(sbs)
             return sbs
         else:
-            return debug_depth_image(depth, args)
+            return debug_depth_image(depth, args, return_tensor=return_tensor)
 
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
@@ -713,6 +717,24 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return
 
     make_parent_dir(output_filename)
+    if args.scene_segment:
+        with TorchHubDir(HUB_MODEL_DIR):
+            segment_pts = SBD.detect_boundary(
+                input_filename,
+                max_fps=args.max_fps,
+                device=args.state["device"],
+                start_time=args.start_time,
+                end_time=args.end_time,
+                stop_event=args.state["stop_event"],
+                suspend_event=args.state["suspend_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+                tqdm_title=f"{path.basename(input_filename)}: Scene Segmentation",
+            )
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                return
+    else:
+        segment_pts = set()
+
 
     def config_callback(stream):
         fps = VU.get_fps(stream)
@@ -731,21 +753,28 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     @torch.inference_mode()
     def test_callback(frame):
-        frame = VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
-                                          return_tensor=True))
+        x = VU.to_tensor(frame, device=args.state["device"])
+        x = process_image(x, args, depth_model, side_model,
+                          return_tensor=True)
         if ema_normalize:
             # reset ema to avoid affecting test frames
             depth_model.reset_ema_minmax()
-        return frame
+        return VU.to_frame(x)
 
     if args.low_vram or args.debug_depth:
         @torch.inference_mode()
         def frame_callback(frame):
             if frame is None:
                 return None
-            return VU.to_frame(process_image(VU.to_tensor(frame, device=args.state["device"]), args, depth_model, side_model,
-                                             return_tensor=True))
-
+            x = VU.to_tensor(frame, device=args.state["device"])
+            x = process_image(x, args, depth_model, side_model,
+                              return_tensor=True)
+            if frame.pts in segment_pts:
+                depth_model.reset_ema_minmax()
+                if args.debug_depth:
+                    # debug red line
+                    x[0, 0:8, :] = 1.0
+            return VU.to_frame(x)
         try:
             if args.compile:
                 depth_model.compile()
@@ -763,7 +792,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         finally:
             if args.compile:
                 depth_model.clear_compiled_model()
-
     else:
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
         preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
@@ -772,7 +800,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         streams = threading.local()
 
         @torch.inference_mode()
-        def __batch_callback(x):
+        def __batch_callback(x, pts):
             device_index = args.state["devices"].index(x.device)
             if (args.max_output_height is not None or
                     args.bg_session is not None or
@@ -787,11 +815,13 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                         x_orgs = x
             else:
                 x_orgs = x
+
             with depth_lock[device_index]:
                 depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                            enable_amp=not args.disable_amp,
                                            edge_dilation=args.edge_dilation)
-                depths = depth_model.minmax_normalize(depths)
+                reset_ema = [t in segment_pts for t in pts]
+                depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
 
             if args.method in {"forward", "forward_fill"}:
                 # Lock all threads
@@ -806,7 +836,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 postprocess_image(left_eyes[i], right_eyes[i], args)
                 for i in range(left_eyes.shape[0])])
 
-        def _batch_callback(x):
+        def _batch_callback(x, pts):
             if args.cuda_stream and device_is_cuda(x.device):
                 device_name = str(x.device)
                 if not hasattr(streams, device_name):
@@ -814,11 +844,11 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 stream = getattr(streams, device_name)
                 stream.wait_stream(torch.cuda.current_stream(x.device))
                 with torch.cuda.device(x.device), torch.cuda.stream(stream):
-                    ret = __batch_callback(x)
+                    ret = __batch_callback(x, pts)
                     stream.synchronize()
                     return ret
             else:
-                return __batch_callback(x)
+                return __batch_callback(x, pts)
 
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         frame_callback = VU.FrameCallbackPool(
@@ -827,6 +857,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             device=args.state["devices"],
             max_workers=args.max_workers,
             max_batch_queue=args.max_workers + extra_queue,
+            require_pts=True,
         )
         try:
             if args.compile:
@@ -1068,6 +1099,24 @@ def export_video(input_filename, output_dir, args, title=None):
         os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
+    if args.scene_segment:
+        with TorchHubDir(HUB_MODEL_DIR):
+            segment_pts = SBD.detect_boundary(
+                input_filename,
+                max_fps=args.max_fps,
+                device=args.state["device"],
+                start_time=args.start_time,
+                end_time=args.end_time,
+                stop_event=args.state["stop_event"],
+                suspend_event=args.state["suspend_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+                tqdm_title=f"{path.basename(input_filename)}: Scene Segmentation",
+            )
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                return
+    else:
+        segment_pts = set()
+
     if args.resume:
         resume_seq = get_resume_seq(depth_dir, rgb_dir) - args.batch_size
     else:
@@ -1131,7 +1180,9 @@ def export_video(input_filename, output_dir, args, title=None):
             if args.export_depth_fit:
                 depths = F.interpolate(depths, size=(x_orgs.shape[2], x_orgs.shape[3]),
                                        mode="bilinear", antialias=True, align_corners=True)
-            depths = depth_model.minmax_normalize(depths)
+
+            reset_ema = [t in segment_pts for t in pts]
+            depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
             if args.export_disparity:
                 depths = torch.stack([get_mapper(args.mapper)(depths[i]) for i in range(depths.shape[0])])
 
@@ -1579,6 +1630,9 @@ def create_parser(required_true=True):
                         help="use min/max moving average to normalize video depth")
     parser.add_argument("--ema-decay", type=float, default=0.75,
                         help="parameter for ema-normalize (0-1). large value makes it smoother")
+    parser.add_argument("--scene-segment", action="store_true",
+                        help=("segmenting a scene using shot detection. "
+                              "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
                         help="loop count of edge dilation.")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],

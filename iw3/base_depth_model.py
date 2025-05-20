@@ -180,12 +180,24 @@ class BaseDepthModel(metaclass=ABCMeta):
         depth = depth.nan_to_num()
         return depth, min_value, max_value
 
-    def minmax_normalize(self, depth):
+    def minmax_normalize(self, depth, reset_ema=None):
         if depth.ndim == 3:
-            return self.minmax_normalize_chw(depth)[0]
+            reset_ema = [False] if reset_ema is None else reset_ema
+            assert len(reset_ema) == 1
+            normalized_depth = self.minmax_normalize_chw(depth)[0]
+            if reset_ema[0]:
+                self.reset_ema_minmax()
+            return normalized_depth
         else:
             assert depth.ndim == 4
-            return torch.stack([self.minmax_normalize_chw(depth[i])[0] for i in range(depth.shape[0])]).contiguous()
+            reset_ema = [False] * depth.shape[0] if reset_ema is None else reset_ema
+            assert len(reset_ema) == depth.shape[0]
+            normalized_depths = []
+            for i in range(depth.shape[0]):
+                normalized_depths.append(self.minmax_normalize_chw(depth[i])[0])
+                if reset_ema[i]:
+                    self.reset_ema_minmax()
+            return torch.stack(normalized_depths).contiguous()
 
     def save_depth(self, depth, file_path, png_info={}, normalize=True):
         # not batch
