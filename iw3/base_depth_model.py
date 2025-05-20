@@ -214,7 +214,7 @@ class BaseDepthModel(metaclass=ABCMeta):
             if "iw3_min_depth_value" in im.text and "iw3_max_depth_value" in im.text:
                 try:
                     min_depth_value = float(im.text["iw3_min_depth_value"])
-                    max_depth_value = float(im.text["iw3_min_depth_value"])
+                    max_depth_value = float(im.text["iw3_max_depth_value"])
                 except (ValueError, TypeError):
                     min_depth_value = max_depth_value = None
             else:
