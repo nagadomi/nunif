@@ -247,6 +247,12 @@ class MainFrame(wx.Frame):
         self.cbo_ema_decay.SetSelection(2)
         self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
 
+        self.chk_scene_segment = wx.CheckBox(self.grp_stereo,
+                                             label=T("Scene Segmentation"),
+                                             name="chk_scene_segment")
+        self.chk_scene_segment.SetValue(False)
+        self.chk_scene_segment.SetToolTip(T("Reset model and Flicker Detection states at scene boundaries"))
+
         self.chk_preserve_screen_border = wx.CheckBox(self.grp_stereo,
                                                       label=T("Preserve Screen Border"),
                                                       name="chk_preserve_screen_border")
@@ -318,6 +324,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_scene_segment, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, (i, 1), flag=wx.EXPAND)
@@ -612,6 +619,7 @@ class MainFrame(wx.Frame):
             self.update_model_selection()
         self.update_edge_dilation()
         self.update_ema_normalize()
+        self.update_scene_segment()
         self.grp_video.update_controls()
 
         self.update_divergence_warning()
@@ -819,8 +827,16 @@ class MainFrame(wx.Frame):
         else:
             self.cbo_ema_decay.Disable()
 
+    def update_scene_segment(self, *args, **kwargs):
+        if self.chk_ema_normalize.IsChecked():
+            self.chk_scene_segment.Enable()
+        else:
+            # TODO: enable when using video depth anything
+            self.chk_scene_segment.Disable()
+
     def on_changed_chk_ema_normalize(self, event):
         self.update_ema_normalize()
+        self.update_scene_segment()
 
     def confirm_overwrite(self, args):
         input_path = args.input
@@ -971,6 +987,7 @@ class MainFrame(wx.Frame):
         edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
+        scene_segment = self.chk_scene_segment.IsEnabled() and self.chk_scene_segment.IsChecked()
 
         parser.set_defaults(
             input=input_path,
@@ -1001,6 +1018,7 @@ class MainFrame(wx.Frame):
             debug_depth=debug_depth,
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
+            scene_segment=scene_segment,
 
             format=self.cbo_image_format.GetValue(),
 
