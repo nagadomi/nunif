@@ -35,6 +35,7 @@ from nunif.gui import (
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
 from .depth_anything_model import DepthAnythingModel
+from .video_depth_anything_model import VideoDepthAnythingModel
 from .depth_pro_model import DepthProModel
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
@@ -651,6 +652,13 @@ class MainFrame(wx.Frame):
             depth_models.append("Distill_Any_B")
         if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
             depth_models.append("Distill_Any_L")
+
+        depth_models += ["VDA_S"]
+        if VideoDepthAnythingModel.has_checkpoint_file("VDA_L"):
+            depth_models.append("VDA_L")
+        if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric"):
+            depth_models.append("VDA_Metric")
+
         return depth_models
 
     def get_editable_comboboxes(self):

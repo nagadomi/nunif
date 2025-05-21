@@ -44,6 +44,11 @@ ROW_FLOW_V3_AUTO_STEP_DIVERGENCE = 4.0
 IMAGE_IO_QUEUE_MAX = 100
 
 
+def chunks(array, n):
+    for i in range(0, len(array), n):
+        yield array[i:i + n]
+
+
 def to_pil_image(x):
     # x is already clipped to 0-1
     assert x.dtype in {torch.float32, torch.float16}
@@ -693,6 +698,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
 
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
+    is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema_minmax(args.ema_decay)
@@ -735,7 +741,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     else:
         segment_pts = set()
 
-
     def config_callback(stream):
         fps = VU.get_fps(stream)
         if float(fps) > args.max_fps:
@@ -761,7 +766,97 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             depth_model.reset_ema_minmax()
         return VU.to_frame(x)
 
-    if args.low_vram or args.debug_depth:
+    if is_video_depth_anything:
+        org_queue = []
+        batch_queue = []
+        pts_queue = []
+        depth_model.reset()
+
+        @torch.inference_mode()
+        def _postprocess(depth_list):
+            results = []
+            if not args.debug_depth:
+                for depths in chunks(depth_list, args.batch_size):
+                    depths = torch.stack(depths)
+                    x_orgs = [org_queue.pop(0) for _ in range(len(depths))]
+                    x_orgs = torch.stack(x_orgs).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
+                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
+                    results += [postprocess_image(left_eyes[i], right_eyes[i], args)
+                                for i in range(left_eyes.shape[0])]
+            else:
+                results += [debug_depth_image(depth, args, return_tensor=True) for depth in depth_list]
+            return results
+
+        @torch.inference_mode()
+        def _batch_infer():
+            x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
+            if (args.max_output_height is not None or
+                    args.bg_session is not None or
+                    args.rotate_right or args.rotate_left):
+                xs = [preprocess_image(xx, args) for xx in x]
+                x = torch.stack([x for x_org, x in xs])
+                if args.bg_session is not None:
+                    x_orgs = torch.stack([x_org for x_org, x in xs])
+                else:
+                    x_orgs = x
+                x_orgs = torch.clamp(x_orgs.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+                for x_org in x_orgs:
+                    org_queue.append(x_org)
+            else:
+                for x_org in batch_queue:
+                    org_queue.append(x_org)
+
+            depth_list = depth_model.infer_and_normalize(
+                x, pts_queue, segment_pts,
+                enable_amp=not args.disable_amp,
+                edge_dilation=args.edge_dilation)
+
+            pts_queue.clear()
+            batch_queue.clear()
+
+            return _postprocess(depth_list)
+
+        @torch.inference_mode()
+        def frame_callback(frame):
+            if frame is None:
+                # flush
+                results = []
+                if batch_queue:
+                    results += _batch_infer()
+                depth_list = depth_model.flush_and_normalize(
+                    enable_amp=not args.disable_amp,
+                    edge_dilation=args.edge_dilation)
+                results += _postprocess(depth_list)
+                return [VU.to_frame(new_frame) for new_frame in results]
+
+            frame_hwc8 = torch.from_numpy(frame.to_ndarray(format="rgb24"))
+            batch_queue.append(frame_hwc8)
+            pts_queue.append(frame.pts)
+
+            if len(batch_queue) == args.batch_size:
+                results = _batch_infer()
+                return [VU.to_frame(new_frame) for new_frame in results]
+            else:
+                return None
+        try:
+            if args.compile:
+                depth_model.compile()
+            VU.process_video(input_filename, output_filename,
+                             config_callback=config_callback,
+                             frame_callback=frame_callback,
+                             test_callback=test_callback,
+                             vf=args.vf,
+                             stop_event=args.state["stop_event"],
+                             suspend_event=args.state["suspend_event"],
+                             tqdm_fn=args.state["tqdm_fn"],
+                             title=path.basename(input_filename),
+                             start_time=args.start_time,
+                             end_time=args.end_time)
+        finally:
+            if args.compile:
+                depth_model.clear_compiled_model()
+
+    elif args.low_vram or args.debug_depth:
         @torch.inference_mode()
         def frame_callback(frame):
             if frame is None:
@@ -1050,6 +1145,9 @@ def get_resume_seq(depth_dir, rgb_dir):
 
 
 def export_video(input_filename, output_dir, args, title=None):
+    if args.state["depth_model"].get_name() == "VideoDepthAnything":
+        raise NotImplementedError("VideoDepthAnything is still not supported in export_video()")
+
     basename = path.splitext(path.basename(input_filename))[0]
     title = title or path.basename(input_filename)
     if args.export_disparity:
@@ -1548,6 +1646,7 @@ def create_parser(required_true=True):
                                  "Any_V2_K_S", "Any_V2_K_B", "Any_V2_K_L",
                                  "Distill_Any_S", "Distill_Any_B", "Distill_Any_L",
                                  "DepthPro", "DepthPro_S",
+                                 "VDA_S", "VDA_L", "VDA_Metric",
                                  "NULL",
                                  ],
                         help="depth model name")
@@ -1710,6 +1809,16 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         raise ValueError("--export-depth-only must be specified together with --export or --export-disparity")
     if args.export_depth_fit and not args.export:
         raise ValueError("--export-depth-fit must be specified together with --export or --export-disparity")
+
+    if depth_model.get_name() == "VideoDepthAnything":
+        if args.low_vram:
+            raise ValueError("--low-vram is not supported for VideoDepthAnything")
+        if args.tta:
+            raise ValueError("--tta is not supported for VideoDepthAnything")
+        if not args.ema_normalize:
+            warnings.warn("--ema-normalize is highly recommended for VideoDepthAnything")
+        if not args.scene_segment:
+            warnings.warn("--scene_segment is highly recommended for VideoDepthAnything")
 
     if is_video(args.output):
         # replace --video-format when filename is specified
