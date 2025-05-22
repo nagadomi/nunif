@@ -1812,10 +1812,6 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         raise ValueError("--export-depth-fit must be specified together with --export or --export-disparity")
 
     if depth_model.get_name() == "VideoDepthAnything":
-        if args.low_vram:
-            raise ValueError("--low-vram is not supported for VideoDepthAnything")
-        if args.tta:
-            raise ValueError("--tta is not supported for VideoDepthAnything")
         if not args.ema_normalize:
             warnings.warn("--ema-normalize is highly recommended for VideoDepthAnything")
         if not args.scene_segment:
