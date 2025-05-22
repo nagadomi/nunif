@@ -162,8 +162,10 @@ class VideoDepthAnythingModel(BaseDepthModel):
             self.output_frame_count += len(ret)
         if results:
             unpad = self.output_frame_count - self.input_frame_count
-            assert unpad <= len(results)
-            return results[:-unpad]
+            if unpad > 0:
+                assert unpad <= len(results)
+                results = results[:-unpad]
+            return results
         else:
             return []
 
