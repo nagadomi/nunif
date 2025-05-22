@@ -785,6 +785,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                                 for i in range(left_eyes.shape[0])]
             else:
                 results += [debug_depth_image(depth, args, return_tensor=True) for depth in depth_list]
+                org_queue.clear()
             return results
 
         @torch.inference_mode()
