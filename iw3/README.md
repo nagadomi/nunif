@@ -434,7 +434,7 @@ These files can be downloaded from Models section of https://huggingface.co/dept
 - https://huggingface.co/depth-anything/Video-Depth-Anything-Large
 - https://huggingface.co/depth-anything/Metric-Video-Depth-Anything-Large
 
-#### Implementation Notes
+#### VDA Implementation Notes
 
 The following options are highly recommended.
 
