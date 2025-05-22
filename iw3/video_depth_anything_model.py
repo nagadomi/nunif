@@ -19,7 +19,7 @@ NAME_MAP = {
 MODEL_FILES = {
     "VDA_S": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vits.pth"),
     "VDA_L": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitl.pth"),
-    "VDA_Metric": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitl.pth"),
+    "VDA_Metric": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
 }
 METRIC_PADDING = 14
 
