@@ -801,6 +801,7 @@ class MainFrame(wx.Frame):
 
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
+        self.update_scene_segment()
 
     def update_preserve_screen_border(self):
         if self.cbo_method.GetValue() in {"row_flow_v2", "row_flow_v3", "row_flow_v3_sym"}:
@@ -842,8 +843,8 @@ class MainFrame(wx.Frame):
         if self.chk_ema_normalize.IsChecked():
             self.chk_scene_segment.Enable()
         else:
-            # TODO: enable when using video depth anything
-            self.chk_scene_segment.Disable()
+            if not VideoDepthAnythingModel.supported(self.cbo_depth_model.GetValue()):
+                self.chk_scene_segment.Disable()
 
     def on_changed_chk_ema_normalize(self, event):
         self.update_ema_normalize()
