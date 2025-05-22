@@ -389,7 +389,7 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `VDA_L`  | Video Depth Anything large.
 | `VDA_Metric`  | Video Depth Anything metric depth model.
 
-Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
+Personally, I recommend `ZoeD_Any_N`, `Any_B` or `VDA_Metric`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
 For art/anime, DepthAnything is better than ZoeDepth.
