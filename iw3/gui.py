@@ -765,7 +765,10 @@ class MainFrame(wx.Frame):
 
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
-        if (DepthAnythingModel.supported(name) or DepthProModel.supported(name) or name.startswith("ZoeD_Any_")):
+        if (DepthAnythingModel.supported(name) or
+              DepthProModel.supported(name) or
+              VideoDepthAnythingModel.supported(name) or
+              name.startswith("ZoeD_Any_")):
             self.chk_edge_dilation.SetValue(True)
             self.cbo_edge_dilation.Enable()
         else:
