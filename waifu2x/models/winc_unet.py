@@ -118,53 +118,26 @@ class WACBlocks(nn.Module):
         return self.blocks(x)
 
 
-class Overscan(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        C = in_channels
-        padding = 1 + 2 + 3 + 1
-        self.pad = ReplicationPad2dNaive((padding,) * 4, detach=True)
-        self.conv1 = nn.Conv2d(C, C, kernel_size=3, dilation=1, stride=1, padding=0)
-        self.conv2 = nn.Conv2d(C, C // 2, kernel_size=3, dilation=2, stride=1, padding=0)
-        self.conv3 = nn.Conv2d(C // 2, C // 2, kernel_size=3, dilation=3, stride=1, padding=0)
-        self.fuse = nn.Sequential(
-            nn.Conv2d(C + C // 2 + C // 2, C, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(C, C, kernel_size=1, stride=1, padding=0))
-        basic_module_init(self)
-
-    def forward(self, x):
-        x = self.pad(x)
-        x1 = self.conv1(x)
-        x1 = F.leaky_relu(x1, 0.2, inplace=True)
-        x2 = self.conv2(x1)
-        x2 = F.leaky_relu(x2, 0.2, inplace=True)
-        x3 = self.conv3(x2)
-        x3 = F.leaky_relu(x3, 0.2, inplace=True)
-        x1 = F.pad(x1, (-(2 + 3),) * 4)
-        x2 = F.pad(x2, (-3,) * 4)
-        x4 = torch.cat([x1, x2, x3], dim=1)
-        x = self.fuse(x4)
-        return x
-
-
 class IR(nn.Module):
-    def __init__(self, in_channels=3, out_channels=16):
+    def __init__(self, in_channels=3, out_channels=32):
         super().__init__()
-        self.patch = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=0)
-        self.overscan = Overscan(out_channels)
-        self.fusion = nn.Conv2d(out_channels * 2, out_channels, kernel_size=3, stride=1, padding=0)
+        self.path1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels // 2, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(0.2, inplace=True))
+        self.path2 = nn.Sequential(
+            nn.PixelUnshuffle(2),
+            nn.Conv2d(in_channels * 4, out_channels // 2 * 4, kernel_size=1, stride=1, padding=0),
+            WACBlock(out_channels // 2 * 4, num_heads=2, window_size=8, mlp_ratio=1, shift=True),
+            WACBlock(out_channels // 2 * 4, num_heads=2, window_size=8, mlp_ratio=1, shift=False),
+            nn.PixelShuffle(2),
+        )
         basic_module_init(self)
 
     @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
     def forward(self, x):
-        x = replication_pad2d_naive(x, (1,) * 4)
-        x = self.patch(x)
-        x = F.leaky_relu(x, 0.2, inplace=True)
-        ov = self.overscan(x)
-        x = torch.cat([x, ov], dim=1)
-        x = replication_pad2d_naive(x, (1,) * 4)
-        x = self.fusion(x)
+        x1 = self.path1(replication_pad2d_naive(x, (1,) * 4))
+        x2 = self.path2(x)
+        x = torch.cat([x1, x2], dim=1)
         return x
 
 
@@ -305,8 +278,8 @@ class WincUNetBase(nn.Module):
         HEADS2 = max(C2 // 32, 2)
 
         # shallow feature extractor
-        self.ir = IR(3, 16)
-        self.patch = nn.Conv2d(16, C, kernel_size=3, stride=1, padding=0)
+        self.ir = IR(3, 32)
+        self.patch = nn.Conv2d(32, C, kernel_size=3, stride=1, padding=0)
 
         # encoder
         self.wac1 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
@@ -377,7 +350,7 @@ class WincUNetBase(nn.Module):
 
         if self.tile_mode:
             B, C, H, W = x.shape
-            if self.scale_factor in {4, 2}:
+            if self.scale_factor in {4, 2, 1}:
                 assert H == 112 and W == H
                 if self.training:
                     #  use 64x64 2x2 tile and 112x112 1x1 tile alternately
@@ -456,6 +429,9 @@ class WincUNet1x(I2IBaseModel):
             return z
         else:
             return torch.clamp(z, 0., 1.)
+
+    def set_tile_mode(self):
+        self.unet.set_tile_mode()
 
 
 @register_model
@@ -596,11 +572,16 @@ register_model_factory(
 def _bench(name, compile):
     from nunif.models import create_model
     import time
+
+    N = 100
+    B = 4
+    S = (256, 256)
     device = "cuda:0"
+
     model = create_model(name, in_channels=3, out_channels=3).to(device).eval()
     if compile:
         model = torch.compile(model)
-    x = torch.zeros((4, 3, 256, 256)).to(device)
+    x = torch.zeros((B, 3, *S)).to(device)
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z, *_ = model(x)
         print(z.shape)
@@ -611,15 +592,15 @@ def _bench(name, compile):
     torch.cuda.synchronize()
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
-        for _ in range(100):
+        for _ in range(N):
             z = model(x)
     torch.cuda.synchronize()
-    print(time.time() - t)
+    et = time.time() - t
+    print(et, 1 / (et / (B * N)), "FPS")
 
 
 if __name__ == "__main__":
     enable_full_compile = False
-
     _bench("waifu2x.winc_unet_1x", enable_full_compile)
     _bench("waifu2x.winc_unet_2x", enable_full_compile)
     _bench("waifu2x.winc_unet_4x", enable_full_compile)
