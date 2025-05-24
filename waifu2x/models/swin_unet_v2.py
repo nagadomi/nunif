@@ -1,4 +1,3 @@
-# wip
 import copy
 import torch
 import torch.nn as nn
@@ -263,12 +262,12 @@ def get_shift_config(num_layers, last=False):
     return shift
 
 
-class WincUNetBase(nn.Module):
+class SwinUNetV2Base(nn.Module):
     def __init__(self, in_channels, out_channels, base_dim=96,
                  lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
                  first_layers=2, last_layers=3,
                  scale_factor=2):
-        super(WincUNetBase, self).__init__()
+        super(SwinUNetV2Base, self).__init__()
         assert scale_factor in {1, 2, 4}
         self.scale_factor = scale_factor
         C = base_dim
@@ -408,20 +407,21 @@ class IRMixIn():
 
 
 @register_model
-class WincUNet1x(I2IBaseModel):
-    name = "waifu2x.winc_unet_1x"
+class SwinUNet1xV2(I2IBaseModel):
+    name = "waifu2x.swin_unet_1x_v2"
+    name_alias = ("waifu2x.winc_unet_1x",)
 
     def __init__(self, in_channels=3, out_channels=3,
                  base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
                  first_layers=2, last_layers=3,
                  **kwargs):
-        super(WincUNet1x, self).__init__(locals(), scale=1, offset=9, in_channels=in_channels, blend_size=4)
+        super(SwinUNet1xV2, self).__init__(locals(), scale=1, offset=9, in_channels=in_channels, blend_size=4)
         self.register_tile_size_validator(tile_size_validator)
-        self.unet = WincUNetBase(in_channels, out_channels,
-                                 base_dim=base_dim,
-                                 lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                 first_layers=first_layers, last_layers=last_layers,
-                                 scale_factor=1)
+        self.unet = SwinUNetV2Base(in_channels, out_channels,
+                                   base_dim=base_dim,
+                                   lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
+                                   first_layers=first_layers, last_layers=last_layers,
+                                   scale_factor=1)
 
     def forward(self, x):
         z = self.unet(x)
@@ -435,18 +435,19 @@ class WincUNet1x(I2IBaseModel):
 
 
 @register_model
-class WincUNet2x(I2IBaseModel):
-    name = "waifu2x.winc_unet_2x"
+class SwinUNet2xV2(I2IBaseModel):
+    name = "waifu2x.swin_unet_v2_2x"
+    name_alias = ("waifu2x.winc_unet_2x",)
 
     def __init__(self, in_channels=3, out_channels=3,
                  base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
                  **kwargs):
-        super(WincUNet2x, self).__init__(locals(), scale=2, offset=18, in_channels=in_channels, blend_size=8)
+        super(SwinUNet2xV2, self).__init__(locals(), scale=2, offset=18, in_channels=in_channels, blend_size=8)
         self.register_tile_size_validator(tile_size_validator)
-        self.unet = WincUNetBase(in_channels, out_channels,
-                                 base_dim=base_dim,
-                                 lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                 scale_factor=2)
+        self.unet = SwinUNetV2Base(in_channels, out_channels,
+                                   base_dim=base_dim,
+                                   lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
+                                   scale_factor=2)
 
     def forward(self, x):
         z = self.unet(x)
@@ -460,20 +461,21 @@ class WincUNet2x(I2IBaseModel):
 
 
 @register_model
-class WincUNet4x(I2IBaseModel):
-    name = "waifu2x.winc_unet_4x"
+class SwinUNet4xV2(I2IBaseModel):
+    name = "waifu2x.swin_unet_v2_4x"
+    name_alias = ("waifu2x.winc_unet_4x",)
 
     def __init__(self, in_channels=3, out_channels=3,
                  base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
                  **kwargs):
-        super(WincUNet4x, self).__init__(locals(), scale=4, offset=36, in_channels=in_channels, blend_size=16)
+        super(SwinUNet4xV2, self).__init__(locals(), scale=4, offset=36, in_channels=in_channels, blend_size=16)
         self.register_tile_size_validator(tile_size_validator)
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.unet = WincUNetBase(in_channels, out_channels=out_channels,
-                                 base_dim=base_dim,
-                                 lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                 scale_factor=4)
+        self.unet = SwinUNetV2Base(in_channels, out_channels=out_channels,
+                                   base_dim=base_dim,
+                                   lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
+                                   scale_factor=4)
 
     def forward(self, x):
         if x.shape[1] == 16 + 3:
@@ -492,13 +494,13 @@ class WincUNet4x(I2IBaseModel):
 
     def to_2x(self, shared=True):
         unet = self.unet if shared else copy.deepcopy(self.unet)
-        return WincUNetDownscaled(unet, downscale_factor=2,
-                                  in_channels=self.i2i_in_channels, out_channels=self.out_channels)
+        return SwinUNetV2Downscaled(unet, downscale_factor=2,
+                                    in_channels=self.i2i_in_channels, out_channels=self.out_channels)
 
     def to_1x(self, shared=True):
         unet = self.unet if shared else copy.deepcopy(self.unet)
-        return WincUNetDownscaled(unet=unet, downscale_factor=4,
-                                  in_channels=self.i2i_in_channels, out_channels=self.out_channels)
+        return SwinUNetV2Downscaled(unet=unet, downscale_factor=4,
+                                    in_channels=self.i2i_in_channels, out_channels=self.out_channels)
 
 
 def box_resize(x, size):
@@ -524,7 +526,7 @@ def resize(x, size, mode, align_corners, antialias):
 
 # TODO: Not tested
 @register_model
-class WincUNetDownscaled(I2IBaseModel):
+class SwinUNetV2Downscaled(I2IBaseModel):
     name = "waifu2x.winc_unet_downscaled"
 
     def __init__(self, unet, downscale_factor, in_channels=3, out_channels=3):
@@ -557,16 +559,16 @@ class WincUNetDownscaled(I2IBaseModel):
 
     @staticmethod
     def from_4x(unet_4x, downscale_factor):
-        net = WincUNetDownscaled(unet=copy.deepcopy(unet_4x.unet),
-                                 downscale_factor=downscale_factor,
-                                 in_channels=unet_4x.unet.in_channels,
-                                 out_channels=unet_4x.unet.out_channels)
+        net = SwinUNetV2Downscaled(unet=copy.deepcopy(unet_4x.unet),
+                                   downscale_factor=downscale_factor,
+                                   in_channels=unet_4x.unet.in_channels,
+                                   out_channels=unet_4x.unet.out_channels)
         return net
 
 
 register_model_factory(
     "waifu2x.winc_unet_1xs",
-    lambda **kwargs: WincUNet1x(base_dim=32, first_layers=1, last_layers=1, lv1_mlp_ratio=1, lv2_mlp_ratio=1, **kwargs))
+    lambda **kwargs: SwinUNet1xV2(base_dim=32, first_layers=1, last_layers=1, lv1_mlp_ratio=1, lv2_mlp_ratio=1, **kwargs))
 
 
 def _bench(name, compile):
