@@ -21,9 +21,17 @@ class MinMaxBuffer():
         self.data[index] = value
         self.count += 1
 
+    def _fill(self, min_value, max_value):
+        self.data[0::2] = min_value
+        self.data[1::2] = max_value
+
     def add(self, min_value, max_value):
-        self._add(min_value)
-        self._add(max_value)
+        if self.count == 0:
+            self._fill(min_value, max_value)
+            self.count = 2
+        else:
+            self._add(min_value)
+            self._add(max_value)
 
     def is_filled(self):
         return self.count >= self.size
@@ -33,21 +41,21 @@ class MinMaxBuffer():
 
 
 class EMAMinMaxScaler():
-    #   SimpleMinMaxScaler: decay=0, window_size=1
-    # IncrementalEMAScaler: decay=0.75, window_size=1
-    #      WindowEMAScaler: decay=0.9, window_size=30
-    def __init__(self, decay=0, window_size=1):
+    #   SimpleMinMaxScaler: decay=0, buffer_size=1
+    # IncrementalEMAScaler: decay=0.75, buffer_size=1
+    #      WindowEMAScaler: decay=0.9, buffer_size=30
+    def __init__(self, decay=0, buffer_size=1):
         self.frame_queue = []
-        assert window_size > 0
-        self.reset(decay=decay, window_size=window_size)
+        assert buffer_size > 0
+        self.reset(decay=decay, buffer_size=buffer_size)
 
-    def reset(self, decay=None, window_size=None, **kwargs):
-        assert len(self.frame_queue) == 0  # need flush
+    def reset(self, decay=None, buffer_size=None, **kwargs):
+        # assert len(self.frame_queue) == 0  # need flush
 
         if decay is not None:
-            self.decay = decay
-        if window_size is not None:
-            self.window_size = window_size
+            self.decay = float(decay)
+        if buffer_size is not None:
+            self.buffer_size = int(buffer_size)
         self.min_value = None
         self.max_value = None
         self.frame_queue = []
@@ -62,12 +70,15 @@ class EMAMinMaxScaler():
 
     def update(self, frame, return_minmax=False):
         if self.minmax_buffer is None:
-            self.minmax_buffer = MinMaxBuffer(self.window_size, dtype=frame.dtype, device=frame.device)
+            self.minmax_buffer = MinMaxBuffer(self.buffer_size, dtype=frame.dtype, device=frame.device)
         self.frame_queue.append(frame)
         self.minmax_buffer.add(frame.amin(), frame.amax())
         if not self.minmax_buffer.is_filled():
             # queued
-            return None
+            if return_minmax:
+                return None, None, None
+            else:
+                return None
 
         min_value, max_value = self.get_minmax()
         if self.min_value is None:
@@ -88,12 +99,18 @@ class EMAMinMaxScaler():
     def flush(self, return_minmax=False):
         if not self.frame_queue:
             return []
+
+        if self.min_value is None:
+            min_value, max_value = self.minmax_buffer.get_minmax()
+        else:
+            min_value, max_value = self.min_value, self.max_value
+
         if return_minmax:
-            return [(minmax_normalize(frame, self.min_value, self.max_value),
-                     self.min_value, self.max_value)
+            return [(minmax_normalize(frame, min_value, max_value),
+                     min_value, max_value)
                     for frame in self.frame_queue]
         else:
-            return [minmax_normalize(frame, self.min_value, self.max_value)
+            return [minmax_normalize(frame, min_value, max_value)
                     for frame in self.frame_queue]
 
 
@@ -105,13 +122,12 @@ def _test():
     x = torch.tensor(zeros + x + list(reversed(x)) + zeros, dtype=torch.float32)
     x = torch.stack([x, x + 10]).permute(1, 0).contiguous()
 
-    scaler = EMAMinMaxScaler(decay=0.9, window_size=22)
+    scaler = EMAMinMaxScaler(decay=0.9, buffer_size=22)
     min_values = []
     max_values = []
     for frame in x:
-        ret = scaler.update(frame, return_minmax=True)
-        if ret is not None:
-            frame, min_value, max_value = ret
+        frame, min_value, max_value = scaler.update(frame, return_minmax=True)
+        if min_value is not None:
             min_values.append(min_value)
             max_values.append(max_value)
     for frame, min_value, max_value in scaler.flush(return_minmax=True):
