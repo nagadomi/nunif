@@ -1,6 +1,6 @@
 from .cunet import CUNet, UpCUNet
 from .swin_unet import SwinUNet, SwinUNet2x, SwinUNet4x, SwinUNetDownscaled
-from .winc_unet import WincUNet4x, WincUNet2x
+from .swin_unet_v2 import SwinUNet4xV2, SwinUNet2xV2, SwinUNet1xV2
 from .wgmlp import WGMLP4x
 from .vgg_7 import VGG7
 from .upconv_7 import UpConv7
@@ -13,7 +13,7 @@ __all__ = [
     "VGG7", "UpConv7",
     "CUNet", "UpCUNet",
     "SwinUNet", "SwinUNet2x", "SwinUNet4x", "SwinUNetDownscaled",
-    "WincUNet4x", "WincUNet2x",
+    "SwinUNet1xV2", "SwinUNet2xV2", "SwinUNet4xV2", "SwinUNetV2Downscaled",
     "WGMLP4x",
     "load_state_from_waifu2x_json"
 ]
