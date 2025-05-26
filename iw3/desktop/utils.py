@@ -189,7 +189,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         depth_model.load(gpu=args.gpu, resolution=args.resolution)
 
     # Use Flicker Reduction to prevent 3D sickness
-    depth_model.enable_ema_minmax(args.ema_decay)
+    depth_model.enable_ema(args.ema_decay, buffer_size=1)
     args.mapper = IW3U.resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                            metric_depth=depth_model.is_metric())
     side_model = IW3U.load_sbs_model(args)

@@ -243,10 +243,16 @@ class MainFrame(wx.Frame):
                                              label=T("Flicker Reduction"),
                                              name="chk_ema_normalize")
         self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
-        self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.99", "0.9", "0.75", "0.5"],
+
+        self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.95", "0.9", "0.75", "0.5", "0.0"],
                                               name="cbo_ema_decay")
         self.cbo_ema_decay.SetSelection(2)
-        self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
+        self.cbo_ema_decay.SetToolTip(T("Decay Rate"))
+
+        self.cbo_ema_buffer = EditableComboBox(self.grp_stereo, choices=["150", "60", "30", "1"],
+                                               name="cbo_ema_buffer")
+        self.cbo_ema_buffer.SetSelection(2)
+        self.cbo_ema_buffer.SetToolTip(T("Lookahead Buffer Size (Only for VDA)"))
 
         self.chk_scene_segment = wx.CheckBox(self.grp_stereo,
                                              label=T("Scene Segmentation"),
@@ -303,36 +309,37 @@ class MainFrame(wx.Frame):
 
         i = 0
         layout.Add(self.lbl_divergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_divergence, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_divergence, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 3), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_convergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_convergence, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_convergence, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_ipd_offset, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.sld_ipd_offset, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.sld_ipd_offset, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_synthetic_view, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_synthetic_view, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_synthetic_view, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_method, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_stereo_width, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stereo_width, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_stereo_width, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_depth_model, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_depth_model, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_resolution, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_foreground_scale, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.chk_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_edge_dilation, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_scene_segment, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_ema_buffer, (i, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_scene_segment, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stereo_format, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_stereo_format, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_anaglyph_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_anaglyph_method, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_anaglyph_method, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.chk_export_depth_only, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_export_depth_fit, (i, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_export_depth_fit, (i, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -669,6 +676,7 @@ class MainFrame(wx.Frame):
             self.cbo_stereo_width,
             self.cbo_edge_dilation,
             self.cbo_ema_decay,
+            self.cbo_ema_buffer,
             *self.grp_video.get_editable_comboboxes(),
             self.cbo_foreground_scale,
             self.cbo_app_preset,
@@ -836,8 +844,10 @@ class MainFrame(wx.Frame):
     def update_ema_normalize(self):
         if self.chk_ema_normalize.IsChecked():
             self.cbo_ema_decay.Enable()
+            self.cbo_ema_buffer.Enable()
         else:
             self.cbo_ema_decay.Disable()
+            self.cbo_ema_buffer.Disable()
 
     def update_scene_segment(self, *args, **kwargs):
         if self.chk_ema_normalize.IsChecked():
@@ -907,6 +917,9 @@ class MainFrame(wx.Frame):
             return None
         if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
             self.show_validation_error_message(T("Flicker Reduction"), 0.1, 0.999)
+            return None
+        if not validate_number(self.cbo_ema_buffer.GetValue(), 1, 1800, is_int=True):
+            self.show_validation_error_message(T("Flicker Reduction Buffer"), 1, 1800)
             return None
         if not validate_number(self.cbo_foreground_scale.GetValue(), -3.0, 3.0, allow_empty=False):
             self.show_validation_error_message(T("Foreground Scale"), -3, 3)
@@ -1030,6 +1043,7 @@ class MainFrame(wx.Frame):
             debug_depth=debug_depth,
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
+            ema_buffer=int(self.cbo_ema_buffer.GetValue()),
             scene_segment=scene_segment,
 
             format=self.cbo_image_format.GetValue(),

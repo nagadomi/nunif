@@ -94,7 +94,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
     def reset(self):
         self.model.reset_state()
-        self.reset_ema_minmax()
+        self.reset_ema()
         self.input_frame_count = 0
         self.output_frame_count = 0
 
@@ -121,7 +121,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
         return out
 
-    def infer_and_normalize(self, x, pts, reset_pts, enable_amp=True, edge_dilation=0, **kwargs):
+    def infer_with_normalize(self, x, pts, reset_pts, enable_amp=True, edge_dilation=0, **kwargs):
         assert x.ndim == 4
 
         B = x.shape[0]
@@ -134,22 +134,29 @@ class VideoDepthAnythingModel(BaseDepthModel):
                 self.output_frame_count += len(ret)
                 out = torch.stack(ret)
                 out = postprocess(out, edge_dilation=edge_dilation, metric_depth=self.model.metric_depth)
-                outputs += [self.minmax_normalize_chw(out[i])[0] for i in range(out.shape[0])]
+                for j in range(out.shape[0]):
+                    normalized_depth = self.minmax_normalize_chw(out[j])
+                    if normalized_depth is not None:
+                        outputs.append(normalized_depth)
             if pts[i] in reset_pts:
-                outputs += self.flush_and_normalize(enable_amp=enable_amp, edge_dilation=edge_dilation)
+                outputs += self.flush_with_normalize(enable_amp=enable_amp, edge_dilation=edge_dilation)
                 self.reset()
         if outputs:
             return outputs
         else:
             return []
 
-    def flush_and_normalize(self, enable_amp=True, edge_dilation=0):
+    def flush_with_normalize(self, enable_amp=True, edge_dilation=0):
         outputs = []
         ret = self._flush(enable_amp=enable_amp)
         if ret:
             out = torch.stack(ret)
             out = postprocess(out, edge_dilation=edge_dilation, metric_depth=self.model.metric_depth)
-            outputs += [self.minmax_normalize_chw(out[i])[0] for i in range(out.shape[0])]
+            for i in range(out.shape[0]):
+                normalized_depth = self.minmax_normalize_chw(out[i])
+                if normalized_depth is not None:
+                    outputs.append(normalized_depth)
+            outputs += self.flush_minmax_normalize()
         return outputs
 
     def _flush(self, enable_amp=True):
@@ -222,17 +229,17 @@ def _test():
     N = 111
 
     model = VideoDepthAnythingModel("VDA_S")
-    model.enable_ema_minmax(0.99)
+    model.enable_ema(0.99)
     model.load(gpu=0)
     model.compile()
     im = Image.open("cc0/320/dog.png").convert("RGB")
     x = TF.to_tensor(im).unsqueeze(0).to(model.device)
-    reset_pts = set([i for i in range(N) if random.uniform(0, 1) < 0.1])
+    reset_pts = set([i + N // 2 for i in range(N // 2) if random.uniform(0, 1) < 0.1])
     outputs = []
     for i in range(N):
-        out = model.infer_and_normalize(x, [i], reset_pts=reset_pts)
+        out = model.infer_with_normalize(x, [i], reset_pts=reset_pts)
         outputs += out
-    outputs += model.flush_and_normalize()
+    outputs += model.flush_with_normalize()
 
     assert len(outputs) == N
     print(len(outputs), outputs[0].shape)

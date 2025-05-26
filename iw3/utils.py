@@ -638,7 +638,7 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
     # disable ema minmax for each process
-    depth_model.disable_ema_minmax()
+    depth_model.disable_ema()
     os.makedirs(output_dir, exist_ok=True)
 
     if args.resume:
@@ -701,7 +701,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
-        depth_model.enable_ema_minmax(args.ema_decay)
+        if is_video_depth_anything:
+            depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
+        else:
+            depth_model.enable_ema(decay=args.ema_decay, buffer_size=1)
 
     if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
         side_model = compile_model(side_model)
@@ -758,12 +761,14 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     @torch.inference_mode()
     def test_callback(frame):
+        decay, buffer_size = depth_model.get_ema_state()
+        depth_model.disable_ema()
         x = VU.to_tensor(frame, device=args.state["device"])
         x = process_image(x, args, depth_model, side_model,
                           return_tensor=True)
         if ema_normalize:
             # reset ema to avoid affecting test frames
-            depth_model.reset_ema_minmax()
+            depth_model.enable_ema(decay=decay, buffer_size=buffer_size)
         return VU.to_frame(x)
 
     if is_video_depth_anything:
@@ -778,14 +783,18 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             if not args.debug_depth:
                 for depths in chunks(depth_list, args.batch_size):
                     depths = torch.stack(depths)
-                    x_orgs = [org_queue.pop(0) for _ in range(len(depths))]
+                    x_orgs = [org_queue.pop(0)[0] for _ in range(len(depths))]
                     x_orgs = torch.stack(x_orgs).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
                     left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
                     results += [postprocess_image(left_eyes[i], right_eyes[i], args)
                                 for i in range(left_eyes.shape[0])]
             else:
-                results += [debug_depth_image(depth, args, return_tensor=True) for depth in depth_list]
-                org_queue.clear()
+                for depth in depth_list:
+                    out = debug_depth_image(depth, args, return_tensor=True)
+                    _, pts = org_queue.pop(0)
+                    if pts in segment_pts:
+                        out[0, 0:8, :] = 1.0
+                    results.append(out)
             return results
 
         @torch.inference_mode()
@@ -801,13 +810,13 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 else:
                     x_orgs = x
                 x_orgs = torch.clamp(x_orgs.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
-                for x_org in x_orgs:
-                    org_queue.append(x_org)
+                for i, x_org in enumerate(x_orgs):
+                    org_queue.append((x_org, pts_queue[i]))
             else:
-                for x_org in batch_queue:
-                    org_queue.append(x_org)
+                for i, x_org in enumerate(batch_queue):
+                    org_queue.append((x_org, pts_queue[i]))
 
-            depth_list = depth_model.infer_and_normalize(
+            depth_list = depth_model.infer_with_normalize(
                 x, pts_queue, segment_pts,
                 enable_amp=not args.disable_amp,
                 edge_dilation=args.edge_dilation)
@@ -824,7 +833,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 results = []
                 if batch_queue:
                     results += _batch_infer()
-                depth_list = depth_model.flush_and_normalize(
+                depth_list = depth_model.flush_with_normalize(
                     enable_amp=not args.disable_amp,
                     edge_dilation=args.edge_dilation)
                 results += _postprocess(depth_list)
@@ -866,7 +875,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             x = process_image(x, args, depth_model, side_model,
                               return_tensor=True)
             if frame.pts in segment_pts:
-                depth_model.reset_ema_minmax()
+                depth_model.reset_ema()
                 if args.debug_depth:
                     # debug red line
                     x[0, 0:8, :] = 1.0
@@ -1012,7 +1021,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
 
 def process_video(input_filename, output_path, args, depth_model, side_model):
     # disable ema minmax for each process
-    depth_model.disable_ema_minmax()
+    depth_model.disable_ema()
 
     if args.keyframe:
         process_video_keyframes(input_filename, output_path, args, depth_model, side_model)
@@ -1312,7 +1321,7 @@ def export_video(input_filename, output_dir, args, title=None):
     depth_model = args.state["depth_model"]
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
-        depth_model.enable_ema_minmax(args.ema_decay)
+        depth_model.enable_ema(decay=args.ema_decay, buffer_size=1)
     try:
         if args.compile:
             depth_model.compile()
@@ -1730,6 +1739,7 @@ def create_parser(required_true=True):
                         help="use min/max moving average to normalize video depth")
     parser.add_argument("--ema-decay", type=float, default=0.75,
                         help="parameter for ema-normalize (0-1). large value makes it smoother")
+    parser.add_argument("--ema-buffer", type=int, default=30, help="TODO")
     parser.add_argument("--scene-segment", action="store_true",
                         help=("segmenting a scene using shot detection. "
                               "ema and other states will be reset at the boundary of the scene."))
@@ -1761,28 +1771,6 @@ def create_parser(required_true=True):
                         help="Deprecated. Use --resolution instead")
 
     return parser
-
-
-class EMAMinMax():
-    def __init__(self, alpha=0.75):
-        self.min = None
-        self.max = None
-        self.alpha = alpha
-
-    def update(self, min_value, max_value):
-        if self.min is None:
-            self.min = float(min_value)
-            self.max = float(max_value)
-        else:
-            self.min = self.alpha * self.min + (1. - self.alpha) * float(min_value)
-            self.max = self.alpha * self.max + (1. - self.alpha) * float(max_value)
-
-        # print(round(float(min_value), 3), round(float(max_value), 3), round(self.min, 3), round(self.max, 3))
-
-        return self.min, self.max
-
-    def clear(self):
-        self.min = self.max = None
 
 
 def calc_auto_warp_steps(method, divergence, synthetic_view):
