@@ -10,6 +10,7 @@ from nunif.device import create_device
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision.transforms import functional as TF
+from . depth_scaler import EMAMinMaxScaler
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -50,8 +51,7 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.model = None
         self.model_backup = None  # for compile
         self.model_type = model_type
-        self.ema_minmax = EMAMinMax()
-        self.ema_minmax_enabled = False
+        self.ema_minmax = EMAMinMaxScaler(decay=0, window_size=1)
 
     @classmethod
     @abstractmethod
@@ -158,27 +158,20 @@ class BaseDepthModel(metaclass=ABCMeta):
         pass
 
     def enable_ema_minmax(self, alpha):
-        self.ema_minmax.set_alpha(alpha)
-        self.ema_minmax_enabled = True
+        self.ema_minmax.reset(decay=alpha)
 
     def disable_ema_minmax(self):
-        self.ema_minmax_enabled = False
-        self.ema_minmax.reset()
+        self.ema_minmax.reset(decay=0, window_size=1)
 
     def reset_ema_minmax(self):
         self.ema_minmax.reset()
 
     def minmax_normalize_chw(self, depth):
-        min_value = depth.amin()
-        max_value = depth.amax()
-        if self.ema_minmax_enabled:
-            min_value, max_value = self.ema_minmax(min_value, max_value)
-
-        # TODO: `1 - normalized_metric_depth` is wrong
-        depth = 1.0 - ((depth - min_value) / (max_value - min_value))
-        depth = depth.clamp(0, 1)
-        depth = depth.nan_to_num()
-        return depth, min_value, max_value
+        ret = self.ema_minmax(depth, return_minmax=True)
+        if ret:
+            return ret
+        else:
+            return None, None, None
 
     def minmax_normalize(self, depth, reset_ema=None):
         if depth.ndim == 3:
