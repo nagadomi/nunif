@@ -15,7 +15,7 @@ import wx.lib.stattext as stattext
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
-    has_rembg_model)
+)
 from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.models.utils import check_compile_support
@@ -349,23 +349,6 @@ class MainFrame(wx.Frame):
         # max-fps, crf, preset, tune
         self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T, has_nvenc=has_nvenc())
 
-        # background removal
-        self.grp_rembg = wx.StaticBox(self.pnl_options, label=T("Background Removal"))
-        self.chk_rembg = wx.CheckBox(self.grp_rembg, label=T("Enable"), name="chk_rembg")
-        self.lbl_bg_model = wx.StaticText(self.grp_rembg, label=T("Seg Model"))
-        self.cbo_bg_model = wx.ComboBox(self.grp_rembg,
-                                        choices=["u2net", "u2net_human_seg",
-                                                 "isnet-general-use", "isnet-anime"],
-                                        style=wx.CB_READONLY, name="cbo_bg_model")
-        self.cbo_bg_model.SetSelection(1)
-
-        layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.chk_rembg, (0, 0), (0, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_bg_model, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_bg_model, (1, 1), flag=wx.EXPAND)
-        sizer_rembg = wx.StaticBoxSizer(self.grp_rembg, wx.VERTICAL)
-        sizer_rembg.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
-
         # input video filter
         # deinterlace, rotate, vf
         self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video Filter"))
@@ -499,8 +482,7 @@ class MainFrame(wx.Frame):
 
         layout = wx.GridBagSizer(wx.HORIZONTAL)
         layout.Add(sizer_stereo, (0, 0), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(self.grp_video.sizer, (0, 1), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_rembg, (1, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(self.grp_video.sizer, (0, 1), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_video_filter, (0, 2), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_processor, (1, 2), flag=wx.ALL | wx.EXPAND, border=4)
         self.pnl_options.SetSizer(layout)
@@ -618,7 +600,6 @@ class MainFrame(wx.Frame):
         self.load_preset()
 
         self.update_start_button_state()
-        self.update_rembg_state()
         self.update_input_option_state()
         self.update_anaglyph_state()
         self.update_export_option_state()
@@ -706,15 +687,6 @@ class MainFrame(wx.Frame):
             else:
                 self.btn_start.Disable()
 
-    def update_rembg_state(self):
-        if is_video(self.pnl_file.input_path):
-            self.chk_rembg.SetValue(False)
-            self.chk_rembg.Disable()
-            self.cbo_bg_model.Disable()
-        else:
-            self.chk_rembg.Enable()
-            self.cbo_bg_model.Enable()
-
     def update_input_option_state(self):
         input_path = self.pnl_file.input_path
         is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
@@ -764,7 +736,6 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
-        self.update_rembg_state()
         self.update_input_option_state()
         self.reset_time_range()
 
@@ -996,9 +967,6 @@ class MainFrame(wx.Frame):
             self.depth_model_device_id = None
             gc_collect()
 
-        remove_bg = self.chk_rembg.GetValue()
-        bg_model_type = self.cbo_bg_model.GetValue()
-
         max_output_width = max_output_height = None
         max_output_size = self.cbo_max_output_size.GetValue()
         if max_output_size:
@@ -1059,9 +1027,6 @@ class MainFrame(wx.Frame):
             preset=self.grp_video.preset,
             tune=self.grp_video.tune,
 
-            remove_bg=remove_bg,
-            bg_model=bg_model_type,
-
             pad=pad,
             rotate_right=rotate_right,
             rotate_left=rotate_left,
@@ -1115,8 +1080,6 @@ class MainFrame(wx.Frame):
         if args.state["depth_model"].has_checkpoint_file(args.depth_model):
             # Realod depth model
             self.SetStatusText(f"Loading {args.depth_model}...")
-            if args.remove_bg and not has_rembg_model(args.bg_model):
-                self.SetStatusText(f"Downloading {args.bg_model}...")
         else:
             # Need to download the model
             self.SetStatusText(f"Downloading {args.depth_model}...")
