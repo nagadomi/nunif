@@ -705,7 +705,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return
 
     make_parent_dir(output_filename)
-    if args.scene_segment:
+    if args.scene_detect:
         with TorchHubDir(HUB_MODEL_DIR):
             segment_pts = SBD.detect_boundary(
                 input_filename,
@@ -716,7 +716,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 stop_event=args.state["stop_event"],
                 suspend_event=args.state["suspend_event"],
                 tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Segmentation",
+                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
             )
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return
@@ -1178,7 +1178,7 @@ def export_video(input_filename, output_dir, args, title=None):
         os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
-    if args.scene_segment:
+    if args.scene_detect:
         with TorchHubDir(HUB_MODEL_DIR):
             segment_pts = SBD.detect_boundary(
                 input_filename,
@@ -1189,7 +1189,7 @@ def export_video(input_filename, output_dir, args, title=None):
                 stop_event=args.state["stop_event"],
                 suspend_event=args.state["suspend_event"],
                 tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Segmentation",
+                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
             )
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return
@@ -1708,8 +1708,8 @@ def create_parser(required_true=True):
     parser.add_argument("--ema-decay", type=float, default=0.75,
                         help="parameter for ema-normalize (0-1). large value makes it smoother")
     parser.add_argument("--ema-buffer", type=int, default=30, help="TODO")
-    parser.add_argument("--scene-segment", action="store_true",
-                        help=("segmenting a scene using shot detection. "
+    parser.add_argument("--scene-detect", action="store_true",
+                        help=("splitting a scene using shot boundary detection. "
                               "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
                         help="loop count of edge dilation.")
@@ -1770,8 +1770,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
     if depth_model.get_name() == "VideoDepthAnything":
         if not args.ema_normalize:
             warnings.warn("--ema-normalize is highly recommended for VideoDepthAnything")
-        if not args.scene_segment:
-            warnings.warn("--scene_segment is highly recommended for VideoDepthAnything")
+        if not args.scene_detect:
+            warnings.warn("--scene-detect is highly recommended for VideoDepthAnything")
 
     if is_video(args.output):
         # replace --video-format when filename is specified

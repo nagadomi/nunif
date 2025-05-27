@@ -254,11 +254,11 @@ class MainFrame(wx.Frame):
         self.cbo_ema_buffer.SetSelection(2)
         self.cbo_ema_buffer.SetToolTip(T("Lookahead Buffer Size (Only for VDA)"))
 
-        self.chk_scene_segment = wx.CheckBox(self.grp_stereo,
-                                             label=T("Scene Segmentation"),
-                                             name="chk_scene_segment")
-        self.chk_scene_segment.SetValue(False)
-        self.chk_scene_segment.SetToolTip(T("Reset model and Flicker Detection states at scene boundaries"))
+        self.chk_scene_detect = wx.CheckBox(self.grp_stereo,
+                                            label=T("Scene Boundary Detection"),
+                                            name="chk_scene_detect")
+        self.chk_scene_detect.SetValue(False)
+        self.chk_scene_detect.SetToolTip(T("Reset model and Flicker Reduction states at scene boundaries"))
 
         self.chk_preserve_screen_border = wx.CheckBox(self.grp_stereo,
                                                       label=T("Preserve Screen Border"),
@@ -332,7 +332,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
         layout.Add(self.cbo_ema_buffer, (i, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_scene_segment, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_scene_detect, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, (i, 1), (1, 2), flag=wx.EXPAND)
@@ -822,10 +822,10 @@ class MainFrame(wx.Frame):
 
     def update_scene_segment(self, *args, **kwargs):
         if self.chk_ema_normalize.IsChecked():
-            self.chk_scene_segment.Enable()
+            self.chk_scene_detect.Enable()
         else:
             if not VideoDepthAnythingModel.supported(self.cbo_depth_model.GetValue()):
-                self.chk_scene_segment.Disable()
+                self.chk_scene_detect.Disable()
 
     def on_changed_chk_ema_normalize(self, event):
         self.update_ema_normalize()
@@ -980,7 +980,7 @@ class MainFrame(wx.Frame):
         edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
-        scene_segment = self.chk_scene_segment.IsEnabled() and self.chk_scene_segment.IsChecked()
+        scene_detect = self.chk_scene_detect.IsEnabled() and self.chk_scene_detect.IsChecked()
 
         parser.set_defaults(
             input=input_path,
@@ -1012,7 +1012,7 @@ class MainFrame(wx.Frame):
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             ema_buffer=int(self.cbo_ema_buffer.GetValue()),
-            scene_segment=scene_segment,
+            scene_detect=scene_detect,
 
             format=self.cbo_image_format.GetValue(),
 

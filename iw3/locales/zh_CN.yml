@@ -53,7 +53,7 @@
 "Stereo Format": "立体格式"
 "Anaglyph Method": "红蓝立体方式"
 "Flicker Reduction": "闪烁抑制"
-"Scene Segmentation": "场景分割"
+"Scene Boundary Detection": "场景边界检测"
 "Reset model and Flicker Detection states at scene boundaries": "在场景边界重置模型和闪烁抑制状态"
 "(experimental)": "(实验性)"
 "Depth Only": "仅深度"
