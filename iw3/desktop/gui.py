@@ -223,7 +223,7 @@ class MainFrame(wx.Frame):
         self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
         self.cbo_stereo_format = wx.ComboBox(
             self.grp_stereo,
-            choices=["Half SBS", "Full SBS"],
+            choices=["Half SBS", "Full SBS", "RGB-D", "Half RGB-D"],
             style=wx.CB_READONLY, name="cbo_stereo_format")
         self.cbo_stereo_format.SetSelection(0)
         self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
@@ -665,7 +665,7 @@ class MainFrame(wx.Frame):
         elif stereo_format == "Full SBS":
             self.lbl_format_device.SetLabel("PICO 4")
         else:
-            self.lbl_format_device.SetText("")
+            self.lbl_format_device.SetLabel("")
 
     def update_edge_dilation(self):
         if self.chk_edge_dilation.IsChecked():
@@ -751,6 +751,8 @@ class MainFrame(wx.Frame):
 
         parser = create_parser()
         full_sbs = self.cbo_stereo_format.GetValue() == "Full SBS"
+        rgbd = self.cbo_stereo_format.GetValue() == "RGB-D"
+        half_rgbd = self.cbo_stereo_format.GetValue() == "Half RGB-D"
         device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
         device_id = [device_id]
 
@@ -806,6 +808,8 @@ class MainFrame(wx.Frame):
             monitor_index=monitor_index,
             window_name=window_name,
             full_sbs=full_sbs,
+            rgbd=rgbd,
+            half_rgbd=half_rgbd,
         )
         args = parser.parse_args()
         set_state_args(

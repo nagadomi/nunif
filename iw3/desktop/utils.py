@@ -160,11 +160,15 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
 def iw3_desktop_main(args, init_wxapp=True):
     init_num_threads(args.gpu[0])
 
-    if not args.full_sbs:
-        args.half_sbs = True
+    if args.full_sbs:
+        frame_width_scale = 2
+    elif args.rgbd:
+        frame_width_scale = 2
+    elif args.half_rgbd:
         frame_width_scale = 1
     else:
-        frame_width_scale = 2
+        args.half_sbs = True
+        frame_width_scale = 1
 
     if args.bind_addr is None:
         args.bind_addr = get_local_address()
