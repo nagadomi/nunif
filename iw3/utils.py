@@ -314,6 +314,8 @@ HALF_SBS_SUFFIX = "_LR"
 FULL_TB_SUFFIX = "_TBF_fulltb"
 HALF_TB_SUFFIX = "_TB"
 CROSS_EYED_SUFFIX = "_RLF_cross"
+RGBD_SUFFIX = "_RGBD"  # TODO
+HALF_RGBD_SUFFIX = "_RGBDF"  # TODO
 
 VR180_SUFFIX = "_180x180_LR"
 ANAGLYPH_SUFFIX = "_redcyan"
@@ -340,6 +342,10 @@ def make_output_filename(input_filename, args, video=False):
         auto_detect_suffix = CROSS_EYED_SUFFIX
     elif args.anaglyph:
         auto_detect_suffix = ANAGLYPH_SUFFIX + f"_{args.anaglyph}"
+    elif args.rgbd:
+        auto_detect_suffix = RGBD_SUFFIX
+    elif args.half_rgbd:
+        auto_detect_suffix = HALF_RGBD_SUFFIX
     elif args.debug_depth:
         auto_detect_suffix = DEBUG_SUFFIX
     else:
@@ -521,7 +527,7 @@ def postprocess_image(left_eye, right_eye, args):
     # CHW
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
     ipd_pad -= ipd_pad % 2
-    if ipd_pad > 0:
+    if ipd_pad > 0 and not (args.rgbd or args.half_rgbd):
         pad_o, pad_i = (ipd_pad * 2, ipd_pad) if args.ipd_offset > 0 else (ipd_pad, ipd_pad * 2)
         left_eye = TF.pad(left_eye, (pad_o, 0, pad_i, 0), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_i, 0, pad_o, 0), padding_mode="constant")
@@ -534,7 +540,7 @@ def postprocess_image(left_eye, right_eye, args):
     if args.vr180:
         left_eye = equirectangular_projection(left_eye, device=left_eye.device)
         right_eye = equirectangular_projection(right_eye, device=right_eye.device)
-    elif args.half_sbs:
+    elif args.half_sbs or args.half_rgbd:
         left_eye = TF.resize(left_eye, (left_eye.shape[1], left_eye.shape[2] // 2),
                              interpolation=InterpolationMode.BICUBIC, antialias=True)
         right_eye = TF.resize(right_eye, (right_eye.shape[1], right_eye.shape[2] // 2),
@@ -557,7 +563,7 @@ def postprocess_image(left_eye, right_eye, args):
         sbs = torch.cat([right_eye, left_eye], dim=2)
         sbs = torch.clamp(sbs, 0., 1.)
     else:
-        # SideBySide
+        # SideBySide or RGBD
         sbs = torch.cat([left_eye, right_eye], dim=2)
         sbs = torch.clamp(sbs, 0., 1.)
 
@@ -605,14 +611,25 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation)
         depth = depth_model.minmax_normalize(depth)
-        if not args.debug_depth:
-            left_eye, right_eye = apply_divergence(depth, im_org, args, side_model)
+        if args.debug_depth:
+            return debug_depth_image(depth, args, return_tensor=return_tensor)
+        elif args.rgbd or args.half_rgbd:
+            left_eye = im_org
+            # TODO: mapper
+            right_eye = TF.resize(depth, (im_org.shape[1], im_org.shape[2]),
+                                  interpolation=InterpolationMode.BICUBIC, antialias=True)
+            right_eye = right_eye.expand_as(left_eye)
             sbs = postprocess_image(left_eye, right_eye, args)
             if not return_tensor:
                 sbs = to_pil_image(sbs)
             return sbs
         else:
-            return debug_depth_image(depth, args, return_tensor=return_tensor)
+            left_eye, right_eye = apply_divergence(depth, im_org, args, side_model)
+            sbs = postprocess_image(left_eye, right_eye, args)
+            if not return_tensor:
+                sbs = to_pil_image(sbs)
+            return sbs
+
 
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
@@ -759,7 +776,25 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         @torch.inference_mode()
         def _postprocess(depth_list):
             results = []
-            if not args.debug_depth:
+            if args.debug_depth:
+                for depth in depth_list:
+                    out = debug_depth_image(depth, args, return_tensor=True)
+                    _, pts = org_queue.pop(0)
+                    if pts in segment_pts:
+                        out[0, 0:8, :] = 1.0
+                    results.append(out)
+            elif args.rgbd or args.half_rgbd:
+                for depths in chunks(depth_list, args.batch_size):
+                    depths = torch.stack(depths)
+                    x_orgs = [org_queue.pop(0)[0] for _ in range(len(depths))]
+                    x_orgs = torch.stack(x_orgs).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
+                    left_eyes = x_orgs
+                    right_eyes = F.interpolate(depths, (x_orgs.shape[2], x_orgs.shape[3]),
+                                               mode="bicubic", antialias=True, align_corners=True)
+                    right_eyes = right_eyes.expand_as(left_eyes)
+                    results += [postprocess_image(left_eyes[i], right_eyes[i], args)
+                                for i in range(left_eyes.shape[0])]
+            else:
                 for depths in chunks(depth_list, args.batch_size):
                     depths = torch.stack(depths)
                     x_orgs = [org_queue.pop(0)[0] for _ in range(len(depths))]
@@ -767,13 +802,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
                     results += [postprocess_image(left_eyes[i], right_eyes[i], args)
                                 for i in range(left_eyes.shape[0])]
-            else:
-                for depth in depth_list:
-                    out = debug_depth_image(depth, args, return_tensor=True)
-                    _, pts = org_queue.pop(0)
-                    if pts in segment_pts:
-                        out[0, 0:8, :] = 1.0
-                    results.append(out)
             return results
 
         @torch.inference_mode()
@@ -899,14 +927,20 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 reset_ema = [t in segment_pts for t in pts]
                 depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
 
-            if args.method in {"forward", "forward_fill"}:
-                # Lock all threads
-                # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
-                with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
-                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
+            if args.rgbd or args.half_rgbd:
+                left_eyes = x_orgs
+                right_eyes = F.interpolate(depths, (x_orgs.shape[2], x_orgs.shape[3]),
+                                           mode="bicubic", antialias=True, align_corners=True)
+                right_eyes = right_eyes.expand_as(left_eyes)
             else:
-                with sbs_lock[device_index]:
-                    left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
+                if args.method in {"forward", "forward_fill"}:
+                    # Lock all threads
+                    # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
+                    with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
+                        left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
+                else:
+                    with sbs_lock[device_index]:
+                        left_eyes, right_eyes = apply_divergence(depths, x_orgs, args, side_model)
 
             return torch.stack([
                 postprocess_image(left_eyes[i], right_eyes[i], args)
@@ -1679,6 +1713,9 @@ def create_parser(required_true=True):
                         choices=["color", "gray", "half-color", "wimmer", "wimmer2", "dubois", "dubois2"],
                         help="output in anaglyph 3d")
     parser.add_argument("--cross-eyed", action="store_true", help="output for cross-eyed viewing")
+    parser.add_argument("--rgbd", action="store_true", help="output in RGBD")
+    parser.add_argument("--half-rgbd", action="store_true", help="output in Half RGBD")
+
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
                         help="pixel format (video only)")
     parser.add_argument("--tta", action="store_true",
@@ -1889,7 +1926,7 @@ def load_sbs_model(args):
 
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
-    assert sum([1 for flag in (args.half_sbs, args.vr180, args.anaglyph, args.tb, args.half_tb, args.cross_eyed) if flag]) < 2
+    assert sum([1 for flag in (args.half_sbs, args.vr180, args.anaglyph, args.tb, args.half_tb, args.cross_eyed, args.half_rgbd, args.rgbd) if flag]) < 2
 
     if len(args.gpu) > 1 and len(args.gpu) > args.max_workers:
         # For GPU round-robin on thread pool
