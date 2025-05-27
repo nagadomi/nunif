@@ -52,7 +52,7 @@
 "Stereo Format": "フォーマット"
 "Anaglyph Method": "アナグリフ方式"
 "Flicker Reduction": "ちらつき軽減"
-"Scene Segmentation": "シーン分割"
+"Scene Boundary Detection": "シーン境界検出"
 "Reset model and Flicker Detection states at scene boundaries": "シーン境界でモデルとちらつき軽減の状態をリセットする"
 "(experimental)": "(実験的)"
 "Depth Only": "深度画像のみ"

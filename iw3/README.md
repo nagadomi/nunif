@@ -255,10 +255,7 @@ This tends to happen with outdoor scene photos.
 There are several ways to fight this problem.
 
 - Try `--foreground-scale 3` option
-- Try`--remove-bg` option
-- Try combined option `--divergence 4 --convergence 0 --foreground-scale 3 --remove-bg`
-
-When `--remove-bg` is specified, the background area is removed using [rembg](https://github.com/danielgatis/rembg) with [U2-net](https://github.com/xuebinqin/U-2-Net)'s human segmentation model, before estimating depthmap.
+- Try combined option `--divergence 4 --convergence 0 --foreground-scale 3`
 
 ### Video encoding error
 

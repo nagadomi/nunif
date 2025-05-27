@@ -15,7 +15,7 @@ import wx.lib.stattext as stattext
 from .utils import (
     create_parser, set_state_args, iw3_main,
     is_text, is_video, is_output_dir, is_yaml, make_output_filename,
-    has_rembg_model)
+)
 from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.models.utils import check_compile_support
@@ -254,11 +254,11 @@ class MainFrame(wx.Frame):
         self.cbo_ema_buffer.SetSelection(2)
         self.cbo_ema_buffer.SetToolTip(T("Lookahead Buffer Size (Only for VDA)"))
 
-        self.chk_scene_segment = wx.CheckBox(self.grp_stereo,
-                                             label=T("Scene Segmentation"),
-                                             name="chk_scene_segment")
-        self.chk_scene_segment.SetValue(False)
-        self.chk_scene_segment.SetToolTip(T("Reset model and Flicker Detection states at scene boundaries"))
+        self.chk_scene_detect = wx.CheckBox(self.grp_stereo,
+                                            label=T("Scene Boundary Detection"),
+                                            name="chk_scene_detect")
+        self.chk_scene_detect.SetValue(False)
+        self.chk_scene_detect.SetToolTip(T("Reset model and Flicker Reduction states at scene boundaries"))
 
         self.chk_preserve_screen_border = wx.CheckBox(self.grp_stereo,
                                                       label=T("Preserve Screen Border"),
@@ -332,7 +332,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
         layout.Add(self.cbo_ema_buffer, (i, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_scene_segment, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_scene_detect, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, (i, 1), (1, 2), flag=wx.EXPAND)
@@ -348,23 +348,6 @@ class MainFrame(wx.Frame):
         # sbs/vr180, padding
         # max-fps, crf, preset, tune
         self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T, has_nvenc=has_nvenc())
-
-        # background removal
-        self.grp_rembg = wx.StaticBox(self.pnl_options, label=T("Background Removal"))
-        self.chk_rembg = wx.CheckBox(self.grp_rembg, label=T("Enable"), name="chk_rembg")
-        self.lbl_bg_model = wx.StaticText(self.grp_rembg, label=T("Seg Model"))
-        self.cbo_bg_model = wx.ComboBox(self.grp_rembg,
-                                        choices=["u2net", "u2net_human_seg",
-                                                 "isnet-general-use", "isnet-anime"],
-                                        style=wx.CB_READONLY, name="cbo_bg_model")
-        self.cbo_bg_model.SetSelection(1)
-
-        layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.Add(self.chk_rembg, (0, 0), (0, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_bg_model, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_bg_model, (1, 1), flag=wx.EXPAND)
-        sizer_rembg = wx.StaticBoxSizer(self.grp_rembg, wx.VERTICAL)
-        sizer_rembg.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # input video filter
         # deinterlace, rotate, vf
@@ -499,8 +482,7 @@ class MainFrame(wx.Frame):
 
         layout = wx.GridBagSizer(wx.HORIZONTAL)
         layout.Add(sizer_stereo, (0, 0), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(self.grp_video.sizer, (0, 1), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_rembg, (1, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(self.grp_video.sizer, (0, 1), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_video_filter, (0, 2), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_processor, (1, 2), flag=wx.ALL | wx.EXPAND, border=4)
         self.pnl_options.SetSizer(layout)
@@ -618,7 +600,6 @@ class MainFrame(wx.Frame):
         self.load_preset()
 
         self.update_start_button_state()
-        self.update_rembg_state()
         self.update_input_option_state()
         self.update_anaglyph_state()
         self.update_export_option_state()
@@ -706,15 +687,6 @@ class MainFrame(wx.Frame):
             else:
                 self.btn_start.Disable()
 
-    def update_rembg_state(self):
-        if is_video(self.pnl_file.input_path):
-            self.chk_rembg.SetValue(False)
-            self.chk_rembg.Disable()
-            self.cbo_bg_model.Disable()
-        else:
-            self.chk_rembg.Enable()
-            self.cbo_bg_model.Enable()
-
     def update_input_option_state(self):
         input_path = self.pnl_file.input_path
         is_export = self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}
@@ -764,7 +736,6 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_txt_input(self, event):
         self.update_start_button_state()
-        self.update_rembg_state()
         self.update_input_option_state()
         self.reset_time_range()
 
@@ -851,10 +822,10 @@ class MainFrame(wx.Frame):
 
     def update_scene_segment(self, *args, **kwargs):
         if self.chk_ema_normalize.IsChecked():
-            self.chk_scene_segment.Enable()
+            self.chk_scene_detect.Enable()
         else:
             if not VideoDepthAnythingModel.supported(self.cbo_depth_model.GetValue()):
-                self.chk_scene_segment.Disable()
+                self.chk_scene_detect.Disable()
 
     def on_changed_chk_ema_normalize(self, event):
         self.update_ema_normalize()
@@ -996,9 +967,6 @@ class MainFrame(wx.Frame):
             self.depth_model_device_id = None
             gc_collect()
 
-        remove_bg = self.chk_rembg.GetValue()
-        bg_model_type = self.cbo_bg_model.GetValue()
-
         max_output_width = max_output_height = None
         max_output_size = self.cbo_max_output_size.GetValue()
         if max_output_size:
@@ -1012,7 +980,7 @@ class MainFrame(wx.Frame):
         edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
-        scene_segment = self.chk_scene_segment.IsEnabled() and self.chk_scene_segment.IsChecked()
+        scene_detect = self.chk_scene_detect.IsEnabled() and self.chk_scene_detect.IsChecked()
 
         parser.set_defaults(
             input=input_path,
@@ -1044,7 +1012,7 @@ class MainFrame(wx.Frame):
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             ema_buffer=int(self.cbo_ema_buffer.GetValue()),
-            scene_segment=scene_segment,
+            scene_detect=scene_detect,
 
             format=self.cbo_image_format.GetValue(),
 
@@ -1058,9 +1026,6 @@ class MainFrame(wx.Frame):
             profile_level=self.grp_video.profile_level,
             preset=self.grp_video.preset,
             tune=self.grp_video.tune,
-
-            remove_bg=remove_bg,
-            bg_model=bg_model_type,
 
             pad=pad,
             rotate_right=rotate_right,
@@ -1115,8 +1080,6 @@ class MainFrame(wx.Frame):
         if args.state["depth_model"].has_checkpoint_file(args.depth_model):
             # Realod depth model
             self.SetStatusText(f"Loading {args.depth_model}...")
-            if args.remove_bg and not has_rembg_model(args.bg_model):
-                self.SetStatusText(f"Downloading {args.bg_model}...")
         else:
             # Need to download the model
             self.SetStatusText(f"Downloading {args.depth_model}...")

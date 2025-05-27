@@ -30,8 +30,6 @@ from . base_depth_model import BaseDepthModel
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
-REMBG_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "rembg")
-os.environ["U2NET_HOME"] = path.abspath(path.normpath(REMBG_MODEL_DIR))
 
 ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v2_20240130.pth"
 ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
@@ -309,10 +307,6 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
     return left_eye, right_eye
 
 
-def has_rembg_model(model_type):
-    return path.exists(path.join(REMBG_MODEL_DIR, f"{model_type}.onnx"))
-
-
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
 FULL_SBS_SUFFIX = "_LRF_Full_SBS"
@@ -448,18 +442,6 @@ def save_image(im, output_filename, format="png", png_info=None):
     im.save(output_filename, format=format, **options)
 
 
-def remove_bg_from_image(im, bg_session):
-    # TODO: mask resolution seems to be low
-    mask = TF.to_tensor(rembg.remove(im, session=bg_session, only_mask=True))
-    im = TF.to_tensor(im)
-    bg_color = torch.tensor((0.4, 0.4, 0.2)).view(3, 1, 1)
-    im = im * mask + bg_color * (1.0 - mask)
-    im = torch.clamp(im, 0, 1)
-    im = to_pil_image(im)
-
-    return im
-
-
 def preprocess_image(im, args):
     if not torch.is_tensor(im):
         im = TF.to_tensor(im)
@@ -482,9 +464,6 @@ def preprocess_image(im, args):
                        interpolation=InterpolationMode.BICUBIC, antialias=True)
         im = torch.clamp(im, 0, 1)
     im_org = im
-    if args.bg_session is not None:
-        im2 = remove_bg_from_image(to_pil_image(im), args.bg_session)
-        im = TF.to_tensor(im2).to(im.device)
     return im_org, im
 
 
@@ -726,7 +705,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return
 
     make_parent_dir(output_filename)
-    if args.scene_segment:
+    if args.scene_detect:
         with TorchHubDir(HUB_MODEL_DIR):
             segment_pts = SBD.detect_boundary(
                 input_filename,
@@ -737,7 +716,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 stop_event=args.state["stop_event"],
                 suspend_event=args.state["suspend_event"],
                 tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Segmentation",
+                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
             )
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return
@@ -801,14 +780,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         def _batch_infer():
             x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
             if (args.max_output_height is not None or
-                    args.bg_session is not None or
                     args.rotate_right or args.rotate_left):
                 xs = [preprocess_image(xx, args) for xx in x]
                 x = torch.stack([x for x_org, x in xs])
-                if args.bg_session is not None:
-                    x_orgs = torch.stack([x_org for x_org, x in xs])
-                else:
-                    x_orgs = x
+                x_orgs = x
                 x_orgs = torch.clamp(x_orgs.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
                 for i, x_org in enumerate(x_orgs):
                     org_queue.append((x_org, pts_queue[i]))
@@ -908,16 +883,12 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         def __batch_callback(x, pts):
             device_index = args.state["devices"].index(x.device)
             if (args.max_output_height is not None or
-                    args.bg_session is not None or
                     args.rotate_right or args.rotate_left):
                 # TODO: batch preprocess_image
                 with preprocess_lock[device_index]:
                     xs = [preprocess_image(xx, args) for xx in x]
                     x = torch.stack([x for x_org, x in xs])
-                    if args.bg_session is not None:
-                        x_orgs = torch.stack([x_org for x_org, x in xs])
-                    else:
-                        x_orgs = x
+                    x_orgs = x
             else:
                 x_orgs = x
 
@@ -1207,7 +1178,7 @@ def export_video(input_filename, output_dir, args, title=None):
         os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
-    if args.scene_segment:
+    if args.scene_detect:
         with TorchHubDir(HUB_MODEL_DIR):
             segment_pts = SBD.detect_boundary(
                 input_filename,
@@ -1218,7 +1189,7 @@ def export_video(input_filename, output_dir, args, title=None):
                 stop_event=args.state["stop_event"],
                 suspend_event=args.state["suspend_event"],
                 tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Segmentation",
+                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
             )
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return
@@ -1270,14 +1241,11 @@ def export_video(input_filename, output_dir, args, title=None):
     @torch.inference_mode()
     def __batch_callback(x, pts):
         device_index = args.state["devices"].index(x.device)
-        if args.max_output_height is not None or args.bg_session is not None:
+        if args.max_output_height is not None:
             with preprocess_lock[device_index]:
                 xs = [preprocess_image(xx, args) for xx in x]
                 x = torch.stack([x for x_org, x in xs])
-                if args.bg_session is not None:
-                    x_orgs = torch.stack([x_org for x_org, x in xs])
-                else:
-                    x_orgs = x
+                x_orgs = x
         else:
             x_orgs = x
 
@@ -1661,7 +1629,7 @@ def create_parser(required_true=True):
                                  ],
                         help="depth model name")
     parser.add_argument("--remove-bg", action="store_true",
-                        help="remove background depth, not recommended for video")
+                        help="remove background depth, not recommended for video (DELETED)")
     parser.add_argument("--bg-model", type=str, default="u2net_human_seg",
                         help="rembg model type")
     parser.add_argument("--rotate-left", action="store_true",
@@ -1740,8 +1708,8 @@ def create_parser(required_true=True):
     parser.add_argument("--ema-decay", type=float, default=0.75,
                         help="parameter for ema-normalize (0-1). large value makes it smoother")
     parser.add_argument("--ema-buffer", type=int, default=30, help="TODO")
-    parser.add_argument("--scene-segment", action="store_true",
-                        help=("segmenting a scene using shot detection. "
+    parser.add_argument("--scene-detect", action="store_true",
+                        help=("splitting a scene using shot boundary detection. "
                               "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
                         help="loop count of edge dilation.")
@@ -1802,8 +1770,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
     if depth_model.get_name() == "VideoDepthAnything":
         if not args.ema_normalize:
             warnings.warn("--ema-normalize is highly recommended for VideoDepthAnything")
-        if not args.scene_segment:
-            warnings.warn("--scene_segment is highly recommended for VideoDepthAnything")
+        if not args.scene_detect:
+            warnings.warn("--scene-detect is highly recommended for VideoDepthAnything")
 
     if is_video(args.output):
         # replace --video-format when filename is specified
@@ -1829,6 +1797,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
     if args.zoed_height is not None:
         args.resolution = args.zoed_height
         warnings.warn("--zoed-height is deprecated. Use --resolution instead")
+    if args.remove_bg:
+        warnings.warn("--remove-bg is deleted")
 
     args.state = {
         "stop_event": stop_event,
@@ -1942,13 +1912,6 @@ def iw3_main(args):
         if args.tune[0] in {"film", "stillimage"}:
             raise ValueError(f"libx265 does not support --tune {args.tune[0]}\n"
                              "available options: grain,animation,psnr,zerolatency,fastdecode")
-
-    if args.remove_bg:
-        global rembg
-        import rembg
-        args.bg_session = rembg.new_session(model_name=args.bg_model)
-    else:
-        args.bg_session = None
 
     assert args.state["depth_model"] is not None
     depth_model = args.state["depth_model"]
