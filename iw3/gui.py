@@ -379,7 +379,7 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.SetSelection(0)
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
-        self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "1", "2"],
+        self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "0.01", "1", "2"],
                                    style=wx.CB_DROPDOWN, name="cbo_pad")
         self.cbo_pad.SetSelection(0)
 
