@@ -435,7 +435,7 @@ These files can be downloaded from Models section of https://huggingface.co/dept
 
 The following options are highly recommended.
 
-- `Scene Segmentation` (`--scene-segment`)
+- `Scene Boundary Detection` (`--scene-detect`)
 - `Flicker Reduction` (`--ema-normalize`)
 
 The following options are ignored.
