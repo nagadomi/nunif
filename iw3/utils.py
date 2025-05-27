@@ -1958,7 +1958,7 @@ def iw3_main(args):
         depth_model.force_update()
 
     if args.edge_dilation is None:
-        if depth_model.get_name() in {"DepthAnything", "DepthPro", "VideoDepthAnything"}:
+        if depth_model.get_name() in {"DepthAnything", "DepthPro", "VideoDepthAnything"} and not (args.rgbd or args.half_rgbd):
             # TODO: This may not be a sensible choice
             args.edge_dilation = 2
         else:
