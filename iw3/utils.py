@@ -615,7 +615,7 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
             return debug_depth_image(depth, args, return_tensor=return_tensor)
         elif args.rgbd or args.half_rgbd:
             left_eye = im_org
-            # TODO: mapper
+            depth = get_mapper(args.mapper)(depth)
             right_eye = TF.resize(depth, (im_org.shape[1], im_org.shape[2]),
                                   interpolation=InterpolationMode.BICUBIC, antialias=True)
             right_eye = right_eye.expand_as(left_eye)
@@ -789,6 +789,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     x_orgs = [org_queue.pop(0)[0] for _ in range(len(depths))]
                     x_orgs = torch.stack(x_orgs).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
                     left_eyes = x_orgs
+                    depths = get_mapper(args.mapper)(depths)
                     right_eyes = F.interpolate(depths, (x_orgs.shape[2], x_orgs.shape[3]),
                                                mode="bicubic", antialias=True, align_corners=True)
                     right_eyes = right_eyes.expand_as(left_eyes)
@@ -929,6 +930,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
             if args.rgbd or args.half_rgbd:
                 left_eyes = x_orgs
+                depths = get_mapper(args.mapper)(depths)
                 right_eyes = F.interpolate(depths, (x_orgs.shape[2], x_orgs.shape[3]),
                                            mode="bicubic", antialias=True, align_corners=True)
                 right_eyes = right_eyes.expand_as(left_eyes)
