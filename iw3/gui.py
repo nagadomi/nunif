@@ -379,9 +379,14 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.SetSelection(0)
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
-        self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "0.01", "1", "2"],
+        self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "16:9"],
+                                        style=wx.CB_DROPDOWN, name="cbo_pad_mode")
+        self.cbo_pad_mode.SetSelection(0)
+        self.cbo_pad_mode.SetToolTip(T("Padding Mode"))
+        self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "1"],
                                    style=wx.CB_DROPDOWN, name="cbo_pad")
         self.cbo_pad.SetSelection(0)
+        self.cbo_pad.SetToolTip(T("Padding Ratio"))
 
         self.lbl_max_output_size = wx.StaticText(self.grp_video_filter, label=T("Output Size Limit"))
         self.cbo_max_output_size = wx.ComboBox(self.grp_video_filter,
@@ -397,21 +402,22 @@ class MainFrame(wx.Frame):
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_start_time, (0, 1), flag=wx.EXPAND)
+        layout.Add(self.txt_start_time, (0, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.chk_end_time, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_end_time, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.txt_end_time, (1, 1), (0, 2), flag=wx.EXPAND)
 
         layout.Add(self.lbl_deinterlace, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_deinterlace, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_deinterlace, (2, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_vf, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_vf, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.txt_vf, (3, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_rotate, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_rotate, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_rotate, (4, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_pad, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pad, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_pad_mode, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_pad, (5, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_max_output_size, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_max_output_size, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_keep_aspect_ratio, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_max_output_size, (6, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_keep_aspect_ratio, (7, 1), (0, 2), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -569,6 +575,8 @@ class MainFrame(wx.Frame):
 
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
 
+        self.cbo_pad_mode.Bind(wx.EVT_TEXT, self.update_pad_mode)
+
         self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
         self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
 
@@ -615,6 +623,7 @@ class MainFrame(wx.Frame):
 
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_pad_mode()
         self.update_compile()
 
     def get_depth_models(self):
@@ -941,6 +950,10 @@ class MainFrame(wx.Frame):
             pad = float(self.cbo_pad.GetValue())
         else:
             pad = None
+        pad_mode = self.cbo_pad_mode.GetValue()
+        if not pad_mode:
+            pad_mode = "tblr"  # default
+
         rot = self.cbo_rotate.GetClientData(self.cbo_rotate.GetSelection())
         rotate_left = rotate_right = None
         if rot == "left":
@@ -1033,6 +1046,7 @@ class MainFrame(wx.Frame):
             preset=self.grp_video.preset,
             tune=self.grp_video.tune,
 
+            pad_mode=pad_mode,
             pad=pad,
             rotate_right=rotate_right,
             rotate_left=rotate_left,
@@ -1335,6 +1349,13 @@ class MainFrame(wx.Frame):
                 device = create_device(device_id)
                 if not check_compile_support(device):
                     self.chk_compile.SetValue(False)
+
+    def update_pad_mode(self, *args, **kwargs):
+        if self.cbo_pad_mode.GetValue() == "16:9":
+            self.cbo_pad.SetSelection(0)
+            self.cbo_pad.Disable()
+        else:
+            self.cbo_pad.Enable()
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))

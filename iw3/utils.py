@@ -523,6 +523,38 @@ def apply_divergence(depth, im_org, args, side_model):
     return left_eye, right_eye
 
 
+def postprocess_padding(left_eye, right_eye, pad, pad_mode):
+    assert pad_mode in {"tblr", "tb", "lr", "16:9"}
+    if pad_mode in {"tblr", "tb", "lr"}:
+        pad_h = pad_w = 0
+        if "tb" in pad_mode:
+            pad_h = round(left_eye.shape[1] * pad) // 2
+        if "lr" in pad_mode:
+            pad_w = round(left_eye.shape[2] * pad) // 2
+        left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+        right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+    elif pad_mode == "16:9":
+        # fit to 16:9
+        # pad size is ignored
+        eps = 1e-3
+        target_ratio = 16 / 9
+        height, width = left_eye.shape[1:]
+        current_ratio = width / height
+        if abs(target_ratio - current_ratio) > eps:
+            pad_h = pad_w = 0
+            if current_ratio > target_ratio:
+                # pad top-bottom
+                target_height = round(width / target_ratio)
+                pad_h = (target_height - height) // 2
+            else:
+                # pad left-right
+                target_width = round(height * target_ratio)
+                pad_w = (target_width - width) // 2
+            left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+            right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+    return left_eye, right_eye
+
+
 def postprocess_image(left_eye, right_eye, args):
     # CHW
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
@@ -532,11 +564,8 @@ def postprocess_image(left_eye, right_eye, args):
         left_eye = TF.pad(left_eye, (pad_o, 0, pad_i, 0), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_i, 0, pad_o, 0), padding_mode="constant")
 
-    if args.pad is not None:
-        pad_h = int(left_eye.shape[1] * args.pad) // 2
-        pad_w = int(left_eye.shape[2] * args.pad) // 2
-        left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
-        right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+    if args.pad is not None or args.pad_mode == "16:9":
+        left_eye, right_eye = postprocess_padding(left_eye, right_eye, pad=args.pad, pad_mode=args.pad_mode)
     if args.vr180:
         left_eye = equirectangular_projection(left_eye, device=left_eye.device)
         right_eye = equirectangular_projection(right_eye, device=right_eye.device)
@@ -629,7 +658,6 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
             if not return_tensor:
                 sbs = to_pil_image(sbs)
             return sbs
-
 
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
@@ -1649,7 +1677,8 @@ def create_parser(required_true=True):
                         help="encoder tunings option for video")
     parser.add_argument("--yes", "-y", action="store_true", default=False,
                         help="overwrite output files")
-    parser.add_argument("--pad", type=float, help="pad_size = int(size * pad)")
+    parser.add_argument("--pad", type=float, help="pad_size = round(width * pad) // 2")
+    parser.add_argument("--pad-mode", type=str, default="tblr", choices=["tblr", "tb", "lr", "16:9"], help="padding mode")
     parser.add_argument("--depth-model", type=str, default="ZoeD_Any_N",
                         choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
                                  "Any_S", "Any_B", "Any_L",
