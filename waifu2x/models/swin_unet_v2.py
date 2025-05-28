@@ -531,7 +531,7 @@ class SwinUNetV2Downscaled(I2IBaseModel):
 
     def __init__(self, unet, downscale_factor, in_channels=3, out_channels=3):
         assert downscale_factor in {2, 4}
-        offset = {1: 9, 2: 18, 4: 36}[downscale_factor]
+        offset = {2: 18, 4: 9}[downscale_factor]
         scale = 4 // downscale_factor
         blend_size = 4 * downscale_factor
         self.antialias = True
