@@ -380,11 +380,11 @@ class MainFrame(wx.Frame):
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
         self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "16:9"],
-                                        style=wx.CB_DROPDOWN, name="cbo_pad_mode")
+                                        style=wx.CB_READONLY, name="cbo_pad_mode")
         self.cbo_pad_mode.SetSelection(0)
         self.cbo_pad_mode.SetToolTip(T("Padding Mode"))
-        self.cbo_pad = wx.ComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "1"],
-                                   style=wx.CB_DROPDOWN, name="cbo_pad")
+        self.cbo_pad = EditableComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "1"],
+                                        name="cbo_pad")
         self.cbo_pad.SetSelection(0)
         self.cbo_pad.SetToolTip(T("Padding Ratio"))
 
@@ -597,7 +597,7 @@ class MainFrame(wx.Frame):
         self.SetDropTarget(FileDropCallback(self.on_drop_files))
         # Disable default drop target
         for control in (self.pnl_file.input_path_widget, self.pnl_file.output_path_widget, self.txt_vf,
-                        self.cbo_pad, self.txt_start_time, self.txt_end_time, *editable_comboboxes):
+                        self.txt_start_time, self.txt_end_time, *editable_comboboxes):
             control.SetDropTarget(FileDropCallback(self.on_drop_files))
 
         # Fix Frame and Panel background colors are different in windows
@@ -671,6 +671,7 @@ class MainFrame(wx.Frame):
             self.cbo_ema_buffer,
             *self.grp_video.get_editable_comboboxes(),
             self.cbo_foreground_scale,
+            self.cbo_pad,
             self.cbo_app_preset,
         ]
         return editable_comboboxes
