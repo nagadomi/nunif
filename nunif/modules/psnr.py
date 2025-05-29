@@ -25,11 +25,14 @@ class LuminancePSNR(nn.Module):
 
     @staticmethod
     def to_luminance(rgb):
-        assert (rgb.shape[1] == 3)
-        w = [0.29891, 0.58661, 0.11448]
-        return (rgb[:, 0:1, :, :] * w[0] +
-                rgb[:, 1:2, :, :] * w[1] +
-                rgb[:, 2:3, :, :] * w[2])
+        if rgb.shape[1] == 3:
+            w = [0.29891, 0.58661, 0.11448]
+            return (rgb[:, 0:1, :, :] * w[0] +
+                    rgb[:, 1:2, :, :] * w[1] +
+                    rgb[:, 2:3, :, :] * w[2])
+        else:
+            assert rgb.shape[1] == 1  # y
+            return rgb
 
     def forward(self, input, target):
         mse = self.mse(torch.clamp(self.to_luminance(input), 0, 1),
