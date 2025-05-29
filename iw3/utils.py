@@ -307,6 +307,23 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
     return left_eye, right_eye
 
 
+def apply_rgbd(im_org, depth, mapper):
+    height, width = im_org.shape[-2:]
+    left_eye = im_org
+    if mapper is not None:
+        depth = get_mapper(mapper)(depth)
+
+    if depth.ndim == 3:
+        right_eye = F.interpolate(depth.unsqueeze(0), (height, width),
+                                  mode="bicubic", antialias=True).squeeze(0)
+    else:
+        right_eye = F.interpolate(depth, (height, width),
+                                  mode="bicubic", antialias=True)
+
+    right_eye = right_eye.expand_as(left_eye)
+    return left_eye, right_eye
+
+
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
 FULL_SBS_SUFFIX = "_LRF_Full_SBS"
@@ -643,11 +660,7 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
         if args.debug_depth:
             return debug_depth_image(depth, args, return_tensor=return_tensor)
         elif args.rgbd or args.half_rgbd:
-            left_eye = im_org
-            depth = get_mapper(args.mapper)(depth)
-            right_eye = TF.resize(depth, (im_org.shape[1], im_org.shape[2]),
-                                  interpolation=InterpolationMode.BICUBIC, antialias=True)
-            right_eye = right_eye.expand_as(left_eye)
+            left_eye, right_eye = apply_rgbd(im_org, depth, mapper=args.mapper)
             sbs = postprocess_image(left_eye, right_eye, args)
             if not return_tensor:
                 sbs = to_pil_image(sbs)
@@ -816,11 +829,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     depths = torch.stack(depths)
                     x_orgs = [org_queue.pop(0)[0] for _ in range(len(depths))]
                     x_orgs = torch.stack(x_orgs).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
-                    left_eyes = x_orgs
-                    depths = get_mapper(args.mapper)(depths)
-                    right_eyes = F.interpolate(depths, (x_orgs.shape[2], x_orgs.shape[3]),
-                                               mode="bicubic", antialias=True, align_corners=True)
-                    right_eyes = right_eyes.expand_as(left_eyes)
+                    left_eyes, right_eyes = apply_rgbd(x_orgs, depths, mapper=args.mapper)
                     results += [postprocess_image(left_eyes[i], right_eyes[i], args)
                                 for i in range(left_eyes.shape[0])]
             else:
@@ -957,11 +966,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
 
             if args.rgbd or args.half_rgbd:
-                left_eyes = x_orgs
-                depths = get_mapper(args.mapper)(depths)
-                right_eyes = F.interpolate(depths, (x_orgs.shape[2], x_orgs.shape[3]),
-                                           mode="bicubic", antialias=True, align_corners=True)
-                right_eyes = right_eyes.expand_as(left_eyes)
+                with sbs_lock[device_index]:
+                    left_eyes, right_eyes = apply_rgbd(x_orgs, depths, mapper=args.mapper)
             else:
                 if args.method in {"forward", "forward_fill"}:
                     # Lock all threads
