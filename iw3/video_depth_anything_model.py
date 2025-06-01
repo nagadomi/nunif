@@ -9,6 +9,7 @@ from nunif.modules.reflection_pad2d import reflection_pad2d_naive
 from .dilation import dilate_edge
 from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 from . depth_anything_model import batch_preprocess as batch_preprocess_da
+from .models import DepthAA
 
 
 NAME_MAP = {
@@ -22,6 +23,11 @@ MODEL_FILES = {
     "VDA_Metric": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
 }
 METRIC_PADDING = 14
+AA_SUPPORT_MODELS = {
+    "VDA_S",
+    "VDA_L",
+    "VDA_Metric",
+}
 
 
 def batch_preprocess(x, lower_bound, metric_depth):
@@ -32,9 +38,16 @@ def batch_preprocess(x, lower_bound, metric_depth):
     return x
 
 
-def postprocess(out, edge_dilation, metric_depth, max_dist=None):
+def _postprocess(out, edge_dilation, metric_depth, max_dist=None, depth_aa=None, enable_amp=True):
     out = out.unsqueeze(1)
     out = torch.nan_to_num(out)
+
+    if depth_aa is not None:
+        ori_dtype = out.dtype
+        with autocast(device=out.device, enabled=enable_amp):
+            out = depth_aa.infer(out)
+        out = out.to(ori_dtype)
+
     if max_dist is not None:
         out = torch.clamp(out, max=max_dist)
 
@@ -54,6 +67,18 @@ def postprocess(out, edge_dilation, metric_depth, max_dist=None):
     return out
 
 
+def postprocess(out, edge_dilation, metric_depth, max_dist=None, depth_aa=None):
+    micro_batch_size = 4
+    return torch.cat([
+        _postprocess(
+            batch,
+            edge_dilation=edge_dilation,
+            metric_depth=metric_depth,
+            max_dist=max_dist,
+            depth_aa=depth_aa,
+        ) for batch in torch.split(out, micro_batch_size, dim=0)], dim=0)
+
+
 class VideoDepthAnythingModel(BaseDepthModel):
     def __init__(self, model_type):
         super().__init__(model_type)
@@ -61,6 +86,9 @@ class VideoDepthAnythingModel(BaseDepthModel):
         self.output_frame_count = 0
 
     def load_model(self, model_type, resolution=None, device=None):
+        # load aa model
+        self.depth_aa = DepthAA().load().eval().to(device)
+        # load depth model
         encoder = NAME_MAP[model_type]
         if model_type == "VDA_Metric":
             # MetricVideoDepthAnything
@@ -121,8 +149,9 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
         return out
 
-    def infer_with_normalize(self, x, pts, reset_pts, enable_amp=True, edge_dilation=0, **kwargs):
+    def infer_with_normalize(self, x, pts, reset_pts, enable_amp=True, edge_dilation=0, depth_aa=None, **kwargs):
         assert x.ndim == 4
+        depth_aa = self.depth_aa if depth_aa else None
 
         B = x.shape[0]
         x = batch_preprocess(x, self.model.prep_lower_bound, metric_depth=self.model.metric_depth)
@@ -133,25 +162,27 @@ class VideoDepthAnythingModel(BaseDepthModel):
             if ret is not None:
                 self.output_frame_count += len(ret)
                 out = torch.stack(ret)
-                out = postprocess(out, edge_dilation=edge_dilation, metric_depth=self.model.metric_depth)
+                out = postprocess(out, edge_dilation=edge_dilation, depth_aa=depth_aa, metric_depth=self.model.metric_depth)
                 for j in range(out.shape[0]):
                     normalized_depth = self.minmax_normalize_chw(out[j])
                     if normalized_depth is not None:
                         outputs.append(normalized_depth)
             if pts[i] in reset_pts:
-                outputs += self.flush_with_normalize(enable_amp=enable_amp, edge_dilation=edge_dilation)
+                outputs += self.flush_with_normalize(enable_amp=enable_amp, edge_dilation=edge_dilation, depth_aa=depth_aa)
                 self.reset()
         if outputs:
             return outputs
         else:
             return []
 
-    def flush_with_normalize(self, enable_amp=True, edge_dilation=0):
+    def flush_with_normalize(self, enable_amp=True, edge_dilation=0, depth_aa=None):
+        if isinstance(depth_aa, bool):
+            depth_aa = self.depth_aa if depth_aa else None
         outputs = []
         ret = self._flush(enable_amp=enable_amp)
         if ret:
             out = torch.stack(ret)
-            out = postprocess(out, edge_dilation=edge_dilation, metric_depth=self.model.metric_depth)
+            out = postprocess(out, edge_dilation=edge_dilation, depth_aa=depth_aa, metric_depth=self.model.metric_depth)
             for i in range(out.shape[0]):
                 normalized_depth = self.minmax_normalize_chw(out[i])
                 if normalized_depth is not None:

@@ -5,7 +5,8 @@ import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
 from .dilation import dilate_edge
-from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
+from .base_depth_model import BaseDepthModel, HUB_MODEL_DIR
+from .models import DepthAA
 
 
 NAME_MAP = {
@@ -56,6 +57,11 @@ MODEL_FILES = {
     "Distill_Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vits.safetensors"),
     "Distill_Any_B": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitb.safetensors"),
     "Distill_Any_L": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitl.safetensors"),
+}
+AA_SUPPORTED_MODELS = {
+    "Any_V2_S",
+    "Any_V2_B",
+    "Any_V2_L",
 }
 
 
@@ -108,7 +114,7 @@ def _forward(model, x, enable_amp):
 
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
-                output_device="cpu", device=None, edge_dilation=2,
+                output_device="cpu", device=None, edge_dilation=2, depth_aa=None,
                 **kwargs):
     device = device if device is not None else model.device
     batch = False
@@ -136,6 +142,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
             x = torch.flip(x_org, dims=[3])
             out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
+    if depth_aa is not None:
+        out = depth_aa.infer(out)
 
     if edge_dilation > 0:
         if not model.metric_depth:
@@ -171,6 +179,12 @@ class DepthAnythingModel(BaseDepthModel):
         super().__init__(model_type)
 
     def load_model(self, model_type, resolution=None, device=None):
+        # load aa model
+        if model_type in AA_SUPPORTED_MODELS:
+            self.depth_aa = DepthAA().load().eval().to(device)
+        else:
+            self.depth_aa = None
+
         encoder = NAME_MAP[model_type]
         if encoder.startswith("hypersim") or encoder.startswith("vkitti"):
             # Depth-Anything V2 metric depth model
@@ -216,7 +230,7 @@ class DepthAnythingModel(BaseDepthModel):
 
         return model
 
-    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):
+    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0, depth_aa=False, **kwargs):
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).to(self.device)
         return batch_infer(
@@ -225,6 +239,7 @@ class DepthAnythingModel(BaseDepthModel):
             output_device=x.device,
             device=x.device,
             edge_dilation=edge_dilation,
+            depth_aa=self.depth_aa if depth_aa else None,
             resize_depth=False)
 
     @classmethod

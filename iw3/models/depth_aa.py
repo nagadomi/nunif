@@ -41,7 +41,7 @@ class DepthAA(I2IBaseModel):
         ])
         self.proj_out = nn.Conv2d(C, 4, kernel_size=1, stride=1, padding=0)
         basic_module_init(self.proj_in)
-        basic_module_init(self.proj_out)
+        nn.init.constant_(self.proj_out.weight, 0)
 
     @torch.inference_mode()
     def infer(self, x):
@@ -85,6 +85,12 @@ class DepthAA(I2IBaseModel):
 
         return x
 
+    def load(self):
+        url = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_depth_aa_20250530.pth"
+        state_dict = torch.hub.load_state_dict_from_url(url, weights_only=True, map_location="cpu")
+        self.load_state_dict(state_dict["state_dict"])
+        return self
+
 
 def _bench(name):
     from nunif.models import create_model
@@ -92,7 +98,7 @@ def _bench(name):
     device = "cuda:0"
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 100
-    B = 4
+    B = 8
     S = (518, 518)
 
     model = create_model(name).to(device).eval()
@@ -118,5 +124,5 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    # 520 FPS on RTX3070ti
+    # 550 FPS on RTX3070ti
     _bench("iw3.depth_aa")

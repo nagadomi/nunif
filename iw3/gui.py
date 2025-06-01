@@ -34,8 +34,14 @@ from nunif.gui import (
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
-from .depth_anything_model import DepthAnythingModel
-from .video_depth_anything_model import VideoDepthAnythingModel
+from .depth_anything_model import (
+    DepthAnythingModel,
+    AA_SUPPORTED_MODELS as DA_AA_SUPPORTED_MODELS
+)
+from .video_depth_anything_model import (
+    VideoDepthAnythingModel,
+    AA_SUPPORT_MODELS as VDA_AA_SUPPORTED_MODELS
+)
 from .depth_pro_model import DepthProModel
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
@@ -230,6 +236,9 @@ class MainFrame(wx.Frame):
                                                      name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(3)
 
+        self.chk_depth_aa = wx.CheckBox(self.grp_stereo, label=T("Depth Anti-aliasing"), name="chk_depth_aa")
+        self.chk_depth_aa.SetValue(True)
+
         self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
                                                   choices=["0", "1", "2", "3", "4"],
@@ -331,6 +340,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.chk_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_edge_dilation, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_depth_aa, (i := i + 1, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
         layout.Add(self.cbo_ema_buffer, (i, 2), flag=wx.EXPAND)
@@ -765,12 +775,20 @@ class MainFrame(wx.Frame):
         else:
             self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
+
         if name in DEPTH_PRO_MODELS:
             self.cbo_resolution.Disable()
             self.chk_fp16.Disable()
         else:
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
+
+        if name in DA_AA_SUPPORTED_MODELS or name in VDA_AA_SUPPORTED_MODELS:
+            self.chk_depth_aa.Enable()
+        else:
+            self.chk_depth_aa.Disable()
+
+        self.GetSizer().Layout()
 
     def update_anaglyph_state(self):
         if self.cbo_stereo_format.GetValue() == "Anaglyph":
@@ -999,6 +1017,7 @@ class MainFrame(wx.Frame):
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
         scene_detect = self.chk_scene_detect.IsEnabled() and self.chk_scene_detect.IsChecked()
+        depth_aa = self.chk_depth_aa.IsShown() and self.chk_depth_aa.IsEnabled() and self.chk_depth_aa.IsChecked()
 
         parser.set_defaults(
             input=input_path,
@@ -1013,6 +1032,7 @@ class MainFrame(wx.Frame):
             preserve_screen_border=preserve_screen_border,
             depth_model=depth_model_type,
             foreground_scale=float(self.cbo_foreground_scale.GetValue()),
+            depth_aa=depth_aa,
             edge_dilation=edge_dilation,
             vr180=vr180,
             half_sbs=half_sbs,

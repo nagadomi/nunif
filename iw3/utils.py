@@ -655,7 +655,8 @@ def process_image(im, args, depth_model, side_model, return_tensor=False):
         im_org, im = preprocess_image(im, args)
         depth = depth_model.infer(im, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
-                                  edge_dilation=args.edge_dilation)
+                                  edge_dilation=args.edge_dilation,
+                                  depth_aa=args.depth_aa)
         depth = depth_model.minmax_normalize(depth)
         if args.debug_depth:
             return debug_depth_image(depth, args, return_tensor=return_tensor)
@@ -860,7 +861,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             depth_list = depth_model.infer_with_normalize(
                 x, pts_queue, segment_pts,
                 enable_amp=not args.disable_amp,
-                edge_dilation=args.edge_dilation)
+                edge_dilation=args.edge_dilation,
+                depth_aa=args.depth_aa)
 
             pts_queue.clear()
             batch_queue.clear()
@@ -876,7 +878,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     results += _batch_infer()
                 depth_list = depth_model.flush_with_normalize(
                     enable_amp=not args.disable_amp,
-                    edge_dilation=args.edge_dilation)
+                    edge_dilation=args.edge_dilation,
+                    depth_aa=args.depth_aa)
                 results += _postprocess(depth_list)
                 return [VU.to_frame(new_frame) for new_frame in results]
 
@@ -961,7 +964,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             with depth_lock[device_index]:
                 depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                            enable_amp=not args.disable_amp,
-                                           edge_dilation=args.edge_dilation)
+                                           edge_dilation=args.edge_dilation,
+                                           depth_aa=args.depth_aa)
                 reset_ema = [t in segment_pts for t in pts]
                 depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
 
@@ -1157,7 +1161,8 @@ def export_images(input_path, output_dir, args, title=None):
             im_org, im = preprocess_image(im, args)
             depth = depth_model.infer(im, tta=args.tta, low_vram=args.low_vram,
                                       enable_amp=not args.disable_amp,
-                                      edge_dilation=edge_dilation)
+                                      edge_dilation=edge_dilation,
+                                      depth_aa=args.depth_aa)
             if args.export_depth_fit:
                 depth = F.interpolate(depth.unsqueeze(0), size=(im_org.shape[1], im_org.shape[2]),
                                       mode="bilinear", antialias=True, align_corners=True).squeeze(0)
@@ -1787,6 +1792,8 @@ def create_parser(required_true=True):
                               "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
                         help="loop count of edge dilation.")
+    parser.add_argument("--depth-aa", action="store_true",
+                        help="apply depth antialiasing. ignored for unsupported models")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
                         help="max inference worker threads for video processing. 0 is disabled")
     parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
