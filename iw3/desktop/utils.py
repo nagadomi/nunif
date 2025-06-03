@@ -271,7 +271,7 @@ def iw3_desktop_main(args, init_wxapp=True):
             with args.state["args_lock"]:
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
-                sbs = IW3U.process_image(frame, args, depth_model, side_model, return_tensor=True)
+                sbs = IW3U.process_image(frame, args, depth_model, side_model)
                 if args.gpu_jpeg:
                     server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
                 else:

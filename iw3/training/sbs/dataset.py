@@ -9,7 +9,7 @@ from nunif.training.sampler import HardExampleSampler, MiningMethod
 from os import path
 import random
 from PIL import Image
-from ... import utils as US
+from ... import backward_warp as make_input_tensor
 
 
 def load_images(org_file, side=None):
@@ -96,7 +96,7 @@ class SBSDataset(Dataset):
          divergence, convergence, mapper) = self.get_metadata(im_depth)
 
         depth = depth_pil_to_tensor(im_depth, depth_min=depth_min, depth_max=depth_max)
-        x = US.make_input_tensor(
+        x = make_input_tensor(
             TF.to_tensor(im_org),
             depth,
             divergence, convergence,
@@ -128,7 +128,7 @@ class SBSDataset(Dataset):
             im_side = TF.hflip(im_side)
 
         depth = depth_pil_to_tensor(im_depth, depth_min=depth_min, depth_max=depth_max)
-        x = US.make_input_tensor(
+        x = make_input_tensor(
             TF.to_tensor(im_org),
             depth,
             divergence, convergence,
