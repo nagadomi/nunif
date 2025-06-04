@@ -149,33 +149,19 @@ class BaseDepthModel(metaclass=ABCMeta):
     def flush_minmax_normalize(self, return_minmax=False):
         return self.scaler.flush(return_minmax=return_minmax)
 
-    def minmax_normalize(self, depth, reset_ema=None, return_list=False):
-        if depth.ndim == 3:
-            reset_ema = [False] if reset_ema is None else reset_ema
-            assert len(reset_ema) == 1
-            normalized_depth = self.minmax_normalize_chw(depth)
-            if reset_ema[0]:
+    def minmax_normalize(self, depth, reset_ema=None):
+        assert depth.ndim == 4
+        reset_ema = [False] * depth.shape[0] if reset_ema is None else reset_ema
+        assert len(reset_ema) == depth.shape[0]
+        normalized_depths = []
+        for i in range(depth.shape[0]):
+            normalized_depth = self.minmax_normalize_chw(depth[i])
+            if normalized_depth is not None:
+                normalized_depths.append(normalized_depth)
+            if reset_ema[i]:
+                normalized_depths += self.flush_minmax_normalize()
                 self.reset_ema()
-            return normalized_depth
-        else:
-            assert depth.ndim == 4
-            reset_ema = [False] * depth.shape[0] if reset_ema is None else reset_ema
-            assert len(reset_ema) == depth.shape[0]
-            normalized_depths = []
-            for i in range(depth.shape[0]):
-                normalized_depth = self.minmax_normalize_chw(depth[i])
-                if normalized_depth is not None:
-                    normalized_depths.append(normalized_depth)
-                if reset_ema[i]:
-                    normalized_depths += self.flush_minmax_normalize()
-                    self.reset_ema()
-            if normalized_depths:
-                if return_list:
-                    return normalized_depths
-                else:
-                    return torch.stack(normalized_depths).contiguous()
-            else:
-                return None
+        return normalized_depths
 
     def save_depth(self, depth, file_path, png_info={}, normalize=True):
         # not batch

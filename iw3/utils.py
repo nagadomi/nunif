@@ -400,13 +400,14 @@ def debug_depth_image(depth, args):
 
 
 def process_image(x, args, depth_model, side_model):
+    assert depth_model.get_ema_buffer_size() == 1
     with torch.inference_mode():
         x = preprocess_image(x, args)
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation,
                                   depth_aa=args.depth_aa)
-        depth = depth_model.minmax_normalize(depth)
+        depth = depth_model.minmax_normalize_chw(depth)
 
         if args.debug_depth:
             return debug_depth_image(depth, args)
@@ -531,7 +532,7 @@ def single_frame_callback(depth_model, side_model, segment_pts, args):
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation,
                                   depth_aa=args.depth_aa)
-        depth = depth_model.minmax_normalize(depth)
+        depth = depth_model.minmax_normalize_chw(depth)
         depths = [depth] if depth is not None else []
         if frame.pts in segment_pts:
             depths += depth_model.flush_minmax_normalize()
@@ -599,11 +600,8 @@ def batch_frame_callback(depth_model, side_model, segment_pts, args):
                                        edge_dilation=args.edge_dilation,
                                        depth_aa=args.depth_aa)
             reset_ema = [t in segment_pts for t in pts]
-            depth_list = depth_model.minmax_normalize(depths, reset_ema=reset_ema, return_list=lookahead_enabled)
-            if depth_list is None:
-                return None
-            else:
-                return _postprocess(depth_list, device_index)
+            depth_list = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
+            return _postprocess(depth_list, device_index)
 
     def _cuda_stream_wrapper(x, pts, flush):
         if flush:
@@ -993,7 +991,7 @@ def export_images(input_path, output_dir, args, title=None):
             if args.export_depth_fit:
                 depth = F.interpolate(depth.unsqueeze(0), size=(im.shape[1], im.shape[2]),
                                       mode="bilinear", antialias=True, align_corners=True).squeeze(0)
-            depth = depth_model.minmax_normalize(depth)
+            depth = depth_model.minmax_normalize_chw(depth)
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
             futures.append(pool.submit(depth_model.save_depth, depth, depth_file, normalize=False))
@@ -1159,14 +1157,12 @@ def export_video(input_filename, output_dir, args, title=None):
             reset_ema = [t in segment_pts for t in pts]
             depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
             if args.export_disparity:
-                depths = torch.stack([get_mapper(args.mapper)(depths[i]) for i in range(depths.shape[0])])
+                depths = [get_mapper(args.mapper)(depth) for depth in depths]
 
-        depths = depths.detach().cpu()
         x = x.detach().cpu()
-
         for xx, depth, seq in zip(x, depths, pts):
             seq = str(seq).zfill(8)
-            depth_model.save_depth(depth[0], path.join(depth_dir, f"{seq}.png"), normalize=False)
+            depth_model.save_depth(depth, path.join(depth_dir, f"{seq}.png"), normalize=False)
             if not args.export_depth_only:
                 rgb = to_pil_image(xx)
                 save_image(rgb, path.join(rgb_dir, f"{seq}.png"))
