@@ -255,13 +255,13 @@ class MainFrame(wx.Frame):
 
         self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.95", "0.9", "0.75", "0.5", "0.0"],
                                               name="cbo_ema_decay")
-        self.cbo_ema_decay.SetSelection(2)
+        self.cbo_ema_decay.SetSelection(1)
         self.cbo_ema_decay.SetToolTip(T("Decay Rate"))
 
         self.cbo_ema_buffer = EditableComboBox(self.grp_stereo, choices=["150", "60", "30", "1"],
                                                name="cbo_ema_buffer")
         self.cbo_ema_buffer.SetSelection(2)
-        self.cbo_ema_buffer.SetToolTip(T("Lookahead Buffer Size (Only for VDA)"))
+        self.cbo_ema_buffer.SetToolTip(T("Lookahead Buffer Size"))
 
         self.chk_scene_detect = wx.CheckBox(self.grp_stereo,
                                             label=T("Scene Boundary Detection"),

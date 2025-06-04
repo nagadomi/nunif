@@ -482,19 +482,61 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
     pbar.close()
 
 
+# video callbacks
+
 def single_frame_callback(depth_model, side_model, segment_pts, args):
+    src_queue = []
+    lookahead_enabled = depth_model.get_ema_buffer_size() > 1
+
+    def _postprocess(depths):
+        frames = []
+        for depth in depths:
+            x, pts = src_queue.pop(0)
+            if lookahead_enabled:
+                x = x.to(args.state["device"]).permute(2, 0, 1) / 255.0
+            if args.debug_depth:
+                out = debug_depth_image(depth, args)
+            elif args.rgbd or args.half_rgbd:
+                left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
+                out = postprocess_image(left_eye, right_eye, args)
+            else:
+                left_eye, right_eye = apply_divergence(depth, x, args, side_model)
+                out = postprocess_image(left_eye, right_eye, args)
+
+            if pts in segment_pts:
+                if args.debug_depth:
+                    # debug red line
+                    out[0, 0:8, :] = 1.0
+            frames.append(VU.to_frame(out))
+        return frames
+
     @torch.inference_mode()
     def _frame_callback(frame):
         if frame is None:
-            return None
-        x = VU.to_tensor(frame, device=args.state["device"])
-        x = process_image(x, args, depth_model, side_model)
+            # flush
+            return _postprocess(depth_model.flush_minmax_normalize())
+
+        frame_hwc8 = torch.from_numpy(frame.to_ndarray(format="rgb24"))
+        if lookahead_enabled:
+            # cpu buffer
+            src_queue.append((frame_hwc8, frame.pts))
+            x = frame_hwc8.to(args.state["device"]).permute(2, 0, 1) / 255.0
+        else:
+            # gpu buffer
+            x = frame_hwc8.to(args.state["device"]).permute(2, 0, 1) / 255.0
+            src_queue.append((x, frame.pts))
+
+        x = preprocess_image(x, args)
+        depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
+                                  enable_amp=not args.disable_amp,
+                                  edge_dilation=args.edge_dilation,
+                                  depth_aa=args.depth_aa)
+        depth = depth_model.minmax_normalize(depth)
+        depths = [depth] if depth is not None else []
         if frame.pts in segment_pts:
-            depth_model.reset_ema()
-            if args.debug_depth:
-                # debug red line
-                x[0, 0:8, :] = 1.0
-        return VU.to_frame(x)
+            depths += depth_model.flush_minmax_normalize()
+
+        return _postprocess(depths)
 
     return _frame_callback
 
@@ -504,12 +546,52 @@ def batch_frame_callback(depth_model, side_model, segment_pts, args):
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     sbs_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     streams = threading.local()
+    src_queue = []
+    lookahead_enabled = depth_model.get_ema_buffer_size() > 1
+
+    def _postprocess(depth_list, device_index):
+        results = []
+        for depths in chunks(depth_list, args.batch_size):
+            if isinstance(depths, list):
+                depths = torch.stack(depths)
+            if lookahead_enabled:
+                x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
+                x_srcs = x_srcs.to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
+            else:
+                x_srcs, _ = src_queue.pop(0)
+
+            if args.rgbd or args.half_rgbd:
+                left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
+            else:
+                if args.method in {"forward", "forward_fill"}:
+                    # Lock all threads
+                    # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
+                    with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
+                        left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+                else:
+                    with sbs_lock[device_index]:
+                        left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+
+            results += [postprocess_image(left_eyes[i], right_eyes[i], args)
+                        for i in range(left_eyes.shape[0])]
+        return results
 
     @torch.inference_mode()
-    def _batch_frame_callback(x, pts):
+    def _batch_frame_callback(x, pts, flush):
+        if flush:
+            depth_list = depth_model.flush_minmax_normalize()
+            return _postprocess(depth_list, device_index=0)
+
         device_index = args.state["devices"].index(x.device)
         with preprocess_lock[device_index]:
             x = preprocess_image(x, args)
+
+        if lookahead_enabled:
+            x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+            for x_, pts_ in zip(x_cpu, pts):
+                src_queue.append((x_, pts_))
+        else:
+            src_queue.append((x, pts))
 
         with depth_lock[device_index]:
             depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
@@ -517,38 +599,27 @@ def batch_frame_callback(depth_model, side_model, segment_pts, args):
                                        edge_dilation=args.edge_dilation,
                                        depth_aa=args.depth_aa)
             reset_ema = [t in segment_pts for t in pts]
-            depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
-
-        if args.rgbd or args.half_rgbd:
-            with sbs_lock[device_index]:
-                left_eyes, right_eyes = apply_rgbd(x, depths, mapper=args.mapper)
-        else:
-            if args.method in {"forward", "forward_fill"}:
-                # Lock all threads
-                # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
-                with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
-                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+            depth_list = depth_model.minmax_normalize(depths, reset_ema=reset_ema, return_list=lookahead_enabled)
+            if depth_list is None:
+                return None
             else:
-                with sbs_lock[device_index]:
-                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+                return _postprocess(depth_list, device_index)
 
-        return torch.stack([
-            postprocess_image(left_eyes[i], right_eyes[i], args)
-            for i in range(left_eyes.shape[0])])
-
-    def _cuda_stream_wrapper(x, pts):
-        if args.cuda_stream and device_is_cuda(x.device):
+    def _cuda_stream_wrapper(x, pts, flush):
+        if flush:
+            return _batch_frame_callback(None, None, True)
+        elif args.cuda_stream and device_is_cuda(x.device):
             device_name = str(x.device)
             if not hasattr(streams, device_name):
                 setattr(streams, device_name, torch.cuda.Stream(device=x.device))
             stream = getattr(streams, device_name)
             stream.wait_stream(torch.cuda.current_stream(x.device))
             with torch.cuda.device(x.device), torch.cuda.stream(stream):
-                ret = _batch_frame_callback(x, pts)
+                ret = _batch_frame_callback(x, pts, False)
                 stream.synchronize()
                 return ret
         else:
-            return _batch_frame_callback(x, pts)
+            return _batch_frame_callback(x, pts, False)
 
     return _cuda_stream_wrapper
 
@@ -568,20 +639,15 @@ def vda_frame_callback(depth_model, side_model, segment_pts, args):
                 if pts in segment_pts:
                     out[0, 0:8, :] = 1.0
                 results.append(out)
-        elif args.rgbd or args.half_rgbd:
-            for depths in chunks(depth_list, args.batch_size):
-                depths = torch.stack(depths)
-                x_srcs = [src_queue.pop(0)[0] for _ in range(len(depths))]
-                x_srcs = torch.stack(x_srcs).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
-                left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
-                results += [postprocess_image(left_eyes[i], right_eyes[i], args)
-                            for i in range(left_eyes.shape[0])]
         else:
             for depths in chunks(depth_list, args.batch_size):
                 depths = torch.stack(depths)
                 x_srcs = [src_queue.pop(0)[0] for _ in range(len(depths))]
                 x_srcs = torch.stack(x_srcs).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
-                left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+                if args.rgbd or args.half_rgbd:
+                    left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
+                else:
+                    left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
                 results += [postprocess_image(left_eyes[i], right_eyes[i], args)
                             for i in range(left_eyes.shape[0])]
         return results
@@ -639,10 +705,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
-        if is_video_depth_anything:
-            depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
-        else:
-            depth_model.enable_ema(decay=args.ema_decay, buffer_size=1)
+        depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
 
     if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
         side_model = compile_model(side_model)
@@ -770,6 +833,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             max_workers=args.max_workers,
             max_batch_queue=args.max_workers + extra_queue,
             require_pts=True,
+            require_flush=True,
         )
         try:
             if args.compile:

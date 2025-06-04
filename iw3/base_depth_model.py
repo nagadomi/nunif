@@ -140,13 +140,16 @@ class BaseDepthModel(metaclass=ABCMeta):
     def reset_ema(self, decay=None, buffer_size=None):
         self.scaler.reset(decay=decay, buffer_size=buffer_size)
 
+    def get_ema_buffer_size(self):
+        return self.scaler.buffer_size
+
     def minmax_normalize_chw(self, depth, return_minmax=False):
         return self.scaler(depth, return_minmax=return_minmax)
 
     def flush_minmax_normalize(self, return_minmax=False):
         return self.scaler.flush(return_minmax=return_minmax)
 
-    def minmax_normalize(self, depth, reset_ema=None):
+    def minmax_normalize(self, depth, reset_ema=None, return_list=False):
         if depth.ndim == 3:
             reset_ema = [False] if reset_ema is None else reset_ema
             assert len(reset_ema) == 1
@@ -167,7 +170,10 @@ class BaseDepthModel(metaclass=ABCMeta):
                     normalized_depths += self.flush_minmax_normalize()
                     self.reset_ema()
             if normalized_depths:
-                return torch.stack(normalized_depths).contiguous()
+                if return_list:
+                    return normalized_depths
+                else:
+                    return torch.stack(normalized_depths).contiguous()
             else:
                 return None
 

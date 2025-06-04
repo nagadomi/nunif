@@ -98,6 +98,7 @@ class EMAMinMaxScaler():
 
     def flush(self, return_minmax=False):
         if not self.frame_queue:
+            self.reset()
             return []
 
         if self.min_value is None:
@@ -106,12 +107,16 @@ class EMAMinMaxScaler():
             min_value, max_value = self.min_value, self.max_value
 
         if return_minmax:
-            return [(minmax_normalize(frame, min_value, max_value),
-                     min_value, max_value)
-                    for frame in self.frame_queue]
+            frames = [(minmax_normalize(frame, min_value, max_value),
+                       min_value, max_value)
+                      for frame in self.frame_queue]
+            self.reset()
+            return frames
         else:
-            return [minmax_normalize(frame, min_value, max_value)
-                    for frame in self.frame_queue]
+            frames = [minmax_normalize(frame, min_value, max_value)
+                      for frame in self.frame_queue]
+            self.reset()
+            return frames
 
 
 def _test():
