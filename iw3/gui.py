@@ -92,7 +92,7 @@ class MainFrame(wx.Frame):
             None,
             name="iw3-gui",
             title=T("iw3-gui") + branch_tag,
-            size=(1100, 720),
+            size=(1000, 840),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
         self.processing = False
@@ -237,14 +237,13 @@ class MainFrame(wx.Frame):
         self.cbo_foreground_scale.SetSelection(3)
 
         self.chk_depth_aa = wx.CheckBox(self.grp_stereo, label=T("Depth Anti-aliasing"), name="chk_depth_aa")
-        self.chk_depth_aa.SetValue(True)
+        self.chk_depth_aa.SetValue(False)
 
         self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
                                                   choices=["0", "1", "2", "3", "4"],
                                                   name="cbo_edge_dilation")
-        self.chk_edge_dilation.SetValue(False)
-
+        self.chk_edge_dilation.SetValue(True)
         self.cbo_edge_dilation.SetSelection(2)
         self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
 
@@ -624,8 +623,7 @@ class MainFrame(wx.Frame):
         self.update_anaglyph_state()
         self.update_export_option_state()
 
-        if not self.chk_edge_dilation.IsChecked():
-            self.update_model_selection()
+        self.update_model_selection()
         self.update_edge_dilation()
         self.update_ema_normalize()
         self.update_scene_segment()
@@ -770,10 +768,8 @@ class MainFrame(wx.Frame):
               DepthProModel.supported(name) or
               VideoDepthAnythingModel.supported(name) or
               name.startswith("ZoeD_Any_")):
-            self.chk_edge_dilation.SetValue(True)
             self.cbo_edge_dilation.Enable()
         else:
-            self.chk_edge_dilation.SetValue(False)
             self.cbo_edge_dilation.Disable()
 
         if name in DEPTH_PRO_MODELS:
