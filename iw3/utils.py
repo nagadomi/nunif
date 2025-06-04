@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 import threading
 import math
 from tqdm import tqdm
+from PIL import Image
 from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
@@ -946,6 +947,7 @@ def export_images(input_path, output_dir, args, title=None):
 
     os.makedirs(depth_dir, exist_ok=True)
     depth_model = args.state["depth_model"]
+    depth_model.disable_ema()
 
     if args.resume:
         # skip existing depth files
@@ -988,13 +990,13 @@ def export_images(input_path, output_dir, args, title=None):
                                       enable_amp=not args.disable_amp,
                                       edge_dilation=edge_dilation,
                                       depth_aa=args.depth_aa)
-            if args.export_depth_fit:
-                depth = F.interpolate(depth.unsqueeze(0), size=(im.shape[1], im.shape[2]),
-                                      mode="bilinear", antialias=True, align_corners=True).squeeze(0)
             depth = depth_model.minmax_normalize_chw(depth)
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
-            futures.append(pool.submit(depth_model.save_depth, depth, depth_file, normalize=False))
+            if args.export_depth_fit:
+                depth = F.interpolate(depth.unsqueeze(0), size=(im.shape[1], im.shape[2]),
+                                      mode="bilinear", antialias=True, align_corners=True).squeeze(0)
+            futures.append(pool.submit(depth_model.save_normalized_depth, depth, depth_file))
             pbar.update(1)
             if suspend_event is not None:
                 suspend_event.wait()
@@ -1025,6 +1027,65 @@ def get_resume_seq(depth_dir, rgb_dir):
     return last_seq
 
 
+def export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
+    src_queue = []
+    futures = []
+    if args.export_disparity:
+        edge_dilation = args.edge_dilation
+    else:
+        edge_dilation = 0
+
+    def _postprocess(depths):
+        for depth in depths:
+            x, pts = src_queue.pop(0)
+
+            if args.export_disparity:
+                depth = get_mapper(args.mapper)(depth)
+            if args.export_depth_fit:
+                depth = TF.resize(depth, size=(x.shape[0], x.shape[1]),
+                                  interpolation=InterpolationMode.BILINEAR, antialias=True)
+            seq = str(pts).zfill(8)
+            futures.append(
+                pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png"))
+            )
+            if not args.export_depth_only:
+                im = Image.fromarray(x)
+                futures.append(
+                    pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png"))
+                )
+
+            if len(futures) >= IMAGE_IO_QUEUE_MAX:
+                for f in futures:
+                    f.result()
+                futures.clear()
+
+        return None
+
+    @torch.inference_mode()
+    def _frame_callback(frame):
+        if frame is None:
+            # flush
+            return _postprocess(depth_model.flush_minmax_normalize())
+
+        frame_np = frame.to_ndarray(format="rgb24")
+        frame_hwc8 = torch.from_numpy(frame_np)
+        src_queue.append((frame_np, frame.pts))
+        x = frame_hwc8.to(args.state["device"]).permute(2, 0, 1) / 255.0
+        x = preprocess_image(x, args)
+        depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
+                                  enable_amp=not args.disable_amp,
+                                  edge_dilation=edge_dilation,
+                                  depth_aa=args.depth_aa)
+        depth = depth_model.minmax_normalize_chw(depth)
+        depths = [depth] if depth is not None else []
+        if frame.pts in segment_pts:
+            depths += depth_model.flush_minmax_normalize()
+
+        return _postprocess(depths)
+
+    return _frame_callback
+
+
 def export_video(input_filename, output_dir, args, title=None):
     if args.state["depth_model"].get_name() == "VideoDepthAnything":
         raise NotImplementedError("VideoDepthAnything is still not supported in export_video()")
@@ -1033,12 +1094,10 @@ def export_video(input_filename, output_dir, args, title=None):
     title = title or path.basename(input_filename)
     if args.export_disparity:
         mapper = "none"
-        edge_dilation = args.edge_dilation
         skip_edge_dilation = True
         skip_mapper = True
     else:
         mapper = args.mapper
-        edge_dilation = 0
         skip_edge_dilation = False
         skip_mapper = False
     config = export_config.ExportConfig(
@@ -1054,8 +1113,12 @@ def export_video(input_filename, output_dir, args, title=None):
                 "export_depth_only": args.export_depth_only,
                 "mapper": args.mapper,
                 "edge_dilation": args.edge_dilation,
+                "depth_aa": args.depth_aa,
                 "max_fps": args.max_fps,
                 "ema_normalize": args.ema_normalize,
+                "ema_decay": args.ema_decay,
+                "ema_buffer": args.ema_buffer,
+                "scene_detect": args.scene_detect,
             }
         }
     )
@@ -1095,6 +1158,7 @@ def export_video(input_filename, output_dir, args, title=None):
                 return
     else:
         segment_pts = set()
+    config.user_data["scene_boundary"] = ",".join([str(pts).zfill(8) for pts in sorted(list(segment_pts))])
 
     if args.resume:
         resume_seq = get_resume_seq(depth_dir, rgb_dir) - args.batch_size
@@ -1133,83 +1197,34 @@ def export_video(input_filename, output_dir, args, title=None):
 
         return video_output_config
 
-    minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
-    preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
-    depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
-    streams = threading.local()
-
-    @torch.inference_mode()
-    def __batch_callback(x, pts):
-        device_index = args.state["devices"].index(x.device)
-        if args.max_output_height is not None:
-            with preprocess_lock[device_index]:
-                xs = [preprocess_image(xx, args) for xx in x]
-                x = torch.stack([x for x in xs])
-
-        with depth_lock[device_index]:
-            depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
-                                       enable_amp=not args.disable_amp,
-                                       edge_dilation=edge_dilation)
-            if args.export_depth_fit:
-                depths = F.interpolate(depths, size=(x.shape[2], x.shape[3]),
-                                       mode="bilinear", antialias=True, align_corners=True)
-
-            reset_ema = [t in segment_pts for t in pts]
-            depths = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
-            if args.export_disparity:
-                depths = [get_mapper(args.mapper)(depth) for depth in depths]
-
-        x = x.detach().cpu()
-        for xx, depth, seq in zip(x, depths, pts):
-            seq = str(seq).zfill(8)
-            depth_model.save_depth(depth, path.join(depth_dir, f"{seq}.png"), normalize=False)
-            if not args.export_depth_only:
-                rgb = to_pil_image(xx)
-                save_image(rgb, path.join(rgb_dir, f"{seq}.png"))
-
-    def _batch_callback(x, pts):
-        if args.cuda_stream and device_is_cuda(x.device):
-            device_name = str(x.device)
-            if not hasattr(streams, device_name):
-                setattr(streams, device_name, torch.cuda.Stream(device=x.device))
-            stream = getattr(streams, device_name)
-            stream.wait_stream(torch.cuda.current_stream(x.device))
-            with torch.cuda.device(x.device), torch.cuda.stream(stream):
-                ret = __batch_callback(x, pts)
-                stream.synchronize()
-                return ret
-        else:
-            return __batch_callback(x, pts)
-
     depth_model = args.state["depth_model"]
+    depth_model.disable_ema()
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
-        depth_model.enable_ema(decay=args.ema_decay, buffer_size=1)
+        depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
     try:
         if args.compile:
             depth_model.compile()
 
-        extra_queue = 1 if len(args.state["devices"]) == 1 else 0
-        frame_callback = VU.FrameCallbackPool(
-            _batch_callback,
-            batch_size=minibatch_size,
-            device=args.state["devices"],
-            max_workers=args.max_workers,
-            max_batch_queue=args.max_workers + extra_queue,
-            require_pts=True,
-            skip_pts=resume_seq
-        )
-        VU.hook_frame(input_filename,
-                      config_callback=config_callback,
-                      frame_callback=frame_callback,
-                      vf=args.vf,
-                      stop_event=args.state["stop_event"],
-                      suspend_event=args.state["suspend_event"],
-                      tqdm_fn=args.state["tqdm_fn"],
-                      title=title,
-                      start_time=args.start_time,
-                      end_time=args.end_time)
-        frame_callback.shutdown()
+        max_workers = max(args.max_workers, 8)
+        with PoolExecutor(max_workers=max_workers) as pool:
+            VU.hook_frame(input_filename,
+                          config_callback=config_callback,
+                          frame_callback=export_single_frame_callback(
+                              depth_model=depth_model,
+                              segment_pts=segment_pts,
+                              rgb_dir=rgb_dir,
+                              depth_dir=depth_dir,
+                              pool=pool,
+                              args=args,
+                          ),
+                          vf=args.vf,
+                          stop_event=args.state["stop_event"],
+                          suspend_event=args.state["suspend_event"],
+                          tqdm_fn=args.state["tqdm_fn"],
+                          title=title,
+                          start_time=args.start_time,
+                          end_time=args.end_time)
         config.save(config_file)
     finally:
         if args.compile:

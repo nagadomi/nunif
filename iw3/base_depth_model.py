@@ -163,19 +163,14 @@ class BaseDepthModel(metaclass=ABCMeta):
                 self.reset_ema()
         return normalized_depths
 
-    def save_depth(self, depth, file_path, png_info={}, normalize=True):
-        # not batch
-        assert depth.ndim in {3, 2}
-        if normalize:
-            depth, min_depth_value, max_depth_value = self.minmax_normalize_chw(depth, return_minmax=True)
-            png_info.update(iw3_min_depth_value=min_depth_value.item(), iw3_max_depth_value=max_depth_value.item())
-        else:
-            min_depth_value = depth.amin()
-            max_depth_value = depth.amax()
-            if not (0 - 1e-6 <= min_depth_value and max_depth_value <= 1.0 + 1e-6):
-                raise ValueError("depth is not normalized and normalize=False."
-                                 f"min={min_depth_value}, max={max_depth_value}")
+    @staticmethod
+    def save_normalized_depth(depth, file_path, png_info={}, min_depth_value=None, max_depth_value=None):
+        if min_depth_value is not None:
+            png_info.update(iw3_min_depth_value=float(min_depth_value))
+        if max_depth_value is not None:
+            png_info.update(iw3_max_depth_value=float(max_depth_value))
 
+        depth = torch.clamp(depth, 0, 1)
         depth_int = (0xffff * depth).to(torch.uint16).squeeze(0).cpu().numpy()
         metadata = PngInfo()
         for k, v in png_info.items():
@@ -186,6 +181,7 @@ class BaseDepthModel(metaclass=ABCMeta):
 
     @staticmethod
     def load_depth(file_path):
+        # TODO: test iw3_max_depth_value
         with Image.open(file_path) as im:
             if "iw3_min_depth_value" in im.text and "iw3_max_depth_value" in im.text:
                 try:
