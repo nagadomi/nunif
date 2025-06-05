@@ -486,7 +486,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
 # video callbacks
 
-def single_frame_callback(depth_model, side_model, segment_pts, args):
+def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     lookahead_enabled = depth_model.get_ema_buffer_size() > 1
 
@@ -543,7 +543,7 @@ def single_frame_callback(depth_model, side_model, segment_pts, args):
     return _frame_callback
 
 
-def batch_frame_callback(depth_model, side_model, segment_pts, args):
+def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     sbs_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
@@ -623,7 +623,7 @@ def batch_frame_callback(depth_model, side_model, segment_pts, args):
     return _cuda_stream_wrapper
 
 
-def vda_frame_callback(depth_model, side_model, segment_pts, args):
+def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     batch_queue = []
     pts_queue = []
@@ -776,7 +776,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 depth_model.compile()
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
-                             frame_callback=vda_frame_callback(
+                             frame_callback=bind_vda_frame_callback(
                                  depth_model=depth_model,
                                  side_model=side_model,
                                  segment_pts=segment_pts,
@@ -800,7 +800,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 depth_model.compile()
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
-                             frame_callback=single_frame_callback(
+                             frame_callback=bind_single_frame_callback(
                                  depth_model=depth_model,
                                  side_model=side_model,
                                  segment_pts=segment_pts,
@@ -821,7 +821,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
         frame_callback = VU.FrameCallbackPool(
-            batch_frame_callback(
+            bind_batch_frame_callback(
                 depth_model=depth_model,
                 side_model=side_model,
                 segment_pts=segment_pts,
@@ -1027,7 +1027,10 @@ def get_resume_seq(depth_dir, rgb_dir):
     return last_seq
 
 
-def export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
+# export callbacks
+
+
+def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
     src_queue = []
     futures = []
     if args.export_disparity:
@@ -1086,10 +1089,89 @@ def export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, p
     return _frame_callback
 
 
-def export_video(input_filename, output_dir, args, title=None):
-    if args.state["depth_model"].get_name() == "VideoDepthAnything":
-        raise NotImplementedError("VideoDepthAnything is still not supported in export_video()")
+def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
+    src_queue = []
+    batch_queue = []
+    pts_queue = []
+    futures = []
 
+    depth_model.reset()
+    if args.export_disparity:
+        edge_dilation = args.edge_dilation
+    else:
+        edge_dilation = 0
+
+    def _postprocess(depth_list):
+        for depth in depth_list:
+            x, pts = src_queue.pop(0)
+
+            if args.export_disparity:
+                depth = get_mapper(args.mapper)(depth)
+            if args.export_depth_fit:
+                depth = TF.resize(depth, size=(x.shape[0], x.shape[1]),
+                                  interpolation=InterpolationMode.BILINEAR, antialias=True)
+            seq = str(pts).zfill(8)
+            futures.append(
+                pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png"))
+            )
+            if not args.export_depth_only:
+                im = Image.fromarray(x.numpy())
+                futures.append(
+                    pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png"))
+                )
+
+            if len(futures) >= IMAGE_IO_QUEUE_MAX:
+                for f in futures:
+                    f.result()
+                futures.clear()
+
+        return None
+
+    def _batch_infer():
+        x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
+        if args.max_output_height is not None or args.rotate_right or args.rotate_left:
+            x = preprocess_image(x, args)
+            x_srcs = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+        else:
+            x_srcs = batch_queue
+
+        for i, x_src in enumerate(x_srcs):
+            src_queue.append((x_src, pts_queue[i]))
+
+        depth_list = depth_model.infer_with_normalize(
+            x, pts_queue, segment_pts,
+            enable_amp=not args.disable_amp,
+            edge_dilation=edge_dilation,
+            depth_aa=args.depth_aa)
+
+        pts_queue.clear()
+        batch_queue.clear()
+
+        return _postprocess(depth_list)
+
+    @torch.inference_mode()
+    def frame_callback(frame):
+        if frame is None:
+            # flush
+            if batch_queue:
+                _batch_infer()
+            depth_list = depth_model.flush_with_normalize(
+                enable_amp=not args.disable_amp,
+                edge_dilation=edge_dilation,
+                depth_aa=args.depth_aa)
+            _postprocess(depth_list)
+        else:
+            frame_hwc8 = torch.from_numpy(frame.to_ndarray(format="rgb24"))
+            batch_queue.append(frame_hwc8)
+            pts_queue.append(frame.pts)
+
+            if len(batch_queue) == args.batch_size:
+                _batch_infer()
+
+    return frame_callback
+
+
+def export_video(input_filename, output_dir, args, title=None):
     basename = path.splitext(path.basename(input_filename))[0]
     title = title or path.basename(input_filename)
     if args.export_disparity:
@@ -1205,19 +1287,31 @@ def export_video(input_filename, output_dir, args, title=None):
     try:
         if args.compile:
             depth_model.compile()
-
         max_workers = max(args.max_workers, 8)
+
         with PoolExecutor(max_workers=max_workers) as pool:
+            if args.state["depth_model"].get_name() == "VideoDepthAnything":
+                frame_callback = bind_export_vda_frame_callback(
+                    depth_model=depth_model,
+                    segment_pts=segment_pts,
+                    rgb_dir=rgb_dir,
+                    depth_dir=depth_dir,
+                    pool=pool,
+                    args=args,
+                )
+            else:
+                frame_callback = bind_export_single_frame_callback(
+                    depth_model=depth_model,
+                    segment_pts=segment_pts,
+                    rgb_dir=rgb_dir,
+                    depth_dir=depth_dir,
+                    pool=pool,
+                    args=args,
+                )
+
             VU.hook_frame(input_filename,
                           config_callback=config_callback,
-                          frame_callback=export_single_frame_callback(
-                              depth_model=depth_model,
-                              segment_pts=segment_pts,
-                              rgb_dir=rgb_dir,
-                              depth_dir=depth_dir,
-                              pool=pool,
-                              args=args,
-                          ),
+                          frame_callback=frame_callback,
                           vf=args.vf,
                           stop_event=args.state["stop_event"],
                           suspend_event=args.state["suspend_event"],
