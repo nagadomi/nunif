@@ -217,9 +217,12 @@ def apply_dark_mode(
 ):
     if isinstance(window, wx.StaticLine):
         window.SetBackgroundColour(fg_color)
-    elif isinstance(window, (wx.Button, wx.StatusBar, GenBitmapButton)):
+    elif isinstance(window, (wx.Button, GenBitmapButton)):
         window.SetForegroundColour(fg_color)
         window.SetBackgroundColour(btn_color)
+    elif isinstance(window, (wx.StatusBar,)):
+        # not working on windows
+        pass
     else:
         window.SetForegroundColour(fg_color)
         window.SetBackgroundColour(bg_color)
