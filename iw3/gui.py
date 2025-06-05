@@ -29,7 +29,7 @@ from nunif.gui import (
     persistent_manager_register_all, persistent_manager_unregister_all,
     persistent_manager_restore_all, persistent_manager_register,
     extension_list_to_wildcard, validate_number,
-    set_icon_ex,
+    set_icon_ex, apply_dark_mode, is_dark_mode,
     VideoEncodingBox, IOPathPanel
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
@@ -107,6 +107,8 @@ class MainFrame(wx.Frame):
         self.depth_model_device_id = None
         self.depth_model_height = None
         self.initialize_component()
+        if is_dark_mode():
+            apply_dark_mode(self)
 
     def initialize_component(self):
         NORMAL_FONT = wx.Font(10, family=wx.FONTFAMILY_MODERN, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_NORMAL)

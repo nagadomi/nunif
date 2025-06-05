@@ -1,4 +1,5 @@
 import wx
+from wx.lib.buttons import GenBitmapButton
 from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
 from wx.lib.masked.ipaddrctrl import IpAddrCtrl as _IpAddrCtrl
 import wx.lib.agw.persist as persist
@@ -112,7 +113,7 @@ def persistent_manager_register_all(manager, window):
 def persistent_manager_restore_all(manager, exclude_names={}):
     # restore all registered controls
     for name, obj in list(manager._persistentObjects.items()):  # NOTE: private attribute
-        if not name in exclude_names:
+        if name not in exclude_names:
             manager.Restore(obj.GetWindow())
 
 
@@ -206,3 +207,38 @@ def start_file(file_path):
 
 def load_icon(name):
     return wx.Bitmap(path.join(path.dirname(__file__), "..", "rc", "icons", name))
+
+
+def apply_dark_mode(
+        window,
+        fg_color=wx.Colour(*(0xdc,) * 3),
+        bg_color=wx.Colour(*(0x1e,) * 3),
+        btn_color=wx.Colour(*(0x33,) * 3)
+):
+    if isinstance(window, wx.StaticLine):
+        window.SetBackgroundColour(fg_color)
+    elif isinstance(window, (wx.Button, wx.StatusBar, GenBitmapButton)):
+        window.SetForegroundColour(fg_color)
+        window.SetBackgroundColour(btn_color)
+    else:
+        window.SetForegroundColour(fg_color)
+        window.SetBackgroundColour(bg_color)
+
+    window.Refresh()
+
+    for child in window.GetChildren():
+        apply_dark_mode(child, fg_color, bg_color, btn_color)
+
+
+def is_dark_mode():
+    if sys.platform != "win32":
+        return False
+    else:
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                return value == 0
+        except: # noqa
+            return False
