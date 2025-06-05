@@ -1,6 +1,5 @@
 import torch
 import torch.nn.functional as F
-from torchvision.transforms import functional as TF
 import math
 from nunif.device import device_is_mps
 
@@ -13,12 +12,8 @@ def equirectangular_projection(c, device="cpu"):
     output_size = max_edge + max_edge // 2
     pad_w = (output_size - w) // 2
     pad_h = (output_size - h) // 2
-    if True:
-        c = TF.pad(c, (pad_w, pad_h, pad_w, pad_h),
-                   padding_mode="constant", fill=0)
-    else:
-        c = F.pad(c, (pad_w, pad_w, pad_h, pad_h),
-                  mode="constant")
+    c = F.pad(c, (pad_w, pad_w, pad_h, pad_h),
+              mode="constant")
 
     h, w = c.shape[1:]
     y, x = torch.meshgrid(torch.linspace(-1, 1, h, device=device),
