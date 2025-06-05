@@ -14,6 +14,7 @@ from .common import (
     extension_list_to_wildcard,
     set_icon_ex, load_icon,
     start_file,
+    is_dark_mode, apply_dark_mode,
 )
 from .video_encoding_box import VideoEncodingBox
 from .io_path_panel import IOPathPanel
@@ -36,4 +37,6 @@ __all__ = [
     "start_file",
     "VideoEncodingBox",
     "IOPathPanel",
+    "apply_dark_mode",
+    "is_dark_mode",
 ]

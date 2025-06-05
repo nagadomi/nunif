@@ -27,6 +27,7 @@ from nunif.gui import (
     persistent_manager_restore_all, persistent_manager_register,
     validate_number,
     set_icon_ex, load_icon, start_file,
+    apply_dark_mode, is_dark_mode,
 )
 from ..depth_anything_model import DepthAnythingModel
 from ..locales import LOCALES, load_language_setting, save_language_setting
@@ -124,6 +125,8 @@ class MainFrame(wx.Frame):
         self.args = None
         self.args_lock = threading.Lock()
         self.initialize_component()
+        if is_dark_mode():
+            apply_dark_mode(self)
 
     def initialize_component(self):
         NORMAL_FONT = wx.Font(10, family=wx.FONTFAMILY_MODERN, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_NORMAL)
@@ -164,13 +167,15 @@ class MainFrame(wx.Frame):
         self.lbl_synthetic_view = wx.StaticText(self.grp_stereo, label=T("Synthetic View"))
         self.cbo_synthetic_view = wx.ComboBox(self.grp_stereo,
                                               choices=["both", "right", "left"],
-                                              style=wx.CB_READONLY, name="cbo_synthetic_view")
+                                              name="cbo_synthetic_view")
+        self.cbo_synthetic_view.SetEditable(False)
         self.cbo_synthetic_view.SetSelection(0)
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
                                       choices=["row_flow_v3", "row_flow_v3_sym", "row_flow_v2", "forward_fill"],
-                                      style=wx.CB_READONLY, name="cbo_method")
+                                      name="cbo_method")
+        self.cbo_method.SetEditable(False)
         self.cbo_method.SetSelection(0)
 
         self.chk_small_model_only = wx.CheckBox(self.grp_stereo, label=T("List small model only"), name="chk_small_model_only")
@@ -180,7 +185,8 @@ class MainFrame(wx.Frame):
         depth_models = self.get_depth_models(small_only=False)
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
                                            choices=depth_models,
-                                           style=wx.CB_READONLY, name="cbo_depth_model")
+                                           name="cbo_depth_model")
+        self.cbo_depth_model.SetEditable(False)
         self.cbo_depth_model.SetSelection(depth_models.index("Any_V2_S"))
 
         self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
@@ -224,7 +230,8 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format = wx.ComboBox(
             self.grp_stereo,
             choices=["Half SBS", "Full SBS", "RGB-D", "Half RGB-D"],
-            style=wx.CB_READONLY, name="cbo_stereo_format")
+            name="cbo_stereo_format")
+        self.cbo_stereo_format.SetEditable(False)
         self.cbo_stereo_format.SetSelection(0)
         self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
 
@@ -332,8 +339,8 @@ class MainFrame(wx.Frame):
             self.grp_processor.SetBackgroundColour("#fcf")
 
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), style=wx.CB_READONLY,
-                                      name="cbo_device")
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), name="cbo_device")
+        self.cbo_device.SetEditable(False)
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
                 device_name = torch.cuda.get_device_properties(i).name
@@ -350,18 +357,20 @@ class MainFrame(wx.Frame):
 
         self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
         screenshot_backends = ["pil", "pil_mp"] + (["wc_mp"] if HAS_WINDOWS_CAPTURE else [])
-        self.cbo_screenshot = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
+        self.cbo_screenshot = wx.ComboBox(self.grp_processor,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
+        self.cbo_screenshot.SetEditable(False)
         if sys.platform == "win32" and HAS_WINDOWS_CAPTURE:
             self.cbo_screenshot.SetSelection(2)
         else:
             self.cbo_screenshot.SetSelection(0)
 
         self.lbl_monitor_index = wx.StaticText(self.grp_processor, label=T("Monitor Index"))
-        self.cbo_monitor_index = wx.ComboBox(self.grp_processor, style=wx.CB_READONLY,
+        self.cbo_monitor_index = wx.ComboBox(self.grp_processor,
                                              choices=[str(i) for i in range(len(get_monitor_size_list()))],
                                              name="cbo_monitor_index")
+        self.cbo_monitor_index.SetEditable(False)
         self.cbo_monitor_index.SetSelection(0)
 
         self.lbl_window_name = wx.StaticText(self.grp_processor, label=T("Window Name"))

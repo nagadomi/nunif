@@ -29,7 +29,7 @@ from nunif.gui import (
     persistent_manager_register_all, persistent_manager_unregister_all,
     persistent_manager_restore_all, persistent_manager_register,
     extension_list_to_wildcard, validate_number,
-    set_icon_ex,
+    set_icon_ex, apply_dark_mode, is_dark_mode,
     VideoEncodingBox, IOPathPanel
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
@@ -107,6 +107,8 @@ class MainFrame(wx.Frame):
         self.depth_model_device_id = None
         self.depth_model_height = None
         self.initialize_component()
+        if is_dark_mode():
+            apply_dark_mode(self)
 
     def initialize_component(self):
         NORMAL_FONT = wx.Font(10, family=wx.FONTFAMILY_MODERN, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_NORMAL)
@@ -151,7 +153,8 @@ class MainFrame(wx.Frame):
         self.sep_image_format = wx.StaticLine(self.pnl_file_option, size=(2, 16), style=wx.LI_VERTICAL)
         self.lbl_image_format = wx.StaticText(self.pnl_file_option, label=" " + T("Image Format"))
         self.cbo_image_format = wx.ComboBox(self.pnl_file_option, choices=["png", "jpeg", "webp"],
-                                            style=wx.CB_READONLY, name="cbo_image_format")
+                                            name="cbo_image_format")
+        self.cbo_image_format.SetEditable(False)
         self.cbo_image_format.SetSelection(0)
         self.cbo_image_format.SetToolTip(T("Output Image Format"))
 
@@ -202,13 +205,15 @@ class MainFrame(wx.Frame):
         self.lbl_synthetic_view = wx.StaticText(self.grp_stereo, label=T("Synthetic View"))
         self.cbo_synthetic_view = wx.ComboBox(self.grp_stereo,
                                               choices=["both", "right", "left"],
-                                              style=wx.CB_READONLY, name="cbo_synthetic_view")
+                                              name="cbo_synthetic_view")
+        self.cbo_synthetic_view.SetEditable(False)
         self.cbo_synthetic_view.SetSelection(0)
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
                                       choices=["row_flow_v3", "row_flow_v3_sym", "row_flow_v2", "forward_fill"],
-                                      style=wx.CB_READONLY, name="cbo_method")
+                                      name="cbo_method")
+        self.cbo_method.SetEditable(False)
         self.cbo_method.SetSelection(0)
 
         self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Processing Width"))
@@ -221,7 +226,8 @@ class MainFrame(wx.Frame):
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
         self.cbo_depth_model = wx.ComboBox(self.grp_stereo,
                                            choices=self.get_depth_models(),
-                                           style=wx.CB_READONLY, name="cbo_depth_model")
+                                           name="cbo_depth_model")
+        self.cbo_depth_model.SetEditable(False)
         self.cbo_depth_model.SetSelection(3)
 
         self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
@@ -287,7 +293,8 @@ class MainFrame(wx.Frame):
                      "Export", "Export disparity",
                      "Debug Depth",
                      ],
-            style=wx.CB_READONLY, name="cbo_stereo_format")
+            name="cbo_stereo_format")
+        self.cbo_stereo_format.SetEditable(False)
         self.cbo_stereo_format.SetSelection(0)
 
         self.lbl_anaglyph_method = wx.StaticText(self.grp_stereo, label=T("Anaglyph Method"))
@@ -297,7 +304,8 @@ class MainFrame(wx.Frame):
                      "color", "gray",
                      "half-color",
                      "wimmer", "wimmer2"],
-            style=wx.CB_READONLY, name="cbo_anaglyph_method")
+            name="cbo_anaglyph_method")
+        self.cbo_anaglyph_method.SetEditable(False)
         self.cbo_anaglyph_method.SetSelection(0)
         self.lbl_anaglyph_method.Hide()
         self.cbo_anaglyph_method.Hide()
@@ -373,7 +381,8 @@ class MainFrame(wx.Frame):
 
         self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
         self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
-                                           style=wx.CB_READONLY, name="cbo_deinterlace")
+                                           name="cbo_deinterlace")
+        self.cbo_deinterlace.SetEditable(False)
         self.cbo_deinterlace.SetSelection(0)
 
         self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
@@ -381,7 +390,8 @@ class MainFrame(wx.Frame):
 
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
         self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
-                                      style=wx.CB_READONLY, name="cbo_rotate")
+                                      name="cbo_rotate")
+        self.cbo_rotate.SetEditable(False)
         self.cbo_rotate.Append("", "")
         self.cbo_rotate.Append(T("Left 90 (counterclockwise)"), "left")
         self.cbo_rotate.Append(T("Right 90 (clockwise)"), "right")
@@ -389,7 +399,8 @@ class MainFrame(wx.Frame):
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
         self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "16:9"],
-                                        style=wx.CB_READONLY, name="cbo_pad_mode")
+                                        name="cbo_pad_mode")
+        self.cbo_pad_mode.SetEditable(False)
         self.cbo_pad_mode.SetSelection(0)
         self.cbo_pad_mode.SetToolTip(T("Padding Mode"))
         self.cbo_pad = EditableComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "1"],
@@ -402,7 +413,8 @@ class MainFrame(wx.Frame):
                                                choices=["",
                                                         "1920x1080", "1280x720", "640x360",
                                                         "1080x1920", "720x1280", "360x640"],
-                                               style=wx.CB_READONLY, name="cbo_max_output_size")
+                                               name="cbo_max_output_size")
+        self.cbo_max_output_size.SetEditable(False)
         self.cbo_max_output_size.SetSelection(0)
 
         self.chk_keep_aspect_ratio = wx.CheckBox(self.grp_video_filter, label=T("Keep Aspect Ratio"),
@@ -435,8 +447,8 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA, Low VRAM, fp16
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), style=wx.CB_READONLY,
-                                      name="cbo_device")
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), name="cbo_device")
+        self.cbo_device.SetEditable(False)
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
                 device_name = torch.cuda.get_device_properties(i).name
@@ -456,14 +468,16 @@ class MainFrame(wx.Frame):
         self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Depth") + " " + T("Batch Size"))
         self.cbo_batch_size = wx.ComboBox(self.grp_processor,
                                           choices=[str(n) for n in (64, 32, 16, 8, 4, 2, 1)],
-                                          style=wx.CB_READONLY, name="cbo_zoed_batch_size")
+                                          name="cbo_zoed_batch_size")
+        self.cbo_batch_size.SetEditable(False)
         self.cbo_batch_size.SetToolTip(T("Video Only"))
         self.cbo_batch_size.SetSelection(5)
 
         self.lbl_max_workers = wx.StaticText(self.grp_processor, label=T("Worker Threads"))
         self.cbo_max_workers = wx.ComboBox(self.grp_processor,
                                            choices=[str(n) for n in (16, 8, 4, 3, 2, 0)],
-                                           style=wx.CB_READONLY, name="cbo_max_workers")
+                                           name="cbo_max_workers")
+        self.cbo_max_workers.SetEditable(False)
         self.cbo_max_workers.SetToolTip(T("Video Only"))
         self.cbo_max_workers.SetSelection(5)
 

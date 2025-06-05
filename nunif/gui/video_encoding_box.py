@@ -40,7 +40,8 @@ class VideoEncodingBox():
 
         self.lbl_video_format = wx.StaticText(self.grp_video, label=T("Video Format"))
         self.cbo_video_format = wx.ComboBox(self.grp_video, choices=["mp4", "mkv", "avi"],
-                                            style=wx.CB_READONLY, name=f"{prefix}cbo_video_format")
+                                            name=f"{prefix}cbo_video_format")
+        self.cbo_video_format.SetEditable(False)
         self.cbo_video_format.SetSelection(0)
 
         self.lbl_video_codec = wx.StaticText(self.grp_video, label=T("Video Codec"))
@@ -57,14 +58,16 @@ class VideoEncodingBox():
 
         self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
         self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=PIX_FMT_ALL,
-                                       style=wx.CB_READONLY, name=f"{prefix}cbo_pix_fmt")
+                                       name=f"{prefix}cbo_pix_fmt")
+        self.cbo_pix_fmt.SetEditable(False)
         self.cbo_pix_fmt.SetSelection(0)
 
         self.lbl_colorspace = wx.StaticText(self.grp_video, label=T("Colorspace"))
         self.cbo_colorspace = wx.ComboBox(
             self.grp_video,
             choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
-            style=wx.CB_READONLY, name=f"{prefix}cbo_colorspace")
+            name=f"{prefix}cbo_colorspace")
+        self.cbo_colorspace.SetEditable(False)
         self.cbo_colorspace.SetSelection(1)
 
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
@@ -84,13 +87,14 @@ class VideoEncodingBox():
         self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
         self.cbo_preset = wx.ComboBox(
             self.grp_video, choices=PRESET_ALL,
-            style=wx.CB_READONLY, name=f"{prefix}cbo_preset")
+            name=f"{prefix}cbo_preset")
+        self.cbo_preset.SetEditable(False)
         self.cbo_preset.SetSelection(0)
 
         self.lbl_tune = wx.StaticText(self.grp_video, label=T("Tune"))
         self.cbo_tune = wx.ComboBox(
-            self.grp_video, choices=TUNE_ALL,
-            style=wx.CB_READONLY, name=f"{prefix}cbo_tune")
+            self.grp_video, choices=TUNE_ALL, name=f"{prefix}cbo_tune")
+        self.cbo_tune.SetEditable(False)
         self.cbo_tune.SetSelection(0)
         self.chk_tune_fastdecode = wx.CheckBox(self.grp_video, label=T("fastdecode"),
                                                name=f"{prefix}chk_tune_fastdecode")
