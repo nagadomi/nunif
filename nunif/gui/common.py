@@ -211,9 +211,9 @@ def load_icon(name):
 
 def apply_dark_mode(
         window,
-        fg_color=wx.Colour(*(0xdc,) * 3),
-        bg_color=wx.Colour(*(0x1e,) * 3),
-        btn_color=wx.Colour(*(0x33,) * 3)
+        fg_color=wx.Colour(*(0xf0,) * 3),
+        bg_color=wx.Colour(*(0x39,) * 3),
+        btn_color=wx.Colour(*(0x4c,) * 3)
 ):
     if isinstance(window, wx.StaticLine):
         window.SetBackgroundColour(fg_color)
