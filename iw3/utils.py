@@ -903,11 +903,11 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
 def export_images(input_path, output_dir, args, title=None):
     if path.isdir(input_path):
         files = ImageLoader.listdir(input_path)
-        rgb_dir = path.normpath(path.abspath(input_path))
+        src_rgb_dir = path.normpath(path.abspath(input_path))
     else:
         assert is_image(input_path)
         files = [input_path]
-        rgb_dir = path.normpath(path.abspath(path.dirname(input_path)))
+        src_rgb_dir = path.normpath(path.abspath(path.dirname(input_path)))
 
     if not files:
         # no image files
@@ -940,12 +940,17 @@ def export_images(input_path, output_dir, args, title=None):
             }
         }
     )
-    config.rgb_dir = rgb_dir
     config.audio_file = None
+    if args.export_depth_only:
+        config.rgb_dir = src_rgb_dir
+        rgb_dir = src_rgb_dir
+    else:
+        rgb_dir = path.join(output_dir, config.rgb_dir)
     depth_dir = path.join(output_dir, config.depth_dir)
     config_file = path.join(output_dir, export_config.FILENAME)
 
     os.makedirs(depth_dir, exist_ok=True)
+    os.makedirs(rgb_dir, exist_ok=True)
     depth_model = args.state["depth_model"]
     depth_model.disable_ema()
 
@@ -980,6 +985,7 @@ def export_images(input_path, output_dir, args, title=None):
     with PoolExecutor(max_workers=max_workers) as pool, torch.inference_mode():
         for im, meta in loader:
             basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
+            rgb_file = path.join(rgb_dir, basename)
             depth_file = path.join(depth_dir, basename)
             if im is None:
                 pbar.update(1)
@@ -997,6 +1003,10 @@ def export_images(input_path, output_dir, args, title=None):
                 depth = F.interpolate(depth.unsqueeze(0), size=(im.shape[1], im.shape[2]),
                                       mode="bilinear", antialias=True, align_corners=True).squeeze(0)
             futures.append(pool.submit(depth_model.save_normalized_depth, depth, depth_file))
+
+            if not args.export_depth_only:
+                futures.append(pool.submit(save_image, to_pil_image(im), rgb_file))
+
             pbar.update(1)
             if suspend_event is not None:
                 suspend_event.wait()
