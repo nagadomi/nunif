@@ -60,7 +60,7 @@ class SBSTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=True)
             return loader
         else:
             dataset = SBSDataset(path.join(self.args.data_dir, "eval"), model_offset,
@@ -71,7 +71,7 @@ class SBSTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=True)
             return loader
 
     def create_best_model_filename(self):
@@ -100,7 +100,7 @@ def train(args):
             args.loss = "l1"
         elif args.arch == "sbs.row_flow_v2":
             args.loss = "aux_l1"
-        elif args.arch == "sbs.row_flow_v3":
+        else:
             args.loss = "l1_delta"
 
     trainer = SBSTrainer(args)

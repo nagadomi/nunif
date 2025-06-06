@@ -170,6 +170,13 @@ def gen_edge_dilation(model_type):
         return random.choice([2] * 7 + [0, 1, 3, 4])
 
 
+def gen_depth_aa(model_type):
+    if model_type.startswith("Any_V2"):
+        return random.choice([True, False])
+    else:
+        return False
+
+
 def main(args):
     import numba
     from ...depth_model_factory import create_depth_model
@@ -182,6 +189,7 @@ def main(args):
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     model = create_depth_model(args.model_type)
     model.load(gpu=args.gpu, resolution=args.resolution)
+    model.disable_ema()
 
     for dataset_type in ("eval", "train"):
         input_dir = path.join(args.dataset_dir, dataset_type)
@@ -214,15 +222,16 @@ def main(args):
                     divergence = gen_divergence(im_s.width)
                     convergence = gen_convergence()
                     edge_dilation = gen_edge_dilation(args.model_type)
-                    flip_aug = random.choice([True, False, False, False])
+                    depth_aa = gen_depth_aa(args.model_type)
+                    flip_aug = False #random.choice([True, False, False, False])
                     enable_amp = True
 
                     with torch.inference_mode():
                         depth = model.infer(im_s, tta=flip_aug, enable_amp=enable_amp,
-                                            edge_dilation=edge_dilation)
+                                            edge_dilation=edge_dilation, depth_aa=depth_aa)
                         depth = F.interpolate(depth.unsqueeze(0), (im_s.height, im_s.width),
-                                              mode="bilinear", align_corners=False, antialias=True).squeeze(0)
-                        depth = model.minmax_normalize(depth)
+                                              mode="bilinear", align_corners=True, antialias=True).squeeze(0)
+                        depth = model.minmax_normalize_chw(depth)
                         np_depth16 = (depth * 0xffff).to(torch.uint16).squeeze(0).cpu().numpy()
 
                     if args.method == "polylines":

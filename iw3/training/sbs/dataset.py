@@ -9,7 +9,7 @@ from nunif.training.sampler import HardExampleSampler, MiningMethod
 from os import path
 import random
 from PIL import Image
-from ... import backward_warp as make_input_tensor
+from ...backward_warp import make_input_tensor
 
 
 def load_images(org_file, side=None):
