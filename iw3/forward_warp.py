@@ -122,7 +122,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
         depth = F.interpolate(depth, size=c.shape[-2:],
-                              mode="bilinear", align_corners=True, antialias=False)
+                              mode="bilinear", align_corners=True, antialias=True)
     if synthetic_view != "both":
         divergence *= 2
 
