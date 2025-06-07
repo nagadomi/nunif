@@ -86,7 +86,7 @@ def save_images(im_org, im_sbs, im_depth, divergence, convergence, mapper, filen
 
 def random_resize(im, min_size, max_size):
     w, h = im.size
-    common_size = [384, 392, 512, 518] * 3 + [768, 770, 1036, 1024]
+    common_size = [384, 392, 512, 518]
     if random.uniform(0, 1) < 0.75:
         # random select common format
         if w < h:
@@ -266,7 +266,7 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--max-size", type=int, default=1280, help="max image size")
+    parser.add_argument("--max-size", type=int, default=920, help="max image size")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
