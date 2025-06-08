@@ -600,9 +600,9 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                                        enable_amp=not args.disable_amp,
                                        edge_dilation=args.edge_dilation,
                                        depth_aa=args.depth_aa)
-            reset_ema = [t in segment_pts for t in pts]
-            depth_list = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
-            return _postprocess(depth_list, device_index)
+        reset_ema = [t in segment_pts for t in pts]
+        depth_list = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
+        return _postprocess(depth_list, device_index)
 
     def _cuda_stream_wrapper(x, pts, flush):
         if flush:
