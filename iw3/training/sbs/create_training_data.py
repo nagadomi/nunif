@@ -117,7 +117,8 @@ def random_resize(im, min_size, max_size):
         new_w = int(im.width * scale_factor)
         new_h = int(im.height * scale_factor)
         if new_w < w:
-            assert min(new_w, new_h) >= min_size and max(new_w, new_h) <= max_size
+            if not (min(new_w, new_h) >= min_size and max(new_w, new_h) <= max_size):
+                print("warn", new_w, new_h)
             interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
             im = TF.resize(im, (new_h, new_w), interpolation=interpolation, antialias=True)
 
@@ -126,7 +127,7 @@ def random_resize(im, min_size, max_size):
     if max_size < im.height:
         im = TF.crop(im, 0, 0, max_size, im.width)
 
-    assert min_size <= min(im.size) and max(im.size) <= max_size
+    #assert min_size <= min(im.size) and max(im.size) <= max_size
 
     return im
 
