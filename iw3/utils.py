@@ -38,6 +38,7 @@ HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v2_20240130.pth"
 ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
 ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240424.pth"
+MLBW_L2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_mlbw_l2_20250611.pth"
 
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
 ROW_FLOW_V3_MAX_DIVERGENCE = 5.0
@@ -1585,6 +1586,7 @@ def create_parser(required_true=True):
     parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "backward", "forward", "forward_fill",
+                                 "mlbw_l2", "mlbw_l4",
                                  "row_flow", "row_flow_sym",
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
@@ -1890,7 +1892,13 @@ def is_yaml(filename):
 
 def load_sbs_model(args):
     with TorchHubDir(HUB_MODEL_DIR):
-        if args.method in {"row_flow_v3", "row_flow"}:
+        if args.method  == "mlbw_l2":
+            side_model = load_model(MLBW_L2_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = False
+            side_model.delta_output = True
+        elif args.method  == "mlbw_l4":
+            raise NotImplementedError()
+        elif args.method in {"row_flow_v3", "row_flow"}:
             side_model = load_model(ROW_FLOW_V3_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
             side_model.symmetric = False
             side_model.delta_output = True

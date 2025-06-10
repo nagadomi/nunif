@@ -150,6 +150,16 @@ def apply_divergence_nn_LR(model, c, depth, divergence, convergence, steps,
 
 def apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                         mapper, shift, preserve_screen_border, enable_amp):
+    if model.name == "sbs.mlbw":
+        return apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
+                                                mapper, shift, preserve_screen_border, enable_amp)
+    else:
+        return apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
+                                         mapper, shift, preserve_screen_border, enable_amp)
+
+
+def apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
+                              mapper, shift, preserve_screen_border, enable_amp):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -159,7 +169,7 @@ def apply_divergence_nn(model, c, depth, divergence, convergence, steps,
     B, _, H, W = depth.shape
     divergence_step = divergence / steps
     grid = make_grid(B, W, H, c.device)
-    delta_scale = 1.0 / (W // 2 - 1)
+    delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
     depth_warp = depth
     delta_steps = []
     for j in range(steps):
@@ -180,6 +190,75 @@ def apply_divergence_nn(model, c, depth, divergence, convergence, steps,
     for delta in delta_steps:
         c_warp = backward_warp(c_warp, grid, delta, delta_scale)
     z = c_warp
+
+    if shift > 0:
+        z = torch.flip(z, (3,))
+
+    return z
+
+
+def pad_delta_y(delta_x):
+    # interleave
+    B, C, H, W = delta_x.shape
+    delta = torch.stack([delta_x, torch.zeros_like(delta_x)], dim=2).reshape(B, C * 2, H, W)
+    return delta
+
+
+MLBW_DEBUG_OUTPUT = False
+_mlbw_debug_count = 0
+
+
+def mlbw_debug_output(z):
+    import os
+    import torchvision.transforms.functional as TF
+    global _mlbw_debug_count
+    _mlbw_debug_count += 1
+    os.makedirs("tmp/mlbw_debug", exist_ok=True)
+    z = torch.cat(z, dim=2)
+    # only batch=0
+    z = z.clamp(0, 1)[0]
+    z = TF.to_pil_image(z).save(f"tmp/mlbw_debug/{_mlbw_debug_count}.png")
+
+
+def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
+                                     mapper, shift, preserve_screen_border, enable_amp):
+    # BCHW
+    assert model.delta_output
+    if shift > 0:
+        c = torch.flip(c, (3,))
+        depth = torch.flip(depth, (3,))
+
+    B, _, H, W = depth.shape
+    x = torch.stack([make_input_tensor(None, depth[i],
+                                       divergence=divergence,
+                                       convergence=convergence,
+                                       image_width=W,
+                                       mapper=mapper,
+                                       preserve_screen_border=preserve_screen_border)
+                     for i in range(depth.shape[0])])
+    with autocast(device=depth.device, enabled=enable_amp):
+        delta, layer_weight = model(x)
+
+    if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
+        layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
+                                     mode="bilinear", align_corners=True, antialias=True)
+
+    delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
+    delta = pad_delta_y(delta)
+    grid = make_grid(B, W, H, c.device)
+    z = torch.zeros_like(c)
+    debug = []
+    for i in range(model.num_layers):
+        d = delta[:, i * 2:i * 2 + 2, :, :]
+        w = layer_weight[:, i:i + 1, :, :]
+        bw = backward_warp(c, grid, d, delta_scale) * w
+        z += bw
+        if MLBW_DEBUG_OUTPUT:
+            debug.append(bw)
+    if MLBW_DEBUG_OUTPUT:
+        mlbw_debug_output(debug)
+    del debug
+    z = z.clamp(0, 1)
 
     if shift > 0:
         z = torch.flip(z, (3,))
