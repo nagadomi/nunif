@@ -117,7 +117,7 @@ def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
 
 
 def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
-                                      synthetic_view="both", inpaint_model=None):
+                                      synthetic_view="both", inpaint_model=None, return_mask=False):
     src_image = c
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
@@ -161,6 +161,9 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         fix_layered_holes(left_eye, left_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
 
+        if return_mask:
+            left_mask, right_mask = (left_eye < 0)[:, 0:1, :, :], (right_eye < 0)[:, 0:1, :, :]
+
         if fill:
             if inpaint_model is None:
                 # super simple inpainting
@@ -174,13 +177,19 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             left_eye = torch.clamp(left_eye, 0, 1)
             right_eye = torch.clamp(right_eye, 0, 1)
 
-        return left_eye.contiguous(), right_eye.contiguous()
+        if return_mask:
+            return left_eye.contiguous(), right_eye.contiguous(), left_mask, right_mask
+        else:
+            return left_eye.contiguous(), right_eye.contiguous()
     elif synthetic_view == "right":
         right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
         right_eye = unpad(right_eye)
         right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
         right_eye_index = shift_fill(right_eye_index)
         fix_layered_holes(right_eye, right_eye_index, -1)
+        if return_mask:
+            right_mask = (right_eye < 0)[:, 0:1, :, :]
+
         if fill:
             if inpaint_model is None:
                 right_eye = shift_fill(right_eye)
@@ -189,13 +198,21 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
                     right_eye = inpaint_model(right_eye, (right_eye < 0)[:, 0:1, :, :])
         else:
             right_eye = torch.clamp(right_eye, 0, 1)
-        return src_image, right_eye.contiguous()
+
+        if return_mask:
+            return src_image, right_eye.contiguous(), None, right_mask
+        else:
+            return src_image, right_eye.contiguous()
+
     elif synthetic_view == "left":
         left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
         left_eye = unpad(left_eye)
         left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
         left_eye_index = shift_fill(left_eye_index)
         fix_layered_holes(left_eye, left_eye_index, 1)
+        if return_mask:
+            left_mask = (left_eye < 0)[:, 0:1, :, :]
+
         if fill:
             if inpaint_model is None:
                 left_eye = shift_fill(left_eye)
@@ -205,16 +222,20 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         else:
             left_eye = torch.clamp(left_eye, 0, 1)
 
-        return left_eye.contiguous(), src_image
+        if return_mask:
+            return left_eye.contiguous(), src_image, left_mask, None
+        else:
+            return left_eye.contiguous(), src_image
 
 
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None,
-                                  synthetic_view="both", inpaint_model=None):
+                                  synthetic_view="both", inpaint_model=None, return_mask=False):
     fill = (method == "forward_fill")
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
                                                  fill=fill, synthetic_view=synthetic_view,
-                                                 inpaint_model=inpaint_model)
+                                                 inpaint_model=inpaint_model,
+                                                 return_mask=return_mask)
 
 
 def _bench():
