@@ -380,6 +380,28 @@ class MainFrame(wx.Frame):
         self.btn_reload_window_name = GenBitmapButton(self.grp_processor, bitmap=load_icon("view-refresh.png"))
         self.btn_reload_window_name.SetToolTip(T("Reload"))
 
+        self.lbl_crop_region = wx.StaticText(self.grp_processor, label=T("Crop Region (px)"))
+        
+        self.lbl_crop_top = wx.StaticText(self.grp_processor, label=T("Top"))
+        self.txt_crop_top = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
+                                   allow_none=False, min=0, max=500, name="txt_crop_top")
+        self.txt_crop_top.SetValue(0)
+        
+        self.lbl_crop_left = wx.StaticText(self.grp_processor, label=T("Left"))
+        self.txt_crop_left = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
+                                    allow_none=False, min=0, max=500, name="txt_crop_left")
+        self.txt_crop_left.SetValue(0)
+        
+        self.lbl_crop_right = wx.StaticText(self.grp_processor, label=T("Right"))
+        self.txt_crop_right = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
+                                     allow_none=False, min=0, max=500, name="txt_crop_right")
+        self.txt_crop_right.SetValue(0)
+        
+        self.lbl_crop_bottom = wx.StaticText(self.grp_processor, label=T("Bottom"))
+        self.txt_crop_bottom = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
+                                      allow_none=False, min=0, max=500, name="txt_crop_bottom")
+        self.txt_crop_bottom.SetValue(0)
+
         self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
@@ -395,7 +417,21 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_window_name, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_window_name, (3, 1), flag=wx.EXPAND)
         layout.Add(self.btn_reload_window_name, (3, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_compile, (4, 0), flag=wx.EXPAND)
+        layout.Add(self.lbl_crop_region, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        
+        # Create a sub-layout for crop controls
+        crop_layout = wx.GridBagSizer(vgap=2, hgap=4)
+        crop_layout.Add(self.lbl_crop_top, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        crop_layout.Add(self.txt_crop_top, (0, 1), flag=wx.EXPAND)
+        crop_layout.Add(self.lbl_crop_left, (0, 2), flag=wx.ALIGN_CENTER_VERTICAL)
+        crop_layout.Add(self.txt_crop_left, (0, 3), flag=wx.EXPAND)
+        crop_layout.Add(self.lbl_crop_right, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        crop_layout.Add(self.txt_crop_right, (1, 1), flag=wx.EXPAND)
+        crop_layout.Add(self.lbl_crop_bottom, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
+        crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
+        
+        layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (5, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -749,6 +785,16 @@ class MainFrame(wx.Frame):
             self.show_validation_error_message(T("Port"), 1025, 65535)
             return None
 
+        crop_top = self.txt_crop_top.GetValue()
+        crop_left = self.txt_crop_left.GetValue()
+        crop_right = self.txt_crop_right.GetValue()
+        crop_bottom = self.txt_crop_bottom.GetValue()
+        
+        for crop_name, crop_value in [("Top", crop_top), ("Left", crop_left), ("Right", crop_right), ("Bottom", crop_bottom)]:
+            if not validate_number(str(crop_value), 0, 500, is_int=True, allow_empty=False):
+                self.show_validation_error_message(T("Crop") + " " + T(crop_name), 0, 500)
+                return None
+
         resolution = self.cbo_resolution.GetValue()
         if resolution == "Default" or resolution == "":
             resolution = None
@@ -816,6 +862,10 @@ class MainFrame(wx.Frame):
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
+            crop_top=crop_top,
+            crop_left=crop_left,
+            crop_right=crop_right,
+            crop_bottom=crop_bottom,
             full_sbs=full_sbs,
             rgbd=rgbd,
             half_rgbd=half_rgbd,
@@ -1023,11 +1073,29 @@ class MainFrame(wx.Frame):
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()
+            self.lbl_crop_region.Show()
+            self.txt_crop_top.Show()
+            self.lbl_crop_top.Show()
+            self.txt_crop_left.Show()
+            self.lbl_crop_left.Show()
+            self.txt_crop_right.Show()
+            self.lbl_crop_right.Show()
+            self.txt_crop_bottom.Show()
+            self.lbl_crop_bottom.Show()
             self.cbo_window_name.SetItems([""] + enum_window_names())
         else:
             self.lbl_window_name.Hide()
             self.cbo_window_name.Hide()
             self.btn_reload_window_name.Hide()
+            self.lbl_crop_region.Hide()
+            self.txt_crop_top.Hide()
+            self.lbl_crop_top.Hide()
+            self.txt_crop_left.Hide()
+            self.lbl_crop_left.Hide()
+            self.txt_crop_right.Hide()
+            self.lbl_crop_right.Hide()
+            self.txt_crop_bottom.Hide()
+            self.lbl_crop_bottom.Hide()
 
         self.GetSizer().Layout()
 
