@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data.dataset import Dataset
+from torchvision import transforms as T
 from torchvision.transforms import (
     functional as TF,
 )
@@ -34,13 +35,17 @@ def load_images(org_file, side=None):
         if side == "left":
             im_side, _ = pil_io.load_image_simple(
                 path.join(dirname, basename.replace("_C.png", "_L.png")), color="rgb")
+            im_mask, _ = pil_io.load_image_simple(
+                path.join(dirname, basename.replace("_C.png", "_ML.png")), color="gray")
         else:
             im_side, _ = pil_io.load_image_simple(
                 path.join(dirname, basename.replace("_C.png", "_R.png")), color="rgb")
-        if not all([im_org, im_depth, im_side]):
+            im_mask, _ = pil_io.load_image_simple(
+                path.join(dirname, basename.replace("_C.png", "_MR.png")), color="gray")
+        if not all([im_org, im_depth, im_side, im_mask]):
             raise RuntimeError(f"load error {org_file}")
-        assert im_org.size == im_depth.size and im_org.size == im_side.size
-        return im_org, im_depth, im_side
+        assert im_org.size == im_depth.size and im_org.size == im_side.size == im_mask.size
+        return im_org, im_depth, im_side, im_mask
 
 
 def depth_pil_to_tensor(im_depth, depth_min, depth_max):
@@ -52,9 +57,27 @@ def depth_pil_to_tensor(im_depth, depth_min, depth_max):
     return depth
 
 
+def random_crop(size, *images):
+    i, j, h, w = T.RandomCrop.get_params(images[0], (size, size))
+    results = []
+    for im in images:
+        results.append(TF.crop(im, i, j, h, w))
+
+    return tuple(results)
+
+
+def center_crop(size, *images):
+    results = []
+    for im in images:
+        results.append(TF.center_crop(im, (size, size)))
+
+    return tuple(results)
+
+
 class SBSDataset(Dataset):
-    def __init__(self, input_dir, model_offset, symmetric, training):
+    def __init__(self, input_dir, size, model_offset, symmetric, training):
         super().__init__()
+        self.size = size
         self.training = training
         self.symmetric = symmetric
         self.model_offset = model_offset
@@ -118,7 +141,7 @@ class SBSDataset(Dataset):
             side = random.choice(["left", "right"])
         else:
             side = "left"
-        im_org, im_depth, im_side = load_images(self.files[index], side)
+        im_org, im_depth, im_side, im_mask = load_images(self.files[index], side)
         (depth_max, depth_min, original_image_width,
          divergence, convergence, mapper) = self.get_metadata(im_depth)
 
@@ -126,6 +149,13 @@ class SBSDataset(Dataset):
             im_org = TF.hflip(im_org)
             im_depth = TF.hflip(im_depth)
             im_side = TF.hflip(im_side)
+            im_mask = TF.hflip(im_mask)
+
+        if self.size != im_org.height:
+            if self.training:
+                im_org, im_depth, im_side, im_mask = random_crop(self.size, im_org, im_depth, im_side, im_mask)
+            else:
+                im_org, im_depth, im_side, im_mask = center_crop(self.size, im_org, im_depth, im_side, im_mask)
 
         depth = depth_pil_to_tensor(im_depth, depth_min=depth_min, depth_max=depth_max)
         x = make_input_tensor(
@@ -138,7 +168,10 @@ class SBSDataset(Dataset):
         y = TF.to_tensor(TF.crop(im_side, self.model_offset, self.model_offset,
                                  im_side.height - self.model_offset * 2,
                                  im_side.width - self.model_offset * 2))
-        return x, y, index
+        mask = TF.to_tensor(TF.crop(im_mask, self.model_offset, self.model_offset,
+                                    im_mask.height - self.model_offset * 2,
+                                    im_mask.width - self.model_offset * 2))
+        return x, (y, mask), index
 
     def __getitem__(self, index):
         if self.symmetric:

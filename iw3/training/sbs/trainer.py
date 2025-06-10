@@ -1,30 +1,71 @@
 from os import path
 import argparse
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import create_model
-from nunif.training.env import RGBPSNREnv
+from nunif.training.env import I2IEnv
+from nunif.modules.psnr import PSNR
 from nunif.training.trainer import Trainer
 from nunif.modules.auxiliary_loss import AuxiliaryLoss
 from nunif.modules.clamp_loss import ClampLoss
+from nunif.modules.dct_loss import window_dct_loss, dct_loss
+from nunif.modules.gaussian_filter import GaussianFilter2d
 from .dataset import SBSDataset
 from ... import models # noqa
 
 
 class DeltaPenalty(nn.Module):
-    def forward(self, input, dummy):
+    def forward(self, grid, dummy):
         # warp points(grid + delta) should be monotonically increasing
         N = 3
         penalty = 0
         for i in range(1, N):
-            penalty = penalty + F.relu(input[:, :, :, :-i] - input[:, :, :, i:], inplace=True).mean()
+            penalty = penalty + F.relu(grid[:, :, :, :-i] - grid[:, :, :, i:], inplace=True).mean()
         return penalty / N
 
 
-class SBSEnv(RGBPSNREnv):
-    def __init__(self, model, criterion, sampler):
-        super().__init__(model, criterion)
+def l1_none(input, target):
+    return F.l1_loss(input, target, reduction="none")
+
+
+class MLBWLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.blur = GaussianFilter2d(1, 3, padding=1)
+        self.delta_penalty = DeltaPenalty()
+
+    def forward(self, input, target):
+        z, grid, layer_weight = input
+        y, mask = target
+
+        delta_penalty = self.delta_penalty(grid, None)
+
+        mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * 0.75
+        z = z * mask
+        y = y * mask
+        loss = (window_dct_loss(z, y, window_size=24) +
+                window_dct_loss(z, y, window_size=4) +
+                dct_loss(z, y)) * 0.3
+
+        return loss + delta_penalty
+
+
+class MaskedPSNR(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.psnr = PSNR()
+
+    def forward(self, input, target):
+        y, mask = target
+        mask = 1 - mask
+        return self.psnr(input * mask, y * mask)
+
+
+class SBSEnv(I2IEnv):
+    def __init__(self, model, criterion, sampler, eval_criterion=None):
+        super().__init__(model, criterion, eval_criterion=eval_criterion)
         self.sampler = sampler
 
     def train_loss_hook(self, data, loss):
@@ -35,6 +76,10 @@ class SBSEnv(RGBPSNREnv):
     def train_end(self):
         self.sampler.update_weights()
         return super().train_end()
+
+    def print_eval_result(self, psnr_loss, file=sys.stdout):
+        psnr = -psnr_loss
+        print(f"Batch RGB-PSNR: {psnr}", file=file)
 
 
 class SBSTrainer(Trainer):
@@ -50,7 +95,8 @@ class SBSTrainer(Trainer):
         assert (type in {"train", "eval"})
         model_offset = self.model.i2i_offset
         if type == "train":
-            dataset = SBSDataset(path.join(self.args.data_dir, "train"), model_offset,
+            dataset = SBSDataset(path.join(self.args.data_dir, "train"),
+                                 size=self.args.size, model_offset=model_offset,
                                  symmetric=self.args.symmetric, training=True)
             self.sampler = dataset.create_sampler(self.args.num_samples)
             loader = torch.utils.data.DataLoader(
@@ -63,7 +109,8 @@ class SBSTrainer(Trainer):
                 drop_last=True)
             return loader
         else:
-            dataset = SBSDataset(path.join(self.args.data_dir, "eval"), model_offset,
+            dataset = SBSDataset(path.join(self.args.data_dir, "eval"),
+                                 size=self.args.size, model_offset=model_offset,
                                  symmetric=self.args.symmetric, training=False)
             loader = torch.utils.data.DataLoader(
                 dataset,
@@ -81,27 +128,31 @@ class SBSTrainer(Trainer):
         return path.join(self.args.model_dir, f"{self.model.name}.left.checkpoint.pth")
 
     def create_env(self):
+        eval_criterion = MaskedPSNR().to(self.device)
         if self.args.loss == "l1":
             criterion = ClampLoss(nn.L1Loss()).to(self.device)
         elif self.args.loss == "l1_delta":
             criterion = AuxiliaryLoss(
                 (ClampLoss(nn.L1Loss()), DeltaPenalty()),
                 (1.0, 1.0)).to(self.device)
+        elif self.args.loss == "mlbw":
+            criterion = MLBWLoss().to(self.device)
         elif self.args.loss == "aux_l1":
             criterion = AuxiliaryLoss(
                 (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()),
                 (1.0, 0.5, 1.0)).to(self.device)
-        return SBSEnv(self.model, criterion, self.sampler)
+        return SBSEnv(self.model, criterion, self.sampler, eval_criterion=eval_criterion)
 
 
 def train(args):
-    if args.loss is None:
-        if args.arch == "sbs.row_flow":
-            args.loss = "l1"
-        elif args.arch == "sbs.row_flow_v2":
-            args.loss = "aux_l1"
-        else:
-            args.loss = "l1_delta"
+    if args.arch == "sbs.row_flow":
+        args.loss = "l1"
+    elif args.arch == "sbs.row_flow_v2":
+        args.loss = "aux_l1"
+    elif args.arch == "sbs.row_flow_v3":
+        args.loss = "l1_delta"
+    elif args.arch.startswith("sbs.mlbw"):
+        args.loss = "mlbw"
 
     trainer = SBSTrainer(args)
     trainer.fit()
@@ -113,25 +164,27 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="sbs.row_flow_v3", help="network arch")
+    parser.add_argument("--arch", type=str, default="sbs.mlbw_l2", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, nargs="?", default=None, const="l1",
-                        choices=["l1", "aux_l1", "l1_delta"], help="loss")
+    parser.add_argument("--size", type=int, default=256, help="input size. other than 256, it only works with mlbw model")
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
 
     parser.set_defaults(
         batch_size=16,
+        # optimizer="adamw_schedulefree",
         optimizer="adam",
-        learning_rate=0.0001,
         scheduler="cosine",
-        learning_rate_cycles=4,
+        hard_example="none",
+        num_samples=10000,
         max_epoch=200,
-        learning_rate_decay=0.98,
-        learning_rate_decay_step=[1],
-        momentum=0.9,
-        weight_decay=0,
+        learning_rate=0.0001,
+        learning_rate_cosine_min=1e-8,
+        learning_rate_cycles=5,
+        weight_decay=0.001,
+        weight_decay_end=0.01,
+        eval_step=2,
     )
     parser.set_defaults(handler=train)
 
