@@ -69,7 +69,7 @@ def backward_warp(c, grid, delta, delta_scale):
         mode = "bilinear"
         padding_mode = "reflection"
     else:
-        mode = "bicubic"
+        mode = "bilinear"
         padding_mode = "border"
 
     z = F.grid_sample(c, grid, mode=mode, padding_mode=padding_mode, align_corners=True)
