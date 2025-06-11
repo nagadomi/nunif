@@ -101,6 +101,7 @@ class RowFlowV3(I2IBaseModel):
     def _forward_delta_only(self, x):
         assert not self.training
         delta = self._forward(x)
+        delta = delta.to(torch.float32)
         delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
         return delta
 
