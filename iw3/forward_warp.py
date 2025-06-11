@@ -16,23 +16,20 @@ def blur_blend(x, mask):
     return x * (1.0 - mask) + x_blur * mask
 
 
-def shift_fill(x, max_tries=100):
+def shift_fill(x, sign, max_tries=100):
     mask = x < 0
-    shift = 1
     while mask.any().item() and max_tries > 0:
-        if shift > 0:
+        if sign > 0:
             x[mask] = F.pad(x[:, :, :, 1:], (0, 1, 0, 0))[mask]
         else:
             x[mask] = F.pad(x[:, :, :, :-1], (1, 0, 0, 0))[mask]
         mask = x < 0
-        shift = 0 if shift == 1 else 1
         max_tries = max_tries - 1
 
     return x
 
 
 def fix_layered_holes(side_image, index_image, sign, max_tries=100):
-    # NOTE: I still don't understand what it means to separate by sign(left/right), but this works.
     if sign > 0:
         mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (0, 1, 0, 0))
         while mask.any().item() and max_tries > 0:
@@ -157,7 +154,8 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 
         # Fix layered holes
         # inspired by @math-artist patch: https://github.com/nagadomi/nunif/discussions/274
-        left_eye_index, right_eye_index = shift_fill(torch.cat([left_eye_index, right_eye_index], dim=1)).chunk(2, dim=1)
+        left_eye_index = shift_fill(left_eye_index, -1)
+        right_eye_index = shift_fill(right_eye_index, 1)
         fix_layered_holes(left_eye, left_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
 
@@ -167,7 +165,8 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         if fill:
             if inpaint_model is None:
                 # super simple inpainting
-                left_eye, right_eye = shift_fill(torch.cat([left_eye, right_eye], dim=1)).chunk(2, dim=1)
+                left_eye = shift_fill(left_eye, -1)
+                right_eye = shift_fill(right_eye, 1)
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
@@ -185,14 +184,14 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
         right_eye = unpad(right_eye)
         right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
-        right_eye_index = shift_fill(right_eye_index)
+        right_eye_index = shift_fill(right_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
         if return_mask:
             right_mask = (right_eye < 0)[:, 0:1, :, :]
 
         if fill:
             if inpaint_model is None:
-                right_eye = shift_fill(right_eye)
+                right_eye = shift_fill(right_eye, 1)
             else:
                 with autocast(device=right_eye.device, enabled=True):
                     right_eye = inpaint_model(right_eye, (right_eye < 0)[:, 0:1, :, :])
@@ -208,14 +207,14 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
         left_eye = unpad(left_eye)
         left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
-        left_eye_index = shift_fill(left_eye_index)
+        left_eye_index = shift_fill(left_eye_index, -1)
         fix_layered_holes(left_eye, left_eye_index, 1)
         if return_mask:
             left_mask = (left_eye < 0)[:, 0:1, :, :]
 
         if fill:
             if inpaint_model is None:
-                left_eye = shift_fill(left_eye)
+                left_eye = shift_fill(left_eye, -1)
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
