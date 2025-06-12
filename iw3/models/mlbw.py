@@ -49,8 +49,8 @@ class MLBW(I2IBaseModel):
             nn.LeakyReLU(0.2, inplace=True),
         )
         self.lv2 = nn.Sequential(
-            WABlock(C, (4, 4), shift=False, num_heads=self.num_layers),
-            WABlock(C, (4, 4), shift=False, num_heads=self.num_layers),
+            WABlock(C, (4, 4), shift=(False, True), num_heads=self.num_layers),
+            WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
         )
         self.lv1_out = nn.Sequential(
             ReplicationPad2dNaive((4, 4, 0, 0), detach=True),
@@ -67,19 +67,6 @@ class MLBW(I2IBaseModel):
         pad_w2 = pad_w - pad_w1
         pad_h1 = pad_h // 2
         pad_h2 = pad_h - pad_h1
-        if False:  # self.training:
-            pad_method = random.choice([0, 1, 2])
-            if pad_method == 1:
-                pad_w2 = pad_w1 + pad_w2
-                pad_w1 = 0
-                pad_h2 = pad_h1 + pad_h2
-                pad_h1 = 0
-            elif pad_method == 2:
-                pad_w1 = pad_w1 + pad_w2
-                pad_w2 = 0
-                pad_h1 = pad_h1 + pad_h2
-                pad_h2 = 0
-
         return pad_w1, pad_w2, pad_h1, pad_h2
 
     def _forward(self, x):
