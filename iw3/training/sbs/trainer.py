@@ -31,8 +31,9 @@ def l1_none(input, target):
 
 
 class MLBWLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, mask_weight):
         super().__init__()
+        self.mask_weight = mask_weight
         self.blur = GaussianFilter2d(1, 3, padding=1)
         self.delta_penalty = DeltaPenalty()
 
@@ -41,13 +42,38 @@ class MLBWLoss(nn.Module):
         y, mask = target
 
         delta_penalty = self.delta_penalty(grid, None)
+        if self.mask_weight > 0:
+            mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
+            z = z * mask
+            y = y * mask
+            loss = (window_dct_loss(z, y, window_size=24) +
+                    window_dct_loss(z, y, window_size=4) +
+                    dct_loss(z, y)) * 0.3
+        else:
+            loss = (window_dct_loss(z, y, window_size=24) +
+                    window_dct_loss(z, y, window_size=4) +
+                    dct_loss(z, y)) * 0.3
 
-        mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * 0.75
-        z = z * mask
-        y = y * mask
-        loss = (window_dct_loss(z, y, window_size=24) +
-                window_dct_loss(z, y, window_size=4) +
-                dct_loss(z, y)) * 0.3
+        return loss + delta_penalty
+
+
+class RowFlowV3Loss(nn.Module):
+    def __init__(self, mask_weight):
+        super().__init__()
+        self.mask_weight = mask_weight
+        self.blur = GaussianFilter2d(1, 3, padding=1)
+        self.delta_penalty = DeltaPenalty()
+
+    def forward(self, input, target):
+        z, grid = input
+        y, mask = target
+
+        delta_penalty = self.delta_penalty(grid, None)
+        if self.mask_weight > 0:
+            mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
+            loss = (F.l1_loss(z, y, reduction="none") * mask).mean()
+        else:
+            loss = F.l1_loss(z, y)
 
         return loss + delta_penalty
 
@@ -131,12 +157,10 @@ class SBSTrainer(Trainer):
         eval_criterion = MaskedPSNR().to(self.device)
         if self.args.loss == "l1":
             criterion = ClampLoss(nn.L1Loss()).to(self.device)
-        elif self.args.loss == "l1_delta":
-            criterion = AuxiliaryLoss(
-                (ClampLoss(nn.L1Loss()), DeltaPenalty()),
-                (1.0, 1.0)).to(self.device)
+        elif self.args.loss == "row_flow_v3":
+            criterion = RowFlowV3Loss(mask_weight=self.args.mask_weight).to(self.device)
         elif self.args.loss == "mlbw":
-            criterion = MLBWLoss().to(self.device)
+            criterion = MLBWLoss(mask_weight=self.args.mask_weight).to(self.device)
         elif self.args.loss == "aux_l1":
             criterion = AuxiliaryLoss(
                 (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()),
@@ -150,7 +174,7 @@ def train(args):
     elif args.arch == "sbs.row_flow_v2":
         args.loss = "aux_l1"
     elif args.arch == "sbs.row_flow_v3":
-        args.loss = "l1_delta"
+        args.loss = "row_flow_v3"
     elif args.arch.startswith("sbs.mlbw"):
         args.loss = "mlbw"
 
@@ -168,6 +192,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
     parser.add_argument("--size", type=int, default=256, help="input size. other than 256, it only works with mlbw model")
+    parser.add_argument("--mask-weight", type=float, default=0.75,
+                        help="hole mask weight. 1 means completely excluded from the loss")
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
 
