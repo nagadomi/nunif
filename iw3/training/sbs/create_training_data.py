@@ -22,6 +22,9 @@ from iw3.forward_warp import apply_divergence_forward_warp
 from .stereoimage_generation import create_stereoimages
 
 
+OFFSET = 32
+
+
 def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, mapper, filename_base, size, num_samples):
     im_l = TF.crop(im_sbs, 0, 0, im_org.height, im_org.width)
     im_r = TF.crop(im_sbs, 0, im_org.width, im_org.height, im_org.width)
@@ -42,7 +45,7 @@ def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, 
     metadata.add_text("sbs_mapper", mapper)
 
     # remove replication padding area
-    unpad_size = int(im_org.width * divergence * 0.01 + 2)
+    unpad_size = int(im_org.width * divergence * 0.5 * 0.01 + 2)
 
     im_org = TF.crop(im_org, 0, unpad_size, im_org.height, im_org.width - unpad_size * 2)
     im_depth = TF.crop(im_depth, 0, unpad_size, im_depth.height, im_depth.width - unpad_size * 2)
@@ -124,7 +127,10 @@ def random_resize(im, min_size, max_size):
         new_h = int(im.height * scale_factor)
         if new_w < w:
             if not (min(new_w, new_h) >= min_size and max(new_w, new_h) <= max_size):
-                print("warn", new_w, new_h)
+                new_h = max(min_size, new_h)
+                new_w = max(min_size, new_w)
+                new_h = min(max_size, new_h)
+                new_w = min(max_size, new_w)
             interpolation = random.choice([InterpolationMode.BICUBIC, InterpolationMode.BILINEAR])
             im = TF.resize(im, (new_h, new_w), interpolation=interpolation, antialias=True)
 
@@ -142,13 +148,23 @@ def apply_mapper(depth, mapper):
     return get_mapper(mapper)(depth)
 
 
-def gen_divergence(width, max_divergence):
-    # NOTE: min(32.0 / (width * 0.5) * 100, max_divergence) is correct but use this
-    max_divergence = min(32.0 / width * 100, max_divergence)
-    if random.uniform(0, 1) < 0.7:
-        return random.choice([2., 2.5, 3.0])
+def gen_divergence(width, large_divergence):
+    if not large_divergence:
+        # max divergence == 5
+        # NOTE: min(32.0 / (width * 0.5) * 100, max_divergence) is correct but use this
+        max_divergence = min(OFFSET / width * 100, 5.0)
+        if random.uniform(0, 1) < 0.7:
+            return random.choice([2., 2.5, 3.0])
+        else:
+            return random.uniform(0., max_divergence)
     else:
-        return random.uniform(0., max_divergence)
+        # max divergence == 10
+        max_divergence = min(OFFSET / (width * 0.6) * 100, 10.0)
+        min_divergence = min(max_divergence - 0.1, 3.0)
+        if random.uniform(0, 1) < 0.7:
+            return random.choice([5.0, 6.0, 7.0, 8.0])
+        else:
+            return random.uniform(min_divergence, max_divergence)
 
 
 def gen_convergence():
@@ -172,10 +188,7 @@ def gen_mapper(is_metric):
 
 
 def gen_edge_dilation(model_type):
-    if model_type.startswith("ZoeD"):
-        return random.choice([0] * 7 + [1, 2, 3, 4])
-    else:
-        return random.choice([2] * 7 + [0, 1, 3, 4])
+    return random.choice([2] * 6 + [0, 1, 3, 4])
 
 
 def gen_depth_aa(model_type):
@@ -188,6 +201,8 @@ def gen_depth_aa(model_type):
 def main(args):
     import numba
     from ...depth_model_factory import create_depth_model
+
+    assert args.min_size - OFFSET * 2 >= args.size
     # force_update_midas()
     # force_update_zoedepth()
 
@@ -236,7 +251,7 @@ def main(args):
                         if random.choice([True, False]):
                             # resize depth size to image size
                             im_s = random_resize(im, args.min_size, args.max_size)
-                            divergence = gen_divergence(im_s.width, args.max_divergence)
+                            divergence = gen_divergence(im_s.width, args.large_divergence)
                             depth = model.infer(im_s, tta=flip_aug, enable_amp=enable_amp,
                                                 edge_dilation=edge_dilation, depth_aa=depth_aa)
                             depth = F.interpolate(depth.unsqueeze(0), (im_s.height, im_s.width),
@@ -246,7 +261,7 @@ def main(args):
                             depth = model.infer(im, tta=flip_aug, enable_amp=enable_amp,
                                                 edge_dilation=edge_dilation, depth_aa=depth_aa)
                             im_s = TF.resize(im, depth.shape[-2:], InterpolationMode.BILINEAR, antialias=True)
-                            divergence = gen_divergence(im_s.width, args.max_divergence)
+                            divergence = gen_divergence(im_s.width, args.large_divergence)
 
                         assert im_s.height == depth.shape[-2] and im_s.width == depth.shape[-1]
 
@@ -290,7 +305,7 @@ def register(subparsers, default_parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("--max-size", type=int, default=920, help="max image size")
-    parser.add_argument("--max-divergence", type=float, default=5, help="max divergence")
+    parser.add_argument("--large-divergence", action="store_true", help="Use divergence up to 10 instead of 5")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
