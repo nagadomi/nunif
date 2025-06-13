@@ -2,6 +2,7 @@ import torch
 from .mapper import get_mapper
 from nunif.device import autocast, device_is_mps
 import torch.nn.functional as F
+from nunif.modules.replication_pad2d import replication_pad2d
 
 
 def make_divergence_feature_value(divergence, convergence, image_width):
@@ -154,12 +155,24 @@ def apply_divergence_nn(model, c, depth, divergence, convergence, steps,
         return apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
                                                 mapper, shift, preserve_screen_border, enable_amp)
     else:
+        use_pad_convergence = model.name in {"sbs.row_flow_v4"}
         return apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
-                                         mapper, shift, preserve_screen_border, enable_amp)
+                                         mapper, shift, preserve_screen_border, enable_amp,
+                                         use_pad_convergence=use_pad_convergence)
+
+
+def pad_convergence_shift_05(c, divergence, convergence):
+    if abs(float(convergence) - 0.5) > 1e-4:
+        shift_size = divergence * 0.01 * 0.5 * c.shape[-1]
+        convergence = convergence - 0.5
+        convergence_shift = round(shift_size * convergence)
+        c = replication_pad2d(c, (-convergence_shift, convergence_shift, 0, 0))
+    return c
 
 
 def apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
-                              mapper, shift, preserve_screen_border, enable_amp):
+                              mapper, shift, preserve_screen_border, enable_amp,
+                              use_pad_convergence=False):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -172,16 +185,18 @@ def apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
     delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
     depth_warp = depth
     delta_steps = []
+
     for j in range(steps):
         x = torch.stack([make_input_tensor(None, depth_warp[i],
                                            divergence=divergence_step,
-                                           convergence=convergence,
+                                           convergence=0.5 if use_pad_convergence else convergence,
                                            image_width=W,
                                            mapper=mapper,
                                            preserve_screen_border=preserve_screen_border)
                          for i in range(depth_warp.shape[0])])
         with autocast(device=depth.device, enabled=enable_amp):
             delta = model(x)
+
         delta_steps.append(delta)
         if j + 1 < steps:
             depth_warp = backward_warp(depth_warp, grid, delta, delta_scale)
@@ -190,6 +205,8 @@ def apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
     for delta in delta_steps:
         c_warp = backward_warp(c_warp, grid, delta, delta_scale)
     z = c_warp
+    if use_pad_convergence:
+        z = pad_convergence_shift_05(z, divergence, convergence)
 
     if shift > 0:
         z = torch.flip(z, (3,))
@@ -231,7 +248,8 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
     B, _, H, W = depth.shape
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
-                                       convergence=convergence,
+                                       # use constant convergence
+                                       convergence=0.5,
                                        image_width=W,
                                        mapper=mapper,
                                        preserve_screen_border=preserve_screen_border)
@@ -258,6 +276,7 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
     if MLBW_DEBUG_OUTPUT:
         mlbw_debug_output(debug)
     del debug
+    z = pad_convergence_shift_05(z, divergence, convergence)
     z = z.clamp(0, 1)
 
     if shift > 0:
