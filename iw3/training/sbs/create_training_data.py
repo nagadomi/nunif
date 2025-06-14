@@ -268,7 +268,10 @@ def main(args):
                             # resize image size to depth size
                             depth = model.infer(im, tta=flip_aug, enable_amp=enable_amp,
                                                 edge_dilation=edge_dilation, depth_aa=depth_aa)
-                            im_s = TF.resize(im, depth.shape[-2:], InterpolationMode.BILINEAR, antialias=True)
+                            im_s = F.interpolate(TF.to_tensor(im).unsqueeze(0), depth.shape[-2:],
+                                                 mode="bilinear", align_corners=True, antialias=True).squeeze(0)
+                            im_s = im_s.clamp(0, 1)
+                            im_s = TF.to_pil_image(im_s)
                             divergence = gen_divergence(im_s.width, args.large_divergence)
 
                         assert im_s.height == depth.shape[-2] and im_s.width == depth.shape[-1]
