@@ -16,7 +16,7 @@ def blur_blend(x, mask):
     return x * (1.0 - mask) + x_blur * mask
 
 
-def shift_fill(x, sign, max_tries=100):
+def shift_fill(x, sign, flip_sign=False, max_tries=100):
     mask = x < 0
     while mask.any().item() and max_tries > 0:
         if sign > 0:
@@ -25,8 +25,17 @@ def shift_fill(x, sign, max_tries=100):
             x[mask] = F.pad(x[:, :, :, :-1], (1, 0, 0, 0))[mask]
         mask = x < 0
         max_tries = max_tries - 1
+        if flip_sign:
+            sign = -1 if sign > 0 else 1
 
     return x
+
+
+def shift_fill_pack(left_eye, right_eye):
+    pack = torch.cat([left_eye, torch.flip(right_eye, dims=(-1,))], dim=1)
+    left_eye, right_eye = shift_fill(pack, -1).chunk(2, dim=1)
+    right_eye = torch.flip(right_eye, dims=(-1,))
+    return left_eye, right_eye
 
 
 def fix_layered_holes(side_image, index_image, sign, max_tries=100):
@@ -154,8 +163,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 
         # Fix layered holes
         # inspired by @math-artist patch: https://github.com/nagadomi/nunif/discussions/274
-        left_eye_index = shift_fill(left_eye_index, -1)
-        right_eye_index = shift_fill(right_eye_index, 1)
+        left_eye_index, right_eye_index = shift_fill_pack(left_eye_index, right_eye_index)
         fix_layered_holes(left_eye, left_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
 
@@ -165,8 +173,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         if fill:
             if inpaint_model is None:
                 # super simple inpainting
-                left_eye = shift_fill(left_eye, -1)
-                right_eye = shift_fill(right_eye, 1)
+                left_eye, right_eye = shift_fill_pack(left_eye, right_eye)
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
