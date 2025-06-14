@@ -167,14 +167,19 @@ def gen_divergence(width, large_divergence):
             return random.uniform(min_divergence, max_divergence)
 
 
-def gen_convergence(random_convergence):
-    if random_convergence:
+def gen_convergence(full_random_convergence):
+    if full_random_convergence:
         if random.uniform(0, 1) < 0.7:
             return random.choice([0.0, 0.5, 1.0])
         else:
             return random.uniform(0., 1.)
     else:
-        return 0.5
+        # weak random
+        # needed to prevent strange distortion of grid_sample
+        if random.uniform(0, 1) < 0.7:
+            return 0.5
+        else:
+            return random.uniform(0.5 - 0.125, 0.5 + 0.125)
 
 
 def gen_mapper(is_metric):
@@ -244,7 +249,7 @@ def main(args):
                 for _ in range(args.times):
                     mapper = gen_mapper(model.is_metric()) if args.mapper == "random" else args.mapper
                     output_base = path.join(output_dir, filename_prefix + str(seq))
-                    convergence = gen_convergence(args.random_convergence)
+                    convergence = gen_convergence(args.full_random_convergence)
                     edge_dilation = gen_edge_dilation(args.model_type)
                     depth_aa = gen_depth_aa(args.model_type)
                     flip_aug = False  # random.choice([True, False, False, False])
@@ -309,7 +314,7 @@ def register(subparsers, default_parser):
 
     parser.add_argument("--max-size", type=int, default=920, help="max image size")
     parser.add_argument("--large-divergence", action="store_true", help="Use divergence up to 10 instead of 5")
-    parser.add_argument("--random-convergence", action="store_true", help="Use random convergence. fixed 0.5 by default")
+    parser.add_argument("--full-random-convergence", action="store_true", help="Use full random convergence")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
