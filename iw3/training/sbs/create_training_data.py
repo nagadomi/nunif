@@ -79,7 +79,7 @@ def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, 
     im_mask_l = TF.crop(im_mask_l, 0, unpad_size, im_mask_l.height, im_mask_l.width - unpad_size * 2)
     im_mask_r = TF.crop(im_mask_r, 0, unpad_size, im_mask_r.height, im_mask_r.width - unpad_size * 2)
     assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size == im_mask_r.size == im_mask_r.size
-    if max(im_org.size) < size:
+    if min(im_org.size) < size:
         return
 
     # im_l.save(filename_base + "_debug_l.png")
