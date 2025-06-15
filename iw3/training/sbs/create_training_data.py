@@ -8,6 +8,7 @@ import numpy as np
 from os import path
 from tqdm import tqdm
 import random
+from torchvision import transforms as T
 from torchvision.transforms import (
     functional as TF,
     InterpolationMode)
@@ -23,6 +24,30 @@ from .stereoimage_generation import create_stereoimages
 
 
 OFFSET = 32
+
+
+def random_crop(size, *images):
+    i, j, h, w = T.RandomCrop.get_params(images[0], (size, size))
+    results = []
+    for im in images:
+        results.append(TF.crop(im, i, j, h, w))
+
+    return tuple(results)
+
+
+def random_hard_example_crop(size, n, *images):
+    assert n > 0
+    results = []
+    for i in range(n):
+        crop_images = random_crop(size, *images)
+        # depth is last image
+        depth = crop_images[-1]
+        stdv = TF.to_tensor(depth).float().std(dim=[1, 2]).sum().item()
+        results.append((stdv, crop_images))
+
+    results = sorted(results, key=lambda v: v[0], reverse=True)
+    results = [images for stdv, images in results]
+    return results
 
 
 def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, mapper, filename_base, size, num_samples):
@@ -45,7 +70,7 @@ def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, 
     metadata.add_text("sbs_mapper", mapper)
 
     # remove replication padding area
-    unpad_size = int(im_org.width * divergence * 0.5 * 0.01 + 2)
+    unpad_size = int(im_org.width * divergence * 0.01 + 2)
 
     im_org = TF.crop(im_org, 0, unpad_size, im_org.height, im_org.width - unpad_size * 2)
     im_depth = TF.crop(im_depth, 0, unpad_size, im_depth.height, im_depth.width - unpad_size * 2)
@@ -54,43 +79,18 @@ def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, 
     im_mask_l = TF.crop(im_mask_l, 0, unpad_size, im_mask_l.height, im_mask_l.width - unpad_size * 2)
     im_mask_r = TF.crop(im_mask_r, 0, unpad_size, im_mask_r.height, im_mask_r.width - unpad_size * 2)
     assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size == im_mask_r.size == im_mask_r.size
+    if max(im_org.size) < size:
+        return
 
     # im_l.save(filename_base + "_debug_l.png")
     # im_depth.save(filename_base + "_debug_d.png")
-
-    stride = size // 4
-    w, h = im_org.size
-    seq = 1
-    rect_groups = []
-    for y in range(0, h, stride):
-        if not y + size <= h:
-            break
-        for x in range(0, w, stride):
-            if not x + size <= w:
-                break
-            rects = []
-            for im, postfix in zip((im_org, im_l, im_r, im_mask_l, im_mask_r, im_depth), ("_C", "_L", "_R", "_ML", "_MR", "_D")):
-                rect = TF.crop(im, y, x, size, size)
-
-                rects.append((filename_base + "_" + str(seq) + postfix + ".png", rect))
-            rect_groups.append(rects)
-            seq += 1
-    if not rect_groups:
-        return
-    if len(rect_groups) > num_samples:
-        if random.uniform(0, 1) < 0.5:
-            # sorted by depth std
-            rects_sorted = sorted([(rects, TF.to_tensor(rects[3][1]).float().std(dim=[1, 2]).sum().item())
-                                   for rects in rect_groups],
-                                  key=lambda d: d[1], reverse=True)
-            rect_groups = [d[0] for d in rects_sorted[:num_samples]]
-        else:
-            random.shuffle(rect_groups)
-
-    for i in range(min(num_samples, len(rect_groups))):
-        rects = rect_groups[i]
-        for output_filename, rect in rects:
-            rect.save(output_filename, format="png", pnginfo=metadata)
+    images = (im_org, im_l, im_r, im_mask_l, im_mask_r, im_depth)
+    names = ("_C", "_L", "_R", "_ML", "_MR", "_D")
+    crops = random_hard_example_crop(size, num_samples * 3, *images)
+    for seq, images in enumerate(crops[:num_samples]):
+        for im, postfix in zip(images, names):
+            output_filename = filename_base + "_" + str(seq) + postfix + ".png"
+            im.save(output_filename, format="png", pnginfo=metadata)
 
 
 def random_resize(im, min_size, max_size):
@@ -148,21 +148,29 @@ def apply_mapper(depth, mapper):
     return get_mapper(mapper)(depth)
 
 
-def gen_divergence(width, large_divergence):
-    if not large_divergence:
+def gen_divergence(width, divergence_level):
+    if divergence_level == 1:
         # max divergence == 5
         # NOTE: min(32.0 / (width * 0.5) * 100, max_divergence) is correct but use this
-        max_divergence = min(OFFSET / width * 100, 5.0)
+        max_divergence = min(OFFSET / (width * 0.5) * 100, 5.0)
         if random.uniform(0, 1) < 0.7:
             return random.choice([2., 2.5, 3.0])
         else:
             return random.uniform(0., max_divergence)
-    else:
-        # max divergence == 10
-        max_divergence = min(OFFSET / (width * 0.6) * 100, 10.0)
+    elif divergence_level == 2:
+        # max divergence == 8
+        max_divergence = min(OFFSET / (width * 0.5) * 100, 8.0)
         min_divergence = min(max_divergence - 0.1, 3.0)
         if random.uniform(0, 1) < 0.7:
-            return random.choice([5.0, 6.0, 7.0, 8.0])
+            return random.choice([4.0, 5.0, 6.0])
+        else:
+            return random.uniform(min_divergence, max_divergence)
+    elif divergence_level == 3:
+        # max divergence == 11
+        max_divergence = min(OFFSET / (width * 0.5) * 100, 11.0)
+        min_divergence = min(max_divergence - 0.1, 6.0)
+        if random.uniform(0, 1) < 0.7:
+            return random.choice([7.0, 8.0, 9.0])
         else:
             return random.uniform(min_divergence, max_divergence)
 
@@ -196,7 +204,7 @@ def gen_mapper(is_metric):
 
 
 def gen_edge_dilation(model_type):
-    return random.choice([2] * 6 + [0, 1, 3, 4])
+    return random.choice([2] * 5 + [0, 0, 1, 3, 4])
 
 
 def gen_depth_aa(model_type):
@@ -259,7 +267,7 @@ def main(args):
                         if random.choice([True, False]):
                             # resize depth size to image size
                             im_s = random_resize(im, args.min_size, args.max_size)
-                            divergence = gen_divergence(im_s.width, args.large_divergence)
+                            divergence = gen_divergence(im_s.width, args.divergence_level)
                             depth = model.infer(im_s, tta=flip_aug, enable_amp=enable_amp,
                                                 edge_dilation=edge_dilation, depth_aa=depth_aa)
                             depth = F.interpolate(depth.unsqueeze(0), (im_s.height, im_s.width),
@@ -272,7 +280,7 @@ def main(args):
                                                  mode="bilinear", align_corners=True, antialias=True).squeeze(0)
                             im_s = im_s.clamp(0, 1)
                             im_s = TF.to_pil_image(im_s)
-                            divergence = gen_divergence(im_s.width, args.large_divergence)
+                            divergence = gen_divergence(im_s.width, args.divergence_level)
 
                         assert im_s.height == depth.shape[-2] and im_s.width == depth.shape[-1]
 
@@ -316,7 +324,7 @@ def register(subparsers, default_parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("--max-size", type=int, default=920, help="max image size")
-    parser.add_argument("--large-divergence", action="store_true", help="Use divergence up to 10 instead of 5")
+    parser.add_argument("--divergence-level", type=int, default=1, choices=[1, 2, 3], help="divergence level. 1=0-5, 2=3-8, 3=6-11")
     parser.add_argument("--full-random-convergence", action="store_true", help="Use full random convergence")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
