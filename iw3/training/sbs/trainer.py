@@ -9,7 +9,7 @@ from nunif.training.env import I2IEnv
 from nunif.modules.psnr import PSNR
 from nunif.training.trainer import Trainer
 from nunif.modules.auxiliary_loss import AuxiliaryLoss
-from nunif.modules.clamp_loss import ClampLoss
+from nunif.modules.clamp_loss import ClampLoss, clamp_loss
 from nunif.modules.dct_loss import window_dct_loss, dct_loss
 from nunif.modules.gaussian_filter import GaussianFilter2d
 from .dataset import SBSDataset
@@ -26,6 +26,12 @@ class DeltaPenalty(nn.Module):
         return penalty / N
 
 
+def delta_eval(grid):
+    non_inc_count = int((grid[:, :, :, :-1] > grid[:, :, :, 1:]).sum())
+    all_count = grid[:, :, :, 1:].numel()
+    print(f"Non monotonically increasing = {non_inc_count} / {all_count}, ({non_inc_count/all_count})")
+
+
 def l1_none(input, target):
     return F.l1_loss(input, target, reduction="none")
 
@@ -38,7 +44,7 @@ class MLBWLoss(nn.Module):
         self.delta_penalty = DeltaPenalty()
 
     def forward(self, input, target):
-        z, grid, layer_weight = input
+        z, grid, *_ = input
         y, mask = target
 
         delta_penalty = self.delta_penalty(grid, None)
@@ -71,9 +77,9 @@ class RowFlowV3Loss(nn.Module):
         delta_penalty = self.delta_penalty(grid, None)
         if self.mask_weight > 0:
             mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
-            loss = (F.l1_loss(z, y, reduction="none") * mask).mean()
+            loss = (clamp_loss(z, y, loss_function=l1_none, min_value=0, max_value=1) * mask).mean()
         else:
-            loss = F.l1_loss(z, y)
+            loss = clamp_loss(z, y, loss_function=l1_none, min_value=0, max_value=1).mean()
 
         return loss + delta_penalty
 
@@ -96,11 +102,13 @@ class SBSEnv(I2IEnv):
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
-        index = data[-1]
-        self.sampler.update_losses(index, loss.item())
+        if self.trainer.args.hard_example:
+            index = data[-1]
+            self.sampler.update_losses(index, loss.item())
 
     def train_end(self):
-        self.sampler.update_weights()
+        if self.trainer.args.hard_example:
+            self.sampler.update_weights()
         return super().train_end()
 
     def print_eval_result(self, psnr_loss, file=sys.stdout):
@@ -175,6 +183,8 @@ def train(args):
         args.loss = "aux_l1"
     elif args.arch == "sbs.row_flow_v3":
         args.loss = "row_flow_v3"
+    elif args.arch == "sbs.row_flow_v4":
+        args.loss = "mlbw"
     elif args.arch.startswith("sbs.mlbw"):
         args.loss = "mlbw"
 
@@ -196,13 +206,13 @@ def register(subparsers, default_parser):
                         help="hole mask weight. 1 means completely excluded from the loss")
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
+    parser.add_argument("--hard-example", action="store_true", help="Use hard example mining")
 
     parser.set_defaults(
         batch_size=16,
         # optimizer="adamw_schedulefree",
         optimizer="adam",
         scheduler="cosine",
-        hard_example="none",
         num_samples=10000,
         max_epoch=200,
         learning_rate=0.0001,
