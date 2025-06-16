@@ -285,7 +285,7 @@ def main(args):
                         assert im_s.height == depth.shape[-2] and im_s.width == depth.shape[-1]
 
                         depth = model.minmax_normalize_chw(depth)
-                        np_depth16 = (depth * 0xffff).to(torch.uint16).squeeze(0).cpu().numpy()
+                        np_depth16 = (depth * 0xffff).round().to(torch.uint16).squeeze(0).cpu().numpy()
 
                     if args.method == "polylines":
                         np_depth_f = apply_mapper(depth, mapper).squeeze(0).numpy().astype(np.float64)
