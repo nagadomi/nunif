@@ -574,8 +574,10 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             else:
                 left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
 
-            results += [postprocess_image(left_eyes[i], right_eyes[i], args)
-                        for i in range(left_eyes.shape[0])]
+            frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
+                      for i in range(left_eyes.shape[0])]
+            results += [VU.to_frame(frame) for frame in frames]
+
         return results
 
     def _batch_frame_callback(x, pts, flush):
@@ -634,7 +636,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                 _, pts = src_queue.pop(0)
                 if pts in segment_pts:
                     out[0, 0:8, :] = 1.0
-                results.append(out)
+                results.append(VU.to_frame(out))
         else:
             for depths in chunks(depth_list, args.batch_size):
                 depths = torch.stack(depths)
@@ -644,8 +646,9 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
                     left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
-                results += [postprocess_image(left_eyes[i], right_eyes[i], args)
-                            for i in range(left_eyes.shape[0])]
+                frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
+                          for i in range(left_eyes.shape[0])]
+                results += [VU.to_frame(frame) for frame in frames]
         return results
 
     def _batch_infer():
