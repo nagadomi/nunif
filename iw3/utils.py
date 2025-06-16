@@ -544,8 +544,8 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
 
 
 def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
-    preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+    src_queue_lock = threading.Lock()
     streams = threading.local()
     src_queue = []
     lookahead_enabled = depth_model.get_ema_buffer_size() > 1
@@ -582,17 +582,16 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
         if flush:
             return None, None, flush
 
-        device_index = args.state["devices"].index(x.device)
-        with preprocess_lock[device_index]:
+        with src_queue_lock:
             x = preprocess_image(x, args)
+            if lookahead_enabled:
+                x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+                for x_, pts_ in zip(x_cpu, pts):
+                    src_queue.append((x_, pts_))
+            else:
+                src_queue.append((x, pts))
 
-        if lookahead_enabled:
-            x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
-            for x_, pts_ in zip(x_cpu, pts):
-                src_queue.append((x_, pts_))
-        else:
-            src_queue.append((x, pts))
-
+        device_index = args.state["devices"].index(x.device)
         with depth_lock[device_index]:
             depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                        enable_amp=not args.disable_amp,
