@@ -544,14 +544,21 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
 
 
 def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
-    preprocess_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
     depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
-    sbs_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
+    src_queue_lock = threading.Lock()
     streams = threading.local()
     src_queue = []
     lookahead_enabled = depth_model.get_ema_buffer_size() > 1
 
-    def _postprocess(depth_list, device_index):
+    @torch.inference_mode()
+    def _postprocess(frame_callback_args):
+        depth_batch, reset_ema, flush = frame_callback_args
+        if flush:
+            depth_list = depth_model.flush_minmax_normalize()
+        else:
+            depth_batch = depth_batch.to(args.state["device"])  # use same device
+            depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+
         results = []
         for depths in chunks(depth_list, args.batch_size):
             if isinstance(depths, list):
@@ -565,45 +572,35 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             if args.rgbd or args.half_rgbd:
                 left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
             else:
-                if args.method in {"forward", "forward_fill"}:
-                    # Lock all threads
-                    # forward_warp uses torch.use_deterministic_algorithms() and it seems to be not thread-safe
-                    with sbs_lock[device_index], preprocess_lock[device_index], depth_lock[device_index]:
-                        left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
-                else:
-                    with sbs_lock[device_index]:
-                        left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+                left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
 
             results += [postprocess_image(left_eyes[i], right_eyes[i], args)
                         for i in range(left_eyes.shape[0])]
         return results
 
-    @torch.inference_mode()
     def _batch_frame_callback(x, pts, flush):
         if flush:
-            depth_list = depth_model.flush_minmax_normalize()
-            return _postprocess(depth_list, device_index=0)
+            return None, None, flush
+
+        with src_queue_lock:
+            x = preprocess_image(x, args)
+            if lookahead_enabled:
+                x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+                for x_, pts_ in zip(x_cpu, pts):
+                    src_queue.append((x_, pts_))
+            else:
+                src_queue.append((x, pts))
 
         device_index = args.state["devices"].index(x.device)
-        with preprocess_lock[device_index]:
-            x = preprocess_image(x, args)
-
-        if lookahead_enabled:
-            x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
-            for x_, pts_ in zip(x_cpu, pts):
-                src_queue.append((x_, pts_))
-        else:
-            src_queue.append((x, pts))
-
         with depth_lock[device_index]:
             depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                        enable_amp=not args.disable_amp,
                                        edge_dilation=args.edge_dilation,
                                        depth_aa=args.depth_aa)
             reset_ema = [t in segment_pts for t in pts]
-            depth_list = depth_model.minmax_normalize(depths, reset_ema=reset_ema)
-            return _postprocess(depth_list, device_index)
+            return depths, reset_ema, flush
 
+    @torch.inference_mode()
     def _cuda_stream_wrapper(x, pts, flush):
         if flush:
             return _batch_frame_callback(None, None, True)
@@ -620,7 +617,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
         else:
             return _batch_frame_callback(x, pts, False)
 
-    return _cuda_stream_wrapper
+    return _cuda_stream_wrapper, _postprocess
 
 
 def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
@@ -820,13 +817,15 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
+        frame_callback, postprocess_callback = bind_batch_frame_callback(
+            depth_model=depth_model,
+            side_model=side_model,
+            segment_pts=segment_pts,
+            args=args
+        )
         frame_callback = VU.FrameCallbackPool(
-            bind_batch_frame_callback(
-                depth_model=depth_model,
-                side_model=side_model,
-                segment_pts=segment_pts,
-                args=args
-            ),
+            frame_callback=frame_callback,
+            postprocess_callback=postprocess_callback,
             batch_size=minibatch_size,
             device=args.state["devices"],
             max_workers=args.max_workers,
