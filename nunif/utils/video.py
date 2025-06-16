@@ -12,6 +12,7 @@ import torch
 from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 import time
+import numpy as np
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -164,12 +165,22 @@ def to_tensor(frame, device=None):
 
 def from_tensor(x):
     x = (x.permute(1, 2, 0).contiguous() * 255.0).to(torch.uint8).detach().cpu().numpy()
+    return from_ndarray(x)
+
+
+def from_ndarray(x):
     return av.video.frame.VideoFrame.from_ndarray(x, format="rgb24")
 
 
 def to_frame(x):
     if torch.is_tensor(x):
+        # float CHW
         return from_tensor(x)
+    elif isinstance(x, np.ndarray):
+        # uint8 HWC
+        return from_ndarray(x)
+    elif isinstance(x, av.video.frame.VideoFrame):
+        return x
     else:
         return from_image(x)
 
