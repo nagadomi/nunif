@@ -175,19 +175,19 @@ def gen_divergence(width, divergence_level):
             return random.uniform(min_divergence, max_divergence)
 
 
-def gen_convergence(full_random_convergence):
-    if full_random_convergence:
-        if random.uniform(0, 1) < 0.7:
-            return random.choice([0.0, 0.5, 1.0])
-        else:
-            return random.uniform(0., 1.)
-    else:
+def gen_convergence(weak_random_convergence):
+    if weak_random_convergence:
         # weak random
-        # needed to prevent strange distortion of grid_sample
         if random.uniform(0, 1) < 0.7:
             return 0.5
         else:
             return random.uniform(0.5 - 0.125, 0.5 + 0.125)
+    else:
+        # full random
+        if random.uniform(0, 1) < 0.7:
+            return random.choice([0.0, 0.5, 1.0])
+        else:
+            return random.uniform(0., 1.)
 
 
 def gen_mapper(is_metric):
@@ -204,7 +204,10 @@ def gen_mapper(is_metric):
 
 
 def gen_edge_dilation(model_type):
-    return random.choice([2] * 5 + [0, 0, 1, 3, 4])
+    if model_type.startswith("ZoeD"):
+        return random.choice([0] * 6 + [1, 2, 3, 4])
+    else:
+        return random.choice([2] * 6 + [0, 1, 3, 4])
 
 
 def gen_depth_aa(model_type):
@@ -257,7 +260,7 @@ def main(args):
                 for _ in range(args.times):
                     mapper = gen_mapper(model.is_metric()) if args.mapper == "random" else args.mapper
                     output_base = path.join(output_dir, filename_prefix + str(seq))
-                    convergence = gen_convergence(args.full_random_convergence)
+                    convergence = gen_convergence(args.weak_random_convergence)
                     edge_dilation = gen_edge_dilation(args.model_type)
                     depth_aa = gen_depth_aa(args.model_type)
                     flip_aug = False  # random.choice([True, False, False, False])
@@ -297,9 +300,12 @@ def main(args):
                     elif args.method == "forward_fill":
                         c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
                         depth_f = apply_mapper(depth, mapper).unsqueeze(0)
-                        left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(c, depth_f, divergence, convergence,
-                                                                                                   method="forward_fill", synthetic_view="both",
-                                                                                                   return_mask=True)
+                        left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
+                            c, depth_f, divergence, convergence,
+                            method="forward_fill",
+                            synthetic_view="both",
+                            return_mask=True,
+                            inconsistent_shift=True)
 
                         sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
                         sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
@@ -325,7 +331,7 @@ def register(subparsers, default_parser):
 
     parser.add_argument("--max-size", type=int, default=920, help="max image size")
     parser.add_argument("--divergence-level", type=int, default=1, choices=[1, 2, 3], help="divergence level. 1=0-5, 2=3-8, 3=6-11")
-    parser.add_argument("--full-random-convergence", action="store_true", help="Use full random convergence")
+    parser.add_argument("--weak-random-convergence", action="store_true", help="Use weak random convergence. 0.375-0.625")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")

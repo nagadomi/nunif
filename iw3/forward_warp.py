@@ -31,11 +31,16 @@ def shift_fill(x, sign, flip_sign=False, max_tries=100):
     return x
 
 
-def shift_fill_pack(left_eye, right_eye):
-    pack = torch.cat([left_eye, torch.flip(right_eye, dims=(-1,))], dim=1)
-    left_eye, right_eye = shift_fill(pack, -1).chunk(2, dim=1)
-    right_eye = torch.flip(right_eye, dims=(-1,))
-    return left_eye, right_eye
+def shift_fill_pack(left_eye, right_eye, inconsistent_shift=False):
+    if inconsistent_shift:
+        pack = torch.cat([left_eye, right_eye], dim=1)
+        left_eye, right_eye = shift_fill(pack, 1, flip_sign=True).chunk(2, dim=1)
+        return left_eye, right_eye
+    else:
+        pack = torch.cat([left_eye, torch.flip(right_eye, dims=(-1,))], dim=1)
+        left_eye, right_eye = shift_fill(pack, -1).chunk(2, dim=1)
+        right_eye = torch.flip(right_eye, dims=(-1,))
+        return left_eye, right_eye
 
 
 def fix_layered_holes(side_image, index_image, sign, max_tries=100):
@@ -123,7 +128,8 @@ def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
 
 
 def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
-                                      synthetic_view="both", inpaint_model=None, return_mask=False):
+                                      synthetic_view="both", inpaint_model=None,
+                                      return_mask=False, inconsistent_shift=False):
     src_image = c
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
@@ -158,12 +164,13 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         # unpad
         left_eye = unpad(left_eye)
         right_eye = unpad(right_eye)
-        left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
-        right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
+        left_eye, left_eye_index = left_eye[:, :-1, :, :], left_eye[:, -1:, :, :]
+        right_eye, right_eye_index = right_eye[:, :-1, :, :], right_eye[:, -1:, :, :]
 
         # Fix layered holes
         # inspired by @math-artist patch: https://github.com/nagadomi/nunif/discussions/274
-        left_eye_index, right_eye_index = shift_fill_pack(left_eye_index, right_eye_index)
+        left_eye_index, right_eye_index = shift_fill_pack(left_eye_index, right_eye_index,
+                                                          inconsistent_shift=inconsistent_shift)
         fix_layered_holes(left_eye, left_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
 
@@ -173,7 +180,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         if fill:
             if inpaint_model is None:
                 # super simple inpainting
-                left_eye, right_eye = shift_fill_pack(left_eye, right_eye)
+                left_eye, right_eye = shift_fill_pack(left_eye, right_eye, inconsistent_shift=inconsistent_shift)
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
@@ -235,13 +242,15 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 
 
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None,
-                                  synthetic_view="both", inpaint_model=None, return_mask=False):
+                                  synthetic_view="both", inpaint_model=None,
+                                  return_mask=False, inconsistent_shift=False):
     fill = (method == "forward_fill")
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
                                                  fill=fill, synthetic_view=synthetic_view,
                                                  inpaint_model=inpaint_model,
-                                                 return_mask=return_mask)
+                                                 return_mask=return_mask,
+                                                 inconsistent_shift=inconsistent_shift)
 
 
 def _bench():
