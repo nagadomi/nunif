@@ -18,6 +18,7 @@ import nunif.utils.shot_boundary_detection as SBD
 from nunif.models import load_model, compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
+from nunif.utils.ticket_lock import TicketLock
 from nunif.device import create_device, device_is_cuda, mps_is_available, xpu_is_available
 from nunif.models.data_parallel import DeviceSwitchInference
 from . import export_config
@@ -544,35 +545,55 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
 
 
 def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
-    depth_lock = [threading.Lock() for _ in range(len(args.state["devices"]))]
-    src_queue_lock = threading.Lock()
+    depth_lock = threading.RLock()
+    sbs_lock = threading.RLock()
+    enqueue_ticket_lock = TicketLock()
+    dequeue_ticket_lock = TicketLock()
     streams = threading.local()
     src_queue = []
     lookahead_enabled = depth_model.get_ema_buffer_size() > 1
 
-    @torch.inference_mode()
-    def _postprocess(frame_callback_args):
-        depth_batch, reset_ema, flush = frame_callback_args
-        if flush:
-            depth_list = depth_model.flush_minmax_normalize()
-        else:
-            depth_batch = depth_batch.to(args.state["device"])  # use same device
-            depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+    def _postprocess(depth_batch, reset_ema, deque_ticket_id, flush):
+        src_depth_pairs = []
+        with dequeue_ticket_lock:
+            # Reorder threads
+            dequeue_ticket_lock.wait(deque_ticket_id)
+
+            with depth_lock:
+                if flush:
+                    depth_list = depth_model.flush_minmax_normalize()
+                else:
+                    depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+
+            for depths in chunks(depth_list, args.batch_size):
+                if isinstance(depths, list):
+                    depths = torch.stack(depths)
+                if lookahead_enabled:
+                    x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
+                else:
+                    x_srcs, _ = src_queue.pop(0)
+
+                src_depth_pairs.append((x_srcs, depths))
+
+            dequeue_ticket_lock.release(deque_ticket_id)
 
         results = []
-        for depths in chunks(depth_list, args.batch_size):
-            if isinstance(depths, list):
-                depths = torch.stack(depths)
-            if lookahead_enabled:
-                x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
-                x_srcs = x_srcs.to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
-            else:
-                x_srcs, _ = src_queue.pop(0)
+        for x_srcs, depths in src_depth_pairs:
+            device = depths[0].device
 
-            if args.rgbd or args.half_rgbd:
-                left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
-            else:
-                left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+            if lookahead_enabled:
+                x_srcs = x_srcs.to(device).permute(0, 3, 1, 2) / 255.0
+
+            with sbs_lock:  # TODO: unclear whether this is actually needed
+                if args.rgbd or args.half_rgbd:
+                    left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
+                else:
+                    if args.method in {"forward_fill", "forward"}:
+                        # lock all threads (sbs_lock -> ticket_lock -> depth_lock order)
+                        with enqueue_ticket_lock, dequeue_ticket_lock, depth_lock:
+                            left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+                    else:
+                        left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
 
             frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
                       for i in range(left_eyes.shape[0])]
@@ -580,32 +601,38 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
 
         return results
 
-    def _batch_frame_callback(x, pts, flush):
+    def _batch_frame_callback(x, pts, flush, enqueue_ticket_id):
+        with enqueue_ticket_lock:
+            # Reorder threads
+            enqueue_ticket_lock.wait(enqueue_ticket_id)
+            deque_ticket_id = dequeue_ticket_lock.new_ticket()
+            if not flush:
+                x = preprocess_image(x, args)
+                if lookahead_enabled:
+                    x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+                    for x_, pts_ in zip(x_cpu, pts):
+                        src_queue.append((x_, pts_))
+                else:
+                    src_queue.append((x, pts))
+            enqueue_ticket_lock.release(enqueue_ticket_id)
+
         if flush:
-            return None, None, flush
+            return _postprocess(None, None, deque_ticket_id, flush)
 
-        with src_queue_lock:
-            x = preprocess_image(x, args)
-            if lookahead_enabled:
-                x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
-                for x_, pts_ in zip(x_cpu, pts):
-                    src_queue.append((x_, pts_))
-            else:
-                src_queue.append((x, pts))
-
-        device_index = args.state["devices"].index(x.device)
-        with depth_lock[device_index]:
+        with depth_lock:
             depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                        enable_amp=not args.disable_amp,
                                        edge_dilation=args.edge_dilation,
                                        depth_aa=args.depth_aa)
-            reset_ema = [t in segment_pts for t in pts]
-            return depths, reset_ema, flush
+
+        reset_ema = [t in segment_pts for t in pts]
+        return _postprocess(depths, reset_ema, deque_ticket_id, flush)
 
     @torch.inference_mode()
-    def _cuda_stream_wrapper(x, pts, flush):
+    def _cuda_stream_wrapper(preprocess_args):
+        x, pts, flush, enqueue_ticket_id = preprocess_args
         if flush:
-            return _batch_frame_callback(None, None, True)
+            return _batch_frame_callback(None, None, True, enqueue_ticket_id)
         elif args.cuda_stream and device_is_cuda(x.device):
             device_name = str(x.device)
             if not hasattr(streams, device_name):
@@ -613,13 +640,17 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             stream = getattr(streams, device_name)
             stream.wait_stream(torch.cuda.current_stream(x.device))
             with torch.cuda.device(x.device), torch.cuda.stream(stream):
-                ret = _batch_frame_callback(x, pts, False)
+                ret = _batch_frame_callback(x, pts, False, enqueue_ticket_id)
                 stream.synchronize()
                 return ret
         else:
-            return _batch_frame_callback(x, pts, False)
+            return _batch_frame_callback(x, pts, False, enqueue_ticket_id)
 
-    return _cuda_stream_wrapper, _postprocess
+    def _preprocess(x, pts, flush):
+        enqueue_ticket_id = enqueue_ticket_lock.new_ticket()
+        return (x, pts, flush, enqueue_ticket_id)
+
+    return _cuda_stream_wrapper, _preprocess
 
 
 def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
@@ -820,7 +851,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
-        frame_callback, postprocess_callback = bind_batch_frame_callback(
+        frame_callback, preprocess_callback = bind_batch_frame_callback(
             depth_model=depth_model,
             side_model=side_model,
             segment_pts=segment_pts,
@@ -828,7 +859,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         )
         frame_callback = VU.FrameCallbackPool(
             frame_callback=frame_callback,
-            postprocess_callback=postprocess_callback,
+            preprocess_callback=preprocess_callback,
             batch_size=minibatch_size,
             device=args.state["devices"],
             max_workers=args.max_workers,
