@@ -4,7 +4,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
+from nunif.modules.replication_pad2d import (
+    ReplicationPad2dNaive,
+    replication_pad2d_naive,
+    replication_pad2d
+)
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
 
@@ -24,6 +28,7 @@ class WABlock(nn.Module):
         )
         self.bias = WindowScoreBias(window_size)
 
+    @conditional_compile(["NUNIF_TRAIN"])
     def forward(self, x):
         x = x + self.mha(x, attn_mask=self.bias())
         x = x + self.conv_mlp(x)
@@ -46,7 +51,7 @@ class MLBW(I2IBaseModel):
         self.lv1_in = nn.Sequential(
             ReplicationPad2dNaive((4, 4, 0, 0), detach=True),
             nn.Conv2d(3, C // pack, kernel_size=(1, 9), stride=1, padding=0),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(0.2, inplace=False),
         )
         self.lv2 = nn.Sequential(
             WABlock(C, (4, 4), shift=(False, True), num_heads=self.num_layers),
@@ -63,16 +68,22 @@ class MLBW(I2IBaseModel):
         input_height, input_width = x.shape[2:]
         pad_w = (self.mod * self.downscaling_factor[1]) - input_width % (self.mod * self.downscaling_factor[1])
         pad_h = (self.mod * self.downscaling_factor[0]) - input_height % (self.mod * self.downscaling_factor[0])
-        pad_w1 = pad_w // 2
-        pad_w2 = pad_w - pad_w1
-        pad_h1 = pad_h // 2
-        pad_h2 = pad_h - pad_h1
+        if self.training:
+            pad_w1 = random.randint(0, pad_w)
+            pad_w2 = pad_w - pad_w1
+            pad_h1 = random.randint(0, pad_h)
+            pad_h2 = pad_h - pad_h1
+        else:
+            pad_w1 = pad_w // 2
+            pad_w2 = pad_w - pad_w1
+            pad_h1 = pad_h // 2
+            pad_h2 = pad_h - pad_h1
         return pad_w1, pad_w2, pad_h1, pad_h2
 
     def _forward(self, x):
         input_height, input_width = x.shape[2:]
         pad_w1, pad_w2, pad_h1, pad_h2 = self._calc_pad(x)
-        x = replication_pad2d_naive(x, (pad_w1, pad_w2, pad_h1, pad_h2), detach=True)
+        x = replication_pad2d(x, (pad_w1, pad_w2, pad_h1, pad_h2))
         x = x1 = self.lv1_in(x)
         x = pixel_unshuffle(x, self.downscaling_factor)
         x = self.lv2(x)
@@ -81,9 +92,8 @@ class MLBW(I2IBaseModel):
         x = F.pad(x, (-pad_w1, -pad_w2, -pad_h1, -pad_h2), mode="constant")
         delta, layer_weight = x.chunk(2, dim=1)
 
-        # apply softmax step 1
         layer_weight = layer_weight.to(torch.float32)
-        layer_weight = torch.exp(layer_weight - layer_weight.amax(dim=1, keepdim=True))
+        layer_weight = F.softmax(layer_weight, dim=1)
 
         return delta, layer_weight
 
@@ -100,7 +110,6 @@ class MLBW(I2IBaseModel):
         z = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
         return z.to(output_dtye)
 
-    @conditional_compile(["NUNIF_TRAIN"])
     def _forward_default_composite(self, x):
         rgb = x[:, 0:3, :, ]
         grid = x[:, 6:8, :, ]
@@ -108,15 +117,6 @@ class MLBW(I2IBaseModel):
         delta, layer_weight = self._forward(x)
         delta = delta.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
-
-        # warp layer_weight with delta.detach()
-        layer_weights = []
-        for i in range(delta.shape[1]):
-            w = self._warp(layer_weight[:, i:i + 1, :, :], grid, delta[:, i:i + 1, :, :].detach(), delta_scale)
-            layer_weights.append(w)
-        layer_weight = torch.cat(layer_weights, dim=1)
-        # apply softmax step 2
-        layer_weight = layer_weight / (layer_weight.sum(dim=1, keepdim=True) + 1e-6)
 
         # composite
         z = torch.zeros_like(rgb)
@@ -138,26 +138,8 @@ class MLBW(I2IBaseModel):
 
     def _forward_delta_only(self, x):
         assert not self.training
-
-        # pre-warp layer_weight
-        h, w = x.shape[-2], x.shape[-1]
-        mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h, device=x.device),
-                                        torch.linspace(-1, 1, w, device=x.device), indexing="ij")
-        grid = torch.stack((mesh_x, mesh_y), 2)
-        grid = grid.permute(2, 0, 1)
-        delta_scale = torch.tensor(1.0 / (w // 2 - 1), dtype=x.dtype, device=x.device)
         delta, layer_weight = self._forward(x)
         delta = delta.to(torch.float32)
-
-        layer_weights = []
-        for i in range(delta.shape[1]):
-            w = self._warp(layer_weight[:, i:i + 1, :, :], grid, delta[:, i:i + 1, :, :], delta_scale)
-            layer_weights.append(w)
-
-        # apply softmax step 2
-        layer_weight = torch.cat(layer_weights, dim=1)
-        layer_weight = layer_weight / (layer_weight.sum(dim=1, keepdim=True) + 1e-6)
-
         return delta, layer_weight
 
     def forward(self, x):
