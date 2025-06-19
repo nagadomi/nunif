@@ -3,6 +3,9 @@ import torch
 
 def minmax_normalize(frame, min_value, max_value):
     # TODO: Fix this inversion `1 - value`
+    if torch.is_tensor(min_value):
+        min_value = min_value.to(frame.device)
+        max_value = max_value.to(frame.device)
     frame = 1.0 - ((frame - min_value) / (max_value - min_value))
     frame = frame.clamp(0.0, 1.0)
     frame = frame.nan_to_num()
