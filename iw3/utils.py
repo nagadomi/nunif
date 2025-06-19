@@ -558,24 +558,24 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
         with dequeue_ticket_lock:
             # Reorder threads
             dequeue_ticket_lock.wait(deque_ticket_id)
+            try:
+                with depth_lock:
+                    if flush:
+                        depth_list = depth_model.flush_minmax_normalize()
+                    else:
+                        depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
 
-            with depth_lock:
-                if flush:
-                    depth_list = depth_model.flush_minmax_normalize()
-                else:
-                    depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+                for depths in chunks(depth_list, args.batch_size):
+                    if isinstance(depths, list):
+                        depths = torch.stack(depths)
+                    if lookahead_enabled:
+                        x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
+                    else:
+                        x_srcs, _ = src_queue.pop(0)
 
-            for depths in chunks(depth_list, args.batch_size):
-                if isinstance(depths, list):
-                    depths = torch.stack(depths)
-                if lookahead_enabled:
-                    x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
-                else:
-                    x_srcs, _ = src_queue.pop(0)
-
-                src_depth_pairs.append((x_srcs, depths))
-
-            dequeue_ticket_lock.release(deque_ticket_id)
+                    src_depth_pairs.append((x_srcs, depths))
+            finally:
+                dequeue_ticket_lock.release(deque_ticket_id)
 
         results = []
         for x_srcs, depths in src_depth_pairs:
@@ -605,16 +605,18 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
         with enqueue_ticket_lock:
             # Reorder threads
             enqueue_ticket_lock.wait(enqueue_ticket_id)
-            deque_ticket_id = dequeue_ticket_lock.new_ticket()
-            if not flush:
-                x = preprocess_image(x, args)
-                if lookahead_enabled:
-                    x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
-                    for x_, pts_ in zip(x_cpu, pts):
-                        src_queue.append((x_, pts_))
-                else:
-                    src_queue.append((x, pts))
-            enqueue_ticket_lock.release(enqueue_ticket_id)
+            try:
+                deque_ticket_id = dequeue_ticket_lock.new_ticket()
+                if not flush:
+                    x = preprocess_image(x, args)
+                    if lookahead_enabled:
+                        x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+                        for x_, pts_ in zip(x_cpu, pts):
+                            src_queue.append((x_, pts_))
+                    else:
+                        src_queue.append((x, pts))
+            finally:
+                enqueue_ticket_lock.release(enqueue_ticket_id)
 
         if flush:
             return _postprocess(None, None, deque_ticket_id, flush)
