@@ -553,7 +553,10 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     lookahead_enabled = depth_model.get_ema_buffer_size() > 1
 
-    def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device):
+    def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device, stream=None):
+        if stream is not None:
+            # Synchronize before depth_batch enters EMAMinMaxScaler queue
+            stream.synchronize()
         src_depth_pairs = []
         with dequeue_ticket_lock:
             # Reorder threads
@@ -597,11 +600,14 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
 
             frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
                       for i in range(left_eyes.shape[0])]
+            if stream is not None:
+                # Synchronize before calling cpu()
+                stream.synchronize()
             results += [VU.to_frame(frame) for frame in frames]
 
         return results
 
-    def _batch_frame_callback(x, pts, flush, enqueue_ticket_id):
+    def _batch_frame_callback(x, pts, flush, enqueue_ticket_id, stream=None):
         with enqueue_ticket_lock:
             # Reorder threads
             enqueue_ticket_lock.wait(enqueue_ticket_id)
@@ -619,8 +625,13 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 enqueue_ticket_lock.release(enqueue_ticket_id)
 
         if flush:
-            return _postprocess(None, None,
-                                dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=args.state["device"])
+            return _postprocess(
+                None, None,
+                dequeue_ticket_id=dequeue_ticket_id,
+                flush=flush,
+                device=args.state["device"],
+                stream=stream
+            )
 
         with depth_lock:
             depths = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
@@ -629,8 +640,12 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                                        depth_aa=args.depth_aa)
 
         reset_ema = [t in segment_pts for t in pts]
-        return _postprocess(depths, reset_ema,
-                            dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=x.device)
+        return _postprocess(
+            depths, reset_ema,
+            dequeue_ticket_id=dequeue_ticket_id,
+            flush=flush,
+            device=x.device,
+            stream=stream)
 
     @torch.inference_mode()
     def _cuda_stream_wrapper(preprocess_args):
@@ -644,7 +659,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             stream = getattr(streams, device_name)
             stream.wait_stream(torch.cuda.current_stream(x.device))
             with torch.cuda.device(x.device), torch.cuda.stream(stream):
-                ret = _batch_frame_callback(x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
+                ret = _batch_frame_callback(x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id, stream=stream)
                 stream.synchronize()
                 return ret
         else:
