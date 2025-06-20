@@ -154,7 +154,7 @@ def estimate_fps(fps_counter):
         return 0
 
 
-def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_lock, frame_event, stop_event, backend="pil"):
+def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_lock, frame_event, stop_event, backend="pil", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0):
     frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
     frame_count = 0
 
@@ -183,25 +183,35 @@ def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_loc
 
     @capture.event
     def on_frame_arrived(frame, capture_control):
-        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer, window_name, frame_count  # noqa
+        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer, window_name, frame_count, crop_top, crop_left, crop_right, crop_bottom  # noqa
         if not frame_event.is_set():
             with frame_lock:
-                if frame_buffer.shape != frame.frame_buffer.shape:
+                source_frame = frame.frame_buffer
+                # Apply cropping for window capture
+                if window_name and (crop_top > 0 or crop_left > 0 or crop_right > 0 or crop_bottom > 0):
+                    h, w = source_frame.shape[:2]
+                    top = crop_top
+                    bottom = h - crop_bottom if crop_bottom > 0 else h
+                    left = crop_left
+                    right = w - crop_right if crop_right > 0 else w
+                    source_frame = source_frame[top:bottom, left:right, :]
+                
+                if frame_buffer.shape != source_frame.shape:
                     if window_name is not None:
                         # NOTE: The size may differ due to resizing, Window effects, etc.
-                        # I wanted to use replication padding, but since the edges of the Windows screen are black, it’s meaningless
-                        min_h = min(frame_buffer.shape[0], frame.frame_buffer.shape[0])
-                        min_w = min(frame_buffer.shape[1], frame.frame_buffer.shape[1])
+                        # I wanted to use replication padding, but since the edges of the Windows screen are black, it's meaningless
+                        min_h = min(frame_buffer.shape[0], source_frame.shape[0])
+                        min_w = min(frame_buffer.shape[1], source_frame.shape[1])
                         if frame_count % 30 == 0:
                             frame_buffer[:] = 0.0
-                        frame_buffer[0:min_h, 0:min_w, :] = frame.frame_buffer[0:min_h, 0:min_w, :]
+                        frame_buffer[0:min_h, 0:min_w, :] = source_frame[0:min_h, 0:min_w, :]
                         frame_count += 1
                         if frame_count > 0xffff:
                             frame_count = 0
                     else:
-                        raise RuntimeError(f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={frame.frame_buffer.shape}")
+                        raise RuntimeError(f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={source_frame.shape}")
                 else:
-                    frame_buffer[:] = frame.frame_buffer
+                    frame_buffer[:] = source_frame
                 frame_event.set()
 
         if stop_event.is_set():
@@ -227,7 +237,7 @@ def to_tensor(bgra, device):
 
 
 class ScreenshotProcess(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="pil"):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="pil", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0):
         super().__init__()
         self.backend = backend
         self.frame_width = frame_width
@@ -235,6 +245,10 @@ class ScreenshotProcess(threading.Thread):
         self.monitor_index = monitor_index
         self.window_name = window_name
         self.device = device
+        self.crop_top = crop_top
+        self.crop_left = crop_left
+        self.crop_right = crop_right
+        self.crop_bottom = crop_bottom
         self.frame = None
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
@@ -269,7 +283,11 @@ class ScreenshotProcess(threading.Thread):
                   self.process_frame_lock,
                   self.process_frame_event,
                   self.process_stop_event,
-                  self.backend))
+                  self.backend,
+                  self.crop_top,
+                  self.crop_left,
+                  self.crop_right,
+                  self.crop_bottom))
         self.process.start()
 
     def run(self):

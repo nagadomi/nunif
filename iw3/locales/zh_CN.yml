@@ -129,3 +129,8 @@
 "Monitor Index": "显示器编号"
 "Window Name": "窗口名称"
 "Reload": "重新加载"
+"Crop Region (px)": "裁剪区域 (像素)"
+"Top": "上"
+"Left": "左"
+"Right": "右"
+"Bottom": "下"

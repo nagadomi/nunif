@@ -124,3 +124,8 @@
 "Monitor Index": "ディスプレイ番号"
 "Window Name": "ウィンドウ名"
 "Reload": "再読込み"
+"Crop Region (px)": "クロップ領域 (px)"
+"Top": "上"
+"Left": "左"
+"Right": "右"
+"Bottom": "下"
