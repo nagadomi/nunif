@@ -38,7 +38,14 @@ HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v2_20240130.pth"
 ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
 ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240424.pth"
-MLBW_L2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_mlbw_l2_20250611.pth"
+
+ROW_FLOW_V4_D1_URL = "models/row_flow_v4_rev16/sbs.row_flow_v4.left.pth"
+MLBW_L2_D1_URL = "models/mlbw_l2_rev16/sbs.mlbw.left.pth"
+MLBW_L4_D1_URL = "models/mlbw_l4_rev16/sbs.mlbw.left.pth"
+
+MLBW_L2_D2_URL = "models/mlbw_l2_d2_rev16/sbs.mlbw.left.pth"
+MLBW_L4_D2_URL = "models/mlbw_l4_d2_rev16/sbs.mlbw.left.pth"
+
 
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
 ROW_FLOW_V3_MAX_DIVERGENCE = 5.0
@@ -1588,6 +1595,7 @@ def create_parser(required_true=True):
                         choices=["grid_sample", "backward", "forward", "forward_fill",
                                  "mlbw_l2", "mlbw_l4",
                                  "row_flow", "row_flow_sym",
+                                 "row_flow_v4",
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
                         help="left-right divergence method")
@@ -1893,11 +1901,25 @@ def is_yaml(filename):
 def load_sbs_model(args):
     with TorchHubDir(HUB_MODEL_DIR):
         if args.method  == "mlbw_l2":
-            side_model = load_model(MLBW_L2_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            if args.divergence <= 4:
+                url = MLBW_L2_D1_URL
+            else:
+                url = MLBW_L2_D2_URL
+            side_model = load_model(url, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
             side_model.symmetric = False
             side_model.delta_output = True
         elif args.method  == "mlbw_l4":
-            raise NotImplementedError()
+            if args.divergence <= 4:
+                url = MLBW_L4_D1_URL
+            else:
+                url = MLBW_L4_D2_URL
+            side_model = load_model(url, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = False
+            side_model.delta_output = True
+        elif args.method  == "row_flow_v4":
+            side_model = load_model(ROW_FLOW_V4_D1_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
+            side_model.symmetric = False
+            side_model.delta_output = True
         elif args.method in {"row_flow_v3", "row_flow"}:
             side_model = load_model(ROW_FLOW_V3_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
             side_model.symmetric = False
