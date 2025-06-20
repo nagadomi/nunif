@@ -22,7 +22,7 @@ class DeltaPenalty(nn.Module):
         N = 3
         penalty = 0
         for i in range(1, N):
-            penalty = penalty + F.relu(grid[:, :, :, :-i] - grid[:, :, :, i:], inplace=True).mean()
+            penalty = penalty + F.relu(grid[:, :, :, :-i] - grid[:, :, :, i:], inplace=False).mean()
         return penalty / N
 
 
@@ -102,12 +102,12 @@ class SBSEnv(I2IEnv):
 
     def train_loss_hook(self, data, loss):
         super().train_loss_hook(data, loss)
-        if self.trainer.args.hard_example:
+        if not self.trainer.args.disable_hard_example:
             index = data[-1]
             self.sampler.update_losses(index, loss.item())
 
     def train_end(self):
-        if self.trainer.args.hard_example:
+        if not self.trainer.args.disable_hard_example:
             self.sampler.update_weights()
         return super().train_end()
 
@@ -206,7 +206,7 @@ def register(subparsers, default_parser):
                         help="hole mask weight. 1 means completely excluded from the loss")
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
-    parser.add_argument("--hard-example", action="store_true", help="Use hard example mining")
+    parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
 
     parser.set_defaults(
         batch_size=16,
