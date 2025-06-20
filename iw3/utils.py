@@ -555,29 +555,25 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
 
     def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device):
         src_depth_pairs = []
-        with dequeue_ticket_lock:
-            # Reorder threads
-            dequeue_ticket_lock.wait(dequeue_ticket_id)
-            try:
-                with depth_lock:
-                    if flush:
-                        depth_list = depth_model.flush_minmax_normalize()
-                    else:
-                        depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+        # Reorder threads
+        with dequeue_ticket_lock(dequeue_ticket_id):
+            with depth_lock:
+                if flush:
+                    depth_list = depth_model.flush_minmax_normalize()
+                else:
+                    depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
 
-                for depths in chunks(depth_list, args.batch_size):
-                    if isinstance(depths, list):
-                        depths = torch.stack([depth.to(device) for depth in depths])
-                    else:
-                        depths = depths.to(device)
-                    if lookahead_enabled:
-                        x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
-                    else:
-                        x_srcs, _ = src_queue.pop(0)
+            for depths in chunks(depth_list, args.batch_size):
+                if isinstance(depths, list):
+                    depths = torch.stack([depth.to(device) for depth in depths])
+                else:
+                    depths = depths.to(device)
+                if lookahead_enabled:
+                    x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
+                else:
+                    x_srcs, _ = src_queue.pop(0)
 
-                    src_depth_pairs.append((x_srcs, depths))
-            finally:
-                dequeue_ticket_lock.release(dequeue_ticket_id)
+                src_depth_pairs.append((x_srcs, depths))
 
         results = []
         for x_srcs, depths in src_depth_pairs:
@@ -601,57 +597,54 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
 
         return results
 
-    def _batch_frame_callback(x, pts, flush, enqueue_ticket_id):
-        with enqueue_ticket_lock:
-            # Reorder threads
-            enqueue_ticket_lock.wait(enqueue_ticket_id)
-            try:
-                dequeue_ticket_id = dequeue_ticket_lock.new_ticket()
-                if not flush:
-                    x = preprocess_image(x, args)
-                    if lookahead_enabled:
-                        x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
-                        for x_, pts_ in zip(x_cpu, pts):
-                            src_queue.append((x_, pts_))
-                    else:
-                        src_queue.append((x, pts))
-            finally:
-                enqueue_ticket_lock.release(enqueue_ticket_id)
+    def _batch_infer(x, pts, flush, enqueue_ticket_id):
+        # Reorder threads
+        with enqueue_ticket_lock(enqueue_ticket_id):
+            dequeue_ticket_id = dequeue_ticket_lock.new_ticket()
+            if not flush:
+                x = preprocess_image(x, args)
+                if lookahead_enabled:
+                    x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+                    for x_, pts_ in zip(x_cpu, pts):
+                        src_queue.append((x_, pts_))
+                else:
+                    src_queue.append((x, pts))
 
         if flush:
-            return (None, None, dequeue_ticket_id)
+            return None, dequeue_ticket_id
+        else:
+            with depth_lock:
+                depth_batch = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
+                                                enable_amp=not args.disable_amp,
+                                                edge_dilation=args.edge_dilation,
+                                                depth_aa=args.depth_aa)
 
-        with depth_lock:
-            depth_batch = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
-                                            enable_amp=not args.disable_amp,
-                                            edge_dilation=args.edge_dilation,
-                                            depth_aa=args.depth_aa)
-
-        reset_ema = [t in segment_pts for t in pts]
-        return (depth_batch, reset_ema, dequeue_ticket_id)
+            return depth_batch, dequeue_ticket_id
 
     @torch.inference_mode()
     def _cuda_stream_wrapper(preprocess_args):
         x, pts, flush, enqueue_ticket_id = preprocess_args
         if flush:
             device = args.state["device"]
-            depth_batch, reset_ema, dequeue_ticket_id = _batch_frame_callback(
+            reset_ema = None
+            depth_batch, dequeue_ticket_id = _batch_infer(
                 None, None, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
-        elif args.cuda_stream and device_is_cuda(x.device):
-            device = x.device
-            device_name = str(device)
-            if not hasattr(streams, device_name):
-                setattr(streams, device_name, torch.cuda.Stream(device=x.device))
-            stream = getattr(streams, device_name)
-            stream.wait_stream(torch.cuda.current_stream(x.device))
-            with torch.cuda.device(x.device), torch.cuda.stream(stream):
-                depth_batch, reset_ema, dequeue_ticket_id = _batch_frame_callback(
-                    x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
-                stream.synchronize()
         else:
             device = x.device
-            depth_batch, reset_ema, dequeue_ticket_id = _batch_frame_callback(
-                x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
+            reset_ema = [t in segment_pts for t in pts]
+            if args.cuda_stream and device_is_cuda(x.device):
+                device_name = str(device)
+                if not hasattr(streams, device_name):
+                    setattr(streams, device_name, torch.cuda.Stream(device=x.device))
+                stream = getattr(streams, device_name)
+                stream.wait_stream(torch.cuda.current_stream(x.device))
+                with torch.cuda.device(x.device), torch.cuda.stream(stream):
+                    depth_batch, dequeue_ticket_id = _batch_infer(
+                        x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
+                    stream.synchronize()
+            else:
+                depth_batch, dequeue_ticket_id = _batch_infer(
+                    x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
 
         return _postprocess(
             depth_batch, reset_ema,
