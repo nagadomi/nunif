@@ -40,7 +40,6 @@ ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3
 ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
 ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240424.pth"
 
-ROW_FLOW_V4_D1_URL = "models/row_flow_v4_rev16/sbs.row_flow_v4.left.pth"
 MLBW_L2_D1_URL = "models/mlbw_l2_rev16/sbs.mlbw.left.pth"
 MLBW_L4_D1_URL = "models/mlbw_l4_rev16/sbs.mlbw.left.pth"
 
@@ -1634,7 +1633,6 @@ def create_parser(required_true=True):
                         choices=["grid_sample", "backward", "forward", "forward_fill",
                                  "mlbw_l2", "mlbw_l4",
                                  "row_flow", "row_flow_sym",
-                                 "row_flow_v4",
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
                         help="left-right divergence method")
@@ -1953,10 +1951,6 @@ def load_sbs_model(args):
             else:
                 url = MLBW_L4_D2_URL
             side_model = load_model(url, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
-            side_model.symmetric = False
-            side_model.delta_output = True
-        elif args.method  == "row_flow_v4":
-            side_model = load_model(ROW_FLOW_V4_D1_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
             side_model.symmetric = False
             side_model.delta_output = True
         elif args.method in {"row_flow_v3", "row_flow"}:

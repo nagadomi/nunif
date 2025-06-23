@@ -183,8 +183,6 @@ def train(args):
         args.loss = "aux_l1"
     elif args.arch == "sbs.row_flow_v3":
         args.loss = "row_flow_v3"
-    elif args.arch == "sbs.row_flow_v4":
-        args.loss = "mlbw"
     elif args.arch.startswith("sbs.mlbw"):
         args.loss = "mlbw"
 
