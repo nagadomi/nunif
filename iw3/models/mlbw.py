@@ -38,7 +38,7 @@ class WABlock(nn.Module):
 class MLBW(I2IBaseModel):
     name = "sbs.mlbw"
 
-    def __init__(self, num_layers=2, base_dim=32):
+    def __init__(self, num_layers=2, base_dim=32, **kwargs):
         super(MLBW, self).__init__(locals(), scale=1, offset=OFFSET, in_channels=8, blend_size=4)
         self.downscaling_factor = (1, 8)
         self.mod = 4
@@ -53,7 +53,9 @@ class MLBW(I2IBaseModel):
             nn.LeakyReLU(0.2, inplace=False),
         )
         self.lv2 = nn.Sequential(
-            WABlock(C, (4, 4), shift=(False, True), num_heads=self.num_layers),
+            WABlock(C, (4, 4), shift=(True, True), num_heads=self.num_layers),
+            WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
+            WABlock(C, (4, 4), shift=(True, True), num_heads=self.num_layers),
             WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
         )
         self.lv1_out = nn.Sequential(
@@ -167,7 +169,7 @@ def _bench(name):
 
     model = create_model(name).to(device).eval()
     x = torch.zeros((B, 8, 512, 512)).to(device)
-    with torch.inference_mode():
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z, *_ = model(x)
         print(z.shape)
         params = sum([p.numel() for p in model.parameters()])
@@ -183,7 +185,7 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    # 420 FPS on RTX3070Ti
+    # 305 FPS on RTX3070Ti
     _bench("sbs.mlbw_l2")
-    # 240 FPS on RTX3070Ti
+    # 150 FPS on RTX3070Ti
     _bench("sbs.mlbw_l4")
