@@ -121,7 +121,7 @@ def _bench(name):
 
     model = create_model(name).to(device).eval()
     x = torch.zeros((B, 8, 512, 512)).to(device)
-    with torch.inference_mode():
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z, *_ = model(x)
         print(z.shape)
         params = sum([p.numel() for p in model.parameters()])
