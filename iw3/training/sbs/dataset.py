@@ -26,11 +26,15 @@ def load_images(org_file, side=None):
             path.join(dirname, basename.replace("_C.png", "_L.png")), color="rgb")
         im_right, _ = pil_io.load_image_simple(
             path.join(dirname, basename.replace("_C.png", "_R.png")), color="rgb")
+        im_mask_left, _ = pil_io.load_image_simple(
+            path.join(dirname, basename.replace("_C.png", "_ML.png")), color="gray")
+        im_mask_right, _ = pil_io.load_image_simple(
+            path.join(dirname, basename.replace("_C.png", "_MR.png")), color="gray")
 
-        if not all([im_org, im_depth, im_left, im_right]):
+        if not all([im_org, im_depth, im_left, im_right, im_mask_left, im_mask_right]):
             raise RuntimeError(f"load error {org_file}")
-        assert im_org.size == im_depth.size and im_org.size == im_left.size and im_org.size == im_right.size
-        return im_org, im_depth, im_left, im_right
+        assert im_org.size == im_depth.size == im_left.size == im_right.size == im_mask_left.size == im_mask_right.size
+        return im_org, im_depth, im_left, im_right, im_mask_left, im_mask_right
     else:
         if side == "left":
             im_side, _ = pil_io.load_image_simple(
@@ -114,9 +118,12 @@ class SBSDataset(Dataset):
         return depth_max, depth_min, original_image_width, divergence, convergence, mapper
 
     def _getitem_symmetric(self, index):
-        im_org, im_depth, im_left, im_right = load_images(self.files[index])
+        im_org, im_depth, im_left, im_right, im_mask_left, im_mask_right = load_images(self.files[index])
         (depth_max, depth_min, original_image_width,
          divergence, convergence, mapper) = self.get_metadata(im_depth)
+
+        if self.size != im_org.height:
+            raise ValueError("--symmetric does not support --size option")
 
         depth = depth_pil_to_tensor(im_depth, depth_min=depth_min, depth_max=depth_max)
         x = make_input_tensor(
@@ -132,9 +139,16 @@ class SBSDataset(Dataset):
         right = TF.to_tensor(TF.crop(im_right, self.model_offset, self.model_offset,
                                      im_right.height - self.model_offset * 2,
                                      im_right.width - self.model_offset * 2))
+        mask_left = TF.to_tensor(TF.crop(im_mask_left, self.model_offset, self.model_offset,
+                                         im_mask_left.height - self.model_offset * 2,
+                                         im_mask_left.width - self.model_offset * 2))
+        mask_right = TF.to_tensor(TF.crop(im_mask_right, self.model_offset, self.model_offset,
+                                          im_mask_right.height - self.model_offset * 2,
+                                          im_mask_right.width - self.model_offset * 2))
         y = torch.cat([left, right], dim=0)
+        mask = torch.cat([mask_left, mask_right], dim=0)
 
-        return x, y, index
+        return x, (y, mask), index
 
     def _getitem(self, index):
         if self.training:

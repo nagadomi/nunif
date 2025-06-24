@@ -70,14 +70,25 @@ class RowFlowV3Loss(nn.Module):
         self.blur = GaussianFilter2d(1, 3, padding=1)
         self.delta_penalty = DeltaPenalty()
 
+    def _masked_loss(self, input, target, mask):
+        mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
+        loss = (clamp_loss(input, target, loss_function=l1_none, min_value=0, max_value=1) * mask).mean()
+        return loss
+
     def forward(self, input, target):
         z, grid = input
         y, mask = target
 
         delta_penalty = self.delta_penalty(grid, None)
         if self.mask_weight > 0:
-            mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
-            loss = (clamp_loss(z, y, loss_function=l1_none, min_value=0, max_value=1) * mask).mean()
+            if mask.shape[1] == 1:
+                loss = self._masked_loss(z, y, mask)
+            else:
+                # symmetric
+                mask_l, mask_r = mask.chunk(2, dim=1)
+                z_l, z_r = z.chunk(2, dim=1)
+                y_l, y_r = y.chunk(2, dim=1)
+                loss = (self._masked_loss(z_l, y_l, mask_l) + self._masked_loss(z_r, y_r, mask_r)) * 0.5
         else:
             loss = clamp_loss(z, y, loss_function=l1_none, min_value=0, max_value=1).mean()
 
@@ -92,7 +103,18 @@ class MaskedPSNR(nn.Module):
     def forward(self, input, target):
         y, mask = target
         mask = 1 - mask
-        return self.psnr(input * mask, y * mask)
+
+        if mask.shape[1] == 1:
+            return self.psnr(input * mask, y * mask)
+        else:
+            # symmetric
+            z = input
+            mask_l, mask_r = mask.chunk(2, dim=1)
+            z_l, z_r = z.chunk(2, dim=1)
+            y_l, y_r = y.chunk(2, dim=1)
+            input = torch.cat((z_l * mask_l, z_r * mask_r), dim=1)
+            target = torch.cat((y_l * mask_l, y_r * mask_r), dim=1)
+            return self.psnr(input, target)
 
 
 class SBSEnv(I2IEnv):
