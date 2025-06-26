@@ -153,7 +153,8 @@ class SBSTrainer(Trainer):
         if type == "train":
             dataset = SBSDataset(path.join(self.args.data_dir, "train"),
                                  size=self.args.size, model_offset=model_offset,
-                                 symmetric=self.args.symmetric, training=True)
+                                 symmetric=self.args.symmetric, training=True,
+                                 weak_convergence=self.args.weak_convergence)
             self.sampler = dataset.create_sampler(self.args.num_samples)
             loader = torch.utils.data.DataLoader(
                 dataset,
@@ -167,7 +168,8 @@ class SBSTrainer(Trainer):
         else:
             dataset = SBSDataset(path.join(self.args.data_dir, "eval"),
                                  size=self.args.size, model_offset=model_offset,
-                                 symmetric=self.args.symmetric, training=False)
+                                 symmetric=self.args.symmetric, training=False,
+                                 weak_convergence=self.args.weak_convergence)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -227,6 +229,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
     parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
+    parser.add_argument("--weak-convergence", action="store_true", help="Use 0.375 <= convergence <= 0.625 only ")
 
     parser.set_defaults(
         batch_size=16,

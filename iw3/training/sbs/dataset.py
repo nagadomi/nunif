@@ -10,6 +10,7 @@ from nunif.training.sampler import HardExampleSampler, MiningMethod
 from os import path
 import random
 from PIL import Image
+from tqdm import tqdm
 from ...backward_warp import make_input_tensor
 
 
@@ -78,14 +79,44 @@ def center_crop(size, *images):
     return tuple(results)
 
 
+def filter_weak_convergence(files, datset_dir):
+    name = path.basename(datset_dir)
+    cache_file = path.join(datset_dir, "..", f"weak_convergence_{name}.txt")
+    print("cache_file", cache_file)
+    if not path.exists(cache_file):
+        weak_convergence_files = set()
+        for fn in tqdm(files, ncols=80, desc="filter weak_convergence"):
+            with Image.open(fn) as im:
+                convergence = float(im.text["sbs_convergence"])
+                if 0.375 <= convergence <= 0.625:
+                    weak_convergence_files.add(path.basename(fn))
+
+        with open(cache_file, mode="w", encoding="utf-8") as f:
+            for fn in weak_convergence_files:
+                f.write(fn + "\n")
+
+    with open(cache_file, mode="r", encoding="utf-8") as f:
+        hit_names = set(f.read().split("\n"))
+
+    new_files = []
+    for fn in files:
+        if path.basename(fn) in hit_names:
+            new_files.append(fn)
+
+    print("filter_weak_convergence", len(files), len(new_files))
+    return new_files
+
+
 class SBSDataset(Dataset):
-    def __init__(self, input_dir, size, model_offset, symmetric, training):
+    def __init__(self, input_dir, size, model_offset, symmetric, training, weak_convergence=False):
         super().__init__()
         self.size = size
         self.training = training
         self.symmetric = symmetric
         self.model_offset = model_offset
         self.files = [fn for fn in ImageLoader.listdir(input_dir) if fn.endswith("_C.png")]
+        if weak_convergence:
+            self.files = filter_weak_convergence(self.files, input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
 
