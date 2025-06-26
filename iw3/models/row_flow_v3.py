@@ -128,6 +128,7 @@ def _bench(name):
         print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
 
     # benchmark
+    torch.cuda.synchronize()
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
@@ -137,5 +138,5 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    # 540 FPS on RTX3070Ti
+    # 480 FPS on RTX3070Ti
     _bench("sbs.row_flow_v3")
