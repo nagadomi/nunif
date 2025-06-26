@@ -38,7 +38,7 @@ class WABlock(nn.Module):
 class MLBW(I2IBaseModel):
     name = "sbs.mlbw"
 
-    def __init__(self, num_layers=2, base_dim=32, **kwargs):
+    def __init__(self, num_layers=2, base_dim=32, small=False, **kwargs):
         super(MLBW, self).__init__(locals(), scale=1, offset=OFFSET, in_channels=8, blend_size=4)
         self.downscaling_factor = (1, 8)
         self.mod = 4
@@ -52,12 +52,18 @@ class MLBW(I2IBaseModel):
             nn.Conv2d(3, C // pack, kernel_size=(1, 9), stride=1, padding=0),
             nn.LeakyReLU(0.2, inplace=False),
         )
-        self.lv2 = nn.Sequential(
-            WABlock(C, (4, 4), shift=(True, True), num_heads=self.num_layers),
-            WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
-            WABlock(C, (4, 4), shift=(True, True), num_heads=self.num_layers),
-            WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
-        )
+        if small:
+            self.lv2 = nn.Sequential(
+                WABlock(C, (4, 4), shift=(False, True), num_heads=self.num_layers),
+                WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
+            )
+        else:
+            self.lv2 = nn.Sequential(
+                WABlock(C, (4, 4), shift=(True, True), num_heads=self.num_layers),
+                WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
+                WABlock(C, (4, 4), shift=(True, True), num_heads=self.num_layers),
+                WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
+            )
         self.lv1_out = nn.Sequential(
             ReplicationPad2dNaive((4, 4, 0, 0), detach=True),
             nn.Conv2d(C // pack, self.num_layers * 2, kernel_size=(1, 9), stride=1, padding=0),
@@ -158,6 +164,14 @@ register_model_factory(
     "sbs.mlbw_l4",
     lambda **kwargs: MLBW(num_layers=4, base_dim=32, **kwargs)
 )
+register_model_factory(
+    "sbs.mlbw_l2s",
+    lambda **kwargs: MLBW(num_layers=2, base_dim=32, small=True, **kwargs)
+)
+register_model_factory(
+    "sbs.mlbw_l4s",
+    lambda **kwargs: MLBW(num_layers=4, base_dim=32, small=True, **kwargs)
+)
 
 
 def _bench(name):
@@ -176,6 +190,7 @@ def _bench(name):
         print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
 
     # benchmark
+    torch.cuda.synchronize()
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
@@ -189,3 +204,8 @@ if __name__ == "__main__":
     _bench("sbs.mlbw_l2")
     # 150 FPS on RTX3070Ti
     _bench("sbs.mlbw_l4")
+
+    # 490 FPS on RTX3070Ti
+    _bench("sbs.mlbw_l2s")
+    # 250 FPS on RTX3070Ti
+    _bench("sbs.mlbw_l4s")
