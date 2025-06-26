@@ -88,7 +88,7 @@ def filter_weak_convergence(files, datset_dir):
         for fn in tqdm(files, ncols=80, desc="filter weak_convergence"):
             with Image.open(fn) as im:
                 convergence = float(im.text["sbs_convergence"])
-                if 0.375 <= convergence <= 0.625:
+                if 0.3 <= convergence <= 0.7:
                     weak_convergence_files.add(path.basename(fn))
 
         with open(cache_file, mode="w", encoding="utf-8") as f:

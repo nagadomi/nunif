@@ -181,7 +181,7 @@ def gen_convergence(weak_random_convergence):
         if random.uniform(0, 1) < 0.7:
             return 0.5
         else:
-            return random.uniform(0.5 - 0.125, 0.5 + 0.125)
+            return random.uniform(0.5 - 0.2, 0.5 + 0.2)
     else:
         # full random
         if random.uniform(0, 1) < 0.7:
@@ -331,7 +331,7 @@ def register(subparsers, default_parser):
 
     parser.add_argument("--max-size", type=int, default=920, help="max image size")
     parser.add_argument("--divergence-level", type=int, default=1, choices=[1, 2, 3], help="divergence level. 1=0-5, 2=3-8, 3=6-11")
-    parser.add_argument("--weak-random-convergence", action="store_true", help="Use weak random convergence. 0.375-0.625")
+    parser.add_argument("--weak-random-convergence", action="store_true", help="Use weak random convergence. 0.3-0.7")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")

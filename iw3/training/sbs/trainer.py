@@ -229,7 +229,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
     parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
-    parser.add_argument("--weak-convergence", action="store_true", help="Use 0.375 <= convergence <= 0.625 only ")
+    parser.add_argument("--weak-convergence", action="store_true", help="Use 0.3 <= convergence <= 0.7 only ")
 
     parser.set_defaults(
         batch_size=16,
