@@ -12,6 +12,7 @@ import random
 from PIL import Image
 from tqdm import tqdm
 from ...backward_warp import make_input_tensor
+from concurrent.futures import ThreadPoolExecutor
 
 
 def load_images(org_file, side=None):
@@ -84,12 +85,26 @@ def filter_weak_convergence(files, datset_dir):
     cache_file = path.join(datset_dir, "..", f"weak_convergence_{name}.txt")
     print("cache_file", cache_file)
     if not path.exists(cache_file):
-        weak_convergence_files = set()
-        for fn in tqdm(files, ncols=80, desc="filter weak_convergence"):
+
+        def get_convergence(fn):
             with Image.open(fn) as im:
                 convergence = float(im.text["sbs_convergence"])
                 if 0.3 <= convergence <= 0.7:
-                    weak_convergence_files.add(path.basename(fn))
+                    return [path.basename(fn)]
+            return []
+
+        weak_convergence_files = set()
+        futures = []
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for fn in tqdm(files, ncols=80, desc="filter weak_convergence"):
+                futures.append(pool.submit(get_convergence, fn))
+                if len(futures) > 100:
+                    for f in futures:
+                        weak_convergence_files.update(f.result())
+                    futures.clear()
+            for f in futures:
+                weak_convergence_files.update(f.result())
+            futures.clear()
 
         with open(cache_file, mode="w", encoding="utf-8") as f:
             for fn in weak_convergence_files:
