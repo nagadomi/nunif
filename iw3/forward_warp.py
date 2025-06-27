@@ -16,23 +16,34 @@ def blur_blend(x, mask):
     return x * (1.0 - mask) + x_blur * mask
 
 
-def shift_fill(x, max_tries=100):
+def shift_fill(x, sign, flip_sign=False, max_tries=100):
     mask = x < 0
-    shift = 1
     while mask.any().item() and max_tries > 0:
-        if shift > 0:
+        if sign > 0:
             x[mask] = F.pad(x[:, :, :, 1:], (0, 1, 0, 0))[mask]
         else:
             x[mask] = F.pad(x[:, :, :, :-1], (1, 0, 0, 0))[mask]
         mask = x < 0
-        shift = 0 if shift == 1 else 1
         max_tries = max_tries - 1
+        if flip_sign:
+            sign = -1 if sign > 0 else 1
 
     return x
 
 
+def shift_fill_pack(left_eye, right_eye, inconsistent_shift=False):
+    if inconsistent_shift:
+        pack = torch.cat([left_eye, right_eye], dim=1)
+        left_eye, right_eye = shift_fill(pack, 1, flip_sign=True).chunk(2, dim=1)
+        return left_eye, right_eye
+    else:
+        pack = torch.cat([left_eye, torch.flip(right_eye, dims=(-1,))], dim=1)
+        left_eye, right_eye = shift_fill(pack, -1).chunk(2, dim=1)
+        right_eye = torch.flip(right_eye, dims=(-1,))
+        return left_eye, right_eye
+
+
 def fix_layered_holes(side_image, index_image, sign, max_tries=100):
-    # NOTE: I still don't understand what it means to separate by sign(left/right), but this works.
     if sign > 0:
         mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (0, 1, 0, 0))
         while mask.any().item() and max_tries > 0:
@@ -117,12 +128,13 @@ def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
 
 
 def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
-                                      synthetic_view="both", inpaint_model=None):
+                                      synthetic_view="both", inpaint_model=None,
+                                      return_mask=False, inconsistent_shift=False):
     src_image = c
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
         depth = F.interpolate(depth, size=c.shape[-2:],
-                              mode="bilinear", align_corners=True, antialias=False)
+                              mode="bilinear", align_corners=True, antialias=True)
     if synthetic_view != "both":
         divergence *= 2
 
@@ -152,19 +164,23 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         # unpad
         left_eye = unpad(left_eye)
         right_eye = unpad(right_eye)
-        left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
-        right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
+        left_eye, left_eye_index = left_eye[:, :-1, :, :], left_eye[:, -1:, :, :]
+        right_eye, right_eye_index = right_eye[:, :-1, :, :], right_eye[:, -1:, :, :]
 
         # Fix layered holes
         # inspired by @math-artist patch: https://github.com/nagadomi/nunif/discussions/274
-        left_eye_index, right_eye_index = shift_fill(torch.cat([left_eye_index, right_eye_index], dim=1)).chunk(2, dim=1)
+        left_eye_index, right_eye_index = shift_fill_pack(left_eye_index, right_eye_index,
+                                                          inconsistent_shift=inconsistent_shift)
         fix_layered_holes(left_eye, left_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
+
+        if return_mask:
+            left_mask, right_mask = (left_eye < 0)[:, 0:1, :, :], (right_eye < 0)[:, 0:1, :, :]
 
         if fill:
             if inpaint_model is None:
                 # super simple inpainting
-                left_eye, right_eye = shift_fill(torch.cat([left_eye, right_eye], dim=1)).chunk(2, dim=1)
+                left_eye, right_eye = shift_fill_pack(left_eye, right_eye, inconsistent_shift=inconsistent_shift)
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
@@ -174,47 +190,67 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             left_eye = torch.clamp(left_eye, 0, 1)
             right_eye = torch.clamp(right_eye, 0, 1)
 
-        return left_eye.contiguous(), right_eye.contiguous()
+        if return_mask:
+            return left_eye.contiguous(), right_eye.contiguous(), left_mask, right_mask
+        else:
+            return left_eye.contiguous(), right_eye.contiguous()
     elif synthetic_view == "right":
         right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
         right_eye = unpad(right_eye)
         right_eye, right_eye_index = right_eye[:, :-1, :, ], right_eye[:, -1:, :, ]
-        right_eye_index = shift_fill(right_eye_index)
+        right_eye_index = shift_fill(right_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
+        if return_mask:
+            right_mask = (right_eye < 0)[:, 0:1, :, :]
+
         if fill:
             if inpaint_model is None:
-                right_eye = shift_fill(right_eye)
+                right_eye = shift_fill(right_eye, 1)
             else:
                 with autocast(device=right_eye.device, enabled=True):
                     right_eye = inpaint_model(right_eye, (right_eye < 0)[:, 0:1, :, :])
         else:
             right_eye = torch.clamp(right_eye, 0, 1)
-        return src_image, right_eye.contiguous()
+
+        if return_mask:
+            return src_image, right_eye.contiguous(), None, right_mask
+        else:
+            return src_image, right_eye.contiguous()
+
     elif synthetic_view == "left":
         left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
         left_eye = unpad(left_eye)
         left_eye, left_eye_index = left_eye[:, :-1, :, ], left_eye[:, -1:, :, ]
-        left_eye_index = shift_fill(left_eye_index)
+        left_eye_index = shift_fill(left_eye_index, -1)
         fix_layered_holes(left_eye, left_eye_index, 1)
+        if return_mask:
+            left_mask = (left_eye < 0)[:, 0:1, :, :]
+
         if fill:
             if inpaint_model is None:
-                left_eye = shift_fill(left_eye)
+                left_eye = shift_fill(left_eye, -1)
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = inpaint_model(left_eye, (left_eye < 0)[:, 0:1, :, :])
         else:
             left_eye = torch.clamp(left_eye, 0, 1)
 
-        return left_eye.contiguous(), src_image
+        if return_mask:
+            return left_eye.contiguous(), src_image, left_mask, None
+        else:
+            return left_eye.contiguous(), src_image
 
 
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None,
-                                  synthetic_view="both", inpaint_model=None):
+                                  synthetic_view="both", inpaint_model=None,
+                                  return_mask=False, inconsistent_shift=False):
     fill = (method == "forward_fill")
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
                                                  fill=fill, synthetic_view=synthetic_view,
-                                                 inpaint_model=inpaint_model)
+                                                 inpaint_model=inpaint_model,
+                                                 return_mask=return_mask,
+                                                 inconsistent_shift=inconsistent_shift)
 
 
 def _bench():

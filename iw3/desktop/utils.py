@@ -199,7 +199,13 @@ def iw3_desktop_main(args, init_wxapp=True):
     depth_model.enable_ema(args.ema_decay, buffer_size=1)
     args.mapper = IW3U.resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                            metric_depth=depth_model.is_metric())
-    side_model = IW3U.load_sbs_model(args)
+
+    # TODO: For mlbw, it is better to switch models when the divergence value dynamically changes
+    side_model = IW3U.create_stereo_model(
+        args.method,
+        divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
+        device_id=args.gpu[0],
+    )
     if args.user or args.password:
         user = args.user or ""
         password = args.password or ""
@@ -255,7 +261,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         fps=args.stream_fps,
         frame_width=frame_width, frame_height=frame_height,
         monitor_index=args.monitor_index, window_name=args.window_name,
-        device=device, crop_top=args.crop_top, crop_left=args.crop_left, 
+        device=device, crop_top=args.crop_top, crop_left=args.crop_left,
         crop_right=args.crop_right, crop_bottom=args.crop_bottom)
 
     try:

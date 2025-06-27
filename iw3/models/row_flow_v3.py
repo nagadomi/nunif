@@ -101,6 +101,7 @@ class RowFlowV3(I2IBaseModel):
     def _forward_delta_only(self, x):
         assert not self.training
         delta = self._forward(x)
+        delta = delta.to(torch.float32)
         delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
         return delta
 
@@ -120,13 +121,14 @@ def _bench(name):
 
     model = create_model(name).to(device).eval()
     x = torch.zeros((B, 8, 512, 512)).to(device)
-    with torch.inference_mode():
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
         z, *_ = model(x)
         print(z.shape)
         params = sum([p.numel() for p in model.parameters()])
         print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
 
     # benchmark
+    torch.cuda.synchronize()
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
@@ -136,5 +138,5 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    # 540 FPS on RTX3070Ti
+    # 480 FPS on RTX3070Ti
     _bench("sbs.row_flow_v3")

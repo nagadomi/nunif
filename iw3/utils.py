@@ -33,13 +33,10 @@ from .backward_warp import (
     apply_divergence_grid_sample,
     apply_divergence_nn_LR,
 )
+from .stereo_model_factory import create_stereo_model
+
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
-
-ROW_FLOW_V2_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v2_20240130.pth"
-ROW_FLOW_V3_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_20240423.pth"
-ROW_FLOW_V3_SYM_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_row_flow_v3_sym_20240424.pth"
-
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
 ROW_FLOW_V3_MAX_DIVERGENCE = 5.0
 ROW_FLOW_V2_AUTO_STEP_DIVERGENCE = 2.0
@@ -618,7 +615,6 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                                                 enable_amp=not args.disable_amp,
                                                 edge_dilation=args.edge_dilation,
                                                 depth_aa=args.depth_aa)
-
             return depth_batch, dequeue_ticket_id
 
     @torch.inference_mode()
@@ -1625,6 +1621,7 @@ def create_parser(required_true=True):
     parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "backward", "forward", "forward_fill",
+                                 "mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s",
                                  "row_flow", "row_flow_sym",
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
@@ -1928,25 +1925,6 @@ def is_yaml(filename):
     return path.splitext(filename)[-1].lower() in {".yaml", ".yml"}
 
 
-def load_sbs_model(args):
-    with TorchHubDir(HUB_MODEL_DIR):
-        if args.method in {"row_flow_v3", "row_flow"}:
-            side_model = load_model(ROW_FLOW_V3_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
-            side_model.symmetric = False
-            side_model.delta_output = True
-        elif args.method in {"row_flow_v3_sym", "row_flow_sym"}:
-            side_model = load_model(ROW_FLOW_V3_SYM_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
-            side_model.symmetric = True
-            side_model.delta_output = True
-        elif args.method == "row_flow_v2":
-            side_model = load_model(ROW_FLOW_V2_URL, weights_only=True, device_ids=[args.gpu[0]])[0].eval()
-            side_model.delta_output = True
-        else:
-            side_model = None
-
-    return side_model
-
-
 def iw3_main(args):
     assert not (args.rotate_left and args.rotate_right)
     assert sum([1 for flag in (args.half_sbs, args.vr180, args.anaglyph, args.tb, args.half_tb, args.cross_eyed, args.half_rgbd, args.rgbd) if flag]) < 2
@@ -2001,7 +1979,11 @@ def iw3_main(args):
         export_main(args)
         return args
 
-    side_model = load_sbs_model(args)
+    side_model = create_stereo_model(
+        args.method,
+        divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
+        device_id=args.gpu[0]
+    )
     if side_model is not None and len(args.gpu) > 1:
         side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
 
