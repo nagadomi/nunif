@@ -32,6 +32,12 @@ class TicketLock():
         self.condition.release()
         assert relesed_ticket is not None and relesed_ticket == ticket_id
 
+    def __enter__(self):
+        return self.condition.__enter__()
+
+    def __exit__(self, *args):
+        return self.condition.__exit__(*args)
+
 
 class _TicketLockContext():
     def __init__(self, ticket_lock, ticket_id):
