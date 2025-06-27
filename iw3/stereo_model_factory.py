@@ -11,8 +11,8 @@ def pth_url(filename):
 
 
 ROW_FLOW_V2_URL = pth_url("iw3_row_flow_v2_20240130.pth")
-ROW_FLOW_V3_URL = pth_url("iw3_row_flow_v3_20240423.pth")
-ROW_FLOW_V3_SYM_URL = pth_url("iw3_row_flow_v3_sym_20240424.pth")
+ROW_FLOW_V3_URL = pth_url("iw3_row_flow_v3_20250627.pth")
+ROW_FLOW_V3_SYM_URL = pth_url("iw3_row_flow_v3_sym_20250628.pth")
 
 MLBW_L2_D1_URL = pth_url("iw3_mlbw_l2_d1_20250627.pth")
 MLBW_L2_D2_URL = pth_url("iw3_mlbw_l2_d2_20250627.pth")
