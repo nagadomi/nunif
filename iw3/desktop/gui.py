@@ -173,10 +173,12 @@ class MainFrame(wx.Frame):
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
-                                      choices=["row_flow_v3", "row_flow_v3_sym", "row_flow_v2", "forward_fill"],
+                                      choices=["mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s",
+                                               "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
+                                               "forward_fill"],
                                       name="cbo_method")
         self.cbo_method.SetEditable(False)
-        self.cbo_method.SetSelection(0)
+        self.cbo_method.SetSelection(4)
 
         self.chk_small_model_only = wx.CheckBox(self.grp_stereo, label=T("List small model only"), name="chk_small_model_only")
         self.chk_small_model_only.SetValue(True)
@@ -381,25 +383,25 @@ class MainFrame(wx.Frame):
         self.btn_reload_window_name.SetToolTip(T("Reload"))
 
         self.lbl_crop_region = wx.StaticText(self.grp_processor, label=T("Crop Region (px)"))
-        
+
         self.lbl_crop_top = wx.StaticText(self.grp_processor, label=T("Top"))
         self.txt_crop_top = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
-                                   allow_none=False, min=0, max=500, name="txt_crop_top")
+                                    allow_none=False, min=0, max=500, name="txt_crop_top")
         self.txt_crop_top.SetValue(0)
-        
+
         self.lbl_crop_left = wx.StaticText(self.grp_processor, label=T("Left"))
         self.txt_crop_left = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
-                                    allow_none=False, min=0, max=500, name="txt_crop_left")
+                                     allow_none=False, min=0, max=500, name="txt_crop_left")
         self.txt_crop_left.SetValue(0)
-        
+
         self.lbl_crop_right = wx.StaticText(self.grp_processor, label=T("Right"))
         self.txt_crop_right = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
-                                     allow_none=False, min=0, max=500, name="txt_crop_right")
+                                      allow_none=False, min=0, max=500, name="txt_crop_right")
         self.txt_crop_right.SetValue(0)
-        
+
         self.lbl_crop_bottom = wx.StaticText(self.grp_processor, label=T("Bottom"))
         self.txt_crop_bottom = IntCtrl(self.grp_processor, size=self.FromDIP((60, -1)),
-                                      allow_none=False, min=0, max=500, name="txt_crop_bottom")
+                                       allow_none=False, min=0, max=500, name="txt_crop_bottom")
         self.txt_crop_bottom.SetValue(0)
 
         self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
@@ -418,7 +420,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_window_name, (3, 1), flag=wx.EXPAND)
         layout.Add(self.btn_reload_window_name, (3, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_crop_region, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        
+
         # Create a sub-layout for crop controls
         crop_layout = wx.GridBagSizer(vgap=2, hgap=4)
         crop_layout.Add(self.lbl_crop_top, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -429,7 +431,7 @@ class MainFrame(wx.Frame):
         crop_layout.Add(self.txt_crop_right, (1, 1), flag=wx.EXPAND)
         crop_layout.Add(self.lbl_crop_bottom, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
-        
+
         layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
         layout.Add(self.chk_compile, (5, 0), flag=wx.EXPAND)
 
@@ -722,7 +724,8 @@ class MainFrame(wx.Frame):
         self.update_edge_dilation()
 
     def update_preserve_screen_border(self):
-        if self.cbo_method.GetValue() in {"row_flow_v2", "row_flow_v3", "row_flow_v3_sym"}:
+        if self.cbo_method.GetValue() in {"row_flow_v2", "row_flow_v3", "row_flow_v3_sym",
+                                          "mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
             self.chk_preserve_screen_border.Enable()
         else:
             self.chk_preserve_screen_border.Disable()
@@ -789,7 +792,7 @@ class MainFrame(wx.Frame):
         crop_left = self.txt_crop_left.GetValue()
         crop_right = self.txt_crop_right.GetValue()
         crop_bottom = self.txt_crop_bottom.GetValue()
-        
+
         for crop_name, crop_value in [("Top", crop_top), ("Left", crop_left), ("Right", crop_right), ("Bottom", crop_bottom)]:
             if not validate_number(str(crop_value), 0, 500, is_int=True, allow_empty=False):
                 self.show_validation_error_message(T("Crop") + " " + T(crop_name), 0, 500)
@@ -1013,6 +1016,11 @@ class MainFrame(wx.Frame):
                     max_divergence = 2.5
                 else:
                     max_divergence = 2.5 * 0.5
+            elif method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
+                if synthetic_view == "both":
+                    max_divergence = 10.0
+                else:
+                    max_divergence = 10.0 * 0.5
 
             if divergence > max_divergence:
                 self.lbl_divergence_warning.SetLabel(

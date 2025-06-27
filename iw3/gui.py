@@ -211,10 +211,12 @@ class MainFrame(wx.Frame):
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
-                                      choices=["row_flow_v3", "row_flow_v3_sym", "row_flow_v2", "forward_fill"],
+                                      choices=["mlbw_l2", "mlbw_l4",
+                                               "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
+                                               "forward_fill"],
                                       name="cbo_method")
         self.cbo_method.SetEditable(False)
-        self.cbo_method.SetSelection(0)
+        self.cbo_method.SetSelection(2)
 
         self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Processing Width"))
         self.cbo_stereo_width = EditableComboBox(self.grp_stereo,
@@ -778,10 +780,12 @@ class MainFrame(wx.Frame):
 
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
-        if (DepthAnythingModel.supported(name) or
-              DepthProModel.supported(name) or
-              VideoDepthAnythingModel.supported(name) or
-              name.startswith("ZoeD_Any_")):
+        if (
+                DepthAnythingModel.supported(name) or
+                DepthProModel.supported(name) or
+                VideoDepthAnythingModel.supported(name) or
+                name.startswith("ZoeD_Any_")
+        ):
             self.cbo_edge_dilation.Enable()
         else:
             self.cbo_edge_dilation.Disable()
@@ -823,7 +827,8 @@ class MainFrame(wx.Frame):
         self.update_scene_segment()
 
     def update_preserve_screen_border(self):
-        if self.cbo_method.GetValue() in {"row_flow_v2", "row_flow_v3", "row_flow_v3_sym"}:
+        if self.cbo_method.GetValue() in {"row_flow_v2", "row_flow_v3", "row_flow_v3_sym",
+                                          "mlbw_l2", "mlbw_l4"}:
             self.chk_preserve_screen_border.Enable()
         else:
             self.chk_preserve_screen_border.Disable()
@@ -1348,6 +1353,11 @@ class MainFrame(wx.Frame):
                     max_divergence = 2.5
                 else:
                     max_divergence = 2.5 * 0.5
+            elif method in {"mlbw_l2", "mlbw_l4"}:
+                if synthetic_view == "both":
+                    max_divergence = 10.0
+                else:
+                    max_divergence = 10.0 * 0.5
 
             if divergence > max_divergence:
                 self.lbl_divergence_warning.SetLabel(
