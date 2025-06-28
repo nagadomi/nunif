@@ -37,17 +37,9 @@ def load_mlbw_model(
         method, divergence, device_id,
         use_weak_convergence_model=False,
 ):
-    use_small_model = False
-    if method == "mlbw_l2s":
-        method = "mlbw_l2"
-        use_small_model = True
-    elif method == "mlbw_l4s":
-        method = "mlbw_l4"
-        use_small_model = True
-
-    if method == "mlbw_l2":
+    if method in {"mlbw_l2", "mlbw_l2s"}:
         if divergence <= 4:
-            if use_small_model:
+            if method == "mlbw_l2s":
                 url = MLBW_L2S_D1_URL
             else:
                 url = MLBW_L2_D1_URL
@@ -61,11 +53,9 @@ def load_mlbw_model(
                 url = MLBW_L2_D3_WEAK_URL
             else:
                 url = MLBW_L2_D3_URL
-        model = load_model(url, weights_only=True, device_ids=[device_id])[0].eval()
-        model.delta_output = True
-    elif method == "mlbw_l4":
+    elif method in {"mlbw_l4", "mlbw_l4s"}:
         if divergence <= 4:
-            if use_small_model:
+            if method == "mlbw_l4s":
                 url = MLBW_L4S_D1_URL
             else:
                 url = MLBW_L4_D1_URL
@@ -79,10 +69,11 @@ def load_mlbw_model(
                 url = MLBW_L4_D3_WEAK_URL
             else:
                 url = MLBW_L4_D3_URL
-        model = load_model(url, weights_only=True, device_ids=[device_id])[0].eval()
-        model.delta_output = True
     else:
         raise ValueError(method)
+
+    model = load_model(url, weights_only=True, device_ids=[device_id])[0].eval()
+    model.delta_output = True
 
     return model
 
