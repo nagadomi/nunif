@@ -633,7 +633,9 @@ class MainFrame(wx.Frame):
         self.btn_suspend.Disable()
 
         self.load_preset()
+        self.update_controls()
 
+    def update_controls(self):
         self.update_start_button_state()
         self.update_input_option_state()
         self.update_anaglyph_state()
@@ -1316,6 +1318,7 @@ class MainFrame(wx.Frame):
 
     def on_click_btn_load_preset(self, event):
         self.load_preset(self.cbo_app_preset.GetValue(), exclude_names={self.GetName()})
+        self.update_controls()
 
     def on_click_btn_save_preset(self, event):
         self.save_preset(self.cbo_app_preset.GetValue())
