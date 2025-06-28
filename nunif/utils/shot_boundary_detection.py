@@ -27,6 +27,7 @@ def detect_boundary(
         stop_event=None,
         suspend_event=None,
         tqdm_fn=None,
+        tqdm_title=None,
 ):
     assert (window_size % padding_size == 0 and
             window_size // padding_size >= 3)  # pad1 + frames + pad2
@@ -82,7 +83,7 @@ def detect_boundary(
     VU.hook_frame(
         video_file, callback_pool,
         config_callback=_fps_config(max_fps),
-        title="Shot Boundary Detection",
+        title=tqdm_title or "Shot Boundary Detection",
         vf="scale=48:27:flags=bilinear",  # input size for TransNetV2
         start_time=start_time, end_time=end_time,
         stop_event=stop_event,
@@ -90,7 +91,7 @@ def detect_boundary(
         tqdm_fn=tqdm_fn
     )
     if stop_event is not None and stop_event.is_set():
-        return []
+        return set()
 
     last_x = frames[-1][0][-1:]
     last_pts = frames[-1][1][-1:]
@@ -104,7 +105,7 @@ def detect_boundary(
 
     frame_preds = torch.cat([pred for pred, pts in results], dim=0)[:frame_count[0]]
     frame_pts = torch.cat([pts for pred, pts in results], dim=0)[:frame_count[0]]
-    segment_pts = frame_pts[frame_preds > threshold]
+    segment_pts = set(frame_pts[frame_preds > threshold].tolist())
 
     # NOTE: pts is the end point of the segment. It is not the starting point.
-    return set(segment_pts.tolist())
+    return segment_pts

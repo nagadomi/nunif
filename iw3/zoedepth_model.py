@@ -199,7 +199,7 @@ class ZoeDepthModel(BaseDepthModel):
 
         return model
 
-    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):
+    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0, **kwargs):
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).to(self.device)
         return batch_infer(

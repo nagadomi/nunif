@@ -29,7 +29,7 @@ dctorch
 timm
 numba # only for iw3 sbs training
 av==14.2.0
-rembg # for --remove-bg
 truststore; python_version >= '3.10'
 pillow_heif
 safetensors
+einops

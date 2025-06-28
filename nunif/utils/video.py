@@ -12,6 +12,7 @@ import torch
 from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 import time
+import numpy as np
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -164,12 +165,22 @@ def to_tensor(frame, device=None):
 
 def from_tensor(x):
     x = (x.permute(1, 2, 0).contiguous() * 255.0).to(torch.uint8).detach().cpu().numpy()
+    return from_ndarray(x)
+
+
+def from_ndarray(x):
     return av.video.frame.VideoFrame.from_ndarray(x, format="rgb24")
 
 
 def to_frame(x):
     if torch.is_tensor(x):
+        # float CHW
         return from_tensor(x)
+    elif isinstance(x, np.ndarray):
+        # uint8 HWC
+        return from_ndarray(x)
+    elif isinstance(x, av.video.frame.VideoFrame):
+        return x
     else:
         return from_image(x)
 
@@ -1136,14 +1147,19 @@ class FrameCallbackPool():
     thread pool callback wrapper
     """
     def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2,
-                 require_pts=False, skip_pts=-1):
+                 require_pts=False, skip_pts=-1, require_flush=False,
+                 preprocess_callback=None,
+                 postprocess_callback=None):
         if max_workers > 0:
             self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         else:
             self.thread_pool = _DummyThreadPool()
         self.require_pts = require_pts
+        self.require_flush = require_flush
         self.skip_pts = skip_pts
         self.frame_callback = frame_callback
+        self.preprocess_callback = preprocess_callback
+        self.postprocess_callback = postprocess_callback
         self.batch_size = batch_size
         self.max_workers = max_workers
         self.max_batch_queue = max_batch_queue
@@ -1154,6 +1170,32 @@ class FrameCallbackPool():
         self.batch_queue = []
         self.pts_batch_queue = []
         self.futures = []
+
+    def make_args(self, batch, pts_batch, flush):
+        if self.require_pts and self.require_flush:
+            return (batch, pts_batch, flush)
+        elif self.require_pts:
+            return (batch, pts_batch)
+        elif self.require_flush:
+            return (batch, flush)
+        else:
+            return (batch,)
+
+    def get_results(self, future):
+        frames = future.result()
+        if self.postprocess_callback is not None:
+            frames = self.postprocess_callback(frames)
+
+        return [to_frame(frame) for frame in frames] if frames is not None else []
+
+    def submit(self, *args):
+        if self.preprocess_callback is not None:
+            args = self.preprocess_callback(*args)
+            future = self.thread_pool.submit(self.frame_callback, args)
+        else:
+            future = self.thread_pool.submit(self.frame_callback, *args)
+
+        return future
 
     def __call__(self, frame):
         if False:
@@ -1186,20 +1228,15 @@ class FrameCallbackPool():
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
                 batch = self.batch_queue.pop(0)
                 pts_batch = self.pts_batch_queue.pop(0)
-                if self.require_pts:
-                    future = self.thread_pool.submit(self.frame_callback, batch, pts_batch)
-                else:
-                    future = self.thread_pool.submit(self.frame_callback, batch)
+                future = self.submit(*self.make_args(batch, pts_batch, False))
                 self.futures.append(future)
             if len(self.batch_queue) >= self.max_batch_queue and self.futures:
                 future = self.futures.pop(0)
-                frames = future.result()
-                return [to_frame(frame) for frame in frames] if frames is not None else None
+                return self.get_results(future)
         if self.futures:
             if self.futures[0].done():
                 future = self.futures.pop(0)
-                frames = future.result()
-                return [to_frame(frame) for frame in frames] if frames is not None else None
+                return self.get_results(future)
 
         return None
 
@@ -1216,21 +1253,19 @@ class FrameCallbackPool():
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
                 batch = self.batch_queue.pop(0)
                 pts_batch = self.pts_batch_queue.pop(0)
-                if self.require_pts:
-                    future = self.thread_pool.submit(self.frame_callback, batch, pts_batch)
-                else:
-                    future = self.thread_pool.submit(self.frame_callback, batch)
+                future = self.submit(*self.make_args(batch, pts_batch, False))
                 self.futures.append(future)
             else:
                 future = self.futures.pop(0)
-                frames = future.result()
-                if frames is not None:
-                    frame_remains += [to_frame(frame) for frame in frames]
+                frame_remains += self.get_results(future)
         while len(self.futures) > 0:
             future = self.futures.pop(0)
-            frames = future.result()
-            if frames is not None:
-                frame_remains += [to_frame(frame) for frame in frames]
+            frame_remains += self.get_results(future)
+
+        if self.require_flush:
+            future = self.submit(*self.make_args(None, None, True))
+            frame_remains += self.get_results(future)
+
         return frame_remains
 
     def shutdown(self):

@@ -10,7 +10,7 @@ This project is under construction.
 
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro) or [Distill Any Depth](https://github.com/Westlake-AGI-Lab/Distill-Any-Depth).
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro) or [Distill Any Depth](https://github.com/Westlake-AGI-Lab/Distill-Any-Depth) or [Video-Depth-Anything](https://github.com/DepthAnything/Video-Depth-Anything).
 - Generating side-by-side image using grid_sample based lightweight model
 
 ## Usage
@@ -241,6 +241,24 @@ Export and Export Disparity are features to output depth and frame images.
 
 See https://github.com/nagadomi/nunif/issues/97#issuecomment-2027349722 for details at the moment.
 
+# `Flicker Reduction` (`--ema-normalize`)
+
+This feature stabilizes temporal variations in the depth range using exponential moving average.
+
+There are two parameters for this.
+
+1. Decay Rate (`--ema-decay`)
+2. Lookahead Buffer Size (`--ema-buffer`)
+
+`Decay Rate` accepts a value between 0 and 1. The larger the value, the smaller the change between frames. However, if it is too large, clipping may occur when the depth range changes suddenly. The appropriate range is between 0.75 and 0.99.
+
+`Lookahead Buffer Size` specifies the number of future frames, starting from the current frame, over which the depth range is calculated.
+Buffer Size = 30 means looking ahead 1 seconds at 30 FPS. Buffer Size = 150 means looking ahead 5 seconds. Buffer Size = 1 is the same as in the previous version.
+
+# `Depth Anti-aliasing`
+
+See https://github.com/nagadomi/nunif/issues/406
+
 ## Trouble shooting
 
 ### Output video is not SBS
@@ -255,10 +273,7 @@ This tends to happen with outdoor scene photos.
 There are several ways to fight this problem.
 
 - Try `--foreground-scale 3` option
-- Try`--remove-bg` option
-- Try combined option `--divergence 4 --convergence 0 --foreground-scale 3 --remove-bg`
-
-When `--remove-bg` is specified, the background area is removed using [rembg](https://github.com/danielgatis/rembg) with [U2-net](https://github.com/xuebinqin/U-2-Net)'s human segmentation model, before estimating depthmap.
+- Try combined option `--divergence 4 --convergence 0 --foreground-scale 3`
 
 ### Video encoding error
 
@@ -352,6 +367,8 @@ If the results are acceptable, process the full video.
 
 `--method row_flow_v3`(by default) is currently only trained for the range `0.0 <= divergence <= 5.0` and `0.0 <= convergence <= 1.0`.
 
+`--method mlbw_l2` and `--method mlbw_l4` are trained for the range `0.0 <= divergence <= 10.0` and `0.0 <= convergence <= 1.0`.
+
 ## About row_flow model and its training
 
 See https://github.com/nagadomi/nunif/issues/60 .
@@ -385,8 +402,11 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Distill_Any_S`  | Distill Any Depth model small.
 | `Distill_Any_B`  | Distill Any Depth model base.
 | `Distill_Any_L`  | Distill Any Depth model large.
+| `VDA_S`  | Video Depth Anything small.
+| `VDA_L`  | Video Depth Anything large.
+| `VDA_Metric`  | Video Depth Anything metric depth model.
 
-Personally, I recommend `ZoeD_N`, `Any_B` or `ZoeD_Any_N`.
+Personally, I recommend `ZoeD_Any_N`, `Any_B` or `VDA_Metric`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
 For art/anime, DepthAnything is better than ZoeDepth.
@@ -408,6 +428,47 @@ If you want to use it, agree to the pre-trained model license and place the chec
 
 These files can be downloaded from Models section of https://huggingface.co/depth-anything .
 
+- https://huggingface.co/depth-anything/Depth-Anything-V2-Base
+- https://huggingface.co/depth-anything/Depth-Anything-V2-Large
+- https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Large
+- https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Large
+
+
+### About Video-Depth-Anything
+
+#### `VDA_L`, `VDA_Metric`
+
+These models are licensed under cc-by-nc-4.0 (Non Commercial).
+If you want to use it, agree to the pre-trained model license and place the checkpoint file yourself.
+
+| Short Name | Path |
+|------------|------|
+| `VDA_L` | `iw3/pretrained_models/hub/checkpoints/video_depth_anything_vitl.pth`
+| `VDA_Metric` | `iw3/pretrained_models/hub/checkpoints/metric_video_depth_anything_vitl.pth`
+
+These files can be downloaded from Models section of https://huggingface.co/depth-anything .
+
+- https://huggingface.co/depth-anything/Video-Depth-Anything-Large
+- https://huggingface.co/depth-anything/Metric-Video-Depth-Anything-Large
+
+#### VDA Implementation Notes
+
+The following options are highly recommended.
+
+- `Scene Boundary Detection` (`--scene-detect`)
+- `Flicker Reduction` (`--ema-normalize`)
+
+The following options are ignored.
+
+- `Low VRAM` (`--low-vram`)
+- `TTA` (`--tta`)
+- `Worker Threads` (`--max-workers`)
+- `Stream` (`--cuda-stream`)
+
+`Batch Size`(`--batch-size`) is also ignored when using the depth model (32 is used), but it is used during preprocessing and stereo generation.
+
+Also, the original implementation uses global min/max values for normalization, but iw3's online processing uses their moving average.
+
 ### About `Distill_Any_B`, `Distill_Any_L`
 
 These models are stated to be under Apache License 2.0, but they use Depth-Anything-V2, which is licensed under cc-by-nc-4.0 (Non Commercial), as the initial weights.
@@ -428,6 +489,10 @@ These files are in `.safetensors` format, so conversion to `.pth` is not require
 | Short Name  |                   |
 |-------------|-------------------|
 | `row_flow_v3`    | Calculating the backward warping parameters with ML model. Trained with `0.0 <= divergence <= 5.0` and synthetic training data generated by `forward_fill`. Default method.
+| `mlbw_l2`    | Calculating the 2-layer backward warping parameters with ML model. Trained with `0.0 <= divergence <= 10.0`.
+| `mlbw_l4`    | Calculating the 4-layer backward warping parameters with ML model. Trained with `0.0 <= divergence <= 10.0`.
+| `mlbw_l2s`   | The small model of `mlbw_l2`. Trained with `0.0 <= divergence <= 5.0`. When `4.0 < divergence`, the same model as `mlbw_l2` is used.
+| `mlbw_l4s`   | The small model of `mlbw_l4`. Trained with `0.0 <= divergence <= 5.0`. When `4.0 < divergence`, the same model as `mlbw_l4` is used.
 | `row_flow_v2`    | Previous default model. Trained with `0.0 <= divergence <= 2.5` and synthetic training data generated by [stable-diffusion-webui-depthmap-script](https://github.com/thygate/stable-diffusion-webui-depthmap-script) 's method.
 | `forward_fill`   | Depth order bilinear forward warping. Non ML method.
 | `row_flow_v3_sym`| Calculating the backward warping(`grid_sample`) parameters with ML model. The left and right parameters are fully symmetric. 2x faster than `row_flow_v3`. For experimental use.

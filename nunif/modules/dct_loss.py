@@ -90,8 +90,9 @@ class DCTLoss(nn.Module):
             return dct_loss(input, target, loss_function=self.loss_function, clamp=self.clamp)
 
     def forward(self, input, target):
-        input = rgb_to_yrgb(input, y_clamp=True)
-        target = rgb_to_yrgb(target, y_clamp=True)
+        if input.shape[1] == 3: # RGB
+            input = rgb_to_yrgb(input, y_clamp=True)
+            target = rgb_to_yrgb(target, y_clamp=True)
         loss1 = self.forward_loss(input, target)
 
         if self.random_instance_rotate:
