@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+import contextlib
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.models.utils import compile_model
@@ -16,6 +17,19 @@ from . depth_scaler import EMAMinMaxScaler
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 
 
+class _CompileContext():
+    def __init__(self, base_model):
+        self.base_model = base_model
+
+    def __enter__(self):
+        self.base_model.compile()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.base_model.clear_compiled_model()
+        return False
+
+
 class BaseDepthModel(metaclass=ABCMeta):
     def __init__(self, model_type):
         self.device = None
@@ -23,6 +37,12 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.model_backup = None  # for compile
         self.model_type = model_type
         self.scaler = EMAMinMaxScaler(decay=0, buffer_size=1)
+
+    def compile_context(self, enabled=True):
+        if enabled:
+            return _CompileContext(self)
+        else:
+            return contextlib.nullcontext()
 
     @classmethod
     @abstractmethod

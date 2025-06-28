@@ -805,9 +805,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         return VU.to_frame(x)
 
     if is_video_depth_anything:
-        try:
-            if args.compile:
-                depth_model.compile()
+        with depth_model.compile_context(enabled=args.compile):
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
                              frame_callback=bind_vda_frame_callback(
@@ -824,14 +822,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              title=path.basename(input_filename),
                              start_time=args.start_time,
                              end_time=args.end_time)
-        finally:
-            if args.compile:
-                depth_model.clear_compiled_model()
 
     elif args.low_vram or args.debug_depth:
-        try:
-            if args.compile:
-                depth_model.compile()
+        with depth_model.compile_context(enabled=args.compile):
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
                              frame_callback=bind_single_frame_callback(
@@ -848,12 +841,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              title=path.basename(input_filename),
                              start_time=args.start_time,
                              end_time=args.end_time)
-        finally:
-            if args.compile:
-                depth_model.clear_compiled_model()
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
+
         frame_callback, preprocess_callback = bind_batch_frame_callback(
             depth_model=depth_model,
             side_model=side_model,
@@ -871,23 +862,20 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             require_flush=True,
         )
         try:
-            if args.compile:
-                depth_model.compile()
-            VU.process_video(input_filename, output_filename,
-                             config_callback=config_callback,
-                             frame_callback=frame_callback,
-                             test_callback=test_callback,
-                             vf=args.vf,
-                             stop_event=args.state["stop_event"],
-                             suspend_event=args.state["suspend_event"],
-                             tqdm_fn=args.state["tqdm_fn"],
-                             title=path.basename(input_filename),
-                             start_time=args.start_time,
-                             end_time=args.end_time)
+            with depth_model.compile_context(enabled=args.compile):
+                VU.process_video(input_filename, output_filename,
+                                 config_callback=config_callback,
+                                 frame_callback=frame_callback,
+                                 test_callback=test_callback,
+                                 vf=args.vf,
+                                 stop_event=args.state["stop_event"],
+                                 suspend_event=args.state["suspend_event"],
+                                 tqdm_fn=args.state["tqdm_fn"],
+                                 title=path.basename(input_filename),
+                                 start_time=args.start_time,
+                                 end_time=args.end_time)
         finally:
             frame_callback.shutdown()
-            if args.compile:
-                depth_model.clear_compiled_model()
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
@@ -1330,9 +1318,8 @@ def export_video(input_filename, output_dir, args, title=None):
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
-    try:
-        if args.compile:
-            depth_model.compile()
+
+    with depth_model.compile_context(enabled=args.compile):
         max_workers = max(args.max_workers, 8)
 
         with PoolExecutor(max_workers=max_workers) as pool:
@@ -1366,9 +1353,6 @@ def export_video(input_filename, output_dir, args, title=None):
                           start_time=args.start_time,
                           end_time=args.end_time)
         config.save(config_file)
-    finally:
-        if args.compile:
-            depth_model.clear_compiled_model()
 
 
 def process_config_video(config, args, side_model):
