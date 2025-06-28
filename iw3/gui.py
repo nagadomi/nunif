@@ -664,6 +664,8 @@ class MainFrame(wx.Frame):
             depth_models.append("Any_V2_B")
         if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
             depth_models.append("Any_V2_L")
+        if DepthAnythingModel.has_checkpoint_file("Any_V2_G"):
+            depth_models.append("Any_V2_G")
 
         depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
         if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):

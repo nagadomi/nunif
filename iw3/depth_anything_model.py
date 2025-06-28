@@ -16,6 +16,7 @@ NAME_MAP = {
     "Any_V2_S": "v2_vits",
     "Any_V2_B": "v2_vitb",
     "Any_V2_L": "v2_vitl",
+    "Any_V2_G": "v2_vitl",
 
     "Any_V2_N_S": "hypersim_s",
     "Any_V2_N_B": "hypersim_b",
@@ -40,6 +41,7 @@ MODEL_FILES = {
     "Any_V2_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vits.pth"),
     "Any_V2_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitb.pth"),
     "Any_V2_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitl.pth"),
+    "Any_V2_G": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitg.pth"),
 
     "Any_V2_N_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vits.pth"),
     "Any_V2_N_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitb.pth"),
@@ -62,6 +64,7 @@ AA_SUPPORTED_MODELS = {
     "Any_V2_S",
     "Any_V2_B",
     "Any_V2_L",
+    "Any_V2_G",
 }
 
 
