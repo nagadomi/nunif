@@ -947,8 +947,8 @@ class MainFrame(wx.Frame):
         if resolution == "Default" or resolution == "":
             resolution = None
         else:
-            if not validate_number(resolution, 384, 8190, is_int=True, allow_empty=False):
-                self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 384, 8190)
+            if not validate_number(resolution, 224, 8190, is_int=True, allow_empty=False):
+                self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 224, 8190)
                 return
             resolution = int(resolution)
 
