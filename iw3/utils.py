@@ -25,7 +25,7 @@ from . import export_config
 from .dilation import dilate_edge
 from .forward_warp import apply_divergence_forward_warp
 from .anaglyph import apply_anaglyph_redcyan
-from .mapper import get_mapper, resolve_mapper_name
+from .mapper import get_mapper, resolve_mapper_name, MAPPER_ALL
 from .depth_model_factory import create_depth_model
 from .base_depth_model import BaseDepthModel
 from .equirectangular import equirectangular_projection
@@ -486,13 +486,13 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
 def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
-    lookahead_enabled = depth_model.get_ema_buffer_size() > 1
+    frame_cpu_offload = depth_model.get_ema_buffer_size() > 1
 
     def _postprocess(depths):
         frames = []
         for depth in depths:
             x, pts = src_queue.pop(0)
-            if lookahead_enabled:
+            if frame_cpu_offload:
                 x = x.to(args.state["device"]).permute(2, 0, 1) / 255.0
             if args.debug_depth:
                 out = debug_depth_image(depth, args)
@@ -517,7 +517,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             return _postprocess(depth_model.flush_minmax_normalize())
 
         frame_hwc8 = torch.from_numpy(frame.to_ndarray(format="rgb24"))
-        if lookahead_enabled:
+        if frame_cpu_offload:
             # cpu buffer
             src_queue.append((frame_hwc8, frame.pts))
             x = frame_hwc8.to(args.state["device"]).permute(2, 0, 1) / 255.0
@@ -548,7 +548,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     dequeue_ticket_lock = TicketLock()
     streams = threading.local()
     src_queue = []
-    lookahead_enabled = depth_model.get_ema_buffer_size() > 1
+    frame_cpu_offload = depth_model.get_ema_buffer_size() > 1
 
     def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device):
         src_depth_pairs = []
@@ -565,7 +565,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     depths = torch.stack([depth.to(device) for depth in depths])
                 else:
                     depths = depths.to(device)
-                if lookahead_enabled:
+                if frame_cpu_offload:
                     x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
                 else:
                     x_srcs, _ = src_queue.pop(0)
@@ -574,7 +574,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
 
         results = []
         for x_srcs, depths in src_depth_pairs:
-            if lookahead_enabled:
+            if frame_cpu_offload:
                 x_srcs = x_srcs.to(device).permute(0, 3, 1, 2) / 255.0
 
             with sbs_lock:  # TODO: unclear whether this is actually needed
@@ -600,7 +600,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             dequeue_ticket_id = dequeue_ticket_lock.new_ticket()
             if not flush:
                 x = preprocess_image(x, args)
-                if lookahead_enabled:
+                if frame_cpu_offload:
                     x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
                     for x_, pts_ in zip(x_cpu, pts):
                         src_queue.append((x_, pts_))
@@ -1693,14 +1693,10 @@ def create_parser(required_true=True):
     parser.add_argument("--export-depth-fit", action="store_true",
                         help=("fit depth image size to rgb image"))
     parser.add_argument("--mapper", type=str,
-                        choices=["auto", "pow2", "softplus", "softplus2",
-                                 "div_6", "div_4", "div_2", "div_1",
-                                 "none", "mul_1", "mul_2", "mul_3",
-                                 "inv_mul_1", "inv_mul_2", "inv_mul_3",
-                                 ],
+                        choices=MAPPER_ALL,
                         help=("(re-)mapper function for depth. "
                               "if auto, div_6 for ZoeDepth model, none for DepthAnything/DepthPro model. "
-                              "directly using this option is deprecated. "
+                              "directly using this option is not recommended. "
                               "use --foreground-scale instead."))
     parser.add_argument("--foreground-scale", type=float, choices=[Range(-3.0, 3.0)], default=0,
                         help="foreground scaling level. 0 is disabled")
