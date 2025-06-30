@@ -233,14 +233,19 @@ def main(args):
     model.load(gpu=args.gpu, resolution=args.resolution)
     model.disable_ema()
 
-    for dataset_type in ("eval", "train"):
+    if args.eval_only:
+        target_dataset_type = ("eval",)
+    else:
+        target_dataset_type = ("eval", "train")
+
+    for dataset_type in target_dataset_type:
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)
         if not path.exists(input_dir):
             print(f"Error: `{input_dir}` not found", file=sys.stderr)
             return
 
-    for dataset_type in ("eval", "train"):
+    for dataset_type in target_dataset_type:
         print(f"** {dataset_type}")
         input_dir = path.join(args.dataset_dir, dataset_type)
         output_dir = path.join(args.data_dir, dataset_type)
@@ -343,6 +348,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
     parser.add_argument("--mapper", type=str, default="random", help="depth mapper function")
     parser.add_argument("--method", type=str, default="forward_fill", choices=["forward_fill", "polylines"], help="divergence method")
+    parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
 
     parser.set_defaults(handler=main)
 
