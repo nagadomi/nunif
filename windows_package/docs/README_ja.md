@@ -11,6 +11,7 @@ iw3-guiは実写のあらゆる画像・動画を3D画像・3D動画に変換す
 
 - Windows 7 以降. Windows 10 以降が推奨. Windows Server 2008 r2以降.
 - Visual C++ 再頒布可能パッケージ https://aka.ms/vs/16/release/vc_redist.x64.exe
+- [長いファイルパスの有効化](#長いファイルパスの有効化)
 
 # ダウンロードとインストール
 
@@ -58,6 +59,20 @@ GUIは入力状態が保存されています。リセットしたい場合は�
 ## アンインストール
 
 フォルダごと削除してください。
+
+## 長いファイルパスの有効化
+
+これ必須ではありませんが、問題になることがあります。
+
+Windowsではパスの最大長に260文字の制限があります。
+nunif-windowsを深いパスに配置した場合、いくつかのファイルがこの制限によってエラーになることがあります。
+
+以下の`.reg`ファイルをダウンロードして実行しコンピュータを再起動することでこの制限を撤廃できます
+これにはコンピュータの管理権限が必要です。
+
+[enable_long_path.reg](https://raw.githubusercontent.com/nagadomi/nunif/refs/heads/master/windows_package/torch_compile/enable_long_path.reg)
+
+より詳しい説明はマイクロソフトのサイト上にある[パスの最大長の制限](https://learn.microsoft.com/ja-jp/windows/win32/fileio/maximum-file-path-limitation?tabs=registry)を参照してください。
 
 ## Windows Defender SmartScreenにブロックされる
 

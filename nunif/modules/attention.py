@@ -89,16 +89,17 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, dropout_p=0.0, is_causal=Fals
     return x.permute(0, 2, 1, 3).reshape(B, QN, qkv_dim * num_heads)
 
 
-def pad_shift_mask_token(x, mask_token, window_size):
+def pad_shift_mask_token(x, mask_token, window_size, shift=(True, True)):
     mask_token = mask_token.to(x.dtype)
 
-    B, C, H, W = x.shape
-    pad_w = mask_token.expand(B, C, H, window_size[1] // 2)
-    x = torch.cat((pad_w, x, pad_w), dim=3)
-
-    B, C, H, W = x.shape
-    pad_h = mask_token.expand(B, C, window_size[0] // 2, W)
-    x = torch.cat((pad_h, x, pad_h), dim=2)
+    if shift[1]:
+        B, C, H, W = x.shape
+        pad_w = mask_token.expand(B, C, H, window_size[1] // 2)
+        x = torch.cat((pad_w, x, pad_w), dim=3)
+    if shift[0]:
+        B, C, H, W = x.shape
+        pad_h = mask_token.expand(B, C, window_size[0] // 2, W)
+        x = torch.cat((pad_h, x, pad_h), dim=2)
     return x
 
 
@@ -134,11 +135,16 @@ class WindowMHA2d(nn.Module):
         super().__init__()
         self.window_size = (window_size if isinstance(window_size, (tuple, list))
                             else (window_size, window_size))
-        self.shift = shift
-        if self.shift:
-            assert self.window_size[0] % 2 == 0 and self.window_size[1] % 2 == 0
-            self.pad_h = self.window_size[0] // 2
-            self.pad_w = self.window_size[1] // 2
+        self.shift = (shift if isinstance(shift, (tuple, list))
+                      else (shift, shift))
+        self.pad_h = self.pad_w = 0
+        if self.shift[0] or self.shift[1]:
+            if self.shift[0]:
+                assert self.window_size[0] % 2 == 0
+                self.pad_h = self.window_size[0] // 2
+            if self.shift[1]:
+                assert self.window_size[1] % 2 == 0
+                self.pad_w = self.window_size[1] // 2
             if shift_mask_token:
                 self.shift_mask_bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
                 nn.init.trunc_normal_(self.shift_mask_bias, 0, 0.01)
@@ -151,21 +157,19 @@ class WindowMHA2d(nn.Module):
         basic_module_init(self)
 
     def forward(self, x, attn_mask=None, layer_norm=None):
-        if self.shift:
+        if self.shift[0] or self.shift[1]:
             if self.shift_mask_bias is not None:
-                x = pad_shift_mask_token(x, self.shift_mask_bias, self.window_size)
+                x = pad_shift_mask_token(x, self.shift_mask_bias, self.window_size, self.shift)
             else:
                 x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h), mode="constant", value=0)
-
         out_shape = x.shape
         x = bchw_to_bnc(x, self.window_size)
         if layer_norm is not None:
             x = layer_norm(x)
         x = self.mha(x, attn_mask=attn_mask)
         x = bnc_to_bchw(x, out_shape, self.window_size)
-        if self.shift:
+        if self.shift[0] or self.shift[1]:
             x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h))
-
         return x
 
 
@@ -656,9 +660,32 @@ def _test_bias2():
     bias()
 
 
+def _test_shift():
+    mha1 = WindowMHA2d(32, num_heads=2, window_size=4, shift=(False, True))
+    mha2 = WindowMHA2d(32, num_heads=2, window_size=4, shift=(True, False))
+    mha3 = WindowMHA2d(32, num_heads=2, window_size=4, shift=(False, False))
+    mha4 = WindowMHA2d(32, num_heads=2, window_size=4, shift=True)
+    mha5 = WindowMHA2d(32, num_heads=2, window_size=4, shift=False)
+
+    x = torch.zeros((1, 32, 64, 64))
+    assert mha1(x).shape == mha2(x).shape == mha3(x).shape == mha4(x).shape == mha5(x).shape
+
+    mha1 = WindowMHA2d(32, num_heads=2, window_size=4, shift=(False, True), shift_mask_token=True)
+    mha2 = WindowMHA2d(32, num_heads=2, window_size=4, shift=(True, False), shift_mask_token=True)
+    mha3 = WindowMHA2d(32, num_heads=2, window_size=4, shift=(False, False), shift_mask_token=True)
+    mha4 = WindowMHA2d(32, num_heads=2, window_size=4, shift=True, shift_mask_token=True)
+    mha5 = WindowMHA2d(32, num_heads=2, window_size=4, shift=False, shift_mask_token=True)
+
+    x = torch.zeros((1, 32, 64, 64))
+    assert mha1(x).shape == mha2(x).shape == mha3(x).shape == mha4(x).shape == mha5(x).shape
+
+    # I also tested with print debug at WindowMHA2d.forward
+
+
 if __name__ == "__main__":
-    # _test_spatial_reduction()
+    _test_spatial_reduction()
     _test_neighborhood()
     _test_bias()
     _test_bias2()
+    _test_shift()
     pass

@@ -60,21 +60,6 @@ https://github.com/apple/ml-depth-pro
 Apple Inc. / https://github.com/apple/ml-depth-pro/blob/main/LICENSE
 
 ---
-iw3 can use U-2-Net's pretrained model via rembg module.
-https://github.com/xuebinqin/U-2-Net
-xuebinqin / Apache License Version 2.0
-
----
-iw3 can use DIS's pretrained model via rembg module.
-https://github.com/xuebinqin/DIS
-xuebinqin / Apache License Version 2.0
-
----
-iw3 can use anime-segmentation's pretrained model via rembg module.
-https://github.com/SkyTNT/anime-segmentation
-SkyTNT / Apache License Version 2.0
-
----
 nunif/modules/lpips.py
 `normalize_tensor` fix is adapted from NormFixLPIPS of NeuralCompression
 https://github.com/facebookresearch/NeuralCompression

@@ -29,7 +29,7 @@ class NullDepthModel(BaseDepthModel):
         return NullDepth(resolution)
 
     @torch.inference_mode()
-    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):
+    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0, **kwargs):
         batch = True
         if x.ndim == 3:
             batch = False

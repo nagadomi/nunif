@@ -112,7 +112,6 @@ def get_mapper(name):
         names = name.split(":")
     else:
         names = [name]
-
     functions = []
     for name in names:
         if "+" in name:
@@ -133,19 +132,28 @@ def get_mapper(name):
     return lambda x: chain(x, functions)
 
 
-METRIC_MAPPER = [
+METRIC_DIV_MAPPER = [
     "none", "div_25", "div_10",
     "div_6",
     "div_4", "div_2", "div_1",
 ]
-RELATIVE_MAPPER = [
+RELATIVE_MUL_MAPPER = [
     "inv_mul_3", "inv_mul_2", "inv_mul_1",
     "none",
     "mul_1", "mul_2", "mul_3",
 ]
+LEGACY_MAPPER = ["pow2", "softplus", "softplus2"]
+MAPPER_ALL = ["auto"] + list(dict.fromkeys(LEGACY_MAPPER + RELATIVE_MUL_MAPPER + METRIC_DIV_MAPPER))
 
 
-def resolve_mapper_name(mapper, foreground_scale, metric_depth):
+def get_mapper_levels(metric_depth, mapper_type=None):
+    if metric_depth:
+        return METRIC_DIV_MAPPER
+    else:
+        return RELATIVE_MUL_MAPPER
+
+
+def resolve_mapper_name(mapper, foreground_scale, metric_depth, mapper_type=None):
     disparity_mapper = None
     if mapper is not None:
         if mapper == "auto":
@@ -156,12 +164,11 @@ def resolve_mapper_name(mapper, foreground_scale, metric_depth):
         else:
             disparity_mapper = mapper
     else:
-        if foreground_scale == int(foreground_scale):
+        if float(foreground_scale).is_integer():
             foreground_scale = int(foreground_scale)
-            if metric_depth:
-                disparity_mapper = METRIC_MAPPER[foreground_scale + 3]
-            else:
-                disparity_mapper = RELATIVE_MAPPER[foreground_scale + 3]
+            mapper_levels = get_mapper_levels(metric_depth=metric_depth, mapper_type=mapper_type)
+            assert len(mapper_levels) == 7
+            disparity_mapper = mapper_levels[foreground_scale + 3]
         else:
             # float value, interpolate two mappers
             if foreground_scale > 0:
@@ -175,12 +182,10 @@ def resolve_mapper_name(mapper, foreground_scale, metric_depth):
                 weight = foreground_scale - foreground_scale_a
                 foreground_scale_a, foreground_scale_b = -foreground_scale_a, -foreground_scale_b
 
-            if metric_depth:
-                mapper_a = METRIC_MAPPER[foreground_scale_a + 3]
-                mapper_b = METRIC_MAPPER[foreground_scale_b + 3]
-            else:
-                mapper_a = RELATIVE_MAPPER[foreground_scale_a + 3]
-                mapper_b = RELATIVE_MAPPER[foreground_scale_b + 3]
+            mapper_levels = get_mapper_levels(metric_depth=metric_depth, mapper_type=mapper_type)
+            assert len(mapper_levels) == 7
+            mapper_a = mapper_levels[foreground_scale_a + 3]
+            mapper_b = mapper_levels[foreground_scale_b + 3]
 
             disparity_mapper = f"{mapper_a}+{mapper_b}={round(weight, 2)}"
 

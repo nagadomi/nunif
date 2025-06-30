@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+import contextlib
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.models.utils import compile_model
@@ -10,38 +11,23 @@ from nunif.device import create_device
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision.transforms import functional as TF
+from . depth_scaler import EMAMinMaxScaler
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 
 
-class EMAMinMax():
-    def __init__(self, alpha=0.75):
-        self.min_value = None
-        self.max_value = None
-        self.alpha = alpha
+class _CompileContext():
+    def __init__(self, base_model):
+        self.base_model = base_model
 
-    def update(self, min_value, max_value):
-        if self.min_value is None:
-            self.min_value = float(min_value)
-            self.max_value = float(max_value)
-        else:
-            self.min_value = self.alpha * self.min_value + (1. - self.alpha) * float(min_value)
-            self.max_value = self.alpha * self.max_value + (1. - self.alpha) * float(max_value)
+    def __enter__(self):
+        self.base_model.compile()
+        return self
 
-        # print(round(float(min_value), 3), round(float(max_value), 3), round(self.min_value, 3), round(self.max_value, 3))
-
-        return self.min_value, self.max_value
-
-    def __call__(self, min_value, max_value):
-        return self.update(min_value, max_value)
-
-    def reset(self):
-        self.min_value = self.max_value = None
-
-    def set_alpha(self, alpha):
-        self.alpha = alpha
-        self.reset()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.base_model.clear_compiled_model()
+        return False
 
 
 class BaseDepthModel(metaclass=ABCMeta):
@@ -50,8 +36,13 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.model = None
         self.model_backup = None  # for compile
         self.model_type = model_type
-        self.ema_minmax = EMAMinMax()
-        self.ema_minmax_enabled = False
+        self.scaler = EMAMinMaxScaler(decay=0, buffer_size=1)
+
+    def compile_context(self, enabled=True):
+        if enabled:
+            return _CompileContext(self)
+        else:
+            return contextlib.nullcontext()
 
     @classmethod
     @abstractmethod
@@ -154,52 +145,52 @@ class BaseDepthModel(metaclass=ABCMeta):
             self.model_backup = None
 
     @abstractmethod
-    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0):
+    def infer(self, x, *kwargs):
         pass
 
-    def enable_ema_minmax(self, alpha):
-        self.ema_minmax.set_alpha(alpha)
-        self.ema_minmax_enabled = True
+    def enable_ema(self, decay, buffer_size=None):
+        self.scaler.reset(decay=decay, buffer_size=buffer_size)
 
-    def disable_ema_minmax(self):
-        self.ema_minmax_enabled = False
-        self.ema_minmax.reset()
+    def get_ema_state(self):
+        return self.scaler.decay, self.scaler.buffer_size
 
-    def reset_ema_minmax(self):
-        self.ema_minmax.reset()
+    def disable_ema(self):
+        self.scaler.reset(decay=0, buffer_size=1)
 
-    def minmax_normalize_chw(self, depth):
-        min_value = depth.amin()
-        max_value = depth.amax()
-        if self.ema_minmax_enabled:
-            min_value, max_value = self.ema_minmax(min_value, max_value)
+    def reset_ema(self, decay=None, buffer_size=None):
+        self.scaler.reset(decay=decay, buffer_size=buffer_size)
 
-        # TODO: `1 - normalized_metric_depth` is wrong
-        depth = 1.0 - ((depth - min_value) / (max_value - min_value))
-        depth = depth.clamp(0, 1)
-        depth = depth.nan_to_num()
-        return depth, min_value, max_value
+    def get_ema_buffer_size(self):
+        return self.scaler.buffer_size
 
-    def minmax_normalize(self, depth):
-        if depth.ndim == 3:
-            return self.minmax_normalize_chw(depth)[0]
-        else:
-            assert depth.ndim == 4
-            return torch.stack([self.minmax_normalize_chw(depth[i])[0] for i in range(depth.shape[0])]).contiguous()
+    def minmax_normalize_chw(self, depth, return_minmax=False):
+        return self.scaler(depth, return_minmax=return_minmax)
 
-    def save_depth(self, depth, file_path, png_info={}, normalize=True):
-        # not batch
-        assert depth.ndim in {3, 2}
-        if normalize:
-            depth, min_depth_value, max_depth_value = self.minmax_normalize_chw(depth)
-            png_info.update(iw3_min_depth_value=min_depth_value.item(), iw3_max_depth_value=max_depth_value.item())
-        else:
-            min_depth_value = depth.amin()
-            max_depth_value = depth.amax()
-            if not (0 - 1e-6 <= min_depth_value and max_depth_value <= 1.0 + 1e-6):
-                raise ValueError("depth is not normalized and normalize=False."
-                                 f"min={min_depth_value}, max={max_depth_value}")
+    def flush_minmax_normalize(self, return_minmax=False):
+        return self.scaler.flush(return_minmax=return_minmax)
 
+    def minmax_normalize(self, depth, reset_ema=None):
+        assert depth.ndim == 4
+        reset_ema = [False] * depth.shape[0] if reset_ema is None else reset_ema
+        assert len(reset_ema) == depth.shape[0]
+        normalized_depths = []
+        for i in range(depth.shape[0]):
+            normalized_depth = self.minmax_normalize_chw(depth[i])
+            if normalized_depth is not None:
+                normalized_depths.append(normalized_depth)
+            if reset_ema[i]:
+                normalized_depths += self.flush_minmax_normalize()
+                self.reset_ema()
+        return normalized_depths
+
+    @staticmethod
+    def save_normalized_depth(depth, file_path, png_info={}, min_depth_value=None, max_depth_value=None):
+        if min_depth_value is not None:
+            png_info.update(iw3_min_depth_value=float(min_depth_value))
+        if max_depth_value is not None:
+            png_info.update(iw3_max_depth_value=float(max_depth_value))
+
+        depth = torch.clamp(depth, 0, 1)
         depth_int = (0xffff * depth).to(torch.uint16).squeeze(0).cpu().numpy()
         metadata = PngInfo()
         for k, v in png_info.items():
@@ -210,11 +201,12 @@ class BaseDepthModel(metaclass=ABCMeta):
 
     @staticmethod
     def load_depth(file_path):
+        # TODO: test iw3_max_depth_value
         with Image.open(file_path) as im:
             if "iw3_min_depth_value" in im.text and "iw3_max_depth_value" in im.text:
                 try:
                     min_depth_value = float(im.text["iw3_min_depth_value"])
-                    max_depth_value = float(im.text["iw3_min_depth_value"])
+                    max_depth_value = float(im.text["iw3_max_depth_value"])
                 except (ValueError, TypeError):
                     min_depth_value = max_depth_value = None
             else:

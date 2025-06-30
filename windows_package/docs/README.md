@@ -13,6 +13,7 @@ The images and videos you really wanted to watch in VR can be watched on VR devi
 
 - Windows 7 and greater; Windows 10 or greater recommended. Windows Server 2008 r2 and greater
 - Microsoft Visual C++ Redistributable Packages https://aka.ms/vs/16/release/vc_redist.x64.exe
+- [Eanble long paths](#enable-long-paths)
 
 # Download and Install
 
@@ -55,6 +56,20 @@ GUI keeps the input state. If you want to reset it, delete the `nunif\tmp` folde
 ## Uninstall
 
 Delete the entire folder.
+
+## Enable long paths
+
+This is not required, but it can cause problems.
+
+Windows has a 260-character limit on file paths.
+If you place nunif-windows in a deeply nested path, some files may exceed this limit and result in errors.
+
+You can remove this limit by downloading and running the following `.reg` file and reboot.
+This requires administrator privileges on the computer.
+
+[enable_long_path.reg](https://raw.githubusercontent.com/nagadomi/nunif/refs/heads/master/windows_package/torch_compile/enable_long_path.reg)
+
+For a more detailed explanation, please see [Maximum Path Length Limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry) on Microsoft website.
 
 ## Blocked by Windows Defender SmartScreen
 

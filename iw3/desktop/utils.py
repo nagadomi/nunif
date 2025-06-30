@@ -138,6 +138,10 @@ def create_parser():
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
     parser.add_argument("--window-name", type=str, help=("target window name for wc_mp."
                                                          " When this is specified, --monitor-index is ignored"))
+    parser.add_argument("--crop-top", type=int, default=0, help="Crop pixels from top when using --window-name")
+    parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
+    parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
+    parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
     parser.set_defaults(
         input="dummy",
         output="dummy",
@@ -153,7 +157,6 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
     IW3U.set_state_args(args, stop_event=stop_event, depth_model=depth_model)
     args.state["fps_event"] = fps_event
     args.state["args_lock"] = args_lock if args_lock is not None else threading.Lock()
-    args.bg_session = None
     if args.edge_dilation is None:
         args.edge_dilation = 2
 
@@ -161,11 +164,15 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
 def iw3_desktop_main(args, init_wxapp=True):
     init_num_threads(args.gpu[0])
 
-    if not args.full_sbs:
-        args.half_sbs = True
+    if args.full_sbs:
+        frame_width_scale = 2
+    elif args.rgbd:
+        frame_width_scale = 2
+    elif args.half_rgbd:
         frame_width_scale = 1
     else:
-        frame_width_scale = 2
+        args.half_sbs = True
+        frame_width_scale = 1
 
     if args.bind_addr is None:
         args.bind_addr = get_local_address()
@@ -189,10 +196,16 @@ def iw3_desktop_main(args, init_wxapp=True):
         depth_model.load(gpu=args.gpu, resolution=args.resolution)
 
     # Use Flicker Reduction to prevent 3D sickness
-    depth_model.enable_ema_minmax(args.ema_decay)
+    depth_model.enable_ema(args.ema_decay, buffer_size=1)
     args.mapper = IW3U.resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                            metric_depth=depth_model.is_metric())
-    side_model = IW3U.load_sbs_model(args)
+
+    # TODO: For mlbw, it is better to switch models when the divergence value dynamically changes
+    side_model = IW3U.create_stereo_model(
+        args.method,
+        divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
+        device_id=args.gpu[0],
+    )
     if args.user or args.password:
         user = args.user or ""
         password = args.password or ""
@@ -209,7 +222,8 @@ def iw3_desktop_main(args, init_wxapp=True):
         rect = get_window_rect_by_title(args.window_name)
         if rect is None:
             raise RuntimeError(f"window_name={args.window_name} not found")
-        screen_width, screen_height = rect["width"], rect["height"]
+        screen_width = rect["width"] - args.crop_left - args.crop_right
+        screen_height = rect["height"] - args.crop_top - args.crop_bottom
     else:
         size_list = get_monitor_size_list()
         if args.monitor_index >= len(size_list):
@@ -247,7 +261,8 @@ def iw3_desktop_main(args, init_wxapp=True):
         fps=args.stream_fps,
         frame_width=frame_width, frame_height=frame_height,
         monitor_index=args.monitor_index, window_name=args.window_name,
-        device=device)
+        device=device, crop_top=args.crop_top, crop_left=args.crop_left,
+        crop_right=args.crop_right, crop_bottom=args.crop_bottom)
 
     try:
         if args.compile:
@@ -268,7 +283,7 @@ def iw3_desktop_main(args, init_wxapp=True):
             with args.state["args_lock"]:
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
-                sbs = IW3U.process_image(frame, args, depth_model, side_model, return_tensor=True)
+                sbs = IW3U.process_image(frame, args, depth_model, side_model)
                 if args.gpu_jpeg:
                     server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
                 else:

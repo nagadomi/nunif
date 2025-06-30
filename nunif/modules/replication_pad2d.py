@@ -55,6 +55,13 @@ def replication_pad2d_naive(x, padding, detach=False):
     return x.contiguous()
 
 
+def replication_pad2d(x, padding):
+    if sys.platform == "darwin":
+        return replication_pad2d_naive(x, padding)
+    else:
+        return nn.functional.pad(x, padding, mode="replicate")
+
+
 def replication_pad1d_naive(x, padding, detach=False):
     assert x.ndim == 3 and len(padding) == 2
     left, right = padding

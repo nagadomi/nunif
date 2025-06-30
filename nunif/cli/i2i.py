@@ -8,6 +8,7 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from .. utils.render import tiled_render, simple_render
 from .. utils.image_loader import ImageLoader
+from nunif.utils import pil_io as IL
 from .. models import load_model, I2IBaseModel
 from .. logger import logger
 from .. addon import load_addons
@@ -37,9 +38,10 @@ def convert_with_tiled_render(model, args):
         os.makedirs(args.output, exist_ok=True)
     with torch.inference_mode(), PoolExecutor() as pool:
         for im, meta in tqdm(loader, ncols=60):
-            if in_grayscale:
-                im = TF.to_grayscale(im)
-            z = tiled_render(TF.to_tensor(im), model, tile_size=tile_size, batch_size=args.batch_size).to("cpu")
+            im = IL.to_tensor(im, return_alpha=False)
+            if in_grayscale and im.shape[0] == 3:
+                im = im.mean(dim=0, keepdims=True)
+            z = tiled_render(im, model, tile_size=tile_size, batch_size=args.batch_size).to("cpu")
             if is_dir:
                 output_filename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
                 pool.submit(save_image, TF.to_pil_image(z), path.join(args.output, output_filename))
@@ -55,9 +57,10 @@ def convert_with_simple_render_single(model, args):
         os.makedirs(args.output, exist_ok=True)
     with torch.inference_mode(), PoolExecutor() as pool:
         for im, meta in tqdm(loader, ncols=60):
-            if in_grayscale:
-                im = TF.to_grayscale(im)
-            z = simple_render(TF.to_tensor(im), model).to('cpu')
+            im = IL.to_tensor(im, return_alpha=False)
+            if in_grayscale and im.shape[0] == 3:
+                im = im.mean(dim=0, keepdims=True)
+            z = simple_render(im, model).to('cpu')
             if is_dir:
                 output_filename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
                 pool.submit(save_image, TF.to_pil_image(z), path.join(args.output, output_filename))
