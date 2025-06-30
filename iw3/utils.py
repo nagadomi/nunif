@@ -775,6 +775,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             )
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return
+        gc_collect()
     else:
         segment_pts = set()
 
@@ -1272,6 +1273,7 @@ def export_video(input_filename, output_dir, args, title=None):
             )
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 return
+        gc_collect()
     else:
         segment_pts = set()
     config.user_data["scene_boundary"] = ",".join([str(pts).zfill(8) for pts in sorted(list(segment_pts))])
