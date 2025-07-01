@@ -29,17 +29,6 @@ def inv_distance_to_disparity(x, c):
     return ((c + 1) * x) / (x + c)
 
 
-def shift(x, value):
-    return (1.0 - value) * x + value
-
-
-def div_shift(x, value, c=0.6):
-    x = inv_distance_to_disparity(x, c)
-    x = (1.0 - value) * x + value
-    x = distance_to_disparity(x, c)
-    return x
-
-
 def resolve_mapper_function(name):
     # https://github.com/nagadomi/nunif/assets/287255/0071a65a-62ff-4928-850c-0ad22bceba41
     if name == "pow2":
@@ -83,20 +72,6 @@ def resolve_mapper_function(name):
             "div_1": 0.1,
         }[name]
         return lambda x: distance_to_disparity(x, param)
-    elif name in {"shift_25", "shift_50", "shift_75"}:
-        param = {
-            "shift_25": 0.25,
-            "shift_50": 0.5,
-            "shift_75": 0.75,
-        }[name]
-        return lambda x: shift(x, param)
-    elif name in {"div_shift_25", "div_shift_50", "div_shift_75"}:
-        param = {
-            "div_shift_25": 0.25,
-            "div_shift_50": 0.5,
-            "div_shift_75": 0.75,
-        }[name]
-        return lambda x: div_shift(x, param, 0.6)
     else:
         raise NotImplementedError(f"mapper={name}")
 
