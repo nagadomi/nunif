@@ -69,6 +69,7 @@ class MLBW(I2IBaseModel):
             nn.Conv2d(C // pack, self.num_layers * 2, kernel_size=(1, 9), stride=1, padding=0),
         )
         self.delta_output = False
+        self.cycle = False
         self.symmetric = False
 
     def _calc_pad(self, x):
@@ -143,6 +144,55 @@ class MLBW(I2IBaseModel):
         else:
             return torch.clamp(z, 0., 1.)
 
+    def _forward_cycle_composite(self, x):
+        rgb = x[:, 0:3, :, ]
+        depth = x[:, 3:4, :, ]
+        grid = x[:, 6:8, :, ]
+        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        delta1, layer_weight1 = self._forward(x)
+        delta1 = delta1.to(torch.float32)
+        delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
+
+        # composite
+
+        # warp
+        warp_rgb = torch.zeros_like(rgb)
+        warp_depth = torch.zeros_like(depth)
+        for i in range(delta1.shape[1]):
+            d = delta1[:, i:i + 1, :, :]
+            w = layer_weight1[:, i:i + 1, :, :]
+            warp_rgb = warp_rgb + self._warp(rgb, grid, d, delta_scale) * w
+            warp_depth = warp_depth + self._warp(depth, grid, d, delta_scale) * w
+
+        # reverse warp
+        warp_depth = torch.flip(warp_depth, dims=[-1])
+        warp_rgb_flip = torch.flip(warp_rgb, dims=[-1]).detach()
+        x = torch.cat([warp_depth, x[:, 1:]], dim=1).detach()
+        delta2, layer_weight2 = self._forward(x)
+        delta2 = delta2.to(torch.float32)
+
+        reverse_warp_rgb = torch.zeros_like(warp_rgb)
+        for i in range(delta2.shape[1]):
+            d = delta2[:, i:i + 1, :, :]
+            w = layer_weight2[:, i:i + 1, :, :]
+            reverse_warp_rgb = reverse_warp_rgb + self._warp(warp_rgb_flip, grid, d, delta_scale) * w
+
+        reverse_warp_rgb = torch.flip(reverse_warp_rgb, dims=[-1])
+        z1 = F.pad(warp_rgb, (-OFFSET,) * 4)
+        z2 = F.pad(reverse_warp_rgb, (-OFFSET * 2,) * 4)
+        src_rgb = F.pad(rgb.detach(), (-OFFSET * 2,) * 4)
+
+        return z1, z2, grid, delta1, delta2, src_rgb
+
+    def _forward_cycle(self, x):
+        delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
+        z1, z2, grid, delta1, delta2, x = self._forward_cycle_composite(x)
+        if self.training:
+            grid = (grid[:, 0:1, :, :] / delta_scale).detach()
+            return z1, z2, grid + delta1, grid + delta2, x
+        else:
+            return torch.clamp(z1, 0., 1.), torch.clamp(z2, 0., 1.), x
+
     def _forward_delta_only(self, x):
         assert not self.training
         delta, layer_weight = self._forward(x)
@@ -151,7 +201,10 @@ class MLBW(I2IBaseModel):
 
     def forward(self, x):
         if not self.delta_output:
-            return self._forward_default(x)
+            if self.cycle:
+                return self._forward_cycle(x)
+            else:
+                return self._forward_default(x)
         else:
             return self._forward_delta_only(x)
 
