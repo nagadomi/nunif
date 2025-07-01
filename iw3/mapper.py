@@ -147,10 +147,22 @@ MAPPER_ALL = ["auto"] + list(dict.fromkeys(LEGACY_MAPPER + RELATIVE_MUL_MAPPER +
 
 
 def get_mapper_levels(metric_depth, mapper_type=None):
-    if metric_depth:
-        return METRIC_DIV_MAPPER
+    if mapper_type is None:
+        if metric_depth:
+            return METRIC_DIV_MAPPER
+        else:
+            return RELATIVE_MUL_MAPPER
     else:
-        return RELATIVE_MUL_MAPPER
+        if metric_depth:
+            if mapper_type == "div":
+                return METRIC_DIV_MAPPER
+            else:
+                raise ValueError(f"{mapper_type} is not metric depth mapper")
+        else:
+            if mapper_type == "mul":
+                return RELATIVE_MUL_MAPPER
+            else:
+                raise ValueError(f"{mapper_type} is not relative depth mapper")
 
 
 def resolve_mapper_name(mapper, foreground_scale, metric_depth, mapper_type=None):

@@ -1702,6 +1702,8 @@ def create_parser(required_true=True):
                               "use --foreground-scale instead."))
     parser.add_argument("--foreground-scale", type=float, choices=[Range(-3.0, 3.0)], default=0,
                         help="foreground scaling level. 0 is disabled")
+    parser.add_argument("--mapper-type", type=str, choices=["div", "mul", "off"], default=None,
+                        help="mapper type for foreground scaling level")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")
     parser.add_argument("--half-sbs", action="store_true",
@@ -1951,7 +1953,8 @@ def iw3_main(args):
 
         is_metric = depth_model.is_metric()
         args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
-                                          metric_depth=is_metric)
+                                          metric_depth=is_metric,
+                                          mapper_type=args.mapper_type)
     else:
         depth_model = None
         # specified args.mapper never used in process_config_*
