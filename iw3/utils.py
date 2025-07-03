@@ -1702,7 +1702,7 @@ def create_parser(required_true=True):
                               "use --foreground-scale instead."))
     parser.add_argument("--foreground-scale", type=float, choices=[Range(-3.0, 3.0)], default=0,
                         help="foreground scaling level. 0 is disabled")
-    parser.add_argument("--mapper-type", type=str, choices=["div", "mul", "off"], default=None,
+    parser.add_argument("--mapper-type", type=str, choices=["div", "mul", "shift"], default=None,
                         help="mapper type for foreground scaling level")
     parser.add_argument("--vr180", action="store_true",
                         help="output in VR180 format")

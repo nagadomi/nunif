@@ -29,6 +29,31 @@ def inv_distance_to_disparity(x, c):
     return ((c + 1) * x) / (x + c)
 
 
+def shift_relative_depth(x, min_distance, max_distance=16):
+    # convert x from dispariy space to distance space
+    # reference: https://github.com/LiheYoung/Depth-Anything/issues/72#issuecomment-1937892879
+    provisional_max_distance = min_distance + max_distance
+    A = 1.0 / provisional_max_distance
+    B = (1.0 / min_distance) - (1.0 / provisional_max_distance)
+    distance = 1 / (A + B * x)
+
+    # shift distance in distance space. old min_distance -> 1
+    new_min_distance = 1.0
+    distance = (new_min_distance - min_distance) + distance
+
+    # back to disparity space
+    new_x = 1.0 / distance
+
+    # scale output to 0-1 range
+    # NOTE: Do not use new_x.amin()/new_x.amax() to avoid re-normalization.
+    #       This condition is required when using EMA normalization with look-ahead buffers.
+    min_value = 1.0 / (max_distance + 1)
+    value_range = 1.0 - 1.0 / (max_distance + 1)
+    new_x = (new_x - min_value) / value_range
+
+    return new_x
+
+
 def resolve_mapper_function(name):
     # https://github.com/nagadomi/nunif/assets/287255/0071a65a-62ff-4928-850c-0ad22bceba41
     if name == "pow2":
@@ -40,7 +65,7 @@ def resolve_mapper_function(name):
     elif name == "softplus2":
         return lambda x: softplus01(x) ** 2
     elif name in {"mul_1", "mul_2", "mul_3"}:
-        # for DepthAnything
+        # for Relative Depth
         # https://github.com/nagadomi/nunif/assets/287255/2be5c0de-cb72-4c9c-9e95-4855c0730e5c
         param = {
             # none 1x
@@ -50,7 +75,7 @@ def resolve_mapper_function(name):
         }[name]
         return lambda x: softplus01(x, **param)
     elif name in {"inv_mul_1", "inv_mul_2", "inv_mul_3"}:
-        # for DepthAnything
+        # for Relative Depth
         # https://github.com/nagadomi/nunif/assets/287255/f580b405-b0bf-4c6a-8362-66372b2ed930
         param = {
             # none 1x
@@ -59,8 +84,20 @@ def resolve_mapper_function(name):
             "inv_mul_3": {"bias": -0.0001, "scale": 3.4343},    # inverse smooth 3x
         }[name]
         return lambda x: inv_softplus01(x, **param)
+    elif name in {"shift_30", "shift_20", "shift_14", "shift_08", "shift_06", "shift_045"}:
+        # for Relative Depth
+        # https://github.com/user-attachments/assets/7c953aae-101e-4337-82b4-10a073863d47
+        param = {
+            "shift_30": {"min_distance":  3.0},
+            "shift_20":  {"min_distance": 2.0},
+            "shift_14":  {"min_distance": 1.4},
+            "shift_08": {"min_distance": 0.8},
+            "shift_06": {"min_distance": 0.6},
+            "shift_045": {"min_distance": 0.45},
+        }[name]
+        return lambda x: shift_relative_depth(x, **param)
     elif name in {"div_25", "div_10", "div_6", "div_4", "div_2", "div_1"}:
-        # for ZoeDepth
+        # for Metric Depth (inverse distance)
         # TODO: There is no good reason for this parameter step
         # https://github.com/nagadomi/nunif/assets/287255/46c6b292-040f-4820-93fc-9e001cd53375
         param = {
@@ -117,6 +154,12 @@ RELATIVE_MUL_MAPPER = [
     "none",
     "mul_1", "mul_2", "mul_3",
 ]
+RELATIVE_SHIFT_MAPPER = [
+    "shift_045", "shift_06", "shift_08",
+    "none",
+    "shift_14", "shift_20", "shift_30",
+]
+
 LEGACY_MAPPER = ["pow2", "softplus", "softplus2"]
 MAPPER_ALL = ["auto"] + list(dict.fromkeys(LEGACY_MAPPER + RELATIVE_MUL_MAPPER + METRIC_DIV_MAPPER))
 
@@ -136,6 +179,8 @@ def get_mapper_levels(metric_depth, mapper_type=None):
         else:
             if mapper_type == "mul":
                 return RELATIVE_MUL_MAPPER
+            if mapper_type == "shift":
+                return RELATIVE_SHIFT_MAPPER
             else:
                 raise ValueError(f"{mapper_type} is not relative depth mapper")
 
