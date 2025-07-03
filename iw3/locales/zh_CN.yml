@@ -54,7 +54,7 @@
 "Anaglyph Method": "红蓝立体方式"
 "Flicker Reduction": "闪烁抑制"
 "Scene Boundary Detection": "场景边界检测"
-"Reset model and Flicker Detection states at scene boundaries": "在场景边界重置模型和闪烁抑制状态"
+"Reset model and Flicker Reduction states at scene boundaries": "在场景边界重置模型和闪烁抑制状态"
 "(experimental)": "(实验性)"
 "Depth Only": "仅深度"
 "Exporting depth images only.\nNote that exported data with this option cannot be imported.": "仅导出深度图像\n注意：此选项导出的数据无法导入"
