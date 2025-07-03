@@ -211,7 +211,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
-                                      choices=["mlbw_l2", "mlbw_l4",
+                                      choices=["mlbw_l2", "mlbw_l4", "mlbw_l2s",
                                                "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
                                                "forward_fill"],
                                       name="cbo_method")
@@ -260,9 +260,9 @@ class MainFrame(wx.Frame):
                                              name="chk_ema_normalize")
         self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
 
-        self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.95", "0.9", "0.75", "0.5", "0.0"],
+        self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.99", "0.95", "0.9", "0.75", "0.5"],
                                               name="cbo_ema_decay")
-        self.cbo_ema_decay.SetSelection(1)
+        self.cbo_ema_decay.SetSelection(2)
         self.cbo_ema_decay.SetToolTip(T("Decay Rate"))
 
         self.cbo_ema_buffer = EditableComboBox(self.grp_stereo, choices=["150", "60", "30", "1"],
