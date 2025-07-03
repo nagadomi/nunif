@@ -179,7 +179,7 @@ def get_mapper_levels(metric_depth, mapper_type=None):
         else:
             if mapper_type == "mul":
                 return RELATIVE_MUL_MAPPER
-            if mapper_type == "shift":
+            elif mapper_type == "shift":
                 return RELATIVE_SHIFT_MAPPER
             else:
                 raise ValueError(f"{mapper_type} is not relative depth mapper")
