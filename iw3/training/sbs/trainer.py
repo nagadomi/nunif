@@ -63,6 +63,40 @@ class MLBWLoss(nn.Module):
         return loss + delta_penalty
 
 
+class CycleMLBWLoss(nn.Module):
+    def __init__(self, mask_weight):
+        super().__init__()
+        self.mask_weight = mask_weight
+        self.blur = GaussianFilter2d(1, 3, padding=1)
+        self.delta_penalty = DeltaPenalty()
+
+    def forward(self, input, target):
+        z1, z2, grid1, grid2, src_rgb = input
+        y, mask = target
+
+        delta_penalty = (self.delta_penalty(grid1, None) + self.delta_penalty(grid2, None)) * 0.5
+
+        if self.mask_weight > 0:
+            mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
+            z1 = z1 * mask
+            y = y * mask
+            loss1 = (window_dct_loss(z1, y, window_size=24) +
+                     window_dct_loss(z1, y, window_size=4) +
+                     dct_loss(z1, y)) * 0.3
+        else:
+            loss1 = (window_dct_loss(z1, y, window_size=24) +
+                     window_dct_loss(z1, y, window_size=4) +
+                     dct_loss(z1, y)) * 0.3
+
+        loss2 = (window_dct_loss(z2, src_rgb, window_size=24) +
+                 window_dct_loss(z2, src_rgb, window_size=4) +
+                 dct_loss(z2, src_rgb)) * 0.3
+
+        loss = loss1 * 0.5 + loss2 * 0.5
+
+        return loss + delta_penalty
+
+
 class RowFlowV3Loss(nn.Module):
     def __init__(self, mask_weight):
         super().__init__()
@@ -117,6 +151,24 @@ class MaskedPSNR(nn.Module):
             return self.psnr(input, target)
 
 
+class CyclePSNR(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.psnr = PSNR()
+
+    def forward(self, input, target):
+        z1, z2, src_rgb = input
+        y, mask = target
+        mask = 1 - mask
+
+        psnr1 = self.psnr(z1 * mask, y * mask)
+        if False:
+            psnr2 = self.psnr(z2, src_rgb)
+            return (psnr1 + psnr2) * 0.5
+        else:
+            return psnr1
+
+
 class SBSEnv(I2IEnv):
     def __init__(self, model, criterion, sampler, eval_criterion=None):
         super().__init__(model, criterion, eval_criterion=eval_criterion)
@@ -144,6 +196,8 @@ class SBSTrainer(Trainer):
         model = create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
         if self.args.symmetric:
             model.symmetric = True
+        if self.args.cycle:
+            model.cycle = True
         model = model.to(self.device)
         return model
 
@@ -193,6 +247,9 @@ class SBSTrainer(Trainer):
             criterion = RowFlowV3Loss(mask_weight=self.args.mask_weight).to(self.device)
         elif self.args.loss == "mlbw":
             criterion = MLBWLoss(mask_weight=self.args.mask_weight).to(self.device)
+        elif self.args.loss == "cycle_mlbw":
+            criterion = CycleMLBWLoss(mask_weight=self.args.mask_weight).to(self.device)
+            eval_criterion = CyclePSNR().to(self.device)
         elif self.args.loss == "aux_l1":
             criterion = AuxiliaryLoss(
                 (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()),
@@ -207,8 +264,14 @@ def train(args):
         args.loss = "aux_l1"
     elif args.arch == "sbs.row_flow_v3":
         args.loss = "row_flow_v3"
+    elif args.cycle:
+        args.loss = "cycle_mlbw"
     elif args.arch.startswith("sbs.mlbw"):
         args.loss = "mlbw"
+
+    if args.cycle:
+        args.mask_weight = 1.0
+        print("change mask_weight=1")
 
     trainer = SBSTrainer(args)
     trainer.fit()
@@ -228,6 +291,8 @@ def register(subparsers, default_parser):
                         help="hole mask weight. 1 means completely excluded from the loss")
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
+    parser.add_argument("--cycle", action="store_true",
+                        help="use cycle warp training. only for `--arch sbs.mlbw_*`")
     parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
     parser.add_argument("--weak-convergence", action="store_true", help="Use 0.3 <= convergence <= 0.7 only ")
 

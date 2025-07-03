@@ -255,7 +255,17 @@ There are two parameters for this.
 `Lookahead Buffer Size` specifies the number of future frames, starting from the current frame, over which the depth range is calculated.
 Buffer Size = 30 means looking ahead 1 seconds at 30 FPS. Buffer Size = 150 means looking ahead 5 seconds. Buffer Size = 1 is the same as in the previous version.
 
-# `Depth Anti-aliasing`
+## Scene Boundary Detection
+
+Scene/Shot boundary detection is performed first, using [TransNetV2](https://github.com/soCzech/TransNetV2).
+
+At scene boundary frames, state reset is performed if needed.
+
+This includes:
+- The state of VideoDepthAnything
+- The state of Flicker Reduction (Min-Max Normalization)
+
+## `Depth Anti-aliasing`
 
 See https://github.com/nagadomi/nunif/issues/406
 
