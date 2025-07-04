@@ -30,6 +30,7 @@ from nunif.gui import (
     apply_dark_mode, is_dark_mode,
 )
 from ..depth_anything_model import DepthAnythingModel
+from ..video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
 from ..locales import LOCALES, load_language_setting, save_language_setting
 from .utils import (
     get_local_address,
@@ -584,7 +585,7 @@ class MainFrame(wx.Frame):
 
     def get_depth_models(self, small_only):
         if small_only:
-            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S"]
+            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S"]
         else:
             depth_models = [
                 "ZoeD_N", "ZoeD_K", "ZoeD_NK",
@@ -609,6 +610,10 @@ class MainFrame(wx.Frame):
                 depth_models.append("Distill_Any_B")
             if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
                 depth_models.append("Distill_Any_L")
+
+            depth_models += ["VDA_Stream_S"]
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
+                depth_models.append("VDA_Stream_L")
 
             return depth_models
 
