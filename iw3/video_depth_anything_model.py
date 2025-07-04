@@ -122,11 +122,14 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
         return model
 
-    def reset(self):
+    def reset_state(self):
         self.model.reset_state()
-        self.reset_ema()
         self.input_frame_count = 0
         self.output_frame_count = 0
+
+    def reset(self):
+        self.reset_state()
+        self.reset_ema()
 
     def infer(self, x, enable_amp=True, edge_dilation=0, **kwargs):
         # NOTE: DONT USE THIS
