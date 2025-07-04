@@ -31,9 +31,11 @@ AA_SUPPORT_MODELS = {
 
 
 def batch_preprocess(x, lower_bound, metric_depth):
-    x = batch_preprocess_da(x, lower_bound - METRIC_PADDING * 2)
     if metric_depth:
+        x = batch_preprocess_da(x, lower_bound - METRIC_PADDING * 2)
         x = reflection_pad2d_naive(x, (METRIC_PADDING,) * 4)
+    else:
+        x = batch_preprocess_da(x, lower_bound)
     assert x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0
     return x
 
