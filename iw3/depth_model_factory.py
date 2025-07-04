@@ -2,6 +2,7 @@ from . zoedepth_model import ZoeDepthModel
 from . depth_anything_model import DepthAnythingModel
 from . depth_pro_model import DepthProModel
 from . video_depth_anything_model import VideoDepthAnythingModel
+from . video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
 from . null_depth_model import NullDepthModel
 
 
@@ -17,6 +18,9 @@ def create_depth_model(model_type):
         return model
     elif VideoDepthAnythingModel.supported(model_type):
         model = VideoDepthAnythingModel(model_type)
+        return model
+    elif VideoDepthAnythingStreamingModel.supported(model_type):
+        model = VideoDepthAnythingStreamingModel(model_type)
         return model
     elif NullDepthModel.supported(model_type):
         model = NullDepthModel(model_type)
