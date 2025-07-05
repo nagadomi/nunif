@@ -316,6 +316,8 @@ def iw3_desktop_main(args, init_wxapp=True):
         server.stop()
         screenshot_thread.stop()
         depth_model.clear_compiled_model()
+        depth_model.reset()
+        gc_collect()
 
     if args.state["stop_event"] and args.state["stop_event"].is_set():
         args.state["stop_event"].clear()
