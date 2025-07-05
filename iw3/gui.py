@@ -42,7 +42,7 @@ from .video_depth_anything_model import (
     VideoDepthAnythingModel,
     AA_SUPPORT_MODELS as VDA_AA_SUPPORTED_MODELS
 )
-from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
+from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel, AA_SUPPORT_MODELS as VDA_STREAM_AA_SUPPORTED_MODELS
 from .depth_pro_model import DepthProModel
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
@@ -791,6 +791,7 @@ class MainFrame(wx.Frame):
                 DepthAnythingModel.supported(name) or
                 DepthProModel.supported(name) or
                 VideoDepthAnythingModel.supported(name) or
+                VideoDepthAnythingStreamingModel.supported(name) or
                 name.startswith("ZoeD_Any_")
         ):
             self.cbo_edge_dilation.Enable()
@@ -804,7 +805,7 @@ class MainFrame(wx.Frame):
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
 
-        if name in DA_AA_SUPPORTED_MODELS or name in VDA_AA_SUPPORTED_MODELS:
+        if name in DA_AA_SUPPORTED_MODELS or name in VDA_AA_SUPPORTED_MODELS or name in VDA_STREAM_AA_SUPPORTED_MODELS:
             self.chk_depth_aa.Enable()
         else:
             self.chk_depth_aa.Disable()
