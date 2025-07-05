@@ -535,6 +535,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
         depths = [depth] if depth is not None else []
         if frame.pts in segment_pts:
             depths += depth_model.flush_minmax_normalize()
+            depth_model.reset_state()
 
         return _postprocess(depths)
 
@@ -736,6 +737,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
 
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
+    is_video_depth_anything_streaming = depth_model.get_name() == "VideoDepthAnythingStreaming"
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
@@ -803,6 +805,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         if ema_normalize:
             # reset ema to avoid affecting test frames
             depth_model.enable_ema(decay=decay, buffer_size=buffer_size)
+        depth_model.reset()
         return VU.to_frame(x)
 
     if is_video_depth_anything:
@@ -824,7 +827,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              start_time=args.start_time,
                              end_time=args.end_time)
 
-    elif args.low_vram or args.debug_depth:
+    elif args.low_vram or args.debug_depth or is_video_depth_anything_streaming:
         with depth_model.compile_context(enabled=args.compile):
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
@@ -917,6 +920,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
 
 def process_video(input_filename, output_path, args, depth_model, side_model):
     # disable ema minmax for each process
+    depth_model.reset()
     depth_model.disable_ema()
 
     if args.keyframe:
@@ -1118,6 +1122,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
         depths = [depth] if depth is not None else []
         if frame.pts in segment_pts:
             depths += depth_model.flush_minmax_normalize()
+            depth_model.reset_state()
 
         return _postprocess(depths)
 
@@ -1316,6 +1321,7 @@ def export_video(input_filename, output_dir, args, title=None):
         return video_output_config
 
     depth_model = args.state["depth_model"]
+    depth_model.reset()
     depth_model.disable_ema()
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:

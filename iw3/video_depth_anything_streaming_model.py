@@ -75,6 +75,9 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
 
         return model
 
+    def reset_state(self):
+        self.model.reset_state()
+
     def infer(self, x, enable_amp=True, edge_dilation=0, depth_aa=False, **kwargs):
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).to(self.device)

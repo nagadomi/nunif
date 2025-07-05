@@ -42,6 +42,7 @@ from .video_depth_anything_model import (
     VideoDepthAnythingModel,
     AA_SUPPORT_MODELS as VDA_AA_SUPPORTED_MODELS
 )
+from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
 from .depth_pro_model import DepthProModel
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
@@ -683,6 +684,10 @@ class MainFrame(wx.Frame):
             depth_models.append("VDA_L")
         if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric"):
             depth_models.append("VDA_Metric")
+
+        depth_models += ["VDA_Stream_S"]
+        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
+            depth_models.append("VDA_Stream_L")
 
         return depth_models
 

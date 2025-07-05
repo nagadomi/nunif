@@ -350,6 +350,9 @@ class ScreenshotProcess(threading.Thread):
             self.stop_event.set()
             time.sleep(0.1)
             self.process = None
+            self.process_frame_buffer.close()
+            self.process_frame_buffer.unlink()
+            self.process_frame_buffer = None
 
     def get_frame(self):
         frame = None

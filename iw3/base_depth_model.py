@@ -160,6 +160,13 @@ class BaseDepthModel(metaclass=ABCMeta):
     def reset_ema(self, decay=None, buffer_size=None):
         self.scaler.reset(decay=decay, buffer_size=buffer_size)
 
+    def reset_state(self):
+        pass
+
+    def reset(self):
+        self.reset_ema()
+        self.reset_state()
+
     def get_ema_buffer_size(self):
         return self.scaler.buffer_size
 
