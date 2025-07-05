@@ -28,7 +28,7 @@ dctorch
 # iw3
 timm
 numba # only for iw3 sbs training
-av==14.2.0
+av==15.0.0
 truststore; python_version >= '3.10'
 pillow_heif
 safetensors
