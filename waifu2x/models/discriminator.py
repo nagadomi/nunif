@@ -4,7 +4,6 @@ import torch.nn.functional as F
 from nunif.models import Model, register_model
 from nunif.modules.attention import SEBlock, SNSEBlock
 from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
-from nunif.modules.dinov2 import DINOEmbedding, dinov2_normalize, dinov2_pad, DINO_PATCH_SIZE
 from torch.nn.utils.parametrizations import spectral_norm
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init, icnr_init
@@ -114,20 +113,6 @@ class ImageToConditionPatch(nn.Module):
         return outputs
 
 
-class DINOPatch(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.dino = DINOEmbedding()
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        x = dinov2_pad(x)
-        x = dinov2_normalize(x)
-        x = self.dino.forward_patch(x)
-        x = x.detach()
-        return x
-
-
 class PatchToCondition(nn.Module):
     def __init__(self, embed_dim, outputs):
         super().__init__()
@@ -165,18 +150,6 @@ def add_bias(x, cond):
 def apply_attention(x, cond):
     cond = torch.sigmoid(cond)
     cond = F.interpolate(cond, size=x.shape[2:], mode="bilinear", align_corners=False)
-    return x * cond
-
-
-def dinov2_add_patch(x, cond):
-    cond = F.leaky_relu(x, 0.1, inplace=False)
-    cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
-    return x + cond
-
-
-def dinov2_attention_patch(x, cond):
-    cond = torch.sigmoid(cond)
-    cond = F.interpolate(cond, size=x.shape[2:], mode="nearest")
     return x * cond
 
 
@@ -329,44 +302,6 @@ class L3V1ConditionalDiscriminator(Discriminator):
         return clamp(l3), clamp(v1)
 
 
-@register_model
-class L3V1DINOConditionalDiscriminator(Discriminator):
-    name = "waifu2x.l3v1_dino_conditional_discriminator"
-
-    def __init__(self, in_channels=3, out_channels=1):
-        super().__init__(locals(), loss_weights=(0.8, 0.2))
-        self.l3 = L3Discriminator(in_channels=in_channels, out_channels=out_channels)
-        self.v1 = V1Discriminator(in_channels=in_channels, out_channels=out_channels)
-        self.dino_patch = DINOPatch()
-        self.to_cond_l3 = PatchToCondition(32, [64, 256])
-        self.to_cond_v1 = PatchToCondition(32, [64, 128])
-
-    def forward_l3(self, x, cond):
-        x = self.l3.first_layer(x)
-        x = dinov2_attention_patch(x, cond[0])
-        x = self.l3.features(x)
-        x = dinov2_attention_patch(x, cond[1])
-        x = self.l3.classifier(x)
-        return x
-
-    def forward_v1(self, x, cond):
-        x = self.v1.first_layer(x)
-        x = dinov2_attention_patch(x, cond[0])
-        x = self.v1.features(x)
-        x = dinov2_attention_patch(x, cond[1])
-        x = self.v1.classifier(x)
-        return x
-
-    def forward(self, x, c=None, scale_factor=None):
-        dino_patch = self.dino_patch(c)
-        cond_v1 = self.to_cond_v1(dino_patch)
-        cond_l3 = self.to_cond_l3(dino_patch)
-        x = normalize(x)
-        v1 = self.forward_v1(x, cond_v1)
-        l3 = self.forward_l3(x, cond_l3)
-        return clamp(l3), clamp(v1)
-
-
 class SelfSupervisedDiscriminator():
     pass
 
@@ -495,7 +430,6 @@ if __name__ == "__main__":
     l3c = L3ConditionalDiscriminator()
     l3v1 = L3V1Discriminator()
     l3v1c = L3V1ConditionalDiscriminator()
-    l3v1dino = L3V1DINOConditionalDiscriminator()
     u3c = U3ConditionalDiscriminator()
     dct = DCTConditionalDiscriminator()
 
@@ -506,6 +440,5 @@ if __name__ == "__main__":
     print(l3c(x, c, 4).shape)
     print([z.shape for z in l3v1(x, c, 4)])
     print([z.shape for z in l3v1c(x, c, 4)])
-    print([z.shape for z in l3v1dino(x, c, 4)])
     print([z.shape for z in u3c(x, c, 4)])
     print(dct(x, c, 4).shape)

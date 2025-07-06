@@ -26,6 +26,7 @@ from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.dct_loss import DCTLoss
+from nunif.modules.dinov2 import DINOv2L1Loss
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate, DiffPairRandomDownsample
 from nunif.transforms import pair as TP
@@ -78,13 +79,13 @@ LOSS_FUNCTIONS = {
 
     # weight=0.1, gradient norm is about the same as L1Loss.
     "l1lpips": lambda: LPIPSWith(ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3)), weight=0.4),
+    "dinov2": lambda: DINOL1Loss(),
+    "lbp_dinov2_l1": lambda: WeightedLoss((YRGBLBP(kernel_size=3), DINOv2L1Loss()), weights=(0.5, 0.5)),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
-
     # loss is computed in model.forward()
     "ident": lambda: IdentityLoss(),
 }
-
 
 def diff_pair_random_noise(input, target, strength=0.01, p=0.1):
     # NOTE: only applies to the discriminator input.
