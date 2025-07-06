@@ -79,7 +79,7 @@ LOSS_FUNCTIONS = {
 
     # weight=0.1, gradient norm is about the same as L1Loss.
     "l1lpips": lambda: LPIPSWith(ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3)), weight=0.4),
-    "dinov2": lambda: DINOL1Loss(),
+    "dinov2": lambda: DINOv2L1Loss(),
     "lbp_dinov2_l1": lambda: WeightedLoss((YRGBLBP(kernel_size=3), DINOv2L1Loss()), weights=(0.5, 0.5)),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
@@ -527,6 +527,8 @@ class Waifu2xTrainer(Trainer):
             logger.debug("call model.freeze()")
         if self.args.tile_mode:
             self.model.set_tile_mode()
+        if self.args.tile_2x2_mode:
+            self.model.set_tile_2x2_mode()
 
     def create_model(self):
         kwargs = {"in_channels": 3, "out_channels": 3}
@@ -827,6 +829,8 @@ def register(subparsers, default_parser):
                         help="call model.freeze() if avaliable")
     parser.add_argument("--tile-mode", action="store_true",
                         help="call model.set_tile_mode()")
+    parser.add_argument("--tile-2x2-mode", action="store_true",
+                        help="call model.set_tile_2x2_mode()")
     parser.add_argument("--pre-antialias", action="store_true",
                         help=("Set `pre_antialias=True` for SwinUNet4x."))
     parser.add_argument("--privilege", action="store_true",

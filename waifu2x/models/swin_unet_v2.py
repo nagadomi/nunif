@@ -300,10 +300,14 @@ class SwinUNetV2Base(nn.Module):
         basic_module_init(self.patch)
 
         self.tile_mode = False
+        self.tile_2x2_mode = False
         self.tick = 1
 
     def set_tile_mode(self):
         self.tile_mode = True
+
+    def set_tile_2x2_mode(self):
+        self.tile_2x2_mode = True
 
     def _forward(self, x, src):
         x = self.patch(x)
@@ -347,11 +351,11 @@ class SwinUNetV2Base(nn.Module):
         else:
             assert x.shape[1] == 16
 
-        if self.tile_mode:
+        if self.tile_mode or self.tile_2x2_mode:
             B, C, H, W = x.shape
             if self.scale_factor in {4, 2, 1}:
                 assert H == 112 and W == H
-                if self.training:
+                if self.training and not self.tile_2x2_mode:
                     #  use 64x64 2x2 tile and 112x112 1x1 tile alternately
                     self.tick += 1
                     if self.tick % 2 == 0:
@@ -433,6 +437,9 @@ class SwinUNet1xV2(I2IBaseModel):
     def set_tile_mode(self):
         self.unet.set_tile_mode()
 
+    def set_tile_2x2_mode(self):
+        self.unet.set_tile_2x2_mode()
+
 
 @register_model
 class SwinUNet2xV2(I2IBaseModel):
@@ -458,6 +465,9 @@ class SwinUNet2xV2(I2IBaseModel):
 
     def set_tile_mode(self):
         self.unet.set_tile_mode()
+
+    def set_tile_2x2_mode(self):
+        self.unet.set_tile_2x2_mode()
 
 
 @register_model
@@ -491,6 +501,9 @@ class SwinUNet4xV2(I2IBaseModel):
 
     def set_tile_mode(self):
         self.unet.set_tile_mode()
+
+    def set_tile_2x2_mode(self):
+        self.unet.set_tile_2x2_mode()
 
     def to_2x(self, shared=True):
         unet = self.unet if shared else copy.deepcopy(self.unet)
