@@ -10,6 +10,7 @@ from nunif.modules.init import basic_module_init, icnr_init
 from dctorch.functional import dct2, idct2
 from nunif.modules.permute import window_partition2d, window_reverse2d
 from nunif.modules.color import rgb_to_ycbcr, rgb_to_yrgb
+from nunif.modules.dinov2 import DINOv2IntermediateFeatures, dinov2_crop, dinov2_normalize
 import os
 
 
@@ -425,6 +426,37 @@ class DCTConditionalDiscriminator(Discriminator):
         return self._forward(x, dct, c, scale_factor)
 
 
+@register_model
+class DINOV2Discriminator(Discriminator):
+    name = "waifu2x.dinov2_discriminator"
+
+    def __init__(self, in_channels=3, out_channels=1):
+        super().__init__(locals())
+        dim = 384
+        self.dinov2 = DINOv2IntermediateFeatures()
+        self.projects = nn.ModuleList(
+            [spectral_norm(nn.Conv2d(dim, dim, kernel_size=1, stride=1, padding=0, bias=False)) for i in range(4)]
+        )
+        self.fusions = nn.ModuleList([
+            ResBlockSNLReLU(dim * 2, dim),
+            ResBlockSNLReLU(dim * 2, dim),
+            ResBlockSNLReLU(dim * 2, dim),
+        ])
+        self.output = spectral_norm(nn.Conv2d(dim, out_channels, kernel_size=3, stride=1, padding=0))
+
+    def forward(self, x, c=None, scale_factor=None):
+        x = dinov2_crop(x)
+        x = dinov2_normalize(x)
+        features = self.dinov2(x)
+        assert len(features) == len(self.projects)
+        features = [self.projects[i](features[i]) for i in range(len(features))]
+        x = self.fusions[0](torch.cat([features[3], features[2]], dim=1))
+        x = self.fusions[1](torch.cat([x, features[1]], dim=1))
+        x = self.fusions[2](torch.cat([x, features[0]], dim=1))
+        x = self.output(x)
+        return x
+
+
 if __name__ == "__main__":
     l3 = L3Discriminator()
     l3c = L3ConditionalDiscriminator()
@@ -432,6 +464,7 @@ if __name__ == "__main__":
     l3v1c = L3V1ConditionalDiscriminator()
     u3c = U3ConditionalDiscriminator()
     dct = DCTConditionalDiscriminator()
+    dino = DINOV2Discriminator()
 
     S = 64 * 4 - 38 * 2
     x = torch.zeros((1, 3, S, S))
@@ -442,3 +475,4 @@ if __name__ == "__main__":
     print([z.shape for z in l3v1c(x, c, 4)])
     print([z.shape for z in u3c(x, c, 4)])
     print(dct(x, c, 4).shape)
+    print(dino(x, c, 4).shape)

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import random
+from .weighted_loss import WeightedLoss
 from .compile_wrapper import conditional_compile
 
 
@@ -87,14 +88,15 @@ class DINOv2IntermediateFeatures(nn.Module):
         self.model.requires_grad_(False)
         return self
 
-    @conditional_compile("NUNIF_TRAIN")
+    # @conditional_compile("NUNIF_TRAIN")  # error when backward
     def forward(self, x):
         assert x.ndim == 4
         assert x.shape[2] % DINO_PATCH_SIZE == 0 and x.shape[3] % DINO_PATCH_SIZE == 0
 
         features = self.model.get_intermediate_layers(
             x, self.intermediate_layer_index,
-            reshape=True
+            reshape=True,
+            return_class_token=False,
         )
         return features
 
@@ -121,22 +123,21 @@ class DINOv2Loss(nn.Module):
         return loss / len(input_features)
 
 
-def DINOv2L1Loss(model_type="vits", index=None, normalize=True):
-    return DINOv2Loss(nn.L1Loss(), model_type=model_type, index=index, normalize=normalize)
-
+def cosine_loss(input, target):
+    return (1.0 - F.cosine_similarity(input, target, dim=1)).mean()
 
 class CosineLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.cosine = nn.CosineSimilarity(dim=1)
-
     def forward(self, input, target):
-        cosine = self.cosine(input, target)
-        return (1.0 - cosine).mean()
+        return cosine_loss(input, target)
 
 
 def DINOv2CosineLoss(model_type="vits", index=None, normalize=True):
     return DINOv2Loss(CosineLoss(), model_type=model_type, index=index, normalize=normalize)
+
+
+def DINOv2CosineWith(base_loss, weight=1.0, model_type="vits", index=None, normalize=True):
+    return WeightedLoss((base_loss, DINOv2Loss(CosineLoss(), model_type=model_type, index=index, normalize=normalize)),
+                        weights=(1.0, weight))
 
 
 def _test_feat():
@@ -146,13 +147,16 @@ def _test_feat():
     for feat in features:
         print(feat.shape)
 
-    loss = DINOv2L1Loss("vitb").cuda().eval()
+    loss1 = DINOv2CosineLoss("vitb").cuda().eval()
+    loss2 = DINOv2CosineWith(nn.L1Loss()).cuda().eval()
     x = torch.rand((4, 3, 112, 112)).cuda()
     x = dinov2_normalize(x)
     y = torch.rand((4, 3, 112, 112)).cuda()
     y = dinov2_normalize(y)
-    print(loss(x, y))
-    print(loss(x, x))
+    print(loss1(x, y))
+    print(loss1(x, x))
+    print(loss2(x, y))
+    print(loss2(x, x))
 
 
 if __name__ == "__main__":

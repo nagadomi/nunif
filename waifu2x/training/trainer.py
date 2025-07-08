@@ -26,7 +26,7 @@ from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.dct_loss import DCTLoss
-from nunif.modules.dinov2 import DINOv2L1Loss
+from nunif.modules.dinov2 import DINOv2CosineWith
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate, DiffPairRandomDownsample
 from nunif.transforms import pair as TP
@@ -36,6 +36,18 @@ import math
 
 
 # basic training
+
+
+## loss
+
+
+def _dctirm():
+    return WeightedLoss(
+        (DCTLoss(window_size=4, clamp=True),
+         DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+         DCTLoss(clamp=True, random_instance_rotate=True)),
+        weights=(0.2, 0.2, 0.6),
+        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True))
 
 
 LOSS_FUNCTIONS = {
@@ -57,12 +69,7 @@ LOSS_FUNCTIONS = {
     "y_l1fftgrad": lambda: YRGBL1FFTGradientLoss(fft_weight=0.1, grad_weight=0.1, diag=False),
 
     "dct": lambda: DCTLoss(clamp=True),
-    "dctirm": lambda: WeightedLoss(
-        (DCTLoss(window_size=4, clamp=True),
-         DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-         DCTLoss(clamp=True, random_instance_rotate=True)),
-        weights=(0.2, 0.2, 0.6),
-        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)),
+    "dctirm": lambda: _dctirm(),
     "dctir24": lambda: WeightedLoss(
         (DCTLoss(window_size=24, clamp=True, random_rotate=True, overlap=True),),
         weights=(1.0,),
@@ -78,9 +85,8 @@ LOSS_FUNCTIONS = {
         ClampLoss(LuminanceWeightedLoss(CharbonnierLoss()))), weight=(1.0, 0.5)),
 
     # weight=0.1, gradient norm is about the same as L1Loss.
-    "l1lpips": lambda: LPIPSWith(ClampLoss(AverageWeightedLoss(torch.nn.L1Loss(), in_channels=3)), weight=0.4),
-    "dinov2": lambda: DINOv2L1Loss(),
-    "lbp_dinov2_l1": lambda: WeightedLoss((YRGBLBP(kernel_size=3), DINOv2L1Loss()), weights=(0.5, 0.5)),
+    "l1lpips": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4),
+    "yrgb_lbp_dinov2": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=2.0),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
     # loss is computed in model.forward()
@@ -129,6 +135,8 @@ def create_discriminator(discriminator, device_ids, device):
         model = create_model("waifu2x.l3v1_dino_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "dct":
         model = create_model("waifu2x.dct_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "dinov2":
+        model = create_model("waifu2x.dinov2_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator, device_ids=device_ids)
     else:
@@ -696,6 +704,7 @@ class Waifu2xTrainer(Trainer):
 
 
 def train(args):
+    torch._functorch.config.donated_buffer = False
     ARCH_SWIN_UNET = {"waifu2x.swin_unet_1x",
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x"}
