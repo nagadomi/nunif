@@ -111,8 +111,8 @@ class DINOv2Loss(nn.Module):
     def forward(self, input, target):
         input, target = dinov2_crop_pair(input, target, self.training)
         if self.normalize:
-            input = dinov2_normalize(input)
-            target = dinov2_normalize(target)
+            input = dinov2_normalize(input.clamp(0, 1))
+            target = dinov2_normalize(target.clamp(0, 1))
         input_features = self.dino(input)
         target_features = self.dino(target)
         loss = 0.0
