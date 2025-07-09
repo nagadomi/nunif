@@ -378,7 +378,10 @@ class Waifu2xEnv(LuminancePSNREnv):
             optimizers = []
 
             # update generator
-            disc_skip_prob = self.calc_discriminator_skip_prob(d_loss)
+            if self.trainer.args.disable_skip_discriminator:
+                disc_skip_prob = 0.0
+            else:
+                disc_skip_prob = self.calc_discriminator_skip_prob(d_loss)
             if not self.trainer.args.discriminator_only:
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
@@ -875,6 +878,8 @@ def register(subparsers, default_parser):
                         help=("When the epoch is less than the specified value,"
                               " stops training of the generator."
                               " And --generator-start-criteria will be ignored."))
+    parser.add_argument("--disable-skip-discriminator", action="store_true",
+                        help=("Disable skipping of discriminator updates."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--reconstruction-loss-scale", type=float, default=10.0,
