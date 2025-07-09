@@ -15,7 +15,7 @@ from . cosine_wd import (
 )
 from ..optim import Lion
 from ..models import create_model, save_model, load_model
-from ..initializer import set_seed
+from ..initializer import set_seed, gc_collect
 from ..device import create_device
 from .weight_decay_config import configure_optim_groups, configure_adamw
 from abc import ABC, abstractmethod
@@ -139,6 +139,7 @@ class Trainer(ABC):
                     grad_scaler=self.grad_scaler,
                     backward_step=self.args.backward_step,
                 )
+                gc_collect()
                 for optimizer in self.optimizers:
                     if hasattr(optimizer, "eval") and callable(optimizer.eval):
                         optimizer.eval()
@@ -162,6 +163,7 @@ class Trainer(ABC):
                     self.write_log(self.epoch, train_loss, loss)
                 except:  # noqa
                     pass
+                gc_collect()
         finally:
             self.shutdown()
 
