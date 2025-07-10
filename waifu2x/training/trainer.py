@@ -87,6 +87,7 @@ LOSS_FUNCTIONS = {
     # weight=0.1, gradient norm is about the same as L1Loss.
     "l1lpips": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4),
     "yrgb_lbp_dinov2": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=2.0),
+    "yrgb_lbp_dinov2_01": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=0.2),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
     # loss is computed in model.forward()
@@ -333,7 +334,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.discriminator.requires_grad_(True)
                 if isinstance(self.discriminator, SelfSupervisedDiscriminator):
                     if self.use_diff_aug:
-                        fake_aug, y_aug = diff_pair_random_noise(fake.detach(), y)
+                        fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
                         *z_fake, fake_ss_loss = self.discriminator(fake_aug, y_aug, scale_factor, train=True)
                         *z_real, real_ss_loss = self.discriminator(y_aug, y_aug, scale_factor, train=True)
                     else:
@@ -346,8 +347,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                         z_real = z_real[0]
                 else:
                     if self.use_diff_aug:
-                        # No clamp
-                        fake_aug, y_aug = diff_pair_random_noise(fake.detach(), y)
+                        fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
                         z_fake = self.discriminator(fake_aug, y_aug, scale_factor)
                         z_real = self.discriminator(y_aug, y_aug, scale_factor)
                     else:
