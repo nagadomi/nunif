@@ -456,13 +456,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                     weight = 10.0  # inf
                 recon_weight = 1.0 / weight
                 if self.trainer.args.generator_start_epoch is not None:
-                    if generator_loss > 0.0 and self.trainer.epoch >= self.trainer.args.generator_start_epoch:
+                    if generator_loss > -1.0 and self.trainer.epoch >= self.trainer.args.generator_start_epoch:
                         use_disc_loss = True
                     else:
                         use_disc_loss = False
                 else:
-                    if generator_loss > 0.0 and (d_loss < self.trainer.args.generator_start_criteria or
-                                                 generator_loss > 0.95):
+                    if generator_loss > -1.0 and (d_loss < self.trainer.args.generator_start_criteria or
+                                                  generator_loss > 0.95):
                         use_disc_loss = True
                     else:
                         use_disc_loss = False
