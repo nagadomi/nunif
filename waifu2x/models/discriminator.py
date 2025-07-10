@@ -154,6 +154,11 @@ def apply_attention(x, cond):
     return x * cond
 
 
+def apply_project(x, cond):
+    cond = F.adaptive_avg_pool2d(cond, (1, 1))
+    return (x * cond).sum(dim=1, keepdim=True)
+
+
 def add_noise(x, strength=0.01):
     B, C, H, W = x.shape
     noise1x = torch.randn((B, C, H, W), dtype=x.dtype, device=x.device)
@@ -434,25 +439,61 @@ class DINOV2Discriminator(Discriminator):
         super().__init__(locals())
         dim = 384
         self.dinov2 = DINOv2IntermediateFeatures()
+        self.cond_feature = nn.Sequential(
+            spectral_norm(nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)),
+            ResBlockSNLReLU(32, 64, stride=2),
+            ResBlockSNLReLU(64, 64),
+            SNSEBlock(64, bias=True),
+            ResBlockSNLReLU(64, 64),
+        )
+        self.cond_fc = nn.ModuleList([
+            spectral_norm(nn.Conv2d(64, 64, kernel_size=1, stride=1, padding=0)),
+            spectral_norm(nn.Conv2d(64, 64, kernel_size=1, stride=1, padding=0)),
+            spectral_norm(nn.Conv2d(64, 64, kernel_size=1, stride=1, padding=0)),
+            spectral_norm(nn.Conv2d(64, 64, kernel_size=1, stride=1, padding=0)),
+        ])
         self.projects = nn.ModuleList(
             [spectral_norm(nn.Conv2d(dim, dim, kernel_size=1, stride=1, padding=0, bias=False)) for i in range(4)]
         )
         self.fusions = nn.ModuleList([
-            ResBlockSNLReLU(dim * 2, dim),
-            ResBlockSNLReLU(dim * 2, dim),
-            ResBlockSNLReLU(dim * 2, dim),
+            nn.Sequential(
+                ResBlockSNLReLU(dim * 2 + 64, dim),
+                SNSEBlock(dim, bias=True),
+                ResBlockSNLReLU(dim, dim),
+            ),
+            nn.Sequential(
+                ResBlockSNLReLU(dim * 2 + 64, dim),
+                SNSEBlock(dim, bias=True),
+                ResBlockSNLReLU(dim, dim),
+            ),
+            nn.Sequential(
+                ResBlockSNLReLU(dim * 2 + 64, dim),
+                SNSEBlock(dim, bias=True),
+                ResBlockSNLReLU(dim, dim),
+            ),
         ])
         self.output = spectral_norm(nn.Conv2d(dim, out_channels, kernel_size=3, stride=1, padding=0))
+        self.request_false_condition = True
+
+    def to_cond(self, c, size):
+        c = F.interpolate(c, scale_factor=0.25, mode="bilinear", align_corners=True, antialias=True)
+        c = self.cond_feature(c)
+        c = F.adaptive_avg_pool2d(c, size)
+        return c
 
     def forward(self, x, c=None, scale_factor=None):
         x = dinov2_crop(x)
+        c = fit_to_size(x, c)
+
         x = dinov2_normalize(x)
         features = self.dinov2(x)
         assert len(features) == len(self.projects)
         features = [self.projects[i](features[i]) for i in range(len(features))]
-        x = self.fusions[0](torch.cat([features[3], features[2]], dim=1))
-        x = self.fusions[1](torch.cat([x, features[1]], dim=1))
-        x = self.fusions[2](torch.cat([x, features[0]], dim=1))
+
+        cond = self.to_cond(c, features[3].shape[-2:])
+        x = self.fusions[0](torch.cat([features[3], features[2], self.cond_fc[0](cond)], dim=1))
+        x = self.fusions[1](torch.cat([x, features[1], self.cond_fc[1](cond)], dim=1))
+        x = self.fusions[2](torch.cat([x, features[0], self.cond_fc[2](cond)], dim=1))
         x = self.output(x)
         return x
 

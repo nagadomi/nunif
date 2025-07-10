@@ -3,6 +3,7 @@ import sys
 from time import time
 import argparse
 import torch
+import torch.nn.functional as F
 from . dataset import Waifu2xDataset
 from .. models.discriminator import SelfSupervisedDiscriminator
 from nunif.training.sampler import MiningMethod
@@ -14,7 +15,7 @@ from nunif.models import (
     get_model_names
 )
 from nunif.modules import (
-    ClampLoss, LuminanceWeightedLoss, AverageWeightedLoss,
+    ClampLoss, LuminanceWeightedLoss,
     AuxiliaryLoss,
     CharbonnierLoss,
     Alex11Loss,
@@ -38,7 +39,7 @@ import math
 # basic training
 
 
-## loss
+# loss
 
 
 def _dctirm():
@@ -93,6 +94,7 @@ LOSS_FUNCTIONS = {
     # loss is computed in model.forward()
     "ident": lambda: IdentityLoss(),
 }
+
 
 def diff_pair_random_noise(input, target, strength=0.01, p=0.1):
     # NOTE: only applies to the discriminator input.
@@ -256,6 +258,51 @@ class Waifu2xEnv(LuminancePSNREnv):
             p = (start - cur) / (start - stop)
             return p
 
+    def gen_false_condition(self, y):
+        false_conditions = []
+        for i in range(y.shape[0]):
+            method = random.choice([0, 1, 2, 3])
+            if method == 0:
+                # flip
+                axis = random.choice([0, -2, -1])
+                if axis == 0:
+                    batch_index = random.choice([j for j in range(y.shape[0]) if j != i])
+                    false_condition = y[batch_index:batch_index + 1]
+                else:
+                    false_condition = torch.flip(y[i:i + 1], dims=(axis,))
+            elif method == 1:
+                # shift
+                shift_w = random.randint(3, 18) * random.choice([-1, 1])
+                shift_h = random.randint(3, 18) * random.choice([-1, 1])
+                false_condition = F.pad(y[i:i + 1], (shift_w, -shift_w, shift_h, -shift_h), mode="reflect")
+            elif method == 2:
+                # color
+                scale_r = random.uniform(0.8, 0.95)
+                scale_g = random.uniform(0.8, 0.95)
+                scale_b = random.uniform(0.8, 0.95)
+                bias_r = 1 - scale_r
+                bias_g = 1 - scale_g
+                bias_b = 1 - scale_b
+                scale = torch.tensor([scale_r, scale_g, scale_b], dtype=y.dtype, device=y.device).view(1, 3, 1, 1)
+                bias = torch.tensor([bias_r, bias_g, bias_b], dtype=y.dtype, device=y.device).view(1, 3, 1, 1)
+                if random.choice([True, False]):
+                    false_condition = y[i:i + 1] * scale + bias
+                else:
+                    false_condition = (y[i:i + 1] + bias) * scale
+            elif method == 3:
+                # more blur (too high res)
+                scale_factor = random.choice([0.5, 0.75])
+                false_condition = F.interpolate(y[i:i + 1], scale_factor=scale_factor, mode="bilinear", align_corners=True)
+                false_condition = F.interpolate(false_condition, size=y.shape[-2:], mode="bilinear", align_corners=True)
+
+            false_conditions.append(false_condition)
+
+        false_condition = torch.cat(false_conditions, dim=0)
+
+        assert y.shape == false_condition.shape
+
+        return false_condition
+
     def clear_loss(self):
         super().clear_loss()
         self.sum_p_loss = 0
@@ -346,12 +393,21 @@ class Waifu2xEnv(LuminancePSNREnv):
                         z_fake = z_fake[0]
                         z_real = z_real[0]
                 else:
+                    request_false_condition = getattr(self.discriminator, "request_false_condition", False)
                     if self.use_diff_aug:
                         fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
-                        z_fake = self.discriminator(fake_aug, y_aug, scale_factor)
+                        if request_false_condition and random.uniform(0, 1) < 0.25 and y_aug.shape[0] > 1:
+                            false_condition = self.gen_false_condition(y_aug)
+                            z_fake = self.discriminator(y_aug, false_condition, scale_factor)
+                        else:
+                            z_fake = self.discriminator(fake_aug, y_aug, scale_factor)
                         z_real = self.discriminator(y_aug, y_aug, scale_factor)
                     else:
-                        z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
+                        if request_false_condition and random.uniform(0, 1) < 0.25 and y_aug.shape[0] > 1:
+                            false_condition = self.gen_false_condition(y)
+                            z_fake = self.discriminator(y, false_condition, scale_factor)
+                        else:
+                            z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
                         z_real = self.discriminator(y, y, scale_factor)
                     fake_ss_loss = real_ss_loss = 0
 
@@ -400,7 +456,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     weight = 10.0  # inf
                 recon_weight = 1.0 / weight
                 if self.trainer.args.generator_start_epoch is not None:
-                    if  generator_loss > 0.0 and self.trainer.epoch >= self.trainer.args.generator_start_epoch:
+                    if generator_loss > 0.0 and self.trainer.epoch >= self.trainer.args.generator_start_epoch:
                         use_disc_loss = True
                     else:
                         use_disc_loss = False
