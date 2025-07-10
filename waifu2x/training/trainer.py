@@ -264,7 +264,7 @@ class Waifu2xEnv(LuminancePSNREnv):
             method = random.choice([0, 1, 2, 3])
             if method == 0:
                 # flip
-                axis = random.choice([0, -2, -1])
+                axis = random.choice([-2, -1] + ([0] if y.shape[0] > 1 else []))
                 if axis == 0:
                     batch_index = random.choice([j for j in range(y.shape[0]) if j != i])
                     false_condition = y[batch_index:batch_index + 1]
