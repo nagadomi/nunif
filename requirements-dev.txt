@@ -1,0 +1,10 @@
+wand >= 0.6.10
+fonttools
+onnx
+onnxconverter_common
+lpips
+# https://github.com/GallagherCommaJack/dctorch
+dctorch
+numba
+# https://github.com/facebookresearch/schedule_free
+schedule_free
