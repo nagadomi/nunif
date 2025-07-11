@@ -200,13 +200,14 @@ class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
                  discriminator_criterion,
-                 sampler, use_diff_aug=False, use_diff_aug_downsample=False):
+                 sampler, use_diff_aug=False, use_diff_aug_downsample=False, use_diff_aug_noise=False):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
         self.adaptive_weight_ema = None
         self.sampler = sampler
         self.use_diff_aug = use_diff_aug
+        self.use_diff_aug_noise = use_diff_aug_noise
         if use_diff_aug:
             if use_diff_aug_downsample:
                 self.diff_aug = TP.RandomChoice([
@@ -380,7 +381,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 # discriminator step
                 self.discriminator.requires_grad_(True)
                 if isinstance(self.discriminator, SelfSupervisedDiscriminator):
-                    if self.use_diff_aug:
+                    if self.use_diff_aug and self.use_diff_aug_noise:
                         fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
                         *z_fake, fake_ss_loss = self.discriminator(fake_aug, y_aug, scale_factor, train=True)
                         *z_real, real_ss_loss = self.discriminator(y_aug, y_aug, scale_factor, train=True)
@@ -394,7 +395,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                         z_real = z_real[0]
                 else:
                     request_false_condition = getattr(self.discriminator, "request_false_condition", False)
-                    if self.use_diff_aug:
+                    if self.use_diff_aug and self.use_diff_aug_noise:
                         fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
                         if request_false_condition and random.uniform(0, 1) < 0.25 and y_aug.shape[0] > 1:
                             false_condition = self.gen_false_condition(y_aug)
@@ -403,7 +404,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                             z_fake = self.discriminator(fake_aug, y_aug, scale_factor)
                         z_real = self.discriminator(y_aug, y_aug, scale_factor)
                     else:
-                        if request_false_condition and random.uniform(0, 1) < 0.25 and y_aug.shape[0] > 1:
+                        if request_false_condition and random.uniform(0, 1) < 0.25 and y.shape[0] > 1:
                             false_condition = self.gen_false_condition(y)
                             z_fake = self.discriminator(y, false_condition, scale_factor)
                         else:
@@ -571,11 +572,15 @@ class Waifu2xTrainer(Trainer):
             discriminator_criterion = DiscriminatorHingeLoss(loss_weights=loss_weights).to(self.device)
         else:
             discriminator_criterion = None
-        return Waifu2xEnv(self.model, criterion=criterion,
-                          discriminator=self.discriminator,
-                          discriminator_criterion=discriminator_criterion,
-                          sampler=self.sampler,
-                          use_diff_aug=self.args.diff_aug, use_diff_aug_downsample=self.args.diff_aug_downsample)
+        return Waifu2xEnv(
+            self.model, criterion=criterion,
+            discriminator=self.discriminator,
+            discriminator_criterion=discriminator_criterion,
+            sampler=self.sampler,
+            use_diff_aug=self.args.diff_aug,
+            use_diff_aug_downsample=self.args.diff_aug_downsample,
+            use_diff_aug_noise=self.args.diff_aug_noise,
+        )
 
     def setup(self):
         method = self.args.hard_example
@@ -945,6 +950,8 @@ def register(subparsers, default_parser):
                         help="Use differentiable transforms for reconstruction loss and discriminator")
     parser.add_argument("--diff-aug-downsample", action="store_true",
                         help="Use addtional 2x downsample transforms")
+    parser.add_argument("--diff-aug-noise", action="store_true",
+                        help="Use addtional random noise transforms")
 
     parser.set_defaults(
         batch_size=16,
