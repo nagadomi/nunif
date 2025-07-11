@@ -196,6 +196,15 @@ def to_dtype(x, dtype):
         return x.to(dtype)
 
 
+def ste_clamp(x, overshoot_scale=0.1):
+    # scale down the overshoot value
+    # this prevents NaN loss
+    x_clamp = x.clamp(0, 1)
+    x = x_clamp + (x - x_clamp) * overshoot_scale
+    # straight through estimator
+    return x + x.clamp(0, 1).detach() - x.detach()
+
+
 class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
@@ -361,7 +370,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     else:
                         z, y = self.diff_aug(z, y)
                         fake = z
-                    z_real = to_dtype(self.discriminator(torch.clamp(fake, 0, 1), y, scale_factor), fake.dtype)
+                    z_real = to_dtype(self.discriminator(ste_clamp(fake), y, scale_factor), fake.dtype)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
                     self.sum_p_loss += recon_loss.item()
