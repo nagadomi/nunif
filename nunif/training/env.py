@@ -51,11 +51,25 @@ class BaseEnv(ABC):
         optimizers = optimizer if isinstance(optimizer, (list, tuple)) else [optimizer]
         if self.amp:
             for optimizer in optimizers:
+                if self.trainer.args.clip_grad_norm > 0:
+                    grad_scaler.unscale_(optimizer)
+                    for group in optimizer.param_groups:
+                        torch.nn.utils.clip_grad_norm_(
+                            group["params"],
+                            max_norm=self.trainer.args.clip_grad_norm,
+                            error_if_nonfinite=False)
                 grad_scaler.step(optimizer)
                 optimizer.zero_grad()
             grad_scaler.update()
         else:
             for optimizer in optimizers:
+                if self.trainer.args.clip_grad_norm > 0:
+                    for group in optimizer.param_groups:
+                        torch.nn.utils.clip_grad_norm_(
+                            group["params"],
+                            max_norm=self.trainer.args.clip_grad_norm,
+                            error_if_nonfinite=False
+                        )
                 optimizer.step()
                 optimizer.zero_grad()
 

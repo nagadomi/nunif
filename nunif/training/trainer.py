@@ -414,5 +414,7 @@ def create_trainer_default_parser():
                         help="decay parameter for EMA model")
     parser.add_argument("--ema-step", type=int, default=1,
                         help="Update interval for EMA model")
+    parser.add_argument("--clip-grad-norm", type=float, default=-1,
+                        help="clip grad norm")
 
     return parser
