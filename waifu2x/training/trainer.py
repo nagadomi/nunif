@@ -5,7 +5,6 @@ import argparse
 import torch
 import torch.nn.functional as F
 from . dataset import Waifu2xDataset
-from .. models.discriminator import SelfSupervisedDiscriminator
 from nunif.training.sampler import MiningMethod
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
@@ -404,42 +403,22 @@ class Waifu2xEnv(LuminancePSNREnv):
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
-                if isinstance(self.discriminator, SelfSupervisedDiscriminator):
-                    if self.use_diff_aug and self.use_diff_aug_noise:
-                        fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
-                        *z_fake, fake_ss_loss = self.discriminator(fake_aug, y_aug, scale_factor, train=True)
-                        *z_real, real_ss_loss = self.discriminator(y_aug, y_aug, scale_factor, train=True)
-                    else:
-                        *z_fake, fake_ss_loss = self.discriminator(torch.clamp(fake.detach(), 0, 1),
-                                                                   y, scale_factor, train=True)
-                        *z_real, real_ss_loss = self.discriminator(y, y, scale_factor, train=True)
-
-                    if len(z_fake) == 1:
-                        z_fake = z_fake[0]
-                        z_real = z_real[0]
+                request_false_condition = getattr(self.discriminator, "request_false_condition", False)
+                if self.use_diff_aug and self.use_diff_aug_noise:
+                    fake, y = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
                 else:
-                    request_false_condition = getattr(self.discriminator, "request_false_condition", False)
-                    if self.use_diff_aug and self.use_diff_aug_noise:
-                        fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
-                        fake_input, fake_cond = self.gen_fake_input(
-                            fake_aug, y_aug,
-                            p=0.25 if request_false_condition else 0
-                        )
-                        z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
-                        z_real = self.discriminator(y_aug, y_aug, scale_factor)
-                    else:
-                        fake_input, fake_cond = self.gen_fake_input(
-                            torch.clamp(fake.detach(), 0, 1), y,
-                            p=0.25 if request_false_condition else 0
-                        )
-                        z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
-                        z_real = self.discriminator(y, y, scale_factor)
-                    fake_ss_loss = real_ss_loss = 0
+                    fake = torch.clamp(fake.detach(), 0, 1)
+
+                fake_input, fake_cond = self.gen_fake_input(
+                    fake, y,
+                    p=0.25 if request_false_condition else 0
+                )
+                z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
+                z_real = self.discriminator(y, y, scale_factor)
 
                 z_fake = to_dtype(z_fake, fake.dtype)
                 z_real = to_dtype(z_real, y.dtype)
-                discriminator_loss = (self.discriminator_criterion(z_real, z_fake) +
-                                      (real_ss_loss + fake_ss_loss) * 0.5)
+                discriminator_loss = self.discriminator_criterion(z_real, z_fake)
 
                 self.sum_d_loss += discriminator_loss.item()
                 loss = (recon_loss, generator_loss, discriminator_loss)
