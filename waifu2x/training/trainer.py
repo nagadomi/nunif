@@ -268,9 +268,21 @@ class Waifu2xEnv(LuminancePSNREnv):
             p = (start - cur) / (start - stop)
             return p
 
-    def gen_false_condition(self, y):
-        false_conditions = []
+    @staticmethod
+    def gen_fake_input(x, y, p):
+        inputs = []
+        conditions = []
+        false_count = 0
         for i in range(y.shape[0]):
+            use_fake_condition = random.uniform(0, 1) < p
+            if not use_fake_condition:
+                # fake + true condition
+                inputs.append(x[i: i + 1])
+                conditions.append(y[i: i + 1])
+                continue
+
+            # real + false condition
+            false_count += 1
             method = random.choice([0, 1, 2, 3])
             if method == 0:
                 # flip
@@ -305,13 +317,16 @@ class Waifu2xEnv(LuminancePSNREnv):
                 false_condition = F.interpolate(y[i:i + 1], scale_factor=scale_factor, mode="bilinear", align_corners=True)
                 false_condition = F.interpolate(false_condition, size=y.shape[-2:], mode="bilinear", align_corners=True)
 
-            false_conditions.append(false_condition)
+            inputs.append(y[i: i + 1])
+            conditions.append(false_condition)
 
-        false_condition = torch.cat(false_conditions, dim=0)
+        condition = torch.cat(conditions, dim=0)
+        input = torch.cat(inputs, dim=0)
 
-        assert y.shape == false_condition.shape
+        assert y.shape == condition.shape == input.shape
+        # print(f"false_condition {false_count}/{y.shape[0]}")
 
-        return false_condition
+        return input, condition
 
     def clear_loss(self):
         super().clear_loss()
@@ -406,18 +421,18 @@ class Waifu2xEnv(LuminancePSNREnv):
                     request_false_condition = getattr(self.discriminator, "request_false_condition", False)
                     if self.use_diff_aug and self.use_diff_aug_noise:
                         fake_aug, y_aug = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
-                        if request_false_condition and random.uniform(0, 1) < 0.25 and y_aug.shape[0] > 1:
-                            false_condition = self.gen_false_condition(y_aug)
-                            z_fake = self.discriminator(y_aug, false_condition, scale_factor)
-                        else:
-                            z_fake = self.discriminator(fake_aug, y_aug, scale_factor)
+                        fake_input, fake_cond = self.gen_fake_input(
+                            fake_aug, y_aug,
+                            p=0.25 if request_false_condition else 0
+                        )
+                        z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
                         z_real = self.discriminator(y_aug, y_aug, scale_factor)
                     else:
-                        if request_false_condition and random.uniform(0, 1) < 0.25 and y.shape[0] > 1:
-                            false_condition = self.gen_false_condition(y)
-                            z_fake = self.discriminator(y, false_condition, scale_factor)
-                        else:
-                            z_fake = self.discriminator(torch.clamp(fake.detach(), 0, 1), y, scale_factor)
+                        fake_input, fake_cond = self.gen_fake_input(
+                            torch.clamp(fake.detach(), 0, 1), y,
+                            p=0.25 if request_false_condition else 0
+                        )
+                        z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
                         z_real = self.discriminator(y, y, scale_factor)
                     fake_ss_loss = real_ss_loss = 0
 
