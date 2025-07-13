@@ -4,7 +4,8 @@ from time import time
 import argparse
 import torch
 import torch.nn.functional as F
-from . dataset import Waifu2xDataset
+from .dataset import Waifu2xDataset
+from ..models import discriminator as _discriminator  # noqa
 from nunif.training.sampler import MiningMethod
 from nunif.training.trainer import Trainer
 from nunif.training.env import LuminancePSNREnv
@@ -268,16 +269,16 @@ class Waifu2xEnv(LuminancePSNREnv):
             return p
 
     @staticmethod
-    def gen_fake_input(x, y, p):
+    def gen_fake_input(fake, real, cond, p):
         inputs = []
         conditions = []
         false_count = 0
-        for i in range(y.shape[0]):
+        for i in range(cond.shape[0]):
             use_fake_condition = random.uniform(0, 1) < p
             if not use_fake_condition:
                 # fake + true condition
-                inputs.append(x[i: i + 1])
-                conditions.append(y[i: i + 1])
+                inputs.append(fake[i: i + 1])
+                conditions.append(cond[i: i + 1])
                 continue
 
             # real + false condition
@@ -285,17 +286,17 @@ class Waifu2xEnv(LuminancePSNREnv):
             method = random.choice([0, 1, 2, 3])
             if method == 0:
                 # flip
-                axis = random.choice([-2, -1] + ([0] if y.shape[0] > 1 else []))
+                axis = random.choice([-2, -1] + ([0] if cond.shape[0] > 1 else []))
                 if axis == 0:
-                    batch_index = random.choice([j for j in range(y.shape[0]) if j != i])
-                    false_condition = y[batch_index:batch_index + 1]
+                    batch_index = random.choice([j for j in range(cond.shape[0]) if j != i])
+                    false_condition = cond[batch_index:batch_index + 1]
                 else:
-                    false_condition = torch.flip(y[i:i + 1], dims=(axis,))
+                    false_condition = torch.flip(cond[i:i + 1], dims=(axis,))
             elif method == 1:
                 # shift
                 shift_w = random.randint(3, 18) * random.choice([-1, 1])
                 shift_h = random.randint(3, 18) * random.choice([-1, 1])
-                false_condition = F.pad(y[i:i + 1], (shift_w, -shift_w, shift_h, -shift_h), mode="reflect")
+                false_condition = F.pad(cond[i:i + 1], (shift_w, -shift_w, shift_h, -shift_h), mode="reflect")
             elif method == 2:
                 # color
                 scale_r = random.uniform(0.8, 0.95)
@@ -304,28 +305,41 @@ class Waifu2xEnv(LuminancePSNREnv):
                 bias_r = 1 - scale_r
                 bias_g = 1 - scale_g
                 bias_b = 1 - scale_b
-                scale = torch.tensor([scale_r, scale_g, scale_b], dtype=y.dtype, device=y.device).view(1, 3, 1, 1)
-                bias = torch.tensor([bias_r, bias_g, bias_b], dtype=y.dtype, device=y.device).view(1, 3, 1, 1)
+                scale = torch.tensor([scale_r, scale_g, scale_b], dtype=cond.dtype, device=cond.device).view(1, 3, 1, 1)
+                bias = torch.tensor([bias_r, bias_g, bias_b], dtype=cond.dtype, device=cond.device).view(1, 3, 1, 1)
                 if random.choice([True, False]):
-                    false_condition = y[i:i + 1] * scale + bias
+                    false_condition = cond[i:i + 1] * scale + bias
                 else:
-                    false_condition = (y[i:i + 1] + bias) * scale
+                    false_condition = (cond[i:i + 1] + bias) * scale
             elif method == 3:
                 # more blur (too high res)
-                scale_factor = random.choice([0.5, 0.75])
-                false_condition = F.interpolate(y[i:i + 1], scale_factor=scale_factor, mode="bilinear", align_corners=True)
-                false_condition = F.interpolate(false_condition, size=y.shape[-2:], mode="bilinear", align_corners=True)
+                scale_factor = random.uniform(0.25, 0.75)
+                false_condition = F.interpolate(cond[i:i + 1], scale_factor=scale_factor,
+                                                mode="bilinear", align_corners=True, antialias=True)
+                false_condition = F.interpolate(false_condition, size=cond.shape[-2:],
+                                                mode="bilinear", align_corners=True)
 
-            inputs.append(y[i: i + 1])
+            inputs.append(real[i: i + 1])
             conditions.append(false_condition)
 
         condition = torch.cat(conditions, dim=0)
         input = torch.cat(inputs, dim=0)
 
-        assert y.shape == condition.shape == input.shape
-        # print(f"false_condition {false_count}/{y.shape[0]}")
+        assert condition.shape == cond.shape
+        assert input.shape == fake.shape == real.shape
+        # print(f"false_condition {false_count}/{cond.shape[0]}")
 
         return input, condition
+
+    @staticmethod
+    def gen_cond(x, y, scale_factor, request_x_condition):
+        if request_x_condition:
+            unpad = (x.shape[-1] - (y.shape[-1] // scale_factor)) // 2
+            cond = F.pad(x, (-unpad,) * 4)
+            cond = F.interpolate(cond, scale_factor=scale_factor, mode="bilinear", align_corners=True)
+        else:
+            cond = y
+        return cond
 
     def clear_loss(self):
         super().clear_loss()
@@ -375,6 +389,11 @@ class Waifu2xEnv(LuminancePSNREnv):
                     else:
                         z = to_dtype(self.model(x, self.to_device(privilege)), x.dtype)
                         z, y = fit_size(z, y)
+
+                    cond = self.gen_cond(
+                        x, y,
+                        scale_factor=scale_factor,
+                        request_x_condition=getattr(self.discriminator, "request_x_condition", False))
                     if isinstance(z, (list, tuple)):
                         # NOTE: models using auxiliary loss return tuple.
                         #       first element is SR result.
@@ -382,9 +401,11 @@ class Waifu2xEnv(LuminancePSNREnv):
                             raise ValueError(f"--diff-aug does not support {self.model.name}")
                         fake = z[0]
                     else:
-                        z, y = self.diff_aug(z, y)
+                        z, y = self.diff_aug(z, torch.cat([y, cond], dim=1))
+                        y, cond = y.chunk(2, dim=1)
                         fake = z
-                    z_real = to_dtype(self.discriminator(ste_clamp(fake), y, scale_factor), fake.dtype)
+
+                    z_real = to_dtype(self.discriminator(ste_clamp(fake), cond, scale_factor), fake.dtype)
                     recon_loss = self.criterion(z, y)
                     generator_loss = self.discriminator_criterion(z_real)
                     self.sum_p_loss += recon_loss.item()
@@ -395,26 +416,33 @@ class Waifu2xEnv(LuminancePSNREnv):
                     # (gradient norm of generator_loss is 10-100x larger than recon_loss)
                     recon_loss = recon_loss * self.trainer.args.reconstruction_loss_scale
                 else:
+                    recon_loss = generator_loss = torch.zeros(1, dtype=x.dtype, device=x.device)
                     with torch.inference_mode():
                         z = to_dtype(self.model(x), x.dtype)
                         z, y = fit_size(z, y)
                         fake = z[0] if isinstance(z, (list, tuple)) else z
-                    recon_loss = generator_loss = torch.zeros(1, dtype=x.dtype, device=x.device)
+                    cond = self.gen_cond(
+                        x, y,
+                        scale_factor=scale_factor,
+                        request_x_condition=getattr(self.discriminator, "request_x_condition", False))
+                    z, y = self.diff_aug(z, torch.cat([y, cond], dim=1))
+                    y, cond = y.chunk(2, dim=1)
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
-                request_false_condition = getattr(self.discriminator, "request_false_condition", False)
                 if self.use_diff_aug and self.use_diff_aug_noise:
-                    fake, y = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), y)
+                    fake, cond = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), cond)
                 else:
                     fake = torch.clamp(fake.detach(), 0, 1)
-
+                real = y
+                real_cond = fake_cond = cond
+                request_false_condition = getattr(self.discriminator, "request_false_condition", False)
                 fake_input, fake_cond = self.gen_fake_input(
-                    fake, y,
+                    fake, real, cond,
                     p=0.25 if request_false_condition else 0
                 )
                 z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
-                z_real = self.discriminator(y, y, scale_factor)
+                z_real = self.discriminator(real, real_cond, scale_factor)
 
                 z_fake = to_dtype(z_fake, fake.dtype)
                 z_real = to_dtype(z_real, y.dtype)
