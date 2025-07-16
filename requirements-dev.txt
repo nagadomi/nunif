@@ -2,9 +2,12 @@ wand >= 0.6.10
 fonttools
 onnx
 onnxconverter_common
+numba
+# https://github.com/richzhang/PerceptualSimilarity
 lpips
 # https://github.com/GallagherCommaJack/dctorch
 dctorch
-numba
 # https://github.com/facebookresearch/schedule_free
-schedule_free
+schedulefree
+# https://github.com/toshas/torch-fidelity
+torch-fidelity
