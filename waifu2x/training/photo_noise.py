@@ -397,10 +397,11 @@ def add_validation_noise(x, noise_level, index):
 def _test():
     from nunif.utils import pil_io
     import argparse
-    import cv2
+    import time
 
     def show(name, im):
-        cv2.imshow(name, pil_io.to_cv2(im))
+        im.show()
+        time.sleep(0.5)
 
     def print_mean_diff(name, a, b):
         a = pil_io.to_tensor(a)
@@ -423,8 +424,6 @@ def _test():
     show_op(gaussian_noise_variants, im)
     show_op(gaussian_8x8_masked_noise, im)
     show_op(structured_noise, im)
-
-    cv2.waitKey(0)
 
 
 def _test_gaussian():
