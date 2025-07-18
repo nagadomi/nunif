@@ -256,18 +256,6 @@ class Waifu2xEnv(LuminancePSNREnv):
         scale_factor = self.model.i2i_scale
         return scale_factor
 
-    def calc_discriminator_skip_prob(self, d_loss):
-        start = self.trainer.args.generator_start_criteria
-        stop = self.trainer.args.discriminator_stop_criteria
-        cur = d_loss.item()
-        if cur > start:
-            return 0.
-        elif cur < stop:
-            return 1.
-        else:
-            p = (start - cur) / (start - stop)
-            return p
-
     @staticmethod
     def gen_fake_input(fake, real, cond, p):
         inputs = []
@@ -466,16 +454,13 @@ class Waifu2xEnv(LuminancePSNREnv):
             optimizers = []
 
             # update generator
-            if self.trainer.args.disable_skip_discriminator:
-                disc_skip_prob = 0.0
-            else:
-                disc_skip_prob = self.calc_discriminator_skip_prob(d_loss)
             if not self.trainer.args.discriminator_only:
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
                     min=1e-3, max=10, mode="norm")
-                if not math.isnan(weight):
+                weight_is_nan = math.isnan(weight)
+                if not weight_is_nan:
                     if self.adaptive_weight_ema is None:
                         self.adaptive_weight_ema = weight
                     else:
@@ -488,16 +473,16 @@ class Waifu2xEnv(LuminancePSNREnv):
                     weight = 10.0  # inf
                 recon_weight = 1.0 / weight
                 if self.trainer.args.generator_start_epoch is not None:
-                    if generator_loss > -1.0 and self.trainer.epoch >= self.trainer.args.generator_start_epoch:
+                    if self.trainer.epoch >= self.trainer.args.generator_start_epoch and not weight_is_nan:
                         use_disc_loss = True
                     else:
                         use_disc_loss = False
                 else:
-                    if generator_loss > -1.0 and (d_loss < self.trainer.args.generator_start_criteria or
-                                                  generator_loss > 0.95):
-                        use_disc_loss = True
-                    else:
+                    if weight_is_nan:
                         use_disc_loss = False
+                    else:
+                        use_disc_loss = True
+
                 if use_disc_loss:
                     g_loss = (recon_loss * recon_weight + generator_loss * self.trainer.args.discriminator_weight) * 0.5
                 else:
@@ -508,13 +493,11 @@ class Waifu2xEnv(LuminancePSNREnv):
                 optimizers.append(g_opt)
 
                 logger.debug(f"recon: {round(recon_loss.item(), 4)}, gen: {round(generator_loss.item(), 4)}, "
-                             f"disc: {round(d_loss.item(), 4)}, weight: {round(weight, 6)}, "
-                             f"disc skip: {round(disc_skip_prob, 3)}")
+                             f"disc: {round(d_loss.item(), 4)}, weight: {round(weight, 6)}")
 
             # update discriminator
-            if not (random.uniform(0., 1.) < disc_skip_prob):
-                self.backward(d_loss / backward_step, grad_scaler)
-                optimizers.append(d_opt)
+            self.backward(d_loss / backward_step, grad_scaler)
+            optimizers.append(d_opt)
 
             if optimizers and update:
                 self.optimizer_step(optimizers, grad_scaler)
@@ -803,7 +786,6 @@ def train(args):
     ARCH_SWIN_UNET = {"waifu2x.swin_unet_1x",
                       "waifu2x.swin_unet_2x",
                       "waifu2x.swin_unet_4x"}
-    assert args.discriminator_stop_criteria < args.generator_start_criteria
     # if args.size % 4 != 0:
     #     raise ValueError("--size must be a multiple of 4")
     if args.arch in ARCH_SWIN_UNET and ((args.size - 16) % 12 != 0 or (args.size - 16) % 16 != 0):
@@ -956,22 +938,10 @@ def register(subparsers, default_parser):
                               "`all` forced to saves the best model each epoch."))
     parser.add_argument("--discriminator-only", action="store_true",
                         help="training discriminator only")
-    parser.add_argument("--discriminator-stop-criteria", type=float, default=0.5,
-                        help=("When the loss of the discriminator is less than the specified value,"
-                              " stops training of the discriminator."
-                              " This is the limit to prevent too strong discriminator."
-                              " Also, the discriminator skip probability is interpolated between --generator-start-criteria and --discriminator-stop-criteria."))
-    parser.add_argument("--generator-start-criteria", type=float, default=0.9,
-                        help=("When the loss of the discriminator is greater than the specified value,"
-                              " stops training of the generator."
-                              " This is the limit to prevent too strong generator."
-                              " Also do not hit the newbie discriminator."))
     parser.add_argument("--generator-start-epoch", type=int, default=None,
                         help=("When the epoch is less than the specified value,"
                               " stops training of the generator."
                               " And --generator-start-criteria will be ignored."))
-    parser.add_argument("--disable-skip-discriminator", action="store_true",
-                        help=("Disable skipping of discriminator updates."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--reconstruction-loss-scale", type=float, default=10.0,
