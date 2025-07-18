@@ -20,35 +20,41 @@ class ReplicationPad2d(nn.Module):
         return self.pad(x)
 
 
+def _detach_fn(x, flag: bool):
+    if flag:
+        return x.detach()
+    else:
+        return x
+
+
 def replication_pad2d_naive(x, padding, detach=False):
     assert x.ndim == 4 and len(padding) == 4
     left, right, top, bottom = padding
 
-    detach_fn = lambda t: t.detach() if detach else t
     if left > 0 and right > 0:
-        pad_l = (detach_fn(x[:, :, :, :1]),) * left
-        pad_r = (detach_fn(x[:, :, :, -1:]),) * right
+        pad_l = (_detach_fn(x[:, :, :, :1], detach),) * left
+        pad_r = (_detach_fn(x[:, :, :, -1:], detach),) * right
         x = torch.cat((*pad_l, x, *pad_r), dim=3)
     else:
         if left > 0:
-            x = torch.cat((*((detach_fn(x[:, :, :, :1]),) * left), x), dim=3)
+            x = torch.cat((*((_detach_fn(x[:, :, :, :1], detach),) * left), x), dim=3)
         elif left < 0:
             x = x[:, :, :, -left:]
         if right > 0:
-            x = torch.cat((x, *((detach_fn(x[:, :, :, -1:]),) * right)), dim=3)
+            x = torch.cat((x, *((_detach_fn(x[:, :, :, -1:], detach),) * right)), dim=3)
         elif right < 0:
             x = x[:, :, :, :right]
     if top > 0 and bottom > 0:
-        pad_t = (detach_fn(x[:, :, :1, :]),) * top
-        pad_b = (detach_fn(x[:, :, -1:, :]),) * bottom
+        pad_t = (_detach_fn(x[:, :, :1, :], detach),) * top
+        pad_b = (_detach_fn(x[:, :, -1:, :], detach),) * bottom
         x = torch.cat((*pad_t, x, *pad_b), dim=2)
     else:
         if top > 0:
-            x = torch.cat((*((detach_fn(x[:, :, :1, :]),) * top), x), dim=2)
+            x = torch.cat((*((_detach_fn(x[:, :, :1, :], detach),) * top), x), dim=2)
         elif top < 0:
             x = x[:, :, -top:, :]
         if bottom > 0:
-            x = torch.cat((x, *((detach_fn(x[:, :, -1:, :]),) * bottom)), dim=2)
+            x = torch.cat((x, *((_detach_fn(x[:, :, -1:, :], detach),) * bottom)), dim=2)
         elif bottom < 0:
             x = x[:, :, :bottom, :]
 
@@ -66,13 +72,12 @@ def replication_pad1d_naive(x, padding, detach=False):
     assert x.ndim == 3 and len(padding) == 2
     left, right = padding
 
-    detach_fn = lambda t: t.detach() if detach else t
     if left > 0:
-        x = torch.cat((*((detach_fn(x[:, :, :1]),) * left), x), dim=2)
+        x = torch.cat((*((_detach_fn(x[:, :, :1], detach),) * left), x), dim=2)
     elif left < 0:
         x = x[:, :, -left:]
     if right > 0:
-        x = torch.cat((x, *((detach_fn(x[:, :, -1:]),) * right)), dim=2)
+        x = torch.cat((x, *((_detach_fn(x[:, :, -1:], detach),) * right)), dim=2)
     elif right < 0:
         x = x[:, :, :right]
 
@@ -101,7 +106,7 @@ class ReplicationPad1dNaive(nn.Module):
         return replication_pad1d_naive(x, self.padding, detach=self.detach)
 
 
-def _test():
+def _test2d():
     padding = (1, 2, 3, 4)
     my_pad = ReplicationPad2dNaive(padding)
     nn_pad = nn.ReplicationPad2d(padding)
@@ -116,6 +121,26 @@ def _test():
         my_pad = ReplicationPad2dNaive(padding).cuda()
         nn_pad = nn.ReplicationPad2d(padding).cuda()
         x = torch.rand((4, 3, 8, 8)).cuda()
+        y1 = my_pad(x)
+        y2 = nn_pad(x)
+        assert (y1 - y2).abs().sum() == 0
+
+
+def _test1d():
+    padding = (1, 2)
+    my_pad = ReplicationPad1dNaive(padding)
+    nn_pad = nn.ReplicationPad1d(padding)
+
+    x = torch.rand((4, 3, 8))
+    y1 = my_pad(x)
+    y2 = nn_pad(x)
+    assert (y1 - y2).abs().sum() == 0
+
+    for _ in range(10):
+        padding = torch.randint(-3, 3, (2,)).tolist()
+        my_pad = ReplicationPad1dNaive(padding).cuda()
+        nn_pad = nn.ReplicationPad1d(padding).cuda()
+        x = torch.rand((4, 3, 8)).cuda()
         y1 = my_pad(x)
         y2 = nn_pad(x)
         assert (y1 - y2).abs().sum() == 0
@@ -142,5 +167,6 @@ def _test_grad():
 
 
 if __name__ == "__main__":
-    _test()
+    _test2d()
+    _test1d()
     _test_grad()
