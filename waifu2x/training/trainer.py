@@ -446,10 +446,8 @@ class Waifu2xEnv(LuminancePSNREnv):
         if self.discriminator is None:
             super().train_backward_step(loss, optimizers, grad_scaler, update)
         else:
-            # NOTE: Ignore `update` flag,
-            #       gradient accumulation does not work with Discriminator.
             backward_step = self.trainer.args.backward_step
-            recon_loss, generator_loss, d_loss = [val * backward_step for val in loss]
+            recon_loss, generator_loss, d_loss = loss
             g_opt, d_opt = optimizers
             optimizers = []
 
@@ -489,14 +487,16 @@ class Waifu2xEnv(LuminancePSNREnv):
                     g_loss = recon_loss * recon_weight * 0.5
                 self.sum_loss += g_loss.item()
                 self.sum_d_weight += weight
-                self.backward(g_loss / backward_step, grad_scaler)
+                self.backward(g_loss, grad_scaler)
                 optimizers.append(g_opt)
 
-                logger.debug(f"recon: {round(recon_loss.item(), 4)}, gen: {round(generator_loss.item(), 4)}, "
-                             f"disc: {round(d_loss.item(), 4)}, weight: {round(weight, 6)}")
+                logger.debug(f"recon: {round(recon_loss.item() * backward_step, 4)}, "
+                             f"gen: {round(generator_loss.item() * backward_step, 4)}, "
+                             f"disc: {round(d_loss.item() * backward_step, 4)}, "
+                             f"weight: {round(weight, 6)}")
 
             # update discriminator
-            self.backward(d_loss / backward_step, grad_scaler)
+            self.backward(d_loss, grad_scaler)
             optimizers.append(d_opt)
 
             if optimizers and update:
