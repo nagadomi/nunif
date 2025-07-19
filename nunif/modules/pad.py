@@ -24,8 +24,14 @@ class Pad(nn.Module):
 
 
 def get_pad_size(x, mod, center=True, random_shift=False):
-    pad_w = (mod - x.shape[-1] % mod)
-    pad_h = (mod - x.shape[-2] % mod)
+    if x.shape[-1] % mod == 0:
+        pad_w = 0
+    else:
+        pad_w = (mod - x.shape[-1] % mod)
+    if x.shape[-2] % mod == 0:
+        pad_h = 0
+    else:
+        pad_h = (mod - x.shape[-2] % mod)
 
     if random_shift:
         pad_w1 = random.randint(0, pad_w)
