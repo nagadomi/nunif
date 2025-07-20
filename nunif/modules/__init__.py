@@ -12,7 +12,7 @@ from . psnr import PSNR, LuminancePSNR
 from . charbonnier_loss import CharbonnierLoss
 from . norm import L2Normalize
 from . pad import Pad
-from . discriminator_loss import DiscriminatorBCELoss, DiscriminatorHingeLoss
+from . gan_loss import GANBCELoss, GANHingeLoss
 from . multiscale_loss import MultiscaleLoss
 
 __all__ = [
@@ -21,6 +21,6 @@ __all__ = [
     "ChannelWeightedLoss", "LuminanceWeightedLoss", "AverageWeightedLoss",
     "JaccardIndex", "PSNR", "LuminancePSNR", "CharbonnierLoss", "Alex11Loss",
     "L2Normalize", "Pad",
-    "DiscriminatorBCELoss", "DiscriminatorHingeLoss",
+    "GANBCELoss", "GANHingeLoss",
     "MultiscaleLoss"
 ]
