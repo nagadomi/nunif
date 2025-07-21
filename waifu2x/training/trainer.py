@@ -19,7 +19,8 @@ from nunif.modules import (
     AuxiliaryLoss,
     CharbonnierLoss,
     Alex11Loss,
-    DiscriminatorHingeLoss,
+    GANHingeLoss,
+    GANBCELoss,
     MultiscaleLoss,
 )
 from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP, YRGBFlatLBP
@@ -96,20 +97,20 @@ LOSS_FUNCTIONS = {
 }
 
 
-def diff_pair_random_noise(input, target, strength=0.01, p=0.1):
+def diff_pair_random_noise(inputs, strength=0.01, p=0.1):
     # NOTE: only applies to the discriminator input.
     if random.uniform(0., 1.) < p:
-        B, C, H, W = input.shape
-        noise1x = torch.randn((B, C, H, W), dtype=input.dtype, device=input.device)
+        B, C, H, W = inputs[0].shape
+        noise1x = torch.randn((B, C, H, W), dtype=inputs[0].dtype, device=inputs[0].device)
         if random.uniform(0., 1.) < 0.5:
-            noise2x = torch.randn((B, C, H // 2, W // 2), dtype=input.dtype, device=input.device)
+            noise2x = torch.randn((B, C, H // 2, W // 2), dtype=inputs[0].dtype, device=inputs[0].device)
             noise2x = torch.nn.functional.interpolate(noise2x, size=(H, W), mode="nearest")
             noise = ((noise1x + noise2x) * (strength / 2.0)).detach()
         else:
             noise = (noise1x * strength).detach()
-        return input + noise, target + noise
+        return [input + noise for input in inputs]
     else:
-        return input, target
+        return inputs
 
 
 def create_criterion(loss):
@@ -220,13 +221,13 @@ class Waifu2xEnv(LuminancePSNREnv):
         if use_diff_aug:
             if use_diff_aug_downsample:
                 self.diff_aug = TP.RandomChoice([
-                    DiffPairRandomTranslate(size=16, padding_mode="reflection", expand=False, instance_random=False),
+                    DiffPairRandomTranslate(size=8, padding_mode="reflection", expand=False, instance_random=False),
                     DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
                     DiffPairRandomDownsample(scale_factor_min=0.5, scale_factor_max=0.5),
                     TP.Identity()], p=[0.25, 0.25, 0.25, 0.25])
             else:
                 self.diff_aug = TP.RandomChoice([
-                    DiffPairRandomTranslate(size=16, padding_mode="reflection", expand=False, instance_random=False),
+                    DiffPairRandomTranslate(size=8, padding_mode="reflection", expand=False, instance_random=False),
                     DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
                     TP.Identity()], p=[0.25, 0.25, 0.5])
 
@@ -419,7 +420,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 # discriminator step
                 self.discriminator.requires_grad_(True)
                 if self.use_diff_aug and self.use_diff_aug_noise:
-                    fake, cond = diff_pair_random_noise(torch.clamp(fake.detach(), 0, 1), cond)
+                    fake, y, cond = diff_pair_random_noise((torch.clamp(fake.detach(), 0, 1), y, cond))
                 else:
                     fake = torch.clamp(fake.detach(), 0, 1)
                 real = y
@@ -456,7 +457,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
-                    min=1e-3, max=10, mode="norm")
+                    min=1e-4, max=20.0, mode="norm")
                 weight_is_nan = math.isnan(weight)
                 if not weight_is_nan:
                     if self.adaptive_weight_ema is None:
@@ -468,8 +469,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                 elif self.adaptive_weight_ema is not None:
                     weight = self.adaptive_weight_ema
                 else:
-                    weight = 10.0  # inf
-                recon_weight = 1.0 / weight
+                    weight = 20.0  # inf
                 if self.trainer.args.generator_start_epoch is not None:
                     if self.trainer.epoch >= self.trainer.args.generator_start_epoch and not weight_is_nan:
                         use_disc_loss = True
@@ -482,9 +482,9 @@ class Waifu2xEnv(LuminancePSNREnv):
                         use_disc_loss = True
 
                 if use_disc_loss:
-                    g_loss = (recon_loss * recon_weight + generator_loss * self.trainer.args.discriminator_weight) * 0.5
+                    g_loss = (recon_loss + generator_loss * weight * self.trainer.args.discriminator_weight)
                 else:
-                    g_loss = recon_loss * recon_weight * 0.5
+                    g_loss = recon_loss
                 self.sum_loss += g_loss.item()
                 self.sum_d_weight += weight
                 self.backward(g_loss, grad_scaler)
@@ -583,7 +583,12 @@ class Waifu2xTrainer(Trainer):
         criterion = create_criterion(self.args.loss).to(self.device)
         if self.discriminator is not None:
             loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
-            discriminator_criterion = DiscriminatorHingeLoss(loss_weights=loss_weights).to(self.device)
+            if self.args.gan_loss == "hinge":
+                discriminator_criterion = GANHingeLoss(loss_weights=loss_weights).to(self.device)
+            elif self.args.gan_loss == "bce":
+                discriminator_criterion = GANBCELoss(loss_weights=loss_weights).to(self.device)
+            else:
+                raise ValueError(self.args.gan_loss)
         else:
             discriminator_criterion = None
         return Waifu2xEnv(
@@ -944,7 +949,7 @@ def register(subparsers, default_parser):
                               " And --generator-start-criteria will be ignored."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
-    parser.add_argument("--reconstruction-loss-scale", type=float, default=10.0,
+    parser.add_argument("--reconstruction-loss-scale", type=float, default=1.0,
                         help=("pre scaling factor for reconstruction loss. "
                               "When discriminator weight is clipping(1e-3 or 10.0),this needs to be adjusted."))
     parser.add_argument("--diff-aug", action="store_true",
@@ -953,6 +958,8 @@ def register(subparsers, default_parser):
                         help="Use addtional 2x downsample transforms")
     parser.add_argument("--diff-aug-noise", action="store_true",
                         help="Use addtional random noise transforms")
+    parser.add_argument("--gan-loss", type=str, choices=["hinge", "bce"], default="hinge",
+                        help="GAN loss function")
 
     parser.set_defaults(
         batch_size=16,
