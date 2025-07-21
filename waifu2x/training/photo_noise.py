@@ -281,6 +281,19 @@ def structured_noise(x, strength=0.15):
                          antialias=True)
         noise = noise * mask
 
+    if random.uniform(0, 1) < 0.2:
+        # stretch
+        if random.choice([True, False]):
+            width_scale = random.uniform(1.0, random.choice([4, 32]))
+            height_scale = 1
+        else:
+            width_scale = 1
+            height_scale = random.uniform(1.0, random.choice([4.0, 32.0]))
+        org_w, org_h = noise.shape[-1], noise.shape[-2]
+        new_w, new_h = int(noise.shape[-1] * width_scale), int(noise.shape[-2] * height_scale)
+        noise = TF.resize(noise, (new_h, new_w), interpolation=InterpolationMode.BILINEAR)
+        noise = noise[:, :org_h, :org_w]
+
     rotate = random.choice([0, 1, 1, 1, 2])
     if rotate == 0:
         # no rotate
@@ -452,10 +465,11 @@ def _test_gaussian():
 def _test_structured_noise():
     from nunif.utils import pil_io
     import argparse
-    import cv2
+    import time
 
     def show(name, im):
-        cv2.imshow(name, pil_io.to_cv2(im))
+        im.show()
+        time.sleep(0.5)
 
     def show_op(func, a):
         show(func.__name__, pil_io.to_image(func(pil_io.to_tensor(a))))
@@ -465,14 +479,11 @@ def _test_structured_noise():
     args = parser.parse_args()
     im, _ = pil_io.load_image_simple(args.input)
 
-    while True:
+    for i in range(4):
         show_op(structured_noise, im)
-        c = cv2.waitKey(0)
-        if c in {ord("q"), ord("x")}:
-            break
 
 
 if __name__ == "__main__":
-    _test()
+    #_test()
     # _test_gaussian()
-    # _test_structured_noise()
+    _test_structured_noise()
