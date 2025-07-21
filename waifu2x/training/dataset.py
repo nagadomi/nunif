@@ -221,7 +221,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                  tile_size, num_samples=None,
                  da_jpeg_p=0, da_scale_p=0, da_chshuf_p=0, da_unsharpmask_p=0,
                  da_grayscale_p=0, da_color_p=0, da_antialias_p=0, da_hflip_only=False,
-                 da_no_rotate=False,
                  da_cutmix_p=0, da_mixup_p=0,
                  bicubic_only=False,
                  skip_screentone=False,
@@ -268,16 +267,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
                 jpeg_transform = RandomJPEGNoiseX(style=style, noise_level=noise_level, random_crop_p=random_crop_p)
             else:
                 jpeg_transform = TP.Identity()
-
-            if style == "photo" and not da_no_rotate:
-                rotate_transform = TP.RandomApply([
-                    TP.RandomChoice([
-                        TP.RandomSafeRotate(y_scale=scale_factor, angle_min=-45, angle_max=45),
-                        TP.RandomSafeRotate(y_scale=scale_factor, angle_min=-11, angle_max=11)
-                    ], p=[0.2, 0.8]),
-                ], p=0.2)
-            else:
-                rotate_transform = TP.Identity()
 
             if style == "photo" and noise_level >= 0:
                 photo_noise = RandomPhotoNoiseX(noise_level=noise_level)
@@ -346,7 +335,6 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             self.transforms = TP.Compose([
                 random_downscale_x,
                 photo_noise,
-                rotate_transform,
                 antialias,
                 jpeg_transform,
                 random_flip,
