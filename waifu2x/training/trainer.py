@@ -19,10 +19,9 @@ from nunif.modules import (
     AuxiliaryLoss,
     CharbonnierLoss,
     Alex11Loss,
-    GANHingeLoss,
-    GANBCELoss,
     MultiscaleLoss,
 )
+from nunif.modules.gan_loss import GANHingeLoss, GANBCELoss, GANSoftplusLoss
 from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP, YRGBFlatLBP
 from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
@@ -587,6 +586,8 @@ class Waifu2xTrainer(Trainer):
                 discriminator_criterion = GANHingeLoss(loss_weights=loss_weights).to(self.device)
             elif self.args.gan_loss == "bce":
                 discriminator_criterion = GANBCELoss(loss_weights=loss_weights).to(self.device)
+            elif self.args.gan_loss == "softplus":
+                discriminator_criterion = GANSoftplusLoss(loss_weights=loss_weights).to(self.device)
             else:
                 raise ValueError(self.args.gan_loss)
         else:
@@ -958,7 +959,7 @@ def register(subparsers, default_parser):
                         help="Use addtional 2x downsample transforms")
     parser.add_argument("--diff-aug-noise", action="store_true",
                         help="Use addtional random noise transforms")
-    parser.add_argument("--gan-loss", type=str, choices=["hinge", "bce"], default="hinge",
+    parser.add_argument("--gan-loss", type=str, choices=["hinge", "bce", "softplus"], default="hinge",
                         help="GAN loss function")
 
     parser.set_defaults(

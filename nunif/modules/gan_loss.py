@@ -65,3 +65,26 @@ class GANHingeLoss(nn.Module):
             generator_loss=self.generator_loss,
             discriminator_loss=self.discriminator_loss,
             loss_weights=self.loss_weights)
+
+
+class GANSoftplusLoss(nn.Module):
+    # From SNGAN
+    # https://github.com/pfnet-research/sngan_projection/issues/18#issuecomment-392683263
+    def __init__(self, loss_weights=(1.0,)):
+        super().__init__()
+        self.loss_weights = loss_weights
+
+    @staticmethod
+    def generator_loss(real, fake):
+        return F.softplus(-real).mean()
+
+    @staticmethod
+    def discriminator_loss(real, fake):
+        return (F.softplus(-real).mean() + F.softplus(fake).mean()) * 0.5
+
+    def forward(self, real, fake=None):
+        return _compute_loss(
+            real, fake,
+            generator_loss=self.generator_loss,
+            discriminator_loss=self.discriminator_loss,
+            loss_weights=self.loss_weights)
