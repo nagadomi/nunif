@@ -96,20 +96,28 @@ LOSS_FUNCTIONS = {
 }
 
 
-def diff_pair_random_noise(inputs, strength=0.01, p=0.1):
+def diff_dequant_noise(inputs):
+    # Remove 8bit conversion marks
+    scale = (1.0 / 255.0) * 0.5
+    noise = (torch.randn_like(inputs[0]) * 0.5).clamp(-1, 1) * scale
+    return [input + noise for input in inputs]
+
+
+def diff_random_noise(inputs, p=0.1, strength=0.01):
     # NOTE: only applies to the discriminator input.
-    if random.uniform(0., 1.) < p:
-        B, C, H, W = inputs[0].shape
-        noise1x = torch.randn((B, C, H, W), dtype=inputs[0].dtype, device=inputs[0].device)
+    if random.uniform(0.0, 1.0) < p:
+        base = inputs[0]
+        B, C, H, W = base.shape
+        noise1x = torch.randn_like(base)
         if random.uniform(0., 1.) < 0.5:
-            noise2x = torch.randn((B, C, H // 2, W // 2), dtype=inputs[0].dtype, device=inputs[0].device)
+            noise2x = torch.randn((B, C, H // 2, W // 2), dtype=base.dtype, device=base.device)
             noise2x = torch.nn.functional.interpolate(noise2x, size=(H, W), mode="nearest")
             noise = ((noise1x + noise2x) * (strength / 2.0)).detach()
         else:
             noise = (noise1x * strength).detach()
         return [input + noise for input in inputs]
     else:
-        return inputs
+        return diff_dequant_noise(inputs)
 
 
 def create_criterion(loss):
@@ -418,10 +426,8 @@ class Waifu2xEnv(LuminancePSNREnv):
 
                 # discriminator step
                 self.discriminator.requires_grad_(True)
-                if self.use_diff_aug and self.use_diff_aug_noise:
-                    fake, y, cond = diff_pair_random_noise((torch.clamp(fake.detach(), 0, 1), y, cond))
-                else:
-                    fake = torch.clamp(fake.detach(), 0, 1)
+                fake, y, cond = diff_random_noise((torch.clamp(fake.detach(), 0, 1), y, cond),
+                                                  p=0.1 if self.use_diff_aug_noise else 0)
                 real = y
                 real_cond = fake_cond = cond
                 request_false_condition = getattr(self.discriminator, "request_false_condition", False)
@@ -431,7 +437,6 @@ class Waifu2xEnv(LuminancePSNREnv):
                 )
                 z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
                 z_real = self.discriminator(real, real_cond, scale_factor)
-
                 z_fake = to_dtype(z_fake, fake.dtype)
                 z_real = to_dtype(z_real, y.dtype)
                 discriminator_loss = self.discriminator_criterion(z_real, z_fake)
