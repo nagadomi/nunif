@@ -87,7 +87,10 @@ class FastLayerNorm(nn.LayerNorm):
         if torch.is_autocast_enabled(input.device.type):
             dtype = torch.get_autocast_dtype(input.device.type)
             input = input.to(dtype)
-            weight = self.weight.to(dtype)
+            if self.weight is not None:
+                weight = self.weight.to(dtype)
+            else:
+                weight = None
             if self.bias is not None:
                 bias = self.bias.to(dtype)
             else:
