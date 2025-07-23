@@ -2068,31 +2068,39 @@ def iw3_main(args):
 
 def find_param(args, depth_model, side_model):
     im, _ = load_image_simple(args.input, color="rgb")
+    if im is None:
+        raise RuntimeError(f"{args.input} cannot be loadded")
+    im = TF.to_tensor(im).to(args.state["device"])
+
     args.metadata = "filename"
     os.makedirs(args.output, exist_ok=True)
     if args.method == "forward_fill":
         divergence_cond = range(1, 10 + 1) if "divergence" in args.find_param else [args.divergence]
         convergence_cond = np.arange(-2, 2, 0.25) if "convergence" in args.find_param else [args.convergence]
     else:
-        divergence_cond = range(1, 5) if "divergence" in args.find_param else [args.divergence]
+        max_divegence = 10 if args.method.startswith("mlbw_") else 5
+        divergence_cond = range(1, max_divegence + 1) if "divergence" in args.find_param else [args.divergence]
         convergence_cond = np.arange(0, 1, 0.25) if "convergence" in args.find_param else [args.convergence]
 
     foreground_scale_cond = range(0, 3 + 1) if "foreground-scale" in args.find_param else [args.foreground_scale]
     ipd_offset_cond = range(0, 5 + 1) if "ipd-offset" in args.find_param else [args.ipd_offset]
 
+    params = []
     for divergence in divergence_cond:
         for convergence in convergence_cond:
             for foreground_scale in foreground_scale_cond:
                 for ipd_offset in ipd_offset_cond:
-                    args.divergence = float(divergence)
-                    args.convergence = float(convergence)
-                    args.foreground_scale = foreground_scale
-                    args.ipd_offset = ipd_offset
+                    params.append((divergence, convergence, foreground_scale, ipd_offset))
 
-                    output_filename = path.join(
-                        args.output,
-                        make_output_filename("param.png", args, video=False))
-                    print(output_filename)
-                    output = process_image(im, args, depth_model, side_model)
-                    output = to_pil_image(output)
-                    output.save(output_filename)
+    for divergence, convergence, foreground_scale, ipd_offset in tqdm(params, ncols=80):
+        args.divergence = float(divergence)
+        args.convergence = float(convergence)
+        args.foreground_scale = foreground_scale
+        args.ipd_offset = ipd_offset
+
+        output_filename = path.join(
+            args.output,
+            make_output_filename("param.png", args, video=False))
+        output = process_image(im, args, depth_model, side_model)
+        output = to_pil_image(output)
+        output.save(output_filename)
