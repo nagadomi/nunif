@@ -159,6 +159,8 @@ class Trainer(ABC):
                     self.env.eval_begin()
                     self.save_best_model()
                 self.save_checkpoint()
+                if self.args.save_epoch:
+                    self.save_epoch_model()
                 try:
                     self.write_log(self.epoch, train_loss, loss)
                 except:  # noqa
@@ -299,6 +301,18 @@ class Trainer(ABC):
             last_epoch=self.epoch,
             **kwargs)
 
+    def save_epoch_model(self):
+        backup_model_dir, backup_disable_backup = self.args.model_dir, self.args.disable_backup
+        self.args.model_dir = path.join(self.args.model_dir, "epoch", str(self.epoch))
+        self.args.disable_backup = True
+        self.best_model_filename = self.create_best_model_filename()
+
+        os.makedirs(self.args.model_dir, exist_ok=True)
+        self.save_best_model()
+
+        self.args.model_dir, self.args.disable_backup = backup_model_dir, backup_disable_backup
+        self.best_model_filename = self.create_best_model_filename()
+
     def save_best_model(self):
         model = self.ema_model.module if self.args.ema_model else self.model
         save_model(model, self.best_model_filename)
@@ -404,6 +418,8 @@ def create_trainer_default_parser():
                         help="checkpoint file for initializing model parameters. ignored when --resume is specified")
     parser.add_argument("--disable-backup", action="store_true",
                         help="disable backup of the best model file for every runtime")
+    parser.add_argument("--save-epoch", action="store_true",
+                        help="save the model file at each epoch")
     parser.add_argument("--ignore-nan", action="store_true",
                         help="do not raise NaN exception unless NaN occurs more than 100 times in one epoch")
     parser.add_argument("--skip-eval", action="store_true",
