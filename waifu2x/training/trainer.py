@@ -460,10 +460,11 @@ class Waifu2xEnv(LuminancePSNREnv):
             if not self.trainer.args.discriminator_only:
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
-                    recon_loss, generator_loss, last_layer, grad_scalers,
+                    recon_loss, generator_loss, last_layer, grad_scalers[0],
                     min=self.trainer.args.discriminator_adaptive_weight_min,
                     max=self.trainer.args.discriminator_adaptive_weight_max,
-                    mode="norm"
+                    mode="norm",
+                    adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema
                 )
                 weight_is_nan = math.isnan(weight)
                 if not weight_is_nan:
@@ -954,9 +955,9 @@ def register(subparsers, default_parser):
                         help="discriminator name or .pth or [`l3`, `l3c`, `l3v1`, `l3v1`].")
     parser.add_argument("--discriminator-weight", type=float, default=1.0,
                         help="discriminator loss weight")
-    parser.add_argument("--discriminator-adaptive-weight-min", type=float, default=1e-4,
+    parser.add_argument("--discriminator-adaptive-weight-min", type=float, default=0.0,
                         help="minimum adaptive loss weight")
-    parser.add_argument("--discriminator-adaptive-weight-max", type=float, default=20.0,
+    parser.add_argument("--discriminator-adaptive-weight-max", type=float, default=1e4,
                         help="maxmum adaptive loss weight")
     parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss", "all"], default="psnr",
                         help=("criterion for updating the best model file. "

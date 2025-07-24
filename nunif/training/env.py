@@ -98,41 +98,33 @@ class BaseEnv(ABC):
             self.optimizer_step(optimizers, grad_scaler)
 
     def calculate_adaptive_weight(self, base_loss, second_loss, param,
-                                  grad_scaler, min=1e-6, max=1., mode="norm"):
-        if isinstance(grad_scaler, (list, tuple)):
-            if len(grad_scaler) == 1:
-                second_grad_scaler = base_grad_scaler = grad_scaler[0]
-            elif len(grad_scaler) == 2:
-                base_grad_scaler = grad_scaler[0]
-                second_grad_scaler = grad_scaler[1]
-            else:
-                raise ValueError("grad_scaler is list and len(grad_scaler) not in {1, 2}")
-        else:
-            second_grad_scaler = base_grad_scaler = grad_scaler
-
-        base_loss = base_grad_scaler.scale(base_loss)
-        second_loss = second_grad_scaler.scale(second_loss)
+                                  grad_scaler, min=1e-6, max=1., mode="norm",
+                                  adaptive_weight=1.0):
+        base_loss = grad_scaler.scale(base_loss)
+        second_loss = grad_scaler.scale(second_loss * adaptive_weight)
         # ref. taming transformers
         base_grad = torch.autograd.grad(base_loss, param, retain_graph=True)[0]
         second_grad = torch.autograd.grad(second_loss, param, retain_graph=True)[0]
+
         assert base_grad is not None and second_grad is not None
-        base_inv_scale = 1.0 / base_grad_scaler.get_scale()
-        second_inv_scale = 1.0 / second_grad_scaler.get_scale()
-        base_grad = base_grad * base_inv_scale
-        second_grad = second_grad * second_inv_scale
+        inv_scale = 1.0 / grad_scaler.get_scale()
+        base_grad = base_grad * inv_scale
+        second_grad = second_grad * inv_scale
         if mode == "norm":
             base_grad_strength = torch.norm(base_grad, p=2)
-            second_grad_strength = torch.norm(second_grad, p=2) + 1e-6
+            second_grad_strength = torch.norm(second_grad, p=2)
+            second_grad_strength = second_grad_strength / adaptive_weight
         elif mode == "max":
             base_grad_strength = torch.max(torch.abs(base_grad))
-            second_grad_strength = torch.max(torch.abs(second_grad)) + 1e-6
+            second_grad_strength = torch.max(torch.abs(second_grad))
+            second_grad_strength = second_grad_strength / adaptive_weight
         else:
             raise NotImplementedError()
         grad_ratio = torch.clamp(base_grad_strength / second_grad_strength, min, max).item()
         if False:
             print("base", base_grad_strength.item(), "second", second_grad_strength.item(),
                   "weight", (base_grad_strength / second_grad_strength).item(),
-                  "base_inv_scale", base_inv_scale, "second_inv_scale", second_inv_scale)
+                  "inv_scale", inv_scale)
         return grad_ratio
 
     @abstractmethod
