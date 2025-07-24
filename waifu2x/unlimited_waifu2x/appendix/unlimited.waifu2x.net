@@ -8,10 +8,11 @@ server {
        }
        location / {
            add_header Cache-Control "public, max-age=3600, must-revalidate";
-           # If you want to enable multi-threading
-           #add_header Cross-Origin-Resource-Policy "cross-origin";
-           #add_header Cross-Origin-Embedder-Policy "require-corp";
-           #add_header Cross-Origin-Opener-Policy "same-origin";
+           # Enable multi-threading, see:
+           # https://github.com/nagadomi/nunif/blob/bedce31ab9ec56568fe6149e108872e912301a70/waifu2x/unlimited_waifu2x/public_html/script.js#L679
+           add_header Cross-Origin-Resource-Policy "cross-origin";
+           add_header Cross-Origin-Embedder-Policy "require-corp";
+           add_header Cross-Origin-Opener-Policy "same-origin";
        }
        location ~* \.(onnx|pth) {
            add_header Cache-Control "public, max-age=86400, must-revalidate";
