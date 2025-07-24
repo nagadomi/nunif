@@ -67,6 +67,20 @@ class GANHingeLoss(nn.Module):
             loss_weights=self.loss_weights)
 
 
+class GANHingeClampLoss(GANHingeLoss):
+    @staticmethod
+    def ste_clamp(x, slope=0.1):
+        x_clamp = x.clamp(-1, 1)
+        x = x_clamp + (x - x_clamp) * slope
+        return x + x.clamp(-1, 1).detach() - x.detach()
+
+    def forward(self, real, fake=None):
+        real = self.ste_clamp(real)
+        if fake is not None:
+            fake = self.ste_clamp(fake)
+        return super().forward(real, fake)
+
+
 class GANSoftplusLoss(nn.Module):
     # From SNGAN
     # https://github.com/pfnet-research/sngan_projection/issues/18#issuecomment-392683263

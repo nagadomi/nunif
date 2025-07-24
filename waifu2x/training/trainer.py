@@ -21,7 +21,7 @@ from nunif.modules import (
     Alex11Loss,
     MultiscaleLoss,
 )
-from nunif.modules.gan_loss import GANHingeLoss, GANBCELoss, GANSoftplusLoss
+from nunif.modules.gan_loss import GANHingeLoss, GANBCELoss, GANSoftplusLoss, GANHingeClampLoss
 from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP, YRGBFlatLBP
 from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
@@ -282,7 +282,7 @@ class Waifu2xEnv(LuminancePSNREnv):
             method = random.choice([0, 1, 2, 3])
             if method == 0:
                 # flip
-                axis = random.choice([-2, -1] + ([0] if cond.shape[0] > 1 else []))
+                axis = random.choice([-2, -1] + ([0, 0] if cond.shape[0] > 1 else []))
                 if axis == 0:
                     batch_index = random.choice([j for j in range(cond.shape[0]) if j != i])
                     false_condition = cond[batch_index:batch_index + 1]
@@ -290,14 +290,14 @@ class Waifu2xEnv(LuminancePSNREnv):
                     false_condition = torch.flip(cond[i:i + 1], dims=(axis,))
             elif method == 1:
                 # shift
-                shift_w = random.randint(3, 18) * random.choice([-1, 1])
-                shift_h = random.randint(3, 18) * random.choice([-1, 1])
+                shift_w = random.randint(4, 18) * random.choice([-1, 1])
+                shift_h = random.randint(4, 18) * random.choice([-1, 1])
                 false_condition = F.pad(cond[i:i + 1], (shift_w, -shift_w, shift_h, -shift_h), mode="reflect")
             elif method == 2:
                 # color
-                scale_r = random.uniform(0.8, 0.95)
-                scale_g = random.uniform(0.8, 0.95)
-                scale_b = random.uniform(0.8, 0.95)
+                scale_r = random.uniform(0.6, 0.9)
+                scale_g = random.uniform(0.6, 0.9)
+                scale_b = random.uniform(0.6, 0.9)
                 bias_r = 1 - scale_r
                 bias_g = 1 - scale_g
                 bias_b = 1 - scale_b
@@ -309,7 +309,7 @@ class Waifu2xEnv(LuminancePSNREnv):
                     false_condition = (cond[i:i + 1] + bias) * scale
             elif method == 3:
                 # more blur (too high res)
-                scale_factor = random.uniform(0.25, 0.75)
+                scale_factor = random.uniform(0.2, 0.6)
                 false_condition = F.interpolate(cond[i:i + 1], scale_factor=scale_factor,
                                                 mode="bilinear", align_corners=True, antialias=True)
                 false_condition = F.interpolate(false_condition, size=cond.shape[-2:],
@@ -461,7 +461,10 @@ class Waifu2xEnv(LuminancePSNREnv):
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
                     recon_loss, generator_loss, last_layer, grad_scaler,
-                    min=1e-4, max=20.0, mode="norm")
+                    min=self.trainer.args.discriminator_adaptive_weight_min,
+                    max=self.trainer.args.discriminator_adaptive_weight_max,
+                    mode="norm"
+                )
                 weight_is_nan = math.isnan(weight)
                 if not weight_is_nan:
                     if self.adaptive_weight_ema is None:
@@ -589,6 +592,9 @@ class Waifu2xTrainer(Trainer):
             loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
             if self.args.gan_loss == "hinge":
                 discriminator_criterion = GANHingeLoss(loss_weights=loss_weights).to(self.device)
+            elif self.args.gan_loss == "hinge_clamp":
+                # old behavior
+                discriminator_criterion = GANHingeClampLoss(loss_weights=loss_weights).to(self.device)
             elif self.args.gan_loss == "bce":
                 discriminator_criterion = GANBCELoss(loss_weights=loss_weights).to(self.device)
             elif self.args.gan_loss == "softplus":
@@ -941,6 +947,10 @@ def register(subparsers, default_parser):
                         help="discriminator name or .pth or [`l3`, `l3c`, `l3v1`, `l3v1`].")
     parser.add_argument("--discriminator-weight", type=float, default=1.0,
                         help="discriminator loss weight")
+    parser.add_argument("--discriminator-adaptive-weight-min", type=float, default=1e-4,
+                        help="minimum adaptive loss weight")
+    parser.add_argument("--discriminator-adaptive-weight-max", type=float, default=20.0,
+                        help="maxmum adaptive loss weight")
     parser.add_argument("--update-criterion", type=str, choices=["psnr", "loss", "all"], default="psnr",
                         help=("criterion for updating the best model file. "
                               "`all` forced to saves the best model each epoch."))
@@ -948,20 +958,18 @@ def register(subparsers, default_parser):
                         help="training discriminator only")
     parser.add_argument("--generator-start-epoch", type=int, default=None,
                         help=("When the epoch is less than the specified value,"
-                              " stops training of the generator."
-                              " And --generator-start-criteria will be ignored."))
+                              " stops training of the generator."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--reconstruction-loss-scale", type=float, default=1.0,
-                        help=("pre scaling factor for reconstruction loss. "
-                              "When discriminator weight is clipping(1e-3 or 10.0),this needs to be adjusted."))
+                        help=("pre scaling factor for reconstruction loss."))
     parser.add_argument("--diff-aug", action="store_true",
                         help="Use differentiable transforms for reconstruction loss and discriminator")
     parser.add_argument("--diff-aug-downsample", action="store_true",
                         help="Use addtional 2x downsample transforms")
     parser.add_argument("--diff-aug-noise", action="store_true",
                         help="Use addtional random noise transforms")
-    parser.add_argument("--gan-loss", type=str, choices=["hinge", "bce", "softplus"], default="hinge",
+    parser.add_argument("--gan-loss", type=str, choices=["hinge", "bce", "softplus", "hinge_clamp"], default="hinge",
                         help="GAN loss function")
 
     parser.set_defaults(
