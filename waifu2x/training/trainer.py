@@ -447,9 +447,9 @@ class Waifu2xEnv(LuminancePSNREnv):
         self.sum_step += 1
         return loss
 
-    def train_backward_step(self, loss, optimizers, grad_scaler, update):
+    def train_backward_step(self, loss, optimizers, grad_scalers, update):
         if self.discriminator is None:
-            super().train_backward_step(loss, optimizers, grad_scaler, update)
+            super().train_backward_step(loss, optimizers, grad_scalers, update)
         else:
             backward_step = self.trainer.args.backward_step
             recon_loss, generator_loss, d_loss = loss
@@ -460,7 +460,7 @@ class Waifu2xEnv(LuminancePSNREnv):
             if not self.trainer.args.discriminator_only:
                 last_layer = get_last_layer(self.model)
                 weight = self.calculate_adaptive_weight(
-                    recon_loss, generator_loss, last_layer, grad_scaler,
+                    recon_loss, generator_loss, last_layer, grad_scalers,
                     min=self.trainer.args.discriminator_adaptive_weight_min,
                     max=self.trainer.args.discriminator_adaptive_weight_max,
                     mode="norm"
@@ -494,8 +494,8 @@ class Waifu2xEnv(LuminancePSNREnv):
                     g_loss = recon_loss
                 self.sum_loss += g_loss.item()
                 self.sum_d_weight += weight
-                self.backward(g_loss, grad_scaler)
-                optimizers.append(g_opt)
+                self.backward(g_loss, grad_scalers[0])
+                optimizers.append((g_opt, grad_scalers[0]))
 
                 logger.debug(f"recon: {round(recon_loss.item() * backward_step, 4)}, "
                              f"gen: {round(generator_loss.item() * backward_step, 4)}, "
@@ -503,11 +503,12 @@ class Waifu2xEnv(LuminancePSNREnv):
                              f"weight: {round(weight, 6)}")
 
             # update discriminator
-            self.backward(d_loss, grad_scaler)
-            optimizers.append(d_opt)
+            self.backward(d_loss, grad_scalers[1])
+            optimizers.append((d_opt, grad_scalers[1]))
 
             if optimizers and update:
-                self.optimizer_step(optimizers, grad_scaler)
+                for optimizer, grad_scaler in optimizers:
+                    self.optimizer_step(optimizer, grad_scaler)
 
     def train_end(self):
         # update sampler
@@ -652,6 +653,12 @@ class Waifu2xTrainer(Trainer):
             return g_opt, d_opt
         else:
             return super().create_optimizers()
+
+    def create_grad_scalers(self):
+        if self.discriminator is not None:
+            return [self.create_grad_scaler(), self.create_grad_scaler()]
+        else:
+            return super().create_grad_scalers()
 
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
