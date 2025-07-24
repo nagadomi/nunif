@@ -53,7 +53,7 @@ class Trainer(ABC):
         self.best_loss = 1000000000
         self.optimizers = self.create_optimizers()
         self.schedulers = self.create_schedulers(self.optimizers)
-        self.grad_scaler = self.create_grad_scaler()
+        self.grad_scalers = self.create_grad_scalers()
         if self.args.resume:
             self.resume()
         self.env = self.create_env()
@@ -106,7 +106,11 @@ class Trainer(ABC):
             else:
                 for i, scheduler_state_dict in enumerate(meta["scheduler_state_dict"]):
                     self.schedulers[i].load_state_dict(scheduler_state_dict)
-            self.grad_scaler.load_state_dict(meta["grad_scaler_state_dict"])
+            if not isinstance(meta["grad_scaler_state_dict"], (list, tuple)):
+                self.grad_scalers[0].load_state_dict(meta["grad_scaler_state_dict"])
+            else:
+                for i, grad_scaler_state_dict in enumerate(meta["grad_scaler_state_dict"]):
+                    self.grad_scalers[i].load_state_dict(grad_scaler_state_dict)
             self.start_epoch = meta["last_epoch"] + 1
             self.best_loss = meta["best_loss"]
         print(f"* load checkpoint from {latest_checkpoint_filename}")
@@ -136,7 +140,7 @@ class Trainer(ABC):
                     loader=self.train_loader,
                     optimizers=self.optimizers,
                     schedulers=self.schedulers,
-                    grad_scaler=self.grad_scaler,
+                    grad_scalers=self.grad_scalers,
                     backward_step=self.args.backward_step,
                 )
                 gc_collect()
@@ -274,6 +278,9 @@ class Trainer(ABC):
 
         return scheduler
 
+    def create_grad_scalers(self):
+        return [self.create_grad_scaler()]
+
     def create_grad_scaler(self):
         if hasattr(torch.amp, "GradScaler"):
             return torch.amp.GradScaler(self.device.type, enabled=self.amp_is_enabled())
@@ -289,6 +296,7 @@ class Trainer(ABC):
     def save_checkpoint(self, **kwargs):
         optimizer_state_dict = [optimizer.state_dict() for optimizer in self.optimizers]
         scheduler_state_dict = [scheduler.state_dict() for scheduler in self.schedulers]
+        grad_scaler_state_dict = [grad_scaler.state_dict() for grad_scaler in self.grad_scalers]
         model = self.ema_model.module if self.args.ema_model else self.model
         save_model(
             model,
@@ -296,7 +304,7 @@ class Trainer(ABC):
             train_kwargs=self.args,
             optimizer_state_dict=optimizer_state_dict,
             scheduler_state_dict=scheduler_state_dict,
-            grad_scaler_state_dict=self.grad_scaler.state_dict(),
+            grad_scaler_state_dict=grad_scaler_state_dict,
             best_loss=self.best_loss,
             last_epoch=self.epoch,
             **kwargs)
