@@ -564,9 +564,6 @@ class Waifu2xEnv(LuminancePSNREnv):
                 # TODO: AuxiliaryLoss does not work
                 psnr = self.eval_criterion(z, y)
                 loss = self.criterion(z, y)
-                if self.discriminator is not None:
-                    z_real = self.discriminator(z, y, scale_factor)
-                    loss = loss + self.discriminator_criterion(z_real)
 
         self.sum_psnr += psnr.item()
         self.sum_loss += loss.item()
