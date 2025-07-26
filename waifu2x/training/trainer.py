@@ -786,6 +786,11 @@ class Waifu2xTrainer(Trainer):
         if self.discriminator is not None and "discriminator_state_dict" in meta:
             self.discriminator.load_state_dict(meta["discriminator_state_dict"])
 
+    def load_initial_parameters(self, checkpoint_filename):
+        meta = super().load_initial_parameters(checkpoint_filename)
+        if self.discriminator is not None and "discriminator_state_dict" in meta:
+            self.discriminator.load_state_dict(meta["discriminator_state_dict"])
+
     def create_discriminator_model_filename(self):
         return path.join(
             self.args.model_dir,

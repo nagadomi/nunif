@@ -41,9 +41,9 @@ class Trainer(ABC):
         set_seed(self.args.seed)
 
         self.model = self.create_model()
+        self.setup_model()
         if self.args.checkpoint_file is not None:
             self.load_initial_parameters(self.args.checkpoint_file)
-        self.setup_model()
 
         self.train_loader = self.create_dataloader(type="train")
         self.eval_loader = self.create_dataloader(type="eval")
@@ -117,7 +117,8 @@ class Trainer(ABC):
         return meta
 
     def load_initial_parameters(self, checkpoint_filename):
-        load_model(checkpoint_filename, model=self.model)
+        _, meta = load_model(checkpoint_filename, model=self.model)
+        return meta
 
     @staticmethod
     def _lr_format(schedulers):
