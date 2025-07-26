@@ -161,7 +161,7 @@ RELATIVE_SHIFT_MAPPER = [
 ]
 
 LEGACY_MAPPER = ["pow2", "softplus", "softplus2"]
-MAPPER_ALL = ["auto"] + list(dict.fromkeys(LEGACY_MAPPER + RELATIVE_MUL_MAPPER + METRIC_DIV_MAPPER))
+MAPPER_ALL = ["auto"] + list(dict.fromkeys(LEGACY_MAPPER + RELATIVE_MUL_MAPPER + METRIC_DIV_MAPPER + RELATIVE_SHIFT_MAPPER))
 
 
 def get_mapper_levels(metric_depth, mapper_type=None):
