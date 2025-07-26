@@ -4,6 +4,13 @@ import torch
 import math
 
 
+def softplus01_legacy(depth, c=6):
+    min_v = math.log(1 + math.exp(0 * 12.0 - c)) / (12 - c)
+    max_v = math.log(1 + math.exp(1 * 12.0 - c)) / (12 - c)
+    v = torch.log(1. + torch.exp(depth * 12.0 - c)) / (12 - c)
+    return (v - min_v) / (max_v - min_v)
+
+
 def softplus01(x, bias, scale):
     # x: 0-1 normalized
     min_v = math.log(1 + math.exp((0 - bias) * scale))
@@ -61,9 +68,9 @@ def resolve_mapper_function(name):
     elif name == "none":
         return lambda x: x
     elif name == "softplus":
-        return softplus01
+        return softplus01_legacy
     elif name == "softplus2":
-        return lambda x: softplus01(x) ** 2
+        return lambda x: softplus01_legacy(x) ** 2
     elif name in {"mul_1", "mul_2", "mul_3"}:
         # for Relative Depth
         # https://github.com/nagadomi/nunif/assets/287255/2be5c0de-cb72-4c9c-9e95-4855c0730e5c
