@@ -95,9 +95,9 @@ def resolve_mapper_function(name):
         # for Relative Depth
         # https://github.com/user-attachments/assets/7c953aae-101e-4337-82b4-10a073863d47
         param = {
-            "shift_30": {"min_distance":  3.0},
-            "shift_20":  {"min_distance": 2.0},
-            "shift_14":  {"min_distance": 1.4},
+            "shift_30": {"min_distance": 3.0},
+            "shift_20": {"min_distance": 2.0},
+            "shift_14": {"min_distance": 1.4},
             "shift_08": {"min_distance": 0.8},
             "shift_06": {"min_distance": 0.6},
             "shift_045": {"min_distance": 0.45},
