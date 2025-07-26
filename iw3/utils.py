@@ -2084,6 +2084,7 @@ def find_param(args, depth_model, side_model):
 
     foreground_scale_cond = range(0, 3 + 1) if "foreground-scale" in args.find_param else [args.foreground_scale]
     ipd_offset_cond = range(0, 5 + 1) if "ipd-offset" in args.find_param else [args.ipd_offset]
+    is_metric = depth_model.is_metric()
 
     params = []
     for divergence in divergence_cond:
@@ -2095,8 +2096,11 @@ def find_param(args, depth_model, side_model):
     for divergence, convergence, foreground_scale, ipd_offset in tqdm(params, ncols=80):
         args.divergence = float(divergence)
         args.convergence = float(convergence)
-        args.foreground_scale = foreground_scale
         args.ipd_offset = ipd_offset
+        args.foreground_scale = foreground_scale
+        args.mapper = resolve_mapper_name(mapper=None, foreground_scale=args.foreground_scale,
+                                          metric_depth=is_metric,
+                                          mapper_type=args.mapper_type)
 
         output_filename = path.join(
             args.output,
