@@ -225,6 +225,7 @@ class Waifu2xEnv(LuminancePSNREnv):
         self.sampler = sampler
         self.use_diff_aug = use_diff_aug
         self.use_diff_aug_noise = use_diff_aug_noise
+        self.epoch_iteration = 0
         if use_diff_aug:
             if use_diff_aug_downsample:
                 self.diff_aug = TP.RandomChoice([
@@ -347,12 +348,21 @@ class Waifu2xEnv(LuminancePSNREnv):
 
     def train_begin(self):
         super().train_begin()
+        self.epoch_iteration = 0
         if self.discriminator is not None:
             self.discriminator.train()
             if self.trainer.args.discriminator_only:
                 self.model.eval()
 
+    def get_current_iteration(self):
+        batch_iteration = (self.trainer.epoch - 1) * self.trainer.args.num_samples
+        batch_iteration = batch_iteration // (self.trainer.args.batch_size * self.trainer.args.backward_step)
+        iteration = batch_iteration + self.epoch_iteration // self.trainer.args.backward_step
+        return iteration
+
     def train_step(self, data):
+        self.epoch_iteration += 1
+
         if not self.trainer.args.privilege:
             x, y, *_ = data
             privilege = None
@@ -478,8 +488,8 @@ class Waifu2xEnv(LuminancePSNREnv):
                     weight = self.adaptive_weight_ema
                 else:
                     weight = 20.0  # inf
-                if self.trainer.args.generator_start_epoch is not None:
-                    if self.trainer.epoch >= self.trainer.args.generator_start_epoch and not weight_is_nan:
+                if self.trainer.args.generator_start_iteration is not None:
+                    if self.get_current_iteration() >= self.trainer.args.generator_start_iteration and not weight_is_nan:
                         use_disc_loss = True
                     else:
                         use_disc_loss = False
@@ -498,10 +508,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                 self.backward(g_loss, grad_scalers[0])
                 optimizers.append((g_opt, grad_scalers[0]))
 
-                logger.debug(f"recon: {round(recon_loss.item() * backward_step, 4)}, "
-                             f"gen: {round(generator_loss.item() * backward_step, 4)}, "
-                             f"disc: {round(d_loss.item() * backward_step, 4)}, "
-                             f"weight: {round(weight, 6)}")
+                logger.debug(
+                    f"iteration: {self.get_current_iteration()}, "
+                    f"recon: {round(recon_loss.item() * backward_step, 4)}, "
+                    f"gen: {round(generator_loss.item() * backward_step, 4)}, "
+                    f"disc: {round(d_loss.item() * backward_step, 4)}, "
+                    f"weight: {round(weight, 6)}"
+                )
 
             # update discriminator
             self.backward(d_loss, grad_scalers[1])
@@ -966,9 +979,9 @@ def register(subparsers, default_parser):
                               "`all` forced to saves the best model each epoch."))
     parser.add_argument("--discriminator-only", action="store_true",
                         help="training discriminator only")
-    parser.add_argument("--generator-start-epoch", type=int, default=None,
-                        help=("When the epoch is less than the specified value,"
-                              " stops training of the generator."))
+    parser.add_argument("--generator-start-iteration", type=int, default=None,
+                        help=("When the iteration is less than the specified value,"
+                              " stops training with the generator loss."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--reconstruction-loss-scale", type=float, default=1.0,
