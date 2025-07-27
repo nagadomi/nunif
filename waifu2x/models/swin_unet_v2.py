@@ -8,6 +8,7 @@ from nunif.modules.replication_pad2d import ReplicationPad2dNaive as Replication
 from nunif.modules.init import icnr_init, basic_module_init
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.norm import FastLayerNorm
+from nunif.modules.softpool import soft_pool_downscale
 
 
 class GLUConvMLP(nn.Module):
@@ -516,31 +517,31 @@ class SwinUNet4xV2(I2IBaseModel):
                                     in_channels=self.i2i_in_channels, out_channels=self.out_channels)
 
 
-def box_resize(x, size):
-    H, W = x.shape[2:]
-    assert H % size[0] == 0 or W % size[1] == 0 and H > size[0] and W > size[1]
-    kernel_h = H // size[0]
-    kernel_w = W // size[1]
-
+def box_resize(x, kernel_size):
+    assert kernel_size in {2, 4}
     # NOTE: Need static kernel_size for export
-    assert (kernel_h == kernel_w) and (kernel_h == 2 or kernel_h == 4)
-    if kernel_h == 2:
+    if kernel_size == 2:
         return F.avg_pool2d(x, kernel_size=(2, 2), stride=(2, 2))
     else:
         return F.avg_pool2d(x, kernel_size=(4, 4), stride=(4, 4))
 
 
-def resize(x, size, mode, align_corners, antialias):
+def resize(x, downscale_factor, mode, align_corners, antialias):
+    assert mode in {"box", "bicubic", "softpool"}
+    h, w = x.shape[-2:]
     if mode == "box":
-        return box_resize(x, size=size)
-    else:
-        return F.interpolate(x, size=size, mode=mode, align_corners=align_corners, antialias=antialias)
+        return box_resize(x, kernel_size=downscale_factor)
+    elif mode == "softpool":
+        return soft_pool_downscale(x, downscale_factor=downscale_factor)
+    elif mode == "bicubic":
+        new_h, new_w = h // downscale_factor, w // downscale_factor
+        return F.interpolate(x, size=(new_h, new_w), mode=mode, align_corners=align_corners, antialias=antialias)
 
 
 # TODO: Not tested
 @register_model
 class SwinUNetV2Downscaled(I2IBaseModel):
-    name = "waifu2x.winc_unet_downscaled"
+    name = "waifu2x.swin_unet_v2_downscaled"
 
     def __init__(self, unet, downscale_factor, in_channels=3, out_channels=3):
         assert downscale_factor in {2, 4}
@@ -560,12 +561,12 @@ class SwinUNetV2Downscaled(I2IBaseModel):
     def forward(self, x):
         z = self.unet(x)
         if self.training:
-            z = resize(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+            z = resize(z, downscale_factor=self.downscale_factor,
                        mode=self.mode, align_corners=False, antialias=self.antialias)
             return z
         else:
             z = torch.clamp(z, 0., 1.)
-            z = resize(z, size=(z.shape[2] // self.downscale_factor, z.shape[3] // self.downscale_factor),
+            z = resize(z, downscale_factor=self.downscale_factor,
                        mode=self.mode, align_corners=False, antialias=self.antialias)
             z = torch.clamp(z, 0., 1.)
             return z
