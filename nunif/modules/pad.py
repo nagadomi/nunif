@@ -53,6 +53,36 @@ def get_pad_size(x, mod, center=True, random_shift=False):
     return pad_w1, pad_w2, pad_h1, pad_h2
 
 
+def get_crop_size(x, mod, center=True, random_shift=False):
+    if x.shape[-1] % mod == 0:
+        pad_w = 0
+    else:
+        pad_w = x.shape[-1] % mod
+    if x.shape[-2] % mod == 0:
+        pad_h = 0
+    else:
+        pad_h = x.shape[-2] % mod
+
+    if random_shift:
+        pad_w1 = random.randint(0, pad_w)
+        pad_w2 = pad_w - pad_w1
+        pad_h1 = random.randint(0, pad_h)
+        pad_h2 = pad_h - pad_h1
+    else:
+        if center:
+            pad_w1 = pad_w // 2
+            pad_w2 = pad_w - pad_w1
+            pad_h1 = pad_h // 2
+            pad_h2 = pad_h - pad_h1
+        else:
+            pad_w1 = 0
+            pad_w2 = pad_w
+            pad_h1 = 0
+            pad_h2 = pad_h
+
+    return -pad_w1, -pad_w2, -pad_h1, -pad_h2
+
+
 def _test():
     import torch
     x = torch.zeros((1, 3, 4, 4))
@@ -93,6 +123,33 @@ def _test_get_pad_size():
         assert w % mod == 0
 
 
+def _test_get_crop_size():
+    import torch
+
+    x = torch.zeros((4, 3, 34, 33))
+    for mod in [2, 3, 4, 16, 18]:
+        pad = get_crop_size(x, mod)
+        x = F.pad(x, pad)
+        h, w = x.shape[-2:]
+        assert h % mod == 0
+        assert w % mod == 0
+
+    for mod in [2, 3, 4, 16, 18]:
+        pad = get_crop_size(x, mod, center=False)
+        x = F.pad(x, pad)
+        h, w = x.shape[-2:]
+        assert h % mod == 0
+        assert w % mod == 0
+
+    for mod in [2, 3, 4, 16, 18]:
+        pad = get_crop_size(x, mod, random_shift=True)
+        x = F.pad(x, pad)
+        h, w = x.shape[-2:]
+        assert h % mod == 0
+        assert w % mod == 0
+
+
 if __name__ == "__main__":
     # _test()
     _test_get_pad_size()
+    _test_get_crop_size()
