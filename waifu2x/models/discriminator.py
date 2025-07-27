@@ -329,6 +329,7 @@ class U3ConditionalDiscriminator(Discriminator):
         C1 = 64
         C2 = 128
         C3 = 256
+        C4 = 384
         pool_block = PoolFormerBlock
         self.enc1 = nn.Sequential(
             nn.Conv2d(in_channels, C1, kernel_size=3, stride=1, padding=1),
@@ -339,11 +340,21 @@ class U3ConditionalDiscriminator(Discriminator):
         self.enc2 = nn.Sequential(
             spectral_norm(nn.Conv2d(C2, C3, kernel_size=4, stride=2, padding=1)),
             nn.LeakyReLU(0.2, inplace=True),
-            ResBlockSNLReLU(C3, C3),
-            ResBlockSNLReLU(C3, C3),
+        )
+        self.enc3 = nn.Sequential(
+            spectral_norm(nn.Conv2d(C3, C4, kernel_size=4, stride=2, padding=1)),
+            nn.LeakyReLU(0.2, inplace=True),
+            ResBlockSNLReLU(C4, C4),
         )
         self.enc1_proj = spectral_norm(nn.Conv2d(C2, C2, kernel_size=1, stride=1, padding=0))
+        self.enc2_proj = spectral_norm(nn.Conv2d(C3, C3, kernel_size=1, stride=1, padding=0))
         self.up1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+            spectral_norm(nn.Conv2d(C4, C3, kernel_size=3, stride=1, padding=1)),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.up2 = nn.Sequential(
+            ResBlockSNLReLU(C3, C3),
             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
             spectral_norm(nn.Conv2d(C3, C2, kernel_size=3, stride=1, padding=1)),
             nn.LeakyReLU(0.2, inplace=True),
@@ -364,7 +375,10 @@ class U3ConditionalDiscriminator(Discriminator):
         cond = self.to_cond(c)[0]
         x1 = self.enc1(x)
         x2 = self.enc2(x1)
-        h = self.classifier(self.up1(x2) + self.enc1_proj(x1))
+        x3 = self.enc3(x2)
+        x4 = self.up1(x3) + self.enc2_proj(x2)
+        x5 = self.up2(x4) + self.enc1_proj(x1)
+        h = self.classifier(x5)
         assert h.shape[-1] / 4 == cond.shape[-1]
         z = apply_patch_project(h, cond)
         z = F.pad(z, (-8,) * 4)
@@ -422,6 +436,6 @@ def _bench(name, compile=False):
 if __name__ == "__main__":
     _test()
     # _bench("waifu2x.l3v1_conditional_discriminator", compile=True)
-    # _bench("waifu2x.u3_conditional_discriminator", compile=True)
+    _bench("waifu2x.u3_conditional_discriminator", compile=True)
 
     pass
