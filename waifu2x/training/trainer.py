@@ -22,6 +22,7 @@ from nunif.modules import (
     MultiscaleLoss,
 )
 from nunif.modules.gan_loss import GANHingeLoss, GANBCELoss, GANSoftplusLoss, GANHingeClampLoss
+from nunif.modules.local_std_mask import local_std_mask
 from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP, YRGBFlatLBP
 from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
@@ -87,6 +88,8 @@ LOSS_FUNCTIONS = {
 
     # weight=0.1, gradient norm is about the same as L1Loss.
     "l1lpips": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4),
+    "l1lpips_std_mask": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4, std_mask=True),
+
     "yrgb_lbp_dinov2": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=2.0),
     "yrgb_lbp_dinov2_01": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=0.2),
 

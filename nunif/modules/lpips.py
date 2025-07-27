@@ -5,6 +5,7 @@ import lpips
 from os import path
 from .compile_wrapper import conditional_compile
 from .pad import get_crop_size
+from .local_std_mask import local_std_mask
 
 
 # Patch `lpips.normalize_tensor`
@@ -66,10 +67,11 @@ MODEL_PATH = path.join(path.dirname(__file__), "_lpips_2.pth")
 
 
 class LPIPSWith(nn.Module):
-    def __init__(self, base_loss, weight=1.):
+    def __init__(self, base_loss, weight=1.0, std_mask=False):
         super().__init__()
         self.base_loss = base_loss
         self.weight = weight
+        self.std_mask = std_mask
         self.lpips = lpips.LPIPS(net='vgg', model_path=MODEL_PATH).eval()
         # This needed because LPIPS has duplicate parameter references problem
         self.lpips.requires_grad_(False)
@@ -85,7 +87,10 @@ class LPIPSWith(nn.Module):
         pad = get_crop_size(input, 32, random_shift=self.training)
         input = F.pad(input, pad)
         target = F.pad(target, pad)
-        lpips_loss = self.lpips(input, target, normalize=True).mean()
+        if self.std_mask:
+            lpips_loss = self.lpips(local_std_mask(input, target), target, normalize=True).mean()
+        else:
+            lpips_loss = self.lpips(input, target, normalize=True).mean()
         return base_loss + lpips_loss * self.weight
 
 
