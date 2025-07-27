@@ -1,8 +1,10 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 import lpips
 from os import path
 from .compile_wrapper import conditional_compile
+from .pad import get_crop_size
 
 
 # Patch `lpips.normalize_tensor`
@@ -75,10 +77,14 @@ class LPIPSWith(nn.Module):
         self.lpips.__class__ = LPIPSFix
 
     def train(self, mode=True):
-        super().train(False)
+        super().train(mode)
+        self.lpips.train(False)
 
     def forward(self, input, target):
         base_loss = self.base_loss(input, target)
+        pad = get_crop_size(input, 32, random_shift=self.training)
+        input = F.pad(input, pad)
+        target = F.pad(target, pad)
         lpips_loss = self.lpips(input, target, normalize=True).mean()
         return base_loss + lpips_loss * self.weight
 
