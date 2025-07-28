@@ -7,6 +7,7 @@ from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
 from torch.nn.utils.parametrizations import spectral_norm
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init
+from nunif.modules.avg_pool2d import ConvAvgPool2d
 
 
 def normalize(x):
@@ -104,13 +105,14 @@ class PoolFormerBlock(nn.Module):
             spectral_norm(nn.Conv2d(in_channels, in_channels, kernel_size=conv_kernel_size, stride=1,
                                     padding=(conv_kernel_size - 1) // 2, bias=False)),
         )
+        self.avg_pool2d = ConvAvgPool2d(in_channels, kernel_size=kernel_size, stride=1,
+                                        padding=(kernel_size - 1) // 2, count_include_pad=False)
         self.norm1 = nn.GroupNorm(groups, in_channels)
         self.norm2 = nn.GroupNorm(groups, in_channels)
         self.kernel_size = kernel_size
 
     def pooling(self, x):
-        pool = F.avg_pool2d(x, kernel_size=self.kernel_size, stride=1,
-                            padding=(self.kernel_size - 1) // 2, count_include_pad=False)
+        pool = self.avg_pool2d(x)
         x = pool - x
         return x
 
