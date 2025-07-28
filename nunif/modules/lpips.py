@@ -81,12 +81,13 @@ class LPIPSWith(nn.Module):
     def train(self, mode=True):
         super().train(mode)
         self.lpips.train(False)
+        self.lpips.requires_grad_(False)
 
     def forward(self, input, target):
-        base_loss = self.base_loss(input, target)
-        pad = get_crop_size(input, 32, random_shift=self.training)
+        pad = get_crop_size(input, 16)
         input = F.pad(input, pad)
         target = F.pad(target, pad)
+        base_loss = self.base_loss(input, target)
         if self.std_mask:
             lpips_loss = self.lpips(local_std_mask(input, target), target, normalize=True).mean()
         else:
