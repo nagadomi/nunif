@@ -363,6 +363,15 @@ class Waifu2xEnv(LuminancePSNREnv):
         iteration = batch_iteration + self.epoch_iteration // self.trainer.args.backward_step
         return iteration
 
+    def get_generator_warmup_weight(self, k=4):
+        t = self.get_current_iteration()
+        n = self.trainer.args.generator_warmup_iteration
+        if n == 0 or t > n:
+            return 1.0
+
+        x = t / n
+        return (math.exp(k * x) - 1) / (math.exp(k) - 1)
+
     def train_step(self, data):
         self.epoch_iteration += 1
 
@@ -491,19 +500,14 @@ class Waifu2xEnv(LuminancePSNREnv):
                     weight = self.adaptive_weight_ema
                 else:
                     weight = 20.0  # inf
-                if self.trainer.args.generator_start_iteration is not None:
-                    if self.get_current_iteration() >= self.trainer.args.generator_start_iteration and not weight_is_nan:
-                        use_disc_loss = True
-                    else:
-                        use_disc_loss = False
+                if weight_is_nan:
+                    use_disc_loss = False
                 else:
-                    if weight_is_nan:
-                        use_disc_loss = False
-                    else:
-                        use_disc_loss = True
+                    use_disc_loss = True
 
+                warmup_weight = self.get_generator_warmup_weight()
                 if use_disc_loss:
-                    g_loss = (recon_loss + generator_loss * weight * self.trainer.args.discriminator_weight)
+                    g_loss = (recon_loss + generator_loss * weight * self.trainer.args.discriminator_weight * warmup_weight)
                 else:
                     g_loss = recon_loss
                 self.sum_loss += g_loss.item()
@@ -512,13 +516,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                 optimizers.append((g_opt, grad_scalers[0]))
 
                 logger.debug(
-                    f"iteration: {self.get_current_iteration()}, "
-                    f"recon: {round(recon_loss.item() * backward_step, 4)}, "
-                    f"gen: {round(generator_loss.item() * backward_step, 4)}, "
-                    f"disc: {round(d_loss.item() * backward_step, 4)}, "
-                    f"weight: {round(weight, 6)}"
+                    (f"iteration: {self.get_current_iteration()}, "
+                     f"recon: {round(recon_loss.item() * backward_step, 4)}, "
+                     f"gen: {round(generator_loss.item() * backward_step, 4)}, "
+                     f"disc: {round(d_loss.item() * backward_step, 4)}, "
+                     f"weight: {round(weight, 6)}"
+                     ) + (f", warmup weight: {round(warmup_weight, 4)}" if warmup_weight < 1 else "")
                 )
-
             # update discriminator
             self.backward(d_loss, grad_scalers[1])
             optimizers.append((d_opt, grad_scalers[1]))
@@ -982,9 +986,8 @@ def register(subparsers, default_parser):
                               "`all` forced to saves the best model each epoch."))
     parser.add_argument("--discriminator-only", action="store_true",
                         help="training discriminator only")
-    parser.add_argument("--generator-start-iteration", type=int, default=None,
-                        help=("When the iteration is less than the specified value,"
-                              " stops training with the generator loss."))
+    parser.add_argument("--generator-warmup-iteration", type=int, default=500,
+                        help=("warm-up iterations for the discriminator loss affecting the generator."))
     parser.add_argument("--discriminator-learning-rate", type=float,
                         help=("learning-rate for discriminator. --learning-rate by default."))
     parser.add_argument("--reconstruction-loss-scale", type=float, default=1.0,
