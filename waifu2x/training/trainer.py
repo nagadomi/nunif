@@ -135,22 +135,12 @@ def create_criterion(loss):
 def create_discriminator(discriminator, device_ids, device):
     if discriminator is None:
         return None
-    elif discriminator == "l3":
-        model = create_model("waifu2x.l3_discriminator", device_ids=device_ids)
-    elif discriminator == "l3c":
-        model = create_model("waifu2x.l3_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "l3v1":
-        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids)
     elif discriminator == "l3v1c":
         model = create_model("waifu2x.l3v1_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "l3v1ec":
+        model = create_model("waifu2x.l3v1_ensemble_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "u3c":
         model = create_model("waifu2x.u3_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "l3v1_dino":
-        model = create_model("waifu2x.l3v1_dino_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "dct":
-        model = create_model("waifu2x.dct_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "dinov2":
-        model = create_model("waifu2x.dinov2_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator, device_ids=device_ids)
     else:
@@ -400,6 +390,8 @@ class Waifu2xEnv(LuminancePSNREnv):
             else:
                 if not self.trainer.args.discriminator_only:
                     # generator (sr) step
+                    if hasattr(self.discriminator, "round"):
+                        self.discriminator.round()
                     self.discriminator.requires_grad_(False)
                     if not self.trainer.args.privilege:
                         z = to_dtype(self.model(x), x.dtype)
