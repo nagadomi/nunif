@@ -2,7 +2,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.models import register_model
-from nunif.modules.attention import SNSEBlock
+from nunif.modules.attention import SEBlock
 from nunif.modules.res_block import ResBlockSNLReLU
 from torch.nn.utils.parametrizations import spectral_norm
 from nunif.modules.compile_wrapper import conditional_compile
@@ -28,7 +28,7 @@ class SNImageToConditionPatch8(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             ResBlockSNLReLU(embed_dim, embed_dim, stride=2),
             ResBlockSNLReLU(embed_dim, embed_dim),
-            SNSEBlock(embed_dim, bias=True),
+            SEBlock(embed_dim, bias=True),
         )
         self.fc = nn.ModuleList([
             nn.Sequential(
