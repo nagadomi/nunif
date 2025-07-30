@@ -210,11 +210,12 @@ class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
                  discriminator_criterion,
-                 sampler, use_diff_aug=False, use_diff_aug_downsample=False, use_diff_aug_noise=False):
+                 sampler, use_diff_aug=False, use_diff_aug_downsample=False, use_diff_aug_noise=False,
+                 adaptive_weight_ema=None):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
-        self.adaptive_weight_ema = None
+        self.adaptive_weight_ema = adaptive_weight_ema
         self.sampler = sampler
         self.use_diff_aug = use_diff_aug
         self.use_diff_aug_noise = use_diff_aug_noise
@@ -485,13 +486,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                     if self.adaptive_weight_ema is None:
                         self.adaptive_weight_ema = weight
                     else:
-                        alpha = 0.95
+                        alpha = 0.99
                         self.adaptive_weight_ema = self.adaptive_weight_ema * alpha + weight * (1 - alpha)
                     weight = self.adaptive_weight_ema
                 elif self.adaptive_weight_ema is not None:
                     weight = self.adaptive_weight_ema
                 else:
-                    weight = 20.0  # inf
+                    weight = 1.0  # inf
                 if weight_is_nan:
                     use_disc_loss = False
                 else:
@@ -614,6 +615,7 @@ class Waifu2xTrainer(Trainer):
                 raise ValueError(self.args.gan_loss)
         else:
             discriminator_criterion = None
+
         return Waifu2xEnv(
             self.model, criterion=criterion,
             discriminator=self.discriminator,
@@ -622,6 +624,7 @@ class Waifu2xTrainer(Trainer):
             use_diff_aug=self.args.diff_aug,
             use_diff_aug_downsample=self.args.diff_aug_downsample,
             use_diff_aug_noise=self.args.diff_aug_noise,
+            adaptive_weight_ema=self.adaptive_weight_ema
         )
 
     def setup(self):
@@ -635,6 +638,7 @@ class Waifu2xTrainer(Trainer):
         self.sampler.scale_factor = self.args.hard_example_scale
 
     def setup_model(self):
+        self.adaptive_weight_ema = None
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
         if self.args.freeze and hasattr(self.model, "freeze"):
             self.model.freeze()
@@ -791,17 +795,22 @@ class Waifu2xTrainer(Trainer):
     def save_checkpoint(self, **kwargs):
         if self.discriminator is not None:
             kwargs.update({"discriminator_state_dict": self.discriminator.state_dict()})
+            kwargs.update({"adaptive_weight_ema": self.env.adaptive_weight_ema})
         super().save_checkpoint(**kwargs)
 
     def resume(self):
         meta = super().resume()
         if self.discriminator is not None and "discriminator_state_dict" in meta:
             self.discriminator.load_state_dict(meta["discriminator_state_dict"])
+            if "adaptive_weight_ema" in meta:
+                self.adaptive_weight_ema = meta["adaptive_weight_ema"]
 
     def load_initial_parameters(self, checkpoint_filename):
         meta = super().load_initial_parameters(checkpoint_filename)
         if self.discriminator is not None and "discriminator_state_dict" in meta:
             self.discriminator.load_state_dict(meta["discriminator_state_dict"])
+            if "adaptive_weight_ema" in meta:
+                self.adaptive_weight_ema = meta["adaptive_weight_ema"]
 
     def create_discriminator_model_filename(self):
         return path.join(
@@ -969,7 +978,7 @@ def register(subparsers, default_parser):
                         help="discriminator name or .pth or [`l3`, `l3c`, `l3v1`, `l3v1`].")
     parser.add_argument("--discriminator-weight", type=float, default=1.0,
                         help="discriminator loss weight")
-    parser.add_argument("--discriminator-adaptive-weight-min", type=float, default=0.0,
+    parser.add_argument("--discriminator-adaptive-weight-min", type=float, default=1e-4,
                         help="minimum adaptive loss weight")
     parser.add_argument("--discriminator-adaptive-weight-max", type=float, default=1e4,
                         help="maxmum adaptive loss weight")
