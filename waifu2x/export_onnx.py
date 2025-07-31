@@ -19,9 +19,9 @@ from nunif.models.onnx_helper_models import (
 from nunif.logger import logger
 
 
-def export_onnx(load_path, save_path):
+def export_onnx(load_path, save_path, dynamo=False):
     model, *_ = load_model(load_path)
-    model.export_onnx(save_path)
+    model.export_onnx(save_path, dynamo=dynamo)
 
 
 def convert_cunet(model_dir, output_dir):
@@ -31,7 +31,8 @@ def convert_cunet(model_dir, output_dir):
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
             export_onnx(path.join(in_dir, f"noise{noise_level}.pth"),
-                        path.join(out_dir, f"noise{noise_level}.onnx"))
+                        path.join(out_dir, f"noise{noise_level}.onnx"),
+                        dynamo=True)
 
         scale1x = ONNXScale1x(offset=28)
         scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
@@ -44,7 +45,8 @@ def convert_upcunet(model_dir, output_dir):
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
             export_onnx(path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
-                        path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
+                        path.join(out_dir, f"noise{noise_level}_scale2x.onnx"),
+                        dynamo=True)
 
         export_onnx(path.join(in_dir, "scale2x.pth"),
                     path.join(out_dir, "scale2x.onnx"))
