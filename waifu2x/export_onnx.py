@@ -32,7 +32,7 @@ def convert_cunet(model_dir, output_dir):
         for noise_level in (0, 1, 2, 3):
             export_onnx(path.join(in_dir, f"noise{noise_level}.pth"),
                         path.join(out_dir, f"noise{noise_level}.onnx"),
-                        dynamo=True)
+                        dynamo=False)
 
         scale1x = ONNXScale1x(offset=28)
         scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"))
@@ -46,7 +46,7 @@ def convert_upcunet(model_dir, output_dir):
         for noise_level in (0, 1, 2, 3):
             export_onnx(path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
                         path.join(out_dir, f"noise{noise_level}_scale2x.onnx"),
-                        dynamo=True)
+                        dynamo=False)
 
         export_onnx(path.join(in_dir, "scale2x.pth"),
                     path.join(out_dir, "scale2x.onnx"))
