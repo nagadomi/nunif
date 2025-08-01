@@ -8,7 +8,7 @@ from nunif.modules.replication_pad2d import ReplicationPad2dNaive as Replication
 from nunif.modules.init import icnr_init, basic_module_init
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.norm import FastLayerNorm
-from nunif.modules.softpool import soft_pool_downscale
+from nunif.modules.antialiased_bicubic import AntialiasedBicubic
 
 
 class GLUConvMLP(nn.Module):
@@ -517,22 +517,12 @@ class SwinUNet4xV2(I2IBaseModel):
                                     in_channels=self.i2i_in_channels, out_channels=self.out_channels)
 
 
-def box_resize(x, kernel_size):
-    assert kernel_size in {2, 4}
-    # NOTE: Need static kernel_size for export
-    if kernel_size == 2:
-        return F.avg_pool2d(x, kernel_size=(2, 2), stride=(2, 2))
-    else:
-        return F.avg_pool2d(x, kernel_size=(4, 4), stride=(4, 4))
-
-
 def resize(x, downscale_factor, mode, align_corners, antialias):
     assert mode in {"box", "bicubic", "softpool"}
     h, w = x.shape[-2:]
-    if mode == "box":
-        return box_resize(x, kernel_size=downscale_factor)
-    elif mode == "softpool":
-        return soft_pool_downscale(x, downscale_factor=downscale_factor)
+    if mode == "bicubic_onnx":
+        model = AntialiasedBicubic(3, downscale_factor=downscale_factor).eval().to(x.device)
+        return model(x)
     elif mode == "bicubic":
         new_h, new_w = h // downscale_factor, w // downscale_factor
         return F.interpolate(x, size=(new_h, new_w), mode=mode, align_corners=align_corners, antialias=antialias)
