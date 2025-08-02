@@ -144,6 +144,9 @@ def get_duration(stream, container_duration=None, to_int=True):
 
 
 def get_frames(stream, container_duration=None):
+    if container_duration is None:
+        if stream.container and stream.container.duration:
+            container_duration = float(stream.container.duration / av.time_base)
     if stream.frames > 0:
         return stream.frames
     else:
