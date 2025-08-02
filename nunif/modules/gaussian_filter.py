@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .replication_pad2d import ReplicationPad2dNaive, ReplicationPad1dNaive
+from .permute import kernel2d_to_conv2d_weight, kernel1d_to_conv1d_weight
 
 
 def get_gaussian_kernel1d(kernel_size, dtype=None, device=None, sigma=None):
@@ -30,8 +31,7 @@ class GaussianFilter2d(nn.Module):
         super().__init__()
         with torch.no_grad():
             kernel = get_gaussian_kernel2d(kernel_size, sigma=sigma)
-            kernel = kernel.reshape(1, 1, *kernel.shape)
-            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
+            kernel = kernel2d_to_conv2d_weight(in_channels, kernel)
         self.register_buffer("kernel", kernel, persistent=False)
 
         if padding is not None:
@@ -50,8 +50,7 @@ class GaussianFilter1d(nn.Module):
         super().__init__()
         with torch.no_grad():
             kernel = get_gaussian_kernel1d(kernel_size)
-            kernel = kernel.reshape(1, 1, *kernel.shape)
-            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
+            kernel = kernel1d_to_conv1d_weight(in_channels, kernel)
         self.register_buffer("kernel", kernel, persistent=False)
 
         if padding is not None:
