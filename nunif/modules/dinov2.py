@@ -28,7 +28,7 @@ def dinov2_normalize(x):
 
 def dinov2_pad(x):
     pad = get_pad_size(x, DINO_PATCH_SIZE)
-    x = F.pad(x, pad, mode="reflect")
+    x = reflection_pad2d_naive(x, pad, detach=True)
     return x
 
 
@@ -48,7 +48,7 @@ def dinov2_crop_pair(x, y, training=False):
 
 def dinov2_pad_pair(x, y, training=False):
     assert x.shape == y.shape
-    pad = get_crop_size(x, DINO_PATCH_SIZE, random_shift=training)
+    pad = get_pad_size(x, DINO_PATCH_SIZE, random_shift=training)
     x = reflection_pad2d_naive(x, pad, detach=True)
     y = reflection_pad2d_naive(y, pad, detach=True)
     return x, y
