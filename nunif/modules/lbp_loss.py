@@ -21,7 +21,7 @@ def generate_lbp_kernel(in_channels, out_channels, kernel_size=3, seed=71):
 
 
 class LBPLoss(nn.Module):
-    def __init__(self, in_channels, out_channels=64, kernel_size=3, loss=None, seed=71, num_kernels=32):
+    def __init__(self, in_channels, out_channels=64, kernel_size=3, loss=None, seed=71, num_kernels=1):
         super().__init__()
         self.groups = in_channels
         self.num_kernels = num_kernels
