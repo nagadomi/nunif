@@ -1,11 +1,11 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
 import lpips
 from os import path
 from .compile_wrapper import conditional_compile
-from .pad import get_crop_size
+from .pad import get_pad_size
 from .local_std_mask import local_std_mask
+from .reflection_pad2d import reflection_pad2d_naive
 
 
 # Patch `lpips.normalize_tensor`
@@ -84,9 +84,9 @@ class LPIPSWith(nn.Module):
         self.lpips.requires_grad_(False)
 
     def forward(self, input, target):
-        pad = get_crop_size(input, 16)
-        input = F.pad(input, pad)
-        target = F.pad(target, pad)
+        pad = get_pad_size(input, 16, random_shift=self.training)
+        input = reflection_pad2d_naive(input, pad, detach=True)
+        target = reflection_pad2d_naive(target, pad, detach=True)
         base_loss = self.base_loss(input, target)
         if self.std_mask:
             lpips_loss = self.lpips(local_std_mask(input, target), target, normalize=True).mean()
