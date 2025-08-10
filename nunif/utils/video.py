@@ -673,6 +673,10 @@ def configure_video_codec(config):
         if config.pix_fmt == "rgb24":
             config.pix_fmt = "gbrp"
 
+    if config.video_codec in {"h264_nvenc", "hevc_nvenc"}:
+        if config.pix_fmt == "yuv420p10le":
+            config.pix_fmt = "p010le"
+
 
 def try_replace(output_path_tmp, output_path):
     try_count = 4
@@ -1178,7 +1182,8 @@ class FrameCallbackPool():
     def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2,
                  require_pts=False, skip_pts=-1, require_flush=False,
                  preprocess_callback=None,
-                 postprocess_callback=None):
+                 postprocess_callback=None,
+                 use_16bit=False):
         if max_workers > 0:
             self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         else:
@@ -1186,6 +1191,7 @@ class FrameCallbackPool():
         self.require_pts = require_pts
         self.require_flush = require_flush
         self.skip_pts = skip_pts
+        self.use_16bit = use_16bit
         self.frame_callback = frame_callback
         self.preprocess_callback = preprocess_callback
         self.postprocess_callback = postprocess_callback
@@ -1215,7 +1221,7 @@ class FrameCallbackPool():
         if self.postprocess_callback is not None:
             frames = self.postprocess_callback(frames)
 
-        return [to_frame(frame) for frame in frames] if frames is not None else []
+        return [to_frame(frame, use_16bit=self.use_16bit) for frame in frames] if frames is not None else []
 
     def submit(self, *args):
         if self.preprocess_callback is not None:
@@ -1363,7 +1369,8 @@ def _test_reencode():
     parser.add_argument("--output", "-o", type=str, required=True,
                         help="output video file")
     parser.add_argument("--pix-fmt", type=str, default="yuv420p",
-                        choices=["yuv420p", "yuv444p", "rgb24"],
+                        choices=["yuv420p", "yuv444p", "rgb24",
+                                 "yuv420p10le"],
                         help="colorspace")
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
@@ -1395,9 +1402,11 @@ def _test_reencode():
         # width x 2
         return torch.cat([frames, frames], dim=3)
 
+    use_16bit = args.pix_fmt in {"yuv420p10le"}
     callback = FrameCallbackPool(process_image, batch_size=args.batch_size,
                                  device=device, max_workers=args.max_workers,
-                                 max_batch_queue=args.max_workers + 1)
+                                 max_batch_queue=args.max_workers + 1,
+                                 use_16bit=use_16bit)
 
     process_video(args.input, args.output, config_callback=make_config, frame_callback=callback)
 
