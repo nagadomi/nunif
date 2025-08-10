@@ -84,7 +84,7 @@ class LPIPSWith(nn.Module):
         self.lpips.requires_grad_(False)
 
     def forward(self, input, target):
-        pad = get_pad_size(input, 16, random_shift=self.training)
+        pad = get_pad_size(input, 16, random_shift=False)
         input = reflection_pad2d_naive(input, pad, detach=True)
         target = reflection_pad2d_naive(target, pad, detach=True)
         base_loss = self.base_loss(input, target)

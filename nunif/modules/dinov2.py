@@ -38,17 +38,17 @@ def dinov2_crop(x):
     return x
 
 
-def dinov2_crop_pair(x, y, training=False):
+def dinov2_crop_pair(x, y):
     assert x.shape == y.shape
-    pad = get_crop_size(x, DINO_PATCH_SIZE, random_shift=training)
+    pad = get_crop_size(x, DINO_PATCH_SIZE)
     x = F.pad(x, pad)
     y = F.pad(y, pad)
     return x, y
 
 
-def dinov2_pad_pair(x, y, training=False):
+def dinov2_pad_pair(x, y):
     assert x.shape == y.shape
-    pad = get_pad_size(x, DINO_PATCH_SIZE, random_shift=training)
+    pad = get_pad_size(x, DINO_PATCH_SIZE)
     x = reflection_pad2d_naive(x, pad, detach=True)
     y = reflection_pad2d_naive(y, pad, detach=True)
     return x, y
@@ -122,7 +122,7 @@ class DINOv2Loss(nn.Module):
         self.dino = DINOv2IntermediateFeatures(model_type=model_type, index=None, random_projection=random_projection)
 
     def forward(self, input, target):
-        input, target = dinov2_pad_pair(input, target, self.training)
+        input, target = dinov2_pad_pair(input, target)
         if self.normalize:
             input = dinov2_normalize(input)
             target = dinov2_normalize(target)
