@@ -40,6 +40,10 @@ def make_output_filename(input_filename, args, video=False):
         return set_image_ext(basename, args.format)
 
 
+def requires_16bit(pix_fmt):
+    return pix_fmt in {"yuv420p10le"}
+
+
 @torch.inference_mode()
 def process_image(ctx, im, meta, args):
     if args.rotate_left:
@@ -103,6 +107,7 @@ def process_images(ctx, files, output_dir, args, title=None):
 
 
 def process_video(ctx, input_filename, output_path, args):
+    use_16bit = requires_16bit(args.pix_fmt)
     if args.compile:
         ctx.compile()
 
@@ -153,13 +158,13 @@ def process_video(ctx, input_filename, output_path, args):
     def frame_callback(frame):
         if frame is None:
             return None
-        im = frame.to_image()
-        if args.rotate_left:
-            im = im.transpose(Image.Transpose.ROTATE_90)
-        elif args.rotate_right:
-            im = im.transpose(Image.Transpose.ROTATE_270)
 
-        rgb = TF.to_tensor(im).to(args.state["device"])
+        rgb = VU.to_tensor(frame, device=args.state["device"])
+        if args.rotate_left:
+            rgb = torch.rot90(rgb, 1, (-2, -1))
+        elif args.rotate_right:
+            rgb = torch.rot90(rgb, 3, (-2, -1))
+
         output, _ = ctx.convert(
             rgb, None, args.method, args.noise_level,
             args.tile_size, args.batch_size,
@@ -175,7 +180,7 @@ def process_video(ctx, input_filename, output_path, args):
                 args.state["noise_buffer"].add_(noise.mul_(args.grain_speed))
             output = apply_rgb_noise(output, args.state["noise_buffer"], strength=args.grain_strength)
 
-        return VU.to_frame(output)
+        return VU.to_frame(output, use_16bit=use_16bit)
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -275,7 +280,7 @@ def create_parser(required_true=True):
                         choices=["film", "animation", "grain", "stillimage", "psnr",
                                  "fastdecode", "zerolatency"],
                         help="encoder tunings option (video only)")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp", "yuv420p10le"],
                         help=("pixel format (video only)"))
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["unspecified", "auto",
