@@ -2,7 +2,7 @@
 import random
 import torch.nn as nn
 import torch.nn.functional as F
-from nunif.models import register_model
+from nunif.models import register_model, register_model_factory
 from nunif.modules.attention import SEBlock
 from nunif.modules.res_block import ResBlockGNLReLU
 from torch.nn.utils.parametrizations import spectral_norm
@@ -200,28 +200,29 @@ class L3V1ConditionalDiscriminator(Discriminator):
 class L3V1EnsembleConditionalDiscriminator(Discriminator):
     name = "waifu2x.l3v1_ensemble_conditional_discriminator"
 
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1, imbalanced_prob=False):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
         N = 3
+        if imbalanced_prob:
+            self.prob = [1.0, 0.5, 0.25]
+        else:
+            self.prob = [1.0, 1.0, 1.0]
+        self.prob = [p / sum(self.prob) for p in self.prob]
+        self.indexes = [0, 1, 2]
         self.index = 0
 
-        # additional variations. probably not very necessary.
-        negative_slope = [0.2, 0.15, 0.1]
-
         self.l3 = nn.ModuleList([
-            L3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels,
-                                       negative_slope=negative_slope[i])
+            L3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels)
             for i in range(N)
         ])
         self.v1 = nn.ModuleList([
-            V1ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels,
-                                       negative_slope=negative_slope[i])
+            V1ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels)
             for i in range(N)
         ])
 
     def round(self):
         # called from the trainer at every iteration.
-        self.index = random.randint(0, len(self.l3) - 1)
+        self.index = random.choices(self.indexes, weights=self.prob, k=1)[0]
 
     def forward(self, x, c=None, scale_factor=None):
         l3 = self.l3[self.index](x, c, scale_factor)
@@ -229,9 +230,16 @@ class L3V1EnsembleConditionalDiscriminator(Discriminator):
         return l3, v1
 
 
+register_model_factory(
+    "waifu2x.l3v1_imbalanced_ensemble_conditional_discriminator",
+    lambda **kwargs: L3V1EnsembleConditionalDiscriminator(imbalanced_prob=True)
+)
+
+
 def _bench():
     bench("waifu2x.l3v1_conditional_discriminator", compile=True)
     bench("waifu2x.l3v1_ensemble_conditional_discriminator", compile=True)
+    bench("waifu2x.l3v1_imbalanced_ensemble_conditional_discriminator", compile=True)
 
 
 if __name__ == "__main__":
