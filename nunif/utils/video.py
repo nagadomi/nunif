@@ -156,19 +156,21 @@ def from_image(im):
 
 
 def to_tensor(frame, device=None):
-    use_16bit = frame.format.components[0].bits > 8
-    if use_16bit:
-        format = "rgb48le"
-        value_scale = 65535.0
-    else:
-        format = "rgb24"
-        value_scale = 255.0
-
-    x = torch.from_numpy(frame.to_ndarray(format=format))
+    x = torch.from_numpy(to_ndarray(frame))
     if device is not None:
         x = x.to(device)
     # CHW float32
-    return x.permute(2, 0, 1).contiguous() / value_scale
+    return x.permute(2, 0, 1).contiguous() / torch.iinfo(x.dtype).max
+
+
+def to_ndarray(frame):
+    use_16bit = frame.format.components[0].bits > 8
+    if use_16bit:
+        format = "rgb48le"
+    else:
+        format = "rgb24"
+
+    return frame.to_ndarray(format=format)
 
 
 def from_tensor(x, use_16bit=False):
@@ -796,8 +798,9 @@ def process_video(input_path, output_path,
                 if frame is not None:
                     frame = frame.reformat(**rgb24_options) if rgb24_options else frame
                     for new_frame in get_new_frames(frame_callback(frame)):
-                        new_frame = reformatter(new_frame)
-                        enc_packet = video_output_stream.encode(new_frame)
+                        reformatted_frame = reformatter(new_frame)
+                        # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
+                        enc_packet = video_output_stream.encode(reformatted_frame)
                         if enc_packet:
                             output_container.mux(enc_packet)
                         pbar.update(1)

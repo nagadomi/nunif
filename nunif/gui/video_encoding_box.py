@@ -18,8 +18,9 @@ PRESET_ALL = PRESET_LIBX264
 
 CODEC_ALL = ["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"]
 
-PIX_FMT_ALL = ["yuv420p", "yuv444p", "rgb24"]
+PIX_FMT_ALL = ["yuv420p", "yuv444p", "yuv420p10le", "rgb24"]
 PIX_FMT_OPEN_H264 = ["yuv420p"]
+PIX_FMT_UTVIDEO = ["yuv420p", "yuv444p", "rgb24"]
 
 
 def empty_translate_function(s):
@@ -279,6 +280,8 @@ class VideoEncodingBox():
         user_pix_fmt = self.cbo_pix_fmt.GetValue()
         if codec == "libopenh264":
             choices = PIX_FMT_OPEN_H264
+        elif codec == "utvideo":
+            choices = PIX_FMT_UTVIDEO
         else:
             choices = PIX_FMT_ALL
         self.cbo_pix_fmt.SetItems(choices)
