@@ -156,28 +156,50 @@ def from_image(im):
 
 
 def to_tensor(frame, device=None):
-    x = torch.from_numpy(frame.to_ndarray(format="rgb24"))
+    use_16bit = frame.format.components[0].bits > 8
+    if use_16bit:
+        format = "rgb48le"
+        value_scale = 65535.0
+    else:
+        format = "rgb24"
+        value_scale = 255.0
+
+    x = torch.from_numpy(frame.to_ndarray(format=format))
     if device is not None:
         x = x.to(device)
     # CHW float32
-    return x.permute(2, 0, 1).contiguous() / 255.0
+    return x.permute(2, 0, 1).contiguous() / value_scale
 
 
-def from_tensor(x):
-    x = (x.permute(1, 2, 0).contiguous() * 255.0).to(torch.uint8).detach().cpu().numpy()
+def from_tensor(x, use_16bit=False):
+    if use_16bit:
+        dtype = torch.uint16
+        value_scale = 65535.0
+    else:
+        dtype = torch.uint8
+        value_scale = 255.0
+
+    x = (x.permute(1, 2, 0).contiguous() * value_scale).round_().to(dtype).detach().cpu().numpy()
     return from_ndarray(x)
 
 
 def from_ndarray(x):
-    return av.video.frame.VideoFrame.from_ndarray(x, format="rgb24")
+    if x.dtype == np.uint8:
+        format = "rgb24"
+    elif x.dtype == np.uint16:
+        format = "rgb48le"
+    else:
+        raise ValueError(f"unsupported dtype {x.dtype}")
+
+    return av.video.frame.VideoFrame.from_ndarray(x, format=format)
 
 
-def to_frame(x):
+def to_frame(x, use_16bit=False):
     if torch.is_tensor(x):
         # float CHW
-        return from_tensor(x)
+        return from_tensor(x, use_16bit=use_16bit)
     elif isinstance(x, np.ndarray):
-        # uint8 HWC
+        # uint8/uint16 HWC
         return from_ndarray(x)
     elif isinstance(x, av.video.frame.VideoFrame):
         return x
@@ -421,7 +443,14 @@ def guess_rgb24_options(input_stream, target_colorspace):
     if src_color_range is not None and src_colorspace is not None:
         if int(target_colorspace) == COLORSPACE_UNSPECIFIED:
             target_colorspace = Colorspace.ITU601
+
+        use_16bit = input_stream is not None and input_stream.format.components[0].bits > 8
+        if use_16bit:
+            format = "rgb48le"
+        else:
+            format = "rgb24"
         return dict(
+            format=format,
             src_color_range=src_color_range, dst_color_range=ColorRange.JPEG,
             src_colorspace=src_colorspace, dst_colorspace=target_colorspace,
         )
@@ -761,7 +790,7 @@ def process_video(input_path, output_path,
             for frame in packet.decode():
                 frame = fps_filter.update(frame)
                 if frame is not None:
-                    frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+                    frame = frame.reformat(**rgb24_options) if rgb24_options else frame
                     for new_frame in get_new_frames(frame_callback(frame)):
                         new_frame = reformatter(new_frame)
                         enc_packet = video_output_stream.encode(new_frame)
@@ -787,7 +816,7 @@ def process_video(input_path, output_path,
     while True:
         frame = fps_filter.update(None)
         if frame is not None:
-            frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+            frame = frame.reformat(**rgb24_options) if rgb24_options else frame
             for new_frame in get_new_frames(frame_callback(frame)):
                 new_frame = reformatter(new_frame)
                 enc_packet = video_output_stream.encode(new_frame)
@@ -1014,7 +1043,7 @@ def hook_frame(input_path,
         for frame in packet.decode():
             frame = fps_filter.update(frame)
             if frame is not None:
-                frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+                frame = frame.reformat(**rgb24_options) if rgb24_options else frame
                 frame_callback(frame)
                 pbar.update(1)
         if suspend_event is not None:
@@ -1025,7 +1054,7 @@ def hook_frame(input_path,
     while True:
         frame = fps_filter.update(None)
         if frame is not None:
-            frame = frame.reformat(format="rgb24", **rgb24_options) if rgb24_options else frame
+            frame = frame.reformat(**rgb24_options) if rgb24_options else frame
             frame_callback(frame)
             pbar.update(1)
         else:
