@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
 from nunif.models import Model
+from nunif.modules.pad import get_crop_size, get_pad_size, get_fit_pad_size
+from nunif.modules.reflection_pad2d import reflection_pad2d_naive
 
 
 class Discriminator(Model):
@@ -13,28 +15,28 @@ def normalize(x):
     return x * 2. - 1.
 
 
+def to_y(rgb):
+    r = rgb[:, 0:1]
+    g = rgb[:, 1:2]
+    b = rgb[:, 2:3]
+    return r * 0.299 + g * 0.587 + b * 0.114
+
+
 def modcrop(x, n):
-    if x.shape[2] % n != 0:
-        unpad = x.shape[2] % n // 2
-        x = F.pad(x, (-unpad,) * 4)
+    unpad = get_crop_size(x, n)
+    x = F.pad(x, unpad)
     return x
 
 
 def modpad(x, n):
-    rem = n - input.shape[2] % n
-    pad1 = rem // 2
-    pad2 = rem - pad1
-    x = F.pad(x, (pad1, pad2, pad1, pad2))
+    pad = get_pad_size(x, n)
+    x = reflection_pad2d_naive(x, pad, detach=True)
     return x
 
 
 def fit_to_size(x, cond):
-    dh = cond.shape[2] - x.shape[2]
-    dw = cond.shape[3] - x.shape[3]
-    assert dh >= 0 and dw >= 0
-    pad_h, pad_w = dh // 2, dw // 2
-    if pad_h > 0 or pad_w > 0:
-        cond = F.pad(cond, (-pad_w, -pad_w, -pad_h, -pad_h))
+    pad = get_fit_pad_size(cond, x)
+    cond = reflection_pad2d_naive(cond, pad, detach=True)
     return cond
 
 
