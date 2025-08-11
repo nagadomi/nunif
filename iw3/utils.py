@@ -52,7 +52,7 @@ def chunks(array, n):
 def to_pil_image(x):
     # x is already clipped to 0-1
     assert x.dtype in {torch.float32, torch.float16}
-    x = TF.to_pil_image((x * 255).round_().to(torch.uint8).cpu())
+    x = TF.to_pil_image((x * 255).round().to(torch.uint8).cpu())
     return x
 
 
@@ -699,7 +699,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
         x = x / pix_max
         if args.max_output_height is not None or args.rotate_right or args.rotate_left:
             x = preprocess_image(x, args)
-            x_srcs = torch.clamp(x.permute(0, 2, 3, 1) * pix_max, 0, pix_max).to(pix_dtype).cpu()
+            x_srcs = (x.permute(0, 2, 3, 1) * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
         else:
             x_srcs = batch_queue
 
@@ -1182,7 +1182,7 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
         x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
         if args.max_output_height is not None or args.rotate_right or args.rotate_left:
             x = preprocess_image(x, args)
-            x_srcs = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+            x_srcs = (x.permute(0, 2, 3, 1) * 255.0).round().clamp(0, 255).to(torch.uint8).cpu()
         else:
             x_srcs = batch_queue
 
