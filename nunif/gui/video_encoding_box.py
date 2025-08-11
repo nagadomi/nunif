@@ -80,8 +80,7 @@ class VideoEncodingBox():
             self.grp_video,
             choices=["auto", "unspecified",
                      "bt709", "bt709-pc", "bt709-tv",
-                     "bt601", "bt601-pc", "bt601-tv",
-                     "bt2020-tv", "bt2020-pq-tv"],
+                     "bt601", "bt601-pc", "bt601-tv"],
             name=f"{prefix}cbo_colorspace")
         self.cbo_colorspace.SetEditable(False)
         self.cbo_colorspace.SetSelection(0)
