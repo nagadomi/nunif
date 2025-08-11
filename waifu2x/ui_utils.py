@@ -269,7 +269,8 @@ def create_parser(required_true=True):
                         help="bitrate option for libopenh264")
     parser.add_argument("--preset", type=str, default="ultrafast",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
-                                 "medium", "slow", "slower", "veryslow", "placebo"],
+                                 "medium", "slow", "slower", "veryslow", "placebo",
+                                 "p1", "p2", "p3", "p4", "p5", "p6", "p7"],
                         help="encoder preset option (video only)")
     parser.add_argument("--tune", type=str, nargs="+", default=[],
                         choices=["film", "animation", "grain", "stillimage", "psnr",
