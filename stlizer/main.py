@@ -46,14 +46,16 @@ def create_parser(required_true=True):
 
     parser.add_argument("--max-fps", type=float, default=60.0,
                         help="max framerate for video. output fps = min(fps, --max-fps)")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p",
+                        choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
                         help="pixel format")
     parser.add_argument("--profile-level", type=str, help="h264 profile level")
     parser.add_argument("--crf", type=int, default=20,
                         help="constant quality value for video. smaller value is higher quality")
     parser.add_argument("--preset", type=str, default="medium",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
-                                 "medium", "slow", "slower", "veryslow", "placebo"],
+                                 "medium", "slow", "slower", "veryslow", "placebo",
+                                 "p1", "p2", "p3", "p4", "p5", "p6", "p7"],
                         help="encoder preset option for video")
     parser.add_argument("--tune", type=str, nargs="+", default=[],
                         choices=["film", "animation", "grain", "stillimage", "psnr",
@@ -68,7 +70,9 @@ def create_parser(required_true=True):
     # TODO: Change the default value from "unspecified" to "auto"
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["unspecified", "auto",
-                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                                 "bt709", "bt709-pc", "bt709-tv",
+                                 "bt601", "bt601-pc", "bt601-tv",
+                                 "bt2020-tv", "bt2020-pq-tv"],
                         help="video colorspace")
 
     return parser
