@@ -578,7 +578,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
         results = []
         for x_srcs, depths in src_depth_pairs:
             if frame_cpu_offload:
-                x_srcs = x_srcs.to(device).permute(0, 3, 1, 2) / 255.0
+                x_srcs = x_srcs.to(device).permute(0, 3, 1, 2) / torch.iinfo(x_srcs.dtype).max
 
             with sbs_lock:  # TODO: unclear whether this is actually needed
                 if args.rgbd or args.half_rgbd:
@@ -604,7 +604,10 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             if not flush:
                 x = preprocess_image(x, args)
                 if frame_cpu_offload:
-                    x_cpu = torch.clamp(x.permute(0, 2, 3, 1) * 255.0, 0, 255).to(torch.uint8).cpu()
+                    if use_16bit:
+                        x_cpu = (x.permute(0, 2, 3, 1) * 65535.0).round().clamp(0, 65535).to(torch.uint16).cpu()
+                    else:
+                        x_cpu = (x.permute(0, 2, 3, 1) * 255.0).round().clamp(0, 255).to(torch.uint8).cpu()
                     for x_, pts_ in zip(x_cpu, pts):
                         src_queue.append((x_, pts_))
                 else:
