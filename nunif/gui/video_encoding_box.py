@@ -83,7 +83,7 @@ class VideoEncodingBox():
                      "bt2020-tv", "bt2020-pq-tv"],
             name=f"{prefix}cbo_colorspace")
         self.cbo_colorspace.SetEditable(False)
-        self.cbo_colorspace.SetSelection(1)
+        self.cbo_colorspace.SetSelection(0)
 
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
         self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
