@@ -32,7 +32,7 @@ CODEC_PIX_FMT = {
 
 
 def get_pix_fmt(codec):
-    return CODEC_PIX_FMT.get(codec, CODEC_ALL)
+    return CODEC_PIX_FMT.get(codec, PIX_FMT_ALL)
 
 
 def empty_translate_function(s):
