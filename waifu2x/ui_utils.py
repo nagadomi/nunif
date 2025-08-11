@@ -284,7 +284,9 @@ def create_parser(required_true=True):
                         help=("pixel format (video only)"))
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["unspecified", "auto",
-                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                                 "bt709", "bt709-pc", "bt709-tv",
+                                 "bt601", "bt601-pc", "bt601-tv",
+                                 "bt2020-tv", "bt2020-pq-tv"],
                         help="video colorspace")
 
     parser.add_argument("--yes", "-y", action="store_true", default=False,

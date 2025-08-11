@@ -1792,7 +1792,9 @@ def create_parser(required_true=True):
     # TODO: Change the default value from "unspecified" to "auto"
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["unspecified", "auto",
-                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                                 "bt709", "bt709-pc", "bt709-tv",
+                                 "bt601", "bt601-pc", "bt601-tv",
+                                 "bt2020-tv", "bt2020-pq-tv"],
                         help="video colorspace")
     # Deprecated
     parser.add_argument("--zoed-batch-size", type=int,

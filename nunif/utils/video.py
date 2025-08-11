@@ -65,6 +65,8 @@ COLORSPACE_UNSPECIFIED = 2
 COLORSPACE_SMPTE170M = 6
 COLORSPACE_SMPTE240M = 7
 COLORSPACE_BT2020 = 9
+COLOR_TRC_ARIB_STD_B67 = 18
+COLOR_TRC_SMPTE2084 = 16
 KNOWN_COLORSPACES = {Colorspace.ITU601.value, Colorspace.ITU709.value,
                      COLORSPACE_SMPTE170M, COLORSPACE_SMPTE240M, COLORSPACE_BT2020}
 
@@ -485,6 +487,14 @@ def guess_target_colorspace(input_stream, colorspace_arg, pix_fmt,
             else:
                 # unknown
                 colorspace_arg = "bt601-tv"
+        elif exported_output_colorspace == COLORSPACE_BT2020:
+            if exported_source_color_range == ColorRange.MPEG:
+                colorspace_arg = "bt2020-tv"
+            elif exported_source_color_range == ColorRange.JPEG:
+                colorspace_arg = "bt2020-pc"
+            else:
+                # unknown
+                colorspace_arg = "bt2020-tv"
         else:
             # unknown
             colorspace_arg = "bt709-tv"
@@ -505,6 +515,27 @@ def guess_target_colorspace(input_stream, colorspace_arg, pix_fmt,
         elif colorspace_arg == "bt709-tv":
             color_range = ColorRange.MPEG
         elif colorspace_arg == "bt709-pc":
+            color_range = ColorRange.JPEG
+
+    elif colorspace_arg in {"bt2020", "bt2020-pc", "bt2020-tv", "bt2020-pq-tv"}:
+        # bt2020
+        color_primaries = COLORSPACE_BT2020
+        if colorspace_arg == "bt2020-pq-tv":
+            color_trc = COLOR_TRC_SMPTE2084
+        else:
+            color_trc = COLOR_TRC_ARIB_STD_B67
+        colorspace = COLORSPACE_BT2020
+
+        if colorspace_arg == "bt2020":
+            color_range = guess_color_range(input_stream) if input_stream is not None else None
+            if color_range is None:
+                if exported_source_color_range in {ColorRange.MPEG.value, ColorRange.JPEG.value}:
+                    color_range = exported_source_color_range
+                else:
+                    color_range = ColorRange.MPEG
+        elif colorspace_arg in {"bt2020-tv", "bt2020-pq-tv"}:
+            color_range = ColorRange.MPEG
+        elif colorspace_arg == "bt2020-pc":
             color_range = ColorRange.JPEG
 
     elif colorspace_arg in {"bt601", "bt601-pc", "bt601-tv"}:
@@ -531,6 +562,7 @@ def guess_target_colorspace(input_stream, colorspace_arg, pix_fmt,
         color_primaries = input_stream.codec_context.color_primaries
         color_trc = input_stream.codec_context.color_trc
         colorspace = input_stream.codec_context.colorspace
+
         color_range = input_stream.codec_context.color_range
         if color_range == ColorRange.UNSPECIFIED.value:
             color_range = guess_color_range(input_stream) if input_stream is not None else None
@@ -554,7 +586,7 @@ def configure_colorspace(output_stream, input_stream, config):
     assert config.colorspace in {"unspecified", "auto", "copy",
                                  "bt709", "bt709-tv", "bt709-pc",
                                  "bt601", "bt601-tv", "bt601-pc",
-                                 "bt2020", "bt2020-tv", "bt2020-pc"}
+                                 "bt2020", "bt2020-tv", "bt2020-pc", "bt2020-pq-tv"}
     config.state["rgb24_options"] = rgb24_options = {}
     config.state["reformatter"] = reformatter = lambda frame: frame
     exported_source_color_range = config.state["source_color_range"]
@@ -638,6 +670,8 @@ def configure_colorspace(output_stream, input_stream, config):
             rgb24_options = guess_rgb24_options(input_stream, target_colorspace=Colorspace.ITU709.value)
         elif config.colorspace in {"bt601", "bt601-pc", "bt601-tv"}:
             rgb24_options = guess_rgb24_options(input_stream, target_colorspace=Colorspace.ITU601.value)
+        elif config.colorspace in {"bt2020", "bt2020-pc", "bt2020-tv", "bt2020-pq-tv"}:
+            rgb24_options = guess_rgb24_options(input_stream, target_colorspace=COLORSPACE_BT2020)
 
     config.state["rgb24_options"] = rgb24_options
     config.state["reformatter"] = reformatter
@@ -659,17 +693,14 @@ def configure_video_codec(config):
             config.colorspace = "bt601-tv"
         elif config.colorspace in {"bt709", "bt709-pc", "bt709-tv"}:
             config.colorspace = "bt709-tv"
-        elif config.colorspace in {"auto", "copy"}:
+        elif config.colorspace in {"bt2020", "bt2020-pc", "bt2020-tv", "bt2020-pq-tv", "auto", "copy"}:
+            # not supported
             config.colorspace = "bt709-tv"
 
     if config.video_codec == "libx264":
         if config.pix_fmt in {"rgb24", "gbrp"}:
             config.video_codec = "libx264rgb"
             config.pix_fmt = "rgb24"
-        else:
-            if config.colorspace in {"bt2020", "bt2020-tv", "bt2020-pc"}:
-                # TODO: change pix_fmt
-                config.video_codec = "libx265"
 
     if config.video_codec in {"libx265", "h264_nvenc", "hevc_nvenc"}:
         if config.pix_fmt == "rgb24":
@@ -1376,10 +1407,11 @@ def _test_reencode():
                                  "yuv420p10le"],
                         help="colorspace")
     parser.add_argument("--colorspace", type=str, default="unspecified",
-                        choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                        choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv",
+                                 "bt2020-tv", "bt2020-pq-tv"],
                         help="colorspace")
     parser.add_argument("--video-codec", type=str, default=LIBH264,
-                        choices=["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc"],
+                        choices=["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"],
                         help="video codec")
     parser.add_argument("--max-workers", type=int, default=0, help="max worker threads")
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")

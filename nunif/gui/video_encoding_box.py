@@ -66,7 +66,10 @@ class VideoEncodingBox():
         self.lbl_colorspace = wx.StaticText(self.grp_video, label=T("Colorspace"))
         self.cbo_colorspace = wx.ComboBox(
             self.grp_video,
-            choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+            choices=["auto", "unspecified",
+                     "bt709", "bt709-pc", "bt709-tv",
+                     "bt601", "bt601-pc", "bt601-tv",
+                     "bt2020-tv", "bt2020-pq-tv"],
             name=f"{prefix}cbo_colorspace")
         self.cbo_colorspace.SetEditable(False)
         self.cbo_colorspace.SetSelection(1)
