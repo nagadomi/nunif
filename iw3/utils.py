@@ -518,16 +518,24 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             return _postprocess(depth_model.flush_minmax_normalize())
 
         frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
+        pix_dtype, pix_max = frame_hwc.dtype, torch.iinfo(frame_hwc.dtype).max
+
         if frame_cpu_offload:
             # cpu buffer
-            src_queue.append((frame_hwc, frame.pts))
-            x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / torch.iinfo(frame_hwc.dtype).max
+            if args.max_output_height is not None or args.rotate_right or args.rotate_left:
+                x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
+                x = preprocess_image(x, args)
+                frame_hwc = (x.permute(1, 2, 0) * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
+                src_queue.append((frame_hwc, frame.pts))
+            else:
+                src_queue.append((frame_hwc, frame.pts))
+                x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
         else:
             # gpu buffer
-            x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / torch.iinfo(frame_hwc.dtype).max
+            x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
+            x = preprocess_image(x, args)
             src_queue.append((x, frame.pts))
 
-        x = preprocess_image(x, args)
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation,
