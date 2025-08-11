@@ -211,6 +211,13 @@ def to_frame(x, use_16bit=False):
         return from_image(x)
 
 
+def pix_fmt_requires_16bit(pix_fmt):
+    return pix_fmt in {
+        "yuv420p10le", "p010le",
+        "gbrp16le", "gbrp10le", "rgb48le"
+    }
+
+
 def _print_len(stream):
     print("frames", stream.frames)
     print("guessed_frames", guess_frames(stream))
@@ -1403,15 +1410,16 @@ def _test_reencode():
     parser.add_argument("--output", "-o", type=str, required=True,
                         help="output video file")
     parser.add_argument("--pix-fmt", type=str, default="yuv420p",
-                        choices=["yuv420p", "yuv444p", "rgb24",
-                                 "yuv420p10le"],
+                        choices=["yuv420p", "yuv444p",
+                                 "yuv420p10le",
+                                 "rgb24", "gbrp16le"],
                         help="colorspace")
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv",
                                  "bt2020-tv", "bt2020-pq-tv"],
                         help="colorspace")
     parser.add_argument("--video-codec", type=str, default=LIBH264,
-                        choices=["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"],
+                        choices=["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo", "ffv1"],
                         help="video codec")
     parser.add_argument("--max-workers", type=int, default=0, help="max worker threads")
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")
@@ -1437,7 +1445,7 @@ def _test_reencode():
         # width x 2
         return torch.cat([frames, frames], dim=3)
 
-    use_16bit = args.pix_fmt in {"yuv420p10le"}
+    use_16bit = pix_fmt_requires_16bit(args.pix_fmt)
     callback = FrameCallbackPool(process_image, batch_size=args.batch_size,
                                  device=device, max_workers=args.max_workers,
                                  max_batch_queue=args.max_workers + 1,

@@ -2,7 +2,6 @@ import os
 from os import path
 import warnings
 import torch
-import torchvision.transforms.functional as TF
 from PIL import Image
 import argparse
 import csv
@@ -38,10 +37,6 @@ def make_output_filename(input_filename, args, video=False):
         return basename + args.video_extension
     else:
         return set_image_ext(basename, args.format)
-
-
-def requires_16bit(pix_fmt):
-    return pix_fmt in {"yuv420p10le"}
 
 
 @torch.inference_mode()
@@ -107,7 +102,7 @@ def process_images(ctx, files, output_dir, args, title=None):
 
 
 def process_video(ctx, input_filename, output_path, args):
-    use_16bit = requires_16bit(args.pix_fmt)
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     if args.compile:
         ctx.compile()
 

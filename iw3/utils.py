@@ -73,11 +73,6 @@ def apply_rgbd(im, depth, mapper):
     return left_eye, right_eye
 
 
-def requires_16bit(pix_fmt):
-    return pix_fmt in {"yuv420p10le"}
-
-
-
 # Filename suffix for VR Player's video format detection
 # LRF: full left-right 3D video
 FULL_SBS_SUFFIX = "_LRF_Full_SBS"
@@ -492,7 +487,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     frame_cpu_offload = depth_model.get_ema_buffer_size() > 1
-    use_16bit = requires_16bit(args.pix_fmt)
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depths):
         frames = []
@@ -556,7 +551,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     streams = threading.local()
     src_queue = []
     frame_cpu_offload = depth_model.get_ema_buffer_size() > 1
-    use_16bit = requires_16bit(args.pix_fmt)
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device):
         src_depth_pairs = []
@@ -669,7 +664,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     batch_queue = []
     pts_queue = []
     depth_model.reset()
-    use_16bit = requires_16bit(args.pix_fmt)
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depth_list):
         results = []
@@ -685,7 +680,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                 depths = torch.stack(depths)
                 x_srcs = [src_queue.pop(0)[0] for _ in range(len(depths))]
                 x_srcs = torch.stack(x_srcs).to(args.state["device"]).permute(0, 3, 1, 2)
-                x_srcs =  x_srcs / torch.iinfo(x_srcs.dtype).max
+                x_srcs = x_srcs / torch.iinfo(x_srcs.dtype).max
                 if args.rgbd or args.half_rgbd:
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
@@ -747,7 +742,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
 
 
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
-    use_16bit = requires_16bit(args.pix_fmt)
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     is_video_depth_anything_streaming = depth_model.get_name() == "VideoDepthAnythingStreaming"
     ema_normalize = args.ema_normalize and args.max_fps >= 15
@@ -1377,7 +1372,7 @@ def export_video(input_filename, output_dir, args, title=None):
 
 
 def process_config_video(config, args, side_model):
-    use_16bit = requires_16bit(args.pix_fmt)
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, audio_file = config.resolve_paths(base_dir)
 

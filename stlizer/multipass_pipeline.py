@@ -370,7 +370,7 @@ def outpaint(x, mask, model, device, composite):
 
 def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, fps, args):
     device = args.state["device"]
-    use_16bit = args.pix_fmt in {"yuv420p10le"}
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     if args.border in {"outpaint", "expand_outpaint"}:
         with TorchHubDir(TORCH_HUB_DIR):
