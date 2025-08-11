@@ -214,7 +214,10 @@ def to_frame(x, use_16bit=False):
 def pix_fmt_requires_16bit(pix_fmt):
     return pix_fmt in {
         "yuv420p10le", "p010le",
-        "gbrp16le", "gbrp10le", "rgb48le"
+        "yuv422p10le", "yuv444p10le",
+        "yuv420p12le", "yuv422p12le", "yuv444p12le",
+        "yuv444p16le",
+        "gbrp16le", "gbrp12le", "gbrp10le", "rgb48le",
     }
 
 
@@ -703,6 +706,10 @@ def configure_video_codec(config):
         elif config.colorspace in {"bt2020", "bt2020-pc", "bt2020-tv", "bt2020-pq-tv", "auto", "copy"}:
             # not supported
             config.colorspace = "bt709-tv"
+
+    if config.video_codec == "ffv1":
+        if config.pix_fmt == "rgb24":
+            config.pix_fmt = "bgr0"
 
     if config.video_codec == "libx264":
         if config.pix_fmt in {"rgb24", "gbrp"}:

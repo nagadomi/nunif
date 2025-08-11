@@ -275,7 +275,7 @@ def create_parser(required_true=True):
                         choices=["film", "animation", "grain", "stillimage", "psnr",
                                  "fastdecode", "zerolatency"],
                         help="encoder tunings option (video only)")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp", "yuv420p10le"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
                         help=("pixel format (video only)"))
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["unspecified", "auto",

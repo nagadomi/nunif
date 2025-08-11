@@ -16,11 +16,22 @@ PRESET_LIBX264 = ["ultrafast", "superfast", "veryfast", "faster", "fast",
 PRESET_NVENC = ["fast", "medium", "slow"]
 PRESET_ALL = PRESET_LIBX264
 
-CODEC_ALL = ["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo"]
+CODEC_ALL = ["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo", "ffv1"]
 
-PIX_FMT_ALL = ["yuv420p", "yuv444p", "yuv420p10le", "rgb24"]
-PIX_FMT_OPEN_H264 = ["yuv420p"]
-PIX_FMT_UTVIDEO = ["yuv420p", "yuv444p", "rgb24"]
+PIX_FMT_ALL = ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le", "gbrp16le"]
+CODEC_PIX_FMT = {
+    "libx264": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le"],
+    "libx265": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le"],
+    "h264_nvenc": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le"],
+    "hevc_nvenc": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le"],
+    "libopenh264": ["yuv420p"],
+    "utvideo": ["yuv420p", "yuv444p", "rgb24"],
+    "ffv1": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le"],
+}
+
+
+def get_pix_fmt(codec):
+    return CODEC_PIX_FMT.get(codec, CODEC_ALL)
 
 
 def empty_translate_function(s):
@@ -232,13 +243,18 @@ class VideoEncodingBox():
         # codec
         if name == "avi":
             choices = codecs_available(["utvideo"])
+        elif name == "mkv":
+            choices = codecs_available(["libx264", "libopenh264", "libx265"])
+            if self.has_nvenc:
+                choices += codecs_available(["h264_nvenc", "hevc_nvenc"])
+            choices += codecs_available(["ffv1"])
         else:
             choices = codecs_available(["libx264", "libopenh264", "libx265"])
             if self.has_nvenc:
                 choices += codecs_available(["h264_nvenc", "hevc_nvenc"])
 
         user_codec = self.cbo_video_codec.GetValue()
-        if user_codec not in {"libx265", "libx264", "libopenh264", "h264_nvenc", "hevc_nvenc", "utvideo"}:
+        if user_codec not in CODEC_ALL:
             choices.append(user_codec)
         self.cbo_video_codec.SetItems(choices)
         if user_codec in choices:
@@ -281,12 +297,7 @@ class VideoEncodingBox():
 
         # pix_fmt
         user_pix_fmt = self.cbo_pix_fmt.GetValue()
-        if codec == "libopenh264":
-            choices = PIX_FMT_OPEN_H264
-        elif codec == "utvideo":
-            choices = PIX_FMT_UTVIDEO
-        else:
-            choices = PIX_FMT_ALL
+        choices = get_pix_fmt(codec)
         self.cbo_pix_fmt.SetItems(choices)
         if user_pix_fmt in choices:
             self.cbo_pix_fmt.SetSelection(choices.index(user_pix_fmt))

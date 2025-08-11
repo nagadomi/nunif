@@ -46,7 +46,7 @@ def create_parser(required_true=True):
 
     parser.add_argument("--max-fps", type=float, default=60.0,
                         help="max framerate for video. output fps = min(fps, --max-fps)")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp", "yuv420p10le"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
                         help="pixel format")
     parser.add_argument("--profile-level", type=str, help="h264 profile level")
     parser.add_argument("--crf", type=int, default=20,
