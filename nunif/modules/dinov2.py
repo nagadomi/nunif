@@ -5,6 +5,7 @@ from .weighted_loss import WeightedLoss
 from .compile_wrapper import conditional_compile
 from .pad import get_crop_size, get_pad_size
 from .reflection_pad2d import reflection_pad2d_naive
+from .charbonnier_loss import CharbonnierLoss
 
 
 try:
@@ -165,6 +166,10 @@ def DINOv2CosineLoss(model_type="vits", index=None, normalize=True):
     return DINOv2Loss(CosineLoss(), model_type=model_type, index=index, normalize=normalize, random_projection=None)
 
 
+def DINOv2CharbonnierLoss(model_type="vits", index=None, normalize=True):
+    return DINOv2Loss(CharbonnierLoss(), model_type=model_type, index=index, normalize=normalize, random_projection=64)
+
+
 def DINOv2PoolLoss(model_type="vits", index=None, normalize=True):
     return DINOv2Loss(
         Pool(nn.L1Loss()),
@@ -178,6 +183,13 @@ def DINOv2CosineWith(base_loss, weight=1.0, model_type="vits", index=None, norma
     return WeightedLoss((
         base_loss,
         DINOv2CosineLoss(model_type=model_type, index=index, normalize=normalize)
+    ), weights=(1.0, weight))
+
+
+def DINOv2CharbonnierWith(base_loss, weight=1.0, model_type="vits", index=None, normalize=True):
+    return WeightedLoss((
+        base_loss,
+        DINOv2CharbonnierLoss(model_type=model_type, index=index, normalize=normalize)
     ), weights=(1.0, weight))
 
 
@@ -227,7 +239,7 @@ def _test_grad():
     lbp_norm, lbp_max = x.grad.norm(), x.grad.abs().max()
 
     x.grad = None
-    dinov2_loss = DINOv2PoolLoss()  # DINOv2CosineLoss()
+    dinov2_loss = DINOv2CharbonnierLoss()  # DINOv2PoolLoss # DINOv2CosineLoss()
     (dinov2_loss(x, y.detach())).backward()
     dinov2_norm, dinov2_max = x.grad.norm(), x.grad.abs().max()
 
