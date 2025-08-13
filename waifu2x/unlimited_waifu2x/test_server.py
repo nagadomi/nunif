@@ -10,6 +10,8 @@ parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFo
 parser.add_argument("--cors", action="store_true",
                     help=("Add CORS header for testing wasm multi-threading."
                           " google-chrome does not work for security reasons (localhost CORS), use firefox"))
+parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
+                    help="0.0.0.0 for global, 127.0.0.1 for local")
 args = parser.parse_args()
 ROOT_DIR = path.abspath(path.join(path.dirname(__file__), "public_html"))
 
@@ -27,7 +29,7 @@ def static_file(url):
 
 
 def main():
-    bottle.run(host="127.0.0.1", port=8812, backend="waitress", debug=True)
+    bottle.run(host=args.bind_addr, port=8812, backend="waitress", debug=True)
 
 
 if __name__ == "__main__":
