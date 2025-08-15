@@ -26,17 +26,17 @@ class ImageToConditionPatch8(nn.Module):
     def __init__(self, embed_dim, outputs):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(4, embed_dim, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(4, embed_dim, kernel_size=3, stride=1, padding=1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            ResBlockGNLReLU(embed_dim, embed_dim, stride=2),
+            ResBlockGNLReLU(embed_dim, embed_dim, stride=2, bias=False),
             SEBlock(embed_dim, bias=True),
-            ResBlockGNLReLU(embed_dim, embed_dim),
+            ResBlockGNLReLU(embed_dim, embed_dim, bias=False),
         )
         self.fc = nn.ModuleList([
             nn.Sequential(
-                spectral_norm(nn.Conv2d(embed_dim, embed_dim, kernel_size=1, stride=1, padding=0)),
+                spectral_norm(nn.Conv2d(embed_dim, embed_dim, kernel_size=1, stride=1, padding=0, bias=False)),
                 nn.LeakyReLU(0.2, inplace=True),
-                spectral_norm(nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0)),
+                spectral_norm(nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0, bias=False)),
             )
             for out_channels in outputs
         ])
@@ -51,6 +51,44 @@ class ImageToConditionPatch8(nn.Module):
         outputs = []
         for fc in self.fc:
             enc = fc(x)
+            outputs.append(enc)
+        return outputs
+
+
+class ImageToCondition(nn.Module):
+    # 1x1 vector
+    def __init__(self, embed_dim, outputs):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.AvgPool2d((4, 4)),
+            nn.Conv2d(4, embed_dim, kernel_size=3, stride=1, padding=1),
+            nn.GroupNorm(4, embed_dim),
+            nn.ReLU(inplace=True),
+            ResBlockGNLReLU(embed_dim, embed_dim, stride=2, bias=False),
+            SEBlock(embed_dim, bias=True),
+            ResBlockGNLReLU(embed_dim, embed_dim, bias=False),
+            nn.AdaptiveAvgPool2d((4, 4)),
+        )
+        self.aggregate = spectral_norm(nn.Linear(embed_dim * 16, embed_dim, bias=False))
+        self.fc = nn.ModuleList([
+            nn.Sequential(
+                spectral_norm(nn.Linear(embed_dim, embed_dim, bias=False)),
+                nn.ReLU(inplace=True),
+                spectral_norm(nn.Linear(embed_dim, out_channels, bias=False))
+            )
+            for out_channels in outputs])
+        basic_module_init(self)
+
+    @conditional_compile("NUNIF_TRAIN")
+    def forward(self, x):
+        B = x.shape[0]
+        x = normalize(x)
+        x = self.features(x)
+        x = self.aggregate(x.view(B, -1))
+        outputs = []
+        for fc in self.fc:
+            enc = fc(x)
+            enc = enc.view(B, enc.shape[1], 1, 1)
             outputs.append(enc)
         return outputs
 
@@ -112,48 +150,59 @@ class U3ConditionalDiscriminator(Discriminator):
         C2 = 64
         C3 = 128
         C4 = 256
+        self.enc0 = nn.Sequential(
+            nn.Conv2d(4, C1, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True)
+        )
+        self.enc0_proj = spectral_norm(nn.Conv2d(C1, C1, kernel_size=1, stride=1, padding=0, bias=False))
         self.enc1 = nn.Sequential(
-            nn.Conv2d(4, C1, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(C1, C2, kernel_size=4, stride=2, padding=1),
+            spectral_norm(nn.Conv2d(C1, C2, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
         )
+        self.enc1_proj = spectral_norm(nn.Conv2d(C2, C2, kernel_size=1, stride=1, padding=0, bias=False))
         self.enc2 = nn.Sequential(
-            ResBlockGNLReLU(C2, C3, stride=2),
-            SEBlock(C3, bias=True),
+            spectral_norm(nn.Conv2d(C2, C3, kernel_size=4, stride=2, padding=1, bias=False)),
+            nn.LeakyReLU(0.2, inplace=True),
         )
+        self.enc2_proj = spectral_norm(nn.Conv2d(C3, C3, kernel_size=1, stride=1, padding=0, bias=False))
         self.enc3 = nn.Sequential(
-            ResBlockGNLReLU(C3, C4, stride=2),
-            SEBlock(C4, bias=True),
+            spectral_norm(nn.Conv2d(C3, C4, kernel_size=4, stride=2, padding=1, bias=False)),
+            nn.LeakyReLU(0.2, inplace=True),
         )
         self.enc4 = nn.Sequential(
-            ResBlockGNLReLU(C4, C4, stride=1),
-            SEBlock(C4, bias=True),
+            ResBlockSNLReLU(C4, C4, stride=1, bias=False),
+            PoolFormerBlock(C4, kernel_size=7),
         )
         self.class1 = nn.Sequential(
             ResBlockSNLReLU(C4, C4),
-            spectral_norm(nn.Conv2d(C4, out_channels, kernel_size=3, stride=1, padding=1)),
+            spectral_norm(nn.Conv2d(C4, out_channels, kernel_size=3, stride=1, padding=0, bias=False)),
         )
         self.up1 = nn.Sequential(
-            nn.Conv2d(C4, C3 * 4, kernel_size=1, stride=1, padding=0),
-            nn.PixelShuffle(2),
+            spectral_norm(nn.ConvTranspose2d(C4, C3, kernel_size=2, stride=2, padding=0, bias=False)),
+            nn.LeakyReLU(0.2, inplace=True),
         )
-        self.dec1 = ResBlockSNLReLU(C3, C3)
+        self.dec1 = nn.Sequential(
+            ResBlockSNLReLU(C3, C3, bias=False),
+        )
         self.up2 = nn.Sequential(
-            nn.Conv2d(C3, C2 * 4, kernel_size=1, stride=1, padding=0),
-            nn.PixelShuffle(2),
+            spectral_norm(nn.ConvTranspose2d(C3, C2, kernel_size=2, stride=2, padding=0, bias=False)),
+            nn.LeakyReLU(0.2, inplace=True),
         )
-        self.dec2 = ResBlockSNLReLU(C2, C2)
+        self.dec2 = nn.Sequential(
+            ResBlockSNLReLU(C2, C2, bias=False),
+        )
+        self.up3 = nn.Sequential(
+            spectral_norm(nn.ConvTranspose2d(C2, C1, kernel_size=2, stride=2, padding=0, bias=False)),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.dec3 = ResBlockSNLReLU(C1, C1, bias=False)
         self.class2 = nn.Sequential(
-            ResBlockSNLReLU(C2, C2),
-            spectral_norm(nn.Conv2d(C2, out_channels, kernel_size=3, stride=1, padding=1)),
+            ResBlockSNLReLU(C1, C1),
+            spectral_norm(nn.Conv2d(C1, out_channels, kernel_size=3, stride=1, padding=0)),
         )
         basic_module_init(self)
-        icnr_init(self.up1[0], scale_factor=2)
-        icnr_init(self.up2[0], scale_factor=2)
-        self.cross_attention = CrossAttention(C4)
-        self.to_cond = ImageToConditionPatch8(64, [C4])
-        self.request_false_condition = True
+        self.to_cond = ImageToCondition(64, [C4])
+        self.request_false_condition = False
 
     def _debug_save_cond(self, x, c):
         import os
@@ -175,19 +224,17 @@ class U3ConditionalDiscriminator(Discriminator):
         # self._debug_save_cond(x, c)
         cond = self.to_cond(c)
         x = normalize(x)
-        x1 = self.enc1(x)
+        x0 = self.enc0(x)
+        x1 = self.enc1(x0)
         x2 = self.enc2(x1)
         x3 = self.enc3(x2)
+        x3 = x3 + cond[0]
         x3 = self.enc4(x3)
-        assert x3.shape == cond[0].shape
-        x3 = self.cross_attention(x3, cond[0])
         z1 = self.class1(x3)
-        x4 = self.dec1(self.up1(x3) + x2)
-        x5 = self.dec2(self.up2(x4) + x1)
-        z2 = self.class2(x5)
-
-        z1 = F.pad(z1, (-2,) * 4)
-        z2 = F.pad(z2, (-8,) * 4)
+        x4 = self.dec1(self.up1(x3) + self.enc2_proj(x2))
+        x5 = self.dec2(self.up2(x4) + self.enc1_proj(x1))
+        x6 = self.dec3(self.up3(x5) + self.enc0_proj(x0))
+        z2 = self.class2(x6)
 
         return z2, z1
 
@@ -221,6 +268,6 @@ class U3CEnsembleConditionalDiscriminator(Discriminator):
 
 
 if __name__ == "__main__":
-    bench("waifu2x.u3_conditional_discriminator", compile=True)
+    bench("waifu2x.u3_conditional_discriminator", compile=False)
     bench("waifu2x.u3_ensemble_conditional_discriminator", compile=True)
     pass
