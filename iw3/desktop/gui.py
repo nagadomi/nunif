@@ -275,6 +275,12 @@ class MainFrame(wx.Frame):
         if LAYOUT_DEBUG:
             self.grp_network.SetBackgroundColour("#fcf")
 
+        self.lbl_view_mode = wx.StaticText(self.grp_network, label=T("View Mode"))
+        self.cbo_view_mode = wx.ComboBox(self.grp_network, choices=["Web Streaming", "Local Viewer"],
+                                         name="cbo_view_mode")
+        self.cbo_view_mode.SetEditable(False)
+        self.cbo_view_mode.SetSelection(0)
+
         self.chk_bind_addr = wx.CheckBox(self.grp_network, label=T("Address"), name="chk_bind_addr")
         self.txt_bind_addr = IpAddrCtrl(self.grp_network, size=self.FromDIP((200, -1)), name="txt_bind_addr")
 
@@ -301,10 +307,14 @@ class MainFrame(wx.Frame):
         self.cbo_stream_quality = EditableComboBox(self.grp_network, choices=["100", "95", "90", "85", "80"],
                                                    name="cbo_stream_quality")
         self.cbo_stream_quality.SetSelection(2)
+        self.chk_pad_16_9 = wx.CheckBox(self.grp_network, label=T("Padding") + " 16:9", name="chk_pad_16_9")
+        self.chk_pad_16_9.SetValue(False)
+
         self.chk_gpu_jpeg = wx.CheckBox(self.grp_network, label=T("GPU JPEG"), name="chk_gpu_jpeg")
         self.chk_gpu_jpeg.SetValue(False)
         if not ENABLE_GPU_JPEG:
             self.chk_gpu_jpeg.Disable()
+        self.sep_network1 = wx.StaticLine(self.grp_network, style=wx.LI_HORIZONTAL)
 
         self.chk_auth = wx.CheckBox(self.grp_network, label=T("Basic Authentication"), name="chk_auth")
         self.lbl_auth_username = wx.StaticText(self.grp_network, label=T("Username"))
@@ -314,24 +324,29 @@ class MainFrame(wx.Frame):
 
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
-        layout.Add(self.chk_bind_addr, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_bind_addr, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.btn_detect_ip, (0, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_port, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_port, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_fps, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_fps, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_height, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_height, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_quality, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_quality, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_gpu_jpeg, (5, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_view_mode, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_view_mode, (0, 1), flag=wx.EXPAND)
 
-        layout.Add(self.chk_auth, (6, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (7, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (8, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_bind_addr, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_bind_addr, (1, 1), flag=wx.EXPAND)
+        layout.Add(self.btn_detect_ip, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_port, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_port, (2, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_fps, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_fps, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_height, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_height, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_quality, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_quality, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_gpu_jpeg, (6, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_pad_16_9, (7, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_network1, (8, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
+
+        layout.Add(self.chk_auth, (9, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (10, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (10, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (11, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (11, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -552,6 +567,8 @@ class MainFrame(wx.Frame):
         self.sld_adj_edge_dilation.Bind(wx.EVT_SPINCTRL, self.update_args_adjustment)
         self.sld_adj_foreground_scale.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
 
+        self.cbo_view_mode.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_view_mode)
+
         self.btn_detect_ip.Bind(wx.EVT_BUTTON, self.on_click_btn_detect_ip)
         self.btn_url.Bind(wx.EVT_BUTTON, self.on_click_btn_url)
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
@@ -576,6 +593,7 @@ class MainFrame(wx.Frame):
         self.update_ema_normalize()
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_view_mode()
         self.update_monitor_index()
         self.update_window_names()
         self.update_compile()
@@ -844,6 +862,26 @@ class MainFrame(wx.Frame):
         if not window_name:
             window_name = None
 
+        pad_mode = "16:9" if self.chk_pad_16_9.IsChecked() else None
+        local_viewer = self.cbo_view_mode.GetValue() == "Local Viewer"
+        if local_viewer:
+            viewer_kwargs = dict(
+                local_viewer=True,
+                stream_fps=int(self.cbo_stream_fps.GetValue()),
+                stream_height=int(self.cbo_stream_height.GetValue()),
+            )
+        else:
+            viewer_kwargs = dict(
+                bind_addr=bind_addr,
+                port=self.txt_port.GetValue(),
+                user=user,
+                password=password,
+                stream_fps=int(self.cbo_stream_fps.GetValue()),
+                stream_height=int(self.cbo_stream_height.GetValue()),
+                stream_quality=int(self.cbo_stream_quality.GetValue()),
+                gpu_jpeg=self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
+            )
+
         parser.set_defaults(
             gpu=device_id,
             divergence=float(self.cbo_divergence.GetValue()),
@@ -859,14 +897,6 @@ class MainFrame(wx.Frame):
             resolution=resolution,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
 
-            bind_addr=bind_addr,
-            port=self.txt_port.GetValue(),
-            user=user,
-            password=password,
-            stream_fps=int(self.cbo_stream_fps.GetValue()),
-            stream_height=int(self.cbo_stream_height.GetValue()),
-            stream_quality=int(self.cbo_stream_quality.GetValue()),
-            gpu_jpeg=self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
@@ -877,6 +907,9 @@ class MainFrame(wx.Frame):
             full_sbs=full_sbs,
             rgbd=rgbd,
             half_rgbd=half_rgbd,
+            pad_mode=pad_mode,
+
+            **viewer_kwargs,
         )
         args = parser.parse_args()
         set_state_args(
@@ -1111,6 +1144,37 @@ class MainFrame(wx.Frame):
             self.lbl_crop_bottom.Hide()
 
         self.GetSizer().Layout()
+
+    def on_text_changed_cbo_view_mode(self, event):
+        self.update_view_mode()
+
+    def update_view_mode(self, *args, **kwargs):
+        local_viewer = self.cbo_view_mode.GetValue() == "Local Viewer"
+        streaming_options = [
+            self.chk_bind_addr,
+            self.txt_bind_addr,
+            self.btn_detect_ip,
+            self.lbl_port,
+            self.txt_port,
+            self.lbl_stream_quality,
+            self.cbo_stream_quality,
+            self.chk_gpu_jpeg,
+            self.sep_network1,
+            self.chk_auth,
+            self.lbl_auth_username,
+            self.txt_auth_username,
+            self.lbl_auth_password,
+            self.txt_auth_password,
+        ]
+        if local_viewer:
+            for control in streaming_options:
+                control.Hide()
+        else:
+            for control in streaming_options:
+                control.Show()
+
+        self.GetSizer().Layout()
+        self.Fit()
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
