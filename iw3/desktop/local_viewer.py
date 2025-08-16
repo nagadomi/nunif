@@ -164,7 +164,7 @@ class GLCanvas(glcanvas.GLCanvas):
 
 class LocalViewerWindow(wx.Frame):
     def __init__(self, width, height, size=(960, 540)):
-        super().__init__(None, title="Local Viewer", size=size, style=wx.DEFAULT_FRAME_STYLE | wx.CLIP_CHILDREN)
+        super().__init__(None, title="iw3-desktop: Local Viewer", size=size, style=wx.DEFAULT_FRAME_STYLE | wx.CLIP_CHILDREN)
         self.canvas = GLCanvas(self, width=width, height=height)
         self.callafter_pending = False
 
@@ -204,6 +204,9 @@ class LocalViewerWindow(wx.Frame):
                 self.canvas.tex_id = None
         evt.Skip()
 
+    def is_closed(self):
+        return self.canvas.closed
+
 
 class LocalViewer():
     def __init__(self, lock, width, height, **_unsupported_kwargs):
@@ -212,6 +215,7 @@ class LocalViewer():
         self.lock = lock
         self.op_lock = threading.Lock()
         self.window = None
+        self.initialized = False
         self.last_frame_time = 0
 
     def stop(self):
@@ -226,10 +230,11 @@ class LocalViewer():
             if self.window is None:
                 self.window = LocalViewerWindow(width=self.width, height=self.height)
                 self.window.Show()
+                self.initialized = True
 
     def start(self):
-        if not (wx.GetApp() and wx.GetApp().IsMainLoopRunning()):
-            raise RuntimeError("Not in wx.MainLoop")
+        if not wx.GetApp():
+            raise RuntimeError("wx.App is not initialized")
         wx.CallAfter(self._start)
 
     def set_frame_data(self, frame_data):
@@ -242,6 +247,16 @@ class LocalViewer():
             return self.window.get_fps()
         else:
             return 0.0
+
+    def is_closed(self):
+        with self.op_lock:
+            if self.window:
+                return self.window.is_closed()
+            else:
+                if self.initialized:
+                    return True
+                else:
+                    return False
 
 
 def _test():

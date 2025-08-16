@@ -11,6 +11,10 @@ import wx  # for mouse pointer
 from packaging.version import Version
 import torch
 from torchvision.io import encode_jpeg
+from nunif.device import create_device
+from nunif.models import compile_model
+from nunif.models.data_parallel import DeviceSwitchInference
+from nunif.initializer import gc_collect
 from .. import utils as IW3U
 from .. import models  # noqa
 from .screenshot_thread_pil import ScreenshotThreadPIL
@@ -21,10 +25,10 @@ from .screenshot_process import ( # noqa
     enum_window_names,
 )
 from .streaming_server import StreamingServer
-from nunif.device import create_device
-from nunif.models import compile_model
-from nunif.models.data_parallel import DeviceSwitchInference
-from nunif.initializer import gc_collect
+try:
+    from .local_viewer import LocalViewer
+except ImportError:
+    LocalViewer = None
 
 
 TORCH_VERSION = Version(torch.__version__)
@@ -122,6 +126,7 @@ def debug_jpeg_data(frame, jpeg_data):
 def create_parser():
     local_address = get_local_address()
     parser = IW3U.create_parser(required_true=False)
+    parser.add_argument("--local-viewer", action="store_true", help="Use Local Viewer instead of Web Streaming")
     parser.add_argument("--port", type=int, default=1303,
                         help="HTTP listen port")
     parser.add_argument("--bind-addr", type=str, default=local_address,
@@ -142,6 +147,7 @@ def create_parser():
     parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
     parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
     parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
+
     parser.set_defaults(
         input="dummy",
         output="dummy",
@@ -244,24 +250,32 @@ def iw3_desktop_main(args, init_wxapp=True):
         args, depth_model, side_model
     )
 
-    with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
-              mode="r", encoding="utf-8") as f:
-        index_template = f.read()
-
+    lock = threading.Lock()
     if init_wxapp:
         empty_app = wx.App()  # noqa: this is needed to initialize wx.GetMousePosition()
 
-    lock = threading.Lock()
-    server = StreamingServer(
-        host=args.bind_addr,
-        port=args.port, lock=lock,
-        frame_width=output_frame_width,
-        frame_height=output_frame_height,
-        fps=args.stream_fps,
-        index_template=index_template,
-        stream_uri="/stream.jpg", stream_content_type="image/jpeg",
-        auth=auth
-    )
+    if not args.local_viewer:
+        # Web Streaming
+        with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
+                  mode="r", encoding="utf-8") as f:
+            index_template = f.read()
+
+        server = StreamingServer(
+            host=args.bind_addr,
+            port=args.port, lock=lock,
+            frame_width=output_frame_width,
+            frame_height=output_frame_height,
+            fps=args.stream_fps,
+            index_template=index_template,
+            stream_uri="/stream.jpg", stream_content_type="image/jpeg",
+            auth=auth
+        )
+    else:
+        # Local Viewer
+        if LocalViewer is None:
+            raise RuntimeError("Local Viewer is not available")
+        server = LocalViewer(lock=lock, width=output_frame_width, height=output_frame_height)
+
     screenshot_thread = screenshot_factory(
         fps=args.stream_fps,
         frame_width=frame_width, frame_height=frame_height,
@@ -277,10 +291,16 @@ def iw3_desktop_main(args, init_wxapp=True):
         # main loop
         server.start()
         screenshot_thread.start()
-        if args.state["fps_event"] is not None:
-            args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
+
+        if not args.local_viewer:
+            if args.state["fps_event"] is not None:
+                args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
+            else:
+                print(f"Open http://{args.bind_addr}:{args.port}")
         else:
-            print(f"Open http://{args.bind_addr}:{args.port}")
+            if args.state["fps_event"] is not None:
+                args.state["fps_event"].set_url(None)
+
         count = last_status_time = 0
         fps_counter = deque(maxlen=120)
 
@@ -289,10 +309,14 @@ def iw3_desktop_main(args, init_wxapp=True):
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
                 sbs = IW3U.process_image(frame, args, depth_model, side_model)
-                if args.gpu_jpeg:
-                    server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+
+                if not args.local_viewer:
+                    if args.gpu_jpeg:
+                        server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                    else:
+                        server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
                 else:
-                    server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                    server.set_frame_data((sbs, tick))
 
                 if count % (args.stream_fps * 30) == 0:
                     gc_collect()
@@ -310,6 +334,12 @@ def iw3_desktop_main(args, init_wxapp=True):
                               f"Streaming FPS = {server.get_fps():.02f}, "
                               f"Screen Size = {screen_size_tuple}", end="")
 
+            if args.local_viewer:
+                if not wx.GetApp().IsMainLoopRunning():
+                    # CLI
+                    wx.Yield()
+                if server.is_closed():
+                    break
             process_time = time.perf_counter() - tick
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
             time.sleep(wait_time)
