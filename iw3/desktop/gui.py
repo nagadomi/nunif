@@ -1150,36 +1150,28 @@ class MainFrame(wx.Frame):
 
     def update_view_mode(self, *args, **kwargs):
         local_viewer = self.cbo_view_mode.GetValue() == "Local Viewer"
+        streaming_options = [
+            self.chk_bind_addr,
+            self.txt_bind_addr,
+            self.btn_detect_ip,
+            self.lbl_port,
+            self.txt_port,
+            self.lbl_stream_quality,
+            self.cbo_stream_quality,
+            self.chk_gpu_jpeg,
+            self.sep_network1,
+            self.chk_auth,
+            self.lbl_auth_username,
+            self.txt_auth_username,
+            self.lbl_auth_password,
+            self.txt_auth_password,
+        ]
         if local_viewer:
-            self.chk_bind_addr.Hide()
-            self.txt_bind_addr.Hide()
-            self.btn_detect_ip.Hide()
-            self.lbl_port.Hide()
-            self.txt_port.Hide()
-            self.lbl_stream_quality.Hide()
-            self.cbo_stream_quality.Hide()
-            self.chk_gpu_jpeg.Hide()
-            self.sep_network1.Hide()
-            self.chk_auth.Hide()
-            self.lbl_auth_username.Hide()
-            self.txt_auth_username.Hide()
-            self.lbl_auth_password.Hide()
-            self.txt_auth_password.Hide()
+            for control in streaming_options:
+                control.Hide()
         else:
-            self.chk_bind_addr.Show()
-            self.txt_bind_addr.Show()
-            self.btn_detect_ip.Show()
-            self.lbl_port.Show()
-            self.txt_port.Show()
-            self.lbl_stream_quality.Show()
-            self.cbo_stream_quality.Show()
-            self.chk_gpu_jpeg.Show()
-            self.sep_network1.Show()
-            self.chk_auth.Show()
-            self.lbl_auth_username.Show()
-            self.txt_auth_username.Show()
-            self.lbl_auth_password.Show()
-            self.txt_auth_password.Show()
+            for control in streaming_options:
+                control.Show()
 
         self.GetSizer().Layout()
         self.Fit()
