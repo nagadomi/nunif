@@ -161,18 +161,18 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
         args.edge_dilation = 2
 
 
+def test_output_size(size, args, depth_model, side_model):
+    frame = torch.zeros((3, *size), dtype=torch.float32).to(args.state["device"])
+    sbs = IW3U.process_image(frame, args, depth_model, side_model)
+    depth_model.reset()
+    return sbs.shape[-2:]
+
+
 def iw3_desktop_main(args, init_wxapp=True):
     init_num_threads(args.gpu[0])
 
-    if args.full_sbs:
-        frame_width_scale = 2
-    elif args.rgbd:
-        frame_width_scale = 2
-    elif args.half_rgbd:
-        frame_width_scale = 1
-    else:
+    if not (args.full_sbs or args.rgbd or args.half_rgbd):
         args.half_sbs = True
-        frame_width_scale = 1
 
     if args.bind_addr is None:
         args.bind_addr = get_local_address()
@@ -239,6 +239,11 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_height = screen_height
         frame_width = screen_width
 
+    output_frame_height, output_frame_width = test_output_size(
+        (frame_height, frame_width),
+        args, depth_model, side_model
+    )
+
     with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
               mode="r", encoding="utf-8") as f:
         index_template = f.read()
@@ -250,8 +255,8 @@ def iw3_desktop_main(args, init_wxapp=True):
     server = StreamingServer(
         host=args.bind_addr,
         port=args.port, lock=lock,
-        frame_width=frame_width * frame_width_scale,
-        frame_height=frame_height,
+        frame_width=output_frame_width,
+        frame_height=output_frame_height,
         fps=args.stream_fps,
         index_template=index_template,
         stream_uri="/stream.jpg", stream_content_type="image/jpeg",

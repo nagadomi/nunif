@@ -301,10 +301,14 @@ class MainFrame(wx.Frame):
         self.cbo_stream_quality = EditableComboBox(self.grp_network, choices=["100", "95", "90", "85", "80"],
                                                    name="cbo_stream_quality")
         self.cbo_stream_quality.SetSelection(2)
+        self.chk_pad_16_9 = wx.CheckBox(self.grp_network, label=T("Padding") + " 16:9", name="chk_pad_16_9")
+        self.chk_pad_16_9.SetValue(False)
+
         self.chk_gpu_jpeg = wx.CheckBox(self.grp_network, label=T("GPU JPEG"), name="chk_gpu_jpeg")
         self.chk_gpu_jpeg.SetValue(False)
         if not ENABLE_GPU_JPEG:
             self.chk_gpu_jpeg.Disable()
+        self.sep_network1 = wx.StaticLine(self.grp_network, style=wx.LI_HORIZONTAL)
 
         self.chk_auth = wx.CheckBox(self.grp_network, label=T("Basic Authentication"), name="chk_auth")
         self.lbl_auth_username = wx.StaticText(self.grp_network, label=T("Username"))
@@ -326,12 +330,14 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_stream_quality, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stream_quality, (4, 1), flag=wx.EXPAND)
         layout.Add(self.chk_gpu_jpeg, (5, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_pad_16_9, (6, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_network1, (7, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
 
-        layout.Add(self.chk_auth, (6, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (7, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (8, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_auth, (8, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (9, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (9, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (10, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (10, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -551,7 +557,6 @@ class MainFrame(wx.Frame):
         self.sld_adj_convergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_edge_dilation.Bind(wx.EVT_SPINCTRL, self.update_args_adjustment)
         self.sld_adj_foreground_scale.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
-
         self.btn_detect_ip.Bind(wx.EVT_BUTTON, self.on_click_btn_detect_ip)
         self.btn_url.Bind(wx.EVT_BUTTON, self.on_click_btn_url)
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
@@ -844,6 +849,7 @@ class MainFrame(wx.Frame):
         if not window_name:
             window_name = None
 
+        pad_mode = "16:9" if self.chk_pad_16_9.IsChecked() else None
         parser.set_defaults(
             gpu=device_id,
             divergence=float(self.cbo_divergence.GetValue()),
@@ -877,6 +883,7 @@ class MainFrame(wx.Frame):
             full_sbs=full_sbs,
             rgbd=rgbd,
             half_rgbd=half_rgbd,
+            pad_mode=pad_mode,
         )
         args = parser.parse_args()
         set_state_args(
