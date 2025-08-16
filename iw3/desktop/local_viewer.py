@@ -76,6 +76,7 @@ class GLCanvas(glcanvas.GLCanvas):
         frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu().numpy()
 
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.tex_id)
+        GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
         GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, frame)
         GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
 
