@@ -5,6 +5,7 @@ import torch
 import threading
 import time
 from collections import deque
+import ctypes
 
 
 class GLCanvas(glcanvas.GLCanvas):
@@ -20,6 +21,7 @@ class GLCanvas(glcanvas.GLCanvas):
         self.fps_counter = deque(maxlen=120)
 
         self.tex_id = None
+        self.pbo = None
         self.tex_w = width
         self.tex_h = height
         self.frame = None
@@ -40,10 +42,33 @@ class GLCanvas(glcanvas.GLCanvas):
         GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
         GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
         GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
-        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGB, self.tex_w, self.tex_h, 0,
+        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGB8, self.tex_w, self.tex_h, 0,
                         GL.GL_RGB, GL.GL_UNSIGNED_BYTE, None)
         GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+
+        self.pbo = GL.glGenBuffers(1)
+        GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, self.pbo)
+        GL.glBufferData(GL.GL_PIXEL_UNPACK_BUFFER, self.tex_w * self.tex_h * 4, None, GL.GL_STREAM_DRAW)
+
         self.initialized = True
+
+    def delete_gl(self):
+        if not self.initialized:
+            return
+        self.initialized = False
+        self.SetCurrent(self.context)
+        if self.tex_id:
+            GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+            GL.glDeleteTextures([self.tex_id])
+            self.tex_id = None
+        if self.pbo:
+            GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, 0)
+            GL.glDeleteBuffers(1, [self.pbo])
+            self.pbo = None
+
+    def destroy(self):
+        self.closed = True
+        self.delete_gl()
 
     def update_frame(self, frame):
         if self.closed:
@@ -73,11 +98,17 @@ class GLCanvas(glcanvas.GLCanvas):
         self.tex_h = h
 
         frame = frame.permute(1, 2, 0).contiguous()
-        frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu().numpy()
+        frame = (frame.clamp(0, 1) * 255).to(torch.uint8).detach().cpu().numpy()
+
+        GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
+
+        GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, self.pbo)
+        ptr = GL.glMapBuffer(GL.GL_PIXEL_UNPACK_BUFFER, GL.GL_WRITE_ONLY)
+        ctypes.memmove(ptr, frame.ctypes.data, frame.nbytes)
+        GL.glUnmapBuffer(GL.GL_PIXEL_UNPACK_BUFFER)
 
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.tex_id)
-        GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
-        GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, frame)
+        GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, None)
         GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
 
         self.frame = None
@@ -90,7 +121,6 @@ class GLCanvas(glcanvas.GLCanvas):
 
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
-        # GL.glOrtho(0, W, 0, H, -1, 1)
         GL.glOrtho(0, W, H, 0, -1, 1)
         GL.glMatrixMode(GL.GL_MODELVIEW)
         GL.glLoadIdentity()
@@ -167,7 +197,6 @@ class LocalViewerWindow(wx.Frame):
     def __init__(self, width, height, size=(960, 540)):
         super().__init__(None, title="iw3-desktop: Local Viewer", size=size, style=wx.DEFAULT_FRAME_STYLE | wx.CLIP_CHILDREN)
         self.canvas = GLCanvas(self, width=width, height=height)
-        self.callafter_pending = False
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_char)
@@ -196,13 +225,7 @@ class LocalViewerWindow(wx.Frame):
         return self.canvas.get_fps()
 
     def on_close(self, evt):
-        self.canvas.closed = True
-        if self.canvas.initialized:
-            self.canvas.initialized = False
-            self.canvas.SetCurrent(self.canvas.context)
-            if self.canvas.tex_id:
-                GL.glDeleteTextures([self.canvas.tex_id])
-                self.canvas.tex_id = None
+        self.canvas.destroy()
         evt.Skip()
 
     def is_closed(self):
@@ -214,7 +237,7 @@ class LocalViewer():
         self.width = width
         self.height = height
         self.lock = lock
-        self.op_lock = threading.Lock()
+        self.op_lock = threading.RLock()
         self.window = None
         self.initialized = False
         self.last_frame_time = 0
@@ -224,7 +247,8 @@ class LocalViewer():
             if self.window is not None:
                 window = self.window
                 self.window = None
-                wx.CallAfter(window.Close)
+                if not window.is_closed():
+                    wx.CallAfter(window.Close)
 
     def _start(self):
         with self.op_lock:
@@ -239,9 +263,11 @@ class LocalViewer():
         wx.CallAfter(self._start)
 
     def set_frame_data(self, frame_data):
-        frame, frame_time = frame_data
-        if self.window is not None and self.last_frame_time < frame_time:
-            wx.CallAfter(self.window.update_frame, frame)
+        with self.op_lock:
+            frame, frame_time = frame_data
+            if self.window is not None and self.last_frame_time < frame_time:
+                wx.CallAfter(self.window.update_frame, frame)
+                self.last_frame_time = frame_time
 
     def get_fps(self):
         if self.window is not None:
