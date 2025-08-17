@@ -649,15 +649,19 @@ class MainFrame(wx.Frame):
         return editable_comboboxes
 
     def on_close(self, event):
+        self.save_preset()
+        event.Skip()
+
+        self.stop_event.set()
         if self.processing:
-            self.stop_event.set()
-            max_wait = int(4 / 0.01)
+            max_wait = int(6 / 0.01)
             for _ in range(max_wait):
                 if not self.stop_event.is_set():
                     break
                 time.sleep(0.01)
-        self.save_preset()
-        event.Skip()
+            if self.stop_event.is_set():
+                # It may be deadlocked, so force exit
+                os._exit(-1)
 
     def update_depth_model_list(self, *args, **kwargs):
         default_model = "Any_V2_S"
