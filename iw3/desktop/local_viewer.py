@@ -52,6 +52,24 @@ class GLCanvas(glcanvas.GLCanvas):
 
         self.initialized = True
 
+    def delete_gl(self):
+        if not self.initialized:
+            return
+        self.initialized = False
+        self.SetCurrent(self.context)
+        if self.tex_id:
+            GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+            GL.glDeleteTextures([self.tex_id])
+            self.tex_id = None
+        if self.pbo:
+            GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, 0)
+            GL.glDeleteBuffers(1, [self.pbo])
+            self.pbo = None
+
+    def destroy(self):
+        self.closed = True
+        self.delete_gl()
+
     def update_frame(self, frame):
         if self.closed:
             return
@@ -208,13 +226,7 @@ class LocalViewerWindow(wx.Frame):
         return self.canvas.get_fps()
 
     def on_close(self, evt):
-        self.canvas.closed = True
-        if self.canvas.initialized:
-            self.canvas.initialized = False
-            self.canvas.SetCurrent(self.canvas.context)
-            if self.canvas.tex_id:
-                GL.glDeleteTextures([self.canvas.tex_id])
-                self.canvas.tex_id = None
+        self.canvas.destroy()
         evt.Skip()
 
     def is_closed(self):
