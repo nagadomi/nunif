@@ -197,7 +197,6 @@ class LocalViewerWindow(wx.Frame):
     def __init__(self, width, height, size=(960, 540)):
         super().__init__(None, title="iw3-desktop: Local Viewer", size=size, style=wx.DEFAULT_FRAME_STYLE | wx.CLIP_CHILDREN)
         self.canvas = GLCanvas(self, width=width, height=height)
-        self.callafter_pending = False
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_char)
@@ -238,7 +237,7 @@ class LocalViewer():
         self.width = width
         self.height = height
         self.lock = lock
-        self.op_lock = threading.Lock()
+        self.op_lock = threading.RLock()
         self.window = None
         self.initialized = False
         self.last_frame_time = 0
@@ -248,7 +247,8 @@ class LocalViewer():
             if self.window is not None:
                 window = self.window
                 self.window = None
-                wx.CallAfter(window.Close)
+                if not window.is_closed():
+                    wx.CallAfter(window.Close)
 
     def _start(self):
         with self.op_lock:
@@ -263,9 +263,11 @@ class LocalViewer():
         wx.CallAfter(self._start)
 
     def set_frame_data(self, frame_data):
-        frame, frame_time = frame_data
-        if self.window is not None and self.last_frame_time < frame_time:
-            wx.CallAfter(self.window.update_frame, frame)
+        with self.op_lock:
+            frame, frame_time = frame_data
+            if self.window is not None and self.last_frame_time < frame_time:
+                wx.CallAfter(self.window.update_frame, frame)
+                self.last_frame_time = frame_time
 
     def get_fps(self):
         if self.window is not None:
