@@ -5,6 +5,7 @@ import torch
 import threading
 import time
 from collections import deque
+import ctypes
 
 
 class GLCanvas(glcanvas.GLCanvas):
@@ -20,6 +21,7 @@ class GLCanvas(glcanvas.GLCanvas):
         self.fps_counter = deque(maxlen=120)
 
         self.tex_id = None
+        self.pbo = None
         self.tex_w = width
         self.tex_h = height
         self.frame = None
@@ -43,6 +45,11 @@ class GLCanvas(glcanvas.GLCanvas):
         GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGB, self.tex_w, self.tex_h, 0,
                         GL.GL_RGB, GL.GL_UNSIGNED_BYTE, None)
         GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+
+        self.pbo = GL.glGenBuffers(1)
+        GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, self.pbo)
+        GL.glBufferData(GL.GL_PIXEL_UNPACK_BUFFER, self.tex_w * self.tex_h * 4, None, GL.GL_STREAM_DRAW)
+
         self.initialized = True
 
     def update_frame(self, frame):
@@ -73,11 +80,17 @@ class GLCanvas(glcanvas.GLCanvas):
         self.tex_h = h
 
         frame = frame.permute(1, 2, 0).contiguous()
-        frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu().numpy()
+        frame = (frame.clamp(0, 1) * 255).to(torch.uint8).detach().cpu().numpy()
+
+        GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
+
+        GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, self.pbo)
+        ptr = GL.glMapBuffer(GL.GL_PIXEL_UNPACK_BUFFER, GL.GL_WRITE_ONLY)
+        ctypes.memmove(ptr, frame.ctypes.data, frame.nbytes)
+        GL.glUnmapBuffer(GL.GL_PIXEL_UNPACK_BUFFER)
 
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.tex_id)
-        GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
-        GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, frame)
+        GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, None)
         GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
 
         self.frame = None
@@ -90,7 +103,6 @@ class GLCanvas(glcanvas.GLCanvas):
 
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
-        # GL.glOrtho(0, W, 0, H, -1, 1)
         GL.glOrtho(0, W, H, 0, -1, 1)
         GL.glMatrixMode(GL.GL_MODELVIEW)
         GL.glLoadIdentity()
