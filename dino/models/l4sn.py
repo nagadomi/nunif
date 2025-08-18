@@ -84,7 +84,6 @@ class L4SNFeature(nn.Module):
 class L4SN(nn.Module):
     def __init__(self, activation=True):
         super().__init__()
-        self.activation = activation  # for loss
         self.feature = L4SNFeature()
         # self.fc is a dummy. It will be replaced with nn.Identity by DINO train.
         self.fc = nn.Linear(C5, 1)
@@ -99,13 +98,18 @@ class L4SN(nn.Module):
 
 
 class L4SNLoss(nn.Module):
-    def __init__(self, activation=True, loss_weights=[1.0, 1.0, 1.0, 1.0]):
+    def __init__(
+            self,
+            activation=True,
+            loss_weights=[0.35, 0.5, 0.7, 1.0],
+            checkpoint_file=None,
+    ):
         super().__init__()
         self.feature = L4SNFeature()
         self.activation = activation
         self.loss_weights = loss_weights
         self.init_random_projection()
-        self.load_pth(CHECKPOINT_URL)
+        self.load_pth(checkpoint_file or CHECKPOINT_URL)
         self.eval()
 
     def train(self, mode=True):
@@ -120,8 +124,8 @@ class L4SNLoss(nn.Module):
                 dims = [RANDOM_PROJECTION_DIM] * len(FEAT_DIMS)
                 feat_dims = FEAT_DIMS
                 for i, (dim, feat_dim) in enumerate(zip(dims, feat_dims)):
-                    scale = 1.0  # already normalized by SN
-                    proj = torch.randn((dim, feat_dim, 1, 1)) * scale
+                    adj = 1.0  # 1.0 / 14.0
+                    proj = torch.randn((dim, feat_dim, 1, 1)) * adj
                     self.register_buffer(f"random_projection_{i}", proj)
             finally:
                 torch.random.set_rng_state(rng_state)
@@ -141,18 +145,30 @@ class L4SNLoss(nn.Module):
             weight = getattr(self, f"random_projection_{i}")
             f1 = F.conv2d(f1, weight=weight, bias=None, stride=1)
             f2 = F.conv2d(f2, weight=weight, bias=None, stride=1)
-            f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False) * 0.1
-            f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False) * 0.1
-            loss = loss + self.loss_fn(f1, f2) * self.loss_weights[i]
-        return loss / len(f1s)
+            f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False)
+            f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False)
+            loss = loss + F.l1_loss(f1, f2) * self.loss_weights[i]
+        return loss / (len(f1s) * 2)
+
+    def forward(self, input, target):
+        loss = self.forward_loss(input, target)
+        return loss
+
+
+class L4SNWith(nn.Module):
+    def __init__(self, base_loss, weight=1.0):
+        super().__init__()
+        self.base_loss = base_loss
+        self.weight = weight
+        self.l4sn = L4SNLoss()
 
     def forward(self, input, target):
         pad = get_pad_size(input, 16)
         input = reflection_pad2d_naive(input, pad, detach=True)
         target = reflection_pad2d_naive(target, pad, detach=True)
-        loss = self.forward_loss(input, target)
-        loss = loss + F.l1_loss(input, target) * 0.4
-        return loss
+        base_loss = self.base_loss(input, target)
+        l4sn_loss = self.l4sn(input, target)
+        return base_loss + l4sn_loss * self.weight
 
 
 def _test_grad():
