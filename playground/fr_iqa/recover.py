@@ -8,7 +8,10 @@ import torchvision.io as io
 import torchvision.transforms.functional as TF
 from nunif.modules.dinov2 import DINOv2Loss, DINOv2PoolLoss
 from nunif.modules.lpips import LPIPSWith
+from dino.models.l4sn import L4SNLoss
 from dctorch.functional import dct2
+import random
+
 
 try:
     from nunif.modules.dists import DISTS
@@ -118,18 +121,26 @@ class DCTLoss(nn.Module):
         return F.l1_loss(x, y)
 
 
+def shift(x, w, h):
+    x = F.pad(x, (w, 0, h, 0), mode="replicate")
+    x = F.pad(x, (0, -w, 0, -h), mode="replicate")
+    return x
+
+
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input image file")
     parser.add_argument("--output", "-o", type=str, required=True, help="output dir")
-    parser.add_argument("--init", type=str, choices=["noise", "jpeg"], default="noise", help="initial image")
+    parser.add_argument("--init", type=str, choices=["noise", "jpeg", "shift"], default="noise", help="initial image")
     parser.add_argument("--init-image", type=str, help="initial image")
     parser.add_argument("--model", type=str,
-                        choices=["dct", "pool", "swd", "patch-swd", "pos-swd", "dists", "lpips", "fdl"],
+                        choices=["dct", "pool", "swd", "patch-swd", "pos-swd", "dists", "lpips", "fdl",
+                                 "l4sn"],
                         required=True)
     parser.add_argument("--iteration", type=int, default=20000, help="iteration")
     parser.add_argument("--fp32", action="store_true", help="use fp32")
     parser.add_argument("--save-interval", type=int, default=100, help="save interval")
+    parser.add_argument("--random-shift", action="store_true")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
@@ -145,6 +156,8 @@ def main():
                 x = init_jpeg(y)
             case "noise":
                 x = init_noise(y)
+            case "shift":
+                x = shift(y, 3, 3)
 
     x = x.unsqueeze(0).cuda()
     y = y.unsqueeze(0).cuda()
@@ -168,14 +181,26 @@ def main():
             model = LPIPSWith(NullLoss(), 1.0).cuda()
         case "fdl":
             model = FDLLoss().eval().cuda()
+        case "l4sn":
+            model = L4SNLoss(activation=True)
+            model = model.eval().cuda()
 
     optimizer = torch.optim.Adam([x], lr=1e-3, betas=(0.9, 0.99))
     grad_scaler = torch.amp.GradScaler("cuda", enabled=not args.fp32)
     for i in range(args.iteration):
         optimizer.zero_grad()
 
+        if args.random_shift:
+            w = random.randint(-8, 8)
+            h = random.randint(-8, 8)
+            xx = shift(x, w, h)
+            yy = shift(y, w, h)
+        else:
+            xx = x
+            yy = y
+
         with torch.autocast(device_type="cuda", enabled=not args.fp32):
-            loss = model(ste_clamp(x), y)
+            loss = model(ste_clamp(xx), yy)
         grad_scaler.scale(loss).backward()
         grad_scaler.step(optimizer)
         grad_scaler.update()
