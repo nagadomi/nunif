@@ -29,6 +29,7 @@ from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.dinov2 import DINOv2PoolWith, DINOv2CosineWith
+from dino.models.l4sn import L4SNWith
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate, DiffPairRandomDownsample
 from nunif.transforms import pair as TP
@@ -100,6 +101,7 @@ LOSS_FUNCTIONS = {
     "l1dinov2": lambda: DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=0.1),
     "l1dinov2_10": lambda: DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=1.0),
     "yrgb_lbp_dinov2": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=2.0),
+    "l1l4sn": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=1),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
     # loss is computed in model.forward()
