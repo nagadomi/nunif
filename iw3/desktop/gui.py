@@ -34,6 +34,8 @@ from ..video_depth_anything_streaming_model import VideoDepthAnythingStreamingMo
 from ..locales import LOCALES, load_language_setting, save_language_setting
 from .utils import (
     get_local_address,
+    is_private_address,
+    is_loopback_address,
     init_win32,
     iw3_desktop_main,
     create_parser, set_state_args,
@@ -735,8 +737,11 @@ class MainFrame(wx.Frame):
 
     def update_bind_addr_warning(self, *args, **kwargs):
         bind_addr = self.txt_bind_addr.GetAddress()
-        if bind_addr == "127.0.0.1":
-            self.lbl_bind_addr_warning.SetLabel("127.0.0.1 is only accessible from this PC.")
+        if is_loopback_address(bind_addr):
+            self.lbl_bind_addr_warning.SetLabel(f"{bind_addr} is only accessible from this PC.")
+            self.lbl_bind_addr_warning.Show()
+        elif not is_private_address(bind_addr):
+            self.lbl_bind_addr_warning.SetLabel(f"{bind_addr} is not Local Area Network Address.")
             self.lbl_bind_addr_warning.Show()
         else:
             self.lbl_bind_addr_warning.SetLabel("")

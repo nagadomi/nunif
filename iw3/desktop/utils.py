@@ -5,7 +5,7 @@ import math
 from os import path
 import time
 import socket
-import struct
+import ipaddress
 from collections import deque
 import wx  # for mouse pointer
 from packaging.version import Version
@@ -74,19 +74,19 @@ def get_local_address():
 
 
 def is_private_address(ip):
-    """ https://stackoverflow.com/a/8339939
-    """
-    f = struct.unpack("!I", socket.inet_pton(socket.AF_INET, ip))[0]
-    private = (
-        [2130706432, 4278190080],  # 127.0.0.0,   255.0.0.0   https://www.rfc-editor.org/rfc/rfc3330
-        [3232235520, 4294901760],  # 192.168.0.0, 255.255.0.0 https://www.rfc-editor.org/rfc/rfc1918
-        [2886729728, 4293918720],  # 172.16.0.0,  255.240.0.0 https://www.rfc-editor.org/rfc/rfc1918
-        [167772160, 4278190080],   # 10.0.0.0,    255.0.0.0   https://www.rfc-editor.org/rfc/rfc1918
-    )
-    for net in private:
-        if (f & net[1]) == net[0]:
-            return True
-    return False
+    try:
+        ip = ipaddress.ip_address(ip)
+        return not ip.is_unspecified and ip.is_private
+    except ValueError:
+        return False
+
+
+def is_loopback_address(ip):
+    try:
+        ip = ipaddress.ip_address(ip)
+        return ip.is_loopback
+    except ValueError:
+        return False
 
 
 def to_uint8(x):
@@ -180,20 +180,29 @@ def iw3_desktop_main(args, init_wxapp=True):
     if not (args.full_sbs or args.rgbd or args.half_rgbd):
         args.half_sbs = True
 
+    if args.user or args.password:
+        user = args.user or ""
+        password = args.password or ""
+        auth = (user, password)
+    else:
+        auth = None
+
     if not args.local_viewer:
         if args.bind_addr is None:
             args.bind_addr = get_local_address()
-        if args.bind_addr == "0.0.0.0":
-            pass  # Allows specifying undefined addresses
-        elif not is_private_address(args.bind_addr):
-            raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address."
-                               " Specify --bind-addr option")
-        if args.bind_addr == "127.0.0.1":
+            if not is_private_address(args.bind_addr):
+                raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address. "
+                                   " Specify --bind-addr option")
+
+        if is_loopback_address(args.bind_addr):
             print(
-                ("Warning: 127.0.0.1 is only accessible from this PC. "
+                (f"Warning: {args.bind_addr} is only accessible from this PC. "
                  "If this option is not explicitly enabled, the network connection might be unavailable."),
                 file=sys.stderr
             )
+        if not is_private_address(args.bind_addr) and auth is None:
+            raise RuntimeError(f"({args.bind_addr}) is not Local Area Network Address. "
+                               "Specify --username/--password option.")
 
     if args.screenshot == "pil":
         screenshot_factory = ScreenshotThreadPIL
@@ -219,13 +228,6 @@ def iw3_desktop_main(args, init_wxapp=True):
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
         device_id=args.gpu[0],
     )
-    if args.user or args.password:
-        user = args.user or ""
-        password = args.password or ""
-        auth = (user, password)
-    else:
-        auth = None
-
     if args.screenshot != "wc_mp" and args.monitor_index != 0:
         raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
     if args.screenshot != "wc_mp" and args.window_name:
