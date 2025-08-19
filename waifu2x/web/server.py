@@ -43,6 +43,7 @@ DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(
 BUFF_SIZE = 8192  # buffer block size for io access
 SIZE_MB = 1024 * 1024
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 COMPILE_LOCK = path.join("tmp", "waifu2x_web_compile.lock")
 
 
@@ -136,6 +137,8 @@ def setup():
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join("tmp", "waifu2x_cache"), help="cache dir")
     parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires --config option")
+    parser.add_argument("--enable-turnstile", action="store_true",
+                        help="enable CloudFlare Turnstile. it requires --config option")
     parser.add_argument("--config", type=str, help="config file for API tokens")
     parser.add_argument("--no-size-limit", action="store_true", help="No file/image size limits for private server")
     parser.add_argument("--torch-threads", type=int, help="The number of threads used for intraop parallelism on CPU")
@@ -179,6 +182,11 @@ def setup():
             raise RuntimeError("--enable-recaptcha: No recaptcha setting in config file")
         else:
             config["recaptcha"] = {"site_key": "", "secret_key": ""}
+    if "turnstile" not in config:
+        if args.enable_turnstile:
+            raise RuntimeError("--enable-turnstile: No turnstile setting in config file")
+        else:
+            config["turnstile"] = {"site_key": "", "secret_key": ""}
 
     return args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc
 
@@ -311,8 +319,10 @@ def make_output_filename(style, method, noise, image_format, meta):
 @bottle.get("/recaptcha_state.json")
 def recaptcha_state():
     state = {
-        "enabled": command_args.enable_recaptcha,
-        "site_key": config["recaptcha"]["site_key"]
+        "recaptcha_enabled": command_args.enable_recaptcha,
+        "recaptcha_site_key": config["recaptcha"]["site_key"],
+        "turnstile_enabled": command_args.enable_turnstile,
+        "turnstile_site_key": config["turnstile"]["site_key"],
     }
     res = HTTPResponse(status=200, body=json.dumps(state))
     res.set_header("Content-Type", "application/json")
@@ -341,6 +351,30 @@ def verify_recaptcha(request):
     except requests.exceptions.RequestException as e:
         logger.error(f"verify_recaptcha: error: {e}")
         bottle.abort(500, "reCAPTCHA Error")
+
+
+def verify_turnstile(request):
+    if not command_args.enable_turnstile:
+        return True
+
+    timeout = command_args.url_timeout
+    data = {
+        "response": request.forms.get("turnstile", ""),
+        "secret": config["turnstile"]["secret_key"],
+        "remoteip": request.remote_addr
+    }
+    try:
+        res = requests.post(TURNSTILE_VERIFY_URL, data=data, timeout=timeout)
+        if res.status_code == 200:
+            result = json.loads(res.text)
+            logger.debug("verify_turnstile: " + ("success" if result['success'] else "failure"))
+            return result["success"]
+        else:
+            logger.error(f"verify_turnstile: HTTP Error {res.status_code} {res.text}")
+            bottle.abort(500, "Turnstile Error")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"verify_turnstile: error: {e}")
+        bottle.abort(500, "Turnstile Error")
 
 
 def dump_meta(meta):
@@ -398,6 +432,9 @@ def api():
 
     if command_args.enable_recaptcha and not verify_recaptcha(request):
         bottle.abort(401, "reCAPTCHA Error")
+    if command_args.enable_turnstile and not verify_turnstile(request):
+        bottle.abort(401, "Turnstile Error")
+
     with global_lock:
         cache_gc.gc()
 

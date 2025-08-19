@@ -11,6 +11,7 @@
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/URI.js/1.18.1/URI.min.js"></script>
+    <script src="//challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
     <script src="ui.js"></script>
     <title>waifu2x</title>
   </head>
@@ -110,6 +111,7 @@
       </p>
       <form action="/api" method="POST" enctype="multipart/form-data" target="_blank">
         <input type="hidden" name="recap" id="recap_response">
+        <input type="hidden" name="turnstile" id="turnstile_response">
 	<div class="option-box first">
 	  <div class="option-left">{{image_choosing}} (D&amp;D):</div>
 	  <div class="option-right">
@@ -226,6 +228,8 @@
 	  </div>
 	</div>
 	<div id="recap_container">
+	</div>
+	<div id="turnstile_container">
 	</div>
 	% if button_convert:
 	  <input id="submit-button" type="submit" class="button" value="{{button_convert}}">
