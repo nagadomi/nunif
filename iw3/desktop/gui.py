@@ -283,11 +283,15 @@ class MainFrame(wx.Frame):
 
         self.chk_bind_addr = wx.CheckBox(self.grp_network, label=T("Address"), name="chk_bind_addr")
         self.txt_bind_addr = IpAddrCtrl(self.grp_network, size=self.FromDIP((200, -1)), name="txt_bind_addr")
-
         self.chk_bind_addr.SetValue(False)
         self.txt_bind_addr.SetValue("127.0.0.1")
         self.btn_detect_ip = GenBitmapButton(self.grp_network, bitmap=load_icon("view-refresh.png"))
         self.btn_detect_ip.SetToolTip(T("Detect"))
+
+        self.lbl_bind_addr_warning = stattext.GenStaticText(self.grp_network, label="")
+        self.lbl_bind_addr_warning.SetFont(WARNING_FONT)
+        self.lbl_bind_addr_warning.SetForegroundColour(WARNING_COLOR)
+        self.lbl_bind_addr_warning.Hide()
 
         self.lbl_port = wx.StaticText(self.grp_network, label=T("Port"))
         self.txt_port = IntCtrl(self.grp_network, size=self.FromDIP((200, -1)),
@@ -330,23 +334,25 @@ class MainFrame(wx.Frame):
         layout.Add(self.chk_bind_addr, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_bind_addr, (1, 1), flag=wx.EXPAND)
         layout.Add(self.btn_detect_ip, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_port, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_port, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_fps, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_fps, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_height, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_height, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_quality, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_quality, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_gpu_jpeg, (6, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_pad_16_9, (7, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.sep_network1, (8, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
+        layout.Add(self.lbl_bind_addr_warning, (2, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_port, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_port, (3, 1), flag=wx.EXPAND)
 
-        layout.Add(self.chk_auth, (9, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (10, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (10, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (11, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (11, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_fps, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_fps, (4, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_height, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_height, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_quality, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_quality, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_gpu_jpeg, (7, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_pad_16_9, (8, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_network1, (9, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
+
+        layout.Add(self.chk_auth, (10, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (11, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (11, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (12, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (12, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -554,6 +560,8 @@ class MainFrame(wx.Frame):
         self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
+        self.txt_bind_addr.Bind(wx.EVT_TEXT, self.update_bind_addr_warning)
+        self.lbl_bind_addr_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_bind_addr_warning)
         self.chk_auth.Bind(wx.EVT_CHECKBOX, self.update_auth_state)
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.update_stereo_format)
         self.cbo_screenshot.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_screenshot)
@@ -585,6 +593,7 @@ class MainFrame(wx.Frame):
         self.load_preset()
 
         self.update_bind_addr_state()
+        self.update_bind_addr_warning()
         self.update_depth_model_list()
         self.update_stereo_format()
         self.update_auth_state()
@@ -723,6 +732,21 @@ class MainFrame(wx.Frame):
             self.txt_bind_addr.Disable()
         else:
             self.txt_bind_addr.Enable()
+
+    def update_bind_addr_warning(self, *args, **kwargs):
+        bind_addr = self.txt_bind_addr.GetAddress()
+        if bind_addr == "127.0.0.1":
+            self.lbl_bind_addr_warning.SetLabel("127.0.0.1 is only accessible from this PC.")
+            self.lbl_bind_addr_warning.Show()
+        else:
+            self.lbl_bind_addr_warning.SetLabel("")
+            self.lbl_bind_addr_warning.Hide()
+
+        self.GetSizer().Layout()
+
+    def on_click_bind_addr_warning(self, event):
+        self.lbl_bind_addr_warning.Hide()
+        self.GetSizer().Layout()
 
     def update_auth_state(self, *args, **kwargs):
         if self.chk_auth.IsChecked():

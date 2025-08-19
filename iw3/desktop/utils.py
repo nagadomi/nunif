@@ -184,9 +184,15 @@ def iw3_desktop_main(args, init_wxapp=True):
         args.bind_addr = get_local_address()
     if args.bind_addr == "0.0.0.0":
         pass  # Allows specifying undefined addresses
-    elif args.bind_addr == "127.0.0.1" or not is_private_address(args.bind_addr):
+    elif not is_private_address(args.bind_addr):
         raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address."
                            " Specify --bind-addr option")
+    if args.bind_addr == "127.0.0.1":
+        print(
+            ("Warning: 127.0.0.1 is only accessible from this PC. "
+             "If this option is not explicitly enabled, the network connection might be unavailable."),
+            file=sys.stderr
+        )
 
     if args.screenshot == "pil":
         screenshot_factory = ScreenshotThreadPIL
