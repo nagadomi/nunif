@@ -131,7 +131,7 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input image file")
     parser.add_argument("--output", "-o", type=str, required=True, help="output dir")
-    parser.add_argument("--init", type=str, choices=["noise", "jpeg", "shift"], default="noise", help="initial image")
+    parser.add_argument("--init", type=str, choices=["noise", "jpeg", "shift", "resize"], default="noise", help="initial image")
     parser.add_argument("--init-image", type=str, help="initial image")
     parser.add_argument("--model", type=str,
                         choices=["dct", "pool", "swd", "patch-swd", "pos-swd", "dists", "lpips", "fdl",
@@ -158,6 +158,13 @@ def main():
                 x = init_noise(y)
             case "shift":
                 x = shift(y, 3, 3)
+            case "resize":
+                x = y.unsqueeze(0)
+                x = F.interpolate(x, size=(x.shape[2] // 4,x.shape[3] // 4),
+                                  mode="bilinear", align_corners=False, antialias=True)
+                x = F.interpolate(x, size=(x.shape[2] * 4,x.shape[3] * 4),
+                                  mode="bilinear", align_corners=False)
+                x = x.squeeze(0)
 
     x = x.unsqueeze(0).cuda()
     y = y.unsqueeze(0).cuda()
