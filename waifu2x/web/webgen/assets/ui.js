@@ -1,6 +1,11 @@
 function on_recap_checked(e) {
     enable_buttons();
 }
+function on_turnstile_success(token) {
+    $("#turnstile_response").val(token);
+    enable_buttons();
+}
+
 function disable_buttons() {
     $("#submit-button").prop("disabled", true);
     $("#download-button").prop("disabled", true);
@@ -10,10 +15,16 @@ function enable_buttons() {
     $("#download-button").prop("disabled", false);
 }
 
+
 $(function (){
     var g_expires = 365;
     var recaptcha_js = "https://www.recaptcha.net/recaptcha/api.js";
+    var turnstile_widgetid;
+    var turnstile_is_enabled = false;
 
+    function reset_turnstile() {
+        turnstile.reset(turnstile_widgetid);
+    }
     function clear_file() {
         $("#file").val("");
     }
@@ -53,6 +64,16 @@ $(function (){
             disable_buttons();
         } else {
             console.log("recaptcha: disabled")
+        }
+    }
+    function commit_turnstile_response()
+    {
+        if (turnstile_is_enabled) {
+            console.log("turnstile: enabled")
+            reset_turnstile();
+            disable_buttons();
+        } else {
+            console.log("turnstile: disabled")
         }
     }
     function restore_from_cookie()
@@ -119,6 +140,7 @@ $(function (){
             }
         };
         commit_recap_response();
+        commit_turnstile_response();
         xhr.send(new FormData($("form").get(0)));
     }
     function load_recaptcha()
@@ -128,12 +150,12 @@ $(function (){
             type: "GET",
             dataType: "json",
         }).done(function (data) {
-            if (data.enabled) {
+            if (data.recaptcha_enabled) {
                 // setup recaptcha
                 console.log("recaptcha is enabled");
                 $("<div>").attr({
                     "class": "g-recaptcha",
-                    "data-sitekey": data.site_key,
+                    "data-sitekey": data.recaptcha_site_key,
                     "data-callback": "on_recap_checked"
                 }).appendTo("#recap_container");
                 $("<script>").attr({
@@ -141,8 +163,17 @@ $(function (){
                     src: recaptcha_js
                 }).appendTo(document.head);
                 disable_buttons();
+            } else if (data.turnstile_enabled) {
+                // setup turnstile
+                console.log("turnstile is enabled");
+                turnstile_is_enabled = true;
+                turnstile_widgetid = turnstile.render('#turnstile_container', {
+                     sitekey: data.turnstile_site_key,
+                     callback: on_turnstile_success,
+                });
+                disable_buttons();
             } else {
-                console.log("recaptcha is disabled");
+                console.log("recaptcha/turnstile is disabled");
             }
         }).fail(function (e) {
             console.log(e)
@@ -182,6 +213,7 @@ $(function (){
     $("form").submit(function(e) {
         e.preventDefault();
         commit_recap_response();
+        commit_turnstile_response();
         this.submit();
     });
     $(document).on({
