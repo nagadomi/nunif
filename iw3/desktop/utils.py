@@ -5,12 +5,16 @@ import math
 from os import path
 import time
 import socket
-import struct
+import ipaddress
 from collections import deque
 import wx  # for mouse pointer
 from packaging.version import Version
 import torch
 from torchvision.io import encode_jpeg
+from nunif.device import create_device
+from nunif.models import compile_model
+from nunif.models.data_parallel import DeviceSwitchInference
+from nunif.initializer import gc_collect
 from .. import utils as IW3U
 from .. import models  # noqa
 from .screenshot_thread_pil import ScreenshotThreadPIL
@@ -21,10 +25,10 @@ from .screenshot_process import ( # noqa
     enum_window_names,
 )
 from .streaming_server import StreamingServer
-from nunif.device import create_device
-from nunif.models import compile_model
-from nunif.models.data_parallel import DeviceSwitchInference
-from nunif.initializer import gc_collect
+try:
+    from .local_viewer import LocalViewer
+except ImportError:
+    LocalViewer = None
 
 
 TORCH_VERSION = Version(torch.__version__)
@@ -70,19 +74,19 @@ def get_local_address():
 
 
 def is_private_address(ip):
-    """ https://stackoverflow.com/a/8339939
-    """
-    f = struct.unpack("!I", socket.inet_pton(socket.AF_INET, ip))[0]
-    private = (
-        [2130706432, 4278190080],  # 127.0.0.0,   255.0.0.0   https://www.rfc-editor.org/rfc/rfc3330
-        [3232235520, 4294901760],  # 192.168.0.0, 255.255.0.0 https://www.rfc-editor.org/rfc/rfc1918
-        [2886729728, 4293918720],  # 172.16.0.0,  255.240.0.0 https://www.rfc-editor.org/rfc/rfc1918
-        [167772160, 4278190080],   # 10.0.0.0,    255.0.0.0   https://www.rfc-editor.org/rfc/rfc1918
-    )
-    for net in private:
-        if (f & net[1]) == net[0]:
-            return True
-    return False
+    try:
+        ip = ipaddress.ip_address(ip)
+        return not ip.is_unspecified and ip.is_private
+    except ValueError:
+        return False
+
+
+def is_loopback_address(ip):
+    try:
+        ip = ipaddress.ip_address(ip)
+        return ip.is_loopback
+    except ValueError:
+        return False
 
 
 def to_uint8(x):
@@ -122,6 +126,7 @@ def debug_jpeg_data(frame, jpeg_data):
 def create_parser():
     local_address = get_local_address()
     parser = IW3U.create_parser(required_true=False)
+    parser.add_argument("--local-viewer", action="store_true", help="Use Local Viewer instead of Web Streaming")
     parser.add_argument("--port", type=int, default=1303,
                         help="HTTP listen port")
     parser.add_argument("--bind-addr", type=str, default=local_address,
@@ -142,6 +147,7 @@ def create_parser():
     parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
     parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
     parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
+
     parser.set_defaults(
         input="dummy",
         output="dummy",
@@ -161,26 +167,42 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
         args.edge_dilation = 2
 
 
+def test_output_size(size, args, depth_model, side_model):
+    frame = torch.zeros((3, *size), dtype=torch.float32).to(args.state["device"])
+    sbs = IW3U.process_image(frame, args, depth_model, side_model)
+    depth_model.reset()
+    return sbs.shape[-2:]
+
+
 def iw3_desktop_main(args, init_wxapp=True):
     init_num_threads(args.gpu[0])
 
-    if args.full_sbs:
-        frame_width_scale = 2
-    elif args.rgbd:
-        frame_width_scale = 2
-    elif args.half_rgbd:
-        frame_width_scale = 1
-    else:
+    if not (args.full_sbs or args.rgbd or args.half_rgbd):
         args.half_sbs = True
-        frame_width_scale = 1
 
-    if args.bind_addr is None:
-        args.bind_addr = get_local_address()
-    if args.bind_addr == "0.0.0.0":
-        pass  # Allows specifying undefined addresses
-    elif args.bind_addr == "127.0.0.1" or not is_private_address(args.bind_addr):
-        raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address."
-                           " Specify --bind-addr option")
+    if args.user or args.password:
+        user = args.user or ""
+        password = args.password or ""
+        auth = (user, password)
+    else:
+        auth = None
+
+    if not args.local_viewer:
+        if args.bind_addr is None:
+            args.bind_addr = get_local_address()
+            if not is_private_address(args.bind_addr):
+                raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address. "
+                                   " Specify --bind-addr option")
+
+        if is_loopback_address(args.bind_addr):
+            print(
+                (f"Warning: {args.bind_addr} is only accessible from this PC. "
+                 "If this option is not explicitly enabled, the network connection might be unavailable."),
+                file=sys.stderr
+            )
+        if not is_private_address(args.bind_addr) and auth is None:
+            raise RuntimeError(f"({args.bind_addr}) is not Local Area Network Address. "
+                               "Specify --username/--password option.")
 
     if args.screenshot == "pil":
         screenshot_factory = ScreenshotThreadPIL
@@ -206,13 +228,6 @@ def iw3_desktop_main(args, init_wxapp=True):
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
         device_id=args.gpu[0],
     )
-    if args.user or args.password:
-        user = args.user or ""
-        password = args.password or ""
-        auth = (user, password)
-    else:
-        auth = None
-
     if args.screenshot != "wc_mp" and args.monitor_index != 0:
         raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
     if args.screenshot != "wc_mp" and args.window_name:
@@ -239,24 +254,37 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_height = screen_height
         frame_width = screen_width
 
-    with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
-              mode="r", encoding="utf-8") as f:
-        index_template = f.read()
+    output_frame_height, output_frame_width = test_output_size(
+        (frame_height, frame_width),
+        args, depth_model, side_model
+    )
 
+    lock = threading.Lock()
     if init_wxapp:
         empty_app = wx.App()  # noqa: this is needed to initialize wx.GetMousePosition()
 
-    lock = threading.Lock()
-    server = StreamingServer(
-        host=args.bind_addr,
-        port=args.port, lock=lock,
-        frame_width=frame_width * frame_width_scale,
-        frame_height=frame_height,
-        fps=args.stream_fps,
-        index_template=index_template,
-        stream_uri="/stream.jpg", stream_content_type="image/jpeg",
-        auth=auth
-    )
+    if not args.local_viewer:
+        # Web Streaming
+        with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
+                  mode="r", encoding="utf-8") as f:
+            index_template = f.read()
+
+        server = StreamingServer(
+            host=args.bind_addr,
+            port=args.port, lock=lock,
+            frame_width=output_frame_width,
+            frame_height=output_frame_height,
+            fps=args.stream_fps,
+            index_template=index_template,
+            stream_uri="/stream.jpg", stream_content_type="image/jpeg",
+            auth=auth
+        )
+    else:
+        # Local Viewer
+        if LocalViewer is None:
+            raise RuntimeError("Local Viewer is not available")
+        server = LocalViewer(lock=lock, width=output_frame_width, height=output_frame_height)
+
     screenshot_thread = screenshot_factory(
         fps=args.stream_fps,
         frame_width=frame_width, frame_height=frame_height,
@@ -272,10 +300,16 @@ def iw3_desktop_main(args, init_wxapp=True):
         # main loop
         server.start()
         screenshot_thread.start()
-        if args.state["fps_event"] is not None:
-            args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
+
+        if not args.local_viewer:
+            if args.state["fps_event"] is not None:
+                args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
+            else:
+                print(f"Open http://{args.bind_addr}:{args.port}")
         else:
-            print(f"Open http://{args.bind_addr}:{args.port}")
+            if args.state["fps_event"] is not None:
+                args.state["fps_event"].set_url(None)
+
         count = last_status_time = 0
         fps_counter = deque(maxlen=120)
 
@@ -284,10 +318,14 @@ def iw3_desktop_main(args, init_wxapp=True):
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
                 sbs = IW3U.process_image(frame, args, depth_model, side_model)
-                if args.gpu_jpeg:
-                    server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+
+                if not args.local_viewer:
+                    if args.gpu_jpeg:
+                        server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                    else:
+                        server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
                 else:
-                    server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                    server.set_frame_data((sbs, tick))
 
                 if count % (args.stream_fps * 30) == 0:
                     gc_collect()
@@ -305,6 +343,12 @@ def iw3_desktop_main(args, init_wxapp=True):
                               f"Streaming FPS = {server.get_fps():.02f}, "
                               f"Screen Size = {screen_size_tuple}", end="")
 
+            if args.local_viewer:
+                if not wx.GetApp().IsMainLoopRunning():
+                    # CLI
+                    wx.Yield()
+                if server.is_closed():
+                    break
             process_time = time.perf_counter() - tick
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
             time.sleep(wait_time)

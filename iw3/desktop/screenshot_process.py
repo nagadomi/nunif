@@ -195,7 +195,7 @@ def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_loc
                     left = crop_left
                     right = w - crop_right if crop_right > 0 else w
                     source_frame = source_frame[top:bottom, left:right, :]
-                
+
                 if frame_buffer.shape != source_frame.shape:
                     if window_name is not None:
                         # NOTE: The size may differ due to resizing, Window effects, etc.
@@ -238,7 +238,7 @@ def to_tensor(bgra, device):
 
 class ScreenshotProcess(threading.Thread):
     def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="pil", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0):
-        super().__init__()
+        super().__init__(daemon=True)
         self.backend = backend
         self.frame_width = frame_width
         self.frame_height = frame_height
@@ -345,10 +345,11 @@ class ScreenshotProcess(threading.Thread):
                     break
         finally:
             self.process_stop_event.set()
-            time.sleep(0.1)
-            self.process.join()
             self.stop_event.set()
-            time.sleep(0.1)
+            self.process.join(timeout=4)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join()
             self.process = None
             self.process_frame_buffer.close()
             self.process_frame_buffer.unlink()
@@ -375,4 +376,4 @@ class ScreenshotProcess(threading.Thread):
     def stop(self):
         self.stop_event.set()
         if self.ident is not None:
-            self.join()
+            self.join(timeout=4)
