@@ -16,7 +16,7 @@ C5 = 512
 FEAT_DIMS = [C2, C3, C4, C5]
 RANDOM_PROJECTION_DIM = 64
 # TODO: uplaod
-CHECKPOINT_URL = "../dino/models/l4sn_v2/l4sn.pth"
+CHECKPOINT_URL = "../dino/models/l4sn_v3/l4sn.pth"
 
 
 def normalize(x):
@@ -52,6 +52,7 @@ class L4SNFeature(nn.Module):
 
     @conditional_compile(["DINO_TRAIN", "NUNIF_TRAIN"])
     def forward_features(self, x, activation=True):
+        assert x.shape[2] % 16 == 0 and x.shape[3] % 16 == 0
         x = normalize(x)
         x1 = self.l1(x)
         x1a = F.leaky_relu(x1, 0.2, inplace=True)
@@ -68,7 +69,7 @@ class L4SNFeature(nn.Module):
 
     @conditional_compile(["DINO_TRAIN", "NUNIF_TRAIN"])
     def forward(self, x):
-        assert x.shape[2] % 16 == 0
+        assert x.shape[2] % 16 == 0 and x.shape[3] % 16 == 0
         # x is normalized
         x = self.l1(x)
         x = F.leaky_relu(x, 0.2, inplace=True)
