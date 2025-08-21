@@ -140,7 +140,7 @@ def main():
     parser.add_argument("--iteration", type=int, default=20000, help="iteration")
     parser.add_argument("--fp32", action="store_true", help="use fp32")
     parser.add_argument("--save-interval", type=int, default=100, help="save interval")
-    parser.add_argument("--random-shift", action="store_true")
+    parser.add_argument("--disable-random-shift", action="store_true")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
@@ -200,7 +200,7 @@ def main():
     for i in range(args.iteration):
         optimizer.zero_grad()
 
-        if args.random_shift:
+        if not args.disable_random_shift:
             w = random.randint(-8, 8)
             h = random.randint(-8, 8)
             xx = shift(x, w, h)
