@@ -6,6 +6,7 @@ from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init
 from nunif.modules.pad import get_pad_size
 from nunif.modules.reflection_pad2d import reflection_pad2d_naive
+from nunif.modules.permute import window_partition2d
 
 
 C1 = 32
@@ -98,17 +99,60 @@ class L4SN(nn.Module):
         return x
 
 
+def _window_sliced_wasserstein(input, target, window_size=8):
+    assert input.shape[2] % window_size == 0 and input.shape[3] % window_size == 0
+    input = window_partition2d(input, window_size=window_size)
+    target = window_partition2d(target, window_size=window_size)
+    B, N, C, H, W = input.shape
+    input = input.reshape(B * N, C, H * W).contiguous()
+    target = target.reshape(B * N, C, H * W).contiguous()
+
+    input, _ = torch.sort(input, dim=-1)
+    target, _ = torch.sort(target, dim=-1)
+
+    return F.l1_loss(input, target)
+
+
+def overlap_window_sliced_wasserstein(input, target, window_size=8):
+    assert window_size % 2 == 0
+    pad = window_size // 2
+    if input.shape[2] % window_size != 0:
+        assert input.shape[2] == input.shape[3]
+        rem = (window_size - input.shape[2] % window_size)
+        pad1 = rem // 2
+        pad2 = rem - pad1
+        input2 = reflection_pad2d_naive(input, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad), detach=True)
+        target2 = reflection_pad2d_naive(target, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad), detach=True)
+        input = reflection_pad2d_naive(input, (pad1, pad2, pad1, pad2), detach=True)
+        target = reflection_pad2d_naive(target, (pad1, pad2, pad1, pad2), detach=True)
+    else:
+        input2 = reflection_pad2d_naive(input, (pad,) * 4, detach=True)
+        target2 = reflection_pad2d_naive(target, (pad,) * 4, detach=True)
+
+    loss1 = _window_sliced_wasserstein(input, target, window_size=window_size)
+    loss2 = _window_sliced_wasserstein(input2, target2, window_size=window_size)
+
+    return (loss1 + loss2) * 0.5
+
+
 class L4SNLoss(nn.Module):
     def __init__(
             self,
             activation=True,
-            loss_weights=[0.35, 0.5, 0.7, 1.0],
+            loss_weights=[0.5, 0.3, 1.0, 0.8],
+            swd_weight=0, swd_indexes=[0, 1], swd_window_size=8,
             checkpoint_file=None,
     ):
         super().__init__()
+        assert all(0 <= i <= 3 for i in swd_indexes)
+        assert 0 <= swd_weight <= 1
+
         self.feature = L4SNFeature()
         self.activation = activation
         self.loss_weights = loss_weights
+        self.swd_weight = swd_weight
+        self.swd_indexes = swd_indexes
+        self.swd_window_size = swd_window_size
         self.init_random_projection()
         self.load_pth(checkpoint_file or CHECKPOINT_URL)
         self.eval()
@@ -142,6 +186,7 @@ class L4SNLoss(nn.Module):
         f1s = self.feature.forward_features(input, activation=self.activation)
         f2s = self.feature.forward_features(target, activation=self.activation)
         loss = 0
+        swd_loss = 0
         for i, (f1, f2) in enumerate(zip(f1s, f2s)):
             weight = getattr(self, f"random_projection_{i}")
             f1 = F.conv2d(f1, weight=weight, bias=None, stride=1)
@@ -149,7 +194,16 @@ class L4SNLoss(nn.Module):
             f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False)
             f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False)
             loss = loss + F.l1_loss(f1, f2) * self.loss_weights[i]
-        return loss / (len(f1s) * 2)
+
+            if self.swd_weight > 0 and i in self.swd_indexes:
+                swd_loss = swd_loss + overlap_window_sliced_wasserstein(
+                    f1, f2, window_size=self.swd_window_size
+                ) * self.loss_weights[i]
+
+        feat_loss = loss / (len(f1s) * 2)
+        swd_loss = swd_loss / len(self.swd_indexes)
+        loss = feat_loss * (1 - self.swd_weight) + swd_loss * self.swd_weight
+        return loss
 
     def forward(self, input, target):
         loss = self.forward_loss(input, target)
