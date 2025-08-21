@@ -44,6 +44,31 @@ def inv_distance_to_disparity(x, c):
     return ((c + 1) * x) / (x + c)
 
 
+def shift_relative_depth(x, min_distance, max_distance=16):
+    # convert x from dispariy space to distance space
+    # reference: https://github.com/LiheYoung/Depth-Anything/issues/72#issuecomment-1937892879
+    provisional_max_distance = min_distance + max_distance
+    A = 1.0 / provisional_max_distance
+    B = (1.0 / min_distance) - (1.0 / provisional_max_distance)
+    distance = 1 / (A + B * x)
+
+    # shift distance in distance space. old min_distance -> 1
+    new_min_distance = 1.0
+    distance = (new_min_distance - min_distance) + distance
+
+    # back to disparity space
+    new_x = 1.0 / distance
+
+    # scale output to 0-1 range
+    # NOTE: Do not use new_x.amin()/new_x.amax() to avoid re-normalization.
+    #       This condition is required when using EMA normalization with look-ahead buffers.
+    min_value = 1.0 / (max_distance + 1)
+    value_range = 1.0 - 1.0 / (max_distance + 1)
+    new_x = (new_x - min_value) / value_range
+
+    return new_x
+
+
 def find_softplus_v2_main():
     def find_softplus_v1_to_v2(c):
         # c=4, bias=0.333, scale=12
@@ -227,10 +252,24 @@ def check_distance_to_disparity_main():
     plt.show()
 
 
+def check_shift_relative_depth_main():
+    # result: https://github.com/user-attachments/assets/7c953aae-101e-4337-82b4-10a073863d47
+    x = torch.linspace(0, 1, 1000)
+    plt.plot(x, x, label="none")
+
+    for c in (1.4, 2, 3.0, 0.8, 0.6, 0.45):
+        y = shift_relative_depth(x, c)
+        plt.plot(x, y, label=f"{c}")
+
+    plt.legend()
+    plt.show()
+
+
 if __name__ == "__main__":
     # find_softplus_v2_main()
     # find_softplus_mul_main()
     # check_find_softplus_mul_main()
     # find_inv_softplus_main()
     # check_find_inv_softplus_main()
-    check_distance_to_disparity_main()
+    #check_distance_to_disparity_main()
+    check_shift_relative_depth_main()

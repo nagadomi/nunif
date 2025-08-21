@@ -408,8 +408,8 @@ class IRMixIn():
 
 @register_model
 class SwinUNet1xV2(I2IBaseModel):
-    name = "waifu2x.swin_unet_1x_v2"
-    name_alias = ("waifu2x.winc_unet_1x",)
+    name = "waifu2x.swin_unet_v2_1x"
+    name_alias = ("waifu2x.winc_unet_1x", "waifu2x.swin_unet_1x_v2")
 
     def __init__(self, in_channels=3, out_channels=3,
                  base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
@@ -567,7 +567,7 @@ class SwinUNetV2Downscaled(I2IBaseModel):
 
 
 register_model_factory(
-    "waifu2x.winc_unet_1xs",
+    "waifu2x.swin_unet_v2_1xs",
     lambda **kwargs: SwinUNet1xV2(base_dim=32, first_layers=1, last_layers=1, lv1_mlp_ratio=1, lv2_mlp_ratio=1, **kwargs))
 
 
@@ -603,7 +603,7 @@ def _bench(name, compile):
 
 if __name__ == "__main__":
     enable_full_compile = False
-    _bench("waifu2x.winc_unet_1x", enable_full_compile)
-    _bench("waifu2x.winc_unet_2x", enable_full_compile)
-    _bench("waifu2x.winc_unet_4x", enable_full_compile)
-    _bench("waifu2x.winc_unet_1xs", enable_full_compile)
+    _bench("waifu2x.swin_unet_v2_1x", enable_full_compile)
+    _bench("waifu2x.swin_unet_v2_2x", enable_full_compile)
+    _bench("waifu2x.swin_unet_v2_4x", enable_full_compile)
+    _bench("waifu2x.swin_unet_v2_1xs", enable_full_compile)

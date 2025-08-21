@@ -42,6 +42,7 @@ from .video_depth_anything_model import (
     VideoDepthAnythingModel,
     AA_SUPPORT_MODELS as VDA_AA_SUPPORTED_MODELS
 )
+from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel, AA_SUPPORT_MODELS as VDA_STREAM_AA_SUPPORTED_MODELS
 from .depth_pro_model import DepthProModel
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
@@ -211,7 +212,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
-                                      choices=["mlbw_l2", "mlbw_l4",
+                                      choices=["mlbw_l2", "mlbw_l4", "mlbw_l2s",
                                                "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
                                                "forward_fill"],
                                       name="cbo_method")
@@ -260,9 +261,9 @@ class MainFrame(wx.Frame):
                                              name="chk_ema_normalize")
         self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
 
-        self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.95", "0.9", "0.75", "0.5", "0.0"],
+        self.cbo_ema_decay = EditableComboBox(self.grp_stereo, choices=["0.99", "0.95", "0.9", "0.75", "0.5"],
                                               name="cbo_ema_decay")
-        self.cbo_ema_decay.SetSelection(1)
+        self.cbo_ema_decay.SetSelection(2)
         self.cbo_ema_decay.SetToolTip(T("Decay Rate"))
 
         self.cbo_ema_buffer = EditableComboBox(self.grp_stereo, choices=["150", "60", "30", "1"],
@@ -684,6 +685,10 @@ class MainFrame(wx.Frame):
         if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric"):
             depth_models.append("VDA_Metric")
 
+        depth_models += ["VDA_Stream_S"]
+        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
+            depth_models.append("VDA_Stream_L")
+
         return depth_models
 
     def get_editable_comboboxes(self):
@@ -786,6 +791,7 @@ class MainFrame(wx.Frame):
                 DepthAnythingModel.supported(name) or
                 DepthProModel.supported(name) or
                 VideoDepthAnythingModel.supported(name) or
+                VideoDepthAnythingStreamingModel.supported(name) or
                 name.startswith("ZoeD_Any_")
         ):
             self.cbo_edge_dilation.Enable()
@@ -799,7 +805,7 @@ class MainFrame(wx.Frame):
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
 
-        if name in DA_AA_SUPPORTED_MODELS or name in VDA_AA_SUPPORTED_MODELS:
+        if name in DA_AA_SUPPORTED_MODELS or name in VDA_AA_SUPPORTED_MODELS or name in VDA_STREAM_AA_SUPPORTED_MODELS:
             self.chk_depth_aa.Enable()
         else:
             self.chk_depth_aa.Disable()

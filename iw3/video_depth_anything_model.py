@@ -31,9 +31,11 @@ AA_SUPPORT_MODELS = {
 
 
 def batch_preprocess(x, lower_bound, metric_depth):
-    x = batch_preprocess_da(x, lower_bound - METRIC_PADDING * 2)
     if metric_depth:
+        x = batch_preprocess_da(x, lower_bound - METRIC_PADDING * 2)
         x = reflection_pad2d_naive(x, (METRIC_PADDING,) * 4)
+    else:
+        x = batch_preprocess_da(x, lower_bound)
     assert x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0
     return x
 
@@ -120,11 +122,14 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
         return model
 
-    def reset(self):
+    def reset_state(self):
         self.model.reset_state()
-        self.reset_ema()
         self.input_frame_count = 0
         self.output_frame_count = 0
+
+    def reset(self):
+        self.reset_state()
+        self.reset_ema()
 
     def infer(self, x, enable_amp=True, edge_dilation=0, **kwargs):
         # NOTE: DONT USE THIS

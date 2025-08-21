@@ -20,7 +20,6 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
 from iw3.utils import get_mapper
 from iw3.forward_warp import apply_divergence_forward_warp
-from .stereoimage_generation import create_stereoimages
 
 
 OFFSET = 32
@@ -218,7 +217,6 @@ def gen_depth_aa(model_type):
 
 
 def main(args):
-    import numba
     from ...depth_model_factory import create_depth_model
 
     assert args.min_size - OFFSET * 2 >= args.size
@@ -226,8 +224,6 @@ def main(args):
     # force_update_zoedepth()
 
     max_workers = cpu_count() // 2 or 1
-    numba.set_num_threads(max_workers)
-
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     model = create_depth_model(args.model_type)
     model.load(gpu=args.gpu, resolution=args.resolution)
@@ -295,27 +291,19 @@ def main(args):
                         depth = model.minmax_normalize_chw(depth)
                         np_depth16 = (depth * 0xffff).round().to(torch.uint16).squeeze(0).cpu().numpy()
 
-                    if args.method == "polylines":
-                        np_depth_f = apply_mapper(depth, mapper).squeeze(0).numpy().astype(np.float64)
-                        sbs = create_stereoimages(
-                            np.array(im_s, dtype=np.uint8),
-                            np_depth_f,
-                            divergence, modes=["left-right"],
-                            convergence=convergence)[0]
-                    elif args.method == "forward_fill":
-                        c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
-                        depth_f = apply_mapper(depth, mapper).unsqueeze(0)
-                        left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
-                            c, depth_f, divergence, convergence,
-                            method="forward_fill",
-                            synthetic_view="both",
-                            return_mask=True,
-                            inconsistent_shift=True)
+                    c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
+                    depth_f = apply_mapper(depth, mapper).unsqueeze(0)
+                    left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
+                        c, depth_f, divergence, convergence,
+                        method="forward_fill",
+                        synthetic_view="both",
+                        return_mask=True,
+                        inconsistent_shift=True)
 
-                        sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
-                        sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
-                        mask_sbs = torch.cat([left_mask, right_mask], dim=3).squeeze(0).float()
-                        mask_sbs = TF.to_pil_image(mask_sbs)
+                    sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
+                    sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
+                    mask_sbs = torch.cat([left_mask, right_mask], dim=3).squeeze(0).float()
+                    mask_sbs = TF.to_pil_image(mask_sbs)
 
                     f = pool.submit(save_images, im_s, sbs, mask_sbs, Image.fromarray(np_depth16),
                                     divergence, convergence,
@@ -347,7 +335,6 @@ def register(subparsers, default_parser):
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
     parser.add_argument("--mapper", type=str, default="random", help="depth mapper function")
-    parser.add_argument("--method", type=str, default="forward_fill", choices=["forward_fill", "polylines"], help="divergence method")
     parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
 
     parser.set_defaults(handler=main)
