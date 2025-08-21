@@ -102,6 +102,7 @@ LOSS_FUNCTIONS = {
     "l1dinov2_10": lambda: DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=1.0),
     "yrgb_lbp_dinov2": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=2.0),
     "l1l4sn": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=1),
+    "l1l4sn_swd": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=1, swd_weight=0.1),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
     # loss is computed in model.forward()
