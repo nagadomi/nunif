@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--init-image", type=str, help="initial image")
     parser.add_argument("--model", type=str,
                         choices=["dct", "pool", "swd", "patch-swd", "pos-swd", "dists", "lpips", "fdl",
-                                 "l4sn"],
+                                 "l4sn", "l4sn-swd"],
                         required=True)
     parser.add_argument("--iteration", type=int, default=20000, help="iteration")
     parser.add_argument("--fp32", action="store_true", help="use fp32")
@@ -190,6 +190,9 @@ def main():
             model = FDLLoss().eval().cuda()
         case "l4sn":
             model = L4SNLoss(activation=True)
+            model = model.eval().cuda()
+        case "l4sn-swd":
+            model = L4SNLoss(activation=True, swd_weight=0.5, swd_indexes=[0, 1], swd_window_size=8)
             model = model.eval().cuda()
 
     optimizer = torch.optim.Adam([x], lr=1e-3, betas=(0.9, 0.99))
