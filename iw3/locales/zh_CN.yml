@@ -112,6 +112,7 @@
 
 # iw3.desktop
 "Network": "网络"
+"View Mode": "显示模式"
 "Address": "地址"
 "Port": "端口"
 "Streaming FPS": "流媒体帧率"

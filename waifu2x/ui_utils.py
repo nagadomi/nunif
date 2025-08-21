@@ -2,7 +2,6 @@ import os
 from os import path
 import warnings
 import torch
-import torchvision.transforms.functional as TF
 from PIL import Image
 import argparse
 import csv
@@ -103,6 +102,7 @@ def process_images(ctx, files, output_dir, args, title=None):
 
 
 def process_video(ctx, input_filename, output_path, args):
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     if args.compile:
         ctx.compile()
 
@@ -153,13 +153,13 @@ def process_video(ctx, input_filename, output_path, args):
     def frame_callback(frame):
         if frame is None:
             return None
-        im = frame.to_image()
-        if args.rotate_left:
-            im = im.transpose(Image.Transpose.ROTATE_90)
-        elif args.rotate_right:
-            im = im.transpose(Image.Transpose.ROTATE_270)
 
-        rgb = TF.to_tensor(im).to(args.state["device"])
+        rgb = VU.to_tensor(frame, device=args.state["device"])
+        if args.rotate_left:
+            rgb = torch.rot90(rgb, 1, (-2, -1))
+        elif args.rotate_right:
+            rgb = torch.rot90(rgb, 3, (-2, -1))
+
         output, _ = ctx.convert(
             rgb, None, args.method, args.noise_level,
             args.tile_size, args.batch_size,
@@ -175,7 +175,7 @@ def process_video(ctx, input_filename, output_path, args):
                 args.state["noise_buffer"].add_(noise.mul_(args.grain_speed))
             output = apply_rgb_noise(output, args.state["noise_buffer"], strength=args.grain_strength)
 
-        return VU.to_frame(output)
+        return VU.to_frame(output, use_16bit=use_16bit)
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -269,17 +269,20 @@ def create_parser(required_true=True):
                         help="bitrate option for libopenh264")
     parser.add_argument("--preset", type=str, default="ultrafast",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
-                                 "medium", "slow", "slower", "veryslow", "placebo"],
+                                 "medium", "slow", "slower", "veryslow", "placebo",
+                                 "p1", "p2", "p3", "p4", "p5", "p6", "p7"],
                         help="encoder preset option (video only)")
     parser.add_argument("--tune", type=str, nargs="+", default=[],
                         choices=["film", "animation", "grain", "stillimage", "psnr",
                                  "fastdecode", "zerolatency"],
                         help="encoder tunings option (video only)")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "rgb24", "gbrp"],
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
                         help=("pixel format (video only)"))
     parser.add_argument("--colorspace", type=str, default="unspecified",
                         choices=["unspecified", "auto",
-                                 "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+                                 "bt709", "bt709-pc", "bt709-tv",
+                                 "bt601", "bt601-pc", "bt601-tv",
+                                 "bt2020-tv", "bt2020-pq-tv"],
                         help="video colorspace")
 
     parser.add_argument("--yes", "-y", action="store_true", default=False,

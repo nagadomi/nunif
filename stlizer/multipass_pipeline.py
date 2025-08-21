@@ -370,6 +370,7 @@ def outpaint(x, mask, model, device, composite):
 
 def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_weight, fps, args):
     device = args.state["device"]
+    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     if args.border in {"outpaint", "expand_outpaint"}:
         with TorchHubDir(TORCH_HUB_DIR):
@@ -381,8 +382,7 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
     def test_callback(frame):
         if frame is None:
             return None
-        im = frame.to_image()
-        x = TF.to_tensor(im).to(device)
+        x = VU.to_tensor(frame, device=device)
 
         if args.border in {"expand", "expand_outpaint"}:
             padding = int(max(x.shape[1], x.shape[2]) * args.padding)
@@ -393,9 +393,9 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
 
         if args.debug:
             z = torch.cat([x, x], dim=2)
-            return VU.to_frame(z)
+            return VU.to_frame(z, use_16bit=use_16bit)
         else:
-            return VU.to_frame(x)
+            return VU.to_frame(x, use_16bit=use_16bit)
 
     index = [0]
     buffer = [None]
@@ -489,6 +489,7 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
         batch_size=args.batch_size,
         device=device,
         max_workers=0,
+        use_16bit=use_16bit,
     )
     VU.process_video(args.input, output_path,
                      stabilizer_callback_pool,

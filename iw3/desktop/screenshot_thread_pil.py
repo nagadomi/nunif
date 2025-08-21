@@ -31,7 +31,7 @@ def to_tensor(pil_image, device, frame_buffer):
 
 class ScreenshotThreadPIL(threading.Thread):
     def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, **_ignore_unsupported_kwargs):
-        super().__init__()
+        super().__init__(daemon=True)
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.monitor_index = monitor_index  # TODO: not implemented
@@ -110,4 +110,4 @@ class ScreenshotThreadPIL(threading.Thread):
         self.stop_event.set()
         self.frame_unset_event.set()
         if self.ident is not None:
-            self.join()
+            self.join(timeout=4)
