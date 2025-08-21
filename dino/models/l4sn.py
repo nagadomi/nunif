@@ -211,11 +211,11 @@ class L4SNLoss(nn.Module):
 
 
 class L4SNWith(nn.Module):
-    def __init__(self, base_loss, weight=1.0):
+    def __init__(self, base_loss, weight=1.0, **l4sn_kwargs):
         super().__init__()
         self.base_loss = base_loss
         self.weight = weight
-        self.l4sn = L4SNLoss()
+        self.l4sn = L4SNLoss(**l4sn_kwargs)
 
     def forward(self, input, target):
         pad = get_pad_size(input, 16)
@@ -223,7 +223,11 @@ class L4SNWith(nn.Module):
         target = reflection_pad2d_naive(target, pad, detach=True)
         base_loss = self.base_loss(input, target)
         l4sn_loss = self.l4sn(input, target)
-        return base_loss + l4sn_loss * self.weight
+        if self.weight <= 1.0:
+            return base_loss + l4sn_loss * self.weight
+        else:
+            base_weight = 1.0 / self.weight
+            return base_loss * base_weight + l4sn_loss
 
 
 def _test_grad():
