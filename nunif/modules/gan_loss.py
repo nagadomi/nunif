@@ -69,16 +69,9 @@ class GANHingeLoss(nn.Module):
 
 class GANHingeClampLoss(GANHingeLoss):
     @staticmethod
-    def ste_clamp(x, slope=0.1):
-        x_clamp = x.clamp(-1, 1)
-        x = x_clamp + (x - x_clamp) * slope
-        return x + x.clamp(-1, 1).detach() - x.detach()
-
-    def forward(self, real, fake=None):
-        real = self.ste_clamp(real)
-        if fake is not None:
-            fake = self.ste_clamp(fake)
-        return super().forward(real, fake)
+    def generator_loss(real, fake):
+        # Soft clamp generator loss less than 0
+        return F.leaky_relu(1. - real, 0.01).mean()
 
 
 class GANSoftplusLoss(nn.Module):

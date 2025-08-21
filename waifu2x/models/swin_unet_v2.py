@@ -8,7 +8,7 @@ from nunif.modules.replication_pad2d import ReplicationPad2dNaive as Replication
 from nunif.modules.init import icnr_init, basic_module_init
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.norm import FastLayerNorm
-from nunif.modules.softpool import soft_pool_downscale
+from nunif.modules.antialiased_bicubic import AntialiasedBicubic
 
 
 class GLUConvMLP(nn.Module):
@@ -310,7 +310,9 @@ class SwinUNetV2Base(nn.Module):
     def set_tile_2x2_mode(self):
         self.tile_2x2_mode = True
 
-    def _forward(self, x, src):
+    def _forward(self, x):
+        src = x
+        x = self.ir(x)
         x = self.patch(x)
         x = F.pad(x, (-7,) * 4)
         x = F.leaky_relu(x, 0.2, inplace=True)
@@ -325,33 +327,21 @@ class SwinUNetV2Base(nn.Module):
 
         return z
 
-    def _forward_tile2x2(self, x, src):
+    def _forward_tile2x2(self, x):
         tl = x[:, :, :64, :64]
         tr = x[:, :, :64, -64:]
         bl = x[:, :, -64:, :64]
         br = x[:, :, -64:, -64:]
         x = torch.cat([tl, tr, bl, br], dim=0).contiguous()
 
-        tl = src[:, :, :64, :64]
-        tr = src[:, :, :64, -64:]
-        bl = src[:, :, -64:, :64]
-        br = src[:, :, -64:, -64:]
-        src = torch.cat([tl, tr, bl, br], dim=0).contiguous()
-
-        x = self._forward(x, src)
+        x = self._forward(x)
         tl, tr, bl, br = x.split(x.shape[0] // 4, dim=0)
         top = torch.cat([tl, tr], dim=3)
         bottom = torch.cat([bl, br], dim=3)
         x = torch.cat([top, bottom], dim=2).contiguous()
         return x
 
-    def forward(self, x, src=None):
-        if src is None:
-            src = x
-            x = self.ir(x)
-        else:
-            assert x.shape[1] == 16
-
+    def forward(self, x):
         if self.tile_mode or self.tile_2x2_mode:
             B, C, H, W = x.shape
             if self.scale_factor in {4, 2, 1}:
@@ -362,53 +352,22 @@ class SwinUNetV2Base(nn.Module):
                     if self.tick % 2 == 0:
                         # 112 -> 110
                         x = F.pad(x, (-1,) * 4)
-                        src = F.pad(src, (-1,) * 4)
-                        return self._forward_tile2x2(x, src)
+                        return self._forward_tile2x2(x)
                     else:
-                        return self._forward(x, src)
+                        return self._forward(x)
                 else:
                     x = F.pad(x, (-1,) * 4)
-                    src = F.pad(src, (-1,) * 4)
-                    return self._forward_tile2x2(x, src)
+                    return self._forward_tile2x2(x)
             else:
                 raise NotImplementedError()
         else:
-            return self._forward(x, src)
+            return self._forward(x)
 
 
 def tile_size_validator(size):
     return (size > 16 and
             (size - 16) % 12 == 0 and
             (size - 16) % 16 == 0)
-
-
-class IRMixIn():
-    def has_callback(self):
-        # Not used
-        # The basic idea of this is,
-        # ```
-        # intermediate_representation = ir(overall_image)
-        # result_image = tiled_infer(intermediate_representation)
-        # ```
-        # Instead of tiling the image pixels directly,
-        # tiling from intermediate feature that use larger receptive field
-        return False
-
-    def config_callback(self, x):
-        C, H, W = x.shape
-        return 16 + 3, H, W, C
-
-    def preprocess_callback(self, rgb, padding):
-        batch = True
-        if rgb.ndim == 3:
-            rgb = rgb.unsqueeze(0)
-            batch = False
-        rgb = replication_pad2d_naive(rgb, padding)
-        x = self.unet.ir(rgb)
-        x = torch.cat([rgb, x], dim=1)
-        if not batch:
-            x = x.squeeze(0)
-        return x.contiguous()
 
 
 @register_model
@@ -489,11 +448,7 @@ class SwinUNet4xV2(I2IBaseModel):
                                    scale_factor=4)
 
     def forward(self, x):
-        if x.shape[1] == 16 + 3:
-            src, x = x.split([3, 16], dim=1)
-            z = self.unet(x, src)
-        else:
-            z = self.unet(x)
+        z = self.unet(x)
 
         if self.training:
             return z
@@ -517,22 +472,12 @@ class SwinUNet4xV2(I2IBaseModel):
                                     in_channels=self.i2i_in_channels, out_channels=self.out_channels)
 
 
-def box_resize(x, kernel_size):
-    assert kernel_size in {2, 4}
-    # NOTE: Need static kernel_size for export
-    if kernel_size == 2:
-        return F.avg_pool2d(x, kernel_size=(2, 2), stride=(2, 2))
-    else:
-        return F.avg_pool2d(x, kernel_size=(4, 4), stride=(4, 4))
-
-
 def resize(x, downscale_factor, mode, align_corners, antialias):
     assert mode in {"box", "bicubic", "softpool"}
     h, w = x.shape[-2:]
-    if mode == "box":
-        return box_resize(x, kernel_size=downscale_factor)
-    elif mode == "softpool":
-        return soft_pool_downscale(x, downscale_factor=downscale_factor)
+    if mode == "bicubic_onnx":
+        model = AntialiasedBicubic(3, downscale_factor=downscale_factor).eval().to(x.device)
+        return model(x)
     elif mode == "bicubic":
         new_h, new_w = h // downscale_factor, w // downscale_factor
         return F.interpolate(x, size=(new_h, new_w), mode=mode, align_corners=align_corners, antialias=antialias)

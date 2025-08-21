@@ -160,6 +160,20 @@ def window_reverse2d(x, out_shape, window_size):
     return x
 
 
+def kernel2d_to_conv2d_weight(in_channels, kernel):
+    assert kernel.ndim == 2
+    kernel = kernel.reshape(1, 1, *kernel.shape)
+    kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
+    return kernel
+
+
+def kernel1d_to_conv1d_weight(in_channels, kernel):
+    assert kernel.ndim == 1
+    kernel = kernel.reshape(1, 1, *kernel.shape)
+    kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
+    return kernel
+
+
 def _test_bhwc():
     src = x = torch.rand((4, 3, 2, 2))
     x = bchw_to_bhwc(x)

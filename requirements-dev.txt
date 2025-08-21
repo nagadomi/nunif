@@ -1,6 +1,7 @@
 wand >= 0.6.10
 fonttools
 onnx
+onnxscript
 onnxconverter_common
 numba
 # https://github.com/richzhang/PerceptualSimilarity

@@ -33,14 +33,10 @@ PAD_MODE_NN = {
 
 
 def _pad(input, pad, mode="constant", value=0):
-    pad = [int(v) for v in pad]
     if mode == "reflect":
-        # TODO: For some reason, using reflection_pad2d_naive breaks the loss function.
-        # reflection_pad2d_naive(input, pad, detach=True)
-        return F.pad(input, pad, mode=mode, value=value).contiguous()
+        return reflection_pad2d_naive(input, pad, detach=True)
     elif mode == "replicate":
-        # return replication_pad2d_naive(input, pad, detach=True)
-        return F.pad(input, pad, mode=mode, value=value).contiguous()
+        return replication_pad2d_naive(input, pad, detach=True)
     else:
         return F.pad(input, pad, mode=mode, value=value).contiguous()
 

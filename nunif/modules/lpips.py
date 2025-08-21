@@ -1,17 +1,18 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
 import lpips
 from os import path
 from .compile_wrapper import conditional_compile
-from .pad import get_crop_size
+from .pad import get_pad_size
 from .local_std_mask import local_std_mask
+from .reflection_pad2d import reflection_pad2d_naive
 
 
 # Patch `lpips.normalize_tensor`
 # ref: https://github.com/facebookresearch/NeuralCompression/blob/main/neuralcompression/loss_fn/_normfix_lpips.py
 def _normalize_tensor_fix(in_feat, eps=1e-8):
-    return in_feat * torch.rsqrt(torch.sum(in_feat.to(torch.float32) ** 2 + eps, dim=1, keepdim=True)).to(in_feat.dtype)
+    in_feat = in_feat.to(torch.float32)
+    return in_feat * torch.rsqrt(torch.sum(in_feat ** 2 + eps, dim=1, keepdim=True))
 
 
 def _spatial_average(in_tens, keepdim=True):
@@ -34,31 +35,32 @@ class LPIPSFix(lpips.LPIPS):
         outs0, outs1 = self.net.forward(in0_input), self.net.forward(in1_input)
         feats0, feats1, diffs = {}, {}, {}
 
-        for kk in range(self.L):
-            # nagadomi: use _normalize_tensor_fix
-            feats0[kk], feats1[kk] = _normalize_tensor_fix(outs0[kk]), _normalize_tensor_fix(outs1[kk])
-            # nagadomi: detach target grad
-            diffs[kk] = (feats0[kk] - feats1[kk].detach()) ** 2
+        with torch.autocast(device_type=in0.device.type, enabled=False):
+            for kk in range(self.L):
+                # nagadomi: use _normalize_tensor_fix
+                feats0[kk], feats1[kk] = _normalize_tensor_fix(outs0[kk]), _normalize_tensor_fix(outs1[kk])
+                # nagadomi: detach target grad
+                diffs[kk] = (feats0[kk] - feats1[kk].detach()) ** 2
 
-        if self.lpips:
-            if self.spatial:
-                res = [_upsample(self.lins[kk](diffs[kk]), out_HW=in0.shape[2:]) for kk in range(self.L)]
+            if self.lpips:
+                if self.spatial:
+                    res = [_upsample(self.lins[kk](diffs[kk]), out_HW=in0.shape[2:]) for kk in range(self.L)]
+                else:
+                    res = [_spatial_average(self.lins[kk](diffs[kk]), keepdim=True) for kk in range(self.L)]
             else:
-                res = [_spatial_average(self.lins[kk](diffs[kk]), keepdim=True) for kk in range(self.L)]
-        else:
-            if self.spatial:
-                res = [_upsample(diffs[kk].sum(dim=1, keepdim=True), out_HW=in0.shape[2:]) for kk in range(self.L)]
+                if self.spatial:
+                    res = [_upsample(diffs[kk].sum(dim=1, keepdim=True), out_HW=in0.shape[2:]) for kk in range(self.L)]
+                else:
+                    res = [_spatial_average(diffs[kk].sum(dim=1, keepdim=True), keepdim=True) for kk in range(self.L)]
+
+            val = 0
+            for i in range(self.L):
+                val += res[i]
+
+            if retPerLayer:
+                return (val, res)
             else:
-                res = [_spatial_average(diffs[kk].sum(dim=1, keepdim=True), keepdim=True) for kk in range(self.L)]
-
-        val = 0
-        for i in range(self.L):
-            val += res[i]
-
-        if retPerLayer:
-            return (val, res)
-        else:
-            return val
+                return val
 
 
 # MODEL_PATH = None
@@ -84,9 +86,9 @@ class LPIPSWith(nn.Module):
         self.lpips.requires_grad_(False)
 
     def forward(self, input, target):
-        pad = get_crop_size(input, 16)
-        input = F.pad(input, pad)
-        target = F.pad(target, pad)
+        pad = get_pad_size(input, 16, random_shift=False)
+        input = reflection_pad2d_naive(input, pad, detach=True)
+        target = reflection_pad2d_naive(target, pad, detach=True)
         base_loss = self.base_loss(input, target)
         if self.std_mask:
             lpips_loss = self.lpips(local_std_mask(input, target), target, normalize=True).mean()
@@ -96,14 +98,15 @@ class LPIPSWith(nn.Module):
 
 
 def _test():
-    loss = LPIPSWith(nn.L1Loss())
+    loss = LPIPSWith(nn.L1Loss()).cuda()
     print(loss.lpips)
     print(loss.lpips.training)
     print([p.requires_grad for p in loss.lpips.parameters()])
 
-    x = torch.randn((4, 3, 64, 64))
-    t = torch.randn((4, 3, 64, 64))
-    print(loss(x, t))
+    x = torch.randn((4, 3, 64, 64)).cuda()
+    t = torch.randn((4, 3, 64, 64)).cuda()
+    with torch.autocast(device_type=x.device.type):
+        print(loss(x, t))
 
 
 def _check_patch():

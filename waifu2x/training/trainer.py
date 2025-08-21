@@ -28,7 +28,8 @@ from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
 from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.dct_loss import DCTLoss
-from nunif.modules.dinov2 import DINOv2CosineWith
+from nunif.modules.dinov2 import DINOv2PoolWith, DINOv2CosineWith
+from dino.models.l4sn import L4SNWith
 from nunif.modules.identity_loss import IdentityLoss
 from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate, DiffPairRandomDownsample
 from nunif.transforms import pair as TP
@@ -43,13 +44,18 @@ import math
 # loss
 
 
-def _dctirm():
-    return WeightedLoss(
-        (DCTLoss(window_size=4, clamp=True),
-         DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-         DCTLoss(clamp=True, random_instance_rotate=True)),
-        weights=(0.2, 0.2, 0.6),
-        preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True))
+def _dctirm(rotate=True, translate=True):
+    losses = (
+        DCTLoss(window_size=4, clamp=True),
+        DCTLoss(window_size=24, clamp=True, random_instance_rotate=rotate),
+        DCTLoss(clamp=True, random_instance_rotate=rotate)
+    )
+    if translate:
+        preprocess_pair = DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)
+    else:
+        preprocess_pair = None
+
+    return WeightedLoss(losses, weights=(0.2, 0.2, 0.6), preprocess_pair=preprocess_pair)
 
 
 LOSS_FUNCTIONS = {
@@ -63,6 +69,7 @@ LOSS_FUNCTIONS = {
     "lbp5m": lambda: MultiscaleLoss(YLBP(kernel_size=5), mode="avg"),
 
     "yrgb_l1lbp5": lambda: YRGBL1LBP(kernel_size=5, weight=0.4),
+    "yrgb_l1lbp": lambda: YRGBL1LBP(kernel_size=3, weight=0.4),
     "yrgb_flatlbp5": lambda: YRGBFlatLBP(kernel_size=5, weight=0.4),
     "yrgb_lbp5": lambda: YRGBLBP(kernel_size=5),
     "yrgb_lbp": lambda: YRGBLBP(kernel_size=3),
@@ -76,7 +83,6 @@ LOSS_FUNCTIONS = {
         (DCTLoss(window_size=24, clamp=True, random_rotate=True, overlap=True),),
         weights=(1.0,),
         preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True)),
-
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
         ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
@@ -89,9 +95,14 @@ LOSS_FUNCTIONS = {
     # weight=0.1, gradient norm is about the same as L1Loss.
     "l1lpips": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4),
     "l1lpips_std_mask": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4, std_mask=True),
+    "l1lpips_dct24": lambda: LPIPSWith(WeightedLoss((ClampLoss(torch.nn.L1Loss()), DCTLoss(window_size=24, clamp=True, random_rotate=False, overlap=True)),
+                                                    weights=(1.0, 0.2)), weight=0.4),
 
+    "l1dinov2": lambda: DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=0.1),
+    "l1dinov2_10": lambda: DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=1.0),
     "yrgb_lbp_dinov2": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=2.0),
-    "yrgb_lbp_dinov2_01": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=0.2),
+    "l1l4sn": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=1),
+    "l1l4sn_swd": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=1, swd_weight=0.1),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
     # loss is computed in model.forward()
@@ -135,22 +146,16 @@ def create_criterion(loss):
 def create_discriminator(discriminator, device_ids, device):
     if discriminator is None:
         return None
-    elif discriminator == "l3":
-        model = create_model("waifu2x.l3_discriminator", device_ids=device_ids)
-    elif discriminator == "l3c":
-        model = create_model("waifu2x.l3_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "l3v1":
-        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids)
     elif discriminator == "l3v1c":
         model = create_model("waifu2x.l3v1_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "l3v1ec":
+        model = create_model("waifu2x.l3v1_ensemble_conditional_discriminator", device_ids=device_ids)
+    elif discriminator == "l3v1iec":
+        model = create_model("waifu2x.l3v1_imbalanced_ensemble_conditional_discriminator", device_ids=device_ids)
     elif discriminator == "u3c":
         model = create_model("waifu2x.u3_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "l3v1_dino":
-        model = create_model("waifu2x.l3v1_dino_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "dct":
-        model = create_model("waifu2x.dct_conditional_discriminator", device_ids=device_ids)
-    elif discriminator == "dinov2":
-        model = create_model("waifu2x.dinov2_discriminator", device_ids=device_ids)
+    elif discriminator == "u3ec":
+        model = create_model("waifu2x.u3_ensemble_conditional_discriminator", device_ids=device_ids)
     elif path.exists(discriminator):
         model, _ = load_model(discriminator, device_ids=device_ids)
     else:
@@ -220,11 +225,12 @@ class Waifu2xEnv(LuminancePSNREnv):
     def __init__(self, model, criterion,
                  discriminator,
                  discriminator_criterion,
-                 sampler, use_diff_aug=False, use_diff_aug_downsample=False, use_diff_aug_noise=False):
+                 sampler, use_diff_aug=False, use_diff_aug_downsample=False, use_diff_aug_noise=False,
+                 adaptive_weight_ema=None):
         super().__init__(model, criterion)
         self.discriminator = discriminator
         self.discriminator_criterion = discriminator_criterion
-        self.adaptive_weight_ema = None
+        self.adaptive_weight_ema = adaptive_weight_ema
         self.sampler = sampler
         self.use_diff_aug = use_diff_aug
         self.use_diff_aug_noise = use_diff_aug_noise
@@ -283,7 +289,7 @@ class Waifu2xEnv(LuminancePSNREnv):
 
             # real + false condition
             false_count += 1
-            method = random.choice([0, 1, 2, 3])
+            method = random.choice([0, 1, 2])
             if method == 0:
                 # flip
                 axis = random.choice([-2, -1] + ([0, 0] if cond.shape[0] > 1 else []))
@@ -294,24 +300,10 @@ class Waifu2xEnv(LuminancePSNREnv):
                     false_condition = torch.flip(cond[i:i + 1], dims=(axis,))
             elif method == 1:
                 # shift
-                shift_w = random.randint(4, 18) * random.choice([-1, 1])
-                shift_h = random.randint(4, 18) * random.choice([-1, 1])
+                shift_w = random.randint(6, 18) * random.choice([-1, 1])
+                shift_h = random.randint(6, 18) * random.choice([-1, 1])
                 false_condition = F.pad(cond[i:i + 1], (shift_w, -shift_w, shift_h, -shift_h), mode="reflect")
             elif method == 2:
-                # color
-                scale_r = random.uniform(0.6, 0.9)
-                scale_g = random.uniform(0.6, 0.9)
-                scale_b = random.uniform(0.6, 0.9)
-                bias_r = 1 - scale_r
-                bias_g = 1 - scale_g
-                bias_b = 1 - scale_b
-                scale = torch.tensor([scale_r, scale_g, scale_b], dtype=cond.dtype, device=cond.device).view(1, 3, 1, 1)
-                bias = torch.tensor([bias_r, bias_g, bias_b], dtype=cond.dtype, device=cond.device).view(1, 3, 1, 1)
-                if random.choice([True, False]):
-                    false_condition = cond[i:i + 1] * scale + bias
-                else:
-                    false_condition = (cond[i:i + 1] + bias) * scale
-            elif method == 3:
                 # more blur (too high res)
                 scale_factor = random.uniform(0.2, 0.6)
                 false_condition = F.interpolate(cond[i:i + 1], scale_factor=scale_factor,
@@ -400,6 +392,8 @@ class Waifu2xEnv(LuminancePSNREnv):
             else:
                 if not self.trainer.args.discriminator_only:
                     # generator (sr) step
+                    if hasattr(self.discriminator, "round"):
+                        self.discriminator.round()
                     self.discriminator.requires_grad_(False)
                     if not self.trainer.args.privilege:
                         z = to_dtype(self.model(x), x.dtype)
@@ -493,13 +487,13 @@ class Waifu2xEnv(LuminancePSNREnv):
                     if self.adaptive_weight_ema is None:
                         self.adaptive_weight_ema = weight
                     else:
-                        alpha = 0.95
+                        alpha = 0.99
                         self.adaptive_weight_ema = self.adaptive_weight_ema * alpha + weight * (1 - alpha)
                     weight = self.adaptive_weight_ema
                 elif self.adaptive_weight_ema is not None:
                     weight = self.adaptive_weight_ema
                 else:
-                    weight = 20.0  # inf
+                    weight = 1.0  # inf
                 if weight_is_nan:
                     use_disc_loss = False
                 else:
@@ -622,6 +616,7 @@ class Waifu2xTrainer(Trainer):
                 raise ValueError(self.args.gan_loss)
         else:
             discriminator_criterion = None
+
         return Waifu2xEnv(
             self.model, criterion=criterion,
             discriminator=self.discriminator,
@@ -630,6 +625,7 @@ class Waifu2xTrainer(Trainer):
             use_diff_aug=self.args.diff_aug,
             use_diff_aug_downsample=self.args.diff_aug_downsample,
             use_diff_aug_noise=self.args.diff_aug_noise,
+            adaptive_weight_ema=self.adaptive_weight_ema
         )
 
     def setup(self):
@@ -643,6 +639,7 @@ class Waifu2xTrainer(Trainer):
         self.sampler.scale_factor = self.args.hard_example_scale
 
     def setup_model(self):
+        self.adaptive_weight_ema = None
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
         if self.args.freeze and hasattr(self.model, "freeze"):
             self.model.freeze()
@@ -723,6 +720,7 @@ class Waifu2xTrainer(Trainer):
                 da_color_p=self.args.da_color_p,
                 da_antialias_p=self.args.da_antialias_p,
                 da_hflip_only=self.args.da_hflip_only,
+                da_no_rotate=self.args.da_no_rotate,
                 da_cutmix_p=self.args.da_cutmix_p,
                 da_mixup_p=self.args.da_mixup_p,
                 deblur=self.args.deblur,
@@ -799,17 +797,22 @@ class Waifu2xTrainer(Trainer):
     def save_checkpoint(self, **kwargs):
         if self.discriminator is not None:
             kwargs.update({"discriminator_state_dict": self.discriminator.state_dict()})
+            kwargs.update({"adaptive_weight_ema": self.env.adaptive_weight_ema})
         super().save_checkpoint(**kwargs)
 
     def resume(self):
         meta = super().resume()
         if self.discriminator is not None and "discriminator_state_dict" in meta:
             self.discriminator.load_state_dict(meta["discriminator_state_dict"])
+            if "adaptive_weight_ema" in meta:
+                self.adaptive_weight_ema = meta["adaptive_weight_ema"]
 
     def load_initial_parameters(self, checkpoint_filename):
         meta = super().load_initial_parameters(checkpoint_filename)
         if self.discriminator is not None and "discriminator_state_dict" in meta:
             self.discriminator.load_state_dict(meta["discriminator_state_dict"])
+            if "adaptive_weight_ema" in meta:
+                self.adaptive_weight_ema = meta["adaptive_weight_ema"]
 
     def create_discriminator_model_filename(self):
         return path.join(
@@ -926,6 +929,8 @@ def register(subparsers, default_parser):
                         help="random antialias input degradation")
     parser.add_argument("--da-hflip-only", action="store_true",
                         help="restrict random flip to horizontal flip only")
+    parser.add_argument("--da-no-rotate", action="store_true",
+                        help="restrict random rotate when style=photo")
     parser.add_argument("--da-cutmix-p", type=float, default=0.0,
                         help="random cutmix data augmentation for gt image")
     parser.add_argument("--da-mixup-p", type=float, default=0.0,
@@ -977,7 +982,7 @@ def register(subparsers, default_parser):
                         help="discriminator name or .pth or [`l3`, `l3c`, `l3v1`, `l3v1`].")
     parser.add_argument("--discriminator-weight", type=float, default=1.0,
                         help="discriminator loss weight")
-    parser.add_argument("--discriminator-adaptive-weight-min", type=float, default=0.0,
+    parser.add_argument("--discriminator-adaptive-weight-min", type=float, default=1e-4,
                         help="minimum adaptive loss weight")
     parser.add_argument("--discriminator-adaptive-weight-max", type=float, default=1e4,
                         help="maxmum adaptive loss weight")

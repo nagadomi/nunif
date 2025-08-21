@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . replication_pad2d import ReplicationPad2dNaive, ReplicationPad1dNaive
+from .replication_pad2d import ReplicationPad2dNaive, ReplicationPad1dNaive
+from .permute import kernel2d_to_conv2d_weight, kernel1d_to_conv1d_weight
 
 
-def get_gaussian_kernel1d(kernel_size, dtype=None, device=None):
+def get_gaussian_kernel1d(kernel_size, dtype=None, device=None, sigma=None):
     # gaussin kernel formula is from torchvision
-    sigma = kernel_size * 0.15 + 0.35
+    if sigma is None:
+        sigma = kernel_size * 0.15 + 0.35
     ksize_half = (kernel_size - 1) * 0.5
     x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size, dtype=dtype, device=device)
     gaussian_kernel = torch.exp(-0.5 * (x / sigma).pow(2))
@@ -14,24 +16,23 @@ def get_gaussian_kernel1d(kernel_size, dtype=None, device=None):
     return gaussian_kernel
 
 
-def get_gaussian_kernel2d(kernel_size, dtype=None, device=None):
+def get_gaussian_kernel2d(kernel_size, dtype=None, device=None, sigma=None):
     if isinstance(kernel_size, (int,)):
         kernel_size = [kernel_size, kernel_size]
 
-    kernel1d_y = get_gaussian_kernel1d(kernel_size[0], dtype=dtype, device=device)
-    kernel1d_x = get_gaussian_kernel1d(kernel_size[1], dtype=dtype, device=device)
+    kernel1d_y = get_gaussian_kernel1d(kernel_size[0], sigma=sigma, dtype=dtype, device=device)
+    kernel1d_x = get_gaussian_kernel1d(kernel_size[1], sigma=sigma, dtype=dtype, device=device)
     kernel2d = torch.mm(kernel1d_y[:, None], kernel1d_x[None, :])
     return kernel2d
 
 
 class GaussianFilter2d(nn.Module):
-    def __init__(self, in_channels, kernel_size, padding=None):
+    def __init__(self, in_channels, kernel_size, padding=None, sigma=None):
         super().__init__()
         with torch.no_grad():
-            kernel = get_gaussian_kernel2d(kernel_size)
-            kernel = kernel.reshape(1, 1, *kernel.shape)
-            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
-        self.register_buffer("kernel", kernel)
+            kernel = get_gaussian_kernel2d(kernel_size, sigma=sigma)
+            kernel = kernel2d_to_conv2d_weight(in_channels, kernel)
+        self.register_buffer("kernel", kernel, persistent=False)
 
         if padding is not None:
             if isinstance(padding, int):
@@ -49,9 +50,8 @@ class GaussianFilter1d(nn.Module):
         super().__init__()
         with torch.no_grad():
             kernel = get_gaussian_kernel1d(kernel_size)
-            kernel = kernel.reshape(1, 1, *kernel.shape)
-            kernel = kernel.expand(in_channels, 1, *kernel.shape[2:]).contiguous()
-        self.register_buffer("kernel", kernel)
+            kernel = kernel1d_to_conv1d_weight(in_channels, kernel)
+        self.register_buffer("kernel", kernel, persistent=False)
 
         if padding is not None:
             if isinstance(padding, int):

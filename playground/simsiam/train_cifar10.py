@@ -243,7 +243,7 @@ def main():
         scheduler="cosine",
         learning_rate_cycles=4,
         max_epoch=400,
-        skip_eval=4,
+        eval_step=4,
         disable_amp=False,
     )
     args = parser.parse_args()
