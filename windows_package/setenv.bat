@@ -31,3 +31,6 @@ if exist "%VCVARS2022_PATH%" (
 @rem set vslang to English to avoid UnicodeDecodeError
 @rem note that this will not work unless the English language package is installed
 set VSLANG=1033
+
+@rem clear github token
+set GITHUB_TOKEN=
