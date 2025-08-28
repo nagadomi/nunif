@@ -175,7 +175,7 @@ class U3ConditionalDiscriminator(Discriminator):
         )
         self.class1 = nn.Sequential(
             ResBlockSNLReLU(C4, C4),
-            spectral_norm(nn.Conv2d(C4, out_channels, kernel_size=3, stride=1, padding=0, bias=False)),
+            spectral_norm(nn.Conv2d(C4, out_channels, kernel_size=3, stride=1, padding=0)),
         )
         self.up1 = nn.Sequential(
             spectral_norm(nn.ConvTranspose2d(C4, C3, kernel_size=2, stride=2, padding=0, bias=False)),
@@ -236,7 +236,10 @@ class U3ConditionalDiscriminator(Discriminator):
         x6 = self.dec3(self.up3(x5) + self.enc0_proj(x0))
         z2 = self.class2(x6)
 
-        return z2, z1
+        if self.training:
+            return F.pad(z2, (-8,) * 4), F.pad(z1, (-1,) * 4)
+        else:
+            return z2, z1
 
 
 @register_model
