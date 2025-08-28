@@ -15,7 +15,7 @@ class ConvAvgPool2d(nn.Module):
         self.count_pad_size = 1
         self.padding_mode = padding_mode
         in_channels = in_channels + self.count_pad_size if not count_include_pad else in_channels
-        self.register_buffer("avg_kernel", self.gen_avg_kernel(in_channels, kernel_size))
+        self.register_buffer("avg_kernel", self.gen_avg_kernel(in_channels, kernel_size), persistent=False)
 
     @staticmethod
     def gen_avg_kernel(in_channels, kernel_size):
