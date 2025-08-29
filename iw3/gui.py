@@ -680,12 +680,20 @@ class MainFrame(wx.Frame):
             depth_models.append("Distill_Any_L")
 
         depth_models += ["VDA_S"]
+        if VideoDepthAnythingModel.has_checkpoint_file("VDA_B"):
+            depth_models.append("VDA_B")
         if VideoDepthAnythingModel.has_checkpoint_file("VDA_L"):
             depth_models.append("VDA_L")
-        if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric"):
-            depth_models.append("VDA_Metric")
+
+        depth_models += ["VDA_Metric_S"]
+        if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric_B"):
+            depth_models.append("VDA_Metric_B")
+        if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric_L"):
+            depth_models.append("VDA_Metric_L")
 
         depth_models += ["VDA_Stream_S"]
+        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_B"):
+            depth_models.append("VDA_Stream_B")
         if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
             depth_models.append("VDA_Stream_L")
 
