@@ -82,7 +82,7 @@ class L3Discriminator(Discriminator):
             spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=1)))
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         x = modcrop(x, 8)
         x = normalize(x)
@@ -101,7 +101,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
                          negative_slope=negative_slope)
         self.to_cond = ImageToCondition(32, [64, 256])
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         x = modcrop(x, 8)
         c = fit_to_size(x, c)
@@ -135,7 +135,7 @@ class V1Discriminator(Discriminator):
         )
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         x = modcrop(x, 8)
         x = normalize(x)
@@ -154,7 +154,7 @@ class V1ConditionalDiscriminator(V1Discriminator):
                          negative_slope=negative_slope)
         self.to_cond = ImageToCondition(32, [64, 128])
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
         x = modcrop(x, 8)
         c = fit_to_size(x, c)

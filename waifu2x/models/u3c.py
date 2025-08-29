@@ -80,7 +80,7 @@ class ImageToCondition(nn.Module):
             for out_channels in outputs])
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_TRAIN")
+    @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x):
         B = x.shape[0]
         x = normalize(x)
@@ -197,7 +197,7 @@ class U3ConditionalDiscriminator(Discriminator):
         )
         basic_module_init(self)
         self.to_cond = ImageToConditionPatch8(64, [C4])
-        self.cross_attention = CrossAttention(C4)
+        #self.cross_attention = CrossAttention(C4)
         self.request_false_condition = True
 
     def _debug_save_cond(self, x, c):
@@ -223,8 +223,8 @@ class U3ConditionalDiscriminator(Discriminator):
         x1 = self.enc1(x)
         x2 = self.enc2(x1)
         x3 = self.enc3(x2)
-        # x3 = x3 + cond[0]
-        x3 = self.cross_attention(x3, cond[0])
+        x3 = x3 + cond[0]
+        # x3 = self.cross_attention(x3, cond[0])
         x3 = self.enc4(x3)
         z1 = self.class1(x3)
         x4 = self.dec1(self.up1(x3) + self.enc2_proj(x2))
