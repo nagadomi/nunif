@@ -14,19 +14,37 @@ from .models import DepthAA
 
 NAME_MAP = {
     "VDA_S": "vits",
+    "VDA_B": "vitb",
     "VDA_L": "vitl",
-    "VDA_Metric": "vitl",
+    "VDA_Metric": "vitl",  # old ver compatibility
+    "VDA_Metric_S": "vits",
+    "VDA_Metric_B": "vitb",
+    "VDA_Metric_L": "vitl",
 }
 MODEL_FILES = {
     "VDA_S": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vits.pth"),
+    "VDA_B": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitb.pth"),
     "VDA_L": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitl.pth"),
     "VDA_Metric": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
+    "VDA_Metric_S": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vits.pth"),
+    "VDA_Metric_B": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitb.pth"),
+    "VDA_Metric_L": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
 }
 METRIC_PADDING = 14
 AA_SUPPORT_MODELS = {
     "VDA_S",
+    "VDA_B",
     "VDA_L",
     "VDA_Metric",
+    "VDA_Metric_S",
+    "VDA_Metric_B",
+    "VDA_Metric_L",
+}
+METRIC_DEPTH_TYPES = {
+    "VDA_Metric",
+    "VDA_Metric_S",
+    "VDA_Metric_B",
+    "VDA_Metric_L",
 }
 
 
@@ -92,7 +110,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
         self.depth_aa = DepthAA().load().eval().to(device)
         # load depth model
         encoder = NAME_MAP[model_type]
-        if model_type == "VDA_Metric":
+        if model_type in METRIC_DEPTH_TYPES:
             # MetricVideoDepthAnything
             if not os.getenv("IW3_DEBUG"):
                 model = torch.hub.load("nagadomi/Video-Depth-Anything_iw3:main",
@@ -235,7 +253,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
         if self.model is not None:
             return self.model.metric_depth
         else:
-            return self.model_type == "VDA_Metric"
+            return self.model_type in METRIC_DEPTH_TYPES
 
     @classmethod
     def multi_gpu_supported(cls, model_type):
