@@ -21,7 +21,13 @@ from nunif.modules import (
     Alex11Loss,
     MultiscaleLoss,
 )
-from nunif.modules.gan_loss import GANHingeLoss, GANBCELoss, GANSoftplusLoss, GANHingeClampLoss
+from nunif.modules.gan_loss import (
+    GANHingeLoss,
+    GANBCELoss,
+    GANSoftplusLoss,
+    GANHingeClampLoss,
+    r1_regularization
+)
 from nunif.modules.local_std_mask import local_std_mask
 from nunif.modules.lbp_loss import YLBP, YRGBL1LBP, YRGBLBP, YRGBFlatLBP
 from nunif.modules.fft_loss import YRGBL1FFTGradientLoss
@@ -102,6 +108,7 @@ LOSS_FUNCTIONS = {
     "l1dinov2_10": lambda: DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=1.0),
     "yrgb_lbp_dinov2": lambda: DINOv2CosineWith(YRGBLBP(kernel_size=3), weight=2.0),
     "l1l4sn": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=1),
+    "l1l4sn2": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=2),
     "l1l4sn_swd": lambda: L4SNWith(ClampLoss(torch.nn.L1Loss()), weight=1, swd_weight=0.1),
 
     "aux_lbp_ident": lambda: AuxiliaryLoss((YLBP(), IdentityLoss()), weight=(1.0, 1.0)),
@@ -452,10 +459,22 @@ class Waifu2xEnv(LuminancePSNREnv):
                     p=0.25 if request_false_condition else 0
                 )
                 z_fake = self.discriminator(fake_input, fake_cond, scale_factor)
+                if self.trainer.args.r1_gamma > 0:
+                    real = real.detach().requires_grad_(True)
                 z_real = self.discriminator(real, real_cond, scale_factor)
+                if self.trainer.args.r1_gamma > 0:
+                    if isinstance(z_real, (tuple, list)):
+                        real_logits = z_real[0]
+                    else:
+                        real_logits = z_real
+                    r1_penalty = r1_regularization(real, real_logits, self.trainer.grad_scalers[1], self.trainer.args.r1_gamma)
+                    # print(r1_penalty)
+                else:
+                    r1_penalty = 0
+
                 z_fake = to_dtype(z_fake, fake.dtype)
                 z_real = to_dtype(z_real, y.dtype)
-                discriminator_loss = self.discriminator_criterion(z_real, z_fake)
+                discriminator_loss = self.discriminator_criterion(z_real, z_fake) + r1_penalty
 
                 self.sum_d_loss += discriminator_loss.item()
                 loss = (recon_loss, generator_loss, discriminator_loss)
@@ -1005,6 +1024,7 @@ def register(subparsers, default_parser):
                         help="Use addtional random noise transforms")
     parser.add_argument("--gan-loss", type=str, choices=["hinge", "bce", "softplus", "hinge_clamp"], default="hinge",
                         help="GAN loss function")
+    parser.add_argument("--r1-gamma", type=float, default=0.0, help="R1 regularization")
 
     parser.set_defaults(
         batch_size=16,

@@ -139,7 +139,7 @@ class L4SNLoss(nn.Module):
     def __init__(
             self,
             activation=True,
-            loss_weights=[0.5, 0.3, 1.0, 0.8],
+            loss_weights=[0.35, 0.5, 0.7, 1.0],
             swd_weight=0, swd_indexes=[0, 1], swd_window_size=8,
             checkpoint_file=None,
     ):
@@ -191,8 +191,8 @@ class L4SNLoss(nn.Module):
             weight = getattr(self, f"random_projection_{i}")
             f1 = F.conv2d(f1, weight=weight, bias=None, stride=1)
             f2 = F.conv2d(f2, weight=weight, bias=None, stride=1)
-            f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False)
-            f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False)
+            f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False) * 0.25
+            f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False) * 0.25
             loss = loss + F.l1_loss(f1, f2) * self.loss_weights[i]
 
             if self.swd_weight > 0 and i in self.swd_indexes:
@@ -200,7 +200,7 @@ class L4SNLoss(nn.Module):
                     f1, f2, window_size=self.swd_window_size
                 ) * self.loss_weights[i]
 
-        feat_loss = loss / (len(f1s) * 2)
+        feat_loss = loss / (len(f1s) * 1.25)
         swd_loss = swd_loss / len(self.swd_indexes)
         loss = feat_loss * (1 - self.swd_weight) + swd_loss * self.swd_weight
         return loss
@@ -223,11 +223,7 @@ class L4SNWith(nn.Module):
         target = reflection_pad2d_naive(target, pad, detach=True)
         base_loss = self.base_loss(input, target)
         l4sn_loss = self.l4sn(input, target)
-        if self.weight <= 1.0:
-            return base_loss + l4sn_loss * self.weight
-        else:
-            base_weight = 1.0 / self.weight
-            return base_loss * base_weight + l4sn_loss
+        return base_loss + l4sn_loss * self.weight
 
 
 def _test_grad():

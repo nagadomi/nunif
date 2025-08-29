@@ -95,3 +95,18 @@ class GANSoftplusLoss(nn.Module):
             generator_loss=self.generator_loss,
             discriminator_loss=self.discriminator_loss,
             loss_weights=self.loss_weights)
+
+
+def r1_regularization(real_image, real_logits, grad_scaler, r1_gamma):
+    # real_logits: (B, 1, H, W)
+    # models compiled with torch.compile cannot be used. (double backward error)
+    real_image = real_image.to(torch.float32)
+    real_logits = real_logits.to(torch.float32)
+
+    scaled_real_logits = grad_scaler.scale(real_logits.mean([1, 2, 3]).sum())
+    scaled_r1_grads = torch.autograd.grad(outputs=[scaled_real_logits], inputs=[real_image], create_graph=True)[0]
+    inv_scale = 1.0 / grad_scaler.get_scale()
+    r1_grads = scaled_r1_grads * inv_scale
+    r1_penalty = r1_grads.square().mean([1, 2, 3]) * r1_gamma
+    r1_penalty = r1_penalty.mean()
+    return r1_penalty
