@@ -223,10 +223,7 @@ class L4SNWith(nn.Module):
         target = reflection_pad2d_naive(target, pad, detach=True)
         base_loss = self.base_loss(input, target)
         l4sn_loss = self.l4sn(input, target)
-        base_weight = 1.0 * 2 / (1 + self.weight)
-        l4sn_weight = self.weight * 2 / (1 + self.weight)
-
-        return base_loss * base_weight + l4sn_loss * l4sn_weight
+        return base_loss + l4sn_loss * self.weight
 
 
 def _test_grad():
