@@ -13,7 +13,7 @@ def same_size(a, b):
     if isinstance(a, Image.Image):
         return a.size == b.size
     else:
-        return a.size() == b.size()
+        return a.shape[-2:] == b.shape[-2:]
 
 
 class Identity():
