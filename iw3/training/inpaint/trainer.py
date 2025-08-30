@@ -1,26 +1,28 @@
-# python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint
-# python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint --resume --reset-state --learning-rate 3e-5 --ema-model
+# python train.py inpaint -i ./data/dataset --model-dir models/light_inpaint
 import os
 from os import path
 import argparse
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from torchvision.utils import make_grid
 from nunif.models import create_model
-from nunif.training.env import RGBPSNREnv
+from nunif.training.env import I2IEnv
 from nunif.training.trainer import Trainer
 from nunif.modules.transforms import DiffPairRandomTranslate
 from nunif.modules.weighted_loss import WeightedLoss
+from nunif.modules.clamp_loss import ClampLoss
 from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.lpips import LPIPSWith
+from nunif.modules.dinov2 import DINOv2PoolWith
 from .dataset import InpaintDataset
 from ... import models # noqa
 
 
-class InpaintEnv(RGBPSNREnv):
+class InpaintEnv(I2IEnv):
     def __init__(self, model, criterion):
-        super().__init__(model, criterion)
+        super().__init__(model, criterion=criterion, eval_criterion=criterion)
 
     def train_step(self, data):
         x, mask, y, *_ = data
@@ -103,14 +105,12 @@ class InpaintTrainer(Trainer):
                  DCTLoss(clamp=True, random_instance_rotate=True)),
                 weights=(0.2, 0.2, 0.6),
                 preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True))
-        elif self.args.loss == "dctlpips":
-            dct_loss = WeightedLoss(
-                (DCTLoss(window_size=4, clamp=True),
-                 DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-                 DCTLoss(clamp=True, random_instance_rotate=True)),
-                weights=(0.2, 0.2, 0.6),
-                preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True))
-            criterion = LPIPSWith(dct_loss, weight=0.2)
+        elif self.args.loss == "l1lpips":
+            criterion = LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4)
+        elif self.args.loss == "l1dinov2":
+            criterion = DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=1.0)
+        else:
+            raise ValueError(f"{self.args.loss}")
 
         return InpaintEnv(self.model, criterion)
 
@@ -129,11 +129,10 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, nargs="?", default=None, const="dct",
-                        choices=["dct", "dctlpips"], help="loss")
+    parser.add_argument("--loss", type=str, default="l1dinov2", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
 
     parser.set_defaults(
-        batch_size=4,
+        batch_size=16,
         optimizer="adam",
         learning_rate=0.0001,
         learning_rate_cosine_min=1e-8,

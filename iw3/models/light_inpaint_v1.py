@@ -23,7 +23,7 @@ class GLUConvMLP(nn.Module):
         self.w2 = nn.Conv2d(mid // 2, out_channels, kernel_size=kernel_size, stride=1, padding=0)
         basic_module_init(self)
 
-    @conditional_compile(["NUNIF_TRAIN", "IW3_MAIN"])
+    @conditional_compile(["NUNIF_TRAIN"])
     def forward(self, x):
         x = self.w1(x)
         x = F.glu(x, dim=1)
@@ -41,7 +41,7 @@ class GMLPBlock(nn.Module):
         self.norm2 = FastLayerNorm(in_channels, bias=False)
         self.glu_conv = GLUConvMLP(in_channels, in_channels, mlp_ratio=mlp_ratio)
 
-    @conditional_compile(["NUNIF_TRAIN", "IW3_MAIN"])
+    @conditional_compile(["NUNIF_TRAIN"])
     def forward(self, x):
         x = x + self.gmlp(x, self.norm1, self.norm2)
         x = x + self.glu_conv(x)
