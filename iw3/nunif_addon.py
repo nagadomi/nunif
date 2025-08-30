@@ -27,6 +27,10 @@ class InpaintAddon(Addon):
         from .training.inpaint.trainer import register
         return register(subparsers, default_parser)
 
+    def register_create_training_data(self, subparsers, default_parser):
+        from .training.inpaint.create_training_data import register
+        return register(subparsers, default_parser)
+
 
 class DepthAAAddon(Addon):
     def __init__(self):
