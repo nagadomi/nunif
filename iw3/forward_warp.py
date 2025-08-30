@@ -253,9 +253,45 @@ def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None
                                                  inconsistent_shift=inconsistent_shift)
 
 
+def mask_closing(mask, kernel_size=3, n_iter=2):
+    def dilate(mask, kernel_size):
+        pad = kernel_size // 2
+        return F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=pad)
+
+    def erode(mask, kernel_size=3):
+        pad = kernel_size // 2
+        return -F.max_pool2d(-mask, kernel_size=kernel_size, stride=1, padding=pad)
+
+    mask = mask.float()
+    for _ in range(n_iter):
+        mask = dilate(mask, kernel_size=kernel_size)
+    for _ in range(n_iter):
+        mask = erode(mask, kernel_size=kernel_size)
+
+    return mask
+
+
+def nonwarp_mask(c, depth, divergence, convergence):
+    if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
+        depth = F.interpolate(depth, size=c.shape[-2:],
+                              mode="bilinear", align_corners=True, antialias=True)
+
+    # warp depth to the left
+    depth3 = depth.repeat(1, 3, 1, 1)
+    warped_depth, _ = depth_order_bilinear_forward_warp(depth3, depth, divergence, convergence,
+                                                        synthetic_view="left",
+                                                        fill=True, inconsistent_shift=False, return_mask=False)
+    warped_depth = warped_depth.mean(dim=1, keepdim=True)
+    # warp warped_depth to the right and back to original position
+    dummy = torch.zeros_like(c)
+    _, _, _, mask = depth_order_bilinear_forward_warp(dummy, warped_depth, divergence, convergence,
+                                                      fill=False, synthetic_view="right", inconsistent_shift=False,
+                                                      return_mask=True)
+    return c, mask
+
+
 def _bench():
     import time
-    import torchvision.transforms.functional as TF
     from nunif.modules.gaussian_filter import GaussianFilter2d
 
     synthetic_view = "both"  # both, right, left
@@ -292,5 +328,24 @@ def _bench():
     print(f"GPU Max Memory Allocated {max_vram_mb}MB")
 
 
+def _test_nonwarp_mask():
+    # https://github.com/user-attachments/assets/69ea87ff-4f01-40d2-abd7-477bfe368df6
+    import torchvision.transforms.functional as TF
+    import torchvision.io as io
+
+    x = io.read_image("cc0/320/dog.png") / 255.0
+    depth = io.read_image("cc0/depth/dog.png") / 65536.0
+    x = x.unsqueeze(0).cuda()
+    depth = depth.unsqueeze(0).cuda()
+    print(x.shape, depth.shape)
+
+    x, mask = nonwarp_mask(x, depth, divergence=5, convergence=0)
+    mask = mask_closing(mask, kernel_size=3, n_iter=2)
+    x = x[0] * 0.5
+    x = x + mask[0].float() * 0.5
+    TF.to_pil_image(x).show()
+
+
 if __name__ == "__main__":
     _bench()
+    # _test_nonwarp_mask()
