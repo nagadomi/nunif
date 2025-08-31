@@ -1,5 +1,6 @@
 import math
 from PIL import Image
+import torch
 from torchvision import transforms as T
 from torchvision.transforms import (
     functional as TF,
@@ -74,7 +75,10 @@ class RandomHardExampleCrop():
     def __call__(self, x, y):
         assert ((not self.y_scale == 1) or same_size(x, y))
         rects = []
-        yt = TF.to_tensor(y)
+        if not torch.is_tensor(y):
+            yt = TF.to_tensor(y)
+        else:
+            yt = y
         for _ in range(self.samples):
             i, j, h, w = T.RandomCrop.get_params(x, self.size)
             rect = TF.crop(
