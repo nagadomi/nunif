@@ -25,10 +25,10 @@ class InpaintEnv(I2IEnv):
         super().__init__(model, criterion=criterion, eval_criterion=criterion)
 
     def train_step(self, data):
-        x, mask, y, *_ = data
-        x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
+        x, mask, lh_mask, y, *_ = data
+        x, mask, lh_mask, y = self.to_device(x), self.to_device(mask), self.to_device(lh_mask), self.to_device(y)
         with self.autocast():
-            z = self.model(x, mask)
+            z = self.model(x, mask, lh_mask)
             loss = self.criterion(z, y)
         if not torch.isnan(loss):
             self.sum_loss += loss.item()
@@ -40,14 +40,16 @@ class InpaintEnv(I2IEnv):
         self.eval_count = 0
 
     def eval_step(self, data):
-        x, mask, y, *_ = data
-        x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
+        x, mask, lh_mask, y, *_ = data
+        x, mask, lh_mask, y = self.to_device(x), self.to_device(mask), self.to_device(lh_mask), self.to_device(y)
         model = self.get_eval_model()
         with self.autocast():
-            z = model(x, mask)
+            z = model(x, mask, lh_mask)
             loss = self.eval_criterion(z, y)
             self.eval_count += 1
             if self.eval_count % 20 == 0:
+                x = x * (1 - mask.float())
+                x = x * (1 - lh_mask.float())
                 self.save_eval(x, y, z, self.eval_count // 20)
 
         self.sum_loss += loss.item()
@@ -143,6 +145,7 @@ def register(subparsers, default_parser):
         learning_rate_decay_step=[1],
         momentum=0.9,
         weight_decay=0.001,
+        eval_step=4,
     )
     parser.set_defaults(handler=train)
 
