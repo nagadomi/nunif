@@ -266,10 +266,14 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
             delta, layer_weight = model(x)
             hole_mask = None
 
+        if not return_mask:
+            # not used
+            hole_mask = None
+
     if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
         layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
                                      mode="bilinear", align_corners=True, antialias=True)
-        if hole_mask is not None and return_mask:
+        if hole_mask is not None:
             hole_mask = F.interpolate(hole_mask, size=c.shape[-2:],
                                       mode="bilinear", align_corners=True, antialias=True)
 
@@ -301,7 +305,6 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
     if shift > 0:
         z = z.flip((3,))
         if hole_mask is not None:
-            print(hole_mask.shape, z.shape)
             hole_mask = hole_mask.flip((3,))
 
     if return_mask:
