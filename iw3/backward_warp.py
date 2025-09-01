@@ -362,9 +362,6 @@ def nonwarp_mask(model, c, depth, divergence, convergence, mapper):
         mapper=mapper, shift=1, preserve_screen_border=False, enable_amp=True,
         return_mask=True,
     )
-    if c.shape[2:] != mask.shape[2:]:
-        mask = F.interpolate(mask, size=c.shape[-2:],
-                             mode="bilinear", align_corners=True, antialias=True)
 
     return c, mask
 
