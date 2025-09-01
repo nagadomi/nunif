@@ -266,7 +266,7 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
             delta, layer_weight = model(x)
             hole_mask = None
 
-        if not return_mask:
+        if not (return_mask or MLBW_DEBUG_OUTPUT):
             # not used
             hole_mask = None
 
