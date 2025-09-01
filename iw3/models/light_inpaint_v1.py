@@ -67,7 +67,7 @@ class LightInpaintV1(I2IBaseModel):
         self.mod = 24
         pack = self.downscaling_factor ** 2
         C = 96
-        self.patch = nn.Conv2d(5 * pack, C, kernel_size=1, stride=1, padding=0, bias=True)
+        self.patch = nn.Conv2d(4 * pack, C, kernel_size=1, stride=1, padding=0, bias=True)
         self.blocks = nn.ModuleList([
             GMLPBlock(C, window_size=24, mlp_ratio=1, shift=False),
             GMLPBlock(C, window_size=24, mlp_ratio=1, shift=True),
@@ -87,18 +87,13 @@ class LightInpaintV1(I2IBaseModel):
         x = pixel_shuffle(x, self.downscaling_factor)
         return x
 
-    def forward(self, x, mask, lh_mask):
+    def forward(self, x, mask):
         src = x
-
-        # Make it clear that they do not overlap.
-        lh_mask[mask] = False
 
         # preprocess: closing + blur
         mask = mask_preprocess(mask, self.blur)
-        lh_mask = mask_preprocess(lh_mask, self.blur)
         x = (x - 0.5) / 0.5
         x = x * (1 - mask)
-        x = x * (1 - lh_mask)
 
         input_height, input_width = x.shape[2:]
         pad1 = (self.mod * self.downscaling_factor) - input_width % (self.mod * self.downscaling_factor)
@@ -106,13 +101,11 @@ class LightInpaintV1(I2IBaseModel):
         padding = (0, pad1, 0, pad2)
         x = replication_pad2d_naive(x, padding, detach=True)
         mask = replication_pad2d_naive(mask, padding, detach=True)
-        lh_mask = replication_pad2d_naive(lh_mask, padding, detach=True)
 
         # forward
-        x = self._forward(torch.cat([x, mask, lh_mask], dim=1))
+        x = self._forward(torch.cat([x, mask], dim=1))
         x = F.pad(x, (0, -pad1, 0, -pad2))
         mask = F.pad(mask, (0, -pad1, 0, -pad2))
-        lh_mask = F.pad(lh_mask, (0, -pad1, 0, -pad2))
 
         # post process
         if not self.training:
@@ -120,11 +113,9 @@ class LightInpaintV1(I2IBaseModel):
 
         src = F.pad(src.to(x.dtype), (-self.i2i_offset,) * 4)
         mask = F.pad(mask, (-self.i2i_offset,) * 4)
-        lh_mask = F.pad(lh_mask, (-self.i2i_offset,) * 4)
 
         mask = mask.expand_as(src)
         src = src * (1 - mask) + x * mask
-        src = src * (1 - lh_mask) + x * lh_mask
 
         if self.training:
             return src
@@ -149,9 +140,8 @@ def _bench(name):
         model = torch.compile(model)
     x = torch.zeros((B, 3, *S)).to(device)
     mask = torch.zeros((B, 1, *S), dtype=torch.bool).to(device)
-    lh_mask = torch.zeros((B, 1, *S), dtype=torch.bool).to(device)
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
-        z, *_ = model(x, mask, lh_mask)
+        z, *_ = model(x, mask)
         print(z.shape)
         params = sum([p.numel() for p in model.parameters()])
         print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
@@ -161,7 +151,7 @@ def _bench(name):
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
-            z = model(x, mask, lh_mask)
+            z = model(x, mask)
     torch.cuda.synchronize()
     print(1 / ((time.time() - t) / (B * N)), "FPS")
     max_vram_mb = int(torch.cuda.max_memory_allocated(device) / (1024 * 1024))

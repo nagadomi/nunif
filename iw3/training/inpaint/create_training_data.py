@@ -107,17 +107,17 @@ def gen_data(im, model, args):
         c = TF.to_tensor(im).unsqueeze(0).to(depth.device)
         depth = apply_mapper(depth, mapper).unsqueeze(0)
 
-        _, mask, overlap_mask = nonwarp_mask(c, depth, divergence=divergence, convergence=convergence)
+        _, mask = nonwarp_mask(c, depth, divergence=divergence, convergence=convergence)
 
         c_flip = torch.flip(c, (-1,))
         depth_flip = torch.flip(depth, (-1,))
 
-        _, mask_flip, overlap_mask_flip = nonwarp_mask(c_flip, depth_flip, divergence=divergence, convergence=convergence)
+        _, mask_flip = nonwarp_mask(c_flip, depth_flip, divergence=divergence, convergence=convergence)
 
         # NOTE: mask_closing() is applied on the model or dataset side.
 
-        return [(c[0], mask.float()[0], overlap_mask.float()[0]),
-                (c_flip[0], mask_flip.float()[0], overlap_mask_flip.float()[0])]
+        return [(c[0], mask.float()[0]),
+                (c_flip[0], mask_flip.float()[0])]
 
 
 def random_crop(size, *images):
@@ -143,12 +143,11 @@ def random_hard_example_crop(size, n, *images):
     return results[0]
 
 
-def save_images(c, mask, overlap_mask, output_base, size, num_samples):
+def save_images(c, mask, output_base, size, num_samples):
     for i in range(num_samples):
-        rgb_rect, overlap_mask_rect, mask_rect = random_hard_example_crop(size, 4, c, overlap_mask, mask)
+        rgb_rect, mask_rect = random_hard_example_crop(size, 4, c, mask)
         TF.to_pil_image(rgb_rect).save(f"{output_base}_{i}_C.png")
         TF.to_pil_image(mask_rect).save(f"{output_base}_{i}_M.png")
-        TF.to_pil_image(overlap_mask_rect).save(f"{output_base}_{i}_O.png")
 
 
 def main(args):
@@ -190,10 +189,10 @@ def main(args):
                     continue
 
                 data = gen_data(im, model, args)
-                for c, mask, overlap_mask in data:
+                for c, mask in data:
                     seq += 1
                     output_base = path.join(output_dir, filename_prefix + str(seq))
-                    f = pool.submit(save_images, c, mask, overlap_mask, output_base, args.size, args.num_samples)
+                    f = pool.submit(save_images, c, mask, output_base, args.size, args.num_samples)
                     # f.result()  # debug
                     futures.append(f)
 
