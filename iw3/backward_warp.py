@@ -233,7 +233,8 @@ def mlbw_debug_output(z):
 
 
 def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
-                                     mapper, shift, preserve_screen_border, enable_amp):
+                                     mapper, shift, preserve_screen_border, enable_amp,
+                                     return_mask=False):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -268,7 +269,7 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
     if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
         layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
                                      mode="bilinear", align_corners=True, antialias=True)
-        if hole_mask is not None:
+        if hole_mask is not None and return_mask:
             hole_mask = F.interpolate(hole_mask, size=c.shape[-2:],
                                       mode="bilinear", align_corners=True, antialias=True)
 
@@ -293,12 +294,20 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
 
     if use_pad_convergence:
         z = pad_convergence_shift_05(z, divergence, convergence)
+        if hole_mask is not None:
+            hole_mask = pad_convergence_shift_05(hole_mask, divergence, convergence)
     z = z.clamp(0, 1)
 
     if shift > 0:
-        z = torch.flip(z, (3,))
+        z = z.flip((3,))
+        if hole_mask is not None:
+            print(hole_mask.shape, z.shape)
+            hole_mask = hole_mask.flip((3,))
 
-    return z
+    if return_mask:
+        return z, hole_mask
+    else:
+        return z
 
 
 def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
@@ -334,3 +343,50 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
         right_eye = c
 
     return left_eye, right_eye
+
+
+def nonwarp_mask(model, c, depth, divergence, convergence, mapper):
+    # warp depth to the left
+    depth3 = depth.repeat(1, 3, 1, 1)
+    warped_depth = apply_divergence_nn_delta_weight(
+        model, depth3, depth, divergence=divergence, convergence=convergence, steps=1,
+        mapper=mapper, shift=-1, preserve_screen_border=False, enable_amp=True,
+        return_mask=False,
+    )
+
+    warped_depth = warped_depth.mean(dim=1, keepdim=True)
+    # warp warped_depth to the right and back to original position
+    dummy = torch.zeros_like(c)
+    _, mask = apply_divergence_nn_delta_weight(
+        model, dummy, warped_depth, divergence=divergence, convergence=convergence, steps=1,
+        mapper=mapper, shift=1, preserve_screen_border=False, enable_amp=True,
+        return_mask=True,
+    )
+    if c.shape[2:] != mask.shape[2:]:
+        mask = F.interpolate(mask, size=c.shape[-2:],
+                             mode="bilinear", align_corners=True, antialias=True)
+
+    return c, mask
+
+
+def _test_nonwarp_mask():
+    import torchvision.transforms.functional as TF
+    import torchvision.io as io
+    from .stereo_model_factory import create_stereo_model
+    from . import models
+
+    model = create_stereo_model("mask_mlbw_l2", divergence=10, device_id=0)
+
+    x = io.read_image("cc0/320/dog.png") / 255.0
+    depth = io.read_image("cc0/depth/dog.png") / 65536.0
+    x = x.unsqueeze(0).cuda()
+    depth = depth.unsqueeze(0).cuda()
+
+    x, mask = nonwarp_mask(model, x, depth, divergence=5, convergence=0, mapper="none")
+    x = x.mean(dim=1, keepdim=True)
+    x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
+    TF.to_pil_image(x).show()
+
+
+if __name__ == "__main__":
+    _test_nonwarp_mask()
