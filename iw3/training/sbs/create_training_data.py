@@ -206,7 +206,7 @@ def gen_edge_dilation(model_type):
     if model_type.startswith("ZoeD"):
         return random.choice([0] * 6 + [1, 2, 3, 4])
     else:
-        return random.choice([2] * 6 + [0, 1, 3, 4])
+        return random.choice([0] * 6 + [1, 2, 2, 2, 3, 4])
 
 
 def gen_depth_aa(model_type):
