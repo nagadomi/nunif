@@ -9,27 +9,7 @@ from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.norm import FastLayerNorm
 from nunif.modules.attention import WindowGMLP2d
 from nunif.modules.gaussian_filter import GaussianFilter2d
-
-
-def mask_closing(mask, kernel_size=3, n_iter=2):
-    def dilate(mask, kernel_size):
-        pad = kernel_size // 2
-        return F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=pad)
-
-    def erode(mask, kernel_size=3):
-        pad = kernel_size // 2
-        return -F.max_pool2d(-mask, kernel_size=kernel_size, stride=1, padding=pad)
-
-    mask = mask_org = mask.float()
-    for _ in range(n_iter):
-        mask = dilate(mask, kernel_size=kernel_size)
-    for _ in range(n_iter):
-        mask = erode(mask, kernel_size=kernel_size)
-
-    # Add erased isolated pixels
-    mask = (mask + mask_org).clamp(0, 1)
-
-    return mask
+from iw3.dilation import mask_closing
 
 
 def mask_preprocess(mask, blur):
@@ -160,9 +140,9 @@ def _bench(name):
     N = 20
     B = 4
     # S = (4320, 7680)  # 8K, 4.7FPS, 4.5GB VRAM
-    #S = (2160, 3840)  # 4K, 18.3FPS, 900MB VRAM
+    # S = (2160, 3840)  # 4K, 18.3FPS, 900MB VRAM
     S = (1080, 1920)  # HD, 70FPS, 240MB VRAM
-    # S = (320, 320) # tile, 714FPS, 28MB VRAM
+    # S = (320, 320)  # tile, 714FPS, 28MB VRAM
 
     model = create_model(name).to(device).eval()
     if do_compile:

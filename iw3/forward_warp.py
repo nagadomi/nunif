@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from nunif.modules.replication_pad2d import ReplicationPad2d
 from nunif.device import autocast
+from .dilation import mask_closing
 
 
 def box_blur(x, kernel_size=7):
@@ -282,27 +283,6 @@ def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None
                                                  inpaint_model=inpaint_model,
                                                  return_mask=return_mask,
                                                  inconsistent_shift=inconsistent_shift)
-
-
-def mask_closing(mask, kernel_size=3, n_iter=2):
-    def dilate(mask, kernel_size):
-        pad = kernel_size // 2
-        return F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=pad)
-
-    def erode(mask, kernel_size=3):
-        pad = kernel_size // 2
-        return -F.max_pool2d(-mask, kernel_size=kernel_size, stride=1, padding=pad)
-
-    mask = mask_org = mask.float()
-    for _ in range(n_iter):
-        mask = dilate(mask, kernel_size=kernel_size)
-    for _ in range(n_iter):
-        mask = erode(mask, kernel_size=kernel_size)
-
-    # Add erased isolated pixels
-    mask = (mask + mask_org).clamp(0, 1)
-
-    return mask
 
 
 def nonwarp_mask(c, depth, divergence, convergence):
