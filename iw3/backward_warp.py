@@ -259,11 +259,18 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
                                        preserve_screen_border=preserve_screen_border)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
-        delta, layer_weight = model(x)
+        if model.hole_mask:
+            delta, layer_weight, hole_mask = model(x)
+        else:
+            delta, layer_weight = model(x)
+            hole_mask = None
 
     if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
         layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
                                      mode="bilinear", align_corners=True, antialias=True)
+        if hole_mask is not None:
+            hole_mask = F.interpolate(hole_mask, size=c.shape[-2:],
+                                      mode="bilinear", align_corners=True, antialias=True)
 
     delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
     delta = pad_delta_y(delta)
@@ -277,6 +284,9 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
         z += bw
         if MLBW_DEBUG_OUTPUT:
             debug.append(bw)
+
+    if MLBW_DEBUG_OUTPUT and hole_mask is not None:
+        debug.append(hole_mask.expand_as(c))
     if MLBW_DEBUG_OUTPUT:
         mlbw_debug_output(debug)
     del debug

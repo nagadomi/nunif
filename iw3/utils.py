@@ -1634,6 +1634,7 @@ def create_parser(required_true=True):
     parser.add_argument("--method", type=str, default="row_flow",
                         choices=["grid_sample", "backward", "forward", "forward_fill",
                                  "mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s",
+                                 "mask_mlbw_l2",
                                  "row_flow", "row_flow_sym",
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],

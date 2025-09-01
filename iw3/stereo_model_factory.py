@@ -33,6 +33,9 @@ MLBW_L4_D2_WEAK_URL = pth_url("iw3_mlbw_l4_d2_weak_20250627.pth")
 MLBW_L4_D3_WEAK_URL = pth_url("iw3_mlbw_l4_d3_weak_20250627.pth")
 
 
+MASK_MLBW_L2_D1_URL = "././models/mask_mlbw_l2b_v1/sbs.mlbw.left.pth"
+
+
 def load_mlbw_model(
         method, divergence, device_id,
         use_weak_convergence_model=False,
@@ -69,6 +72,9 @@ def load_mlbw_model(
                 url = MLBW_L4_D3_WEAK_URL
             else:
                 url = MLBW_L4_D3_URL
+
+    elif method in {"mask_mlbw_l2"}:
+        url = MASK_MLBW_L2_D1_URL
     else:
         raise ValueError(method)
 
@@ -103,7 +109,7 @@ def create_stereo_model(
     with TorchHubDir(HUB_MODEL_DIR):
         if method.startswith("row_flow"):
             return load_row_flow_model(method, device_id=device_id)
-        elif method.startswith("mlbw_"):
+        elif method.startswith("mlbw_") or method.startswith("mask_mlbw_"):
             return load_mlbw_model(
                 method,
                 divergence=divergence,
