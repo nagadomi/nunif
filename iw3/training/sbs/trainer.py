@@ -106,7 +106,7 @@ class MaskMLBWLoss(nn.Module):
         self.delta_penalty = DeltaPenalty()
 
     def forward(self, input, target):
-        z, grid, _, hole_mask = input
+        z, grid, _, hole_mask_logits = input
         y, mask = target
 
         delta_penalty = self.delta_penalty(grid, None)
@@ -123,7 +123,8 @@ class MaskMLBWLoss(nn.Module):
                          dct_loss(z, y)) * 0.3
 
         mask = mask_closing(mask)
-        mask_loss = (F.l1_loss(hole_mask[:, 0:1], mask) + F.l1_loss(hole_mask[:, 1:2], 1 - mask)) * 0.5
+        mask = mask.squeeze(1).long()
+        mask_loss = F.cross_entropy(hole_mask_logits, mask)
 
         return warp_loss + mask_loss + delta_penalty
 

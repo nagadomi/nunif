@@ -103,17 +103,15 @@ class MLBW(I2IBaseModel):
         x = F.pad(x, (-pad_w1, -pad_w2, -pad_h1, -pad_h2), mode="constant")
         if self.hole_mask:
             delta, layer_weight = x[:, :self.num_layers * 2].chunk(2, dim=1)
-            hole_mask = x[:, self.num_layers * 2:]
-            hole_mask = hole_mask.to(torch.float32)
-            hole_mask = F.softmax(hole_mask, dim=1)
+            hole_mask_logits = x[:, self.num_layers * 2:]
         else:
             delta, layer_weight = x.chunk(2, dim=1)
-            hole_mask = None
+            hole_mask_logits = None
 
         layer_weight = layer_weight.to(torch.float32)
         layer_weight = F.softmax(layer_weight, dim=1)
 
-        return delta, layer_weight, hole_mask
+        return delta, layer_weight, hole_mask_logits
 
     def _warp(self, rgb, grid, delta, delta_scale):
         output_dtye = rgb.dtype
@@ -147,7 +145,7 @@ class MLBW(I2IBaseModel):
 
     def _forward_default(self, x):
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
-        z, grid, delta, layer_weight, hole_mask = self._forward_default_composite(x)
+        z, grid, delta, layer_weight, _ = self._forward_default_composite(x)
         if self.training:
             grid = (grid[:, 0:1, :, :] / delta_scale).detach()
             return z, grid + delta, layer_weight
@@ -158,7 +156,7 @@ class MLBW(I2IBaseModel):
         rgb = x[:, 0:3, :, ]
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
-        delta, layer_weight, hole_mask = self._forward(x)
+        delta, layer_weight, hole_mask_logits = self._forward(x)
         delta = delta.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
 
@@ -169,17 +167,18 @@ class MLBW(I2IBaseModel):
             w = layer_weight[:, i:i + 1, :, :]
             z = z + self._warp(rgb, grid, d, delta_scale) * w
         z = F.pad(z, (-OFFSET,) * 4)
-        hole_mask = F.pad(hole_mask, (-OFFSET,) * 4)
-        return z, grid, delta, layer_weight, hole_mask
+        hole_mask_logits = F.pad(hole_mask_logits, (-OFFSET,) * 4)
+        return z, grid, delta, layer_weight, hole_mask_logits
 
     def _forward_hole_mask(self, x):
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
-        z, grid, delta, layer_weight, hole_mask = self._forward_hole_mask_composite(x)
+        z, grid, delta, layer_weight, hole_mask_logits = self._forward_hole_mask_composite(x)
         if self.training:
             grid = (grid[:, 0:1, :, :] / delta_scale).detach()
-            return z, grid + delta, layer_weight, hole_mask
+            return z, grid + delta, layer_weight, hole_mask_logits
         else:
-            return torch.clamp(z, 0., 1.), hole_mask[:, 0:1]
+            hole_mask_logits = hole_mask_logits.to(torch.float32)
+            return torch.clamp(z, 0., 1.), F.softmax(hole_mask_logits, dim=1)[:, 1:]
 
     def _forward_cycle_composite(self, x):
         rgb = x[:, 0:3, :, ]
@@ -232,10 +231,11 @@ class MLBW(I2IBaseModel):
 
     def _forward_delta_only(self, x):
         assert not self.training
-        delta, layer_weight, hole_mask = self._forward(x)
+        delta, layer_weight, hole_mask_logits = self._forward(x)
         delta = delta.to(torch.float32)
         if self.hole_mask:
-            return delta, layer_weight, hole_mask[:, 0:1]
+            hole_mask_logits = hole_mask_logits.to(torch.float32)
+            return delta, layer_weight, F.softmax(hole_mask_logits, dim=1)[:, 1:]
         else:
             return delta, layer_weight
 
