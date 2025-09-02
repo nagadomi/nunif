@@ -48,14 +48,14 @@ def fix_layered_holes(side_image, index_image, sign, max_tries=100):
     if sign > 0:
         mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (0, 1, 0, 0))
         while mask.any().item() and max_tries > 0:
-            side_image[mask.expand_as(side_image)] = -1  # set undefined value
+            side_image[mask.expand_as(side_image)] = -2  # set undefined value
             index_image[mask] = F.pad(index_image[:, :, :, 1:], (0, 1, 0, 0))[mask]
             mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (0, 1, 0, 0))
             max_tries -= 1
     else:
         mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (1, 0, 0, 0))
         while mask.any().item() and max_tries > 0:
-            side_image[mask.expand_as(side_image)] = -1
+            side_image[mask.expand_as(side_image)] = -2
             index_image[mask] = F.pad(index_image[:, :, :, :-1], (1, 0, 0, 0))[mask]
             mask = F.pad((index_image[:, :, :, :-1] - index_image[:, :, :, 1:]) > 0, (1, 0, 0, 0))
             max_tries -= 1
@@ -134,6 +134,11 @@ def warp(batch, width, height, c, x_index, index_shift, src_index, index_order):
     return out
 
 
+def gen_mask2(mask):
+    mask = mask[:, 0:1]
+    return torch.clamp((mask == -1).float() + (mask == -2).float() * 0.5, 0, 1)
+
+
 def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
                                       synthetic_view="both", inpaint_model=None,
                                       return_mask=False, inconsistent_shift=False):
@@ -182,7 +187,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         fix_layered_holes(right_eye, right_eye_index, -1)
 
         if return_mask:
-            left_mask, right_mask = (left_eye < 0)[:, 0:1, :, :], (right_eye < 0)[:, 0:1, :, :]
+            left_mask, right_mask = gen_mask2(left_eye), gen_mask2(right_eye)
 
         if fill:
             if inpaint_model is None:
@@ -210,7 +215,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         right_eye_index = shift_fill(right_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
         if return_mask:
-            right_mask = (right_eye < 0)[:, 0:1, :, :]
+            right_mask = gen_mask2(right_eye)
         if fill:
             if inpaint_model is None:
                 right_eye = shift_fill(right_eye, 1)
@@ -232,7 +237,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         left_eye_index = shift_fill(left_eye_index, -1)
         fix_layered_holes(left_eye, left_eye_index, 1)
         if return_mask:
-            left_mask = (left_eye < 0)[:, 0:1, :, :]
+            left_mask = gen_mask2(left_eye)
 
         if fill:
             if inpaint_model is None:
