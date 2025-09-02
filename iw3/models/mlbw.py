@@ -67,7 +67,7 @@ class MLBW(I2IBaseModel):
 
         self.cycle = cycle
         self.hole_mask = hole_mask
-        additional_output = 2 if self.hole_mask else 0
+        additional_output = 1 if self.hole_mask else 0
         self.lv1_out = nn.Sequential(
             ReplicationPad2dNaive((4, 4, 0, 0), detach=True),
             nn.Conv2d(C // pack, self.num_layers * 2 + additional_output, kernel_size=(1, 9), stride=1, padding=0),
@@ -145,7 +145,7 @@ class MLBW(I2IBaseModel):
 
     def _forward_default(self, x):
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
-        z, grid, delta, layer_weight, _ = self._forward_default_composite(x)
+        z, grid, delta, layer_weight = self._forward_default_composite(x)
         if self.training:
             grid = (grid[:, 0:1, :, :] / delta_scale).detach()
             return z, grid + delta, layer_weight
@@ -178,7 +178,7 @@ class MLBW(I2IBaseModel):
             return z, grid + delta, layer_weight, hole_mask_logits
         else:
             hole_mask_logits = hole_mask_logits.to(torch.float32)
-            return torch.clamp(z, 0., 1.), F.softmax(hole_mask_logits, dim=1)[:, 1:]
+            return torch.clamp(z, 0., 1.), torch.sigmoid(hole_mask_logits)
 
     def _forward_cycle_composite(self, x):
         rgb = x[:, 0:3, :, ]
@@ -235,7 +235,7 @@ class MLBW(I2IBaseModel):
         delta = delta.to(torch.float32)
         if self.hole_mask:
             hole_mask_logits = hole_mask_logits.to(torch.float32)
-            return delta, layer_weight, F.softmax(hole_mask_logits, dim=1)[:, 1:]
+            return delta, layer_weight, hole_mask_logits
         else:
             return delta, layer_weight
 
@@ -270,7 +270,7 @@ register_model_factory(
 
 register_model_factory(
     "sbs.cycle_mlbw_l2",
-    lambda **kwargs: MLBW(num_layers=2, base_dim=32, cycle=True, hole_mask=True, **kwargs)
+    lambda **kwargs: MLBW(num_layers=2, base_dim=32, cycle=True, **kwargs)
 )
 register_model_factory(
     "sbs.mask_mlbw_l2",
@@ -306,6 +306,7 @@ def _bench(name):
 if __name__ == "__main__":
     # 305 FPS on RTX3070Ti
     _bench("sbs.mlbw_l2")
+    _bench("sbs.mask_mlbw_l2")
     # 150 FPS on RTX3070Ti
     _bench("sbs.mlbw_l4")
 

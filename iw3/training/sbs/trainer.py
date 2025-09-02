@@ -15,6 +15,7 @@ from nunif.modules.gaussian_filter import GaussianFilter2d
 from .dataset import SBSDataset
 from ... import models # noqa
 from ...dilation import mask_closing
+from torchvision.ops import sigmoid_focal_loss
 
 
 class DeltaPenalty(nn.Module):
@@ -48,6 +49,8 @@ class MLBWLoss(nn.Module):
         z, grid, *_ = input
         y, mask = target
 
+        mask = (mask > 0).float()
+
         delta_penalty = self.delta_penalty(grid, None)
         if self.mask_weight > 0:
             mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
@@ -74,6 +77,8 @@ class CycleMLBWLoss(nn.Module):
     def forward(self, input, target):
         z1, z2, grid1, grid2, src_rgb = input
         y, mask = target
+
+        mask = (mask > 0).float()
 
         delta_penalty = (self.delta_penalty(grid1, None) + self.delta_penalty(grid2, None)) * 0.5
 
@@ -109,9 +114,11 @@ class MaskMLBWLoss(nn.Module):
         z, grid, _, hole_mask_logits = input
         y, mask = target
 
+        mask_all = (mask > 0).float()
+
         delta_penalty = self.delta_penalty(grid, None)
         if self.mask_weight > 0:
-            loss_mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
+            loss_mask = 1.0 - torch.clamp(mask_all + self.blur(mask_all), 0, 1) * self.mask_weight
             z = z * loss_mask
             y = y * loss_mask
             warp_loss = (window_dct_loss(z, y, window_size=24) +
@@ -122,9 +129,9 @@ class MaskMLBWLoss(nn.Module):
                          window_dct_loss(z, y, window_size=4) +
                          dct_loss(z, y)) * 0.3
 
+        mask = (mask > 0.9).float()  # only hole mask
         mask = mask_closing(mask)
-        mask = mask.squeeze(1).long()
-        mask_loss = F.cross_entropy(hole_mask_logits, mask)
+        mask_loss = sigmoid_focal_loss(hole_mask_logits, mask, gamma=1, reduction="mean")
 
         return warp_loss + mask_loss + delta_penalty
 
@@ -144,6 +151,8 @@ class RowFlowV3Loss(nn.Module):
     def forward(self, input, target):
         z, grid = input
         y, mask = target
+
+        mask = (mask > 0).float()
 
         delta_penalty = self.delta_penalty(grid, None)
         if self.mask_weight > 0:
@@ -194,11 +203,13 @@ class MaskMLBEval(nn.Module):
         loss_mask = 1 - mask
 
         warp_psnr = self.psnr(z * loss_mask, y * loss_mask)
+        if False:
+            mask = mask_closing(mask)
+            mask_psnr = self.psnr(hole_mask, mask)
 
-        mask = mask_closing(mask)
-        mask_psnr = self.psnr(hole_mask, mask)
-
-        return warp_psnr * 0.5 + mask_psnr * 0.5
+            return warp_psnr * 0.5 + mask_psnr * 0.5
+        else:
+            return warp_psnr
 
 
 class CyclePSNR(nn.Module):

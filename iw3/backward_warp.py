@@ -261,21 +261,22 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
         if model.hole_mask:
-            delta, layer_weight, hole_mask = model(x)
+            delta, layer_weight, hole_mask_logits = model(x)
         else:
             delta, layer_weight = model(x)
-            hole_mask = None
-
-        if not (return_mask or MLBW_DEBUG_OUTPUT):
-            # not used
-            hole_mask = None
+            hole_mask_logits = None
 
     if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
         layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
                                      mode="bilinear", align_corners=True, antialias=True)
-        if hole_mask is not None:
-            hole_mask = F.interpolate(hole_mask, size=c.shape[-2:],
-                                      mode="bilinear", align_corners=True, antialias=True)
+        if hole_mask_logits is not None:
+            hole_mask_logits = F.interpolate(hole_mask_logits, size=c.shape[-2:],
+                                             mode="bilinear", align_corners=True, antialias=False)
+
+    if hole_mask_logits is not None:
+        hole_mask = torch.sigmoid(hole_mask_logits)
+    else:
+        hole_mask = None
 
     delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
     delta = pad_delta_y(delta)
@@ -373,7 +374,7 @@ def _test_nonwarp_mask():
     import torchvision.transforms.functional as TF
     import torchvision.io as io
     from .stereo_model_factory import create_stereo_model
-    from . import models
+    from . import models  # noqa
 
     model = create_stereo_model("mask_mlbw_l2", divergence=10, device_id=0)
 
@@ -382,7 +383,7 @@ def _test_nonwarp_mask():
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
-    x, mask = nonwarp_mask(model, x, depth, divergence=5, convergence=0, mapper="none")
+    x, mask = nonwarp_mask(model, x, depth, divergence=5 * 2, convergence=0.5, mapper="none")
     x = x.mean(dim=1, keepdim=True)
     x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
     TF.to_pil_image(x).show()
