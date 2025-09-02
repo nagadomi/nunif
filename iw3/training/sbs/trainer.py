@@ -329,9 +329,12 @@ def train(args):
     elif args.arch.startswith("sbs.cycle_mlbw"):
         args.loss = "cycle_mlbw"
         args.mask_weight = 1.0
-        print("change mask_weight=1")
+        print("Change mask_weight=1", file=sys.stderr)
     elif args.arch.startswith("sbs.mask_mlbw"):
         args.loss = "mask_mlbw"
+        if args.optimizer != "adamw_schedulefree":
+            print("Recommend using `--optimizer adamw_schedulefree`. ", file=sys.stderr)
+
     elif args.arch.startswith("sbs.mlbw"):
         args.loss = "mlbw"
 
