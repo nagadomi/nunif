@@ -198,7 +198,7 @@ class SBSDataset(Dataset):
 
     def _getitem(self, index):
         if self.training:
-            side = random.choice(["left", "right"])
+            side = "left"  # random.choice(["left", "right"])
         else:
             side = "left"
         im_org, im_depth, im_side, im_mask = load_images(self.files[index], side)
