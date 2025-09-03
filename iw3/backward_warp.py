@@ -269,14 +269,6 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
     if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
         layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
                                      mode="bilinear", align_corners=True, antialias=True)
-        if hole_mask_logits is not None:
-            hole_mask_logits = F.interpolate(hole_mask_logits, size=c.shape[-2:],
-                                             mode="bilinear", align_corners=True, antialias=False)
-
-    if hole_mask_logits is not None:
-        hole_mask = torch.sigmoid(hole_mask_logits)
-    else:
-        hole_mask = None
 
     delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
     delta = pad_delta_y(delta)
@@ -291,25 +283,29 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
         if MLBW_DEBUG_OUTPUT:
             debug.append(bw)
 
-    if MLBW_DEBUG_OUTPUT and hole_mask is not None:
+    if MLBW_DEBUG_OUTPUT and hole_mask_logits is not None:
+        hole_mask_logits = F.interpolate(hole_mask_logits, size=c.shape[-2:],
+                                         mode="bilinear", align_corners=True, antialias=False)
+        hole_mask = torch.sigmoid(hole_mask_logits)
         debug.append(hole_mask.expand_as(c))
+
     if MLBW_DEBUG_OUTPUT:
         mlbw_debug_output(debug)
     del debug
 
     if use_pad_convergence:
         z = pad_convergence_shift_05(z, divergence, convergence)
-        if hole_mask is not None:
-            hole_mask = pad_convergence_shift_05(hole_mask, divergence, convergence)
+        if hole_mask_logits is not None:
+            hole_mask_logits = pad_convergence_shift_05(hole_mask_logits, divergence, convergence)
     z = z.clamp(0, 1)
 
     if shift > 0:
         z = z.flip((3,))
-        if hole_mask is not None:
-            hole_mask = hole_mask.flip((3,))
+        if hole_mask_logits is not None:
+            hole_mask_logits = hole_mask_logits.flip((3,))
 
     if return_mask:
-        return z, hole_mask
+        return z, hole_mask_logits
     else:
         return z
 
@@ -349,7 +345,21 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
     return left_eye, right_eye
 
 
-def nonwarp_mask(model, c, depth, divergence, convergence, mapper):
+def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
+    for _ in range(dilation):
+        mask_logits_shift = F.pad(mask_logits, (0, 1, 0, 0))[:, :, :, 1:]
+        mask_logits = torch.maximum(mask_logits, mask_logits_shift)
+
+    if target_size != mask_logits.shape[-2:]:
+        mask_logits = F.interpolate(mask_logits, size=target_size,
+                                    mode="bilinear", align_corners=True, antialias=True)
+    mask = torch.sigmoid(mask_logits)
+    mask = (mask > threshold)
+
+    return mask
+
+
+def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.15, dilation=2):
     # warp depth to the left
     depth3 = depth.repeat(1, 3, 1, 1)
     warped_depth = apply_divergence_nn_delta_weight(
@@ -361,11 +371,12 @@ def nonwarp_mask(model, c, depth, divergence, convergence, mapper):
     warped_depth = warped_depth.mean(dim=1, keepdim=True)
     # warp warped_depth to the right and back to original position
     dummy = torch.zeros_like(c)
-    _, mask = apply_divergence_nn_delta_weight(
+    _, mask_logits = apply_divergence_nn_delta_weight(
         model, dummy, warped_depth, divergence=divergence, convergence=convergence, steps=1,
         mapper=mapper, shift=1, preserve_screen_border=False, enable_amp=True,
         return_mask=True,
     )
+    mask = postprocess_hole_mask(mask_logits, c.shape[-2:], threshold=threshold, dilation=dilation)
 
     return c, mask
 
@@ -383,7 +394,7 @@ def _test_nonwarp_mask():
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
-    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none")
+    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none", threshold=0.15, dilation=2)
     x = x.mean(dim=1, keepdim=True)
     x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
     TF.to_pil_image(x).show()
