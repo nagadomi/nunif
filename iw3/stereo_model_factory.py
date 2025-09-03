@@ -32,8 +32,8 @@ MLBW_L2_D3_WEAK_URL = pth_url("iw3_mlbw_l2_d3_weak_20250627.pth")
 MLBW_L4_D2_WEAK_URL = pth_url("iw3_mlbw_l4_d2_weak_20250627.pth")
 MLBW_L4_D3_WEAK_URL = pth_url("iw3_mlbw_l4_d3_weak_20250627.pth")
 
-
-MASK_MLBW_L2_D1_URL = "././models/mask_mlbw_l2b_v1/sbs.mlbw.left.pth"
+# mlbw with hole mask estimation
+MASK_MLBW_L2_D1_URL = pth_url("iw3_mask_mlbw_l2_d1_20250903.pth")
 
 
 def load_mlbw_model(
