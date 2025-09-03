@@ -406,10 +406,10 @@ def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
 def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.15, dilation=2):
     # warp depth to the left
     depth3 = depth.repeat(1, 3, 1, 1)
-    warped_depth = apply_divergence_nn_delta_weight(
+    warped_depth, _ = apply_divergence_nn_delta_weight(
         model, depth3, depth, divergence=divergence, convergence=convergence, steps=1,
         mapper=mapper, shift=-1, preserve_screen_border=False, enable_amp=True,
-        return_mask=False,
+        return_mask=True,  # prevent hole fill
     )
 
     warped_depth = warped_depth.mean(dim=1, keepdim=True)
