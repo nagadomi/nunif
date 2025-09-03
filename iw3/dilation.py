@@ -13,8 +13,30 @@ def gaussian_blur(x):
     return x
 
 
-def dilate(x):
-    return F.max_pool2d(x, kernel_size=3, stride=1, padding=1)
+def dilate(mask, kernel_size=3):
+    if isinstance(kernel_size, (list, tuple)):
+        pad = (kernel_size[0] // 2, kernel_size[1] // 2)
+    else:
+        pad = kernel_size // 2
+    return F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=pad)
+
+
+def erode(mask, kernel_size=3):
+    if isinstance(kernel_size, (list, tuple)):
+        pad = (kernel_size[0] // 2, kernel_size[1] // 2)
+    else:
+        pad = kernel_size // 2
+    return -F.max_pool2d(-mask, kernel_size=kernel_size, stride=1, padding=pad)
+
+
+def closing(mask, kernel_size=3, n_iter=2):
+    mask = mask.float()
+    for _ in range(n_iter):
+        mask = dilate(mask, kernel_size=kernel_size)
+    for _ in range(n_iter):
+        mask = erode(mask, kernel_size=kernel_size)
+
+    return mask
 
 
 def edge_weight(x):
@@ -43,19 +65,8 @@ def dilate_edge(x, n):
 
 
 def mask_closing(mask, kernel_size=3, n_iter=2):
-    def dilate(mask, kernel_size):
-        pad = kernel_size // 2
-        return F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=pad)
-
-    def erode(mask, kernel_size=3):
-        pad = kernel_size // 2
-        return -F.max_pool2d(-mask, kernel_size=kernel_size, stride=1, padding=pad)
-
     mask = mask_org = mask.float()
-    for _ in range(n_iter):
-        mask = dilate(mask, kernel_size=kernel_size)
-    for _ in range(n_iter):
-        mask = erode(mask, kernel_size=kernel_size)
+    mask = closing(mask, kernel_size=kernel_size, n_iter=n_iter)
 
     # Add erased isolated pixels
     mask = (mask + mask_org).clamp(0, 1)
