@@ -15,7 +15,8 @@ from nunif.utils.image_loader import ImageLoader, list_images
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
 from iw3.utils import get_mapper
-from iw3.forward_warp import nonwarp_mask
+from iw3.stereo_model_factory import create_stereo_model
+from iw3.backward_warp import nonwarp_mask
 
 
 OFFSET = 32
@@ -69,8 +70,11 @@ def gen_mapper(is_metric):
             return random.choice(["inv_mul_1", "inv_mul_2", "inv_mul_3", "mul_1", "mul_2", "mul_3"])
 
 
-def gen_edge_dilation(model_type):
-    return random.choice([0] * 6 + [1, 2, 2, 2, 3, 4])
+def gen_edge_dilation(model_type, depth_resolution):
+    if depth_resolution is not None and depth_resolution >= 512:
+        return random.choice([0] * 6 + [1, 2, 2, 2, 3, 4])
+    else:
+        return random.choice([0] * 3 + [1, 2, 2])
 
 
 def resize(im, min_size):
@@ -88,33 +92,45 @@ def resize(im, min_size):
     return im
 
 
-def apply_mapper(depth, mapper):
-    return get_mapper(mapper)(depth)
-
-
-def gen_data(im, model, args):
-    mapper = gen_mapper(model.is_metric())
+def gen_data(im, depth_model, mask_mlbw, args):
+    mapper = gen_mapper(depth_model.is_metric())
     convergence = gen_convergence()
-    edge_dilation = gen_edge_dilation(args.model_type)
+    edge_dilation = gen_edge_dilation(args.model_type, args.resolution)
     image_size = random.choices([720, 1080], weights=[0.25, 0.5], k=1)[0]
+    # TODO: Maybe need to adjust this later.
+    hole_dilation = random.randint(0, edge_dilation + 1)
 
     with torch.inference_mode():
         im = resize(im, image_size)
         divergence = gen_divergence(im.width, args.divergence_level)
         depth_aa = random.choice([False, False, False, True])
-        depth = model.infer(im, edge_dilation=edge_dilation, depth_aa=depth_aa, tta=False, enable_amp=True)
-        depth = model.minmax_normalize_chw(depth)
+        depth = depth_model.infer(im, edge_dilation=edge_dilation, depth_aa=depth_aa, tta=False, enable_amp=True)
+        depth = depth_model.minmax_normalize_chw(depth)
+        depth = depth.unsqueeze(0)
         c = TF.to_tensor(im).unsqueeze(0).to(depth.device)
-        depth = apply_mapper(depth, mapper).unsqueeze(0)
 
-        _, mask = nonwarp_mask(c, depth, divergence=divergence, convergence=convergence)
+        _, mask = nonwarp_mask(
+            mask_mlbw,
+            c, depth,
+            divergence=divergence,
+            convergence=convergence,
+            mapper=mapper,
+            threshold=0.15,  # constant value
+            dilation=hole_dilation,
+        )
 
         c_flip = torch.flip(c, (-1,))
         depth_flip = torch.flip(depth, (-1,))
 
-        _, mask_flip = nonwarp_mask(c_flip, depth_flip, divergence=divergence, convergence=convergence)
-
-        # NOTE: mask_closing() is applied on the model or dataset side.
+        _, mask_flip = nonwarp_mask(
+            mask_mlbw,
+            c_flip, depth_flip,
+            divergence=divergence,
+            convergence=convergence,
+            mapper=mapper,
+            threshold=0.15,
+            dilation=edge_dilation + 1,
+        )
 
         return [(c[0], mask.float()[0]),
                 (c_flip[0], mask_flip.float()[0])]
@@ -155,9 +171,12 @@ def main(args):
 
     max_workers = cpu_count() // 2 or 1
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
-    model = create_depth_model(args.model_type)
-    model.load(gpu=args.gpu, resolution=args.resolution)
-    model.disable_ema()
+    depth_model = create_depth_model(args.model_type)
+    depth_model.load(gpu=args.gpu, resolution=args.resolution)
+    depth_model.disable_ema()
+
+    # TODO: support for divergence handles when d2 and d3 models become available in the future
+    mask_mlbw = create_stereo_model("mask_mlbw_l2", divergence=1, device_id=args.gpu)
 
     if args.eval_only:
         target_dataset_type = ("eval",)
@@ -188,7 +207,7 @@ def main(args):
                 if im is None:
                     continue
 
-                data = gen_data(im, model, args)
+                data = gen_data(im, depth_model, mask_mlbw, args)
                 for c, mask in data:
                     seq += 1
                     output_base = path.join(output_dir, filename_prefix + str(seq))
@@ -211,7 +230,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
     parser.add_argument("--size", type=int, default=512, help="crop size")
-    parser.add_argument("--num-samples", type=int, default=4, help="max random crops")
+    parser.add_argument("--num-samples", type=int, default=2, help="max random crops")
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_Any_L", help="depth model")
     parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
