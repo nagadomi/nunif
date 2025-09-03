@@ -155,15 +155,15 @@ def random_hard_example_crop(size, n, *images):
         results.append((mask_sum, crop_images))
 
     results = sorted(results, key=lambda v: v[0], reverse=True)
-    results = [images for stdv, images in results]
     return results[0]
 
 
 def save_images(c, mask, output_base, size, num_samples):
     for i in range(num_samples):
-        rgb_rect, mask_rect = random_hard_example_crop(size, 4, c, mask)
-        TF.to_pil_image(rgb_rect).save(f"{output_base}_{i}_C.png")
-        TF.to_pil_image(mask_rect).save(f"{output_base}_{i}_M.png")
+        mask_sum, (rgb_rect, mask_rect) = random_hard_example_crop(size, 8, c, mask)
+        if mask_sum > 0:
+            TF.to_pil_image(rgb_rect).save(f"{output_base}_{i}_C.png")
+            TF.to_pil_image(mask_rect).save(f"{output_base}_{i}_M.png")
 
 
 def main(args):
