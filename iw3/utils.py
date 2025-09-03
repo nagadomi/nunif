@@ -282,7 +282,9 @@ def apply_divergence(depth, im, args, side_model):
             mapper=args.mapper,
             synthetic_view=args.synthetic_view,
             preserve_screen_border=args.preserve_screen_border,
-            enable_amp=not args.disable_amp)
+            enable_amp=not args.disable_amp,
+            edge_dilation=args.edge_dilation,
+        )
 
     if not batch:
         left_eye = left_eye.squeeze(0)

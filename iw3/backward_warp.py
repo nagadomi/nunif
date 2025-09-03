@@ -114,8 +114,14 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_vi
     return left_eye, right_eye
 
 
-def apply_divergence_nn_LR(model, c, depth, divergence, convergence, steps,
-                           mapper, synthetic_view, preserve_screen_border, enable_amp):
+def apply_divergence_nn_LR(
+        model, c, depth, divergence, convergence, steps,
+        mapper,
+        synthetic_view="both",
+        preserve_screen_border=False,
+        enable_amp=True,
+        edge_dilation=2
+):
     assert synthetic_view in {"both", "right", "left"}
     steps = 1 if steps is None else steps
 
@@ -128,35 +134,55 @@ def apply_divergence_nn_LR(model, c, depth, divergence, convergence, steps,
             left_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                                            mapper=mapper, shift=-1,
                                            preserve_screen_border=preserve_screen_border,
-                                           enable_amp=enable_amp)
+                                           enable_amp=enable_amp, edge_dilation=edge_dilation)
             right_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                                             mapper=mapper, shift=1,
                                             preserve_screen_border=preserve_screen_border,
-                                            enable_amp=enable_amp)
+                                            enable_amp=enable_amp, edge_dilation=edge_dilation)
         elif synthetic_view == "right":
             left_eye = c
             right_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
                                             mapper=mapper, shift=1,
                                             preserve_screen_border=preserve_screen_border,
-                                            enable_amp=enable_amp)
+                                            enable_amp=enable_amp, edge_dilation=edge_dilation)
         elif synthetic_view == "left":
             left_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
                                            mapper=mapper, shift=-1,
                                            preserve_screen_border=preserve_screen_border,
-                                           enable_amp=enable_amp)
+                                           enable_amp=enable_amp, edge_dilation=edge_dilation)
             right_eye = c
 
     return left_eye, right_eye
 
 
-def apply_divergence_nn(model, c, depth, divergence, convergence, steps,
-                        mapper, shift, preserve_screen_border, enable_amp):
+def apply_divergence_nn(
+        model, c, depth, divergence, convergence, steps,
+        mapper, shift,
+        preserve_screen_border=False,
+        enable_amp=True,
+        edge_dilation=2
+):
     if model.name == "sbs.mlbw":
-        return apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
-                                                mapper, shift, preserve_screen_border, enable_amp)
+        return apply_divergence_nn_delta_weight(
+            model, c, depth,
+            divergence=divergence,
+            convergence=convergence,
+            steps=steps,
+            mapper=mapper,
+            shift=shift,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp,
+            edge_dilation=edge_dilation)
     else:
-        return apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
-                                         mapper, shift, preserve_screen_border, enable_amp)
+        return apply_divergence_nn_delta(
+            model, c, depth,
+            divergence=divergence,
+            convergence=convergence,
+            steps=steps,
+            mapper=mapper,
+            shift=shift,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp)
 
 
 def pad_convergence_shift_05(c, divergence, convergence):
@@ -168,8 +194,12 @@ def pad_convergence_shift_05(c, divergence, convergence):
     return c
 
 
-def apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
-                              mapper, shift, preserve_screen_border, enable_amp):
+def apply_divergence_nn_delta(
+        model, c, depth, divergence, convergence, steps,
+        mapper, shift,
+        preserve_screen_border=False,
+        enable_amp=True
+):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -232,9 +262,14 @@ def mlbw_debug_output(z):
     z = TF.to_pil_image(z).save(f"tmp/mlbw_debug/{_mlbw_debug_count}.png")
 
 
-def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
-                                     mapper, shift, preserve_screen_border, enable_amp,
-                                     return_mask=False):
+def apply_divergence_nn_delta_weight(
+        model, c, depth, divergence, convergence, steps,
+        mapper, shift,
+        preserve_screen_border=False,
+        enable_amp=True,
+        return_mask=False,
+        edge_dilation=2
+):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -307,6 +342,16 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
     if return_mask:
         return z, hole_mask_logits
     else:
+        if hole_mask_logits is not None:
+            # hole fill for visualize
+            hole_mask = postprocess_hole_mask(
+                hole_mask_logits,
+                target_size=c.shape[-2:],
+                threshold=0.15,
+                dilation=edge_dilation + 1,
+            )
+            z = z * (1 - hole_mask.float())
+
         return z
 
 
@@ -347,8 +392,7 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
 
 def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
     for _ in range(dilation):
-        mask_logits_shift = F.pad(mask_logits, (0, 1, 0, 0))[:, :, :, 1:]
-        mask_logits = torch.maximum(mask_logits, mask_logits_shift)
+        mask_logits = F.max_pool2d(mask_logits, kernel_size=(1, 3), stride=1, padding=(0, 1))
 
     if target_size != mask_logits.shape[-2:]:
         mask_logits = F.interpolate(mask_logits, size=target_size,
