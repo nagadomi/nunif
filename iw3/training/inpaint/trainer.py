@@ -130,7 +130,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="l1dinov2", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
+    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
 
     parser.set_defaults(
         batch_size=16,
