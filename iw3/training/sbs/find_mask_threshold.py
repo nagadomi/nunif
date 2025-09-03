@@ -57,11 +57,11 @@ def bench(args, model, divergence, threshold):
         depth = TF.to_tensor(depth[0]).unsqueeze(0).cuda()
 
         _, forward_mask = forward_nonwarp_mask(rgb, depth, divergence=divergence, convergence=0.5)
-        _, backward_mask = backward_nonwarp_mask(model, rgb, depth, divergence=divergence, convergence=0.5, mapper="none")
+        _, backward_mask = backward_nonwarp_mask(model, rgb, depth, divergence=divergence, convergence=0.5, mapper="none",
+                                                 threshold=threshold, dilation=0)
 
         forward_mask = (forward_mask > 0.9).float()
         forward_mask = mask_closing(forward_mask)
-        backward_mask = (backward_mask > threshold).float()
         # backward_mask = mask_closing(backward_mask)
 
         iou_sum += iou(forward_mask, backward_mask)
@@ -96,12 +96,11 @@ def visualize(args, model, divergence=2.0, threshold=0.4):
         depth = TF.to_tensor(depth[0]).unsqueeze(0).cuda()
 
         _, forward_mask = forward_nonwarp_mask(rgb, depth, divergence=divergence, convergence=0.5)
-        _, backward_mask = backward_nonwarp_mask(model, rgb, depth, divergence=divergence, convergence=0.5, mapper="none")
+        _, backward_mask = backward_nonwarp_mask(model, rgb, depth, divergence=divergence, convergence=0.5, mapper="none",
+                                                 threshold=threshold, dilation=0)
 
         forward_mask = (forward_mask > 0.9).float()
         forward_mask = mask_closing(forward_mask)
-        backward_mask = (backward_mask > threshold).float()
-
         mask_pack = torch.cat([forward_mask, backward_mask, rgb.mean(dim=1, keepdim=True)], dim=1)
 
         i += 1
@@ -114,7 +113,7 @@ def main():
     parser.add_argument("--depth-dir", type=str, required=True, help="input depth data dir")
     parser.add_argument("--output-dir", "-o", type=str, help="output dir for visualization")
     parser.add_argument("--threshold", type=float, default=0.15, help="threshold for visualization")
-    parser.add_argument("--divergence", type=float, default=2.0, help="divergence right only = 1/2")
+    parser.add_argument("--divergence", type=float, default=4.0, help="divergence")
 
     args = parser.parse_args()
 
