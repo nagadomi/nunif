@@ -120,7 +120,7 @@ def apply_divergence_nn_LR(
         synthetic_view="both",
         preserve_screen_border=False,
         enable_amp=True,
-        edge_dilation=2
+        edge_dilation=0
 ):
     assert synthetic_view in {"both", "right", "left"}
     steps = 1 if steps is None else steps
@@ -160,7 +160,7 @@ def apply_divergence_nn(
         mapper, shift,
         preserve_screen_border=False,
         enable_amp=True,
-        edge_dilation=2
+        edge_dilation=0
 ):
     if model.name == "sbs.mlbw":
         return apply_divergence_nn_delta_weight(
@@ -268,7 +268,7 @@ def apply_divergence_nn_delta_weight(
         preserve_screen_border=False,
         enable_amp=True,
         return_mask=False,
-        edge_dilation=2
+        edge_dilation=0
 ):
     # BCHW
     assert model.delta_output
@@ -403,7 +403,7 @@ def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
     return mask
 
 
-def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.15, dilation=2):
+def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.15, dilation=0):
     # warp depth to the left
     depth3 = depth.repeat(1, 3, 1, 1)
     warped_depth, _ = apply_divergence_nn_delta_weight(
@@ -438,7 +438,7 @@ def _test_nonwarp_mask():
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
-    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none", threshold=0.15, dilation=2)
+    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none", threshold=0.15, dilation=0)
     x = x.mean(dim=1, keepdim=True)
     x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
     TF.to_pil_image(x).show()
