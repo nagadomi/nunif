@@ -396,7 +396,7 @@ def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
 
     if target_size != mask_logits.shape[-2:]:
         mask_logits = F.interpolate(mask_logits, size=target_size,
-                                    mode="bilinear", align_corners=True, antialias=True)
+                                    mode="bilinear", align_corners=True, antialias=False)
     mask = torch.sigmoid(mask_logits)
     mask = (mask > threshold)
 
