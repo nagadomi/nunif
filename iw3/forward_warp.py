@@ -268,6 +268,8 @@ def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None
 
 
 def nonwarp_mask(c, depth, divergence, convergence):
+    divergence = divergence * 0.5  # cancels out 2x multiplier for synthetic_view = right|left
+
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
         depth = F.interpolate(depth, size=c.shape[-2:],
                               mode="bilinear", align_corners=True, antialias=True)
@@ -337,7 +339,7 @@ def _test_nonwarp_mask():
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
-    x, mask = nonwarp_mask(x, depth, divergence=5, convergence=0)
+    x, mask = nonwarp_mask(x, depth, divergence=4 * 2, convergence=0)
     mask = mask_closing(mask, kernel_size=3, n_iter=2)
 
     x = x.mean(dim=1, keepdim=True)
@@ -347,4 +349,4 @@ def _test_nonwarp_mask():
 
 if __name__ == "__main__":
     _bench()
-    # _test_nonwarp_mask()
+    _test_nonwarp_mask()

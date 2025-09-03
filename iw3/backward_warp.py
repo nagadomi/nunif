@@ -383,7 +383,7 @@ def _test_nonwarp_mask():
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
-    x, mask = nonwarp_mask(model, x, depth, divergence=5 * 2, convergence=0.5, mapper="none")
+    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none")
     x = x.mean(dim=1, keepdim=True)
     x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
     TF.to_pil_image(x).show()
