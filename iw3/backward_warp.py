@@ -1,5 +1,6 @@
 import torch
 from .mapper import get_mapper
+from .dilation import closing, dilate
 from nunif.device import autocast, device_is_mps
 import torch.nn.functional as F
 from nunif.modules.replication_pad2d import replication_pad2d
@@ -392,7 +393,8 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
 
 def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
     for _ in range(dilation):
-        mask_logits = F.max_pool2d(mask_logits, kernel_size=(1, 3), stride=1, padding=(0, 1))
+        mask_logits = dilate(mask_logits, kernel_size=(1, 3))
+    mask_logits = closing(mask_logits, n_iter=1)
 
     if target_size != mask_logits.shape[-2:]:
         mask_logits = F.interpolate(mask_logits, size=target_size,
