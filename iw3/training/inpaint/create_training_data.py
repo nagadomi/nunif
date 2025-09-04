@@ -79,7 +79,13 @@ def gen_edge_dilation(model_type, depth_resolution):
         return random.choice([0] * 3 + [1, 2, 2])
 
 
-def resize(im, min_size):
+def crop_resize(im, min_size):
+    if random.choice([True, False]):
+        crop_size = int(min(im.size) * (1 / 2 ** 0.5))
+        angle = random.uniform(-45, 45)
+        im = TF.rotate(im, angle=angle, interpolation=InterpolationMode.BILINEAR)
+        im = TF.center_crop(im, (crop_size, crop_size))
+
     w, h = im.size
     if w > h:
         new_h = min_size
@@ -103,7 +109,7 @@ def gen_data(im, depth_model, mask_mlbw, args):
     hole_dilation = random.randint(0, edge_dilation + 1)
 
     with torch.inference_mode():
-        im = resize(im, image_size)
+        im = crop_resize(im, image_size)
         divergence = gen_divergence(im.width, args.divergence_level)
         depth_aa = random.choice([False, False, False, True])
         depth = depth_model.infer(im, edge_dilation=edge_dilation, depth_aa=depth_aa, tta=False, enable_amp=True)
@@ -161,7 +167,7 @@ def random_hard_example_crop(size, n, *images):
 def save_images(c, mask, output_base, size, num_samples):
     for i in range(num_samples):
         mask_sum, (rgb_rect, mask_rect) = random_hard_example_crop(size, 8, c, mask)
-        if mask_sum > 0:
+        if mask_sum > 300:
             TF.to_pil_image(rgb_rect).save(f"{output_base}_{i}_C.png")
             TF.to_pil_image(mask_rect).save(f"{output_base}_{i}_M.png")
 
