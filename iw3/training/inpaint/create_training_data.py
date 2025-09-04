@@ -16,7 +16,9 @@ from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
 from iw3.utils import get_mapper
 from iw3.stereo_model_factory import create_stereo_model
-from iw3.backward_warp import nonwarp_mask
+from iw3.dilation import mask_closing
+from iw3.backward_warp import nonwarp_mask as backward_nonwarp_mask
+from iw3.forward_warp import nonwarp_mask as forward_nonwarp_mask
 
 
 OFFSET = 32
@@ -109,7 +111,7 @@ def gen_data(im, depth_model, mask_mlbw, args):
         depth = depth.unsqueeze(0)
         c = TF.to_tensor(im).unsqueeze(0).to(depth.device)
 
-        _, mask = nonwarp_mask(
+        _, mask = backward_nonwarp_mask(
             mask_mlbw,
             c, depth,
             divergence=divergence,
@@ -121,16 +123,14 @@ def gen_data(im, depth_model, mask_mlbw, args):
 
         c_flip = torch.flip(c, (-1,))
         depth_flip = torch.flip(depth, (-1,))
+        depth_flip = get_mapper(mapper)(depth_flip)
 
-        _, mask_flip = nonwarp_mask(
-            mask_mlbw,
+        _, mask_flip = forward_nonwarp_mask(
             c_flip, depth_flip,
             divergence=divergence,
             convergence=convergence,
-            mapper=mapper,
-            threshold=0.15,
-            dilation=edge_dilation + 1,
         )
+        mask_flip = mask_closing(mask_flip)
 
         return [(c[0], mask.float()[0]),
                 (c_flip[0], mask_flip.float()[0])]
