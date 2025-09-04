@@ -141,7 +141,11 @@ def gen_mask2(mask):
 
 def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
                                       synthetic_view="both", inpaint_model=None,
-                                      return_mask=False, inconsistent_shift=False):
+                                      return_mask=False, inconsistent_shift=False,
+                                      edge_dilation=2):
+    # TODO
+    # dilation = round((c.shape[-2] / depth.shape[-2]) * edge_dilation) if edge_dilation > 0 else 0
+    dilation = 0
     src_image = c
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
@@ -196,8 +200,11 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = left_eye.flip(-1)
-                    left_eye = inpaint_model(left_eye, (left_eye == -1)[:, 0:1, :, :], (left_eye == -2)[:, 0:1, :, :]).flip(-1)
-                    right_eye = inpaint_model(right_eye, (right_eye == -1)[:, 0:1, :, :], (right_eye == -2)[:, 0:1, :, :])
+                    left_mask = (left_eye < 0)[:, 0:1, :, :]
+                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True, dilation=dilation).flip(-1)
+
+                    right_mask = (right_eye < 0)[:, 0:1, :, :]
+                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True, dilation=dilation)
         else:
             # drop undefined values
             left_eye = torch.clamp(left_eye, 0, 1)
@@ -221,7 +228,8 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
                 right_eye = shift_fill(right_eye, 1)
             else:
                 with autocast(device=right_eye.device, enabled=True):
-                    right_eye = inpaint_model(right_eye, (right_eye == -1)[:, 0:1, :, :], (right_eye == -2)[:, 0:1, :, :])
+                    right_mask = (right_eye < 0)[:, 0:1]
+                    right_eye = inpaint_model(right_eye, right_mask, closing=True, dilation=dilation)
         else:
             right_eye = torch.clamp(right_eye, 0, 1)
 
@@ -245,7 +253,8 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             else:
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = left_eye.flip(-1)
-                    left_eye = inpaint_model(left_eye, (left_eye == -1)[:, 0:1, :, :], (left_eye == -2)[:, 0:1, :, :]).flip(-1)
+                    left_mask = (left_eye < 0)[:, 0:1, :, :]
+                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True, dilation=dilation).flip(-1)
         else:
             left_eye = torch.clamp(left_eye, 0, 1)
 

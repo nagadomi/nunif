@@ -15,7 +15,10 @@ from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.clamp_loss import ClampLoss
 from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.lpips import LPIPSWith
-from nunif.modules.dinov2 import DINOv2PoolWith
+from nunif.modules.dinov2 import DINOv2CosineWith
+from nunif.modules.lbp_loss import YLBP
+from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate
+from nunif.transforms import pair as TP
 from .dataset import InpaintDataset
 from ... import models # noqa
 
@@ -23,12 +26,18 @@ from ... import models # noqa
 class InpaintEnv(I2IEnv):
     def __init__(self, model, criterion):
         super().__init__(model, criterion=criterion, eval_criterion=criterion)
+        self.diff_aug = TP.RandomChoice([
+            DiffPairRandomTranslate(size=8, padding_mode="reflection", expand=False, instance_random=False),
+            DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
+            TP.Identity()], p=[0.33, 0.33, 0.33])
 
     def train_step(self, data):
         x, mask, y, *_ = data
         x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
         with self.autocast():
+            x, mask = self.model.preprocess(x, mask)
             z = self.model(x, mask)
+            z, y = self.diff_aug(z, y)
             loss = self.criterion(z, y)
         if not torch.isnan(loss):
             self.sum_loss += loss.item()
@@ -44,12 +53,12 @@ class InpaintEnv(I2IEnv):
         x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
         model = self.get_eval_model()
         with self.autocast():
+            x, mask = self.model.preprocess(x, mask)
             z = model(x, mask)
             loss = self.eval_criterion(z, y)
             self.eval_count += 1
-            if self.eval_count % 20 == 0:
-                x = x * (1 - mask.float())
-                self.save_eval(x, y, z, self.eval_count // 20)
+            if self.eval_count % 10 == 0:
+                self.save_eval(x, y, z, self.eval_count // 10)
 
         self.sum_loss += loss.item()
         self.sum_step += 1
@@ -109,7 +118,7 @@ class InpaintTrainer(Trainer):
         elif self.args.loss == "l1lpips":
             criterion = LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4)
         elif self.args.loss == "l1dinov2":
-            criterion = DINOv2PoolWith(ClampLoss(torch.nn.L1Loss()), weight=1.0)
+            criterion = DINOv2CosineWith(ClampLoss(torch.nn.L1Loss()), weight=0.1)
         else:
             raise ValueError(f"{self.args.loss}")
 
@@ -130,20 +139,21 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
+    parser.add_argument("--loss", type=str, default="l1dinov2", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
 
     parser.set_defaults(
         batch_size=16,
-        optimizer="adam",
+        optimizer="adamw",
         learning_rate=0.0001,
         learning_rate_cosine_min=1e-8,
-        scheduler="cosine",
+        scheduler="cosine_wd",
         learning_rate_cycles=5,
         max_epoch=200,
         learning_rate_decay=0.99,
         learning_rate_decay_step=[1],
         momentum=0.9,
         weight_decay=0.001,
+        weight_decay_end=0.01,
         eval_step=4,
     )
     parser.set_defaults(handler=train)
