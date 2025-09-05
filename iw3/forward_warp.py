@@ -229,7 +229,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             else:
                 with autocast(device=right_eye.device, enabled=True):
                     right_mask = (right_eye < 0)[:, 0:1]
-                    right_eye = inpaint_model(right_eye, right_mask, closing=True, dilation=dilation)
+                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True, dilation=dilation)
         else:
             right_eye = torch.clamp(right_eye, 0, 1)
 
