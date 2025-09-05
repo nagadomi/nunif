@@ -9,7 +9,7 @@ from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.norm import FastLayerNorm
 from nunif.modules.attention import WindowGMLP2d
 from nunif.modules.gaussian_filter import SeparableGaussianFilter2d
-from iw3.dilation import mask_closing, dilate  # TODO: Move nunif/modules
+from iw3.dilation import mask_closing, dilate
 
 
 class GLUConvMLP(nn.Module):
@@ -62,25 +62,24 @@ class LightInpaintV1(I2IBaseModel):
         C2 = C * 2
         self.mask_bias = nn.Parameter(torch.zeros(1, C, 1, 1))
         self.patch = nn.Sequential(
-            nn.Conv2d(3 * pack, C // 2, kernel_size=1, stride=1, padding=0),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(C // 2, C, kernel_size=1, stride=1, padding=0),
+            nn.Conv2d(3 * pack, C, kernel_size=1, stride=1, padding=0),
+            nn.LeakyReLU(0.2, inplace=True),
         )
-        self.enc1 = GMLPBlock(C, window_size=8, mlp_ratio=2, shift=True)
-        self.down = nn.Conv2d(C, C2, kernel_size=2, stride=2, padding=0, bias=0)
+        self.enc1 = GMLPBlock(C, window_size=16, mlp_ratio=2, shift=True)
+        self.down = nn.Conv2d(C, C2, kernel_size=2, stride=2, padding=0)
         self.enc2 = nn.Sequential(
-            GMLPBlock(C2, window_size=4, mlp_ratio=2, shift=False),
-            GMLPBlock(C2, window_size=4, mlp_ratio=2, shift=True),
-            GMLPBlock(C2, window_size=4, mlp_ratio=2, shift=False),
-            GMLPBlock(C2, window_size=4, mlp_ratio=2, shift=True),
+            GMLPBlock(C2, window_size=8, mlp_ratio=2, shift=False),
+            GMLPBlock(C2, window_size=8, mlp_ratio=2, shift=True),
+            GMLPBlock(C2, window_size=8, mlp_ratio=2, shift=False),
+            GMLPBlock(C2, window_size=8, mlp_ratio=2, shift=True),
         )
-        self.up = nn.ConvTranspose2d(C2, C, kernel_size=2, stride=2, padding=0, bias=0)
-        self.dec1 = GMLPBlock(C, window_size=8, mlp_ratio=2, shift=False)
+        self.up = nn.Conv2d(C2, C * 4, kernel_size=1, stride=1, padding=0)
+        self.dec1 = GMLPBlock(C, window_size=16, mlp_ratio=2, shift=False)
         self.to_image = nn.Sequential(
             ReplicationPad2dNaive((1,) * 4, detach=True),
             nn.Conv2d(C, 3 * pack, kernel_size=3, stride=1, padding=0),
         )
-        basic_module_init(self)
+        basic_module_init(self.patch)
         icnr_init(self.to_image[-1], scale_factor=4)
         nn.init.trunc_normal_(self.mask_bias, 0, 0.01)
 
@@ -101,24 +100,27 @@ class LightInpaintV1(I2IBaseModel):
 
     def infer(self, x, mask, closing=False, dilation=0):
         x, mask = self.preprocess(x, mask, closing=closing, dilation=dilation)
-        return self.forward(x, mask)
+        return self.forward(x, mask, skip_i2i_offset=True)
 
     def _forward(self, x, mask):
         x = pixel_unshuffle(x, self.downscaling_factor)
         x = self.patch(x)
 
-        mask = F.max_pool2d(mask, kernel_size=self.downscaling_factor, stride=self.downscaling_factor) > 0.99
-        x = torch.where(mask, x, self.mask_bias.to(x.dtype))
+        mask = pixel_unshuffle(mask, self.downscaling_factor).amax(dim=1, keepdim=True) > 0.99
+        x = torch.where(mask, self.mask_bias.to(x.dtype), x)
 
         x1 = self.enc1(x)
-        x2 = self.up(self.enc2(self.down(x1)))
+        x2 = self.down(x1)
+        x2 = self.enc2(x2)
+        x2 = self.up(x2)
+        x2 = F.pixel_shuffle(x2, 2)
         x = self.dec1(x1 + x2)
         x = self.to_image(x)
         x = pixel_shuffle(x, self.downscaling_factor)
 
         return x
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, skip_i2i_offset=False):
         src = x
 
         x = (x - 0.5) / 0.5
@@ -139,9 +141,10 @@ class LightInpaintV1(I2IBaseModel):
         if not self.training:
             x = x.clamp(0, 1)
 
-        src = F.pad(src.to(x.dtype), (-self.i2i_offset,) * 4)
-        mask = F.pad(mask, (-self.i2i_offset,) * 4)
-        x = F.pad(x, (-self.i2i_offset,) * 4)
+        if not skip_i2i_offset:
+            src = F.pad(src.to(x.dtype), (-self.i2i_offset,) * 4)
+            mask = F.pad(mask, (-self.i2i_offset,) * 4)
+            x = F.pad(x, (-self.i2i_offset,) * 4)
 
         mask = mask.expand_as(src)
         src = src * (1 - mask) + x * mask
