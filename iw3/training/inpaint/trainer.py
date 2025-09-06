@@ -198,8 +198,10 @@ class InpaintEnv(I2IEnv):
             # update generator
             weight, use_disc_loss = self.calc_weight(recon_loss, generator_loss, grad_scalers[0])
             warmup_weight = self.get_generator_warmup_weight()
+            if warmup_weight < 0.1:
+                warmup_weight = 0.0
             if use_disc_loss:
-                g_loss = (recon_loss + generator_loss * weight * warmup_weight)
+                g_loss = (recon_loss + generator_loss * weight * self.trainer.args.discriminator_weight * warmup_weight)
             else:
                 g_loss = recon_loss
             self.sum_d_weight += weight
@@ -365,6 +367,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--discriminator", type=str, help="discriminator")
     parser.add_argument("--generator-warmup-iteration", type=int, default=1000,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
+    parser.add_argument("--discriminator-weight", type=float, default=1.0,
+                        help="discriminator loss weight")
 
     parser.set_defaults(
         batch_size=16,
