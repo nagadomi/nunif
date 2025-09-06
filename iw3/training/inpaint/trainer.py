@@ -19,7 +19,7 @@ from nunif.modules.lpips import LPIPSWith
 from nunif.modules.dinov2 import DINOv2CosineWith
 from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate
 from nunif.transforms import pair as TP
-from nunif.modules.gan_loss import GANHingeLoss
+from nunif.modules.gan_loss import GANMaskHingeLoss
 from nunif.logger import logger
 from .dataset import InpaintDataset
 from ... import models as _m # noqa
@@ -73,7 +73,7 @@ class InpaintEnv(I2IEnv):
         self.discriminator = discriminator
         if discriminator:
             loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
-            self.discriminator_criterion = GANHingeLoss(loss_weights=loss_weights).to(self.device)
+            self.discriminator_criterion = GANMaskHingeLoss(loss_weights=loss_weights).to(self.device)
         else:
             self.discriminator_criterion = None
 
@@ -137,22 +137,22 @@ class InpaintEnv(I2IEnv):
                 cond = y
                 fake = z
 
-                z_real = to_dtype(self.discriminator(ste_clamp(fake), cond, mask=mask), fake.dtype)
+                z_real, z_mask = to_dtype(self.discriminator(ste_clamp(fake), cond, mask=mask), fake.dtype)
                 recon_loss = self.criterion(z, y)
-                generator_loss = self.discriminator_criterion(z_real)
+                generator_loss = self.discriminator_criterion(z_real, mask=z_mask)
+                mask_scale = (z_mask.numel() / (z_mask.sum() + 1e-5)).item() * z_mask.shape[0] * 0.5
 
                 self.sum_p_loss += recon_loss.item()
-                self.sum_g_loss += generator_loss.item()
-
+                self.sum_g_loss += generator_loss.item() * mask_scale
                 self.discriminator.requires_grad_(True)
                 fake, y = diff_dequant_noise((torch.clamp(fake.detach(), 0, 1), y))
                 real = y
-                z_fake = to_dtype(self.discriminator(fake, cond, mask=mask), fake.dtype)
-                z_real = to_dtype(self.discriminator(real, cond, mask=mask), real.dtype)
-                discriminator_loss = self.discriminator_criterion(z_real, z_fake)
+                z_fake, _ = to_dtype(self.discriminator(fake, cond, mask=mask), fake.dtype)
+                z_real, _ = to_dtype(self.discriminator(real, cond, mask=mask), real.dtype)
+                discriminator_loss = self.discriminator_criterion(z_real, z_fake, mask=z_mask)
 
-                self.sum_d_loss += discriminator_loss.item()
-                loss = (recon_loss, generator_loss, discriminator_loss)
+                self.sum_d_loss += discriminator_loss.item() * mask_scale
+                loss = (recon_loss, generator_loss, discriminator_loss, mask_scale)
                 self.sum_step += 1
 
         return loss
@@ -162,7 +162,7 @@ class InpaintEnv(I2IEnv):
         weight = self.calculate_adaptive_weight(
             recon_loss, generator_loss, last_layer, grad_scaler,
             min=1e-5,
-            max=1.0,
+            max=10.0,
             mode="norm",
             adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema
         )
@@ -191,7 +191,7 @@ class InpaintEnv(I2IEnv):
             super().train_backward_step(loss, optimizers, grad_scalers, update)
         else:
             backward_step = self.trainer.args.backward_step
-            recon_loss, generator_loss, d_loss = loss
+            recon_loss, generator_loss, d_loss, mask_scale = loss
             g_opt, d_opt = optimizers
             optimizers = []
 
@@ -211,8 +211,8 @@ class InpaintEnv(I2IEnv):
             logger.debug(
                 (f"iteration: {self.get_current_iteration()}, "
                  f"recon: {round(recon_loss.item() * backward_step, 4)}, "
-                 f"gen: {round(generator_loss.item() * backward_step, 4)}, "
-                 f"disc: {round(d_loss.item() * backward_step, 4)}, "
+                 f"gen: {round(generator_loss.item() * backward_step * mask_scale, 4)}, "
+                 f"disc: {round(d_loss.item() * backward_step * mask_scale, 4)}, "
                  f"weight: {round(weight, 6)}"
                  ) + (f", warmup weight: {round(warmup_weight, 4)}" if warmup_weight < 1 else "")
             )
@@ -365,7 +365,7 @@ def register(subparsers, default_parser):
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str, default="l1dinov2", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
     parser.add_argument("--discriminator", type=str, help="discriminator")
-    parser.add_argument("--generator-warmup-iteration", type=int, default=1000,
+    parser.add_argument("--generator-warmup-iteration", type=int, default=500,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
     parser.add_argument("--discriminator-weight", type=float, default=1.0,
                         help="discriminator loss weight")

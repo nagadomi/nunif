@@ -41,6 +41,7 @@ class ImageToCondition(nn.Module):
     def __init__(self, embed_dim, outputs):
         super().__init__()
         self.features = nn.Sequential(
+            nn.AvgPool2d((4, 4)),
             nn.Conv2d(3, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
             nn.GroupNorm(4, embed_dim),
             nn.ReLU(inplace=True),
@@ -117,12 +118,12 @@ class L3ConditionalDiscriminator(L3Discriminator):
         x = self.features(x)
         x = self.classifier(x + cond[0])
 
-        if mask is not None:
-            mask = F.pixel_unshuffle(mask, 8).amax(dim=1, keepdim=True)
-            assert mask.shape[-2:] == x.shape[-2:]
-            x = x * mask + x.detach() * (1 - mask)
+        mask = F.pixel_unshuffle(mask, 8).mean(dim=1, keepdim=True)
+        assert mask.shape[-2:] == x.shape[-2:]
+        mask = F.pad(mask, (-2,) * 4)
         x = F.pad(x, (-2,) * 4)
-        return x
+
+        return x, mask
 
 
 def _test():

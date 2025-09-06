@@ -19,6 +19,22 @@ def _compute_loss(real, fake, generator_loss, discriminator_loss, loss_weights):
         return loss_fn(real, fake)
 
 
+def _compute_loss_with_mask(real, fake, mask, generator_loss, discriminator_loss, loss_weights):
+    loss_fn = generator_loss if fake is None else discriminator_loss
+    if isinstance(real, (list, tuple)):
+        loss_weights = loss_weights[:len(real)]
+        sum_weight = sum(loss_weights)
+        loss_weights = [w / sum_weight for w in loss_weights]
+        if fake is None:
+            fake = (None,) * len(real)
+        loss = 0
+        for w, r, f, m in zip(loss_weights, real, fake, mask):
+            loss = loss + loss_fn(r, f, m) * w
+        return loss
+    else:
+        return loss_fn(real, fake, mask)
+
+
 class GANBCELoss(nn.Module):
     def __init__(self, loss_weights=(1.0,)):
         super().__init__()
@@ -62,6 +78,29 @@ class GANHingeLoss(nn.Module):
     def forward(self, real, fake=None):
         return _compute_loss(
             real, fake,
+            generator_loss=self.generator_loss,
+            discriminator_loss=self.discriminator_loss,
+            loss_weights=self.loss_weights)
+
+
+class GANMaskHingeLoss(nn.Module):
+    def __init__(self, loss_weights=(1.0,)):
+        super().__init__()
+        self.loss_weights = loss_weights
+
+    @staticmethod
+    def generator_loss(real, fake, mask):
+        return -torch.mean(real * mask)
+
+    @staticmethod
+    def discriminator_loss(real, fake, mask):
+        real_loss = (F.relu(1. - real) * mask).mean()
+        fake_loss = (F.relu(1. + fake) * mask).mean()
+        return (real_loss + fake_loss) * 0.5
+
+    def forward(self, real, fake=None, mask=None):
+        return _compute_loss_with_mask(
+            real, fake, mask=mask,
             generator_loss=self.generator_loss,
             discriminator_loss=self.discriminator_loss,
             loss_weights=self.loss_weights)
