@@ -1,8 +1,6 @@
 import random
 from os import path
-import torch
 import torch.nn.functional as F
-import time
 from torch.utils.data.dataset import Dataset
 import torchvision.transforms as T
 from torchvision.transforms import (
@@ -11,6 +9,7 @@ from torchvision.transforms import (
 import nunif.transforms.pair as TP
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+
 
 SIZE = 256  # % 8 == 0
 
@@ -30,6 +29,21 @@ class RightDilate():
         return mask
 
 
+class LeftDilate():
+    def __init__(self, max_step=4, p=0.25):
+        self.max_step = max_step
+        self.p = p
+
+    def __call__(self, mask):
+        if random.uniform(0, 1) < self.p:
+            n_step = random.randint(1, self.max_step)
+            mask = mask.unsqueeze(0).bool()
+            for _ in range(n_step):
+                mask = F.pad(mask, (0, 1, 0, 0))[:, :, :, 1:] | mask
+            mask = mask.squeeze(0).float()
+        return mask
+
+
 class InpaintDataset(Dataset):
     def __init__(self, input_dir, model_offset, training):
         super().__init__()
@@ -44,7 +58,8 @@ class InpaintDataset(Dataset):
         ])
         self.random_crop = TP.RandomHardExampleCrop(SIZE)
         self.center_crop = TP.CenterCrop(SIZE)
-        self.random_dilate = RightDilate()
+        self.right_dilate = RightDilate()
+        self.left_dilate = RightDilate()
 
     def load_files(self, input_dir):
         files = ImageLoader.listdir(input_dir)
@@ -71,7 +86,8 @@ class InpaintDataset(Dataset):
         mask = TF.to_tensor(mask)
         if self.training:
             im = self.gt_transform(im)
-            mask = self.random_dilate(mask)
+            mask = self.right_dilate(mask)
+            mask = self.left_dilate(mask)
 
         if self.training:
             mask, x = self.random_crop(mask, x)
