@@ -23,16 +23,14 @@ from nunif.modules.gan_loss import GANHingeLoss
 from nunif.logger import logger
 from .dataset import InpaintDataset
 from ... import models as _m # noqa
-from waifu2x import models as _m  # noqa
+from ...models.discriminator import L3ConditionalDiscriminator
 
 
 def create_discriminator(discriminator, device_ids, device):
     if discriminator is None:
         return None
     elif discriminator == "l3v1c":
-        model = create_model("waifu2x.l3v1_conditional_discriminator", device_ids=device_ids, scale_factor=1)
-    elif discriminator == "l3v1":
-        model = create_model("waifu2x.l3v1_discriminator", device_ids=device_ids)
+        model = create_model(L3ConditionalDiscriminator.name, device_ids=device_ids)
     else:
         model = create_model(discriminator, device_ids=device_ids)
     return model.to(device)
@@ -139,7 +137,7 @@ class InpaintEnv(I2IEnv):
                 cond = y
                 fake = z
 
-                z_real = to_dtype(self.discriminator(ste_clamp(fake), cond, scale_factor=1), fake.dtype)
+                z_real = to_dtype(self.discriminator(ste_clamp(fake), cond, mask=mask), fake.dtype)
                 recon_loss = self.criterion(z, y)
                 generator_loss = self.discriminator_criterion(z_real)
 
@@ -149,8 +147,8 @@ class InpaintEnv(I2IEnv):
                 self.discriminator.requires_grad_(True)
                 fake, y = diff_dequant_noise((torch.clamp(fake.detach(), 0, 1), y))
                 real = y
-                z_fake = to_dtype(self.discriminator(fake, cond, scale_factor=1), fake.dtype)
-                z_real = to_dtype(self.discriminator(real, cond, scale_factor=1), real.dtype)
+                z_fake = to_dtype(self.discriminator(fake, cond, mask=mask), fake.dtype)
+                z_real = to_dtype(self.discriminator(real, cond, mask=mask), real.dtype)
                 discriminator_loss = self.discriminator_criterion(z_real, z_fake)
 
                 self.sum_d_loss += discriminator_loss.item()
@@ -365,7 +363,7 @@ def register(subparsers, default_parser):
                         help="number of samples for each epoch")
     parser.add_argument("--loss", type=str, default="l1dinov2", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
     parser.add_argument("--discriminator", type=str, help="discriminator")
-    parser.add_argument("--generator-warmup-iteration", type=int, default=500,
+    parser.add_argument("--generator-warmup-iteration", type=int, default=1000,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
 
     parser.set_defaults(
