@@ -266,7 +266,15 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None,
                                   synthetic_view="both", inpaint_model=None,
-                                  return_mask=False, inconsistent_shift=False):
+                                  return_mask=False, inconsistent_shift=False,
+                                  inpaint_max_width=1920):
+    if inpaint_model is not None and c.shape[-1] > inpaint_max_width:
+        new_w = inpaint_max_width
+        new_h = int((inpaint_max_width / c.shape[-1]) * c.shape[-2])
+        if new_h % 2 != 0:
+            new_h += 1
+        c = F.interpolate(c, size=(new_h, new_w), mode="bilinear", antialias=True, align_corners=True)
+
     fill = (method == "forward_fill")
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
