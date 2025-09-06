@@ -138,9 +138,6 @@ class LightInpaintV1(I2IBaseModel):
         mask = F.pad(mask, (0, -pad1, 0, -pad2))
 
         # post process
-        if not self.training:
-            x = x.clamp(0, 1)
-
         if not skip_i2i_offset:
             src = F.pad(src.to(x.dtype), (-self.i2i_offset,) * 4)
             mask = F.pad(mask, (-self.i2i_offset,) * 4)
@@ -148,6 +145,9 @@ class LightInpaintV1(I2IBaseModel):
 
         mask = mask.expand_as(src)
         src = src * (1 - mask) + x * mask
+
+        if not self.training:
+            src = src.clamp(0, 1)
 
         return src
 
