@@ -123,7 +123,8 @@ class InpaintEnv(I2IEnv):
             if self.discriminator is None:
                 x, mask = self.model.preprocess(x, mask)
                 z = to_dtype(self.model(x, mask), x.dtype)
-                z, y = self.diff_aug(z, y)
+                if self.trainer.args.diff_aug:
+                    z, y = self.diff_aug(z, y)
                 loss = self.criterion(z, y)
                 if not torch.isnan(loss):
                     self.sum_loss += loss.item()
@@ -133,7 +134,8 @@ class InpaintEnv(I2IEnv):
 
                 x, mask = self.model.preprocess(x, mask)
                 z = to_dtype(self.model(x, mask), x.dtype)
-                z, y = self.diff_aug(z, y)
+                if self.trainer.args.diff_aug:
+                    z, y = self.diff_aug(z, y)
                 cond = y
                 fake = z
 
@@ -161,8 +163,8 @@ class InpaintEnv(I2IEnv):
         last_layer = get_last_layer(self.model)
         weight = self.calculate_adaptive_weight(
             recon_loss, generator_loss, last_layer, grad_scaler,
-            min=1e-5,
-            max=10.0,
+            min=1e-4,
+            max=100.0,
             mode="norm",
             adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema
         )
@@ -317,9 +319,11 @@ class InpaintTrainer(Trainer):
     def create_env(self):
         if self.args.loss == "dct":
             criterion = WeightedLoss(
-                (DCTLoss(window_size=4, clamp=True),
-                 DCTLoss(window_size=24, clamp=True),
-                 DCTLoss(clamp=True)),
+                (
+                    DCTLoss(window_size=4, clamp=True),
+                    DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+                    DCTLoss(clamp=True, random_instance_rotate=True)
+                ),
                 weights=(0.2, 0.2, 0.6),
             )
         elif self.args.loss == "l1lpips":
@@ -363,12 +367,14 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="l1dinov2", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
+    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
     parser.add_argument("--discriminator", type=str, help="discriminator")
     parser.add_argument("--generator-warmup-iteration", type=int, default=500,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
     parser.add_argument("--discriminator-weight", type=float, default=1.0,
                         help="discriminator loss weight")
+    parser.add_argument("--diff-aug", action="store_true",
+                        help="Use differentiable transforms for reconstruction loss and discriminator")
 
     parser.set_defaults(
         batch_size=16,
