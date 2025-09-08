@@ -198,10 +198,10 @@ def _bench(name):
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 20
     B = 4
-    # S = (4320, 7680)  # 8K, 4.7FPS, 4.5GB VRAM
-    # S = (2160, 3840)  # 4K, 18.3FPS, 900MB VRAM
-    S = (1080, 1920)  # HD, 70FPS, 240MB VRAM
-    # S = (320, 320)  # tile, 714FPS, 28MB VRAM
+    # S = (4320, 7680)
+    # S = (2160, 3840)
+    S = (1080, 1920)  # HD, 36FPS
+    # S = (320, 320)
 
     model = create_model(name).to(device).eval()
     if do_compile:
