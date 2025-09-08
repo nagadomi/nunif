@@ -68,13 +68,17 @@ class RandomColorJitter():
         return (x * scale + bias).clamp(0, 1)
 
 
-def random_crop(size, *images):
-    i, j, h, w = T.RandomCrop.get_params(images[0][0], (size, size))
+def crop(images, i, j, h, w):
     results = []
     for im in images:
         results.append(im[:, :, i:i + h, j:j + w])
 
     return tuple(results)
+
+
+def random_crop(size, *images):
+    i, j, h, w = T.RandomCrop.get_params(images[0][0], (size, size))
+    return crop(images, i, j, h, w)
 
 
 def random_hard_example_crop(size, n, *images):
@@ -95,6 +99,21 @@ def center_crop(size, *images):
     h_i = (h - size) // 2
     w_i = (w - size) // 2
     return tuple([im[:, :, h_i:h_i + size, w_i: w_i + size] for im in images])
+
+
+def fixed_hard_example_crop(size, *images):
+    results = []
+    H, W = images[0].shape[-2:]
+    h = 0
+    for h in range(0, H - size + 1, size // 4):
+        for w in range(0, W - size + 1, size // 4):
+            crop_images = crop(images, h, w, size, size)
+            mask = crop_images[-1]
+            mask_sum = mask.float().sum().item()
+            results.append((mask_sum, crop_images))
+
+    results = sorted(results, key=lambda v: v[0], reverse=True)
+    return results[0][1]
 
 
 class VideoInpaintDataset(Dataset):
@@ -121,7 +140,10 @@ class VideoInpaintDataset(Dataset):
     @staticmethod
     def load_files(input_dir, seq, training):
         files = ImageLoader.listdir(input_dir)
-        masks = sorted([fn for fn in files if fn.endswith("_M.png")])
+
+        reverse = training and random.uniform(0, 1) < 0.5
+        masks = sorted([fn for fn in files if fn.endswith("_M.png")], reverse=reverse)
+
         files = []
         for fn in masks:
             rgb_file = fn.replace("_M.png", "_C.png")
@@ -155,11 +177,9 @@ class VideoInpaintDataset(Dataset):
             x = self.color_jitter(x)
             mask = self.right_dilate(mask)
             mask = self.left_dilate(mask)
-
-        if self.training:
             x, mask = random_hard_example_crop(SIZE, 4, x, mask)
         else:
-            x, mask = center_crop(SIZE, x, mask)
+            x, mask = fixed_hard_example_crop(SIZE, x, mask)
 
         y = x.clone()
         y = y[:, :,
