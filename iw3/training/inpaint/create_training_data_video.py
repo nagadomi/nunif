@@ -170,7 +170,7 @@ def main(args):
     with PoolExecutor(max_workers=max_workers) as pool:
         futures = []
         seq_no = 0
-        skip_counter = 0
+        skip_counter = args.skip_first
         frames = []
 
         def frame_callback(frame):
@@ -221,6 +221,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--model-type", type=str, default="ZoeD_Any_L", help="depth model")
     parser.add_argument("--skip-interval", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--skip-first", type=int, default=0)
 
     parser.set_defaults(handler=main)
 
