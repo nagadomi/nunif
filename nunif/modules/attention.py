@@ -283,7 +283,9 @@ class WindowMHA3d(nn.Module):
 
     def forward(self, x, attn_mask=None, layer_norm=None):
         if any(self.shift):
-            x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h, self.pad_d, self.pad_d), mode="constant", value=0)
+            x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h, 0, 0), mode="constant", value=0)
+            x = F.pad(x, (0, 0, 0, 0, self.pad_d, self.pad_d), mode="reflect")
+
         out_shape = x.shape
         x = bcdhw_to_bnc(x, self.window_size)
         if layer_norm is not None:
