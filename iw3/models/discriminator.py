@@ -8,7 +8,7 @@ from nunif.modules.reflection_pad2d import reflection_pad2d_naive
 import torch.nn as nn
 from nunif.models import register_model
 from nunif.modules.attention import SEBlock
-from nunif.modules.res_block import ResBlockSNLReLU
+from nunif.modules.res_block import ResBlockGNLReLU
 from torch.nn.utils.parametrizations import spectral_norm
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init
@@ -41,7 +41,6 @@ class ImageToCondition(nn.Module):
     def __init__(self, embed_dim, outputs):
         super().__init__()
         self.features = nn.Sequential(
-            nn.AvgPool2d((4, 4)),
             nn.Conv2d(3, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
             nn.GroupNorm(4, embed_dim),
             nn.ReLU(inplace=True),
@@ -75,16 +74,19 @@ class L3Discriminator(Discriminator):
         super().__init__(locals())
         self.features = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            nn.GroupNorm(32, 64),
             nn.LeakyReLU(0.2, inplace=True),
-            spectral_norm(nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False)),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.2, inplace=True),
             SEBlock(128, bias=True),
-            spectral_norm(nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1, bias=False)),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1, bias=False),
         )
         self.classifier = nn.Sequential(
+            nn.GroupNorm(32, 256),
             nn.LeakyReLU(0.2, inplace=True),
             SEBlock(256, bias=True),
-            ResBlockSNLReLU(256, 512, bias=False),
+            ResBlockGNLReLU(256, 512, bias=False),
             SEBlock(512, bias=True),
             spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=1)))
         basic_module_init(self)
@@ -117,13 +119,16 @@ class L3ConditionalDiscriminator(L3Discriminator):
         x = normalize(x)
         x = self.features(x)
         x = self.classifier(x + cond[0])
-
-        mask = F.pixel_unshuffle(mask, 8).mean(dim=1, keepdim=True)
-        assert mask.shape[-2:] == x.shape[-2:]
-        mask = F.pad(mask, (-2,) * 4)
         x = F.pad(x, (-2,) * 4)
 
-        return x, mask
+        if mask is not None:
+            mask = F.pixel_unshuffle(mask, 8).amax(dim=1, keepdim=True)
+            mask = F.pad(mask, (-2,) * 4)
+            assert mask.shape[-2:] == x.shape[-2:]
+
+            return x, mask
+        else:
+            return x
 
 
 def _test():
@@ -134,7 +139,7 @@ def _test():
     c = torch.zeros((4, 3, 128, 128)).to(device)
     mask = torch.zeros((4, 1, 128, 128)).to(device)
 
-    z = model(x, c, mask=mask)
+    z, mask = model(x, c, mask=mask)
     print(z.shape)
 
 
