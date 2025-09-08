@@ -22,6 +22,7 @@ from nunif.transforms import pair as TP
 from nunif.modules.gan_loss import GANFakeMaskHingeLoss
 from nunif.logger import logger
 from .dataset import InpaintDataset
+from .dataset_video import VideoInpaintDataset, SEQ as VIDEO_SEQ
 from ... import models as _m # noqa
 from ...models.discriminator import L3ConditionalDiscriminator
 
@@ -119,6 +120,14 @@ class InpaintEnv(I2IEnv):
         self.epoch_iteration += 1
         x, mask, y, *_ = data
         x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
+
+        if x.ndim == 5:
+            # video (1, SEQ, C, H, W) -> (SEQ, C, H, W)
+            assert x.shape[0] == 1
+            x = x.reshape(*x.shape[1:])
+            mask = mask.reshape(*mask.shape[1:])
+            y = y.reshape(*y.shape[1:])
+
         with self.autocast():
             if self.discriminator is None:
                 x, mask = self.model.preprocess(x, mask)
@@ -252,14 +261,22 @@ class InpaintEnv(I2IEnv):
     def eval_step(self, data):
         x, mask, y, *_ = data
         x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
+
+        if x.ndim == 5:
+            # video (1, SEQ, C, H, W) -> (SEQ, C, H, W)
+            assert x.shape[0] == 1
+            x = x.reshape(*x.shape[1:])
+            mask = mask.reshape(*mask.shape[1:])
+            y = y.reshape(*y.shape[1:])
+
         model = self.get_eval_model()
         with self.autocast():
             x, mask = self.model.preprocess(x, mask)
             z = model(x, mask)
             loss = self.eval_criterion(z, y)
             self.eval_count += 1
-            if self.eval_count % 10 == 0:
-                self.save_eval(x, y, z, self.eval_count // 10)
+            if self.eval_count % self.trainer.args.save_eval_step == 0:
+                self.save_eval(x, y, z, self.eval_count // self.trainer.args.save_eval_step)
 
         self.sum_loss += loss.item()
         self.sum_step += 1
@@ -292,24 +309,33 @@ class InpaintTrainer(Trainer):
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
         model_offset = self.model.i2i_offset
+        if self.args.video:
+            dataset_class = VideoInpaintDataset
+            batch_size = 1
+            num_samples = self.args.num_samples // VIDEO_SEQ
+        else:
+            dataset_class = InpaintDataset
+            batch_size = self.args.batch_size
+            num_samples = self.args.num_samples
+
         if type == "train":
-            dataset = InpaintDataset(path.join(self.args.data_dir, "train"), model_offset,
-                                     training=True)
+            dataset = dataset_class(path.join(self.args.data_dir, "train"), model_offset,
+                                    training=True)
             loader = torch.utils.data.DataLoader(
                 dataset,
-                sampler=torch.utils.data.RandomSampler(dataset, num_samples=self.args.num_samples),
-                batch_size=self.args.batch_size,
+                sampler=torch.utils.data.RandomSampler(dataset, num_samples=num_samples),
+                batch_size=batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=True)
             return loader
         else:
-            dataset = InpaintDataset(path.join(self.args.data_dir, "eval"), model_offset,
-                                     training=False)
+            dataset = dataset_class(path.join(self.args.data_dir, "eval"), model_offset,
+                                    training=False)
             loader = torch.utils.data.DataLoader(
                 dataset,
-                batch_size=self.args.batch_size,
+                batch_size=batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
@@ -375,6 +401,8 @@ def register(subparsers, default_parser):
                         help="discriminator loss weight")
     parser.add_argument("--diff-aug", action="store_true",
                         help="Use differentiable transforms for reconstruction loss and discriminator")
+    parser.add_argument("--video", action="store_true", help="Use video dataset")
+    parser.add_argument("--save-eval-step", type=int, default=10)
 
     parser.set_defaults(
         batch_size=16,

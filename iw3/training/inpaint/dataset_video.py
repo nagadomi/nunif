@@ -1,0 +1,175 @@
+import random
+import os
+from os import path
+import torch
+import torch.nn.functional as F
+from torch.utils.data.dataset import Dataset
+import torchvision.transforms as T
+from torchvision.transforms import (
+    functional as TF,
+)
+from nunif.utils.image_loader import ImageLoader
+from nunif.utils.pil_io import load_image_simple
+
+
+SIZE = 256  # % 8 == 0
+SEQ = 8
+
+
+class RightDilate():
+    def __init__(self, max_step=20, p=0.5):
+        self.max_step = max_step
+        self.p = p
+
+    def __call__(self, mask):
+        if random.uniform(0, 1) < self.p:
+            n_step = random.randint(1, self.max_step)
+            mask = mask.bool()
+            for _ in range(n_step):
+                mask = F.pad(mask, (1, 0, 0, 0))[:, :, :, :-1] | mask
+            mask = mask.float()
+        return mask
+
+
+class LeftDilate():
+    def __init__(self, max_step=4, p=0.25):
+        self.max_step = max_step
+        self.p = p
+
+    def __call__(self, mask):
+        if random.uniform(0, 1) < self.p:
+            n_step = random.randint(1, self.max_step)
+            mask = mask.bool()
+            for _ in range(n_step):
+                mask = F.pad(mask, (0, 1, 0, 0))[:, :, :, 1:] | mask
+            mask = mask.float()
+        return mask
+
+
+class RandomColorJitter():
+    def __call__(self, x):
+        if random.uniform(0, 1) < 0.5:
+            return x
+
+        grayscale = random.uniform(0, 1) < 0.05
+        if grayscale:
+            x = x.mean(dim=1, keepdim=True).expand_as(x).contiguous()
+            return x
+
+        scale_r = random.uniform(0.7, 0.9)
+        scale_g = random.uniform(0.7, 0.9)
+        scale_b = random.uniform(0.7, 0.9)
+        bias_r = random.uniform(0, 1 - scale_r)
+        bias_g = random.uniform(0, 1 - scale_g)
+        bias_b = random.uniform(0, 1 - scale_b)
+        scale = torch.tensor([scale_r, scale_g, scale_b], dtype=x.dtype, device=x.device).view(1, 3, 1, 1)
+        bias = torch.tensor([bias_r, bias_g, bias_b], dtype=x.dtype, device=x.device).view(1, 3, 1, 1)
+
+        return (x * scale + bias).clamp(0, 1)
+
+
+def random_crop(size, *images):
+    i, j, h, w = T.RandomCrop.get_params(images[0][0], (size, size))
+    results = []
+    for im in images:
+        results.append(im[:, :, i:i + h, j:j + w])
+
+    return tuple(results)
+
+
+def random_hard_example_crop(size, n, *images):
+    assert n > 0
+    results = []
+    for _ in range(n):
+        crop_images = random_crop(size, *images)
+        mask = crop_images[-1]
+        mask_sum = mask.float().sum().item()
+        results.append((mask_sum, crop_images))
+
+    results = sorted(results, key=lambda v: v[0], reverse=True)
+    return results[0][1]
+
+
+def center_crop(size, *images):
+    h, w = images[0].shape[-2:]
+    h_i = (h - size) // 2
+    w_i = (w - size) // 2
+    return tuple([im[:, :, h_i:h_i + size, w_i: w_i + size] for im in images])
+
+
+class VideoInpaintDataset(Dataset):
+    def __init__(self, input_dir, model_offset, training):
+        super().__init__()
+        self.training = training
+        self.model_offset = model_offset
+        self.folders = self.load_folders(input_dir)
+        if not self.folders:
+            raise RuntimeError(f"{input_dir} is empty")
+        self.right_dilate = RightDilate()
+        self.left_dilate = RightDilate()
+        self.color_jitter = RandomColorJitter()
+
+    @staticmethod
+    def load_folders(input_dir):
+        folders = []
+        for fn in os.listdir(input_dir):
+            fn = path.join(input_dir, fn)
+            if path.isdir(fn):
+                folders.append(fn)
+        return folders
+
+    @staticmethod
+    def load_files(input_dir, seq, training):
+        files = ImageLoader.listdir(input_dir)
+        masks = sorted([fn for fn in files if fn.endswith("_M.png")])
+        files = []
+        for fn in masks:
+            rgb_file = fn.replace("_M.png", "_C.png")
+            if path.exists(rgb_file):
+                files.append(rgb_file)
+            else:
+                raise RuntimeError(f"{rgb_file} not found")
+
+        assert len(files) >= seq
+        if training:
+            start_i = random.randint(0, len(files) - seq)
+        else:
+            start_i = (len(files) - seq) // 2
+
+        return files[start_i:start_i + seq], masks[start_i:start_i + seq]
+
+    def worker_init(self, worker_id):
+        pass
+
+    def __len__(self):
+        return len(self.folders)
+
+    def __getitem__(self, index):
+        folder = self.folders[index]
+        x, mask = self.load_files(folder, SEQ, self.training)
+
+        x = torch.stack([TF.to_tensor(load_image_simple(fn, color="rgb")[0]) for fn in x])
+        mask = torch.stack([TF.to_tensor(load_image_simple(fn, color="gray")[0]) for fn in mask])
+
+        if self.training:
+            x = self.color_jitter(x)
+            mask = self.right_dilate(mask)
+            mask = self.left_dilate(mask)
+
+        if self.training:
+            x, mask = random_hard_example_crop(SIZE, 4, x, mask)
+        else:
+            x, mask = center_crop(SIZE, x, mask)
+
+        y = x.clone()
+        y = y[:, :,
+              self.model_offset: self.model_offset + (y.shape[-2] - self.model_offset * 2),
+              self.model_offset: self.model_offset + (y.shape[-1] - self.model_offset * 2)]
+
+        mask = mask > 0.5
+
+        return x, mask, y, index
+
+
+if __name__ == "__main__":
+    pass
