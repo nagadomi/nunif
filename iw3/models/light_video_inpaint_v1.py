@@ -95,7 +95,7 @@ class LightVideoInpaintV1(I2IBaseModel):
 
     def __init__(self):
         super(LightVideoInpaintV1, self).__init__(locals(), scale=1, offset=16, in_channels=3, blend_size=8)
-        self.sequence_offset = 1
+        self.sequence_offset = 0
         self.downscaling_factor = 4
         self.mod = 16
         pack = self.downscaling_factor ** 2
