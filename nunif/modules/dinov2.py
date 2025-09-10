@@ -162,6 +162,22 @@ class Pool(nn.Module):
         return self.base_loss(input, target)
 
 
+class GramMatrixLoss(nn.Module):
+    @staticmethod
+    def gram_matrix(x):
+        B, C, H, W = x.shape
+        # with a weight of 0.7-0.8, it achieves a gradient norm comparable to L1
+        norm = {384: 0.11, 768: 0.02, 1024: 0.005}
+        x = x.to(torch.float32) * ((H * W * C * norm[C]) ** -0.5)
+        f = x.view(B, C, H * W)
+        # (B, C, C)
+        gram = torch.matmul(f, f.transpose(1, 2))
+        return gram
+
+    def forward(self, input, target):
+        return F.l1_loss(self.gram_matrix(input), self.gram_matrix(target))
+
+
 def DINOv2CosineLoss(model_type="vits", index=None, normalize=True):
     return DINOv2Loss(CosineLoss(), model_type=model_type, index=index, normalize=normalize, random_projection=None)
 
@@ -177,6 +193,10 @@ def DINOv2PoolLoss(model_type="vits", index=None, normalize=True):
         normalize=normalize,
         random_projection=64
     )
+
+
+def DINOv2StyleLoss(model_type="vits", index=None, normalize=True):
+    return DINOv2Loss(GramMatrixLoss(), model_type=model_type, index=index, normalize=normalize, random_projection=None)
 
 
 def DINOv2CosineWith(base_loss, weight=1.0, model_type="vits", index=None, normalize=True):
@@ -224,6 +244,7 @@ def _test_grad():
     from .lbp_loss import YRGBLBP
 
     y = io.read_image("cc0/320/dog.png") / 255.0
+    y = y[:, :256, :256]
     y = y.unsqueeze(0)
     x = y + (torch.rand_like(y) * 0.5)
     x.requires_grad_(True)
@@ -239,7 +260,7 @@ def _test_grad():
     lbp_norm, lbp_max = x.grad.norm(), x.grad.abs().max()
 
     x.grad = None
-    dinov2_loss = DINOv2CharbonnierLoss()  # DINOv2PoolLoss # DINOv2CosineLoss()
+    dinov2_loss = DINOv2StyleLoss(model_type="vits")  # DINOv2PoolLoss # DINOv2CosineLoss()
     (dinov2_loss(x, y.detach())).backward()
     dinov2_norm, dinov2_max = x.grad.norm(), x.grad.abs().max()
 
@@ -250,6 +271,14 @@ def _test_grad():
     # DINOv2CosineLoss, weight=0.056
 
 
+def _test_style():
+    loss = DINOv2StyleLoss().cuda()
+    x = torch.rand((4, 3, 518, 518), dtype=torch.float32).cuda()
+    y = x + 0.1
+    print(loss(x, y))
+
+
 if __name__ == "__main__":
     _test_feat()
     _test_grad()
+    _test_style()
