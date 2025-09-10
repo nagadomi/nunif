@@ -693,6 +693,49 @@ class WindowGMLP2d(nn.Module):
         return x
 
 
+class WindowGMLP3d(nn.Module):
+    """
+    3D WindowGMLP
+    BCDHW input/output
+    """
+    def __init__(self, in_channels, window_size=(4, 4, 4), mlp_ratio=2, shift=False):
+        super().__init__()
+        self.window_size = (window_size if isinstance(window_size, (tuple, list))
+                            else (window_size, window_size, window_size))
+        self.shift = (shift if isinstance(shift, (tuple, list))
+                      else (shift, shift, shift))
+        self.pad_h = self.pad_w = self.pad_d = 0
+
+        if any(self.shift):
+            if self.shift[0]:
+                assert self.window_size[0] % 2 == 0
+                self.pad_d = self.window_size[0] // 2
+            if self.shift[1]:
+                assert self.window_size[1] % 2 == 0
+                self.pad_h = self.window_size[1] // 2
+            if self.shift[2]:
+                assert self.window_size[2] % 2 == 0
+                self.pad_w = self.window_size[2] // 2
+
+        self.seq_len = self.window_size[0] * self.window_size[1] * self.window_size[2]
+        self.gmlp = GMLP(in_channels, seq_len=self.seq_len, mlp_ratio=mlp_ratio)
+
+    def forward(self, x, norm1=None, norm2=None):
+        if any(self.shift):
+            x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h, 0, 0), mode="constant", value=0)
+            x = F.pad(x, (0, 0, 0, 0, self.pad_d, self.pad_d), mode="reflect")
+
+        out_shape = x.shape
+        x = bcdhw_to_bnc(x, self.window_size)
+        x = self.gmlp(x, norm1, norm2)
+        x = bnc_to_bcdhw(x, out_shape, self.window_size)
+
+        if any(self.shift):
+            x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h, -self.pad_d, -self.pad_d))
+
+        return x
+
+
 def _test_bias():
     mha = WindowMHA2d(64, 4, window_size=8).cuda().eval()
     x = torch.zeros((4, 64, 32, 32)).cuda()
