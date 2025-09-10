@@ -13,7 +13,7 @@ from nunif.utils.pil_io import load_image_simple
 
 
 SIZE = 256  # % 8 == 0
-SEQ = 8
+SEQ = 12
 
 
 class RightDilate():
@@ -117,10 +117,11 @@ def fixed_hard_example_crop(size, *images):
 
 
 class VideoInpaintDataset(Dataset):
-    def __init__(self, input_dir, model_offset, training):
+    def __init__(self, input_dir, model_offset, model_sequence_offset, training):
         super().__init__()
         self.training = training
         self.model_offset = model_offset
+        self.model_sequence_offset = model_sequence_offset
         self.folders = self.load_folders(input_dir)
         if not self.folders:
             raise RuntimeError(f"{input_dir} is empty")
@@ -185,6 +186,8 @@ class VideoInpaintDataset(Dataset):
         y = y[:, :,
               self.model_offset: self.model_offset + (y.shape[-2] - self.model_offset * 2),
               self.model_offset: self.model_offset + (y.shape[-1] - self.model_offset * 2)]
+        if self.model_sequence_offset > 0:
+            y = y[self.model_sequence_offset:-self.model_sequence_offset]
 
         mask = mask > 0.5
 

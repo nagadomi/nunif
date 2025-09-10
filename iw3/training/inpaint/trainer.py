@@ -27,6 +27,22 @@ from ... import models as _m # noqa
 from ...models.discriminator import L3ConditionalDiscriminator
 
 
+class TemporalGradientLoss(torch.nn.Module):
+    def forward(self, input, target):
+        input_diff = input[:-1] - input[1:]
+        target_diff = target[:-1] - target[1:]
+        return F.l1_loss(input_diff, target_diff)
+
+
+class TemporalSmoothingPenalty(torch.nn.Module):
+    def forward(self, input, target):
+        t0 = input[:, :-2]
+        t1 = input[:, 1:-1]
+        t2 = input[:, 2:]
+        second_order = t2 - 2 * t1 + t0
+        return (second_order ** 2).mean()
+
+
 def create_discriminator(discriminator, device_ids, device):
     if discriminator is None:
         return None
@@ -282,8 +298,11 @@ class InpaintEnv(I2IEnv):
         self.sum_step += 1
 
     def save_eval(self, x, y, z, i):
+        batch_offset = (x.shape[0] - z.shape[0]) // 2
         offset = (x.shape[2] - z.shape[2]) // 2
         x = F.pad(x, (-offset, ) * 4)
+        if batch_offset > 0:
+            x = x[batch_offset:-batch_offset]
         x = torch.cat([x, z, y], dim=3)
         eval_output_dir = path.join(self.trainer.args.model_dir, "eval")
         os.makedirs(eval_output_dir, exist_ok=True)
@@ -311,16 +330,17 @@ class InpaintTrainer(Trainer):
         model_offset = self.model.i2i_offset
         if self.args.video:
             dataset_class = VideoInpaintDataset
+            dataset_kwargs = dict(model_sequence_offset=self.model.sequence_offset)
             batch_size = 1
             num_samples = self.args.num_samples // VIDEO_SEQ
         else:
             dataset_class = InpaintDataset
+            dataset_kwargs = {}
             batch_size = self.args.batch_size
             num_samples = self.args.num_samples
 
         if type == "train":
-            dataset = dataset_class(path.join(self.args.data_dir, "train"), model_offset,
-                                    training=True)
+            dataset = dataset_class(path.join(self.args.data_dir, "train"), model_offset, training=True, **dataset_kwargs)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 sampler=torch.utils.data.RandomSampler(dataset, num_samples=num_samples),
@@ -331,8 +351,7 @@ class InpaintTrainer(Trainer):
                 drop_last=True)
             return loader
         else:
-            dataset = dataset_class(path.join(self.args.data_dir, "eval"), model_offset,
-                                    training=False)
+            dataset = dataset_class(path.join(self.args.data_dir, "eval"), model_offset, training=False, **dataset_kwargs)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=batch_size,
@@ -354,6 +373,13 @@ class InpaintTrainer(Trainer):
             )
         elif self.args.loss == "l1lpips":
             criterion = LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4)
+        elif self.args.loss == "temporal_l1lpips":
+            base_loss = WeightedLoss((
+                ClampLoss(torch.nn.L1Loss()),
+                TemporalGradientLoss(),
+                TemporalSmoothingPenalty()
+            ), weights=(0.8, 0.2, 0.01))
+            criterion = LPIPSWith(base_loss, weight=0.2)
         elif self.args.loss == "l1dinov2":
             criterion = DINOv2CosineWith(ClampLoss(torch.nn.L1Loss()), weight=0.1)
         else:
@@ -393,7 +419,9 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2"], help="loss")
+    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2",
+                                                                    "temporal_l1lpips", "temporal_l1"],
+                        help="loss")
     parser.add_argument("--discriminator", type=str, help="discriminator")
     parser.add_argument("--generator-warmup-iteration", type=int, default=500,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
