@@ -144,6 +144,7 @@ class L4SNLoss(nn.Module):
             self,
             activation=True,
             loss_weights=[0.5, 0.3, 1.0, 0.8],
+            avg_weight=1.0,
             swd_weight=0, swd_indexes=[0, 1], swd_window_size=8,
             model_type="art",
     ):
@@ -154,6 +155,7 @@ class L4SNLoss(nn.Module):
         self.feature = L4SNFeature()
         self.activation = activation
         self.loss_weights = loss_weights
+        self.avg_weight = avg_weight
         self.swd_weight = swd_weight
         self.swd_indexes = swd_indexes
         self.swd_window_size = swd_window_size
@@ -195,8 +197,9 @@ class L4SNLoss(nn.Module):
             weight = getattr(self, f"random_projection_{i}")
             f1 = F.conv2d(f1, weight=weight, bias=None, stride=1)
             f2 = F.conv2d(f2, weight=weight, bias=None, stride=1)
-            f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False)
-            f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False)
+            if self.avg_weight > 0:
+                f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False) * self.avg_weight
+                f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False) * self.avg_weight
             loss = loss + F.l1_loss(f1, f2) * self.loss_weights[i]
 
             if self.swd_weight > 0 and i in self.swd_indexes:
@@ -204,7 +207,7 @@ class L4SNLoss(nn.Module):
                     f1, f2, window_size=self.swd_window_size
                 ) * self.loss_weights[i]
 
-        feat_loss = loss / (len(f1s) * 2)
+        feat_loss = loss / (len(f1s) * (1 + self.avg_weight))
         swd_loss = swd_loss / len(self.swd_indexes)
         loss = feat_loss * (1 - self.swd_weight) + swd_loss * self.swd_weight
         return loss
