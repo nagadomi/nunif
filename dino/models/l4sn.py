@@ -17,7 +17,11 @@ C5 = 512
 FEAT_DIMS = [C2, C3, C4, C5]
 RANDOM_PROJECTION_DIM = 64
 # TODO: uplaod
-CHECKPOINT_URL = "../dino/models/l4sn_v3/l4sn.pth"
+
+CHECKPOINT_URL = {
+    "art": "../dino/models/l4sn_v3/l4sn.pth",
+    "photo": "../dino/models/l4sn_photo_v1/l4sn.pth"
+}
 
 
 def normalize(x):
@@ -141,7 +145,7 @@ class L4SNLoss(nn.Module):
             activation=True,
             loss_weights=[0.35, 0.5, 0.7, 1.0],
             swd_weight=0, swd_indexes=[0, 1], swd_window_size=8,
-            checkpoint_file=None,
+            model_type="art",
     ):
         super().__init__()
         assert all(0 <= i <= 3 for i in swd_indexes)
@@ -154,7 +158,7 @@ class L4SNLoss(nn.Module):
         self.swd_indexes = swd_indexes
         self.swd_window_size = swd_window_size
         self.init_random_projection()
-        self.load_pth(checkpoint_file or CHECKPOINT_URL)
+        self.load_pth(CHECKPOINT_URL[model_type])
         self.eval()
 
     def train(self, mode=True):
