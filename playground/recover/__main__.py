@@ -141,6 +141,7 @@ def main():
     parser.add_argument("--fp32", action="store_true", help="use fp32")
     parser.add_argument("--save-interval", type=int, default=100, help="save interval")
     parser.add_argument("--disable-random-shift", action="store_true")
+    parser.add_argument("--l4sn-type", type=str, default="photo", help="model_type of L4SNLoss")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
@@ -191,10 +192,10 @@ def main():
         case "fdl":
             model = FDLLoss().eval().cuda()
         case "l4sn":
-            model = L4SNLoss(activation=True)
+            model = L4SNLoss(model_type=args.l4sn_type)
             model = model.eval().cuda()
         case "l4sn-swd":
-            model = L4SNLoss(activation=True, swd_weight=0.5, swd_indexes=[0, 1], swd_window_size=8)
+            model = L4SNLoss(model_type=args.l4sn_type, swd_weight=0.5, swd_indexes=[0, 1], swd_window_size=8)
             model = model.eval().cuda()
 
     optimizer = torch.optim.Adam([x], lr=1e-3, betas=(0.9, 0.99))
