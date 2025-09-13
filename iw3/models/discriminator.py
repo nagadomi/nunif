@@ -1,17 +1,17 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.parametrizations import spectral_norm
 from nunif.models import Model
 from nunif.modules.pad import get_crop_size, get_fit_pad_size
 from nunif.modules.reflection_pad2d import reflection_pad2d_naive
-
-# l3v1c discriminator
-import torch.nn as nn
 from nunif.models import register_model
 from nunif.modules.attention import SEBlock
 from nunif.modules.res_block import ResBlockGNLReLU
-from torch.nn.utils.parametrizations import spectral_norm
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init
+from nunif.modules.fourier_unit import FourierUnit
+from iw3.dilation import dilate
 
 
 def normalize(x):
@@ -28,6 +28,14 @@ def fit_to_size(x, cond):
     pad = get_fit_pad_size(cond, x)
     cond = reflection_pad2d_naive(cond, pad, detach=True)
     return cond
+
+
+def mask_dilate(mask, n_iter=None):
+    if n_iter is None:
+        n_iter = mask.shape[-1] // 8 + 1
+    for i in range(n_iter):
+        mask = dilate(mask)
+    return mask
 
 
 class Discriminator(Model):
@@ -123,6 +131,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
 
         if mask is not None:
             mask = F.pixel_unshuffle(mask, 8).amax(dim=1, keepdim=True)
+            mask = mask_dilate(mask.float()) > 0
             mask = F.pad(mask, (-2,) * 4)
             assert mask.shape[-2:] == x.shape[-2:]
 
@@ -131,17 +140,81 @@ class L3ConditionalDiscriminator(L3Discriminator):
             return x
 
 
-def _test():
+class FFCBlock(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.ffc = FourierUnit(in_channels, in_channels,
+                               activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
+                               residual=False)
+        self.fusion = nn.Sequential(
+            nn.Conv2d(in_channels * 2, in_channels, kernel_size=1, stride=1, padding=0),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, padding_mode="replicate")
+        )
+
+    def forward(self, x):
+        x = x + self.fusion(torch.cat((x, self.ffc(x)), dim=1))
+        return x
+
+
+@register_model
+class FFCDiscriminator(Discriminator):
+    name = "inpaint.ffc_discriminator"
+
+    def __init__(self):
+        super().__init__(locals())
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            nn.GroupNorm(32, 64),
+            nn.LeakyReLU(0.2, inplace=True),
+            FFCBlock(64),
+
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            nn.GroupNorm(32, 128),
+            nn.LeakyReLU(0.2, inplace=True),
+            FFCBlock(128),
+
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            nn.GroupNorm(32, 256),
+            nn.LeakyReLU(0.2, inplace=True),
+            FFCBlock(256),
+        )
+        self.classifier = nn.Conv2d(256, 1, kernel_size=1, stride=1, padding=0)
+
+    @conditional_compile("NUNIF_DISC_COMPILE")
+    def forward(self, x, c=None, mask=None):
+        x = modcrop(x, 8)
+        c = fit_to_size(x, c)
+        if mask is not None:
+            mask = fit_to_size(x, mask)
+        x = normalize(x)
+        x = self.features(x)
+        x = self.classifier(x)
+        x = F.pad(x, (-2,) * 4)
+
+        if mask is not None:
+            mask = F.pixel_unshuffle(mask, 8).amax(dim=1, keepdim=True)
+            mask = mask_dilate(mask.float())
+            mask = F.pad(mask, (-2,) * 4)
+            assert mask.shape[-2:] == x.shape[-2:]
+
+            return x, mask
+        else:
+            return x
+
+
+def _test(name):
     from nunif.models import create_model
     device = "cuda"
-    model = create_model("inpaint.l3_conditional_discriminator").to(device).eval()
-    x = torch.zeros((4, 3, 128, 128)).to(device)
-    c = torch.zeros((4, 3, 128, 128)).to(device)
-    mask = torch.zeros((4, 1, 128, 128)).to(device)
+    model = create_model(name).to(device).eval()
+    x = torch.zeros((4, 3, 256, 256)).to(device)
+    c = torch.zeros((4, 3, 256, 256)).to(device)
+    mask = torch.zeros((4, 1, 256, 256)).to(device)
 
     z, mask = model(x, c, mask=mask)
     print(z.shape)
 
 
 if __name__ == "__main__":
-    _test()
+    _test("inpaint.l3_conditional_discriminator")
+    _test("inpaint.ffc_discriminator")

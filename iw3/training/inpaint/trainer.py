@@ -19,12 +19,12 @@ from nunif.modules.lpips import LPIPSWith
 from nunif.modules.dinov2 import DINOv2CosineWith
 from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate
 from nunif.transforms import pair as TP
-from nunif.modules.gan_loss import GANFakeMaskHingeLoss
+from nunif.modules.gan_loss import GANMaskHingeLoss
 from nunif.logger import logger
 from .dataset import InpaintDataset
 from .dataset_video import VideoInpaintDataset, SEQ as VIDEO_SEQ
 from ... import models as _m # noqa
-from ...models.discriminator import L3ConditionalDiscriminator
+from ...models.discriminator import L3ConditionalDiscriminator, FFCDiscriminator
 
 
 class TemporalGradientLoss(torch.nn.Module):
@@ -46,8 +46,10 @@ class TemporalSmoothingPenalty(torch.nn.Module):
 def create_discriminator(discriminator, device_ids, device):
     if discriminator is None:
         return None
-    elif discriminator == "l3v1c":
+    elif discriminator == "l3c":
         model = create_model(L3ConditionalDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "ffc":
+        model = create_model(FFCDiscriminator.name, device_ids=device_ids)
     else:
         model = create_model(discriminator, device_ids=device_ids)
     return model.to(device)
@@ -90,7 +92,7 @@ class InpaintEnv(I2IEnv):
         self.discriminator = discriminator
         if discriminator:
             loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
-            self.discriminator_criterion = GANFakeMaskHingeLoss(loss_weights=loss_weights).to(self.device)
+            self.discriminator_criterion = GANMaskHingeLoss(loss_weights=loss_weights).to(self.device)
         else:
             self.discriminator_criterion = None
 
@@ -161,8 +163,10 @@ class InpaintEnv(I2IEnv):
                 z = to_dtype(self.model(x, mask), x.dtype)
                 if self.trainer.args.diff_aug:
                     z, y = self.diff_aug(z, y)
-                cond = y
+                z, y = diff_dequant_noise((z, y))
+                y = y.clamp(0, 1)
                 fake = z
+                cond = y
 
                 z_real = to_dtype(self.discriminator(ste_clamp(fake), cond, mask=None), fake.dtype)
                 recon_loss = self.criterion(z, y)
@@ -172,9 +176,8 @@ class InpaintEnv(I2IEnv):
                 self.sum_g_loss += generator_loss.item()
 
                 self.discriminator.requires_grad_(True)
-                fake, y = diff_dequant_noise((torch.clamp(fake.detach(), 0, 1), y))
                 real = y
-                z_fake, z_mask = to_dtype(self.discriminator(fake, cond, mask=mask), fake.dtype)
+                z_fake, z_mask = to_dtype(self.discriminator(fake.detach().clamp(0, 1), cond, mask=mask), fake.dtype)
                 z_real = to_dtype(self.discriminator(real, cond, mask=None), real.dtype)
                 discriminator_loss = self.discriminator_criterion(z_real, z_fake, z_mask > 0)
 
@@ -189,7 +192,7 @@ class InpaintEnv(I2IEnv):
         weight = self.calculate_adaptive_weight(
             recon_loss, generator_loss, last_layer, grad_scaler,
             min=1e-5,
-            max=1.0,
+            max=10.0,
             mode="norm",
             adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema
         )
@@ -425,7 +428,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--discriminator", type=str, help="discriminator")
     parser.add_argument("--generator-warmup-iteration", type=int, default=500,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
-    parser.add_argument("--discriminator-weight", type=float, default=1.0,
+    parser.add_argument("--discriminator-weight", type=float, default=0.1,
                         help="discriminator loss weight")
     parser.add_argument("--diff-aug", action="store_true",
                         help="Use differentiable transforms for reconstruction loss and discriminator")
@@ -446,6 +449,7 @@ def register(subparsers, default_parser):
         weight_decay=0.001,
         weight_decay_end=0.01,
         eval_step=4,
+        ignore_nan=True,
     )
     parser.set_defaults(handler=train)
 
