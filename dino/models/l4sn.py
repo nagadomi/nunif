@@ -212,6 +212,7 @@ class L4SNLoss(nn.Module):
         loss = feat_loss * (1 - self.swd_weight) + swd_loss * self.swd_weight
         return loss
 
+    @conditional_compile(["NUNIF_TRAIN"])
     def forward(self, input, target):
         loss = self.forward_loss(input, target)
         return loss
