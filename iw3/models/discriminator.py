@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
 from nunif.models import Model
 from nunif.modules.pad import get_crop_size, get_fit_pad_size
-from nunif.modules.reflection_pad2d import reflection_pad2d_naive
+from nunif.modules.reflection_pad2d import reflection_pad2d_naive, ReflectionPad2dNaive
 from nunif.models import register_model
 from nunif.modules.attention import SEBlock
 from nunif.modules.res_block import ResBlockGNLReLU
@@ -99,7 +99,7 @@ class L3Discriminator(Discriminator):
             spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=1)))
         basic_module_init(self)
 
-    @conditional_compile("NUNIF_DISC_COMPILE")
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None):
         x = modcrop(x, 8)
         x = normalize(x)
@@ -117,7 +117,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [256])
 
-    @conditional_compile("NUNIF_DISC_COMPILE")
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, mask=None):
         x = modcrop(x, 8)
         c = fit_to_size(x, c)
@@ -145,11 +145,13 @@ class FFCBlock(nn.Module):
         super().__init__()
         self.ffc = FourierUnit(in_channels, in_channels,
                                activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
+                               norm_layer=lambda dim: nn.GroupNorm(32, dim),
                                residual=False)
         self.fusion = nn.Sequential(
             nn.Conv2d(in_channels * 2, in_channels, kernel_size=1, stride=1, padding=0),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, padding_mode="replicate")
+            ReflectionPad2dNaive((1,) * 4, detach=True),
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=0)
         )
 
     def forward(self, x):
@@ -164,24 +166,27 @@ class FFCDiscriminator(Discriminator):
     def __init__(self):
         super().__init__(locals())
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            ReflectionPad2dNaive((1,) * 4, detach=True),
+            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 64),
             nn.LeakyReLU(0.2, inplace=True),
             FFCBlock(64),
 
-            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            ReflectionPad2dNaive((1,) * 4, detach=True),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.2, inplace=True),
             FFCBlock(128),
 
-            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            ReflectionPad2dNaive((1,) * 4, detach=True),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 256),
             nn.LeakyReLU(0.2, inplace=True),
             FFCBlock(256),
         )
         self.classifier = nn.Conv2d(256, 1, kernel_size=1, stride=1, padding=0)
 
-    @conditional_compile("NUNIF_DISC_COMPILE")
+    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, mask=None):
         x = modcrop(x, 8)
         c = fit_to_size(x, c)
