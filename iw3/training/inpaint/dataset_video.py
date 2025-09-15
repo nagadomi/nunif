@@ -10,6 +10,7 @@ from torchvision.transforms import (
 )
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+from iw3.dilation import dilate_outer, dilate_inner
 
 
 SIZE = 256  # % 8 == 0
@@ -24,10 +25,7 @@ class RightDilate():
     def __call__(self, mask):
         if random.uniform(0, 1) < self.p:
             n_step = random.randint(1, self.max_step)
-            mask = mask.bool()
-            for _ in range(n_step):
-                mask = F.pad(mask, (1, 0, 0, 0))[:, :, :, :-1] | mask
-            mask = mask.float()
+            mask = dilate_outer(mask, n_iter=n_step)
         return mask
 
 
@@ -39,10 +37,7 @@ class LeftDilate():
     def __call__(self, mask):
         if random.uniform(0, 1) < self.p:
             n_step = random.randint(1, self.max_step)
-            mask = mask.bool()
-            for _ in range(n_step):
-                mask = F.pad(mask, (0, 1, 0, 0))[:, :, :, 1:] | mask
-            mask = mask.float()
+            mask = dilate_inner(mask, n_iter=n_step)
         return mask
 
 
@@ -126,7 +121,7 @@ class VideoInpaintDataset(Dataset):
         if not self.folders:
             raise RuntimeError(f"{input_dir} is empty")
         self.right_dilate = RightDilate()
-        self.left_dilate = RightDilate()
+        self.left_dilate = LeftDilate()
         self.color_jitter = RandomColorJitter()
 
     @staticmethod

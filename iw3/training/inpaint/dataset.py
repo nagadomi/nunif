@@ -9,6 +9,7 @@ from torchvision.transforms import (
 import nunif.transforms.pair as TP
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+from iw3.dilation import dilate_outer, dilate_inner
 
 
 SIZE = 256  # % 8 == 0
@@ -22,10 +23,7 @@ class RightDilate():
     def __call__(self, mask):
         if random.uniform(0, 1) < self.p:
             n_step = random.randint(1, self.max_step)
-            mask = mask.unsqueeze(0).bool()
-            for _ in range(n_step):
-                mask = F.pad(mask, (1, 0, 0, 0))[:, :, :, :-1] | mask
-            mask = mask.squeeze(0).float()
+            mask = dilate_outer(mask.unsqueeze(0), n_iter=n_step).squeeze(0)
         return mask
 
 
@@ -37,10 +35,7 @@ class LeftDilate():
     def __call__(self, mask):
         if random.uniform(0, 1) < self.p:
             n_step = random.randint(1, self.max_step)
-            mask = mask.unsqueeze(0).bool()
-            for _ in range(n_step):
-                mask = F.pad(mask, (0, 1, 0, 0))[:, :, :, 1:] | mask
-            mask = mask.squeeze(0).float()
+            mask = dilate_inner(mask.unsqueeze(0), n_iter=n_step).squeeze(0)
         return mask
 
 
@@ -59,7 +54,7 @@ class InpaintDataset(Dataset):
         self.random_crop = TP.RandomHardExampleCrop(SIZE)
         self.center_crop = TP.CenterCrop(SIZE)
         self.right_dilate = RightDilate()
-        self.left_dilate = RightDilate()
+        self.left_dilate = LeftDilate()
 
     def load_files(self, input_dir):
         files = ImageLoader.listdir(input_dir)
