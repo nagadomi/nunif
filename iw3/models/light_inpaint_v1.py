@@ -9,7 +9,7 @@ from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.norm import FastLayerNorm
 from nunif.modules.attention import WindowGMLP2d
 from nunif.modules.gaussian_filter import SeparableGaussianFilter2d
-from iw3.dilation import mask_closing, dilate
+from iw3.dilation import mask_closing, dilate_inner, dilate_outer
 
 
 class GLUConvMLP(nn.Module):
@@ -85,21 +85,23 @@ class LightInpaintV1(I2IBaseModel):
 
         self.mask_blur = SeparableGaussianFilter2d(1, kernel_size=15, padding=15 // 2)
 
-    def preprocess(self, x, mask, closing=False, dilation=0):
+    def preprocess(self, x, mask, closing=False, inner_dilation=0, outer_dilation=0, base_width=None):
         if closing:
             mask = mask_closing(mask)
         else:
             mask = mask.float()
 
-        for _ in range(dilation):
-            mask = dilate(mask, kernel_size=(1, 3))
+        mask = dilate_inner(mask, n_iter=inner_dilation, base_width=base_width)
+        mask = dilate_outer(mask, n_iter=outer_dilation, base_width=base_width)
 
         x = x * (1 - mask)
         mask = torch.clamp(self.mask_blur(mask) + mask, 0, 1)
         return x, mask
 
-    def infer(self, x, mask, closing=False, dilation=0):
-        x, mask = self.preprocess(x, mask, closing=closing, dilation=dilation)
+    def infer(self, x, mask, closing=False, inner_dilation=0, outer_dilation=0, base_width=None):
+        x, mask = self.preprocess(x, mask, closing=closing,
+                                  inner_dilation=inner_dilation, outer_dilation=outer_dilation,
+                                  base_width=base_width)
         return self.forward(x, mask, skip_i2i_offset=True)
 
     def _forward(self, x, mask):

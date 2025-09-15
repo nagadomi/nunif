@@ -9,7 +9,7 @@ from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.norm import FastLayerNorm
 from nunif.modules.attention import WindowGMLP2d, WindowGMLP3d
 from nunif.modules.gaussian_filter import SeparableGaussianFilter2d
-from iw3.dilation import mask_closing, dilate
+from iw3.dilation import mask_closing, dilate_inner, dilate_outer
 
 
 def linear_blur(x, n=4):
@@ -85,8 +85,6 @@ def chunked_forward(module, x, chunk):
 
 
 SEQ_LEN = 12
-PAD_LEN = 4
-INPUT_LEN = SEQ_LEN - PAD_LEN
 
 
 @register_model
@@ -120,25 +118,24 @@ class LightVideoInpaintV1(I2IBaseModel):
         nn.init.trunc_normal_(self.mask_bias, 0, 0.01)
 
         self.mask_blur = SeparableGaussianFilter2d(1, kernel_size=15, padding=15 // 2)
-        self.infer_cache = None
 
-    def preprocess(self, x, mask, closing=False, dilation=0):
+    def preprocess(self, x, mask, closing=False, inner_dilation=0, outer_dilation=0, base_width=None):
         if closing:
             mask = mask_closing(mask)
         else:
             mask = mask.float()
 
-        for _ in range(dilation):
-            mask = dilate(mask, kernel_size=(1, 3))
+        mask = dilate_inner(mask, n_iter=inner_dilation, base_width=base_width)
+        mask = dilate_outer(mask, n_iter=outer_dilation, base_width=base_width)
 
         x = x * (1 - mask)
         mask = torch.clamp(self.mask_blur(mask) + mask, 0, 1)
         return x, mask
 
-    def infer(self, x, mask, closing=False, dilation=0):
-        if x.shape[0] % INPUT_LEN != 0:
+    def infer(self, x, mask, closing=False, inner_dilation=0, outer_dilation=0, base_width=None):
+        if x.shape[0] % SEQ_LEN != 0:
             # TODO: refactor
-            pad_b = (INPUT_LEN - x.shape[0] % INPUT_LEN)
+            pad_b = (SEQ_LEN - x.shape[0] % SEQ_LEN)
             pad_b1 = pad_b // 2
             pad_b2 = pad_b - pad_b1
             x_pad = [x[0:1].detach()] * pad_b1 + [x] + [x[-1:].detach()] * pad_b2
@@ -148,19 +145,11 @@ class LightVideoInpaintV1(I2IBaseModel):
         else:
             pad_b1 = pad_b2 = 0
 
-        x, mask = self.preprocess(x, mask, closing=closing, dilation=dilation)
-
-        if self.infer_cache is None:
-            self.infer_cache = (x[0:1].repeat(4, 1, 1, 1), mask[0:1].repeat(4, 1, 1, 1))
-
-        x = torch.cat([self.infer_cache[0], x], dim=0)
-        mask = torch.cat([self.infer_cache[1], mask], dim=0)
-
-        self.infer_cache = (x[-4:].detach().clone(), mask[-4:].detach().clone())
+        x, mask = self.preprocess(x, mask, closing=closing,
+                                  inner_dilation=inner_dilation, outer_dilation=outer_dilation,
+                                  base_width=base_width)
 
         out = self.forward(x, mask, skip_i2i_offset=True, micro_batch_size=2)
-        out = out[4:]
-
         if pad_b1 > 0:
             out = out[pad_b1:]
         if pad_b2 > 0:
