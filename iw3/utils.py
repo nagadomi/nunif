@@ -258,6 +258,9 @@ def apply_divergence(depth, im, args, side_model):
             im, depth,
             args.divergence, convergence=args.convergence,
             synthetic_view=args.synthetic_view)
+        if not batch:
+            left_eye = left_eye.squeeze(0)
+            right_eye = right_eye.squeeze(0)
     elif args.method in {"forward", "forward_fill"}:
         depth = get_mapper(args.mapper)(depth)
         left_eye, right_eye = apply_divergence_forward_warp(
@@ -265,6 +268,32 @@ def apply_divergence(depth, im, args, side_model):
             args.divergence, convergence=args.convergence,
             method=args.method, synthetic_view=args.synthetic_view,
             inpaint_model=args.state["inpaint_model"])
+        if not batch:
+            left_eye = left_eye.squeeze(0)
+            right_eye = right_eye.squeeze(0)
+    elif args.method in {"forward_inpaint"}:
+        depth = get_mapper(args.mapper)(depth)
+        left_eyes = []
+        right_eyes = []
+        for i in range(depth.shape[0]):
+            left_eye, right_eye = side_model.infer(
+                im[i:i + 1], depth[i:i + 1],
+                divergence=args.divergence, convergence=args.convergence,
+                synthetic_view=args.synthetic_view,
+                enable_amp=not args.disable_amp,
+            )
+            if left_eye is not None:
+                left_eyes.append(left_eye)
+                right_eyes.append(right_eye)
+        if left_eyes:
+            if len(left_eyes) == 1:
+                left_eye = left_eyes[0]
+                right_eye = right_eyes[0]
+            else:
+                left_eye = torch.cat(left_eyes, dim=0)
+                right_eye = torch.cat(right_eyes, dim=0)
+        else:
+            left_eye = right_eye = None
     else:
         if args.stereo_width is not None:
             # NOTE: use src aspect ratio instead of depth aspect ratio
@@ -285,10 +314,9 @@ def apply_divergence(depth, im, args, side_model):
             enable_amp=not args.disable_amp,
             edge_dilation=args.edge_dilation,
         )
-
-    if not batch:
-        left_eye = left_eye.squeeze(0)
-        right_eye = right_eye.squeeze(0)
+        if not batch:
+            left_eye = left_eye.squeeze(0)
+            right_eye = right_eye.squeeze(0)
 
     return left_eye, right_eye
 
@@ -402,6 +430,7 @@ def debug_depth_image(depth, args):
 
 def process_image(x, args, depth_model, side_model):
     assert depth_model.get_ema_buffer_size() == 1
+
     with torch.inference_mode():
         x = preprocess_image(x, args)
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
@@ -417,14 +446,25 @@ def process_image(x, args, depth_model, side_model):
             sbs = postprocess_image(left_eye, right_eye, args)
             return sbs
         else:
-            left_eye, right_eye = apply_divergence(depth, x, args, side_model)
-            sbs = postprocess_image(left_eye, right_eye, args)
+            while True:
+                left_eye, right_eye = apply_divergence(depth, x, args, side_model)
+                if left_eye is not None:
+                    break
+            if left_eye.ndim == 4:
+                # NOTE: side_model is video inpaint model.
+                #       This may be called from test_callback.
+                sbs = postprocess_image(left_eye[0], right_eye[0], args)
+            else:
+                sbs = postprocess_image(left_eye, right_eye, args)
             return sbs
 
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
     # disable ema minmax for each process
     depth_model.disable_ema()
+    if side_model is not None and hasattr(side_model, "set_mode"):
+        side_model.set_mode("image")
+
     os.makedirs(output_dir, exist_ok=True)
 
     if args.resume:
@@ -491,7 +531,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     frame_cpu_offload = depth_model.get_ema_buffer_size() > 1
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
-    def _postprocess(depths):
+    def _postprocess(depths, flush):
         frames = []
         for depth in depths:
             x, pts = src_queue.pop(0)
@@ -504,20 +544,42 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 out = postprocess_image(left_eye, right_eye, args)
             else:
                 left_eye, right_eye = apply_divergence(depth, x, args, side_model)
-                out = postprocess_image(left_eye, right_eye, args)
+                if left_eye is not None:
+                    if left_eye.ndim == 3:
+                        out = postprocess_image(left_eye, right_eye, args)
+                    else:
+                        out = [postprocess_image(left, right, args) for left, right in zip(left_eye, right_eye)]
+                else:
+                    out = None
 
-            if pts in segment_pts:
-                if args.debug_depth:
+            if not isinstance(out, list):
+                if out is not None:
+                    out = [out]
+                else:
+                    out = []
+
+            if pts in segment_pts and args.debug_depth:
+                for o in out:
                     # debug red line
-                    out[0, 0:8, :] = 1.0
-            frames.append(VU.to_frame(out, use_16bit=use_16bit))
+                    o[0, 0:8, :] = 1.0
+
+            for o in out:
+                frames.append(VU.to_frame(o, use_16bit=use_16bit))
+
+        if flush and hasattr(side_model, "flush"):
+            left_eye, right_eye = side_model.flush(enable_amp=not args.disable_amp)
+            if left_eye is not None:
+                for left, right in zip(left_eye, right_eye):
+                    out = postprocess_image(left, right, args)
+                    frames.append(VU.to_frame(out, use_16bit=use_16bit))
+
         return frames
 
     @torch.inference_mode()
     def _frame_callback(frame):
         if frame is None:
             # flush
-            return _postprocess(depth_model.flush_minmax_normalize())
+            return _postprocess(depth_model.flush_minmax_normalize(), flush=True)
 
         frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
         pix_dtype, pix_max = frame_hwc.dtype, torch.iinfo(frame_hwc.dtype).max
@@ -544,11 +606,12 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                                   depth_aa=args.depth_aa)
         depth = depth_model.minmax_normalize_chw(depth)
         depths = [depth] if depth is not None else []
-        if frame.pts in segment_pts:
+        flush = frame.pts in segment_pts
+        if flush:
             depths += depth_model.flush_minmax_normalize()
             depth_model.reset_state()
 
-        return _postprocess(depths)
+        return _postprocess(depths, flush=flush)
 
     return _frame_callback
 
@@ -679,7 +742,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     depth_model.reset()
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
-    def _postprocess(depth_list):
+    def _postprocess(depth_list, flush=False):
         results = []
         if args.debug_depth:
             for depth in depth_list:
@@ -698,9 +761,18 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
                     left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
-                frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
-                          for i in range(left_eyes.shape[0])]
-                results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
+                if left_eyes is not None:
+                    frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
+                              for i in range(left_eyes.shape[0])]
+                    results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
+
+        if flush and hasattr(side_model, "flush"):
+            left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
+            if left_eyes is not None:
+                for left_eye, right_eye in zip(left_eyes, right_eyes):
+                    out = postprocess_image(left_eye, right_eye, args)
+                    results.append(VU.to_frame(out, use_16bit=use_16bit))
+
         return results
 
     def _batch_infer():
@@ -738,7 +810,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                 enable_amp=not args.disable_amp,
                 edge_dilation=args.edge_dilation,
                 depth_aa=args.depth_aa)
-            results += _postprocess(depth_list)
+            results += _postprocess(depth_list, flush=True)
             return [VU.to_frame(new_frame, use_16bit=use_16bit) for new_frame in results]
 
         frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
@@ -758,9 +830,13 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     is_video_depth_anything_streaming = depth_model.get_name() == "VideoDepthAnythingStreaming"
+    is_inpaint_model = args.method in {"forward_inpaint"}
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
+
+    if side_model is not None and hasattr(side_model, "set_mode"):
+        side_model.set_mode("video")
 
     if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
         side_model = compile_model(side_model)
@@ -826,6 +902,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             # reset ema to avoid affecting test frames
             depth_model.enable_ema(decay=decay, buffer_size=buffer_size)
         depth_model.reset()
+        if side_model is not None and hasattr(side_model, "reset"):
+            side_model.reset()
+
         return VU.to_frame(x, use_16bit=use_16bit)
 
     if is_video_depth_anything:
@@ -847,7 +926,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              start_time=args.start_time,
                              end_time=args.end_time)
 
-    elif args.low_vram or args.debug_depth or is_video_depth_anything_streaming:
+    elif args.low_vram or args.debug_depth or is_video_depth_anything_streaming or is_inpaint_model:
         with depth_model.compile_context(enabled=args.compile):
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
@@ -1388,6 +1467,8 @@ def process_config_video(config, args, side_model):
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, audio_file = config.resolve_paths(base_dir)
+    if side_model is not None and hasattr(side_model, "set_mode"):
+        side_model.set_mode("video")
 
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
@@ -1423,21 +1504,34 @@ def process_config_video(config, args, side_model):
     sbs_lock = threading.Lock()
 
     @torch.inference_mode()
-    def batch_callback(x, depths):
+    def batch_callback(x, depths, test=False):
         if not config.skip_edge_dilation and args.edge_dilation > 0:
             # apply --edge-dilation
             depths = -dilate_edge(-depths, args.edge_dilation)
         with sbs_lock:
-            left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
-        return torch.stack([
-            postprocess_image(left_eyes[i], right_eyes[i], args)
-            for i in range(left_eyes.shape[0])])
+            if test:
+                assert x.shape[0] == 1
+                while True:
+                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+                    if left_eyes is not None:
+                        break
+                left_eyes = left_eyes[0:1]
+                right_eyes = right_eyes[0:1]
+            else:
+                left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+
+        if left_eyes is not None:
+            return torch.stack([
+                postprocess_image(left_eyes[i], right_eyes[i], args)
+                for i in range(left_eyes.shape[0])])
+        else:
+            return []
 
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
-        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0))
+        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), test=True)
         return frame.shape[2:]
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -1466,6 +1560,9 @@ def process_config_video(config, args, side_model):
             yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
     output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
+    if side_model is not None and hasattr(side_model, "reset"):
+        side_model.reset()
+
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
         container_format=args.video_format,
@@ -1512,6 +1609,8 @@ def process_config_video(config, args, side_model):
 def process_config_images(config, args, side_model):
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, _ = config.resolve_paths(base_dir)
+    if side_model is not None and hasattr(side_model, "set_mode"):
+        side_model.set_mode("image")
 
     def fix_rgb_depth_pair(rgb_files, depth_files):
         rgb_db = {path.splitext(path.basename(fn))[0]: fn for fn in rgb_files}
@@ -1634,7 +1733,8 @@ def create_parser(required_true=True):
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--method", type=str, default="row_flow",
-                        choices=["grid_sample", "backward", "forward", "forward_fill",
+                        choices=["grid_sample", "backward",
+                                 "forward", "forward_fill", "forward_inpaint",
                                  "mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s",
                                  "mask_mlbw_l2",
                                  "row_flow", "row_flow_sym",
@@ -2003,7 +2103,7 @@ def iw3_main(args):
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
         device_id=args.gpu[0]
     )
-    if side_model is not None and len(args.gpu) > 1:
+    if side_model is not None and len(args.gpu) > 1 and not args.method == "forward_inpaint":
         side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
 
     if args.find_param:
@@ -2074,6 +2174,9 @@ def iw3_main(args):
     elif is_image(args.input):
         if not depth_model.is_image_supported():
             raise ValueError(f"{args.depth_model} does not support image input")
+        if side_model is not None and hasattr(side_model, "set_mode"):
+            side_model.set_mode("image")
+
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
             output_filename = path.join(

@@ -1,6 +1,7 @@
 from nunif.models import load_model
 from nunif.utils.ui import TorchHubDir
 from os import path
+from .forward_inpaint import ForwardInpaint
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -118,5 +119,7 @@ def create_stereo_model(
             )
         elif method in {"forward", "forward_fill", "backward"}:
             return None
+        elif method in {"forward_inpaint"}:
+            return ForwardInpaint(device_id=device_id)
         else:
             raise ValueError(method)

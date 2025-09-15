@@ -201,10 +201,10 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = left_eye.flip(-1)
                     left_mask = (left_eye < 0)[:, 0:1, :, :]
-                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True, dilation=dilation).flip(-1)
+                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True).flip(-1)
 
                     right_mask = (right_eye < 0)[:, 0:1, :, :]
-                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True, dilation=dilation)
+                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True)
         else:
             # drop undefined values
             left_eye = torch.clamp(left_eye, 0, 1)
@@ -229,7 +229,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             else:
                 with autocast(device=right_eye.device, enabled=True):
                     right_mask = (right_eye < 0)[:, 0:1]
-                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True, dilation=dilation)
+                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True)
         else:
             right_eye = torch.clamp(right_eye, 0, 1)
 
@@ -254,7 +254,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
                 with autocast(device=left_eye.device, enabled=True):
                     left_eye = left_eye.flip(-1)
                     left_mask = (left_eye < 0)[:, 0:1, :, :]
-                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True, dilation=dilation).flip(-1)
+                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True).flip(-1)
         else:
             left_eye = torch.clamp(left_eye, 0, 1)
 
