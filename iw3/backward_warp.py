@@ -1,6 +1,6 @@
 import torch
 from .mapper import get_mapper
-from .dilation import closing, dilate
+from .dilation import closing, dilate_inner, dilate_outer
 from nunif.device import autocast, device_is_mps
 import torch.nn.functional as F
 from nunif.modules.replication_pad2d import replication_pad2d
@@ -391,10 +391,10 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
     return left_eye, right_eye
 
 
-def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
-    for _ in range(dilation):
-        mask_logits = dilate(mask_logits, kernel_size=(1, 3))
+def postprocess_hole_mask(mask_logits, target_size, threshold, inner_dilation=0, outer_dilation=0):
     mask_logits = closing(mask_logits, n_iter=1)
+    mask_logits = dilate_inner(mask_logits, n_iter=inner_dilation)
+    mask_logits = dilate_outer(mask_logits, n_iter=outer_dilation)
 
     if target_size != mask_logits.shape[-2:]:
         mask_logits = F.interpolate(mask_logits, size=target_size,
@@ -405,7 +405,7 @@ def postprocess_hole_mask(mask_logits, target_size, threshold, dilation):
     return mask
 
 
-def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.15, dilation=0):
+def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.15, inner_dilation=0, outer_dilation=0):
     # warp depth to the left
     warped_depth, _ = apply_divergence_nn_delta_weight(
         model, depth, depth, divergence=divergence, convergence=convergence, steps=1,
@@ -419,7 +419,8 @@ def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.1
         mapper=mapper, shift=1, preserve_screen_border=False, enable_amp=True,
         return_mask=True,
     )
-    mask = postprocess_hole_mask(mask_logits, c.shape[-2:], threshold=threshold, dilation=dilation)
+    mask = postprocess_hole_mask(mask_logits, c.shape[-2:], threshold=threshold,
+                                 inner_dilation=inner_dilation, outer_dilation=outer_dilation)
 
     return c, mask
 
@@ -437,7 +438,7 @@ def _test_nonwarp_mask():
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
-    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none", threshold=0.15, dilation=0)
+    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none", threshold=0.15)
     x = x.mean(dim=1, keepdim=True)
     x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
     TF.to_pil_image(x).show()
