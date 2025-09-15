@@ -105,8 +105,6 @@ def gen_data(im, depth_model, mask_mlbw, args):
     convergence = gen_convergence()
     edge_dilation = gen_edge_dilation(args.model_type, args.resolution)
     image_size = random.choices([720, 1080], weights=[0.25, 0.5], k=1)[0]
-    # TODO: Maybe need to adjust this later.
-    hole_dilation = random.randint(0, edge_dilation + 1)
 
     with torch.inference_mode():
         im = crop_resize(im, image_size)
@@ -124,7 +122,6 @@ def gen_data(im, depth_model, mask_mlbw, args):
             convergence=convergence,
             mapper=mapper,
             threshold=0.15,  # constant value
-            dilation=hole_dilation,
         )
 
         c_flip = torch.flip(c, (-1,))
