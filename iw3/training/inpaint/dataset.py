@@ -1,5 +1,6 @@
 import random
 from os import path
+import torch
 import torch.nn.functional as F
 from torch.utils.data.dataset import Dataset
 import torchvision.transforms as T
@@ -9,6 +10,7 @@ from torchvision.transforms import (
 import nunif.transforms.pair as TP
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+from nunif.training.sampler import HardExampleSampler, MiningMethod
 from iw3.dilation import dilate_outer, dilate_inner
 
 
@@ -66,6 +68,15 @@ class InpaintDataset(Dataset):
                 self.files.append(rgb_file)
             else:
                 raise RuntimeError(f"{rgb_file} not found")
+
+    def create_sampler(self, num_samples):
+        return HardExampleSampler(
+            torch.ones((len(self),), dtype=torch.double),
+            num_samples=num_samples,
+            method=MiningMethod.LINEAR,
+            history_size=4,
+            scale_factor=4.,
+        )
 
     def worker_init(self, worker_id):
         pass

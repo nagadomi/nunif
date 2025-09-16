@@ -10,6 +10,7 @@ from torchvision.transforms import (
 )
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+from nunif.training.sampler import HardExampleSampler, MiningMethod
 from iw3.dilation import dilate_outer, dilate_inner
 
 
@@ -155,6 +156,15 @@ class VideoInpaintDataset(Dataset):
             start_i = (len(files) - seq) // 2
 
         return files[start_i:start_i + seq], masks[start_i:start_i + seq]
+
+    def create_sampler(self, num_samples):
+        return HardExampleSampler(
+            torch.ones((len(self),), dtype=torch.double),
+            num_samples=num_samples,
+            method=MiningMethod.LINEAR,
+            history_size=4,
+            scale_factor=4.,
+        )
 
     def worker_init(self, worker_id):
         pass

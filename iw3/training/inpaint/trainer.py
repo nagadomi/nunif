@@ -87,8 +87,9 @@ def ste_clamp(x, overshoot_scale=0.1):
 
 
 class InpaintEnv(I2IEnv):
-    def __init__(self, model, criterion, discriminator=None):
+    def __init__(self, model, criterion, sampler, discriminator=None):
         super().__init__(model, criterion=criterion, eval_criterion=criterion)
+        self.sampler = sampler
         self.discriminator = discriminator
         if discriminator:
             loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
@@ -254,7 +255,18 @@ class InpaintEnv(I2IEnv):
                 for optimizer, grad_scaler in optimizers:
                     self.optimizer_step(optimizer, grad_scaler)
 
+    def train_loss_hook(self, data, loss):
+        super().train_loss_hook(data, loss)
+        if not self.trainer.args.disable_hard_example:
+            index = data[-1]
+            if isinstance(loss, (list, tuple)):
+                loss = loss[0]  # recon_loss
+            self.sampler.update_losses(index, loss.item())
+
     def train_end(self):
+        if not self.trainer.args.disable_hard_example:
+            self.sampler.update_weights()
+
         # show loss
         mean_loss = self.sum_loss / self.sum_step
         if self.discriminator is not None:
@@ -344,9 +356,10 @@ class InpaintTrainer(Trainer):
 
         if type == "train":
             dataset = dataset_class(path.join(self.args.data_dir, "train"), model_offset, training=True, **dataset_kwargs)
+            self.sampler = dataset.create_sampler(num_samples)
             loader = torch.utils.data.DataLoader(
                 dataset,
-                sampler=torch.utils.data.RandomSampler(dataset, num_samples=num_samples),
+                sampler=self.sampler,
                 batch_size=batch_size,
                 shuffle=False,
                 pin_memory=True,
@@ -388,7 +401,7 @@ class InpaintTrainer(Trainer):
         else:
             raise ValueError(f"{self.args.loss}")
 
-        return InpaintEnv(self.model, criterion=criterion, discriminator=self.discriminator)
+        return InpaintEnv(self.model, criterion=criterion, sampler=self.sampler, discriminator=self.discriminator)
 
     def setup_model(self):
         self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
@@ -434,6 +447,7 @@ def register(subparsers, default_parser):
                         help="Use differentiable transforms for reconstruction loss and discriminator")
     parser.add_argument("--video", action="store_true", help="Use video dataset")
     parser.add_argument("--save-eval-step", type=int, default=10)
+    parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
 
     parser.set_defaults(
         batch_size=16,
