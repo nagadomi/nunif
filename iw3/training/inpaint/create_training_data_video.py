@@ -56,6 +56,7 @@ def gen_data(frames, depth_model, mask_mlbw, args):
     convergence = gen_convergence()
     edge_dilation = gen_edge_dilation(args.model_type, args.resolution)
     image_size = random.choices([720, 1080], weights=[0.25, 0.5], k=1)[0]
+    forward_base_view = random.choice(["right", "left"])
     # TODO: Maybe need to adjust this later.
 
     width, height = frames[0].size
@@ -93,6 +94,7 @@ def gen_data(frames, depth_model, mask_mlbw, args):
                 c_flip, depth_flip,
                 divergence=divergence,
                 convergence=convergence,
+                view=forward_base_view,
             )
             mask_flip = mask_closing(mask_flip)
 

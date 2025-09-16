@@ -284,7 +284,7 @@ def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None
                                                  inconsistent_shift=inconsistent_shift)
 
 
-def nonwarp_mask(c, depth, divergence, convergence):
+def nonwarp_mask(c, depth, divergence, convergence, view="right"):
     divergence = divergence * 0.5  # cancels out 2x multiplier for synthetic_view = right|left
 
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
@@ -293,17 +293,32 @@ def nonwarp_mask(c, depth, divergence, convergence):
 
     # warp depth to the left
     depth3 = depth.repeat(1, 3, 1, 1)
-    warped_depth, _ = depth_order_bilinear_forward_warp(
-        depth3, depth, divergence, convergence,
-        synthetic_view="left",
-        fill=True, inconsistent_shift=False, return_mask=False)
-    warped_depth = warped_depth.mean(dim=1, keepdim=True)
-    # warp warped_depth to the right and back to original position
-    dummy = torch.zeros_like(c)
-    _, _, _, mask = depth_order_bilinear_forward_warp(
-        dummy, warped_depth, divergence, convergence,
-        fill=False, synthetic_view="right", inconsistent_shift=False,
-        return_mask=True)
+    if view == "right":
+        warped_depth, _ = depth_order_bilinear_forward_warp(
+            depth3, depth, divergence, convergence,
+            synthetic_view="left",
+            fill=True, inconsistent_shift=False, return_mask=False)
+        warped_depth = warped_depth.mean(dim=1, keepdim=True)
+        # warp warped_depth to the right and back to original position
+        dummy = torch.zeros_like(c)
+        _, _, _, mask = depth_order_bilinear_forward_warp(
+            dummy, warped_depth, divergence, convergence,
+            synthetic_view="right",
+            fill=False, inconsistent_shift=False, return_mask=True)
+    else:
+        c, depth, depth3 = c.flip(-1), depth.flip(-1), depth3.flip(-1)
+        _, warped_depth = depth_order_bilinear_forward_warp(
+            depth3, depth, divergence, convergence,
+            synthetic_view="right",
+            fill=True, inconsistent_shift=False, return_mask=False)
+        warped_depth = warped_depth.mean(dim=1, keepdim=True)
+        # warp warped_depth to the right and back to original position
+        dummy = torch.zeros_like(c)
+        _, _, mask, _ = depth_order_bilinear_forward_warp(
+            dummy, warped_depth, divergence, convergence,
+            synthetic_view="left",
+            fill=False, inconsistent_shift=False, return_mask=True)
+        c, mask = c.flip(-1), mask.flip(-1)
 
     return c, mask
 
@@ -351,12 +366,13 @@ def _test_nonwarp_mask():
     import torchvision.transforms.functional as TF
     import torchvision.io as io
 
+    view = "right" # left
     x = io.read_image("cc0/320/dog.png") / 255.0
     depth = io.read_image("cc0/depth/dog.png") / 65536.0
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
-    x, mask = nonwarp_mask(x, depth, divergence=4 * 2, convergence=0)
+    x, mask = nonwarp_mask(x, depth, divergence=4 * 2, convergence=0, view=view)
     mask = mask_closing(mask, kernel_size=3, n_iter=2)
 
     x = x.mean(dim=1, keepdim=True)
