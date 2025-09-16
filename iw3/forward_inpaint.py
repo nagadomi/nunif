@@ -53,25 +53,27 @@ class ForwardInpaintImage(nn.Module):
     def infer(
             self, x, depth,
             divergence, convergence, synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, inpaint_max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=1920,
             **_kwargs
     ):
         return self.forward(x, depth, divergence=divergence, convergence=convergence,
                             synthetic_view=synthetic_view,
                             inner_dilation=inner_dilation, outer_dilation=outer_dilation,
-                            inpaint_max_width=inpaint_max_width)
+                            max_width=max_width)
 
     def forward(
             self, x, depth,
             divergence, convergence, synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, inpaint_max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=1920,
     ):
-        if x.shape[-1] > inpaint_max_width:
-            new_w = inpaint_max_width
-            new_h = int((inpaint_max_width / x.shape[-1]) * x.shape[-2])
+        if x.shape[-1] > max_width:
+            if max_width % 2 != 0:
+                max_width += 1
+            new_w = max_width
+            new_h = int((max_width / x.shape[-1]) * x.shape[-2])
             if new_h % 2 != 0:
                 new_h += 1
-                x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", antialias=True, align_corners=False)
+            x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", antialias=True, align_corners=False)
 
         left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
             x, depth,
@@ -239,7 +241,7 @@ class ForwardInpaintVideo(nn.Module):
     def infer(
             self, x, depth,
             divergence, convergence, synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, inpaint_max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=1920,
             batch_size=2,
             **_kwargs,
     ):
@@ -315,7 +317,7 @@ class ForwardInpaint(nn.Module):
     def infer(
             self, x, depth,
             divergence, convergence, synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, inpaint_max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=1920,
             enable_amp=True,
             **_kwargs,
     ):
@@ -327,7 +329,7 @@ class ForwardInpaint(nn.Module):
                 synthetic_view=synthetic_view,
                 inner_dilation=inner_dilation,
                 outer_dilation=outer_dilation,
-                inpaint_max_width=inpaint_max_width,
+                max_width=max_width,
                 **_kwargs
             )
 

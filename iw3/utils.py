@@ -280,6 +280,9 @@ def apply_divergence(depth, im, args, side_model):
                 im[i:i + 1], depth[i:i + 1],
                 divergence=args.divergence, convergence=args.convergence,
                 synthetic_view=args.synthetic_view,
+                inner_dilation=args.mask_inner_dilation,
+                outer_dilation=args.mask_outer_dilation,
+                max_width=args.inpaint_max_width,
                 enable_amp=not args.disable_amp,
             )
             if left_eye is not None:
@@ -1884,6 +1887,12 @@ def create_parser(required_true=True):
                               "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
                         help="loop count of edge dilation.")
+    parser.add_argument("--mask-inner-dilation", type=int, default=0,
+                        help="loop count of inner mask dilation")
+    parser.add_argument("--mask-outer-dilation", type=int, default=0,
+                        help="loop count of outer mask dilation")
+    parser.add_argument("--inpaint-max-width", type=int, default=1920,
+                        help="max width of inpaint result")
     parser.add_argument("--depth-aa", action="store_true",
                         help="apply depth antialiasing. ignored for unsupported models")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
