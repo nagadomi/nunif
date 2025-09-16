@@ -241,7 +241,7 @@ def preprocess_image(x, args):
     return x
 
 
-def apply_divergence(depth, im, args, side_model):
+def apply_divergence(depth, im, args, side_model, reset_pts=None):
     batch = True
     if depth.ndim != 4:
         # CHW
@@ -279,6 +279,7 @@ def apply_divergence(depth, im, args, side_model):
             mapper = args.mapper
         left_eyes = []
         right_eyes = []
+        reset_pts = reset_pts if reset_pts is not None else [False] * depth.shape[0]
         for i in range(depth.shape[0]):
             left_eye, right_eye = side_model.infer(
                 im[i:i + 1], depth[i:i + 1],
@@ -294,6 +295,12 @@ def apply_divergence(depth, im, args, side_model):
             if left_eye is not None:
                 left_eyes.append(left_eye)
                 right_eyes.append(right_eye)
+            if reset_pts[i]:
+                left_eye, right_eye = side_model.flush(enable_amp=not args.disable_amp)
+                if left_eye is not None:
+                    left_eyes.append(left_eye)
+                    right_eyes.append(right_eye)
+
         if left_eyes:
             if len(left_eyes) == 1:
                 left_eye = left_eyes[0]
@@ -763,13 +770,15 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
         else:
             for depths in chunks(depth_list, args.batch_size):
                 depths = torch.stack(depths)
-                x_srcs = [src_queue.pop(0)[0] for _ in range(len(depths))]
+                x_pts = [src_queue.pop(0) for _ in range(len(depths))]
+                reset_pts = [pts in segment_pts for _, pts in x_pts]
+                x_srcs = [x for x, _ in x_pts]
                 x_srcs = torch.stack(x_srcs).to(args.state["device"]).permute(0, 3, 1, 2)
                 x_srcs = x_srcs / torch.iinfo(x_srcs.dtype).max
                 if args.rgbd or args.half_rgbd:
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
-                    left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+                    left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
                 if left_eyes is not None:
                     frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
                               for i in range(left_eyes.shape[0])]
