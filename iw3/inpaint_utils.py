@@ -1,4 +1,37 @@
+import os
 import torch
+from nunif.utils.ui import TorchHubDir
+from nunif.models import load_model
+
+
+def pth_url(filename):
+    return "https://github.com/nagadomi/nunif/releases/download/0.0.0/" + filename
+
+
+HUB_MODEL_DIR = os.path.join(os.path.dirname(__file__), "pretrained_models", "hub")
+VIDEO_MODEL_URL = "models/video_inpaint_v6/inpaint.light_video_inpaint_v1.pth"
+IMAGE_MODEL_URL = "models/inpant_v7_gan4_ffc6/inpaint.light_inpaint_v1.pth"
+
+MASK_MLBW_L2_D1_URL = pth_url("iw3_mask_mlbw_l2_d1_20250903.pth")
+
+
+def load_image_inpaint_model(device_id):
+    with TorchHubDir(HUB_MODEL_DIR):
+        model, _ = load_model(IMAGE_MODEL_URL, device_ids=[device_id])
+        return model.eval()
+
+
+def load_video_inpaint_model(device_id):
+    with TorchHubDir(HUB_MODEL_DIR):
+        model, _ = load_model(VIDEO_MODEL_URL, device_ids=[device_id])
+        return model.eval()
+
+
+def load_mask_mlbw(device_id):
+    with TorchHubDir(HUB_MODEL_DIR):
+        model, _ = load_model(MASK_MLBW_L2_D1_URL, device_ids=[device_id])
+        model.delta_output = True
+        return model.eval()
 
 
 class FrameQueue():

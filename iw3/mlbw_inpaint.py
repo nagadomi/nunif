@@ -2,41 +2,83 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.device import create_device, autocast
-from .dilation import mask_closing, dilate_outer, dilate_inner
-from .forward_warp import apply_divergence_forward_warp
+from .backward_warp import apply_divergence_nn_delta_weight, postprocess_hole_mask
 from . import models  # noqa
-from .inpaint_utils import FrameQueue, load_image_inpaint_model, load_video_inpaint_model
+from .inpaint_utils import FrameQueue, load_image_inpaint_model, load_video_inpaint_model, load_mask_mlbw
+
+
+def pth_url(filename):
+    return "https://github.com/nagadomi/nunif/releases/download/0.0.0/" + filename
+
+
+MASK_MLBW_L2_D1_URL = pth_url("iw3_mask_mlbw_l2_d1_20250903.pth")
+MASK_MLBW_THRESHOLD = 0.15
+VIDEO_MODEL_URL = "models/video_inpant_v6/inpaint.light_video_inpaint_v1.pth"
+IMAGE_MODEL_URL = "models/inpant_v7_gan4_ffc6/inpaint.light_inpaint_v1.pth"
 
 
 def forward_right(model, right_eye, right_mask, inner_dilation, outer_dilation, base_width):
-    right_mask = right_mask > 0.5
-    right_mask = mask_closing(right_mask)
-    right_mask = dilate_outer(right_mask, n_iter=outer_dilation, base_width=base_width)
-    right_mask = dilate_inner(right_mask, n_iter=inner_dilation, base_width=base_width)
+    right_mask = postprocess_hole_mask(right_mask, target_size=right_eye.shape[-2:], threshold=MASK_MLBW_THRESHOLD,
+                                       inner_dilation=inner_dilation, outer_dilation=outer_dilation)
     right_eye = model.infer(right_eye, right_mask)
-
     return right_eye
 
 
 def forward_left(model, left_eye, left_mask, inner_dilation, outer_dilation, base_width):
-    left_mask = left_mask > 0.5
-    # flip for right view base
     left_eye, left_mask = left_eye.flip(-1), left_mask.flip(-1)
-
-    left_mask = mask_closing(left_mask)
-    left_mask = dilate_outer(left_mask, n_iter=outer_dilation, base_width=base_width)
-    left_mask = dilate_inner(left_mask, n_iter=inner_dilation, base_width=base_width)
+    left_mask = postprocess_hole_mask(left_mask, target_size=left_eye.shape[-2:], threshold=MASK_MLBW_THRESHOLD,
+                                      inner_dilation=inner_dilation, outer_dilation=outer_dilation)
     left_eye = model.infer(left_eye, left_mask)
-
     left_eye = left_eye.flip(-1)
-
     return left_eye
 
 
-class ForwardInpaintImage(nn.Module):
-    def __init__(self, device_id=-1):
+def apply_divergence(model, c, depth, divergence, convergence, mapper, preserve_screen_border, synthetic_view, enable_amp):
+    if synthetic_view == "both":
+        left_eye, left_mask = apply_divergence_nn_delta_weight(
+            model, c, depth, divergence=divergence, convergence=convergence, steps=1,
+            mapper=mapper, shift=-1,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp, edge_dilation=0,
+            return_mask=True,
+        )
+        right_eye, right_mask = apply_divergence_nn_delta_weight(
+            model, c, depth, divergence=divergence, convergence=convergence, steps=1,
+            mapper=mapper, shift=1,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp, edge_dilation=0,
+            return_mask=True,
+        )
+    elif synthetic_view == "right":
+        left_eye, left_mask = c, None
+        right_eye, right_mask = apply_divergence_nn_delta_weight(
+            model, c, depth, divergence=divergence, convergence=convergence, steps=1,
+            mapper=mapper, shift=1,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp, edge_dilation=0,
+            return_mask=True,
+        )
+    elif synthetic_view == "left":
+        left_eye, left_mask = apply_divergence_nn_delta_weight(
+            model, c, depth, divergence=divergence, convergence=convergence, steps=1,
+            mapper=mapper, shift=-1,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp, edge_dilation=0,
+            return_mask=True,
+        )
+        right_eye, right_mask = c, None
+
+    return left_eye, right_eye, left_mask, right_mask
+
+
+class MLBWInpaintImage(nn.Module):
+    def __init__(self, device_id=-1, mask_mlbw=None):
         super().__init__()
         self.model = load_image_inpaint_model(device_id=device_id)
+        if mask_mlbw is None:
+            mask_mlbw = load_mask_mlbw(device_id=device_id)
+        self.mask_mlbw = mask_mlbw
+        self.device = create_device(device_id)
         self.eval()
 
     def train(self, mode=True):
@@ -45,24 +87,37 @@ class ForwardInpaintImage(nn.Module):
     def reset(self):
         pass
 
-    def flush(self):
+    def flush(self, enable_amp=True):
         return None, None
 
     def infer(
             self, x, depth,
-            divergence, convergence, synthetic_view="both",
+            divergence, convergence,
+            mapper="none",
+            preserve_screen_border=False,
+            synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=1920,
+            enable_amp=True,
             **_kwargs
     ):
-        return self.forward(x, depth, divergence=divergence, convergence=convergence,
-                            synthetic_view=synthetic_view,
-                            inner_dilation=inner_dilation, outer_dilation=outer_dilation,
-                            max_width=max_width)
+        return self.forward(
+            x, depth, divergence=divergence, convergence=convergence,
+            mapper=mapper,
+            preserve_screen_border=preserve_screen_border,
+            synthetic_view=synthetic_view,
+            inner_dilation=inner_dilation, outer_dilation=outer_dilation,
+            max_width=max_width,
+            enable_amp=enable_amp
+        )
 
     def forward(
             self, x, depth,
-            divergence, convergence, synthetic_view="both",
+            divergence, convergence,
+            mapper="none",
+            preserve_screen_border=False,
+            synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=1920,
+            enable_amp=True,
     ):
         if x.shape[-1] > max_width:
             if max_width % 2 != 0:
@@ -73,31 +128,40 @@ class ForwardInpaintImage(nn.Module):
                 new_h += 1
             x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", antialias=True, align_corners=False)
 
-        left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
-            x, depth,
+        left_eye, right_eye, left_mask, right_mask = apply_divergence(
+            self.mask_mlbw, x, depth,
             divergence=divergence, convergence=convergence,
-            synthetic_view=synthetic_view, return_mask=True
+            mapper=mapper,
+            preserve_screen_border=preserve_screen_border,
+            synthetic_view=synthetic_view,
+            enable_amp=enable_amp,
         )
         forward_kwargs = dict(
             inner_dilation=inner_dilation,
             outer_dilation=outer_dilation,
             base_width=depth.shape[-1]
         )
-        if synthetic_view == "both":
-            left_eye = forward_left(self.model, left_eye, left_mask, **forward_kwargs)
-            right_eye = forward_right(self.model, right_eye, right_mask, **forward_kwargs)
-            return left_eye, right_eye
-        elif synthetic_view == "right":
-            right_eye = forward_right(self.model, right_eye, right_mask, **forward_kwargs)
-            return left_eye, right_eye
-        elif synthetic_view == "left":
-            left_eye = forward_left(self.model, left_eye, left_mask, **forward_kwargs)
-            return left_eye, right_eye
+        with autocast(device=self.device, enabled=enable_amp):
+            if synthetic_view == "both":
+                left_eye = forward_left(self.model, left_eye, left_mask, **forward_kwargs)
+                right_eye = forward_right(self.model, right_eye, right_mask, **forward_kwargs)
+                return left_eye, right_eye
+            elif synthetic_view == "right":
+                right_eye = forward_right(self.model, right_eye, right_mask, **forward_kwargs)
+                return left_eye, right_eye
+            elif synthetic_view == "left":
+                left_eye = forward_left(self.model, left_eye, left_mask, **forward_kwargs)
+                return left_eye, right_eye
 
 
-class ForwardInpaintVideo(nn.Module):
-    def __init__(self, pre_padding=3, post_padding=3, device_id=-1):
+class MLBWInpaintVideo(nn.Module):
+    # TODO: Refactor with ForwardInpaintVideo
+    def __init__(self, pre_padding=3, post_padding=3, device_id=-1, mask_mlbw=None):
         super().__init__()
+        if mask_mlbw is None:
+            mask_mlbw = load_mask_mlbw(device_id=device_id)
+        self.mask_mlbw = mask_mlbw
+
         self.model_seq = 12
         self.pre_padding = pre_padding
         self.post_padding = post_padding
@@ -107,6 +171,7 @@ class ForwardInpaintVideo(nn.Module):
         self.inner_dilation = None
         self.outer_dilation = None
         self.base_width = None
+        self.device = create_device(device_id)
         self.eval()
 
     def train(self, mode=True):
@@ -154,10 +219,13 @@ class ForwardInpaintVideo(nn.Module):
 
     def infer(
             self, x, depth,
-            divergence, convergence, synthetic_view="both",
+            divergence, convergence,
+            mapper="none",
+            preserve_screen_border=False,
+            synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=1920,
-            batch_size=2,
-            **_kwargs,
+            enable_amp=True,
+            **_kwargs
     ):
         assert x.shape[0] <= self.model_seq  # Prevent self.frame_queue growth
 
@@ -170,18 +238,22 @@ class ForwardInpaintVideo(nn.Module):
             self.frame_queue = FrameQueue(synthetic_view=synthetic_view,
                                           seq=self.model_seq,
                                           height=x.shape[-2], width=x.shape[-1],
+                                          mask_height=depth.shape[-2], mask_width=depth.shape[-1],
                                           dtype=x.dtype, device=x.device)
 
-        left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
-            x, depth,
+        left_eye, right_eye, left_mask, right_mask = apply_divergence(
+            self.mask_mlbw, x, depth,
             divergence=divergence, convergence=convergence,
-            synthetic_view=synthetic_view, return_mask=True
+            mapper=mapper,
+            preserve_screen_border=preserve_screen_border,
+            synthetic_view=synthetic_view,
+            enable_amp=enable_amp,
         )
         for i in range(left_eye.shape[0]):
             repeat = self.pre_padding + 1 if self.frame_queue.empty() else 1
             if synthetic_view == "both":
                 for _ in range(repeat):
-                    self.frame_queue.add(left_eye[i], right_eye[i], left_mask=left_mask[i], right_mask=right_mask[i])
+                    self.frame_queue.add(left_eye[i], right_eye[i], left_mask[i], right_mask[i])
             elif synthetic_view == "right":
                 for _ in range(repeat):
                     self.frame_queue.add(left_eye[i], right_eye[i], right_mask=right_mask[i])
@@ -189,18 +261,20 @@ class ForwardInpaintVideo(nn.Module):
                 for _ in range(repeat):
                     self.frame_queue.add(left_eye[i], right_eye[i], left_mask=left_mask[i])
 
-        left_eye, right_eye = self.forward()
+        with autocast(device=self.device, enabled=enable_amp):
+            left_eye, right_eye = self.forward()
         if left_eye is not None:
             return left_eye, right_eye
         else:
             return None, None
 
-    def flush(self):
+    def flush(self, enable_amp=True):
         if self.frame_queue.empty():
             return None, None
 
         pad = self.frame_queue.fill()
-        left_eye, right_eye = self.forward(flush=True)
+        with autocast(device=self.device, enabled=enable_amp):
+            left_eye, right_eye = self.forward(flush=True)
 
         if pad > 0:
             return left_eye[:-pad], right_eye[:-pad]
@@ -208,11 +282,11 @@ class ForwardInpaintVideo(nn.Module):
             return left_eye, right_eye
 
 
-class ForwardInpaint(nn.Module):
+class MLBWInpaint(nn.Module):
     def __init__(self, device_id):
         super().__init__()
         self.device = create_device(device_id)
-        self.model = nn.ModuleList([ForwardInpaintImage(device_id=device_id), ForwardInpaintVideo(device_id=device_id)])
+        self.model = nn.ModuleList([MLBWInpaintImage(device_id=device_id), MLBWInpaintVideo(device_id=device_id)])
         self.mode = 0
         self.to(self.device)
         self.eval()
@@ -230,29 +304,33 @@ class ForwardInpaint(nn.Module):
     @torch.inference_mode()
     def infer(
             self, x, depth,
-            divergence, convergence, synthetic_view="both",
+            divergence, convergence,
+            mapper,
+            preserve_screen_border=False,
+            synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=1920,
             enable_amp=True,
             **_kwargs,
     ):
-        with autocast(device=self.device, enabled=enable_amp):
-            return self.model[self.mode].infer(
-                x, depth,
-                divergence=divergence,
-                convergence=convergence,
-                synthetic_view=synthetic_view,
-                inner_dilation=inner_dilation,
-                outer_dilation=outer_dilation,
-                max_width=max_width,
-                **_kwargs
-            )
+        return self.model[self.mode].infer(
+            x, depth,
+            divergence=divergence,
+            convergence=convergence,
+            mapper=mapper,
+            preserve_screen_border=preserve_screen_border,
+            synthetic_view=synthetic_view,
+            inner_dilation=inner_dilation,
+            outer_dilation=outer_dilation,
+            max_width=max_width,
+            enable_amp=enable_amp,
+            **_kwargs
+        )
 
     @torch.inference_mode()
     def flush(self, enable_amp=True):
-        with autocast(device=self.device, enabled=enable_amp):
-            ret = self.model[self.mode].flush()
-            self.reset()
-            return ret
+        ret = self.model[self.mode].flush(enable_amp=enable_amp)
+        self.reset()
+        return ret
 
 
 def _test_image():
@@ -260,7 +338,7 @@ def _test_image():
     import torchvision.io as io
     import time
 
-    model = ForwardInpaintImage().cuda()
+    model = MLBWInpaintImage().cuda()
     x = io.read_image("cc0/320/dog.png") / 255.0
     depth = io.read_image("cc0/depth/dog.png") / 65536.0
 
@@ -282,7 +360,7 @@ def _test_image():
 def _test_video():
     import torchvision.io as io
 
-    model = ForwardInpaintVideo().cuda()
+    model = MLBWInpaintVideo().cuda()
     x = io.read_image("cc0/320/dog.png") / 255.0
     depth = io.read_image("cc0/depth/dog.png") / 65536.0
 

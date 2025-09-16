@@ -2,6 +2,7 @@ from nunif.models import load_model
 from nunif.utils.ui import TorchHubDir
 from os import path
 from .forward_inpaint import ForwardInpaint
+from .mlbw_inpaint import MLBWInpaint
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
@@ -110,6 +111,8 @@ def create_stereo_model(
     with TorchHubDir(HUB_MODEL_DIR):
         if method.startswith("row_flow"):
             return load_row_flow_model(method, device_id=device_id)
+        elif method in {"mlbw_l2_inpaint"}:
+            return MLBWInpaint(device_id=device_id)
         elif method.startswith("mlbw_") or method.startswith("mask_mlbw_"):
             return load_mlbw_model(
                 method,

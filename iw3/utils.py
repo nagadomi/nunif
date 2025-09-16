@@ -271,14 +271,20 @@ def apply_divergence(depth, im, args, side_model):
         if not batch:
             left_eye = left_eye.squeeze(0)
             right_eye = right_eye.squeeze(0)
-    elif args.method in {"forward_inpaint"}:
-        depth = get_mapper(args.mapper)(depth)
+    elif args.method in {"forward_inpaint", "mlbw_l2_inpaint"}:
+        if args.method == "forward_inpaint":
+            depth = get_mapper(args.mapper)(depth)
+            mapper = None
+        else:
+            mapper = args.mapper
         left_eyes = []
         right_eyes = []
         for i in range(depth.shape[0]):
             left_eye, right_eye = side_model.infer(
                 im[i:i + 1], depth[i:i + 1],
                 divergence=args.divergence, convergence=args.convergence,
+                mapper=mapper,
+                preserve_screen_border=args.preserve_screen_border,
                 synthetic_view=args.synthetic_view,
                 inner_dilation=args.mask_inner_dilation,
                 outer_dilation=args.mask_outer_dilation,
@@ -833,7 +839,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     is_video_depth_anything_streaming = depth_model.get_name() == "VideoDepthAnythingStreaming"
-    is_inpaint_model = args.method in {"forward_inpaint"}
+    is_inpaint_model = args.method in {"forward_inpaint", "mlbw_l2_inpaint"}
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
@@ -1739,7 +1745,7 @@ def create_parser(required_true=True):
                         choices=["grid_sample", "backward",
                                  "forward", "forward_fill", "forward_inpaint",
                                  "mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s",
-                                 "mask_mlbw_l2",
+                                 "mask_mlbw_l2", "mlbw_l2_inpaint",
                                  "row_flow", "row_flow_sym",
                                  "row_flow_v3", "row_flow_v3_sym",
                                  "row_flow_v2"],
@@ -2112,7 +2118,7 @@ def iw3_main(args):
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
         device_id=args.gpu[0]
     )
-    if side_model is not None and len(args.gpu) > 1 and not args.method == "forward_inpaint":
+    if side_model is not None and len(args.gpu) > 1 and not args.method in {"forward_inpaint", "mlbw_l2_inpaint"}:
         side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
 
     if args.find_param:
