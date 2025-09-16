@@ -30,7 +30,7 @@ def gen_divergence(width, divergence_level):
         # NOTE: min(32.0 / (width * 0.5) * 100, max_divergence) is correct but use this
         max_divergence = min(OFFSET / (width * 0.5) * 100, 5.0)
         if random.uniform(0, 1) < 0.7:
-            return random.choice([2., 2.5, 3.0])
+            return random.choice([2., 2.5, 3.0, 4.0])
         else:
             return random.uniform(0., max_divergence)
     elif divergence_level == 2:
@@ -74,9 +74,9 @@ def gen_mapper(is_metric):
 
 def gen_edge_dilation(model_type, depth_resolution):
     if depth_resolution is not None and depth_resolution >= 512:
-        return random.choice([0] * 6 + [1, 2, 2, 2, 3, 4])
+        return random.choice([0] * 6 + [1, 1, 1, 2, 3, 4])
     else:
-        return random.choice([0] * 3 + [1, 2, 2])
+        return random.choice([0] * 3 + [1, 1, 2])
 
 
 def crop_resize(im, min_size):
@@ -210,6 +210,9 @@ def main(args):
             seq = 0
             for im, meta in tqdm(loader, ncols=80):
                 if im is None:
+                    continue
+                if max(im.size) > min(im.size) * 3:
+                    # skip extreme aspect ratios
                     continue
 
                 data = gen_data(im, depth_model, mask_mlbw, args)
