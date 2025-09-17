@@ -9,7 +9,7 @@ from .inpaint_utils import FrameQueue, load_image_inpaint_model, load_video_inpa
 
 
 def forward_right(model, right_eye, right_mask, inner_dilation, outer_dilation, base_width):
-    right_mask = right_mask > 0.5
+    right_mask = right_mask > 0
     right_mask = mask_closing(right_mask)
     right_mask = dilate_outer(right_mask, n_iter=outer_dilation, base_width=base_width)
     right_mask = dilate_inner(right_mask, n_iter=inner_dilation, base_width=base_width)
@@ -19,7 +19,7 @@ def forward_right(model, right_eye, right_mask, inner_dilation, outer_dilation, 
 
 
 def forward_left(model, left_eye, left_mask, inner_dilation, outer_dilation, base_width):
-    left_mask = left_mask > 0.5
+    left_mask = left_mask > 0
     # flip for right view base
     left_eye, left_mask = left_eye.flip(-1), left_mask.flip(-1)
 
