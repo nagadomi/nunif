@@ -387,15 +387,15 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
 
 
 def postprocess_hole_mask(mask_logits, target_size, threshold, inner_dilation=0, outer_dilation=0):
+    base_width = mask_logits.shape[-1]
     mask_logits = closing(mask_logits, n_iter=1)
-    mask_logits = dilate_inner(mask_logits, n_iter=inner_dilation)
-    mask_logits = dilate_outer(mask_logits, n_iter=outer_dilation)
-
     if target_size != mask_logits.shape[-2:]:
         mask_logits = F.interpolate(mask_logits, size=target_size,
                                     mode="bilinear", align_corners=True, antialias=False)
     mask = torch.sigmoid(mask_logits)
     mask = (mask > threshold)
+    mask = dilate_inner(mask, n_iter=inner_dilation, base_width=base_width)
+    mask = dilate_outer(mask, n_iter=outer_dilation, base_width=base_width)
 
     return mask
 
