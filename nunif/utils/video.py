@@ -744,11 +744,11 @@ def try_replace(output_path_tmp, output_path):
 
 def test_audio_copy(input_path, output_path):
     buff = io.BytesIO()
-    container_format = path.splitext(output_path)[-1][1:]
+    buff.name = path.basename(output_path)
     try:
         with (
                 av.open(input_path) as input_container,
-                av.open(buff, mode="w", format=container_format) as output_container,
+                av.open(buff, mode="w") as output_container,
         ):
             if len(input_container.streams.audio) > 0:
                 audio_input_stream = input_container.streams.audio[0]
