@@ -194,7 +194,7 @@ class VideoInpaintDataset(Dataset):
         if self.model_sequence_offset > 0:
             y = y[self.model_sequence_offset:-self.model_sequence_offset]
 
-        mask = mask > 0.5
+        mask = mask > 0
 
         return x, mask, y, index
 

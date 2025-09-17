@@ -105,7 +105,7 @@ class InpaintDataset(Dataset):
                     y.shape[-2] - self.model_offset * 2,
                     y.shape[-1] - self.model_offset * 2)
 
-        mask = mask > 0.5
+        mask = mask > 0
 
         return x, mask, y, index
 
