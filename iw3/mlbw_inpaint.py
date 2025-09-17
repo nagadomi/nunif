@@ -52,7 +52,7 @@ def apply_divergence(model, c, depth, divergence, convergence, mapper, preserve_
     elif synthetic_view == "right":
         left_eye, left_mask = c, None
         right_eye, right_mask = apply_divergence_nn_delta_weight(
-            model, c, depth, divergence=divergence, convergence=convergence, steps=1,
+            model, c, depth, divergence=divergence * 2, convergence=convergence, steps=1,
             mapper=mapper, shift=1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
@@ -60,7 +60,7 @@ def apply_divergence(model, c, depth, divergence, convergence, mapper, preserve_
         )
     elif synthetic_view == "left":
         left_eye, left_mask = apply_divergence_nn_delta_weight(
-            model, c, depth, divergence=divergence, convergence=convergence, steps=1,
+            model, c, depth, divergence=divergence * 2, convergence=convergence, steps=1,
             mapper=mapper, shift=-1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
