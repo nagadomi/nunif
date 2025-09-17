@@ -1,20 +1,21 @@
+import contextlib
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.device import create_device, autocast
+from nunif.models.utils import compile_model
 from .backward_warp import apply_divergence_nn_delta_weight, postprocess_hole_mask
 from . import models  # noqa
-from .inpaint_utils import FrameQueue, load_image_inpaint_model, load_video_inpaint_model, load_mask_mlbw
+from .inpaint_utils import (
+    FrameQueue,
+    CompileContext,
+    load_image_inpaint_model,
+    load_video_inpaint_model,
+    load_mask_mlbw,
+)
 
 
-def pth_url(filename):
-    return "https://github.com/nagadomi/nunif/releases/download/0.0.0/" + filename
-
-
-MASK_MLBW_L2_D1_URL = pth_url("iw3_mask_mlbw_l2_d1_20250903.pth")
 MASK_MLBW_THRESHOLD = 0.15
-VIDEO_MODEL_URL = "models/video_inpant_v6/inpaint.light_video_inpaint_v1.pth"
-IMAGE_MODEL_URL = "models/inpant_v7_gan4_ffc6/inpaint.light_inpaint_v1.pth"
 
 
 def forward_right(model, right_eye, right_mask, inner_dilation, outer_dilation, base_width):
@@ -177,6 +178,15 @@ class MLBWInpaintVideo(nn.Module):
     def train(self, mode=True):
         super().train(mode=False)
 
+    def compile(self):
+        self.model_backup = (self.model, self.mask_mlbw)
+        self.model = compile_model(self.model)
+        self.mask_mlbw = compile_model(self.mask_mlbw)
+
+    def clear_compiled_model(self):
+        self.model, self.mask_mlbw = self.model_backup
+        self.model_backup = None
+
     def reset(self):
         if self.frame_queue is not None:
             self.frame_queue.clear()
@@ -300,6 +310,24 @@ class MLBWInpaint(nn.Module):
 
     def reset(self):
         self.model[self.mode].reset()
+
+    def compile(self):
+        if hasattr(self.model[self.mode], "compile"):
+            self.model[self.mode].compile()
+        else:
+            pass
+
+    def clear_compiled_model(self):
+        if hasattr(self.model[self.mode], "clear_compiled_model"):
+            self.model[self.mode].clear_compiled_model()
+        else:
+            pass
+
+    def compile_context(self, enabled=True):
+        if enabled:
+            return CompileContext(self)
+        else:
+            return contextlib.nullcontext()
 
     @torch.inference_mode()
     def infer(

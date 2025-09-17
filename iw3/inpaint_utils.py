@@ -125,3 +125,16 @@ class FrameQueue():
 
     def clear(self):
         self.index = 0
+
+
+class CompileContext():
+    def __init__(self, base_model):
+        self.base_model = base_model
+
+    def __enter__(self):
+        self.base_model.compile()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.base_model.clear_compiled_model()
+        return False

@@ -11,6 +11,7 @@ import threading
 import math
 from tqdm import tqdm
 from PIL import Image
+import contextlib
 from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
@@ -842,6 +843,13 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     return frame_callback
 
 
+def try_compile_context(side_model, enabled):
+    if enabled and side_model is not None and hasattr(side_model, "compile_context"):
+        return side_model.compile_context()
+    else:
+        return contextlib.nullcontext()
+
+
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
@@ -854,7 +862,12 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("video")
 
-    if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
+    if (
+            args.compile and
+            side_model is not None and
+            not isinstance(side_model, DeviceSwitchInference) and
+            not hasattr(side_model, "compile_context")
+    ):
         side_model = compile_model(side_model)
 
     if is_output_dir(output_path):
@@ -924,7 +937,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         return VU.to_frame(x, use_16bit=use_16bit)
 
     if is_video_depth_anything:
-        with depth_model.compile_context(enabled=args.compile):
+        with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
                              frame_callback=bind_vda_frame_callback(
@@ -943,7 +956,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              end_time=args.end_time)
 
     elif args.low_vram or args.debug_depth or is_video_depth_anything_streaming or is_inpaint_model:
-        with depth_model.compile_context(enabled=args.compile):
+        with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
             VU.process_video(input_filename, output_filename,
                              config_callback=config_callback,
                              frame_callback=bind_single_frame_callback(

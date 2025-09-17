@@ -1,11 +1,18 @@
+import contextlib
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nunif.device import create_device, autocast
+from nunif.models.utils import compile_model
 from .dilation import mask_closing, dilate_outer, dilate_inner
 from .forward_warp import apply_divergence_forward_warp
 from . import models  # noqa
-from .inpaint_utils import FrameQueue, load_image_inpaint_model, load_video_inpaint_model
+from .inpaint_utils import (
+    FrameQueue,
+    CompileContext,
+    load_image_inpaint_model,
+    load_video_inpaint_model,
+)
 
 
 def forward_right(model, right_eye, right_mask, inner_dilation, outer_dilation, base_width):
@@ -111,6 +118,14 @@ class ForwardInpaintVideo(nn.Module):
 
     def train(self, mode=True):
         super().train(mode=False)
+
+    def compile(self):
+        self.model_backup = self.model
+        self.model = compile_model(self.model)
+
+    def clear_compiled_model(self):
+        self.model = self.model_backup
+        self.model_backup = None
 
     def reset(self):
         if self.frame_queue is not None:
@@ -226,6 +241,24 @@ class ForwardInpaint(nn.Module):
 
     def reset(self):
         self.model[self.mode].reset()
+
+    def compile(self):
+        if hasattr(self.model[self.mode], "compile"):
+            self.model[self.mode].compile()
+        else:
+            pass
+
+    def clear_compiled_model(self):
+        if hasattr(self.model[self.mode], "clear_compiled_model"):
+            self.model[self.mode].clear_compiled_model()
+        else:
+            pass
+
+    def compile_context(self, enabled=True):
+        if enabled:
+            return CompileContext(self)
+        else:
+            return contextlib.nullcontext()
 
     @torch.inference_mode()
     def infer(
