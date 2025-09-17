@@ -1,8 +1,6 @@
 import torch
 import torch.nn.functional as F
 from nunif.modules.replication_pad2d import ReplicationPad2d
-from nunif.device import autocast
-from .dilation import mask_closing
 
 
 def box_blur(x, kernel_size=7):
@@ -140,12 +138,8 @@ def gen_mask2(mask):
 
 
 def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
-                                      synthetic_view="both", inpaint_model=None,
-                                      return_mask=False, inconsistent_shift=False,
-                                      edge_dilation=2):
-    # TODO
-    # dilation = round((c.shape[-2] / depth.shape[-2]) * edge_dilation) if edge_dilation > 0 else 0
-    dilation = 0
+                                      synthetic_view="both",
+                                      return_mask=False, inconsistent_shift=False):
     src_image = c
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
@@ -194,17 +188,8 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             left_mask, right_mask = gen_mask2(left_eye), gen_mask2(right_eye)
 
         if fill:
-            if inpaint_model is None:
-                # super simple inpainting
-                left_eye, right_eye = shift_fill_pack(left_eye, right_eye, inconsistent_shift=inconsistent_shift)
-            else:
-                with autocast(device=left_eye.device, enabled=True):
-                    left_eye = left_eye.flip(-1)
-                    left_mask = (left_eye < 0)[:, 0:1, :, :]
-                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True).flip(-1)
-
-                    right_mask = (right_eye < 0)[:, 0:1, :, :]
-                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True)
+            # super simple inpainting
+            left_eye, right_eye = shift_fill_pack(left_eye, right_eye, inconsistent_shift=inconsistent_shift)
         else:
             # drop undefined values
             left_eye = torch.clamp(left_eye, 0, 1)
@@ -224,12 +209,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         if return_mask:
             right_mask = gen_mask2(right_eye)
         if fill:
-            if inpaint_model is None:
-                right_eye = shift_fill(right_eye, 1)
-            else:
-                with autocast(device=right_eye.device, enabled=True):
-                    right_mask = (right_eye < 0)[:, 0:1]
-                    right_eye = inpaint_model.infer(right_eye, right_mask, closing=True)
+            right_eye = shift_fill(right_eye, 1)
         else:
             right_eye = torch.clamp(right_eye, 0, 1)
 
@@ -248,13 +228,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
             left_mask = gen_mask2(left_eye)
 
         if fill:
-            if inpaint_model is None:
-                left_eye = shift_fill(left_eye, -1)
-            else:
-                with autocast(device=left_eye.device, enabled=True):
-                    left_eye = left_eye.flip(-1)
-                    left_mask = (left_eye < 0)[:, 0:1, :, :]
-                    left_eye = inpaint_model.infer(left_eye, left_mask, closing=True).flip(-1)
+            left_eye = shift_fill(left_eye, -1)
         else:
             left_eye = torch.clamp(left_eye, 0, 1)
 
@@ -265,21 +239,13 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 
 
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None,
-                                  synthetic_view="both", inpaint_model=None,
+                                  synthetic_view="both",
                                   return_mask=False, inconsistent_shift=False,
                                   inpaint_max_width=1920):
-    if inpaint_model is not None and c.shape[-1] > inpaint_max_width:
-        new_w = inpaint_max_width
-        new_h = int((inpaint_max_width / c.shape[-1]) * c.shape[-2])
-        if new_h % 2 != 0:
-            new_h += 1
-        c = F.interpolate(c, size=(new_h, new_w), mode="bilinear", antialias=True, align_corners=True)
-
     fill = (method == "forward_fill")
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
                                                  fill=fill, synthetic_view=synthetic_view,
-                                                 inpaint_model=inpaint_model,
                                                  return_mask=return_mask,
                                                  inconsistent_shift=inconsistent_shift)
 
@@ -365,8 +331,9 @@ def _test_nonwarp_mask():
     # https://github.com/user-attachments/assets/69ea87ff-4f01-40d2-abd7-477bfe368df6
     import torchvision.transforms.functional as TF
     import torchvision.io as io
+    from .dilation import mask_closing
 
-    view = "right" # left
+    view = "right"  # left
     x = io.read_image("cc0/320/dog.png") / 255.0
     depth = io.read_image("cc0/depth/dog.png") / 65536.0
     x = x.unsqueeze(0).cuda()

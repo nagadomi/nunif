@@ -121,7 +121,6 @@ def apply_divergence_nn_LR(
         synthetic_view="both",
         preserve_screen_border=False,
         enable_amp=True,
-        edge_dilation=0
 ):
     assert synthetic_view in {"both", "right", "left"}
     steps = 1 if steps is None else steps
@@ -135,22 +134,22 @@ def apply_divergence_nn_LR(
             left_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                                            mapper=mapper, shift=-1,
                                            preserve_screen_border=preserve_screen_border,
-                                           enable_amp=enable_amp, edge_dilation=edge_dilation)
+                                           enable_amp=enable_amp)
             right_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
                                             mapper=mapper, shift=1,
                                             preserve_screen_border=preserve_screen_border,
-                                            enable_amp=enable_amp, edge_dilation=edge_dilation)
+                                            enable_amp=enable_amp)
         elif synthetic_view == "right":
             left_eye = c
             right_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
                                             mapper=mapper, shift=1,
                                             preserve_screen_border=preserve_screen_border,
-                                            enable_amp=enable_amp, edge_dilation=edge_dilation)
+                                            enable_amp=enable_amp)
         elif synthetic_view == "left":
             left_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
                                            mapper=mapper, shift=-1,
                                            preserve_screen_border=preserve_screen_border,
-                                           enable_amp=enable_amp, edge_dilation=edge_dilation)
+                                           enable_amp=enable_amp)
             right_eye = c
 
     return left_eye, right_eye
@@ -161,7 +160,6 @@ def apply_divergence_nn(
         mapper, shift,
         preserve_screen_border=False,
         enable_amp=True,
-        edge_dilation=0
 ):
     if model.name == "sbs.mlbw":
         return apply_divergence_nn_delta_weight(
@@ -172,8 +170,7 @@ def apply_divergence_nn(
             mapper=mapper,
             shift=shift,
             preserve_screen_border=preserve_screen_border,
-            enable_amp=enable_amp,
-            edge_dilation=edge_dilation)
+            enable_amp=enable_amp)
     else:
         return apply_divergence_nn_delta(
             model, c, depth,
@@ -269,7 +266,6 @@ def apply_divergence_nn_delta_weight(
         preserve_screen_border=False,
         enable_amp=True,
         return_mask=False,
-        edge_dilation=0
 ):
     # BCHW
     assert model.delta_output
@@ -349,7 +345,6 @@ def apply_divergence_nn_delta_weight(
                 hole_mask_logits,
                 target_size=c.shape[-2:],
                 threshold=0.15,
-                dilation=edge_dilation + 1,
             )
             z = z * (1 - hole_mask.float())
 
