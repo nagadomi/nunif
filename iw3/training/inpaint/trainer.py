@@ -389,12 +389,29 @@ class InpaintTrainer(Trainer):
             )
         elif self.args.loss == "l1lpips":
             criterion = LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4)
+        elif self.args.loss == "l1dctlpips":
+            base_loss = WeightedLoss(
+                (
+                    DCTLoss(window_size=32, clamp=True, overlap=True),
+                    ClampLoss(torch.nn.L1Loss())
+                ),
+                weights=(0.5, 0.5)
+            )
+            criterion = LPIPSWith(base_loss, weight=0.2)
         elif self.args.loss == "temporal_l1lpips":
             base_loss = WeightedLoss((
                 ClampLoss(torch.nn.L1Loss()),
                 TemporalGradientLoss(),
                 TemporalSmoothingPenalty()
             ), weights=(0.8, 0.2, 0.01))
+            criterion = LPIPSWith(base_loss, weight=0.2)
+        elif self.args.loss == "temporal_l1dctlpips":
+            base_loss = WeightedLoss((
+                ClampLoss(torch.nn.L1Loss()),
+                DCTLoss(window_size=32, clamp=True, overlap=True),
+                TemporalGradientLoss(),
+                TemporalSmoothingPenalty()
+            ), weights=(0.4, 0.4, 0.2, 0.01))
             criterion = LPIPSWith(base_loss, weight=0.2)
         elif self.args.loss == "l1dinov2":
             criterion = DINOv2CosineWith(ClampLoss(torch.nn.L1Loss()), weight=0.1)
@@ -435,8 +452,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2",
-                                                                    "temporal_l1lpips", "temporal_l1"],
+    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2", "l1dctlpips",
+                                                                    "temporal_l1lpips", "temporal_l1dctlpips"],
                         help="loss")
     parser.add_argument("--discriminator", type=str, help="discriminator")
     parser.add_argument("--generator-warmup-iteration", type=int, default=500,
