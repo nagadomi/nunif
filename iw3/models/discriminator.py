@@ -1,10 +1,11 @@
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
 from nunif.models import Model
 from nunif.modules.pad import get_crop_size, get_fit_pad_size
-from nunif.modules.reflection_pad2d import reflection_pad2d_naive, ReflectionPad2dNaive
+from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
 from nunif.models import register_model
 from nunif.modules.attention import SEBlock
 from nunif.modules.res_block import ResBlockGNLReLU
@@ -26,7 +27,7 @@ def modcrop(x, n):
 
 def fit_to_size(x, cond):
     pad = get_fit_pad_size(cond, x)
-    cond = reflection_pad2d_naive(cond, pad, detach=True)
+    cond = replication_pad2d_naive(cond, pad, detach=True)
     return cond
 
 
@@ -81,14 +82,17 @@ class L3Discriminator(Discriminator):
     def __init__(self, in_channels=3, out_channels=1):
         super().__init__(locals())
         self.features = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1, padding_mode="replicate"),
+            ReplicationPad2dNaive((1,) * 4, detach=True),
+            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 64),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False),
+            ReplicationPad2dNaive((1,) * 4, detach=True),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=0, bias=False),
             nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.2, inplace=True),
             SEBlock(128, bias=True),
-            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1, bias=False),
+            ReplicationPad2dNaive((1,) * 4, detach=True),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=0, bias=False),
         )
         self.classifier = nn.Sequential(
             nn.GroupNorm(32, 256),
@@ -96,7 +100,8 @@ class L3Discriminator(Discriminator):
             SEBlock(256, bias=True),
             ResBlockGNLReLU(256, 512, bias=False),
             SEBlock(512, bias=True),
-            spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=1)))
+            ReplicationPad2dNaive((1,) * 4, detach=True),
+            spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0)))
         basic_module_init(self)
 
     @conditional_compile("NUNIF_TRAIN")
@@ -117,7 +122,6 @@ class L3ConditionalDiscriminator(L3Discriminator):
         super().__init__(in_channels=in_channels, out_channels=out_channels)
         self.to_cond = ImageToCondition(32, [256])
 
-    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, mask=None):
         x = modcrop(x, 8)
         c = fit_to_size(x, c)
@@ -150,7 +154,7 @@ class FFCBlock(nn.Module):
         self.fusion = nn.Sequential(
             nn.Conv2d(in_channels * 2, in_channels, kernel_size=1, stride=1, padding=0),
             nn.LeakyReLU(0.2, inplace=True),
-            ReflectionPad2dNaive((1,) * 4, detach=True),
+            ReplicationPad2dNaive((1,) * 4, detach=True),
             nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=0)
         )
 
@@ -166,19 +170,19 @@ class FFCDiscriminator(Discriminator):
     def __init__(self):
         super().__init__(locals())
         self.features = nn.Sequential(
-            ReflectionPad2dNaive((1,) * 4, detach=True),
+            ReplicationPad2dNaive((1,) * 4, detach=True),
             nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 64),
             nn.LeakyReLU(0.2, inplace=True),
             FFCBlock(64),
 
-            ReflectionPad2dNaive((1,) * 4, detach=True),
+            ReplicationPad2dNaive((1,) * 4, detach=True),
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.2, inplace=True),
             FFCBlock(128),
 
-            ReflectionPad2dNaive((1,) * 4, detach=True),
+            ReplicationPad2dNaive((1,) * 4, detach=True),
             nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 256),
             nn.LeakyReLU(0.2, inplace=True),
@@ -186,7 +190,6 @@ class FFCDiscriminator(Discriminator):
         )
         self.classifier = nn.Conv2d(256, 1, kernel_size=1, stride=1, padding=0)
 
-    @conditional_compile("NUNIF_TRAIN")
     def forward(self, x, c=None, mask=None):
         x = modcrop(x, 8)
         c = fit_to_size(x, c)
@@ -208,6 +211,87 @@ class FFCDiscriminator(Discriminator):
             return x
 
 
+@register_model
+class FFCEnsembleDiscriminator(Discriminator):
+    name = "inpaint.ffc_ensemble_discriminator"
+
+    def __init__(self, imbalanced_prob=True):
+        super().__init__(locals())
+        N = 3
+        if imbalanced_prob:
+            self.prob = [1.0, 0.5, 0.25]
+        else:
+            self.prob = [1.0] * N
+        self.prob = [p / sum(self.prob) for p in self.prob]
+        self.indexes = list(range(N))
+        self.index = 0
+
+        self.ffc = nn.ModuleList([
+            FFCDiscriminator() for i in range(N)
+        ])
+
+    def round(self):
+        # called from the trainer at every iteration.
+        self.index = random.choices(self.indexes, weights=self.prob, k=1)[0]
+
+    def forward(self, x, c=None, mask=None):
+        return self.ffc[self.index](x, c, mask)
+
+
+@register_model
+class L3CEnsembleDiscriminator(Discriminator):
+    name = "inpaint.l3_conditional_ensemble_discriminator"
+
+    def __init__(self, in_channels=3, out_channels=1, imbalanced_prob=True):
+        super().__init__(locals())
+        N = 3
+        if imbalanced_prob:
+            self.prob = [1.0, 0.5, 0.25]
+        else:
+            self.prob = [1.0] * N
+        self.prob = [p / sum(self.prob) for p in self.prob]
+        self.indexes = list(range(N))
+        self.index = 0
+
+        self.l3c = nn.ModuleList([
+            L3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels) for i in range(N)
+        ])
+
+    def round(self):
+        # called from the trainer at every iteration.
+        self.index = random.choices(self.indexes, weights=self.prob, k=1)[0]
+
+    def forward(self, x, c=None, mask=None):
+        return self.l3c[self.index](x, c, mask)
+
+
+@register_model
+class L3CFFCEnsembleDiscriminator(Discriminator):
+    name = "inpaint.l3c_ffc_ensemble_discriminator"
+
+    def __init__(self):
+        super().__init__(locals())
+        N = 4
+        self.prob = [1.0, 0.5, 1.0, 0.5]
+        self.prob = [p / sum(self.prob) for p in self.prob]
+        self.indexes = list(range(N))
+        self.index = 0
+
+        self.desc = nn.ModuleList([
+            L3ConditionalDiscriminator(),
+            L3ConditionalDiscriminator(),
+            FFCDiscriminator(),
+            FFCDiscriminator(),
+        ])
+
+    def round(self):
+        # called from the trainer at every iteration.
+        self.index = random.choices(self.indexes, weights=self.prob, k=1)[0]
+
+    def forward(self, x, c=None, mask=None):
+        return self.desc[self.index](x, c, mask)
+
+
 def _test(name):
     from nunif.models import create_model
     device = "cuda"
@@ -222,4 +306,7 @@ def _test(name):
 
 if __name__ == "__main__":
     _test("inpaint.l3_conditional_discriminator")
+    _test("inpaint.l3_conditional_ensemble_discriminator")
     _test("inpaint.ffc_discriminator")
+    _test("inpaint.ffc_ensemble_discriminator")
+    _test("inpaint.l3c_ffc_ensemble_discriminator")

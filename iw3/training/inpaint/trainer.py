@@ -24,7 +24,11 @@ from nunif.logger import logger
 from .dataset import InpaintDataset
 from .dataset_video import VideoInpaintDataset, SEQ as VIDEO_SEQ
 from ... import models as _m # noqa
-from ...models.discriminator import L3ConditionalDiscriminator, FFCDiscriminator
+from ...models.discriminator import (
+    L3ConditionalDiscriminator, L3CEnsembleDiscriminator,
+    FFCDiscriminator, FFCEnsembleDiscriminator,
+    L3CFFCEnsembleDiscriminator,
+)
 
 
 class TemporalGradientLoss(torch.nn.Module):
@@ -48,8 +52,14 @@ def create_discriminator(discriminator, device_ids, device):
         return None
     elif discriminator == "l3c":
         model = create_model(L3ConditionalDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "l3ce":
+        model = create_model(L3CEnsembleDiscriminator.name, device_ids=device_ids)
     elif discriminator == "ffc":
         model = create_model(FFCDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "ffce":
+        model = create_model(FFCEnsembleDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "l3cffce":
+        model = create_model(L3CFFCEnsembleDiscriminator.name, device_ids=device_ids)
     else:
         model = create_model(discriminator, device_ids=device_ids)
     return model.to(device)
@@ -158,6 +168,9 @@ class InpaintEnv(I2IEnv):
                     self.sum_loss += loss.item()
                     self.sum_step += 1
             else:
+                if hasattr(self.discriminator, "round"):
+                    self.discriminator.round()
+
                 self.discriminator.requires_grad_(False)
 
                 x, mask = self.model.preprocess(x, mask)
@@ -192,7 +205,7 @@ class InpaintEnv(I2IEnv):
         last_layer = get_last_layer(self.model)
         weight = self.calculate_adaptive_weight(
             recon_loss, generator_loss, last_layer, grad_scaler,
-            min=1e-5,
+            min=1e-3,
             max=10.0,
             mode="norm",
             adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema
@@ -458,7 +471,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--discriminator", type=str, help="discriminator")
     parser.add_argument("--generator-warmup-iteration", type=int, default=500,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
-    parser.add_argument("--discriminator-weight", type=float, default=0.1,
+    parser.add_argument("--discriminator-weight", type=float, default=0.2,
                         help="discriminator loss weight")
     parser.add_argument("--diff-aug", action="store_true",
                         help="Use differentiable transforms for reconstruction loss and discriminator")
