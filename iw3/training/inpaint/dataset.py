@@ -41,6 +41,29 @@ class LeftDilate():
         return mask
 
 
+def crop(images, i, j, h, w):
+    results = []
+    for im in images:
+        results.append(im[:, i:i + h, j:j + w])
+
+    return tuple(results)
+
+
+def fixed_hard_example_crop(size, *images):
+    results = []
+    H, W = images[0].shape[-2:]
+    h = 0
+    for h in range(0, H - size + 1, size // 4):
+        for w in range(0, W - size + 1, size // 4):
+            crop_images = crop(images, h, w, size, size)
+            mask = crop_images[-1]
+            mask_sum = mask.float().sum().item()
+            results.append((mask_sum, crop_images))
+
+    results = sorted(results, key=lambda v: v[0], reverse=True)
+    return results[0][1]
+
+
 class InpaintDataset(Dataset):
     def __init__(self, input_dir, model_offset, training):
         super().__init__()
@@ -54,7 +77,6 @@ class InpaintDataset(Dataset):
             T.RandomGrayscale(p=0.05),
         ])
         self.random_crop = TP.RandomHardExampleCrop(SIZE)
-        self.center_crop = TP.CenterCrop(SIZE)
         self.right_dilate = RightDilate()
         self.left_dilate = LeftDilate()
 
@@ -98,7 +120,7 @@ class InpaintDataset(Dataset):
         if self.training:
             mask, x = self.random_crop(mask, x)
         else:
-            mask, x = self.center_crop(mask, x)
+            x, mask = fixed_hard_example_crop(SIZE, x, mask)
 
         y = x.clone()
         y = TF.crop(y, self.model_offset, self.model_offset,
