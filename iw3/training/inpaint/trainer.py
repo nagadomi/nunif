@@ -82,6 +82,8 @@ def diff_dequant_noise(inputs):
 def get_last_layer(model):
     if model.name == "inpaint.light_inpaint_v1":
         return model.to_image[-1].weight
+    if model.name == "inpaint.light_video_inpaint_v1":
+        return model.to_image.weight
     else:
         raise NotImplementedError()
 
