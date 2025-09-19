@@ -9,9 +9,8 @@ def pth_url(filename):
 
 
 HUB_MODEL_DIR = os.path.join(os.path.dirname(__file__), "pretrained_models", "hub")
-VIDEO_MODEL_URL = "models/video_inpaint_v6/inpaint.light_video_inpaint_v1.pth"
-IMAGE_MODEL_URL = "models/inpant_v7_gan4_ffc6/inpaint.light_inpaint_v1.pth"
-
+VIDEO_MODEL_URL = pth_url("iw3_light_video_inpaint_v1_20250919.pth")  # "models/video_inpaint_v8/inpaint.light_video_inpaint_v1.pth"
+IMAGE_MODEL_URL = pth_url("iw3_light_inpaint_v1_20250919.pth")        # "models/inpant_v10_gan_l3cffc/inpaint.light_inpaint_v1.pth"
 MASK_MLBW_L2_D1_URL = pth_url("iw3_mask_mlbw_l2_d1_20250903.pth")
 
 
