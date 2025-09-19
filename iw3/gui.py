@@ -1420,6 +1420,11 @@ class MainFrame(wx.Frame):
                     max_divergence = 10.0
                 else:
                     max_divergence = 10.0 * 0.5
+            elif method in {"forward_inpaint", "mlbw_l2_inpaint"}:
+                if synthetic_view == "both":
+                    max_divergence = 5.0
+                else:
+                    max_divergence = 5.0 * 0.5
 
             if divergence > max_divergence:
                 self.lbl_divergence_warning.SetLabel(
