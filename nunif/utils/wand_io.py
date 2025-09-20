@@ -1,25 +1,32 @@
 import torch
-from wand.image import Image, IMAGE_TYPES
-from wand.api import library
-from wand.color import Color
 import io
 from PIL import ImageCms
 from ..transforms.functional import quantize256
+try:
+    from wand.image import Image, IMAGE_TYPES
+    from wand.api import library
+    from wand.color import Color
 
+    GRAYSCALE_TYPES = {
+        "grayscale",
+        "grayscalematte",
+        "grayscalealpha",
+    }
+    GRAYSCALE_ALPHA_TYPE = "grayscalealpha" if "grayscalealpha" in IMAGE_TYPES else "grayscalematte"
+    GRAYSCALE_TYPE = "grayscale"
+    RGBA_TYPE = "truecoloralpha" if "truecoloralpha" in IMAGE_TYPES else "truecolormatte"
+    RGB_TYPE = "truecolor"
+    GAMMA_LCD = 45454
+except ImportError:
+    import sys
+    print(
+        "Warning: wand or ImageMagick is not installed."
+        " If you want to train waifu2x or cliqa models on Windows, "
+        " see https://docs.wand-py.org/en/0.6.7/guide/install.html#install-imagemagick-windows.",
+        file=sys.stderr
+    )
 
 sRGB_profile = ImageCms.core.profile_tobytes(ImageCms.createProfile("sRGB"))
-
-
-GRAYSCALE_TYPES = {
-    "grayscale",
-    "grayscalematte",
-    "grayscalealpha",
-}
-GRAYSCALE_ALPHA_TYPE = "grayscalealpha" if "grayscalealpha" in IMAGE_TYPES else "grayscalematte"
-GRAYSCALE_TYPE = "grayscale"
-RGBA_TYPE = "truecoloralpha" if "truecoloralpha" in IMAGE_TYPES else "truecolormatte"
-RGB_TYPE = "truecolor"
-GAMMA_LCD = 45454
 
 
 def decode_image(blob, filename=None, color=None, keep_alpha=False, **kwargs):
