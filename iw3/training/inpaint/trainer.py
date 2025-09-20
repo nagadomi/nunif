@@ -454,6 +454,20 @@ class InpaintTrainer(Trainer):
 
 
 def train(args):
+    if args.loss is None:
+        if args.video:
+            args.loss = "temporal_l1lpips"
+        else:
+            args.loss = "l1lpips"
+
+    if args.arch is None:
+        if args.video:
+            args.arch = "inpaint.light_video_inpaint_v1"
+        else:
+            args.arch = "inpaint.light_inpaint_v1"
+
+    args.diff_aug = args.loss not in {"dct"}
+
     trainer = InpaintTrainer(args)
     trainer.fit()
 
@@ -464,25 +478,24 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
+    parser.add_argument("--arch", type=str, help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1lpips", "l1dinov2", "l1dctlpips",
-                                                                    "temporal_l1lpips", "temporal_l1dctlpips"],
+    parser.add_argument("--loss", type=str, choices=["dct", "l1lpips", "l1dinov2", "l1dctlpips",
+                                                     "temporal_l1lpips", "temporal_l1dctlpips"],
                         help="loss")
     parser.add_argument("--discriminator", type=str, help="discriminator")
     parser.add_argument("--generator-warmup-iteration", type=int, default=500,
                         help=("warm-up iterations for the discriminator loss affecting the generator."))
     parser.add_argument("--discriminator-weight", type=float, default=0.2,
                         help="discriminator loss weight")
-    parser.add_argument("--diff-aug", action="store_true",
-                        help="Use differentiable transforms for reconstruction loss and discriminator")
     parser.add_argument("--video", action="store_true", help="Use video dataset")
     parser.add_argument("--save-eval-step", type=int, default=10)
     parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
 
     parser.set_defaults(
-        batch_size=16,
+        batch_size=8,
+        backward_step=4,  # image: 8x4=32, video: 12*4=48
         optimizer="adamw",
         learning_rate=0.0001,
         learning_rate_cosine_min=1e-8,
