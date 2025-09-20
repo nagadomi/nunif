@@ -188,8 +188,7 @@ class MLBWInpaintVideo(nn.Module):
         self.model_backup = None
 
     def reset(self):
-        if self.frame_queue is not None:
-            self.frame_queue.clear()
+        self.frame_queue = None
 
     def forward(self, flush=False):
         if self.frame_queue.full():
