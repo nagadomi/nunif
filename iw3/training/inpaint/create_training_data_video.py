@@ -6,6 +6,7 @@ from os import path
 import random
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
+import hashlib
 from torchvision import transforms as T
 from torchvision.transforms import (
     functional as TF,
@@ -23,6 +24,11 @@ from .create_training_data import (
     gen_mapper,
     gen_edge_dilation,
 )
+
+
+def md5(s, nbytes=8):
+    MD5_SALT = "iw3"
+    return hashlib.md5((s + MD5_SALT).encode()).hexdigest()[:nbytes]
 
 
 def crop_resize(frames, min_size):
@@ -155,6 +161,7 @@ def main(args):
 
     max_workers = cpu_count() // 2 or 1
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
+    filename_prefix = filename_prefix + md5(path.basename(args.dataset_dir)) + "_"
     depth_model = create_depth_model(args.model_type)
     depth_model.load(gpu=args.gpu, resolution=args.resolution)
     depth_model.disable_ema()
