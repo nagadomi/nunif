@@ -356,7 +356,6 @@ class MLBWInpaint(nn.Module):
     @torch.inference_mode()
     def flush(self, enable_amp=True):
         ret = self.model[self.mode].flush(enable_amp=enable_amp)
-        self.reset()
         return ret
 
 

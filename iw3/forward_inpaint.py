@@ -283,7 +283,6 @@ class ForwardInpaint(nn.Module):
     def flush(self, enable_amp=True):
         with autocast(device=self.device, enabled=enable_amp):
             ret = self.model[self.mode].flush()
-            self.reset()
             return ret
 
 

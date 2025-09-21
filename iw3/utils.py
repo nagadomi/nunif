@@ -479,6 +479,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
     depth_model.disable_ema()
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("image")
+        side_model.reset()
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -861,6 +862,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("video")
+        side_model.reset()
 
     if (
             args.compile and
@@ -1498,6 +1500,7 @@ def process_config_video(config, args, side_model):
     rgb_dir, depth_dir, audio_file = config.resolve_paths(base_dir)
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("video")
+        side_model.reset()
 
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
@@ -1640,6 +1643,7 @@ def process_config_images(config, args, side_model):
     rgb_dir, depth_dir, _ = config.resolve_paths(base_dir)
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("image")
+        side_model.reset()
 
     def fix_rgb_depth_pair(rgb_files, depth_files):
         rgb_db = {path.splitext(path.basename(fn))[0]: fn for fn in rgb_files}
@@ -2203,6 +2207,7 @@ def iw3_main(args):
             raise ValueError(f"{args.depth_model} does not support image input")
         if side_model is not None and hasattr(side_model, "set_mode"):
             side_model.set_mode("image")
+            side_model.reset()
 
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
