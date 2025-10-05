@@ -35,11 +35,20 @@ source .venv/bin/activate
 
 ## 4. Install Pytorch and pip packages
 
+### Pip packages
 ```
-pip3 install -r requirements-torch.txt
 pip3 install -r requirements.txt
 ```
-
+### Pytorch
+If you are using an NVIDIA GPU, 
+```
+pip3 install -r requirements-torch.txt
+```
+or if you are using an AMD GPU.
+```
+pip3 install -r requirements-torch-rocm.txt
+```
+### GUI (optional)
 If you want to use GUI, install wxpython >= 4.0.0
 ```
 sudo apt-get install python3-wxgtk4.0
