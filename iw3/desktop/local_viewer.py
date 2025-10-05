@@ -4,6 +4,7 @@ from OpenGL import GL
 import torch
 import threading
 import time
+import sys
 from collections import deque
 import ctypes
 
@@ -258,6 +259,10 @@ class LocalViewer():
                 self.initialized = True
 
     def start(self):
+        """
+        Standard start method for use when wx.App is already running on main thread.
+        This is used on Linux with wx.Yield() pattern, and on Windows when called from worker thread.
+        """
         if not wx.GetApp():
             raise RuntimeError("wx.App is not initialized")
         wx.CallAfter(self._start)
@@ -284,6 +289,76 @@ class LocalViewer():
                     return True
                 else:
                     return False
+
+
+def run_local_viewer_cli(worker_callback):
+    """
+    Platform-aware entry point for running local viewer from CLI.
+    
+    Handles platform-specific requirements:
+    - Linux: Calls worker directly, which creates wx.App and uses wx.Yield() pattern
+    - Windows: Creates wx.App on main thread, runs worker in background thread
+    
+    Args:
+        worker_callback: Function to run (the processing loop). Should call iw3_desktop_main.
+                        On Windows, should NOT create wx.App (init_wxapp=False)
+                        On Linux, SHOULD create wx.App (init_wxapp=True)
+    
+    This function blocks until the GUI is closed.
+    """
+    if sys.platform != "win32":
+        # Linux: Original wx.Yield() pattern works fine
+        # Worker will create wx.App and use wx.Yield() to pump events
+        return worker_callback()
+    
+    # Windows: Need wx event loop on main thread
+    app = wx.App()
+    
+    # Create a hidden dummy frame to keep the app alive
+    # Without this, app.MainLoop() exits immediately before worker can create the real window
+    dummy_frame = wx.Frame(None)
+    dummy_frame.Hide()
+    
+    # Track worker state
+    worker_started = threading.Event()
+    worker_exception = [None]
+    
+    def worker_target():
+        try:
+            worker_started.set()
+            worker_callback()
+        except Exception as e:
+            worker_exception[0] = e
+            print(f"LocalViewer worker error: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Exit the event loop when worker finishes
+            wx.CallAfter(app.ExitMainLoop)
+    
+    worker_thread = threading.Thread(target=worker_target, daemon=False)
+    
+    def start_worker():
+        worker_thread.start()
+        if not worker_started.wait(timeout=5.0):
+            print("Warning: Worker thread did not start within 5 seconds", file=sys.stderr)
+    
+    # Start worker after event loop begins
+    wx.CallAfter(start_worker)
+    
+    # Run event loop on main thread (Windows requirement)
+    app.MainLoop()
+    
+    # Cleanup
+    dummy_frame.Destroy()
+    
+    # Wait for worker to finish
+    if worker_thread and worker_thread.is_alive():
+        worker_thread.join(timeout=5.0)
+    
+    # Re-raise any exception from worker
+    if worker_exception[0]:
+        raise worker_exception[0]
 
 
 def _test():
