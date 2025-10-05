@@ -32,7 +32,6 @@ def cli_main():
                 # On Windows, wx.App is already created by run_local_viewer_cli on main thread
                 # On Linux, we need to create it here in the worker
                 init_wxapp = (sys.platform != "win32")
-                print(f"Starting worker (platform={sys.platform}, init_wxapp={init_wxapp})", file=sys.stderr)
                 return iw3_desktop_main(args, init_wxapp=init_wxapp)
             except Exception as e:
                 print(f"Error in worker: {e}", file=sys.stderr)
@@ -44,7 +43,6 @@ def cli_main():
             # This function handles platform differences internally:
             # - Linux: Calls worker directly (worker creates wx.App, uses wx.Yield)
             # - Windows: Creates wx.App on main thread, runs worker in background
-            print(f"Calling run_local_viewer_cli (platform={sys.platform})", file=sys.stderr)
             run_local_viewer_cli(worker)
         except Exception as e:
             print(f"Error in run_local_viewer_cli: {e}", file=sys.stderr)
