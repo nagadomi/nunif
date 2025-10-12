@@ -382,7 +382,7 @@ class MainFrame(wx.Frame):
         self.cbo_device.SetSelection(0)
 
         self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
-        screenshot_backends = ["pil", "pil_mp"] + (["wc_mp"] if HAS_WINDOWS_CAPTURE else [])
+        screenshot_backends = ["pil", "mss"] + (["wc_mp"] if HAS_WINDOWS_CAPTURE else [])
         self.cbo_screenshot = wx.ComboBox(self.grp_processor,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
@@ -432,6 +432,10 @@ class MainFrame(wx.Frame):
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
 
+        self.fullscreen_framebuf = wx.CheckBox(self.grp_processor, label=T("Fullscreen Framebuffer"), name="fullscreen_framebuf")
+        self.fullscreen_framebuf.SetToolTip(T("Force framebuffer size to fully match selected monitor resolution regardless of window selection"))
+        self.fullscreen_framebuf.SetValue(False)
+
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -458,6 +462,8 @@ class MainFrame(wx.Frame):
 
         layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
         layout.Add(self.chk_compile, (5, 0), flag=wx.EXPAND)
+        layout.Add(self.fullscreen_framebuf, (5, 1), flag=wx.EXPAND)
+        self.fullscreen_framebuf.Hide()
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -551,6 +557,7 @@ class MainFrame(wx.Frame):
         self.SetSizer(layout)
 
         # bind
+        self.cbo_window_name.Bind(wx.EVT_TEXT,self.on_text_changed_cbo_window_name)
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
@@ -889,7 +896,7 @@ class MainFrame(wx.Frame):
             user = password = None
 
         monitor_index = int(self.cbo_monitor_index.GetValue())
-        if self.cbo_screenshot.GetValue() != "wc_mp":
+        if self.cbo_screenshot.GetValue() == "pil":
             monitor_index = 0
         window_name = self.cbo_window_name.GetValue()
         if not window_name:
@@ -929,7 +936,7 @@ class MainFrame(wx.Frame):
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
-
+            fullscreen_framebuf=self.fullscreen_framebuf.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
@@ -1124,7 +1131,11 @@ class MainFrame(wx.Frame):
                 device = create_device(device_id)
                 if not check_compile_support(device):
                     self.chk_compile.SetValue(False)
-
+    def on_text_changed_cbo_window_name(self, event):
+        if self.cbo_window_name.GetValue()!="":
+            self.fullscreen_framebuf.Show()
+        else:
+            self.fullscreen_framebuf.Hide()
     def on_text_changed_cbo_language(self, event):
         lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
         save_language_setting(LANG_CONFIG_PATH, lang)
@@ -1138,7 +1149,7 @@ class MainFrame(wx.Frame):
         self.update_window_names()
 
     def update_monitor_index(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() == "wc_mp":
+        if self.cbo_screenshot.GetValue() != "pil":
             self.lbl_monitor_index.Show()
             self.cbo_monitor_index.Show()
         else:
@@ -1148,7 +1159,7 @@ class MainFrame(wx.Frame):
         self.GetSizer().Layout()
 
     def update_window_names(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() == "wc_mp":
+        if self.cbo_screenshot.GetValue() != "pil":
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()
@@ -1211,7 +1222,7 @@ class MainFrame(wx.Frame):
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
-LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
+LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
 
 
 def T(s):
