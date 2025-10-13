@@ -154,7 +154,7 @@ def create_parser():
     parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
     parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
     parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
-    parser.add_argument("--draw-cursor", action="store_true", help="Draws cursor on the output stream")
+    parser.add_argument("--disable-draw-cursor", action="store_true", help="Disables drawing the cursor on the output stream")
 
     parser.set_defaults(
         input="dummy",
@@ -299,7 +299,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         monitor_index=args.monitor_index, window_name=args.window_name,
         device=device, crop_top=args.crop_top, crop_left=args.crop_left,
         crop_right=args.crop_right, crop_bottom=args.crop_bottom,
-        draw_cursor_enabled=args.draw_cursor)
+        draw_cursor_enabled=not args.disable_draw_cursor)
 
     try:
         if args.compile:
