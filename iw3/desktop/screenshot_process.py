@@ -301,6 +301,9 @@ class ScreenshotProcess(threading.Thread):
                 while not self.process_frame_event.wait(1):
                     if not self.process.is_alive():
                         raise RuntimeError("thread is already dead")
+                if self.cuda_stream is not None:
+                    torch.cuda.synchronize(self.device)
+                
                 with self.process_frame_lock:
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
                                        dtype=np.uint8, buffer=self.process_frame_buffer.buf)
@@ -316,7 +319,7 @@ class ScreenshotProcess(threading.Thread):
 
                 if self.cuda_stream is not None:
                     with torch.cuda.stream(self.cuda_stream):
-                        frame = frame_buffer.to(self.device)
+                        frame = frame_buffer.to(self.device, non_blocking=True)
                         frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
                         if self.backend == "pil" and self.draw_cursor_enabled:
                             # cursor for PIL
@@ -325,7 +328,7 @@ class ScreenshotProcess(threading.Thread):
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
                                               antialias=True)
-                        self.cuda_stream.synchronize()
+                    self.cuda_stream.synchronize()
                 else:
                     frame = frame_buffer.to(self.device)
                     frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
