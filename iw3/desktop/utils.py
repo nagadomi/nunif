@@ -154,6 +154,7 @@ def create_parser():
     parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
     parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
     parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
+    parser.add_argument("--draw-cursor", action="store_true", help="Draws cursor on the output stream")
 
     parser.set_defaults(
         input="dummy",
@@ -297,7 +298,8 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_width=frame_width, frame_height=frame_height,
         monitor_index=args.monitor_index, window_name=args.window_name,
         device=device, crop_top=args.crop_top, crop_left=args.crop_left,
-        crop_right=args.crop_right, crop_bottom=args.crop_bottom)
+        crop_right=args.crop_right, crop_bottom=args.crop_bottom,
+        draw_cursor_enabled=args.draw_cursor)
 
     try:
         if args.compile:
@@ -330,8 +332,6 @@ def iw3_desktop_main(args, init_wxapp=True):
                     if args.gpu_jpeg:
                         server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
                     else:
-                        # PERFORMANCE FIX: Clone on GPU (fast), defer CPU transfer to streaming thread
-                        # This prevents the streaming thread from accessing GPU memory being reused by main thread
                         with torch.no_grad():
                             sbs_gpu_clone = sbs.detach().clone().contiguous()
                         server.set_frame_data(lambda sbs=sbs_gpu_clone: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=False))

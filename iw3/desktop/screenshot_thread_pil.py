@@ -10,11 +10,11 @@ from torchvision.transforms import (
     InterpolationMode)
 
 
-def take_screenshot(mouse_position=None):
+def take_screenshot(mouse_position=None, draw_cursor_enabled=True):
     frame = ImageGrab.grab(include_layered_windows=True)
     if frame.mode != "RGB":
         frame = frame.convert("RGB")
-    if mouse_position is not None:
+    if mouse_position is not None and draw_cursor_enabled:
         gc = ImageDraw.Draw(frame)
         gc.circle(mouse_position, radius=4, fill=None, outline=(0x33, 0x80, 0x80), width=2)
 
@@ -30,13 +30,14 @@ def to_tensor(pil_image, device, frame_buffer):
 
 
 class ScreenshotThreadPIL(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, **_ignore_unsupported_kwargs):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, draw_cursor_enabled=True, **_ignore_unsupported_kwargs):
         super().__init__(daemon=True)
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.monitor_index = monitor_index  # TODO: not implemented
         self.window_name = window_name  # TODO: not implemented
         self.device = device
+        self.draw_cursor_enabled = draw_cursor_enabled
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
         self.frame = None
@@ -53,7 +54,7 @@ class ScreenshotThreadPIL(threading.Thread):
         frame_buffer = None
         while True:
             tick = time.perf_counter()
-            frame = take_screenshot(wx.GetMousePosition())
+            frame = take_screenshot(wx.GetMousePosition(), draw_cursor_enabled=self.draw_cursor_enabled)
             if frame_buffer is None:
                 frame_buffer = torch.ones((3, frame.height, frame.width), dtype=torch.uint8)
                 if torch.cuda.is_available():
