@@ -19,6 +19,7 @@ from .. import utils as IW3U
 from .. import models  # noqa
 from .screenshot_thread_pil import ScreenshotThreadPIL
 from .screenshot_process import ( # noqa
+    get_x11root,
     ScreenshotProcess,
     get_monitor_size_list,
     get_window_rect_by_title,
@@ -30,10 +31,6 @@ try:
 except ImportError:
     LocalViewer = None
 
-if sys.platform!="win32":
-    from Xlib import display
-    root=display.Display().screen().root
-else:root=None
 
 TORCH_VERSION = Version(torch.__version__)
 ENABLE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
@@ -238,7 +235,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         raise RuntimeError(f"{args.screenshot} does not support --window-name option")
 
     if args.window_name and not args.fullscreen_framebuf:
-        rect = get_window_rect_by_title(args.window_name,root)
+        rect = get_window_rect_by_title(args.window_name, get_x11root())
         if rect is None:
             raise RuntimeError(f"window_name={args.window_name} not found")
         screen_width = rect["width"] - args.crop_left - args.crop_right
@@ -295,7 +292,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         monitor_index=args.monitor_index, window_name=args.window_name,
         device=device, crop_top=args.crop_top, crop_left=args.crop_left,
         crop_right=args.crop_right, crop_bottom=args.crop_bottom,
-        fullscreen_framebuf=args.fullscreen_framebuf)
+        fullscreen_framebuf=args.fullscreen_framebuf, ar_preserve=args.ar_preserve)
 
     try:
         if args.compile:

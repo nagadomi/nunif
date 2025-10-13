@@ -33,6 +33,7 @@ from ..depth_anything_model import DepthAnythingModel
 from ..video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
 from ..locales import LOCALES, load_language_setting, save_language_setting
 from .utils import (
+    get_x11root,
     get_local_address,
     is_private_address,
     is_loopback_address,
@@ -436,6 +437,11 @@ class MainFrame(wx.Frame):
         self.fullscreen_framebuf.SetToolTip(T("Force framebuffer size to fully match selected monitor resolution regardless of window selection"))
         self.fullscreen_framebuf.SetValue(False)
 
+        self.ar_preserve = wx.CheckBox(self.grp_processor, label=T("Keep Aspect Ratio"), name="ar_preserve")
+        self.ar_preserve.SetToolTip(T("Preserve window aspect ratio"))
+        self.ar_preserve.SetValue(True)
+
+
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -461,9 +467,11 @@ class MainFrame(wx.Frame):
         crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
 
         layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_compile, (5, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (6, 0), flag=wx.EXPAND)
         layout.Add(self.fullscreen_framebuf, (5, 1), flag=wx.EXPAND)
         self.fullscreen_framebuf.Hide()
+        layout.Add(self.ar_preserve, (5, 0), flag=wx.EXPAND)
+        self.ar_preserve.Disable()
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -557,7 +565,7 @@ class MainFrame(wx.Frame):
         self.SetSizer(layout)
 
         # bind
-        self.cbo_window_name.Bind(wx.EVT_TEXT,self.on_text_changed_cbo_window_name)
+        self.cbo_window_name.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_window_name)
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
@@ -937,6 +945,7 @@ class MainFrame(wx.Frame):
             resolution=resolution,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
             fullscreen_framebuf=self.fullscreen_framebuf.IsChecked(),
+            ar_preserve=self.ar_preserve.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
@@ -1131,11 +1140,15 @@ class MainFrame(wx.Frame):
                 device = create_device(device_id)
                 if not check_compile_support(device):
                     self.chk_compile.SetValue(False)
+
     def on_text_changed_cbo_window_name(self, event):
-        if self.cbo_window_name.GetValue()!="":
+        if self.cbo_window_name.GetValue() != "":
             self.fullscreen_framebuf.Show()
+            self.ar_preserve.Enable()
         else:
             self.fullscreen_framebuf.Hide()
+            self.ar_preserve.Disable()
+
     def on_text_changed_cbo_language(self, event):
         lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
         save_language_setting(LANG_CONFIG_PATH, lang)
@@ -1172,7 +1185,7 @@ class MainFrame(wx.Frame):
             self.lbl_crop_right.Show()
             self.txt_crop_bottom.Show()
             self.lbl_crop_bottom.Show()
-            self.cbo_window_name.SetItems([""] + enum_window_names())
+            self.cbo_window_name.SetItems([""] + enum_window_names(root=get_x11root()))
         else:
             self.lbl_window_name.Hide()
             self.cbo_window_name.Hide()
@@ -1222,7 +1235,7 @@ class MainFrame(wx.Frame):
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
-LOCALE_DICT = LOCALES.get(locale.getlocale()[0], {})
+LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
 
 
 def T(s):
