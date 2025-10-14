@@ -238,14 +238,15 @@ def iw3_desktop_main(args, init_wxapp=True):
         rect = get_window_rect_by_title(args.window_name, get_x11root())
         if rect is None:
             raise RuntimeError(f"window_name={args.window_name} not found")
-        screen_width = rect["width"] - args.crop_left - args.crop_right
-        screen_height = rect["height"] - args.crop_top - args.crop_bottom
+        screen_width, screen_height = rect["width"], rect["height"]
     else:
         size_list = get_monitor_size_list()
         if args.monitor_index >= len(size_list):
             raise RuntimeError(f"monitor_index={args.monitor_index} not found")
         screen_width, screen_height = size_list[args.monitor_index]
 
+    screen_width -= args.crop_left + args.crop_right
+    screen_height -= args.crop_top + args.crop_bottom
     screen_size = (screen_width, screen_height)
     if screen_height > args.stream_height:
         frame_height = args.stream_height
