@@ -95,10 +95,6 @@ def get_monitor_size_list():
             size_list.append((monitor['width'], monitor['height']))
         return size_list[1:]
 
-def get_screen_size(monitor_index):
-    size_list = get_monitor_size_list()
-    return size_list[monitor_index]
-
 
 DENY_WINDOW_NAMES = {
     "Microsoft Text Input Application",
@@ -220,9 +216,8 @@ def estimate_fps(fps_counter):
         return 0
 
 
-def capture_process(frame_size, monitor_index, window_name, size_shm, frame_shm, frame_lock, frame_event, stop_event, backend="mss", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0):
+def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_lock, frame_event, stop_event, backend="mss", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0):
     frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
-    buffer_size = np.ndarray((2), dtype=np.uint32, buffer=size_shm.buf)
     frame_count = 0
 
     if backend == "mss":
@@ -250,7 +245,7 @@ def capture_process(frame_size, monitor_index, window_name, size_shm, frame_shm,
 
     @capture.event
     def on_frame_arrived(frame, capture_control):
-        nonlocal frame_shm, frame_event, frame_lock, stop_event, buffer_size, frame_buffer, window_name, frame_count, crop_top, crop_left, crop_right, crop_bottom  # noqa
+        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer, window_name, frame_count, crop_top, crop_left, crop_right, crop_bottom  # noqa
         if not frame_event.is_set():
             with frame_lock:
                 source_frame = frame.frame_buffer
@@ -263,14 +258,12 @@ def capture_process(frame_size, monitor_index, window_name, size_shm, frame_shm,
                     right = w - crop_right if crop_right > 0 else w
                     source_frame = source_frame[top:bottom, left:right, :]
 
-                buffer_size[0] = frame_buffer.shape[0]
-                buffer_size[1] = frame_buffer.shape[1]
                 if frame_buffer.shape != source_frame.shape:
                     if window_name is not None:
                         # NOTE: The size may differ due to resizing, Window effects, etc.
                         # I wanted to use replication padding, but since the edges of the Windows screen are black, it's meaningless
-                        buffer_size[0] = min_h = min(frame_buffer.shape[0], source_frame.shape[0])
-                        buffer_size[1] = min_w = min(frame_buffer.shape[1], source_frame.shape[1])
+                        min_h = min(frame_buffer.shape[0], source_frame.shape[0])
+                        min_w = min(frame_buffer.shape[1], source_frame.shape[1])
                         if frame_count % 30 == 0:
                             frame_buffer[:] = 0.0
                         frame_buffer[0:min_h, 0:min_w, :] = source_frame[0:min_h, 0:min_w, :]
@@ -306,8 +299,8 @@ def to_tensor(bgra, device):
 
 
 class ScreenshotProcess(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="mss", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0,
-    fullscreen_framebuf=False,ar_preserve=True):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="mss",
+                 crop_top=0, crop_left=0, crop_right=0, crop_bottom=0, fullscreen_framebuf=False, ar_preserve=True):
         super().__init__(daemon=True)
         self.backend = backend
         self.frame_width = frame_width
@@ -332,18 +325,29 @@ class ScreenshotProcess(threading.Thread):
         else:
             self.cuda_stream = None
 
-    def start_process(self):
-        if self.window_name and not self.fullscreen_framebuf:
+    def get_capture_size(self):
+        if self.window_name:
             rect = get_window_rect_by_title(self.window_name,self.root)
             if rect is None:
                 raise RuntimeError(f"{self.window_name} not found")
-            screen_size = (rect["width"], rect["height"])
         else:
-            screen_size = get_screen_size(self.monitor_index)
-        self.screen_width = screen_size[0]
-        self.screen_height = screen_size[1]
+            rect = _mss.monitors[self.monitor_index + 1]
+        rect["top"] += self.crop_top
+        rect["left"] += self.crop_left
+        rect["height"] -= self.crop_top + self.crop_bottom
+        rect["width"] -= self.crop_left + self.crop_right
+        if rect["width"] < 64 or rect["height"] < 64:
+            raise RuntimeError(f"capture region ={str(rect)} is too small (below 64 x 64)")
+        return rect
+
+    def start_process(self):
+        capture_size = self.get_capture_size()
+        self.screen_width = capture_size["width"]
+        self.screen_height = capture_size["height"]
+        if self.fullscreen_framebuf:
+            self.screen_width = _mss.monitors[self.monitor_index + 1]["width"]
+            self.screen_height = _mss.monitors[self.monitor_index + 1]["height"]
         template = np.zeros((self.screen_height, self.screen_width, 4), dtype=np.uint8)
-        self.process_buffer_size = shared_memory.SharedMemory(create=True, size=64)
         self.process_frame_buffer = shared_memory.SharedMemory(create=True, size=template.nbytes)
         self.process_stop_event = mp.Event()
         self.process_frame_event = mp.Event()
@@ -353,7 +357,6 @@ class ScreenshotProcess(threading.Thread):
             args=(tuple(template.shape),
                   self.monitor_index,
                   self.window_name,
-                  self.process_buffer_size,
                   self.process_frame_buffer,
                   self.process_frame_lock,
                   self.process_frame_event,
@@ -378,8 +381,6 @@ class ScreenshotProcess(threading.Thread):
                 with self.process_frame_lock:
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
                                        dtype=np.uint8, buffer=self.process_frame_buffer.buf)
-                    sizes = np.ndarray((2), dtype=np.uint32, buffer=self.process_buffer_size.buf)
-                    min_h = sizes[0]; min_w = sizes[1]
                     # deepcopy
                     frame = torch.from_numpy(frame)
                     if frame_buffer is None:
@@ -389,25 +390,28 @@ class ScreenshotProcess(threading.Thread):
                     else:
                         frame_buffer.copy_(frame)
 
+                capture_size = self.get_capture_size()
+                min_h = min(capture_size["height"], self.screen_height);
+                min_w = min(capture_size["width"], self.screen_width);
                 if self.ar_preserve:
                     if min_h * self.screen_width // self.screen_height > min_w:
                         min_w = min_h * self.screen_width // self.screen_height
                     elif min_w * self.screen_height // self.screen_width > min_h:
                         min_h = min_w * self.screen_height // self.screen_width
-                offset = _mss.monitors[self.monitor_index + 1]
-                if self.window_name != None:
-                    offset = get_window_rect_by_title(self.window_name, self.root)
-                offset["top"] += self.crop_top
-                offset["left"] += self.crop_left
+                height_fit = min_h < self.screen_height
+                width_fit = min_w < self.screen_width
+                perfect_fit = width_fit and height_fit
+                partial_fit = width_fit or height_fit
+                crop_needed = ((not self.ar_preserve) and partial_fit) or perfect_fit
+
                 if self.cuda_stream is not None:
                     with torch.cuda.stream(self.cuda_stream):
                         frame = frame_buffer.to(self.device)
                         frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
                         if self.backend == "mss":
                             # cursor for MSS
-                            draw_cursor(frame,wx.GetMousePosition(),offset)
-                        if (min_h, min_w) != (self.frame_height, self.frame_width):
-                            frame = TF.crop(frame,0,0,min_h,min_w)
+                            draw_cursor(frame,wx.GetMousePosition(),capture_size)
+                        if crop_needed: frame = TF.crop(frame, 0, 0, min_h, min_w)
                         if frame.shape[1:] != (self.frame_height, self.frame_width):
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
@@ -417,9 +421,8 @@ class ScreenshotProcess(threading.Thread):
                     frame = frame_buffer.to(self.device)
                     frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
                     if self.backend == "mss":
-                        draw_cursor(frame,wx.GetMousePosition(),offset)
-                    if (min_h, min_w) != (self.frame_height, self.frame_width):
-                        frame = TF.crop(frame,0,0,min_h,min_w)
+                        draw_cursor(frame,wx.GetMousePosition(),capture_size)
+                    if crop_needed: frame = TF.crop(frame, 0, 0, min_h, min_w)
                     if frame.shape[1:] != (self.frame_height, self.frame_width):
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
@@ -445,9 +448,6 @@ class ScreenshotProcess(threading.Thread):
             self.process_frame_buffer.close()
             self.process_frame_buffer.unlink()
             self.process_frame_buffer = None
-            self.process_buffer_size.close()
-            self.process_buffer_size.unlink()
-            self.process_buffer_size = None
 
     def get_frame(self):
         frame = None

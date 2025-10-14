@@ -438,7 +438,7 @@ class MainFrame(wx.Frame):
         self.fullscreen_framebuf.SetValue(False)
 
         self.ar_preserve = wx.CheckBox(self.grp_processor, label=T("Keep Aspect Ratio"), name="ar_preserve")
-        self.ar_preserve.SetToolTip(T("Preserve window aspect ratio"))
+        self.ar_preserve.SetToolTip(T("Preserve captured window aspect ratio"))
         self.ar_preserve.SetValue(True)
 
 
@@ -656,6 +656,8 @@ class MainFrame(wx.Frame):
                 depth_models.append("Distill_Any_L")
 
             depth_models += ["VDA_Stream_S"]
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_B"):
+                depth_models.append("VDA_Stream_B")
             if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
                 depth_models.append("VDA_Stream_L")
 
