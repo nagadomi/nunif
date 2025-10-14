@@ -240,6 +240,10 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format.SetEditable(False)
         self.cbo_stereo_format.SetSelection(0)
         self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
+        self.cross_eyed = wx.CheckBox(self.grp_stereo, label=T("Cross Eyed"), name="cross_eyed")
+        self.cross_eyed.SetToolTip(T("Swap left image and right image"))
+        self.cross_eyed.SetValue(False)
+        self.cross_eyed.Hide()
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.SetEmptyCellSize((0, 0))
@@ -269,6 +273,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, (i, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_format_device, (i := i + 1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cross_eyed, (i, 0), flag=wx.EXPAND)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -782,10 +787,13 @@ class MainFrame(wx.Frame):
         stereo_format = self.cbo_stereo_format.GetValue()
         if stereo_format == "Half SBS":
             self.lbl_format_device.SetLabel("Meta Quest 2/3")
+            self.cross_eyed.Show()
         elif stereo_format == "Full SBS":
             self.lbl_format_device.SetLabel("PICO 4")
+            self.cross_eyed.Show()
         else:
             self.lbl_format_device.SetLabel("")
+            self.cross_eyed.Hide()
 
     def update_edge_dilation(self):
         if self.chk_edge_dilation.IsChecked():
@@ -948,6 +956,7 @@ class MainFrame(wx.Frame):
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
             fullscreen_framebuf=self.fullscreen_framebuf.IsChecked(),
             ar_preserve=self.ar_preserve.IsChecked(),
+            cross_eyed=self.cross_eyed.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
