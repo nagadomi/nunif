@@ -177,7 +177,7 @@ def get_window_rect_by_title(title, root = None):
             geom = window.get_geometry()
             abs_pos = root.translate_coords(window, 0, 0)
             ret = {"left": abs_pos.x, "top": abs_pos.y, "width": geom.width, "height": geom.height}
-        except:#window not found falling back to initial window area
+        except: # Window not found falling back to initial window area
             ret = {}
             pos = comp[-3].split(',')
             ret["left"] = int(pos[0])
@@ -185,20 +185,20 @@ def get_window_rect_by_title(title, root = None):
             pos = comp[-2].split(',')
             ret["width"] = int(pos[0])
             ret["height"] = int(pos[1])
-        #ensure bounding box is stricly inside monitor area
+        # Ensure bounding box is stricly inside monitor area
         if ret["left"] < 0: ret["width"] += ret["left"]; ret["left"] = 0
         if ret["top"] < 0: ret["height"] += ret["top"]; ret["top"] = 0
         if ret["width"] <= 0 or ret["height"] <= 0:
             print("window position is invalid or out of screen!")
-            return _mss.monitors[1]#return primary monitor area
-        box = _mss.monitors[0]#combined monitor area
+            return dict(_mss.monitors[1]) # Return primary monitor area
+        box = _mss.monitors[0] # Combined monitor area
         if ret["left"] + ret["width"] >= box["width"]:
             ret["width"] = box["width"] - ret["left"] - 1
         if ret["top"] + ret["height"] >= box["height"]:
             ret["height"] = box["height"] - ret["top"] - 1
         if ret["width"] <= 0 or ret["height"] <= 0:
             print("window position is invalid or out of screen!")
-            return _mss.monitors[1]#return primary monitor area
+            return dict(_mss.monitors[1]) # Return primary monitor area
         return ret
     else: return {"left": 0, "right": 0, "width": 0, "height": 0} # WARNING: mac is unimplemented!
 
@@ -250,7 +250,7 @@ def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_loc
             with frame_lock:
                 source_frame = frame.frame_buffer
                 # Apply cropping for window capture
-                if window_name and (crop_top > 0 or crop_left > 0 or crop_right > 0 or crop_bottom > 0):
+                if crop_top > 0 or crop_left > 0 or crop_right > 0 or crop_bottom > 0:
                     h, w = source_frame.shape[:2]
                     top = crop_top
                     bottom = h - crop_bottom if crop_bottom > 0 else h
@@ -331,7 +331,7 @@ class ScreenshotProcess(threading.Thread):
             if rect is None:
                 raise RuntimeError(f"{self.window_name} not found")
         else:
-            rect = _mss.monitors[self.monitor_index + 1]
+            rect = dict(_mss.monitors[self.monitor_index + 1]) # deep copy
         rect["top"] += self.crop_top
         rect["left"] += self.crop_left
         rect["height"] -= self.crop_top + self.crop_bottom
@@ -345,8 +345,10 @@ class ScreenshotProcess(threading.Thread):
         self.screen_width = capture_size["width"]
         self.screen_height = capture_size["height"]
         if self.fullscreen_framebuf:
-            self.screen_width = _mss.monitors[self.monitor_index + 1]["width"]
-            self.screen_height = _mss.monitors[self.monitor_index + 1]["height"]
+            self.screen_width = _mss.monitors[self.monitor_index + 1]["width"] - self.crop_left - self.crop_right
+            self.screen_height = _mss.monitors[self.monitor_index + 1]["height"] - self.crop_top - self.crop_bottom
+        if self.screen_width < 64 or self.screen_height < 64:
+            raise RuntimeError(f"capture size ={self.frame_width},{self.frame_height} is too small (below 64 x 64)")
         template = np.zeros((self.screen_height, self.screen_width, 4), dtype=np.uint8)
         self.process_frame_buffer = shared_memory.SharedMemory(create=True, size=template.nbytes)
         self.process_stop_event = mp.Event()
