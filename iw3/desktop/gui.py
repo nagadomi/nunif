@@ -240,10 +240,10 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format.SetEditable(False)
         self.cbo_stereo_format.SetSelection(0)
         self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
-        self.cross_eyed = wx.CheckBox(self.grp_stereo, label=T("Cross Eyed"), name="cross_eyed")
-        self.cross_eyed.SetToolTip(T("Swap left image and right image"))
-        self.cross_eyed.SetValue(False)
-        self.cross_eyed.Hide()
+        self.chk_cross_eyed = wx.CheckBox(self.grp_stereo, label=T("Cross Eyed"), name="chk_cross_eyed")
+        self.chk_cross_eyed.SetToolTip(T("Swap left image and right image"))
+        self.chk_cross_eyed.SetValue(False)
+        self.chk_cross_eyed.Hide()
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.SetEmptyCellSize((0, 0))
@@ -273,7 +273,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, (i, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_format_device, (i := i + 1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cross_eyed, (i, 0), flag=wx.EXPAND)
+        layout.Add(self.chk_cross_eyed, (i, 0), flag=wx.EXPAND)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -438,13 +438,13 @@ class MainFrame(wx.Frame):
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
 
-        self.fullscreen_framebuf = wx.CheckBox(self.grp_processor, label=T("Fullscreen Framebuffer"), name="fullscreen_framebuf")
-        self.fullscreen_framebuf.SetToolTip(T("Force framebuffer size to fully match selected monitor resolution regardless of window selection"))
-        self.fullscreen_framebuf.SetValue(False)
+        self.chk_fullscreen_framebuf = wx.CheckBox(self.grp_processor, label=T("Fullscreen Framebuffer"), name="chk_fullscreen_framebuf")
+        self.chk_fullscreen_framebuf.SetToolTip(T("Force framebuffer size to fully match selected monitor resolution regardless of window selection"))
+        self.chk_fullscreen_framebuf.SetValue(False)
 
-        self.ar_preserve = wx.CheckBox(self.grp_processor, label=T("Keep Aspect Ratio"), name="ar_preserve")
-        self.ar_preserve.SetToolTip(T("Preserve captured window aspect ratio"))
-        self.ar_preserve.SetValue(True)
+        self.chk_ar_preserve = wx.CheckBox(self.grp_processor, label=T("Keep Aspect Ratio"), name="chk_ar_preserve")
+        self.chk_ar_preserve.SetToolTip(T("Preserve captured window aspect ratio"))
+        self.chk_ar_preserve.SetValue(True)
 
 
         layout = wx.GridBagSizer(vgap=5, hgap=4)
@@ -473,10 +473,10 @@ class MainFrame(wx.Frame):
 
         layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
         layout.Add(self.chk_compile, (6, 0), flag=wx.EXPAND)
-        layout.Add(self.fullscreen_framebuf, (5, 1), flag=wx.EXPAND)
-        self.fullscreen_framebuf.Hide()
-        layout.Add(self.ar_preserve, (5, 0), flag=wx.EXPAND)
-        self.ar_preserve.Disable()
+        layout.Add(self.chk_fullscreen_framebuf, (5, 1), flag=wx.EXPAND)
+        self.chk_fullscreen_framebuf.Hide()
+        layout.Add(self.chk_ar_preserve, (5, 0), flag=wx.EXPAND)
+        self.chk_ar_preserve.Disable()
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -785,15 +785,14 @@ class MainFrame(wx.Frame):
 
     def update_stereo_format(self, *args, **kwargs):
         stereo_format = self.cbo_stereo_format.GetValue()
+        self.chk_cross_eyed.Show()
         if stereo_format == "Half SBS":
             self.lbl_format_device.SetLabel("Meta Quest 2/3")
-            self.cross_eyed.Show()
         elif stereo_format == "Full SBS":
             self.lbl_format_device.SetLabel("PICO 4")
-            self.cross_eyed.Show()
         else:
             self.lbl_format_device.SetLabel("")
-            self.cross_eyed.Hide()
+            self.chk_cross_eyed.Hide()
 
     def update_edge_dilation(self):
         if self.chk_edge_dilation.IsChecked():
@@ -954,9 +953,9 @@ class MainFrame(wx.Frame):
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
-            fullscreen_framebuf=self.fullscreen_framebuf.IsChecked(),
-            ar_preserve=self.ar_preserve.IsChecked(),
-            cross_eyed=self.cross_eyed.IsChecked(),
+            fullscreen_framebuf=self.chk_fullscreen_framebuf.IsChecked(),
+            ar_preserve=self.chk_ar_preserve.IsChecked(),
+            cross_eyed=self.chk_cross_eyed.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
@@ -1154,11 +1153,11 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_cbo_window_name(self, event):
         if self.cbo_window_name.GetValue() != "":
-            self.fullscreen_framebuf.Show()
-            self.ar_preserve.Enable()
+            self.chk_fullscreen_framebuf.Show()
+            self.chk_ar_preserve.Enable()
         else:
-            self.fullscreen_framebuf.Hide()
-            self.ar_preserve.Disable()
+            self.chk_fullscreen_framebuf.Hide()
+            self.chk_ar_preserve.Disable()
 
     def on_text_changed_cbo_language(self, event):
         lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
