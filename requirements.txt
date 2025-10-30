@@ -4,6 +4,7 @@
 # torchtext
 # numpy < 2.0.0
 # pillow
+requests
 tqdm
 scipy
 waitress
