@@ -30,6 +30,19 @@ def soft_pool2d(x, kernel_size=2, stride=None, eps=1e-6, fp16_max=6e4, fp32_max=
     return x
 
 
+def soft_pool_downscale(x, downscale_factor, eps=1e-6):
+    # for image downloading
+    assert downscale_factor in {2, 4, 8}
+    assert x.shape[-1] % downscale_factor == 0 and x.shape[-2] % downscale_factor == 0
+
+    e_x = torch.sum(torch.exp(x), dim=1, keepdim=True)
+    x = F.avg_pool2d(x * e_x, downscale_factor, stride=downscale_factor)
+    w = F.avg_pool2d(e_x, downscale_factor, stride=downscale_factor)
+    x = x / (w + eps)
+
+    return x
+
+
 class SoftPool2d(nn.Module):
     def __init__(self, kernel_size, stride=None, eps=1e-6, fp16_max=6e4, fp32_max=3e38):
         super().__init__()
@@ -60,19 +73,25 @@ def _test_downscaling():
     import argparse
     import torchvision.transforms.functional as TF
     import torchvision.io as io
+    import time
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input file")
-    parser.add_argument("--kernel-size", type=int, default=2, help="kernel size")
+    parser.add_argument("--downscale-factor", type=int, default=2, help="kernel size")
     args = parser.parse_args()
     x = io.read_image(args.input, io.ImageReadMode.RGB)
     x = (x / 255.0)
-    pad_h = x.shape[1] % args.kernel_size
-    pad_w = x.shape[2] % args.kernel_size
+    pad_h = x.shape[1] % args.downscale_factor
+    pad_w = x.shape[2] % args.downscale_factor
     if pad_h != 0 or pad_w != 0:
         x = TF.pad(x, (0, 0, pad_w, pad_h), padding_mode="edge")
-    z = soft_pool2d(x.unsqueeze(0), args.kernel_size)
-    z = torch.clamp(z, 0, 1).squeeze(0)
+    z = soft_pool_downscale(x.unsqueeze(0), args.downscale_factor).squeeze(0)
+    z = torch.clamp(z, 0, 1)
+    TF.to_pil_image(z.squeeze(0)).show()
+    time.sleep(1)
+
+    z = F.interpolate(x.unsqueeze(0), scale_factor=1 / args.downscale_factor, mode="bicubic", antialias=True, align_corners=False)
+    z = torch.clamp(z, 0, 1)
     TF.to_pil_image(z.squeeze(0)).show()
 
 

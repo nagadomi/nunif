@@ -12,14 +12,17 @@ from .models import DepthAA
 
 NAME_MAP = {
     "VDA_Stream_S": "vits",
+    "VDA_Stream_B": "vitb",
     "VDA_Stream_L": "vitl",
 }
 MODEL_FILES = {
     "VDA_Stream_S": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vits.pth"),
+    "VDA_Stream_B": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitb.pth"),
     "VDA_Stream_L": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitl.pth"),
 }
 AA_SUPPORT_MODELS = {
     "VDA_Stream_S",
+    "VDA_Stream_B",
     "VDA_Stream_L",
 }
 

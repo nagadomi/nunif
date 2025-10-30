@@ -1,4 +1,5 @@
 # python -m nunif.cli.show_train_args -i models/photo_gan/*checkpoint.pth
+import torch
 import argparse
 from .. models import load_model
 from .. addon import load_addons
@@ -14,7 +15,7 @@ def main():
     for checkpoint_file in sorted(args.input):
         print("----")
         print(checkpoint_file)
-        model, meta = load_model(checkpoint_file)
+        meta = torch.load(checkpoint_file)
         meta = {k: meta.get(k, None) for k in ("name", "updated_at", "last_epoch", "train_kwargs")}
         pprint(meta, width=80, sort_dicts=False)
 

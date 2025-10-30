@@ -426,8 +426,15 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Distill_Any_B`  | Distill Any Depth model base.
 | `Distill_Any_L`  | Distill Any Depth model large.
 | `VDA_S`  | Video Depth Anything small.
-| `VDA_L`  | Video Depth Anything large.
-| `VDA_Metric`  | Video Depth Anything metric depth model.
+| `VDA_B`  | Video Depth Anything base. (cc-by-nc-4.0)
+| `VDA_L`  | Video Depth Anything large. (cc-by-nc-4.0)
+| `VDA_Metric_S`  | Video Depth Anything metric depth small model.
+| `VDA_Metric_B`  | Video Depth Anything metric depth base model. (cc-by-nc-4.0)
+| `VDA_Metric_L`  | Video Depth Anything metric depth large model. (cc-by-nc-4.0)
+| `VDA_Stream_S`  | Video Depth Anything streaming model small.
+| `VDA_Stream_B`  | Video Depth Anything streaming model base. (cc-by-nc-4.0)
+| `VDA_Stream_L`  | Video Depth Anything streaming model large. (cc-by-nc-4.0)
+
 
 Personally, I recommend `ZoeD_Any_N`, `Any_B` or `VDA_Metric`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
@@ -459,7 +466,7 @@ These files can be downloaded from Models section of https://huggingface.co/dept
 
 ### About Video-Depth-Anything
 
-#### `VDA_L`, `VDA_Metric`
+#### `VDA_B`, `VDA_L`, `VDA_Metric_B`, `VDA_Metric_L`
 
 These models are licensed under cc-by-nc-4.0 (Non Commercial).
 If you want to use it, agree to the pre-trained model license and place the checkpoint file yourself.
@@ -467,12 +474,18 @@ If you want to use it, agree to the pre-trained model license and place the chec
 | Short Name | Path |
 |------------|------|
 | `VDA_L` | `iw3/pretrained_models/hub/checkpoints/video_depth_anything_vitl.pth`
-| `VDA_Metric` | `iw3/pretrained_models/hub/checkpoints/metric_video_depth_anything_vitl.pth`
+| `VDA_B` | `iw3/pretrained_models/hub/checkpoints/video_depth_anything_vitb.pth`
+| `VDA_Metric_B` | `iw3/pretrained_models/hub/checkpoints/metric_video_depth_anything_vitb.pth`
+| `VDA_Metric_L` | `iw3/pretrained_models/hub/checkpoints/metric_video_depth_anything_vitl.pth`
 
 These files can be downloaded from Models section of https://huggingface.co/depth-anything .
 
 - https://huggingface.co/depth-anything/Video-Depth-Anything-Large
+- https://huggingface.co/depth-anything/Video-Depth-Anything-Base
 - https://huggingface.co/depth-anything/Metric-Video-Depth-Anything-Large
+- https://huggingface.co/depth-anything/Metric-Video-Depth-Anything-Base
+
+`VDA_Stream_*` uses the same checkpoint files as `VDA_*`.
 
 #### VDA Implementation Notes
 

@@ -1689,8 +1689,9 @@ def create_parser(required_true=True):
                                  "Any_V2_K_S", "Any_V2_K_B", "Any_V2_K_L",
                                  "Distill_Any_S", "Distill_Any_B", "Distill_Any_L",
                                  "DepthPro", "DepthPro_S",
-                                 "VDA_S", "VDA_L", "VDA_Metric",
-                                 "VDA_Stream_S", "VDA_Stream_L",
+                                 "VDA_S", "VDA_B", "VDA_L",
+                                 "VDA_Metric", "VDA_Metric_S", "VDA_Metric_B", "VDA_Metric_L",
+                                 "VDA_Stream_S", "VDA_Stream_B", "VDA_Stream_L",
                                  "NULL",
                                  ],
                         help="depth model name")

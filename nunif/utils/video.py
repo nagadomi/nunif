@@ -3,6 +3,7 @@ from av.video.reformatter import ColorRange, Colorspace
 from packaging import version as packaging_version
 import os
 from os import path
+import io
 import math
 from tqdm import tqdm
 from PIL import Image
@@ -146,6 +147,9 @@ def get_duration(stream, container_duration=None, to_int=True):
 
 
 def get_frames(stream, container_duration=None):
+    if container_duration is None:
+        if stream.container and stream.container.duration:
+            container_duration = float(stream.container.duration / av.time_base)
     if stream.frames > 0:
         return stream.frames
     else:
@@ -738,6 +742,31 @@ def try_replace(output_path_tmp, output_path):
                 raise
 
 
+def test_audio_copy(input_path, output_path):
+    buff = io.BytesIO()
+    buff.name = path.basename(output_path)
+    try:
+        with (
+                av.open(input_path) as input_container,
+                av.open(buff, mode="w") as output_container,
+        ):
+            if len(input_container.streams.audio) > 0:
+                audio_input_stream = input_container.streams.audio[0]
+            else:
+                return True
+
+            audio_output_stream = add_stream_from_template(output_container, audio_input_stream)
+            for packet in input_container.demux([audio_input_stream]):
+                if packet.dts is not None:
+                    packet.stream = audio_output_stream
+                    output_container.mux(packet)
+                    break
+    except Exception:  # noqa
+        return False
+    else:
+        return True
+
+
 def process_video(input_path, output_path,
                   frame_callback,
                   config_callback=default_config_callback,
@@ -817,10 +846,10 @@ def process_video(input_path, output_path,
             audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
             audio_copy = False
         else:
-            try:
+            if test_audio_copy(input_path, output_path):
                 audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
                 audio_copy = True
-            except ValueError:
+            else:
                 audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
                 audio_copy = False
 
@@ -937,10 +966,10 @@ def generate_video(output_path,
                 audio_output_stream = output_container.add_stream("aac", 16000)
                 audio_copy = False
             else:
-                try:
+                if test_audio_copy(audio_file, output_path):
                     audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
                     audio_copy = True
-                except ValueError:
+                else:
                     audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
                     audio_copy = False
 
@@ -1150,10 +1179,10 @@ def export_audio(input_path, output_path, start_time=None, end_time=None,
         audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
         audio_copy = False
     else:
-        try:
+        if test_audio_copy(input_path, output_path):
             audio_output_stream = add_stream_from_template(output_container, template=audio_input_stream)
             audio_copy = True
-        except ValueError:
+        else:
             audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
             audio_copy = False
 

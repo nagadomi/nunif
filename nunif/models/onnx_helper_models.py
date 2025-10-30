@@ -69,18 +69,26 @@ class ONNXReplicationPadding(I2IBaseModel):
         )
 
 
+def _hflip(x):
+    return torch.flip(x, (-1,))
+
+
+def _vflip(x):
+    return torch.flip(x, (-2,))
+
+
 class ONNXTTASplit(I2IBaseModel):
     def __init__(self):
         super().__init__({}, scale=1, offset=0, in_channels=3)
 
     def forward(self, x: torch.Tensor, tta_level: int):
         if tta_level == 2:
-            hflip = TF.hflip(x)
+            hflip = _hflip(x)
             x = torch.cat([x, hflip], dim=0)
         elif tta_level == 4:
-            hflip = TF.hflip(x)
-            vflip = TF.vflip(x)
-            vhflip = TF.hflip(vflip)
+            hflip = _hflip(x)
+            vflip = _vflip(x)
+            vhflip = _hflip(vflip)
             x = torch.cat([x, hflip, vflip, vhflip], dim=0)
         # tta_level=8 is not supported due to rot90 is not supported
 
@@ -114,12 +122,13 @@ class ONNXTTAMerge(I2IBaseModel):
 
     def forward(self, x: torch.Tensor, tta_level: int):
         if tta_level == 2:
-            x = torch.clamp((x[0] + TF.hflip(x[1])).unsqueeze(0) / 2., 0., 1.)
+            x = torch.clamp((x[0] + _hflip(x[1])).unsqueeze(0) / 2., 0., 1.)
         elif tta_level == 4:
-            hflip = TF.hflip(x[1])
-            vflip = TF.vflip(x[2])
-            vhflip = TF.vflip(TF.hflip(x[3]))
+            hflip = _hflip(x[1])
+            vflip = _vflip(x[2])
+            vhflip = _vflip(_hflip(x[3]))
             x = torch.clamp((x[0] + hflip + vflip + vhflip).unsqueeze(0) / 4., 0., 1.)
+
         return x
 
     def export_onnx(self, f, **kwargs):
@@ -433,7 +442,8 @@ def _test_alpha_border():
 
 
 if __name__ == "__main__":
-    _test_pad()
+    # _test_pad()
+    # _test_tta()
     # _test_blend_filter()
     # _test_alpha_border()
     # _test_resize()

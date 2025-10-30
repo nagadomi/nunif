@@ -281,10 +281,14 @@ class Waifu2xDataset(Waifu2xDatasetBase):
 
             if style == "photo" and noise_level >= 0:
                 photo_noise = RandomPhotoNoiseX(noise_level=noise_level)
-                if noise_level == 3:
+                if noise_level in {2, 3}:
                     jpeg_transform = T.RandomChoice([
                         jpeg_transform,
-                        RandomPhotoNoiseX(noise_level=noise_level, force=True)], p=[0.95, 0.05])
+                        TP.Compose([
+                            RandomPhotoNoiseX(noise_level=noise_level, force=True),
+                            jpeg_transform,
+                        ]),
+                    ], p=[0.97, 0.03])
             else:
                 photo_noise = TP.Identity()
 

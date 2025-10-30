@@ -85,20 +85,34 @@ class I2IBaseModel(Model):
         tile_size = _find_valid_tile_size(self.name, base_tile_size)
         return tile_size
 
-    def export_onnx(self, f, **kwargs):
+    def export_onnx(self, f, dynamo=False, **kwargs):
         shape = [1, self.i2i_in_channels, self.i2i_default_tile_size, self.i2i_default_tile_size]
         x = torch.rand(shape, dtype=torch.float32)
         model = self.to_inference_model()
-        torch.onnx.export(
-            model,
-            x,
-            f,
-            input_names=["x"],
-            output_names=["y"],
-            dynamic_axes={'x': {0: 'batch_size', 2: "input_height", 3: "input_width"},
-                          'y': {0: 'batch_size', 2: "height", 3: "width"}},
-            **kwargs
-        )
+        if dynamo:
+            torch.onnx.export(
+                model,
+                x,
+                f,
+                input_names=["x"],
+                output_names=["y"],
+                dynamic_shapes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"}},
+                dynamo=True,
+                external_data=False,
+                **kwargs
+            )
+        else:
+            torch.onnx.export(
+                model,
+                x,
+                f,
+                input_names=["x"],
+                output_names=["y"],
+                dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+                              "y": {0: "batch_size", 2: "height", 3: "width"}},
+                external_data=False,
+                **kwargs
+            )
 
 
 class SoftmaxBaseModel(Model):

@@ -63,6 +63,12 @@ sudo apt-get install libgtk-3-dev
 pip3 install -r requirements-gui.txt
 ```
 
+If you want to use training code, install `requirements-dev.txt`.
+
+```
+pip3 install -r requirements-dev.txt
+```
+
 For instructions on how to build PyAV from source, please refer to [Building PyAV from source](#building-pyav-from-source).
 
 ## 5. Download pre-trained models

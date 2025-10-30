@@ -15,7 +15,7 @@ from . cosine_wd import (
 )
 from ..optim import Lion
 from ..models import create_model, save_model, load_model
-from ..initializer import set_seed
+from ..initializer import set_seed, gc_collect
 from ..device import create_device
 from .weight_decay_config import configure_optim_groups, configure_adamw
 from abc import ABC, abstractmethod
@@ -41,9 +41,9 @@ class Trainer(ABC):
         set_seed(self.args.seed)
 
         self.model = self.create_model()
+        self.setup_model()
         if self.args.checkpoint_file is not None:
             self.load_initial_parameters(self.args.checkpoint_file)
-        self.setup_model()
 
         self.train_loader = self.create_dataloader(type="train")
         self.eval_loader = self.create_dataloader(type="eval")
@@ -53,7 +53,7 @@ class Trainer(ABC):
         self.best_loss = 1000000000
         self.optimizers = self.create_optimizers()
         self.schedulers = self.create_schedulers(self.optimizers)
-        self.grad_scaler = self.create_grad_scaler()
+        self.grad_scalers = self.create_grad_scalers()
         if self.args.resume:
             self.resume()
         self.env = self.create_env()
@@ -106,14 +106,19 @@ class Trainer(ABC):
             else:
                 for i, scheduler_state_dict in enumerate(meta["scheduler_state_dict"]):
                     self.schedulers[i].load_state_dict(scheduler_state_dict)
-            self.grad_scaler.load_state_dict(meta["grad_scaler_state_dict"])
+            if not isinstance(meta["grad_scaler_state_dict"], (list, tuple)):
+                self.grad_scalers[0].load_state_dict(meta["grad_scaler_state_dict"])
+            else:
+                for i, grad_scaler_state_dict in enumerate(meta["grad_scaler_state_dict"]):
+                    self.grad_scalers[i].load_state_dict(grad_scaler_state_dict)
             self.start_epoch = meta["last_epoch"] + 1
             self.best_loss = meta["best_loss"]
         print(f"* load checkpoint from {latest_checkpoint_filename}")
         return meta
 
     def load_initial_parameters(self, checkpoint_filename):
-        load_model(checkpoint_filename, model=self.model)
+        _, meta = load_model(checkpoint_filename, model=self.model)
+        return meta
 
     @staticmethod
     def _lr_format(schedulers):
@@ -136,9 +141,10 @@ class Trainer(ABC):
                     loader=self.train_loader,
                     optimizers=self.optimizers,
                     schedulers=self.schedulers,
-                    grad_scaler=self.grad_scaler,
+                    grad_scalers=self.grad_scalers,
                     backward_step=self.args.backward_step,
                 )
+                gc_collect()
                 for optimizer in self.optimizers:
                     if hasattr(optimizer, "eval") and callable(optimizer.eval):
                         optimizer.eval()
@@ -158,10 +164,13 @@ class Trainer(ABC):
                     self.env.eval_begin()
                     self.save_best_model()
                 self.save_checkpoint()
+                if self.args.save_epoch:
+                    self.save_epoch_model()
                 try:
                     self.write_log(self.epoch, train_loss, loss)
                 except:  # noqa
                     pass
+                gc_collect()
         finally:
             self.shutdown()
 
@@ -270,6 +279,9 @@ class Trainer(ABC):
 
         return scheduler
 
+    def create_grad_scalers(self):
+        return [self.create_grad_scaler()]
+
     def create_grad_scaler(self):
         if hasattr(torch.amp, "GradScaler"):
             return torch.amp.GradScaler(self.device.type, enabled=self.amp_is_enabled())
@@ -285,6 +297,7 @@ class Trainer(ABC):
     def save_checkpoint(self, **kwargs):
         optimizer_state_dict = [optimizer.state_dict() for optimizer in self.optimizers]
         scheduler_state_dict = [scheduler.state_dict() for scheduler in self.schedulers]
+        grad_scaler_state_dict = [grad_scaler.state_dict() for grad_scaler in self.grad_scalers]
         model = self.ema_model.module if self.args.ema_model else self.model
         save_model(
             model,
@@ -292,10 +305,22 @@ class Trainer(ABC):
             train_kwargs=self.args,
             optimizer_state_dict=optimizer_state_dict,
             scheduler_state_dict=scheduler_state_dict,
-            grad_scaler_state_dict=self.grad_scaler.state_dict(),
+            grad_scaler_state_dict=grad_scaler_state_dict,
             best_loss=self.best_loss,
             last_epoch=self.epoch,
             **kwargs)
+
+    def save_epoch_model(self):
+        backup_model_dir, backup_disable_backup = self.args.model_dir, self.args.disable_backup
+        self.args.model_dir = path.join(self.args.model_dir, "epoch", str(self.epoch))
+        self.args.disable_backup = True
+        self.best_model_filename = self.create_best_model_filename()
+
+        os.makedirs(self.args.model_dir, exist_ok=True)
+        self.save_best_model()
+
+        self.args.model_dir, self.args.disable_backup = backup_model_dir, backup_disable_backup
+        self.best_model_filename = self.create_best_model_filename()
 
     def save_best_model(self):
         model = self.ema_model.module if self.args.ema_model else self.model
@@ -402,6 +427,8 @@ def create_trainer_default_parser():
                         help="checkpoint file for initializing model parameters. ignored when --resume is specified")
     parser.add_argument("--disable-backup", action="store_true",
                         help="disable backup of the best model file for every runtime")
+    parser.add_argument("--save-epoch", action="store_true",
+                        help="save the model file at each epoch")
     parser.add_argument("--ignore-nan", action="store_true",
                         help="do not raise NaN exception unless NaN occurs more than 100 times in one epoch")
     parser.add_argument("--skip-eval", action="store_true",
@@ -412,5 +439,7 @@ def create_trainer_default_parser():
                         help="decay parameter for EMA model")
     parser.add_argument("--ema-step", type=int, default=1,
                         help="Update interval for EMA model")
+    parser.add_argument("--clip-grad-norm", type=float, default=-1,
+                        help="clip grad norm")
 
     return parser

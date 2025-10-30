@@ -41,6 +41,12 @@ class BaseEnv(ABC):
 
     def backward(self, loss, grad_scaler):
         losses = loss if isinstance(loss, (list, tuple)) else [loss]
+        if isinstance(grad_scaler, (list, tuple)):
+            if len(grad_scaler) == 1:
+                grad_scaler = grad_scaler[0]
+            else:
+                raise NotImplementedError("More than one grad_scaler found. You need to implement `backward`.")
+
         for loss in losses:
             if self.amp:
                 grad_scaler.scale(loss).backward()
@@ -49,38 +55,69 @@ class BaseEnv(ABC):
 
     def optimizer_step(self, optimizer, grad_scaler):
         optimizers = optimizer if isinstance(optimizer, (list, tuple)) else [optimizer]
+        if isinstance(grad_scaler, (list, tuple)):
+            if len(grad_scaler) == 1:
+                grad_scaler = grad_scaler[0]
+            else:
+                raise NotImplementedError("More than one grad_scaler found. You need to implement `optimizer_step`.")
+
         if self.amp:
             for optimizer in optimizers:
+                if self.trainer.args.clip_grad_norm > 0:
+                    grad_scaler.unscale_(optimizer)
+                    for group in optimizer.param_groups:
+                        torch.nn.utils.clip_grad_norm_(
+                            group["params"],
+                            max_norm=self.trainer.args.clip_grad_norm,
+                            error_if_nonfinite=False)
                 grad_scaler.step(optimizer)
                 optimizer.zero_grad()
             grad_scaler.update()
         else:
             for optimizer in optimizers:
+                if self.trainer.args.clip_grad_norm > 0:
+                    for group in optimizer.param_groups:
+                        torch.nn.utils.clip_grad_norm_(
+                            group["params"],
+                            max_norm=self.trainer.args.clip_grad_norm,
+                            error_if_nonfinite=False
+                        )
                 optimizer.step()
                 optimizer.zero_grad()
 
-    def train_backward_step(self, loss, optimizers, grad_scaler, update):
+    def train_backward_step(self, loss, optimizers, grad_scalers, update):
+        if isinstance(grad_scalers, (list, tuple)):
+            if len(grad_scalers) == 1:
+                grad_scaler = grad_scalers[0]
+            else:
+                raise NotImplementedError("More than one grad_scaler found. You need to implement `train_backward_step`.")
+        else:
+            grad_scaler = grad_scalers
         self.backward(loss, grad_scaler)
         if update:
             self.optimizer_step(optimizers, grad_scaler)
 
     def calculate_adaptive_weight(self, base_loss, second_loss, param,
-                                  grad_scaler, min=1e-6, max=1., mode="norm"):
+                                  grad_scaler, min=1e-6, max=1., mode="norm",
+                                  adaptive_weight=1.0):
         base_loss = grad_scaler.scale(base_loss)
-        second_loss = grad_scaler.scale(second_loss)
+        second_loss = grad_scaler.scale(second_loss * adaptive_weight)
         # ref. taming transformers
         base_grad = torch.autograd.grad(base_loss, param, retain_graph=True)[0]
         second_grad = torch.autograd.grad(second_loss, param, retain_graph=True)[0]
+
         assert base_grad is not None and second_grad is not None
         inv_scale = 1.0 / grad_scaler.get_scale()
         base_grad = base_grad * inv_scale
         second_grad = second_grad * inv_scale
         if mode == "norm":
             base_grad_strength = torch.norm(base_grad, p=2)
-            second_grad_strength = torch.norm(second_grad, p=2) + 1e-6
+            second_grad_strength = torch.norm(second_grad, p=2)
+            second_grad_strength = second_grad_strength / adaptive_weight
         elif mode == "max":
             base_grad_strength = torch.max(torch.abs(base_grad))
-            second_grad_strength = torch.max(torch.abs(second_grad)) + 1e-6
+            second_grad_strength = torch.max(torch.abs(second_grad))
+            second_grad_strength = second_grad_strength / adaptive_weight
         else:
             raise NotImplementedError()
         grad_ratio = torch.clamp(base_grad_strength / second_grad_strength, min, max).item()
@@ -128,7 +165,7 @@ class BaseEnv(ABC):
                 return True
         return False
 
-    def train(self, loader, optimizers, schedulers, grad_scaler, backward_step=1):
+    def train(self, loader, optimizers, schedulers, grad_scalers, backward_step=1):
         assert backward_step > 0
 
         nan_count = 0
@@ -153,7 +190,7 @@ class BaseEnv(ABC):
                     nan_count += 1
                     if nan_count > 100:
                         raise FloatingPointError("loss is NaN over 100 times")
-            self.train_backward_step(loss, optimizers, grad_scaler,
+            self.train_backward_step(loss, optimizers, grad_scalers,
                                      update=t % backward_step == 0)
             if self.trainer.args.ema_model:
                 if t % backward_step == 0:

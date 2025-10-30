@@ -1,4 +1,5 @@
 #!/bin/bash
+
 PYTHON=python3
 OUTPUT_DIR=./models/art_scan_gan
 PSNR_MODEL_DIR=./models/art_scan_psnr
@@ -12,7 +13,7 @@ DISCRIMINATOR=u3c
 LOSS=yrgb_l1lbp5
 BATCH_SIZE=16
 DISCRIMINATOR_WEIGHT=1
-LR_OPTIONS=" --scheduler step --learning-rate-decay 0.3 --learning-rate-decay-step 3 10 20 --adam-beta1 0.75 --discriminator-weight ${DISCRIMINATOR_WEIGHT} --generator-start-criteria 0.999"
+LR_OPTIONS=" --scheduler step --learning-rate-decay 0.3 --learning-rate-decay-step 3 10 20 --adam-beta1 0.75 --discriminator-weight ${DISCRIMINATOR_WEIGHT} --generator-start-epoch 2"
 DA_OPTIONS=" --deblur 0.05 --da-scale-p 0.5 --da-grayscale-p 0.01 --da-antialias-p 0.05 "
 # use `--style photo` for photo noise
 OPTIONS=" --arch waifu2x.swin_unet_4x --style photo  --loss ${LOSS} --discriminator ${DISCRIMINATOR} --data-dir ${DATA_DIR} --model-dir ${OUTPUT_DIR} --num-samples ${NUM_SAMPLES} ${LR_OPTIONS} ${DA_OPTIONS} --update-criterion all --disable-backup --hard-example none "
