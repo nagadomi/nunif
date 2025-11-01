@@ -172,7 +172,10 @@ def main(args):
     video_file = args.dataset_dir
 
     def config_callback(stream):
-        return VU.VideoOutputConfig(fps=args.fps)
+        fps = VU.get_fps(stream)
+        if float(fps) > args.max_fps:
+            fps = args.max_fps
+        return VU.VideoOutputConfig(fps=fps)
 
     with PoolExecutor(max_workers=max_workers) as pool:
         futures = []
@@ -222,7 +225,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
     parser.add_argument("--size", type=int, default=512, help="crop size")
     parser.add_argument("--seq", type=int, default=16, help="frame sequence")
-    parser.add_argument("--fps", type=int, default=30, help="sample fps")
+    parser.add_argument("--max-fps", type=int, default=30, help="max sample fps")
     parser.add_argument("--num-samples", type=int, default=1, help="max random crops")
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_Any_L", help="depth model")
