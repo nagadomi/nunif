@@ -16,7 +16,7 @@ def disable_image_lib_threads():
     try:
         from wand.resource import limits
         limits["thread"] = 1
-    except ModuleNotFoundError:
+    except ImportError:
         pass
 
     # Disable OpenCV's Threading/OpenCL
@@ -24,7 +24,7 @@ def disable_image_lib_threads():
         import cv2
         cv2.setNumThreads(0)
         cv2.ocl.setUseOpenCL(False)
-    except ModuleNotFoundError:
+    except ImportError:
         pass
 
 
