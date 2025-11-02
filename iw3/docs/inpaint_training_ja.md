@@ -53,4 +53,5 @@ Forward warpingによる欠損領域を生成することで、以下のよう�
 
 これにより、現実的なインペイントタスクを模擬した学習データを通常の画像から作成できます。
 
-> [画像例をここに挿入]
+<img width="320" height="320" alt="mask-example" src="https://github.com/user-attachments/assets/12a02a8e-e73c-4aea-97b1-e054d1fe92d7" />
+
