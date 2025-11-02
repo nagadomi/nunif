@@ -12,15 +12,17 @@
 まずは短い動画で動作確認することを推奨します。
 
 ```
-python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --prefix tears -o ./data/video_inpaint_v1/train/ --model-type Any_V2_B
+python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --prefix sintel -o ./data/video_inpaint_v1/train/ --model-type Any_V2_B
 ```
 
 コマンド実行後、`./data/video_inpaint_v1/train/`内に各データが格納されたディレクトリが生成されます。1ディレクトリ=1データです。ディレクトリ名は`{prefix}_{model_type}_{FILE_HASH}_{SEQUENCE_NO}`となります。動画ファイルと`--prefix`と`--model-type`の組み合わせが衝突しないように注意してください。
 
-> [画像例をここに挿入]
+<img width="813" height="630" alt="data-ouput" src="https://github.com/user-attachments/assets/4cad2728-9611-479d-8937-a4b77ca0a813" />
+
 
 各ディレクトリには画像シーケンスが保存されます。`_C.png`がRGBフレーム、`_M.png`がインペイントマスクです。
-> [画像例をここに挿入]
+
+<img width="828" height="538" alt="video-sequence-data" src="https://github.com/user-attachments/assets/451ebf7a-73c6-4461-89ff-68e427f89bc6" />
 
 学習用データディレクトリには`train/`と`eval/`が必要です。
 `train/`は学習用、`eval/`は評価用です。この例では`./data/video_inpaint_v1/train`に出力します。
@@ -64,7 +66,7 @@ python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --p
 - 屋外（都市、森林、海、空 など）
 - 屋内（室内、工場等）
 
-YouTube動画例：
+動画例：
 - 都市散策
 - サバイバル・ハイキング
 - 工場見学、オフィスツアー、ジム
