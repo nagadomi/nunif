@@ -114,7 +114,7 @@ python train.py inpaint -i ./data/video_inpaint_v1 --model-dir models/video_inpa
 - `--model-dir`: モデル出力先ディレクトリ（`eval/`配下に学習進捗サンプルを保存）
 - `--save-eval-step`: 評価データごとの保存間隔（1: 全保存、20: 20データごと保存）
 
-動画モデル学習時は`--batch-size 1`固定です（12フレーム/データ）。`--backward-step`はGradient Accumulationの回数です。Batch Sizeの代わりにGradient Accumulationを使用します。
+動画モデル学習時は`--batch-size 1`固定です（12フレーム/データ）。`--backward-step`はGradient Accumulationの回数です。Mini-batchの代わりにGradient Accumulationを使用します。
 
 デフォルトでは200エポックで周期的学習率スケジューラを使用します（40エポック毎に学習率リセット）。リセット直後は一時的に精度が下がります。
 
