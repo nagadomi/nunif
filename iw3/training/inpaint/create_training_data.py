@@ -180,6 +180,9 @@ def save_images(c, mask, output_base, size, num_samples):
 def main(args):
     from ...depth_model_factory import create_depth_model
 
+    if args.model_type.startswith("VDA_"):
+        raise ValueError("VDA is not supported")
+
     max_workers = cpu_count() // 2 or 1
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     filename_prefix = filename_prefix + md5(path.basename(args.dataset_dir)) + "_"

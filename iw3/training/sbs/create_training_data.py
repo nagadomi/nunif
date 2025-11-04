@@ -220,6 +220,9 @@ def main(args):
     from ...depth_model_factory import create_depth_model
 
     assert args.min_size - OFFSET * 2 >= args.size
+    if args.model_type.startswith("VDA_"):
+        raise ValueError("VDA is not supported")
+
     # force_update_midas()
     # force_update_zoedepth()
 

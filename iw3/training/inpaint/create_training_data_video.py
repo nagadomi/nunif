@@ -158,6 +158,8 @@ def main(args):
 
     assert args.batch_size <= args.seq
     assert args.seq % args.batch_size == 0
+    if args.model_type.startswith("VDA_"):
+        raise ValueError("VDA is not supported")
 
     max_workers = cpu_count() // 2 or 1
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
