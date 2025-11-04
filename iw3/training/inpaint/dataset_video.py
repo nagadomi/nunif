@@ -149,7 +149,9 @@ class VideoInpaintDataset(Dataset):
             else:
                 raise RuntimeError(f"{rgb_file} not found")
 
-        assert len(files) >= seq
+        if not len(files) >= seq:
+            raise IOError(f"Invalid data: {input_dir}: {len(files)} files")
+
         if training:
             start_i = random.randint(0, len(files) - seq)
         else:
