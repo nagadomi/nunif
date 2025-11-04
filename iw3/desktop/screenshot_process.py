@@ -11,11 +11,20 @@ import numpy as np
 import sys
 import wx
 import mss
-_mss = mss.mss(); x11root = None # These both global variable will simplify code significantly!
+
+
+_mss = mss.mss()
+x11root = None  # These both global variable will simplify code significantly!
+
+
 if sys.platform == "linux":
     from Xlib import display
     x11root = display.Display().screen().root
-def get_x11root(): global x11root; return x11root
+
+
+def get_x11root():
+    return x11root
+
 
 class FrameMSS():
     def __init__(self, frame):
@@ -29,8 +38,9 @@ class CaptureControlMSS():
     def stop(self):
         self._stop = True
 
+
 class WindowsCaptureMSS():
-    def __init__(self, monitor_index = 0, window_name = None):
+    def __init__(self, monitor_index=0, window_name=None):
         self._mss = mss.mss()
         self.window_name = window_name
         self.monitor_index = monitor_index
@@ -50,7 +60,7 @@ class WindowsCaptureMSS():
         control = CaptureControlMSS()
         while True:
             tick = time.perf_counter()
-            if self.window_name != None:
+            if self.window_name is not None:
                 position = get_window_rect_by_title(self.window_name, self.root)
             else:
                 position = self._mss.monitors[self.monitor_index + 1]
@@ -65,7 +75,7 @@ class WindowsCaptureMSS():
             time.sleep(wait_time)
 
 
-def draw_cursor(x, pos, offset={"left":0,"top":0}, size = 12):
+def draw_cursor(x, pos, offset={"left": 0, "top": 0}, size=12):
     C, H, W = x.shape
     r = size // 2
     rr = r // 2
@@ -88,7 +98,7 @@ def get_monitor_size_list():
             height = height - sy
             size_list.append((width, height))
         return size_list
-    else: # This doesn't use any platform specific call (safe for all OS)
+    else:  # This doesn't use any platform specific call (safe for all OS)
         monitors = _mss.monitors
         size_list = []
         for monitor in monitors:
@@ -102,7 +112,7 @@ DENY_WINDOW_NAMES = {
 }
 
 
-def enum_window_names(window = None, root = None):
+def enum_window_names(window=None, root=None):
     if sys.platform == "win32":
         import win32gui
 
@@ -118,39 +128,51 @@ def enum_window_names(window = None, root = None):
         return sorted(window_names)
     elif sys.platform == "linux":
         is_root = True
-        if window == None: window = root
-        else: is_root = False
+        if window is None:
+            window = root
+        else:
+            is_root = False
         try:
             name = window.get_wm_name()
             geom = window.get_geometry()
             abs_pos = root.translate_coords(window, 0, 0)
-            #this also saves initial window coordinates and address for uniqueness
+            # this also saves initial window coordinates and address for uniqueness
             window_names = [str(name) + "|" + str(abs_pos.x) + "," + str(abs_pos.y) + "|" +
                             str(geom.width) + "," + str(geom.height) + "|" + str(window)[-9: -1]]
             if geom.width < 128 or geom.height < 128:
-                window_names = [] # Reject window size smaller than 128 x 128
-        except: window_names = []
+                window_names = []  # Reject window size smaller than 128 x 128
+        except:  # noqa
+            window_names = []
         try:
             for child in window.query_tree().children:
                 window_names += enum_window_names(child, root)
-        except: pass
-        if is_root: return sorted(window_names)
-        else: return window_names
-    else: return [] # WARNING: mac is unimplemented!
+        except:  # noqa
+            pass
+        if is_root:
+            return sorted(window_names)
+        else:
+            return window_names
+    else:
+        return []  # WARNING: mac is unimplemented!
+
 
 def XFindWindow(window, address, root):
-    if window == None: window = root
+    if window is None:
+        window = root
     try:
         if str(window)[-9: -1] == address:
             return window
         for child in window.query_tree().children:
-            ret = XFindWindow(child,address,root)
-            if ret != None:
+            ret = XFindWindow(child, address, root)
+            if ret is not None:
                 return ret
-    except: pass
+    except:  # noqa
+        pass
+
     return None
 
-def get_window_rect_by_title(title, root = None):
+
+def get_window_rect_by_title(title, root=None):
     if sys.platform == "win32":
         import win32gui
 
@@ -171,13 +193,14 @@ def get_window_rect_by_title(title, root = None):
         }
     elif sys.platform == "linux":
         comp = title.split("|")
-        if len(comp) < 4: return None
+        if len(comp) < 4:
+            return None
         window = XFindWindow(None, comp[-1], root)
         try:
             geom = window.get_geometry()
             abs_pos = root.translate_coords(window, 0, 0)
             ret = {"left": abs_pos.x, "top": abs_pos.y, "width": geom.width, "height": geom.height}
-        except: # Window not found falling back to initial window area
+        except:  # noqa # Window not found falling back to initial window area
             ret = {}
             pos = comp[-3].split(',')
             ret["left"] = int(pos[0])
@@ -186,21 +209,27 @@ def get_window_rect_by_title(title, root = None):
             ret["width"] = int(pos[0])
             ret["height"] = int(pos[1])
         # Ensure bounding box is stricly inside monitor area
-        if ret["left"] < 0: ret["width"] += ret["left"]; ret["left"] = 0
-        if ret["top"] < 0: ret["height"] += ret["top"]; ret["top"] = 0
+        if ret["left"] < 0:
+            ret["width"] += ret["left"]
+            ret["left"] = 0
+        if ret["top"] < 0:
+            ret["height"] += ret["top"]
+            ret["top"] = 0
         if ret["width"] <= 0 or ret["height"] <= 0:
             print("window position is invalid or out of screen!")
-            return dict(_mss.monitors[1]) # Return primary monitor area
-        box = _mss.monitors[0] # Combined monitor area
+            return dict(_mss.monitors[1])  # Return primary monitor area
+        box = _mss.monitors[0]  # Combined monitor area
         if ret["left"] + ret["width"] >= box["width"]:
             ret["width"] = box["width"] - ret["left"] - 1
         if ret["top"] + ret["height"] >= box["height"]:
             ret["height"] = box["height"] - ret["top"] - 1
         if ret["width"] <= 0 or ret["height"] <= 0:
             print("window position is invalid or out of screen!")
-            return dict(_mss.monitors[1]) # Return primary monitor area
+            return dict(_mss.monitors[1])  # Return primary monitor area
         return ret
-    else: return {"left": 0, "right": 0, "width": 0, "height": 0} # WARNING: mac is unimplemented!
+    else:
+        return {"left": 0, "right": 0, "width": 0, "height": 0}  # WARNING: mac is unimplemented!
+
 
 def estimate_fps(fps_counter):
     diff = []
@@ -327,11 +356,11 @@ class ScreenshotProcess(threading.Thread):
 
     def get_capture_size(self):
         if self.window_name:
-            rect = get_window_rect_by_title(self.window_name,self.root)
+            rect = get_window_rect_by_title(self.window_name, self.root)
             if rect is None:
                 raise RuntimeError(f"{self.window_name} not found")
         else:
-            rect = dict(_mss.monitors[self.monitor_index + 1]) # deep copy
+            rect = dict(_mss.monitors[self.monitor_index + 1])  # deep copy
         rect["top"] += self.crop_top
         rect["left"] += self.crop_left
         rect["height"] -= self.crop_top + self.crop_bottom
@@ -393,8 +422,8 @@ class ScreenshotProcess(threading.Thread):
                         frame_buffer.copy_(frame)
 
                 capture_size = self.get_capture_size()
-                min_h = min(capture_size["height"], self.screen_height);
-                min_w = min(capture_size["width"], self.screen_width);
+                min_h = min(capture_size["height"], self.screen_height)
+                min_w = min(capture_size["width"], self.screen_width)
                 if self.ar_preserve:
                     if min_h * self.screen_width // self.screen_height > min_w:
                         min_w = min_h * self.screen_width // self.screen_height
@@ -412,8 +441,9 @@ class ScreenshotProcess(threading.Thread):
                         frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
                         if self.backend == "mss":
                             # cursor for MSS
-                            draw_cursor(frame,wx.GetMousePosition(),capture_size)
-                        if crop_needed: frame = TF.crop(frame, 0, 0, min_h, min_w)
+                            draw_cursor(frame, wx.GetMousePosition(), capture_size)
+                        if crop_needed:
+                            frame = TF.crop(frame, 0, 0, min_h, min_w)
                         if frame.shape[1:] != (self.frame_height, self.frame_width):
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
@@ -423,8 +453,9 @@ class ScreenshotProcess(threading.Thread):
                     frame = frame_buffer.to(self.device)
                     frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
                     if self.backend == "mss":
-                        draw_cursor(frame,wx.GetMousePosition(),capture_size)
-                    if crop_needed: frame = TF.crop(frame, 0, 0, min_h, min_w)
+                        draw_cursor(frame, wx.GetMousePosition(), capture_size)
+                    if crop_needed:
+                        frame = TF.crop(frame, 0, 0, min_h, min_w)
                     if frame.shape[1:] != (self.frame_height, self.frame_width):
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,

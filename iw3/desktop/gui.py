@@ -446,7 +446,6 @@ class MainFrame(wx.Frame):
         self.chk_ar_preserve.SetToolTip(T("Preserve captured window aspect ratio"))
         self.chk_ar_preserve.SetValue(True)
 
-
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
