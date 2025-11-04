@@ -12,7 +12,7 @@
 まずは短い動画で動作確認することを推奨します。
 
 ```
-python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --prefix sintel -o ./data/video_inpaint_v1/train/ --model-type Any_V2_B
+python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --prefix sintel -o ./data/video_inpaint_v1/train/ --model-type Any_B
 ```
 
 コマンド実行後、`./data/video_inpaint_v1/train/`内に各データが格納されたディレクトリが生成されます。1ディレクトリ=1データです。ディレクトリ名は`{prefix}_{model_type}_{FILE_HASH}_{SEQUENCE_NO}`となります。動画ファイルと`--prefix`と`--model-type`の組み合わせが衝突しないように注意してください。
@@ -82,8 +82,8 @@ python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --p
 
 OUTPUT_DIR=./data/video_inpaint_v1/train/
 
-python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy1 --model-type Any_V2_B
-python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy2 --model-type Distill_Any_L --resolution 518 --skip-first 16
+python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy1 --model-type Any_B
+python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy2 --model-type Any_L --resolution 518 --skip-first 16
 python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy3 --model-type ZoeD_Any_N
 
 python create_training_data.py video_inpaint --dataset-dir /data/videos/kamakura.webm -o ${OUTPUT_DIR} --prefix kamakura1 --model-type Any_B

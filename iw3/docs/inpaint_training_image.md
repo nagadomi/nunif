@@ -27,7 +27,7 @@ It is recommended that the shorter side of images is at least 1080px. If the ima
 Run the following command to generate the training data:
 
 ```
-python create_training_data.py inpaint --dataset-dir /path/to/image_dataset --prefix image1 -o ./data/inpaint_v1/ --model-type Any_V2_B
+python create_training_data.py inpaint --dataset-dir /path/to/image_dataset --prefix image1 -o ./data/inpaint_v1/ --model-type Any_B
 ```
 
 After executing the command, each dataset will be created under `./data/inpaint_v1/train/` and `./data/inpaint_v1/eval/`. The file names will be in the format `{prefix}_{model_type}_{SEQUENCE_NO}_(M|C).png`. Files ending with `_C.png` are RGB frames, and files ending with `_M.png` are inpainting masks. Be careful to avoid conflicts between `--prefix` and `--model-type`.
@@ -62,7 +62,7 @@ Example:
 
 OUTPUT_DIR=./data/inpaint_v1/
 
-python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker1 --model-type Any_V2_B
+python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker1 --model-type Any_B
 python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker2 --model-type ZoeD_Any_N
 # ...
 ```

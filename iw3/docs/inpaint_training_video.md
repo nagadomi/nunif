@@ -11,7 +11,7 @@ It is recommended that videos are in 1080p resolution. During generation, videos
 Run the following command for each video to generate training data. It is recommended to first verify the behavior using a short video.
 
 ```
-python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --prefix tears -o ./data/video_inpaint_v1/train/ --model-type Any_V2_B
+python create_training_data.py video_inpaint --dataset-dir path/to/video.mp4 --prefix tears -o ./data/video_inpaint_v1/train/ --model-type Any_B
 ```
 
 After running the command, a directory for each data record will be generated under `./data/video_inpaint_v1/train/`.
@@ -92,8 +92,8 @@ Example:
 
 OUTPUT_DIR=./data/video_inpaint_v1/train/
 
-python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy1 --model-type Any_V2_B
-python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy2 --model-type Distill_Any_L --resolution 518 --skip-first 16
+python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy1 --model-type Any_B
+python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy2 --model-type Any_L --resolution 518 --skip-first 16
 python create_training_data.py video_inpaint --dataset-dir /data/videos/shibuya.webm -o ${OUTPUT_DIR} --prefix shibuy3 --model-type ZoeD_Any_N
 
 python create_training_data.py video_inpaint --dataset-dir /data/videos/kamakura.webm -o ${OUTPUT_DIR} --prefix kamakura1 --model-type Any_B

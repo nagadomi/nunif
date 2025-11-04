@@ -23,7 +23,7 @@ image_dataset/
 以下のコマンドを実行し、学習データを作成します。
 
 ```
-python create_training_data.py inpaint --dataset-dir /path/to/image_dataset --prefix image1 -o ./data/inpaint_v1/ --model-type Any_V2_B
+python create_training_data.py inpaint --dataset-dir /path/to/image_dataset --prefix image1 -o ./data/inpaint_v1/ --model-type Any_B
 ```
 
 コマンド実行後、`./data/inpaint_v1/train/`、`./data/inpaint_v1/eval/`内にに各データが生成されます。ファイル名は`{prefix}_{model_type}_{SEQUENCE_NO}_(M|C).png`になります。`_C.png`がRGB画像、`_M.png`がインペイントマスクです。
@@ -54,7 +54,7 @@ python create_training_data.py inpaint --dataset-dir /path/to/image_dataset --pr
 
 OUTPUT_DIR=./data/inpaint_v1/
 
-python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker1 --model-type Any_V2_B
+python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker1 --model-type Any_B
 python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker2 --model-type ZoeD_Any_N
 # ...
 ```
