@@ -35,6 +35,9 @@ TORCH_VERSION = Version(torch.__version__)
 ENABLE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
 TORCH_NUM_THREADS = torch.get_num_threads()
 
+# Thread-safe JPEG encoding lock
+_jpeg_encode_lock = threading.Lock()
+
 
 def init_win32():
     if sys.platform == "win32":
@@ -102,10 +105,14 @@ def fps_sleep(start_time, fps, resolution=2e-4):
 
 def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
     bio = io.BytesIO()
-    if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
-        jpeg_data = encode_jpeg(to_uint8(frame), quality=quality).cpu()
-    else:
-        jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
+    
+    # Thread-safe JPEG encoding with lock
+    with _jpeg_encode_lock:
+        if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
+            jpeg_data = encode_jpeg(to_uint8(frame), quality=quality).cpu()
+        else:
+            jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
+    
     bio.write(jpeg_data.numpy())
     jpeg_data = bio.getbuffer().tobytes()
     # debug_jpeg_data(frame, jpeg_data)
@@ -147,6 +154,7 @@ def create_parser():
     parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
     parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
     parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
+    parser.add_argument("--disable-draw-cursor", action="store_true", help="Disables drawing the cursor on the output stream")
 
     parser.set_defaults(
         input="dummy",
@@ -290,7 +298,8 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_width=frame_width, frame_height=frame_height,
         monitor_index=args.monitor_index, window_name=args.window_name,
         device=device, crop_top=args.crop_top, crop_left=args.crop_left,
-        crop_right=args.crop_right, crop_bottom=args.crop_bottom)
+        crop_right=args.crop_right, crop_bottom=args.crop_bottom,
+        draw_cursor_enabled=not args.disable_draw_cursor)
 
     try:
         if args.compile:
@@ -323,7 +332,9 @@ def iw3_desktop_main(args, init_wxapp=True):
                     if args.gpu_jpeg:
                         server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
                     else:
-                        server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                        with torch.no_grad():
+                            sbs_gpu_clone = sbs.detach().clone().contiguous()
+                        server.set_frame_data(lambda sbs=sbs_gpu_clone: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=False))
                 else:
                     server.set_frame_data((sbs, tick))
 
@@ -344,9 +355,12 @@ def iw3_desktop_main(args, init_wxapp=True):
                               f"Screen Size = {screen_size_tuple}", end="")
 
             if args.local_viewer:
-                if not wx.GetApp().IsMainLoopRunning():
-                    # CLI
-                    wx.Yield()
+                # Platform-specific behavior for local viewer
+                if sys.platform != "win32":
+                    # Linux: Use wx.Yield() (original working behavior)
+                    if not wx.GetApp().IsMainLoopRunning():
+                        wx.Yield()
+                # Check if window was closed
                 if server.is_closed():
                     break
             process_time = time.perf_counter() - tick

@@ -237,7 +237,7 @@ def to_tensor(bgra, device):
 
 
 class ScreenshotProcess(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="pil", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, backend="pil", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0, draw_cursor_enabled=True):
         super().__init__(daemon=True)
         self.backend = backend
         self.frame_width = frame_width
@@ -249,6 +249,7 @@ class ScreenshotProcess(threading.Thread):
         self.crop_left = crop_left
         self.crop_right = crop_right
         self.crop_bottom = crop_bottom
+        self.draw_cursor_enabled = draw_cursor_enabled
         self.frame = None
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
@@ -300,34 +301,38 @@ class ScreenshotProcess(threading.Thread):
                 while not self.process_frame_event.wait(1):
                     if not self.process.is_alive():
                         raise RuntimeError("thread is already dead")
+                if self.cuda_stream is not None:
+                    torch.cuda.synchronize(self.device)
+                
                 with self.process_frame_lock:
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
                                        dtype=np.uint8, buffer=self.process_frame_buffer.buf)
-                    # deepcopy
-                    frame = torch.from_numpy(frame)
-                    if frame_buffer is None:
-                        frame_buffer = frame.clone()
-                        if torch.cuda.is_available():
-                            frame_buffer = frame_buffer.pin_memory()
-                    else:
-                        frame_buffer.copy_(frame)
+                    frame = frame.copy()
+                    
+                frame = torch.from_numpy(frame)
+                if frame_buffer is None:
+                    frame_buffer = frame.clone()
+                    if torch.cuda.is_available():
+                        frame_buffer = frame_buffer.pin_memory()
+                else:
+                    frame_buffer.copy_(frame)
 
                 if self.cuda_stream is not None:
                     with torch.cuda.stream(self.cuda_stream):
-                        frame = frame_buffer.to(self.device)
+                        frame = frame_buffer.to(self.device, non_blocking=True)
                         frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
-                        if self.backend == "pil":
+                        if self.backend == "pil" and self.draw_cursor_enabled:
                             # cursor for PIL
                             draw_cursor(frame, wx.GetMousePosition())
                         if frame.shape[1:] != (self.frame_height, self.frame_width):
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
                                               antialias=True)
-                        self.cuda_stream.synchronize()
+                    self.cuda_stream.synchronize()
                 else:
                     frame = frame_buffer.to(self.device)
                     frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
-                    if self.backend == "pil":
+                    if self.backend == "pil" and self.draw_cursor_enabled:
                         draw_cursor(frame, wx.GetMousePosition())
                     if frame.shape[1:] != (self.frame_height, self.frame_width):
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
