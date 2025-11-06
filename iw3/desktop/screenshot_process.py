@@ -53,6 +53,7 @@ class FrameMSS():
 class CaptureControlMSS():
     def __init__(self):
         self._stop = False
+        self.frame_pos = [0, 0]
 
     def stop(self):
         self._stop = True
@@ -79,6 +80,7 @@ class WindowsCaptureMSS():
                 tick = time.perf_counter()
                 if self.window_name is not None:
                     position = get_window_rect_by_title(self.window_name, sct=sct)
+                    control.frame_pos = [position["top"], position["left"]]
                 else:
                     position = sct.monitors[self.monitor_index + 1]
                 shot = sct.grab(position)
@@ -92,12 +94,12 @@ class WindowsCaptureMSS():
                 time.sleep(wait_time)
 
 
-def draw_cursor(x, pos, offset={"left": 0, "top": 0}, size=12):
+def draw_cursor(x, pos, size=12, offset=[0, 0]):
     C, H, W = x.shape
     r = size // 2
     rr = r // 2
-    pos_x = min(max(pos[0] - offset["left"], r), W - r)
-    pos_y = min(max(pos[1] - offset["top"], r), H - r)
+    pos_x = min(max(pos[0] - offset[1], r), W - r)
+    pos_y = min(max(pos[1] - offset[0], r), H - r)
     px = x[:, pos_y - rr: pos_y + rr, pos_x - rr: pos_x + rr].clone()
     color = torch.tensor((0x33 / 255.0, 0x80 / 255.0, 0x80 / 255.0), dtype=px.dtype, device=px.device).view(3, 1, 1)
     x[:, pos_y - r: pos_y + r, pos_x - r: pos_x + r] = color
@@ -303,7 +305,11 @@ def estimate_fps(fps_counter):
         return 0
 
 
-def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_lock, frame_event, stop_event, backend="mss", crop_top=0, crop_left=0, crop_right=0, crop_bottom=0):
+def capture_process(
+        frame_size, monitor_index, window_name,
+        frame_shm, frame_pos, frame_lock, frame_event, stop_event, backend="mss",
+        crop_top=0, crop_left=0, crop_right=0, crop_bottom=0
+):
     frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
     frame_count = 0
 
@@ -332,7 +338,9 @@ def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_loc
 
     @capture.event
     def on_frame_arrived(frame, capture_control):
-        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer, window_name, frame_count, crop_top, crop_left, crop_right, crop_bottom  # noqa
+        nonlocal frame_shm, frame_event, frame_lock, stop_event, \
+                  frame_buffer, frame_pos, window_name, frame_count, \
+                  crop_top, crop_left, crop_right, crop_bottom  # noqa
         if not frame_event.is_set():
             with frame_lock:
                 source_frame = frame.frame_buffer
@@ -361,6 +369,11 @@ def capture_process(frame_size, monitor_index, window_name, frame_shm, frame_loc
                         raise RuntimeError(f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={source_frame.shape}")
                 else:
                     frame_buffer[:] = source_frame
+
+                if hasattr(capture_control, "frame_pos"):
+                    frame_pos[0] = capture_control.frame_pos[0]
+                    frame_pos[1] = capture_control.frame_pos[1]
+
                 frame_event.set()
 
         if stop_event.is_set():
@@ -422,6 +435,7 @@ class ScreenshotProcess(threading.Thread):
         self.screen_height = screen_size[1]
         template = np.zeros((self.screen_height, self.screen_width, 4), dtype=np.uint8)
         self.process_frame_buffer = shared_memory.SharedMemory(create=True, size=template.nbytes)
+        self.process_frame_pos = mp.Array("i", [0, 0], lock=False)
         self.process_stop_event = mp.Event()
         self.process_frame_event = mp.Event()
         self.process_frame_lock = mp.Lock()
@@ -431,6 +445,7 @@ class ScreenshotProcess(threading.Thread):
                   self.monitor_index,
                   self.window_name,
                   self.process_frame_buffer,
+                  self.process_frame_pos,
                   self.process_frame_lock,
                   self.process_frame_event,
                   self.process_stop_event,
@@ -467,12 +482,8 @@ class ScreenshotProcess(threading.Thread):
                     with torch.cuda.stream(self.cuda_stream):
                         frame = frame_buffer.to(self.device)
                         frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
-                        if self.backend == "mss":
-                            # cursor for MSS
-                            # On Linux, it is implmented in mss
-                            # TODO: windows
-                            # draw_cursor(frame, wx.GetMousePosition())
-                            pass
+                        if self.backend == "mss" and sys.platform != "linux":
+                            draw_cursor(frame, wx.GetMousePosition(), offset=self.process_frame_pos)
                         if frame.shape[1:] != (self.frame_height, self.frame_width):
                             frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                               interpolation=InterpolationMode.BILINEAR,
@@ -481,11 +492,8 @@ class ScreenshotProcess(threading.Thread):
                 else:
                     frame = frame_buffer.to(self.device)
                     frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
-                    if self.backend == "mss":
-                        # on Linux, it is implmented in mss
-                        # TODO: windows
-                        # draw_cursor(frame, wx.GetMousePosition())
-                        pass
+                    if self.backend == "mss" and sys.platform != "linux":
+                        draw_cursor(frame, wx.GetMousePosition(), offset=self.process_frame_pos)
                     if frame.shape[1:] != (self.frame_height, self.frame_width):
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
