@@ -309,6 +309,8 @@ def iw3_desktop_main(args, init_wxapp=True):
             depth_model.compile()
             if side_model is not None and not isinstance(side_model, DeviceSwitchInference):
                 side_model = compile_model(side_model)
+        gc_collect()
+
         # main loop
         server.start()
         screenshot_thread.start()
@@ -341,8 +343,6 @@ def iw3_desktop_main(args, init_wxapp=True):
                 else:
                     server.set_frame_data((sbs, tick))
 
-                if count % (args.stream_fps * 30) == 0:
-                    gc_collect()
                 if count > 1 and tick - last_status_time > 1:
                     last_status_time = tick
                     mean_processing_time = sum(fps_counter) / len(fps_counter)
