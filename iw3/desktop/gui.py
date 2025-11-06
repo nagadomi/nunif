@@ -437,14 +437,6 @@ class MainFrame(wx.Frame):
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
 
-        self.chk_fullscreen_framebuf = wx.CheckBox(self.grp_processor, label=T("Fullscreen Framebuffer"), name="chk_fullscreen_framebuf")
-        self.chk_fullscreen_framebuf.SetToolTip(T("Force framebuffer size to fully match selected monitor resolution regardless of window selection"))
-        self.chk_fullscreen_framebuf.SetValue(False)
-
-        self.chk_ar_preserve = wx.CheckBox(self.grp_processor, label=T("Keep Aspect Ratio"), name="chk_ar_preserve")
-        self.chk_ar_preserve.SetToolTip(T("Preserve captured window aspect ratio"))
-        self.chk_ar_preserve.SetValue(True)
-
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -470,11 +462,7 @@ class MainFrame(wx.Frame):
         crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
 
         layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_compile, (6, 0), flag=wx.EXPAND)
-        layout.Add(self.chk_fullscreen_framebuf, (5, 1), flag=wx.EXPAND)
-        self.chk_fullscreen_framebuf.Hide()
-        layout.Add(self.chk_ar_preserve, (5, 0), flag=wx.EXPAND)
-        self.chk_ar_preserve.Disable()
+        layout.Add(self.chk_compile, (5, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -568,7 +556,6 @@ class MainFrame(wx.Frame):
         self.SetSizer(layout)
 
         # bind
-        self.cbo_window_name.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_window_name)
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
@@ -911,7 +898,7 @@ class MainFrame(wx.Frame):
             user = password = None
 
         monitor_index = int(self.cbo_monitor_index.GetValue())
-        if self.cbo_screenshot.GetValue() == "pil":
+        if self.cbo_screenshot.GetValue() not in {"wc_mp", "mss"}:
             monitor_index = 0
         window_name = self.cbo_window_name.GetValue()
         if not window_name:
@@ -951,8 +938,6 @@ class MainFrame(wx.Frame):
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
-            fullscreen_framebuf=self.chk_fullscreen_framebuf.IsChecked(),
-            ar_preserve=self.chk_ar_preserve.IsChecked(),
             cross_eyed=self.chk_cross_eyed.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
@@ -1149,14 +1134,6 @@ class MainFrame(wx.Frame):
                 if not check_compile_support(device):
                     self.chk_compile.SetValue(False)
 
-    def on_text_changed_cbo_window_name(self, event):
-        if self.cbo_window_name.GetValue() != "":
-            self.chk_fullscreen_framebuf.Show()
-            self.chk_ar_preserve.Enable()
-        else:
-            self.chk_fullscreen_framebuf.Hide()
-            self.chk_ar_preserve.Disable()
-
     def on_text_changed_cbo_language(self, event):
         lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
         save_language_setting(LANG_CONFIG_PATH, lang)
@@ -1170,7 +1147,7 @@ class MainFrame(wx.Frame):
         self.update_window_names()
 
     def update_monitor_index(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() != "pil":
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
             self.lbl_monitor_index.Show()
             self.cbo_monitor_index.Show()
         else:
@@ -1180,7 +1157,7 @@ class MainFrame(wx.Frame):
         self.GetSizer().Layout()
 
     def update_window_names(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() != "pil":
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()

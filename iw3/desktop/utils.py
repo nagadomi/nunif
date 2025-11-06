@@ -233,19 +233,18 @@ def iw3_desktop_main(args, init_wxapp=True):
     if args.screenshot == "pil" and args.window_name:
         raise RuntimeError(f"{args.screenshot} does not support --window-name option")
 
-    if args.window_name and not args.fullscreen_framebuf:
+    if args.window_name:
         rect = get_window_rect_by_title(args.window_name)
         if rect is None:
             raise RuntimeError(f"window_name={args.window_name} not found")
-        screen_width, screen_height = rect["width"], rect["height"]
+        screen_width = rect["width"] - args.crop_left - args.crop_right
+        screen_height = rect["height"] - args.crop_top - args.crop_bottom
     else:
         size_list = get_monitor_size_list()
         if args.monitor_index >= len(size_list):
             raise RuntimeError(f"monitor_index={args.monitor_index} not found")
         screen_width, screen_height = size_list[args.monitor_index]
 
-    screen_width -= args.crop_left + args.crop_right
-    screen_height -= args.crop_top + args.crop_bottom
     screen_size = (screen_width, screen_height)
     if screen_height > args.stream_height:
         frame_height = args.stream_height
@@ -291,8 +290,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_width=frame_width, frame_height=frame_height,
         monitor_index=args.monitor_index, window_name=args.window_name,
         device=device, crop_top=args.crop_top, crop_left=args.crop_left,
-        crop_right=args.crop_right, crop_bottom=args.crop_bottom,
-        fullscreen_framebuf=args.fullscreen_framebuf, ar_preserve=args.ar_preserve)
+        crop_right=args.crop_right, crop_bottom=args.crop_bottom)
 
     try:
         if args.compile:
