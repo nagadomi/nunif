@@ -431,6 +431,7 @@ class ScreenshotProcess(threading.Thread):
         self.crop_bottom = crop_bottom
         self.draw_cursor_enabled = draw_cursor_enabled
         self.frame = None
+        self.frame_set_event = threading.Event()
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -522,6 +523,7 @@ class ScreenshotProcess(threading.Thread):
 
                 with self.frame_lock:
                     self.frame = frame
+                    self.frame_set_event.set()
 
                 process_time = time.perf_counter() - tick
                 with self.fps_lock:
@@ -542,13 +544,13 @@ class ScreenshotProcess(threading.Thread):
             self.process_frame_buffer = None
 
     def get_frame(self):
-        frame = None
-        while frame is None:
+        while not self.frame_set_event.wait(1):
             if self.stop_event.is_set():
                 raise RuntimeError("thread is already dead")
+        with self.frame_lock:
+            frame = self.frame
+            self.frame_set_event.clear()
 
-            with self.frame_lock:
-                frame = self.frame
         return frame
 
     def get_fps(self):
