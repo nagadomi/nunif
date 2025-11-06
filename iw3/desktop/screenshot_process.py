@@ -11,13 +11,10 @@ from multiprocessing import shared_memory
 import numpy as np
 import sys
 import wx
-import mss
-
-
-_mss = mss.mss()
 
 
 _x11_connection_pool = {}
+_mss_pool = {}
 
 
 def get_x11root():
@@ -29,6 +26,17 @@ def get_x11root():
         _x11_connection_pool[key] = root
 
     return root
+
+
+def get_mss():
+    key = os.getpid()
+    sct = _mss_pool.get(key)
+    if sct is None:
+        import mss
+        sct = mss.mss(with_cursor=True)
+        _mss_pool[key] = sct
+
+    return sct
 
 
 class FrameMSS():
@@ -46,7 +54,6 @@ class CaptureControlMSS():
 
 class WindowsCaptureMSS():
     def __init__(self, monitor_index=0, window_name=None):
-        self._mss = mss.mss(with_cursor=True)
         self.window_name = window_name
         self.monitor_index = monitor_index
 
@@ -59,22 +66,24 @@ class WindowsCaptureMSS():
             raise ValueError(handler.__name__)
 
     def start(self):
+        import mss
         control = CaptureControlMSS()
         while True:
-            tick = time.perf_counter()
-            if self.window_name is not None:
-                position = get_window_rect_by_title(self.window_name)
-            else:
-                position = self._mss.monitors[self.monitor_index + 1]
-            shot = self._mss.grab(position)
-            self.on_frame_arrived(FrameMSS(np.asarray(shot)), control)
-            if control._stop:
-                self.on_closed()
-                break
+            with mss.mss(with_cursor=True) as sct:
+                tick = time.perf_counter()
+                if self.window_name is not None:
+                    position = get_window_rect_by_title(self.window_name, sct=sct)
+                else:
+                    position = sct.monitors[self.monitor_index + 1]
+                shot = sct.grab(position)
+                self.on_frame_arrived(FrameMSS(np.asarray(shot)), control)
+                if control._stop:
+                    self.on_closed()
+                    break
 
-            process_time = time.perf_counter() - tick
-            wait_time = max((1 / 60) - process_time, 0)
-            time.sleep(wait_time)
+                process_time = time.perf_counter() - tick
+                wait_time = max((1 / 60) - process_time, 0)
+                time.sleep(wait_time)
 
 
 def draw_cursor(x, pos, offset={"left": 0, "top": 0}, size=12):
@@ -101,11 +110,11 @@ def get_monitor_size_list():
             size_list.append((width, height))
         return size_list
     else:  # This doesn't use any platform specific call (safe for all OS)
-        monitors = _mss.monitors
+        monitors = get_mss().monitors[1:]
         size_list = []
         for monitor in monitors:
-            size_list.append((monitor['width'], monitor['height']))
-        return size_list[1:]
+            size_list.append((monitor["width"], monitor["height"]))
+        return size_list
 
 
 def get_screen_size(monitor_index):
@@ -177,7 +186,7 @@ def XFindWindow(window, address, root):
     return None
 
 
-def get_window_rect_by_title(title):
+def get_window_rect_by_title(title, sct=None):
     if sys.platform == "win32":
         import win32gui
 
@@ -215,7 +224,10 @@ def get_window_rect_by_title(title):
             pos = comp[-2].split(',')
             ret["width"] = int(pos[0])
             ret["height"] = int(pos[1])
+
         # Ensure bounding box is stricly inside monitor area
+        sct = sct or get_mss()
+
         if ret["left"] < 0:
             ret["width"] += ret["left"]
             ret["left"] = 0
@@ -223,16 +235,17 @@ def get_window_rect_by_title(title):
             ret["height"] += ret["top"]
             ret["top"] = 0
         if ret["width"] <= 0 or ret["height"] <= 0:
-            print("window position is invalid or out of screen!")
-            return dict(_mss.monitors[1])  # Return primary monitor area
-        box = _mss.monitors[0]  # Combined monitor area
+            print("window position is invalid or out of screen!", file=sys.stderr)
+            return dict(sct.monitors[1])  # Return primary monitor area
+        box = sct.monitors[0]  # Combined monitor area
         if ret["left"] + ret["width"] >= box["width"]:
             ret["width"] = box["width"] - ret["left"] - 1
         if ret["top"] + ret["height"] >= box["height"]:
             ret["height"] = box["height"] - ret["top"] - 1
         if ret["width"] <= 0 or ret["height"] <= 0:
-            print("window position is invalid or out of screen!")
-            return dict(_mss.monitors[1])  # Return primary monitor area
+            print("window position is invalid or out of screen!", file=sys.stderr)
+            return dict(sct.monitors[1])  # Return primary monitor area
+
         return ret
     else:
         return {"left": 0, "right": 0, "width": 0, "height": 0}  # WARNING: mac is unimplemented!
