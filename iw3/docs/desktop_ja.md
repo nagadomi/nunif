@@ -1,7 +1,8 @@
 # iw3 desktop streaming
 
 (警告: これは非常に実験的なツールです。
- 今のところMeta QuestとPICO 4で動作することが分かっています。VisionProでは動作しません。)
+ 今のところMeta QuestとPICO 4で動作することが分かっています。VisionProでは動作しません。
+ またLinux/Waylandで非常に遅い。)
 
 iw3.desktopはPCのデスクトップ画面を3D変換してWiFi経由でストリーミング配信するツールです。
 Meta Quest上のブラウザからサイドバイサイド3Dとして視聴できます。

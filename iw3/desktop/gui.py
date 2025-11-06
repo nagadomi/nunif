@@ -41,6 +41,7 @@ from .utils import (
     create_parser, set_state_args,
     get_monitor_size_list,
     enum_window_names,
+    is_mss_supported,
     IW3U, ENABLE_GPU_JPEG,
 )
 
@@ -239,6 +240,10 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format.SetEditable(False)
         self.cbo_stereo_format.SetSelection(0)
         self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
+        self.chk_cross_eyed = wx.CheckBox(self.grp_stereo, label=T("Cross Eyed"), name="chk_cross_eyed")
+        self.chk_cross_eyed.SetToolTip(T("Swap left image and right image"))
+        self.chk_cross_eyed.SetValue(False)
+        self.chk_cross_eyed.Hide()
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.SetEmptyCellSize((0, 0))
@@ -268,6 +273,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, (i, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_format_device, (i := i + 1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_cross_eyed, (i, 0), flag=wx.EXPAND)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -382,7 +388,11 @@ class MainFrame(wx.Frame):
         self.cbo_device.SetSelection(0)
 
         self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
-        screenshot_backends = ["pil", "pil_mp"] + (["wc_mp"] if HAS_WINDOWS_CAPTURE else [])
+        screenshot_backends = ["pil"]
+        if is_mss_supported():
+            screenshot_backends +=  ["mss"]
+        if HAS_WINDOWS_CAPTURE:
+            screenshot_backends += ["wc_mp"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
@@ -641,6 +651,8 @@ class MainFrame(wx.Frame):
                 depth_models.append("Distill_Any_L")
 
             depth_models += ["VDA_Stream_S"]
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_B"):
+                depth_models.append("VDA_Stream_B")
             if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
                 depth_models.append("VDA_Stream_L")
 
@@ -763,12 +775,14 @@ class MainFrame(wx.Frame):
 
     def update_stereo_format(self, *args, **kwargs):
         stereo_format = self.cbo_stereo_format.GetValue()
+        self.chk_cross_eyed.Show()
         if stereo_format == "Half SBS":
             self.lbl_format_device.SetLabel("Meta Quest 2/3")
         elif stereo_format == "Full SBS":
             self.lbl_format_device.SetLabel("PICO 4")
         else:
             self.lbl_format_device.SetLabel("")
+            self.chk_cross_eyed.Hide()
 
     def update_edge_dilation(self):
         if self.chk_edge_dilation.IsChecked():
@@ -889,9 +903,10 @@ class MainFrame(wx.Frame):
             user = password = None
 
         monitor_index = int(self.cbo_monitor_index.GetValue())
-        if self.cbo_screenshot.GetValue() != "wc_mp":
-            monitor_index = 0
         window_name = self.cbo_window_name.GetValue()
+        if self.cbo_screenshot.GetValue() not in {"wc_mp", "mss"}:
+            monitor_index = 0
+            window_name = None
         if not window_name:
             window_name = None
 
@@ -929,7 +944,7 @@ class MainFrame(wx.Frame):
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
-
+            cross_eyed=self.chk_cross_eyed.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
@@ -1138,7 +1153,7 @@ class MainFrame(wx.Frame):
         self.update_window_names()
 
     def update_monitor_index(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() == "wc_mp":
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
             self.lbl_monitor_index.Show()
             self.cbo_monitor_index.Show()
         else:
@@ -1148,7 +1163,7 @@ class MainFrame(wx.Frame):
         self.GetSizer().Layout()
 
     def update_window_names(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() == "wc_mp":
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()
