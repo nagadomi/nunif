@@ -33,7 +33,6 @@ from ..depth_anything_model import DepthAnythingModel
 from ..video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
 from ..locales import LOCALES, load_language_setting, save_language_setting
 from .utils import (
-    get_x11root,
     get_local_address,
     is_private_address,
     is_loopback_address,
@@ -1194,7 +1193,7 @@ class MainFrame(wx.Frame):
             self.lbl_crop_right.Show()
             self.txt_crop_bottom.Show()
             self.lbl_crop_bottom.Show()
-            self.cbo_window_name.SetItems([""] + enum_window_names(root=get_x11root()))
+            self.cbo_window_name.SetItems([""] + enum_window_names())
         else:
             self.lbl_window_name.Hide()
             self.cbo_window_name.Hide()

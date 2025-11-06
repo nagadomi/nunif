@@ -1,3 +1,4 @@
+import os
 import threading
 import torch
 from collections import deque
@@ -14,16 +15,20 @@ import mss
 
 
 _mss = mss.mss()
-x11root = None  # These both global variable will simplify code significantly!
 
 
-if sys.platform == "linux":
-    from Xlib import display
-    x11root = display.Display().screen().root
+_x11_connection_pool = {}
 
 
 def get_x11root():
-    return x11root
+    key = os.getpid()
+    root = _x11_connection_pool.get(key)
+    if root is None:
+        from Xlib import display
+        root = display.Display().screen().root
+        _x11_connection_pool[key] = root
+
+    return root
 
 
 class FrameMSS():
@@ -44,9 +49,6 @@ class WindowsCaptureMSS():
         self._mss = mss.mss()
         self.window_name = window_name
         self.monitor_index = monitor_index
-        self.root = None
-        if sys.platform == "linux":
-            self.root = display.Display().screen().root
 
     def event(self, handler):
         if handler.__name__ == "on_frame_arrived":
@@ -61,7 +63,7 @@ class WindowsCaptureMSS():
         while True:
             tick = time.perf_counter()
             if self.window_name is not None:
-                position = get_window_rect_by_title(self.window_name, self.root)
+                position = get_window_rect_by_title(self.window_name)
             else:
                 position = self._mss.monitors[self.monitor_index + 1]
             shot = self._mss.grab(position)
@@ -112,7 +114,7 @@ DENY_WINDOW_NAMES = {
 }
 
 
-def enum_window_names(window=None, root=None):
+def enum_window_names():
     if sys.platform == "win32":
         import win32gui
 
@@ -127,31 +129,29 @@ def enum_window_names(window=None, root=None):
         win32gui.EnumWindows(callback, None)
         return sorted(window_names)
     elif sys.platform == "linux":
-        is_root = True
-        if window is None:
-            window = root
-        else:
-            is_root = False
-        try:
-            name = window.get_wm_name()
-            geom = window.get_geometry()
-            abs_pos = root.translate_coords(window, 0, 0)
-            # this also saves initial window coordinates and address for uniqueness
-            window_names = [str(name) + "|" + str(abs_pos.x) + "," + str(abs_pos.y) + "|" +
-                            str(geom.width) + "," + str(geom.height) + "|" + str(window)[-9: -1]]
-            if geom.width < 128 or geom.height < 128:
-                window_names = []  # Reject window size smaller than 128 x 128
-        except:  # noqa
-            window_names = []
-        try:
-            for child in window.query_tree().children:
-                window_names += enum_window_names(child, root)
-        except:  # noqa
-            pass
-        if is_root:
-            return sorted(window_names)
-        else:
+        def _enum_window_names(window=None, root=None):
+            if window is None:
+                window = root
+            try:
+                name = window.get_wm_name()
+                geom = window.get_geometry()
+                abs_pos = root.translate_coords(window, 0, 0)
+                # this also saves initial window coordinates and address for uniqueness
+                window_names = [str(name) + "|" + str(abs_pos.x) + "," + str(abs_pos.y) + "|" +
+                                str(geom.width) + "," + str(geom.height) + "|" + str(window)[-9: -1]]
+                if geom.width < 128 or geom.height < 128:
+                    window_names = []  # Reject window size smaller than 128 x 128
+            except:  # noqa
+                window_names = []
+            try:
+                for child in window.query_tree().children:
+                    window_names += _enum_window_names(child, root)
+            except:  # noqa
+                pass
+
             return window_names
+
+        return sorted(_enum_window_names(window=None, root=get_x11root()))
     else:
         return []  # WARNING: mac is unimplemented!
 
@@ -172,7 +172,7 @@ def XFindWindow(window, address, root):
     return None
 
 
-def get_window_rect_by_title(title, root=None):
+def get_window_rect_by_title(title):
     if sys.platform == "win32":
         import win32gui
 
@@ -192,9 +192,11 @@ def get_window_rect_by_title(title, root=None):
             "height": height
         }
     elif sys.platform == "linux":
+        root = get_x11root()
         comp = title.split("|")
         if len(comp) < 4:
             return None
+
         window = XFindWindow(None, comp[-1], root)
         try:
             geom = window.get_geometry()
@@ -348,7 +350,7 @@ class ScreenshotProcess(threading.Thread):
         self.fps_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.fps_counter = deque(maxlen=120)
-        self.root = get_x11root()
+
         if device.type == "cuda":
             self.cuda_stream = torch.cuda.Stream(device=device)
         else:
@@ -356,7 +358,7 @@ class ScreenshotProcess(threading.Thread):
 
     def get_capture_size(self):
         if self.window_name:
-            rect = get_window_rect_by_title(self.window_name, self.root)
+            rect = get_window_rect_by_title(self.window_name)
             if rect is None:
                 raise RuntimeError(f"{self.window_name} not found")
         else:
