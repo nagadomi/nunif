@@ -41,6 +41,7 @@ from .utils import (
     create_parser, set_state_args,
     get_monitor_size_list,
     enum_window_names,
+    is_mss_supported,
     IW3U, ENABLE_GPU_JPEG,
 )
 
@@ -387,7 +388,11 @@ class MainFrame(wx.Frame):
         self.cbo_device.SetSelection(0)
 
         self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
-        screenshot_backends = ["pil", "mss"] + (["wc_mp"] if HAS_WINDOWS_CAPTURE else [])
+        screenshot_backends = ["pil"]
+        if is_mss_supported():
+            screenshot_backends +=  ["mss"]
+        if HAS_WINDOWS_CAPTURE:
+            screenshot_backends += ["wc_mp"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")

@@ -17,6 +17,18 @@ _x11_connection_pool = {}
 _mss_pool = {}
 
 
+def is_linux_x11():
+    return (sys.platform == "linux" and
+            os.environ.get("XDG_SESSION_TYPE", "").lower() == "x11")
+
+
+def is_mss_supported():
+    if sys.platform  == "linux":
+        return is_linux_x11()
+    else:
+        return True
+
+
 def get_x11():
     key = os.getpid()
     display, root = _x11_connection_pool.get(key, (None, None))
@@ -204,7 +216,7 @@ def enum_window_names():
 
         win32gui.EnumWindows(callback, None)
         return sorted(window_names)
-    elif sys.platform == "linux":
+    elif is_linux_x11():
         return enum_window_names_x11()
     else:
         return []  # WARNING: mac is unimplemented!
@@ -239,7 +251,7 @@ def get_window_rect_by_title(title, sct=None):
             "width": width,
             "height": height
         }
-    elif sys.platform == "linux":
+    elif is_linux_x11():
         import Xlib
         x_display, x_root = get_x11()
         comp = title.rsplit("|", 4)

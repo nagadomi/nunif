@@ -23,6 +23,7 @@ from .screenshot_process import ( # noqa
     get_monitor_size_list,
     get_window_rect_by_title,
     enum_window_names,
+    is_mss_supported,
 )
 from .streaming_server import StreamingServer
 try:
@@ -207,6 +208,8 @@ def iw3_desktop_main(args, init_wxapp=True):
     if args.screenshot == "pil":
         screenshot_factory = ScreenshotThreadPIL
     elif args.screenshot == "mss":
+        if not is_mss_supported():
+            raise ValueError("mss is not supported on Wayland")
         screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="mss")
     elif args.screenshot == "wc_mp":
         screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="windows_capture")
