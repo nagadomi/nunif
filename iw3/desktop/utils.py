@@ -23,6 +23,7 @@ from .screenshot_process import ( # noqa
     get_monitor_size_list,
     get_window_rect_by_title,
     enum_window_names,
+    is_mss_supported,
 )
 from .streaming_server import StreamingServer
 try:
@@ -144,7 +145,7 @@ def create_parser():
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
-    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "pil_mp", "wc_mp"],
+    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "mss", "wc_mp"],
                         help="Screenshot method")
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
@@ -214,8 +215,10 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     if args.screenshot == "pil":
         screenshot_factory = ScreenshotThreadPIL
-    elif args.screenshot == "pil_mp":
-        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="pil")
+    elif args.screenshot == "mss":
+        if not is_mss_supported():
+            raise ValueError("mss is not supported on Wayland")
+        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="mss")
     elif args.screenshot == "wc_mp":
         screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="windows_capture")
 
@@ -236,9 +239,9 @@ def iw3_desktop_main(args, init_wxapp=True):
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
         device_id=args.gpu[0],
     )
-    if args.screenshot != "wc_mp" and args.monitor_index != 0:
+    if args.screenshot == "pil" and args.monitor_index != 0:
         raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
-    if args.screenshot != "wc_mp" and args.window_name:
+    if args.screenshot == "pil" and args.window_name:
         raise RuntimeError(f"{args.screenshot} does not support --window-name option")
 
     if args.window_name:
@@ -306,6 +309,8 @@ def iw3_desktop_main(args, init_wxapp=True):
             depth_model.compile()
             if side_model is not None and not isinstance(side_model, DeviceSwitchInference):
                 side_model = compile_model(side_model)
+        gc_collect()
+
         # main loop
         server.start()
         screenshot_thread.start()
@@ -338,8 +343,6 @@ def iw3_desktop_main(args, init_wxapp=True):
                 else:
                     server.set_frame_data((sbs, tick))
 
-                if count % (args.stream_fps * 30) == 0:
-                    gc_collect()
                 if count > 1 and tick - last_status_time > 1:
                     last_status_time = tick
                     mean_processing_time = sum(fps_counter) / len(fps_counter)

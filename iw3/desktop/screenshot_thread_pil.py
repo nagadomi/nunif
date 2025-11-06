@@ -21,10 +21,10 @@ def take_screenshot(mouse_position=None, draw_cursor_enabled=True):
     return frame
 
 
-def to_tensor(pil_image, device, frame_buffer):
+def to_tensor(pil_image, device, frame_buffer, non_blocking=None):
     # Transfer the image data to VRAM as uint8 first, then convert it to float.
     x = np.array(pil_image)
-    x = frame_buffer.copy_(torch.from_numpy(x).permute(2, 0, 1)).to(device)
+    x = frame_buffer.copy_(torch.from_numpy(x).permute(2, 0, 1)).to(device, non_blocking=non_blocking)
     x = x / 255.0  # to float
     return x
 
@@ -60,13 +60,14 @@ class ScreenshotThreadPIL(threading.Thread):
                 if torch.cuda.is_available():
                     frame_buffer = frame_buffer.pin_memory()
             if self.cuda_stream is not None:
+                self.cuda_stream.wait_stream(torch.cuda.default_stream(self.device))
                 with torch.cuda.stream(self.cuda_stream):
-                    frame = to_tensor(frame, self.device, frame_buffer)
+                    frame = to_tensor(frame, self.device, frame_buffer, non_blocking=True)
                     if frame.shape[2] > self.frame_height:
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
                                           antialias=True)
-                    self.cuda_stream.synchronize()
+                frame.record_stream(self.cuda_stream)
             else:
                 frame = to_tensor(frame, self.device, frame_buffer)
                 if frame.shape[2] > self.frame_height:
