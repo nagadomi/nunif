@@ -137,12 +137,12 @@ DENY_WINDOW_NAMES = {
 
 
 def enum_window_names_x11():
+    import Xlib
     from Xlib import X, Xatom
     d, root = get_x11()
 
     NET_CLIENT_LIST = d.intern_atom("_NET_CLIENT_LIST")
     NET_WM_NAME = d.intern_atom("_NET_WM_NAME")
-    NET_FRAME_EXTENTS = d.intern_atom("_NET_FRAME_EXTENTS")
     NET_WM_DESKTOP = d.intern_atom("_NET_WM_DESKTOP")
     NET_CURRENT_DESKTOP = d.intern_atom("_NET_CURRENT_DESKTOP")
     UTF8_STRING = d.intern_atom("UTF8_STRING")
@@ -177,9 +177,7 @@ def enum_window_names_x11():
 
             geom = w.get_geometry()
             abs_pos = root.translate_coords(w, 0, 0)
-            x, y = abs_pos.x, abs_pos.y
-            width, height = geom.width, geom.height
-            if width < 128 or height < 128:
+            if geom.width < 128 or geom.height < 128:
                 continue
 
             window_name = (str(name) + "|" + str(abs_pos.x) + "," + str(abs_pos.y) + "|" +
@@ -213,6 +211,7 @@ def enum_window_names():
 
 
 def find_window_x11(address, x_display):
+    import Xlib
     try:
         window = x_display.create_resource_object("window", int(address))
     except Xlib.error.XError:
@@ -241,17 +240,22 @@ def get_window_rect_by_title(title, sct=None):
             "height": height
         }
     elif sys.platform == "linux":
+        import Xlib
         x_display, x_root = get_x11()
         comp = title.rsplit("|", 4)
         if len(comp) < 4:
             return None
 
+        ret = None
         window = find_window_x11(comp[-1], x_display)
         if window is not None:
-            geom = window.get_geometry()
-            abs_pos = x_root.translate_coords(window, 0, 0)
-            ret = {"left": abs_pos.x, "top": abs_pos.y, "width": geom.width, "height": geom.height}
-        else:
+            try:
+                geom = window.get_geometry()
+                abs_pos = x_root.translate_coords(window, 0, 0)
+                ret = {"left": abs_pos.x, "top": abs_pos.y, "width": geom.width, "height": geom.height}
+            except Xlib.error.XError:
+                pass
+        if ret is None:
             # Window not found falling back to initial window area
             ret = {}
             pos = comp[-3].split(',')
