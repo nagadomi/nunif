@@ -17,14 +17,20 @@ _x11_connection_pool = {}
 _mss_pool = {}
 
 
-def get_x11root():
+def get_x11():
     key = os.getpid()
-    root = _x11_connection_pool.get(key)
-    if root is None:
-        from Xlib import display
-        root = display.Display().screen().root
-        _x11_connection_pool[key] = root
+    display, root = _x11_connection_pool.get(key, (None, None))
+    if display is None:
+        from Xlib import display as Xdisplay
+        display = Xdisplay.Display()
+        root = display.screen().root
+        _x11_connection_pool[key] = (display, root)
 
+    return display, root
+
+
+def get_x11root():
+    display, root = get_x11()
     return root
 
 
@@ -128,6 +134,62 @@ DENY_WINDOW_NAMES = {
 }
 
 
+def enum_window_names_x11():
+    from Xlib import X, Xatom
+    d, root = get_x11()
+
+    NET_CLIENT_LIST = d.intern_atom("_NET_CLIENT_LIST")
+    NET_WM_NAME = d.intern_atom("_NET_WM_NAME")
+    NET_FRAME_EXTENTS = d.intern_atom("_NET_FRAME_EXTENTS")
+    NET_WM_DESKTOP = d.intern_atom("_NET_WM_DESKTOP")
+    NET_CURRENT_DESKTOP = d.intern_atom("_NET_CURRENT_DESKTOP")
+    UTF8_STRING = d.intern_atom("UTF8_STRING")
+
+    current_desktop_prop = root.get_full_property(NET_CURRENT_DESKTOP, X.AnyPropertyType)
+    current_desktop = current_desktop_prop.value[0] if current_desktop_prop else None
+
+    client_list_prop = root.get_full_property(NET_CLIENT_LIST, X.AnyPropertyType)
+    if not client_list_prop:
+        return []
+
+    windows = []
+    for win_id in client_list_prop.value:
+        try:
+            w = d.create_resource_object("window", win_id)
+            desk_prop = w.get_full_property(NET_WM_DESKTOP, X.AnyPropertyType)
+            if desk_prop:
+                desktop = desk_prop.value[0]
+                if current_desktop is not None and desktop != current_desktop:
+                    continue
+
+            name = None
+            for atom in (NET_WM_NAME, Xatom.WM_NAME):
+                prop = w.get_full_property(atom, UTF8_STRING)
+                if prop:
+                    name = prop.value
+                    if isinstance(name, bytes):
+                        name = name.decode(errors="ignore")
+                    break
+            if not name:
+                continue
+
+            geom = w.get_geometry()
+            abs_pos = root.translate_coords(w, 0, 0)
+            x, y = abs_pos.x, abs_pos.y
+            width, height = geom.width, geom.height
+            if width < 128 or height < 128:
+                continue
+
+            window_name = (str(name) + "|" + str(abs_pos.x) + "," + str(abs_pos.y) + "|" +
+                           str(geom.width) + "," + str(geom.height) + "|" + str(w.id))
+            windows.append(window_name)
+
+        except Xlib.error.XError:
+            continue
+
+    return sorted(windows)
+
+
 def enum_window_names():
     if sys.platform == "win32":
         import win32gui
@@ -143,47 +205,18 @@ def enum_window_names():
         win32gui.EnumWindows(callback, None)
         return sorted(window_names)
     elif sys.platform == "linux":
-        def _enum_window_names(window=None, root=None):
-            if window is None:
-                window = root
-            try:
-                name = window.get_wm_name()
-                geom = window.get_geometry()
-                abs_pos = root.translate_coords(window, 0, 0)
-                # this also saves initial window coordinates and address for uniqueness
-                window_names = [str(name) + "|" + str(abs_pos.x) + "," + str(abs_pos.y) + "|" +
-                                str(geom.width) + "," + str(geom.height) + "|" + str(window)[-9: -1]]
-                if geom.width < 128 or geom.height < 128:
-                    window_names = []  # Reject window size smaller than 128 x 128
-            except:  # noqa
-                window_names = []
-            try:
-                for child in window.query_tree().children:
-                    window_names += _enum_window_names(child, root)
-            except:  # noqa
-                pass
-
-            return window_names
-
-        return sorted(_enum_window_names(window=None, root=get_x11root()))
+        return enum_window_names_x11()
     else:
         return []  # WARNING: mac is unimplemented!
 
 
-def XFindWindow(window, address, root):
-    if window is None:
-        window = root
+def find_window_x11(address, x_display):
     try:
-        if str(window)[-9: -1] == address:
-            return window
-        for child in window.query_tree().children:
-            ret = XFindWindow(child, address, root)
-            if ret is not None:
-                return ret
-    except:  # noqa
-        pass
+        window = x_display.create_resource_object("window", int(address))
+    except Xlib.error.XError:
+        window = None
 
-    return None
+    return window
 
 
 def get_window_rect_by_title(title, sct=None):
@@ -206,24 +239,25 @@ def get_window_rect_by_title(title, sct=None):
             "height": height
         }
     elif sys.platform == "linux":
-        root = get_x11root()
-        comp = title.split("|")
+        x_display, x_root = get_x11()
+        comp = title.rsplit("|", 4)
         if len(comp) < 4:
             return None
 
-        window = XFindWindow(None, comp[-1], root)
-        try:
+        window = find_window_x11(comp[-1], x_display)
+        if window is not None:
             geom = window.get_geometry()
-            abs_pos = root.translate_coords(window, 0, 0)
+            abs_pos = x_root.translate_coords(window, 0, 0)
             ret = {"left": abs_pos.x, "top": abs_pos.y, "width": geom.width, "height": geom.height}
-        except:  # noqa # Window not found falling back to initial window area
+        else:
+            # Window not found falling back to initial window area
             ret = {}
             pos = comp[-3].split(',')
             ret["left"] = int(pos[0])
             ret["top"] = int(pos[1])
-            pos = comp[-2].split(',')
-            ret["width"] = int(pos[0])
-            ret["height"] = int(pos[1])
+            size = comp[-2].split(',')
+            ret["width"] = int(size[0])
+            ret["height"] = int(size[1])
 
         # Ensure bounding box is stricly inside monitor area
         sct = sct or get_mss()
@@ -236,7 +270,9 @@ def get_window_rect_by_title(title, sct=None):
             ret["top"] = 0
         if ret["width"] <= 0 or ret["height"] <= 0:
             print("window position is invalid or out of screen!", file=sys.stderr)
-            return dict(sct.monitors[1])  # Return primary monitor area
+            # Return primary monitor area
+            return dict(sct.monitors[1])
+
         box = sct.monitors[0]  # Combined monitor area
         if ret["left"] + ret["width"] >= box["width"]:
             ret["width"] = box["width"] - ret["left"] - 1
@@ -244,11 +280,13 @@ def get_window_rect_by_title(title, sct=None):
             ret["height"] = box["height"] - ret["top"] - 1
         if ret["width"] <= 0 or ret["height"] <= 0:
             print("window position is invalid or out of screen!", file=sys.stderr)
-            return dict(sct.monitors[1])  # Return primary monitor area
+            # Return primary monitor area
+            return dict(sct.monitors[1])
 
         return ret
     else:
-        return {"left": 0, "right": 0, "width": 0, "height": 0}  # WARNING: mac is unimplemented!
+        # TODO: Not implemented
+        return {"left": 0, "right": 0, "width": 0, "height": 0}
 
 
 def estimate_fps(fps_counter):

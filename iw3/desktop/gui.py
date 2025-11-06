@@ -898,9 +898,10 @@ class MainFrame(wx.Frame):
             user = password = None
 
         monitor_index = int(self.cbo_monitor_index.GetValue())
+        window_name = self.cbo_window_name.GetValue()
         if self.cbo_screenshot.GetValue() not in {"wc_mp", "mss"}:
             monitor_index = 0
-        window_name = self.cbo_window_name.GetValue()
+            window_name = None
         if not window_name:
             window_name = None
 
