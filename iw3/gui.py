@@ -697,6 +697,12 @@ class MainFrame(wx.Frame):
         if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
             depth_models.append("VDA_Stream_L")
 
+        depth_models += ["VDA_Stream_Metric_S"]
+        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_B"):
+            depth_models.append("VDA_Stream_Metric_B")
+        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_L"):
+            depth_models.append("VDA_Stream_Metric_L")
+
         return depth_models
 
     def get_editable_comboboxes(self):

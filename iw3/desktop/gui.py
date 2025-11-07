@@ -624,7 +624,7 @@ class MainFrame(wx.Frame):
 
     def get_depth_models(self, small_only):
         if small_only:
-            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S"]
+            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S", "VDA_Stream_Metric_S"]
         else:
             depth_models = [
                 "ZoeD_N", "ZoeD_K", "ZoeD_NK",
@@ -655,6 +655,12 @@ class MainFrame(wx.Frame):
                 depth_models.append("VDA_Stream_B")
             if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
                 depth_models.append("VDA_Stream_L")
+
+            depth_models += ["VDA_Stream_Metric_S"]
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_B"):
+                depth_models.append("VDA_Stream_Metric_B")
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_L"):
+                depth_models.append("VDA_Stream_Metric_L")
 
             return depth_models
 

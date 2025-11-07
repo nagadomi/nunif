@@ -62,14 +62,14 @@ def _postprocess(out, edge_dilation, metric_depth, max_dist=None, depth_aa=None,
     out = out.unsqueeze(1)
     out = torch.nan_to_num(out)
 
+    if max_dist is not None:
+        out = torch.clamp(out, max=max_dist)
+
     if depth_aa is not None:
         ori_dtype = out.dtype
         with autocast(device=out.device, enabled=enable_amp):
             out = depth_aa.infer(out)
         out = out.to(ori_dtype)
-
-    if max_dist is not None:
-        out = torch.clamp(out, max=max_dist)
 
     if metric_depth:
         out = F.pad(out, (-METRIC_PADDING,) * 4)
