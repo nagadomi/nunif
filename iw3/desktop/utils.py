@@ -23,6 +23,7 @@ from .screenshot_process import ( # noqa
     get_monitor_size_list,
     get_window_rect_by_title,
     enum_window_names,
+    is_mss_supported,
 )
 from .streaming_server import StreamingServer
 try:
@@ -34,6 +35,9 @@ except ImportError:
 TORCH_VERSION = Version(torch.__version__)
 ENABLE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
 TORCH_NUM_THREADS = torch.get_num_threads()
+
+# Thread-safe JPEG encoding lock
+_jpeg_encode_lock = threading.Lock()
 
 
 def init_win32():
@@ -102,10 +106,14 @@ def fps_sleep(start_time, fps, resolution=2e-4):
 
 def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
     bio = io.BytesIO()
-    if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
-        jpeg_data = encode_jpeg(to_uint8(frame), quality=quality).cpu()
-    else:
-        jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
+    
+    # Thread-safe JPEG encoding with lock
+    with _jpeg_encode_lock:
+        if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
+            jpeg_data = encode_jpeg(to_uint8(frame), quality=quality).cpu()
+        else:
+            jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
+    
     bio.write(jpeg_data.numpy())
     jpeg_data = bio.getbuffer().tobytes()
     # debug_jpeg_data(frame, jpeg_data)
@@ -137,7 +145,7 @@ def create_parser():
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
-    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "pil_mp", "wc_mp"],
+    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "mss", "wc_mp"],
                         help="Screenshot method")
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
@@ -147,6 +155,7 @@ def create_parser():
     parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
     parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
     parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
+    parser.add_argument("--disable-draw-cursor", action="store_true", help="Disables drawing the cursor on the output stream")
 
     parser.set_defaults(
         input="dummy",
@@ -206,8 +215,10 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     if args.screenshot == "pil":
         screenshot_factory = ScreenshotThreadPIL
-    elif args.screenshot == "pil_mp":
-        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="pil")
+    elif args.screenshot == "mss":
+        if not is_mss_supported():
+            raise ValueError("mss is not supported on Wayland")
+        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="mss")
     elif args.screenshot == "wc_mp":
         screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="windows_capture")
 
@@ -228,9 +239,9 @@ def iw3_desktop_main(args, init_wxapp=True):
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
         device_id=args.gpu[0],
     )
-    if args.screenshot != "wc_mp" and args.monitor_index != 0:
+    if args.screenshot == "pil" and args.monitor_index != 0:
         raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
-    if args.screenshot != "wc_mp" and args.window_name:
+    if args.screenshot == "pil" and args.window_name:
         raise RuntimeError(f"{args.screenshot} does not support --window-name option")
 
     if args.window_name:
@@ -290,13 +301,16 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_width=frame_width, frame_height=frame_height,
         monitor_index=args.monitor_index, window_name=args.window_name,
         device=device, crop_top=args.crop_top, crop_left=args.crop_left,
-        crop_right=args.crop_right, crop_bottom=args.crop_bottom)
+        crop_right=args.crop_right, crop_bottom=args.crop_bottom,
+        draw_cursor_enabled=not args.disable_draw_cursor)
 
     try:
         if args.compile:
             depth_model.compile()
             if side_model is not None and not isinstance(side_model, DeviceSwitchInference):
                 side_model = compile_model(side_model)
+        gc_collect()
+
         # main loop
         server.start()
         screenshot_thread.start()
@@ -323,12 +337,12 @@ def iw3_desktop_main(args, init_wxapp=True):
                     if args.gpu_jpeg:
                         server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
                     else:
-                        server.set_frame_data(lambda: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                        with torch.no_grad():
+                            sbs_gpu_clone = sbs.detach().clone().contiguous()
+                        server.set_frame_data(lambda sbs=sbs_gpu_clone: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=False))
                 else:
                     server.set_frame_data((sbs, tick))
 
-                if count % (args.stream_fps * 30) == 0:
-                    gc_collect()
                 if count > 1 and tick - last_status_time > 1:
                     last_status_time = tick
                     mean_processing_time = sum(fps_counter) / len(fps_counter)
@@ -344,9 +358,12 @@ def iw3_desktop_main(args, init_wxapp=True):
                               f"Screen Size = {screen_size_tuple}", end="")
 
             if args.local_viewer:
-                if not wx.GetApp().IsMainLoopRunning():
-                    # CLI
-                    wx.Yield()
+                # Platform-specific behavior for local viewer
+                if sys.platform != "win32":
+                    # Linux: Use wx.Yield() (original working behavior)
+                    if not wx.GetApp().IsMainLoopRunning():
+                        wx.Yield()
+                # Check if window was closed
                 if server.is_closed():
                     break
             process_time = time.perf_counter() - tick

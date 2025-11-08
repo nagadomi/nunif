@@ -4,9 +4,8 @@ import torch
 from torchvision.transforms import functional as TF
 from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
 from nunif.models.utils import compile_model
-from .dilation import dilate_edge
-from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
-from . depth_anything_model import batch_preprocess as batch_preprocess_da
+from .base_depth_model import BaseDepthModel, HUB_MODEL_DIR
+from .video_depth_anything_model import batch_preprocess, postprocess
 from .models import DepthAA
 
 
@@ -14,61 +13,55 @@ NAME_MAP = {
     "VDA_Stream_S": "vits",
     "VDA_Stream_B": "vitb",
     "VDA_Stream_L": "vitl",
+    "VDA_Stream_Metric_S": "vits",
+    "VDA_Stream_Metric_B": "vitb",
+    "VDA_Stream_Metric_L": "vitl",
 }
 MODEL_FILES = {
     "VDA_Stream_S": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vits.pth"),
     "VDA_Stream_B": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitb.pth"),
     "VDA_Stream_L": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitl.pth"),
+    "VDA_Stream_Metric_S": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vits.pth"),
+    "VDA_Stream_Metric_B": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitb.pth"),
+    "VDA_Stream_Metric_L": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
 }
 AA_SUPPORT_MODELS = {
     "VDA_Stream_S",
     "VDA_Stream_B",
     "VDA_Stream_L",
+    "VDA_Stream_Metric_S",
+    "VDA_Stream_Metric_B",
+    "VDA_Stream_Metric_L",
 }
-
-
-def batch_preprocess(x, lower_bound):
-    x = batch_preprocess_da(x, lower_bound)
-    assert x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0
-    return x
-
-
-def postprocess(out, edge_dilation, depth_aa=None, enable_amp=True):
-    out = torch.nan_to_num(out)
-
-    if depth_aa is not None:
-        ori_dtype = out.dtype
-        with autocast(device=out.device, enabled=enable_amp):
-            out = depth_aa.infer(out)
-        out = out.to(ori_dtype)
-
-    if edge_dilation > 0:
-        out = dilate_edge(out, edge_dilation)
-
-    # invert for zoedepth compatibility
-    out.neg_()
-    if out.dtype != torch.float32:
-        out = out.to(torch.float32)
-    return out
+METRIC_PADDING = 14
+METRIC_DEPTH_TYPES = {
+    "VDA_Stream_Metric_S",
+    "VDA_Stream_Metric_B",
+    "VDA_Stream_Metric_L",
+}
 
 
 class VideoDepthAnythingStreamingModel(BaseDepthModel):
     def __init__(self, model_type):
         super().__init__(model_type)
+        self.metric_depth = model_type in METRIC_DEPTH_TYPES
+        # if True, use 1 / depth and is_metric==False
+        self.force_disparity = True
 
     def load_model(self, model_type, resolution=None, device=None):
         # load aa model
         self.depth_aa = DepthAA().load().eval().to(device)
         # load depth model
         encoder = NAME_MAP[model_type]
+        metric_depth = model_type in METRIC_DEPTH_TYPES
         if not os.getenv("IW3_DEBUG"):
             model = torch.hub.load("nagadomi/Video-Depth-Anything_iw3:main",
-                                   "VideoDepthAnythingStreaming", encoder=encoder, device=device,
+                                   "VideoDepthAnythingStreaming", encoder=encoder, metric_depth=metric_depth, device=device,
                                    verbose=False, trust_repo=True)
         else:
             assert path.exists("../Video-Depth-Anything_iw3/hubconf.py")
             model = torch.hub.load("../Video-Depth-Anything_iw3",
-                                   "VideoDepthAnythingStreaming", encoder=encoder, device=device,
+                                   "VideoDepthAnythingStreaming", encoder=encoder, metric_depth=metric_depth, device=device,
                                    source="local", verbose=False, trust_repo=True)
 
         model.prep_lower_bound = resolution or 392
@@ -93,12 +86,15 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         else:
             batch = True
 
-        x = batch_preprocess(x, self.model.prep_lower_bound)
+        x = batch_preprocess(x, self.model.prep_lower_bound, metric_depth=self.metric_depth)
         outputs = []
         for frame in x:
             outputs.append(self.model.infer_video_depth_one(frame, use_amp=enable_amp).to(torch.float32))
         depth = torch.stack(outputs)
-        depth = postprocess(depth, edge_dilation=edge_dilation, depth_aa=depth_aa, enable_amp=enable_amp)
+        depth = depth.squeeze(1)  # (B, 1, H, W) -> (B, H, W) for compatibility of VDA
+
+        depth = postprocess(depth, edge_dilation=edge_dilation, depth_aa=depth_aa, metric_depth=self.metric_depth,
+                            force_disparity=self.force_disparity, enable_amp=enable_amp)
         if not batch:
             depth = depth.squeeze(0)
 
@@ -124,7 +120,9 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         return MODEL_FILES[model_type]
 
     def is_metric(self):
-        return False
+        if not self.metric_depth:
+            return False
+        return not self.force_disparity
 
     @classmethod
     def multi_gpu_supported(cls, model_type):

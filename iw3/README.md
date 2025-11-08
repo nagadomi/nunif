@@ -373,6 +373,19 @@ python -m iw3 --max-fps 0.5 -i input_video.mp4 -o output_dir/
 
 If the results are acceptable, process the full video.
 
+### "HIP error: invalid device function" on older AMD GPUs
+
+Append the `HSA_OVERRIDE_GFX_VERSION` environment variable to your command. Below are examples launching the GUI module with different AMD GPUs.
+
+For 6700, 6600 and other RDNA2 or older,
+```
+HSA_OVERRIDE_GFX_VERSION=10.3.0 python -m iw3.gui
+```
+or for AMD 7600 and other RDNA3 cards:
+```
+HSA_OVERRIDE_GFX_VERSION=11.0.0 python -m iw3.gui
+```
+
 ## Limitation
 
 `--method row_flow_v3`(by default) is currently only trained for the range `0.0 <= divergence <= 5.0` and `0.0 <= convergence <= 1.0`.

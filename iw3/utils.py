@@ -1826,6 +1826,7 @@ def create_parser(required_true=True):
                                  "VDA_S", "VDA_B", "VDA_L",
                                  "VDA_Metric", "VDA_Metric_S", "VDA_Metric_B", "VDA_Metric_L",
                                  "VDA_Stream_S", "VDA_Stream_B", "VDA_Stream_L",
+                                 "VDA_Stream_Metric_S", "VDA_Stream_Metric_B", "VDA_Stream_Metric_L",
                                  "NULL",
                                  ],
                         help="depth model name")
