@@ -18,6 +18,7 @@ from .common import (
 )
 from .video_encoding_box import VideoEncodingBox
 from .io_path_panel import IOPathPanel
+from .locale import get_default_locale
 
 __all__ = [
     "EVT_TQDM", "TQDMEvent", "TQDMGUI",
@@ -39,4 +40,5 @@ __all__ = [
     "IOPathPanel",
     "apply_dark_mode",
     "is_dark_mode",
+    "get_default_locale"
 ]
