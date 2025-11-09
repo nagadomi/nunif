@@ -1,6 +1,5 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
-import locale
 import sys
 import os
 import time
@@ -28,6 +27,7 @@ from nunif.gui import (
     validate_number,
     set_icon_ex, load_icon, start_file,
     apply_dark_mode, is_dark_mode,
+    get_default_locale,
 )
 from ..depth_anything_model import DepthAnythingModel
 from ..video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
@@ -390,7 +390,7 @@ class MainFrame(wx.Frame):
         self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
         screenshot_backends = ["pil"]
         if is_mss_supported():
-            screenshot_backends +=  ["mss"]
+            screenshot_backends += ["mss"]
         if HAS_WINDOWS_CAPTURE:
             screenshot_backends += ["wc_mp"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor,
@@ -1232,7 +1232,7 @@ class MainFrame(wx.Frame):
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
-LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
+LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 
 def T(s):

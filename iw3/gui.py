@@ -1,6 +1,5 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
-import locale
 import sys
 import os
 from os import path
@@ -30,7 +29,8 @@ from nunif.gui import (
     persistent_manager_restore_all, persistent_manager_register,
     extension_list_to_wildcard, validate_number,
     set_icon_ex, apply_dark_mode, is_dark_mode,
-    VideoEncodingBox, IOPathPanel
+    VideoEncodingBox, IOPathPanel,
+    get_default_locale,
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
@@ -1423,7 +1423,7 @@ class MainFrame(wx.Frame):
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
-LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
+LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 
 def T(s):

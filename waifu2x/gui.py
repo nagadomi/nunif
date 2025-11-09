@@ -1,6 +1,5 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
-import locale
 import sys
 import os
 from os import path
@@ -28,7 +27,8 @@ from nunif.gui import (
     extension_list_to_wildcard,
     validate_number,
     set_icon_ex,
-    VideoEncodingBox, IOPathPanel
+    VideoEncodingBox, IOPathPanel,
+    get_default_locale,
 )
 from .locales import LOCALES
 from . import models # noqa
@@ -618,7 +618,7 @@ class MainFrame(wx.Frame):
             pass
 
 
-LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
+LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 LOCALE_DICT_EN = LOCALES["en_US"]
 
 

@@ -49,12 +49,13 @@ def init_win32():
         except: # noqa
             pass
 
-        # if sys.version_info <= (3, 11):  # python 3.11 or later has high precision sleep.
-        try:
-            # Change timer/sleep precision
-            ctypes.windll.winmm.timeBeginPeriod(1)
-        except: # noqa
-            pass
+        if sys.version_info < (3, 11):
+            try:
+                # Change timer/sleep precision for 3.10
+                # NOTE: python 3.11 or later has high precision sleep.
+                ctypes.windll.winmm.timeBeginPeriod(1)
+            except: # noqa
+                pass
 
 
 def init_num_threads(device_id):
