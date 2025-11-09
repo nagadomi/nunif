@@ -15,7 +15,12 @@ if %ERRORLEVEL% neq 0 (
   call :install_python
   if !ERRORLEVEL! neq 0 goto :on_error
 )
-
+@rem check python version
+for /f %%A in ('python -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')"') do set PYVER=%%A
+if "%PYVER%" neq "3.12" (
+  call :install_python
+  if !ERRORLEVEL! neq 0 goto :on_error
+)
 
 @rem try git
 git --version > nul 2>&1
@@ -23,7 +28,6 @@ if %ERRORLEVEL% neq 0 (
   call :install_git
   if !ERRORLEVEL! neq 0 goto :on_error
 )
-
 
 @rem try nunif
 if not exist "%NUNIF_DIR%" (
@@ -41,7 +45,7 @@ if not exist "%NUNIF_DIR%" (
 @rem update update-installer.bat
 copy /y "%NUNIF_DIR%\windows_package\update-installer.bat" "%~dp0\update-installer.bat"
 
-echo Install Python Packages...
+echo Installing Python Packages...
 python -m pip install --no-cache-dir --upgrade pip
 if %ERRORLEVEL% neq 0 goto :on_error
 python -m pip install --no-cache-dir --upgrade -r "%NUNIF_DIR%\requirements-torch.txt"
@@ -74,7 +78,7 @@ exit /b 0
 
 
 :install_git
-  echo Install MinGit...
+  echo Installing MinGit...
 
   setlocal
   set MINGIT_URL=https://github.com/git-for-windows/git/releases/download/v2.45.2.windows.1/MinGit-2.45.2-64-bit.zip
@@ -96,14 +100,23 @@ exit /b 0
 
 
 :install_python
-  echo Install Python...
+  echo Installing Python...
 
   setlocal
-  set PYTHON_URL=https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip
+  set PYTHON_URL=https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip
   set GETPIP_URL=https://bootstrap.pypa.io/get-pip.py
-  set PTH_PATH=%PYTHON_DIR%\python310._pth
+  set PTH_PATH=%PYTHON_DIR%\python312._pth
   set TMP_DIR=%ROOT_DIR%\tmp
   if not exist "%TMP_DIR%" mkdir "%TMP_DIR%"
+
+  if exist "%PYTHON_DIR%" (
+    echo Uninstalling old Python...
+    rmdir /s /q "%PYTHON_DIR%"
+    if exist "%PYTHON_DIR%" (
+      echo Failed to delete %PYTHON_DIR%
+      exit /b 1
+    )
+  )
 
   @rem Install Embeddable Python
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
