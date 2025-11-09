@@ -21,7 +21,7 @@ def take_screenshot(mouse_position=None, draw_cursor_enabled=True):
     return frame
 
 
-def to_tensor(pil_image, device, frame_buffer, non_blocking=None):
+def to_tensor(pil_image, device, frame_buffer, non_blocking=False):
     # Transfer the image data to VRAM as uint8 first, then convert it to float.
     x = np.array(pil_image)
     x = frame_buffer.copy_(torch.from_numpy(x).permute(2, 0, 1)).to(device, non_blocking=non_blocking)
