@@ -160,15 +160,6 @@ python train.py inpaint -i ./data/video_inpaint_v1 --model-dir models/video_inpa
 Currently, there are no special runtime options.
 In `iw3/inpaint_utils.py`, set `VIDEO_MODEL_URL` to the full path of `inpaint.light_video_inpaint_v1.pth` saved in the `--model-dir` directory.
 
-
-## 4. Code Structure
-
-- `create_training_data.py`: calls `iw3/training/inpaint/create_training_data_video.py`
-- `train.py`: uses `iw3/training/inpaint/trainer.py` and `iw3/training/inpaint/dataset_video.py`
-
-Please refer to the code for more details.
-For questions, please utilize AI support or other resources.
-
 ## 4. Code Structure
 
 - `create_training_data.py`: calls `iw3/training/inpaint/create_training_data_video.py`

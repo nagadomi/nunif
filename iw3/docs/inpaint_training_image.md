@@ -62,8 +62,8 @@ Example:
 
 OUTPUT_DIR=./data/inpaint_v1/
 
-python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker1 --model-type Any_B
-python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flicker2 --model-type ZoeD_Any_N
+python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flickr1 --model-type Any_B
+python create_training_data.py inpaint --dataset-dir /data/Flickr2K -o ${OUTPUT_DIR} --prefix flickr2 --model-type ZoeD_Any_N
 # ...
 ```
 When errors occur, use the prefix to delete unfinished data and retry or skip.
