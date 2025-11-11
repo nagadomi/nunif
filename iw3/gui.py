@@ -89,10 +89,12 @@ class MainFrame(wx.Frame):
         else:
             branch_tag = f" ({branch_name})"
 
+        python_version_tag = f" ({sys.implementation.name}-{sys.version_info[0]}.{sys.version_info[1]})"
+
         super(MainFrame, self).__init__(
             None,
             name="iw3-gui",
-            title=T("iw3-gui") + branch_tag,
+            title=T("iw3-gui") + branch_tag + python_version_tag,
             size=(1000, 840),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
