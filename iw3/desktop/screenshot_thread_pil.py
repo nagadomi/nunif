@@ -93,6 +93,8 @@ class ScreenshotThreadPIL(threading.Thread):
             if not self.is_alive():
                 raise RuntimeError("thread is already dead")
         with self.frame_lock:
+            if self.cuda_stream is not None:
+                torch.cuda.current_stream().wait_stream(self.cuda_stream)
             frame = self.frame
             self.frame = None
             self.frame_set_event.clear()

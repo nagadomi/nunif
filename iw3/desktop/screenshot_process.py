@@ -490,7 +490,7 @@ class ScreenshotProcess(threading.Thread):
                     frame = np.ndarray((self.screen_height, self.screen_width, 4),
                                        dtype=np.uint8, buffer=self.process_frame_buffer.buf)
                     frame = frame.copy()
-                    
+
                 frame = torch.from_numpy(frame)
                 if frame_buffer is None:
                     frame_buffer = frame.clone()
@@ -548,6 +548,8 @@ class ScreenshotProcess(threading.Thread):
             if self.stop_event.is_set():
                 raise RuntimeError("thread is already dead")
         with self.frame_lock:
+            if self.cuda_stream is not None:
+                torch.cuda.current_stream().wait_stream(self.cuda_stream)
             frame = self.frame
             self.frame_set_event.clear()
 
