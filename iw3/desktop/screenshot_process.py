@@ -500,7 +500,6 @@ class ScreenshotProcess(threading.Thread):
                     frame_buffer.copy_(frame)
 
                 if self.cuda_stream is not None:
-                    self.cuda_stream.wait_stream(torch.cuda.default_stream(self.device))
                     with torch.cuda.stream(self.cuda_stream):
                         frame = frame_buffer.to(self.device, non_blocking=True)
                         frame = frame[:, :, 0:3][:, :, (2, 1, 0)].permute(2, 0, 1).contiguous() / 255.0
