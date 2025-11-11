@@ -60,7 +60,6 @@ class ScreenshotThreadPIL(threading.Thread):
                 if torch.cuda.is_available():
                     frame_buffer = frame_buffer.pin_memory()
             if self.cuda_stream is not None:
-                self.cuda_stream.wait_stream(torch.cuda.default_stream(self.device))
                 with torch.cuda.stream(self.cuda_stream):
                     frame = to_tensor(frame, self.device, frame_buffer, non_blocking=True)
                     if frame.shape[2] > self.frame_height:
