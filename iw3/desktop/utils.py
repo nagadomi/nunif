@@ -16,6 +16,7 @@ from nunif.models import compile_model
 from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.initializer import gc_collect
 from .. import utils as IW3U
+from ..stereo_model_factory import get_mlbw_divergence_level
 from .. import models  # noqa
 from .screenshot_thread_pil import ScreenshotThreadPIL
 from .screenshot_process import ( # noqa
@@ -107,14 +108,14 @@ def fps_sleep(start_time, fps, resolution=2e-4):
 
 def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
     bio = io.BytesIO()
-    
+
     # Thread-safe JPEG encoding with lock
     with _jpeg_encode_lock:
         if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
             jpeg_data = encode_jpeg(to_uint8(frame), quality=quality).cpu()
         else:
             jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
-    
+
     bio.write(jpeg_data.numpy())
     jpeg_data = bio.getbuffer().tobytes()
     # debug_jpeg_data(frame, jpeg_data)
@@ -182,6 +183,36 @@ def test_output_size(size, args, depth_model, side_model):
     sbs = IW3U.process_image(frame, args, depth_model, side_model)
     depth_model.reset()
     return sbs.shape[-2:]
+
+
+def try_switch_mlbw_model(old_divergence, new_divergence, old_side_model, args):
+    assert args.method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}
+
+    old_level = get_mlbw_divergence_level(old_divergence)
+    new_level = get_mlbw_divergence_level(new_divergence)
+
+    # print("switch_mlbw_model", old_level, new_level, old_divergence, new_divergence)
+
+    if old_level == new_level:
+        return old_side_model
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    new_side_model = IW3U.create_stereo_model(
+        args.method,
+        divergence=new_divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
+        device_id=args.gpu[0],
+    )
+    if args.compile and not isinstance(new_side_model, DeviceSwitchInference):
+        new_side_model = compile_model(new_side_model)
+        # NOTE: without this torch._dynamo.reset(), torch will crash
+        gc_collect()
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    return new_side_model
 
 
 def iw3_desktop_main(args, init_wxapp=True):
@@ -327,6 +358,7 @@ def iw3_desktop_main(args, init_wxapp=True):
 
         count = last_status_time = 0
         fps_counter = deque(maxlen=120)
+        prev_divergence = args.divergence
 
         while True:
             with args.state["args_lock"]:
@@ -367,6 +399,17 @@ def iw3_desktop_main(args, init_wxapp=True):
                 # Check if window was closed
                 if server.is_closed():
                     break
+
+            if prev_divergence != args.divergence:
+                if args.method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
+                    side_model = try_switch_mlbw_model(
+                        old_divergence=prev_divergence,
+                        new_divergence=args.divergence,
+                        old_side_model=side_model,
+                        args=args
+                    )
+                prev_divergence = args.divergence
+
             process_time = time.perf_counter() - tick
             wait_time = max((1 / (args.stream_fps)) - process_time, 0)
             time.sleep(wait_time)

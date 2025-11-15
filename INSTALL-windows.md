@@ -4,38 +4,19 @@ Basically, I am working on Linux. I sometimes check to make sure that this code 
 
 I am not familiar with Windows or Anaconda. If you are familiar with Anaconda, do it your way.
 
-## Easy way to install
+## nunif windows pacakge
 
-### 1. Install Python
+For Windows, I strongly recommend using the nunif windows package.
 
-Install Python 3.10 from Windows Store.
-
-### 2. Run installer
-
-Run `Installer for Windows.bat`.
-
-If you want to reinstall, delete `venv` folder and run it again.
-
-If you have Anaconda installed, make sure you have added `python` to PATH.
-If `python` command opens Windows Store, see https://stackoverflow.com/questions/58754860/cmd-opens-windows-store-when-i-type-python.
-
-### 3.2 Run waifu2x GUI
-
-Run `Run waifu2x GUI.bat`.
-
-### 3.2 Run waifu2x web interface
-
-Run `Run waifu2x Web.bat`.
-
-Open http://localhost:8812/
-
-### 3.2 Open CLI Prompt
-
-Run `Open Prompt.bat`.
+- [nunif windows package](windows_package/docs/README.md)
 
 ## Manually install
 
-### 1. Install dependencies packages (Optional)
+### 1. Install Python
+
+Install Python 3.12 from Windows Store.
+
+### 2. Install dependencies packages (Optional)
 
 #### Install ImageMagick
 
@@ -43,15 +24,7 @@ NOTE: ImageMagick(wand) is only required for training and benchmark.
 
 See [Install ImageMagick on Windows](https://docs.wand-py.org/en/0.6.10/guide/install.html?highlight=windows#install-imagemagick-on-windows).
 
-#### Install libraqm.dll
-
-NOTE: libraqm is only required for synthetic training data generation.
-
-Download `libraqm‑0.7.1.dll.zip` from https://www.lfd.uci.edu/~gohlke/pythonlibs/#pillow .
-
-See https://stackoverflow.com/questions/62939101/how-to-install-pre-built-pillow-wheel-with-libraqm-dlls-on-windows
-
-### 2. Clone
+### 3. Clone
 
 ```
 git clone https://github.com/nagadomi/nunif.git
@@ -68,23 +41,25 @@ git fetch --all
 git checkout -b dev origin/dev
 ```
 
-### 3. Setup venv (optional)
+### 4. Setup venv (optional)
 
 ```
 python -m venv venv
 .\venv\Scripts\activate
 ```
 
-### 4. Install Pytorch
+
+## 5. Install Pytorch and pip packages
+
+### Pytorch
 
 ```
 pip install -r requirements-torch.txt
 ```
 
-### 5. Install pip packages
-
+### Pip packages
 ```
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 If you want to use GUI,
@@ -92,29 +67,22 @@ If you want to use GUI,
 pip install -r requirements-gui.txt
 ```
 
-### 6. Run waifu2x.web
+## 6. Download pre-trained models
 
-Download pre-trained models.
-```
-python -m waifu2x.download_models
-```
+### waifu2x
 
-Generate `waifu2x/web/public_html`
 ```
-python -m waifu2x.web.webgen
+python3 -m waifu2x.download_models
+python3 -m waifu2x.web.webgen
 ```
 
-Start the web server.
-```
-python -m waifu2x.web
-```
-Open http://localhost:8812/
+See also [waifu2x README.md](waifu2x/README.md)
 
-If you got `ImportError: cannot import name '_imagingcms' from 'PIL'` error, upgrade the pillow package.
+### iw3
+
 ```
-pip install --upgrade pillow
+python -m iw3.download_models
 ```
 
-This seems to be a problem with the pillow that is installed by conda by default.
+See also [iw3 README.md](iw3/README.md).
 
-See also [waifu2x README.md](waifu2x/README.md).
