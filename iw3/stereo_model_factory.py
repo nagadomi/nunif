@@ -33,44 +33,56 @@ MLBW_L4_D2_WEAK_URL = pth_url("iw3_mlbw_l4_d2_weak_20250627.pth")
 MLBW_L4_D3_WEAK_URL = pth_url("iw3_mlbw_l4_d3_weak_20250627.pth")
 
 
+def get_mlbw_divergence_level(d):
+    if d <= 4:
+        return 1
+    elif d <= 7:
+        return 2
+    else:
+        return 3
+
+
 def load_mlbw_model(
         method, divergence, device_id,
         use_weak_convergence_model=False,
 ):
+    level = get_mlbw_divergence_level(divergence)
     if method in {"mlbw_l2", "mlbw_l2s"}:
-        if divergence <= 4:
+        if level == 1:
             if method == "mlbw_l2s":
                 url = MLBW_L2S_D1_URL
             else:
                 url = MLBW_L2_D1_URL
-        elif divergence <= 7:
+        elif level == 2:
             if use_weak_convergence_model:
                 url = MLBW_L2_D2_WEAK_URL
             else:
                 url = MLBW_L2_D2_URL
-        else:
+        elif level == 3:
             if use_weak_convergence_model:
                 url = MLBW_L2_D3_WEAK_URL
             else:
                 url = MLBW_L2_D3_URL
     elif method in {"mlbw_l4", "mlbw_l4s"}:
-        if divergence <= 4:
+        if level == 1:
             if method == "mlbw_l4s":
                 url = MLBW_L4S_D1_URL
             else:
                 url = MLBW_L4_D1_URL
-        elif divergence <= 7:
+        elif level == 2:
             if use_weak_convergence_model:
                 url = MLBW_L4_D2_WEAK_URL
             else:
                 url = MLBW_L4_D2_URL
-        else:
+        elif level == 3:
             if use_weak_convergence_model:
                 url = MLBW_L4_D3_WEAK_URL
             else:
                 url = MLBW_L4_D3_URL
     else:
         raise ValueError(method)
+
+    # print("load_mlbw_model", url)
 
     model = load_model(url, weights_only=True, device_ids=[device_id])[0].eval()
     model.delta_output = True

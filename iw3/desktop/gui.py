@@ -480,7 +480,7 @@ class MainFrame(wx.Frame):
             self.grp_adjustment.SetBackgroundColour("#ccc")
 
         self.lbl_adj_divergence = wx.StaticText(self.grp_adjustment, label=T("3D Strength"))
-        self.sld_adj_divergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.00", min=0.0, max=5.0, inc=0.25)
+        self.sld_adj_divergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.00", min=0.0, max=10.0, inc=0.25)
         self.sld_adj_divergence.SetDigits(2)
         self.lbl_adj_convergence = wx.StaticText(self.grp_adjustment, label=T("Convergence Plane"))
         self.sld_adj_convergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.0", min=0.0, max=1.0, inc=0.1)
