@@ -43,7 +43,7 @@ from .video_depth_anything_model import (
     AA_SUPPORT_MODELS as VDA_AA_SUPPORTED_MODELS
 )
 from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel, AA_SUPPORT_MODELS as VDA_STREAM_AA_SUPPORTED_MODELS
-from .depth_pro_model import DepthProModel
+from .depth_anything_v3_model import AA_SUPPORTED_MODELS as DA3_AA_SUPPORTED_MODELS
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
 import torch
@@ -699,6 +699,8 @@ class MainFrame(wx.Frame):
         if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
             depth_models.append("Distill_Any_L")
 
+        depth_models += ["Any_V3_Mono"]
+
         depth_models += ["VDA_S"]
         if VideoDepthAnythingModel.has_checkpoint_file("VDA_B"):
             depth_models.append("VDA_B")
@@ -821,16 +823,6 @@ class MainFrame(wx.Frame):
 
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
-        if (
-                DepthAnythingModel.supported(name) or
-                DepthProModel.supported(name) or
-                VideoDepthAnythingModel.supported(name) or
-                VideoDepthAnythingStreamingModel.supported(name) or
-                name.startswith("ZoeD_Any_")
-        ):
-            self.cbo_edge_dilation.Enable()
-        else:
-            self.cbo_edge_dilation.Disable()
 
         if name in DEPTH_PRO_MODELS:
             self.cbo_resolution.Disable()
@@ -839,7 +831,12 @@ class MainFrame(wx.Frame):
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
 
-        if name in DA_AA_SUPPORTED_MODELS or name in VDA_AA_SUPPORTED_MODELS or name in VDA_STREAM_AA_SUPPORTED_MODELS:
+        if (
+                name in DA_AA_SUPPORTED_MODELS or
+                name in VDA_AA_SUPPORTED_MODELS or
+                name in VDA_STREAM_AA_SUPPORTED_MODELS or
+                name in DA3_AA_SUPPORTED_MODELS
+        ):
             self.chk_depth_aa.Enable()
         else:
             self.chk_depth_aa.Disable()
