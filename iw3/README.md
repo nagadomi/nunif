@@ -10,7 +10,7 @@ This project is under construction.
 
 ## Overview
 
-- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro) or [Distill Any Depth](https://github.com/Westlake-AGI-Lab/Distill-Any-Depth) or [Video-Depth-Anything](https://github.com/DepthAnything/Video-Depth-Anything).
+- Estimating depthmap using [ZeoDepth](https://github.com/isl-org/ZoeDepth) or [Depth-Anything](https://github.com/LiheYoung/Depth-Anything) or [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2) or [Depth Pro](https://github.com/apple/ml-depth-pro) or [Distill Any Depth](https://github.com/Westlake-AGI-Lab/Distill-Any-Depth) or [Video-Depth-Anything](https://github.com/DepthAnything/Video-Depth-Anything) or [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3).
 - Generating side-by-side image using grid_sample based lightweight model
 
 ## Usage
@@ -420,6 +420,7 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI small. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI base. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
+| `Any_V3_Mono`  | Depth-Anything-3 Monocular Depth large.
 | `DepthPro`  | Depth Pro model. 1536x1536 resolution. For image use.
 | `DepthPro_S`  | Depth Pro model. 1024x1024 modified resolution. For image use.
 | `Distill_Any_S`  | Distill Any Depth model small.
@@ -434,6 +435,7 @@ Perhaps what is needed is fine tuning for ZoeDepth.
 | `VDA_Stream_S`  | Video Depth Anything streaming model small.
 | `VDA_Stream_B`  | Video Depth Anything streaming model base. (cc-by-nc-4.0)
 | `VDA_Stream_L`  | Video Depth Anything streaming model large. (cc-by-nc-4.0)
+
 
 
 Personally, I recommend `ZoeD_Any_N`, `Any_B` or `VDA_Metric`.
