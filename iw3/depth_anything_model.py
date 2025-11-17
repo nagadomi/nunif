@@ -280,10 +280,10 @@ def _bench():
     import time
 
     B = 4
-    N = 100
+    N = 20
     model = DepthAnythingModel("Any_L")
     model.load(gpu=0)
-    x = torch.randn((B, 3, 392, 392)).cuda()
+    x = torch.randn((B, 3, 1080, 1920)).cuda()
     model.infer(x)
     torch.cuda.synchronize()
 
@@ -293,6 +293,9 @@ def _bench():
             model.infer(x)
         torch.cuda.synchronize()
         print(round(1.0 / ((time.time() - t) / (B * N)), 4), "FPS")
+
+    max_vram_mb = int(torch.cuda.max_memory_allocated("cuda") / (1024 * 1024))
+    print(f"GPU Max Memory Allocated {max_vram_mb}MB")
 
 
 def _test():

@@ -20,26 +20,32 @@ AA_SUPPORTED_MODELS = {
 }
 
 
-def _forward(model, x, enable_amp):
-    with autocast(device=x.device, enabled=enable_amp):
+def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1):
+    amp_dtype = torch.bfloat16 if (x.device.type == "cuda" and torch.cuda.is_bf16_supported()) else None
+    with autocast(device=x.device, enabled=enable_amp, dtype=amp_dtype):
         x = x.unsqueeze(1)  # (B, S, C, H, W)
         out = model(x)
 
-    depths = out["depth"].float()
-    sky_masks = out["sky"] > 0.3
-
+    depths = out["depth"]
+    sky_masks = out["sky"] > sky_thresh
+    sky_weights = (out["sky"].clamp(sky_thresh, 1.0) - sky_thresh) / (1.0 - sky_thresh)
     disparity_maps = []
-    for depth, sky_mask in zip(depths, sky_masks):
+    for depth, sky_mask, sky_weight in zip(depths, sky_masks, sky_weights):
         # TODO: improve this
-        median_rel_dist = torch.median(depth)
-        depth = depth / (median_rel_dist + 1e-6)
-        max_rel_dist = torch.quantile(depth, 0.98)
-        depth = torch.where(torch.logical_or(sky_mask, depth > max_rel_dist), max_rel_dist, depth)
-        depth = 1.0 / (depth + 0.1)
+        non_sky_pixels = sky_mask.numel() - sky_mask.sum()
+        if non_sky_pixels < 10:
+            # all sky
+            depth = 1.0 / (torch.ones_like(depth) * 100.0)
+        else:
+            max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
+            depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
+            shift = (max_rel_dist - depth.min()) * shift_ratio + 1e-5
+            depth = 1.0 / (depth + shift)
+
         disparity_maps.append(depth)
 
     out = torch.stack(disparity_maps)
-    out = torch.nan_to_num(out)
+
     return out
 
 
@@ -178,10 +184,10 @@ def _bench():
     import time
 
     B = 4
-    N = 100
-    model = DepthAnythingV3MonoModel("Any_V3_MONO")
+    N = 20
+    model = DepthAnythingV3MonoModel("Any_V3_Mono")
     model.load(gpu=0)
-    x = torch.randn((B, 3, 392, 392)).cuda()
+    x = torch.randn((B, 3, 1080, 1920)).cuda()
     model.infer(x)
     torch.cuda.synchronize()
 
@@ -191,6 +197,9 @@ def _bench():
             model.infer(x)
         torch.cuda.synchronize()
         print(round(1.0 / ((time.time() - t) / (B * N)), 4), "FPS")
+
+    max_vram_mb = int(torch.cuda.max_memory_allocated("cuda") / (1024 * 1024))
+    print(f"GPU Max Memory Allocated {max_vram_mb}MB")
 
 
 if __name__ == "__main__":
