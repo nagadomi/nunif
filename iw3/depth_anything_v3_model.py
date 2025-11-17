@@ -38,7 +38,6 @@ def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1):
             depth = 1.0 / (torch.ones_like(depth) * 100.0)
         else:
             max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
-            #depth = torch.where(torch.logical_or(sky_mask, depth > max_rel_dist), max_rel_dist, depth)
             depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
             shift = (max_rel_dist - depth.min()) * shift_ratio + 1e-5
             depth = 1.0 / (depth + shift)
@@ -198,7 +197,6 @@ def _bench():
             model.infer(x)
         torch.cuda.synchronize()
         print(round(1.0 / ((time.time() - t) / (B * N)), 4), "FPS")
-
 
     max_vram_mb = int(torch.cuda.max_memory_allocated("cuda") / (1024 * 1024))
     print(f"GPU Max Memory Allocated {max_vram_mb}MB")
