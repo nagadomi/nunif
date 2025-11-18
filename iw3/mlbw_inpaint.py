@@ -97,7 +97,7 @@ class MLBWInpaintImage(nn.Module):
             mapper="none",
             preserve_screen_border=False,
             synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=None,
             enable_amp=True,
             **_kwargs
     ):
@@ -117,10 +117,10 @@ class MLBWInpaintImage(nn.Module):
             mapper="none",
             preserve_screen_border=False,
             synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=None,
             enable_amp=True,
     ):
-        if x.shape[-1] > max_width:
+        if max_width is not None and x.shape[-1] > max_width:
             if max_width % 2 != 0:
                 max_width += 1
             new_w = max_width
@@ -232,11 +232,19 @@ class MLBWInpaintVideo(nn.Module):
             mapper="none",
             preserve_screen_border=False,
             synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=None,
             enable_amp=True,
             **_kwargs
     ):
         assert x.shape[0] <= self.model_seq  # Prevent self.frame_queue growth
+        if max_width is not None and x.shape[-1] > max_width:
+            if max_width % 2 != 0:
+                max_width += 1
+            new_w = max_width
+            new_h = int((max_width / x.shape[-1]) * x.shape[-2])
+            if new_h % 2 != 0:
+                new_h += 1
+            x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", antialias=True, align_corners=False)
 
         self.synthetic_view = synthetic_view
         self.inner_dilation = inner_dilation
@@ -335,7 +343,7 @@ class MLBWInpaint(nn.Module):
             mapper,
             preserve_screen_border=False,
             synthetic_view="both",
-            inner_dilation=0, outer_dilation=0, max_width=1920,
+            inner_dilation=0, outer_dilation=0, max_width=None,
             enable_amp=True,
             **_kwargs,
     ):

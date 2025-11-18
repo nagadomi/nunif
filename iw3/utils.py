@@ -16,7 +16,7 @@ from nunif.initializer import gc_collect
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 import nunif.utils.shot_boundary_detection as SBD
-from nunif.models import load_model, compile_model
+from nunif.models import compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.utils.ticket_lock import TicketLock
@@ -1921,7 +1921,7 @@ def create_parser(required_true=True):
                         help="loop count of inner mask dilation")
     parser.add_argument("--mask-outer-dilation", type=int, default=0,
                         help="loop count of outer mask dilation")
-    parser.add_argument("--inpaint-max-width", type=int, default=1920,
+    parser.add_argument("--inpaint-max-width", type=int, default=None,
                         help="max width of inpaint result")
     parser.add_argument("--depth-aa", action="store_true",
                         help="apply depth antialiasing. ignored for unsupported models")
