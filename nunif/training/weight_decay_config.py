@@ -21,6 +21,7 @@ def configure_optim_groups(model, weight_decay=0.01):
     no_decay = set()
     whitelist_weight_modules = (
         torch.nn.Linear,
+        torch.nn.Conv3d,
         torch.nn.Conv2d,
         torch.nn.Conv1d,
         torch.nn.ConvTranspose2d,

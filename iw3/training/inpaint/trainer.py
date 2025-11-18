@@ -1,37 +1,304 @@
-# python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint
-# python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint --resume --reset-state --learning-rate 3e-5 --ema-model
+# python train.py inpaint -i ./data/dataset --model-dir models/light_inpaint
+import sys
 import os
 from os import path
+import math
+import time
 import argparse
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from torchvision.utils import make_grid
 from nunif.models import create_model
-from nunif.training.env import RGBPSNREnv
+from nunif.training.env import I2IEnv
 from nunif.training.trainer import Trainer
-from nunif.modules.transforms import DiffPairRandomTranslate
 from nunif.modules.weighted_loss import WeightedLoss
+from nunif.modules.clamp_loss import ClampLoss
 from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.lpips import LPIPSWith
+from nunif.modules.dinov2 import DINOv2CosineWith
+from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate
+from nunif.transforms import pair as TP
+from nunif.modules.gan_loss import GANMaskHingeLoss
+from nunif.logger import logger
 from .dataset import InpaintDataset
-from ... import models # noqa
+from .dataset_video import VideoInpaintDataset, SEQ as VIDEO_SEQ
+from ... import models as _m # noqa
+from ...models.discriminator import (
+    L3ConditionalDiscriminator, L3CEnsembleDiscriminator,
+    FFCDiscriminator, FFCEnsembleDiscriminator,
+    L3CFFCEnsembleDiscriminator,
+)
 
 
-class InpaintEnv(RGBPSNREnv):
-    def __init__(self, model, criterion):
-        super().__init__(model, criterion)
+class TemporalGradientLoss(torch.nn.Module):
+    def forward(self, input, target):
+        input_diff = input[:-1] - input[1:]
+        target_diff = target[:-1] - target[1:]
+        return F.l1_loss(input_diff, target_diff)
+
+
+class TemporalSmoothingPenalty(torch.nn.Module):
+    def forward(self, input, target):
+        t0 = input[:, :-2]
+        t1 = input[:, 1:-1]
+        t2 = input[:, 2:]
+        second_order = t2 - 2 * t1 + t0
+        return (second_order ** 2).mean()
+
+
+def create_discriminator(discriminator, device_ids, device):
+    if discriminator is None:
+        return None
+    elif discriminator == "l3c":
+        model = create_model(L3ConditionalDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "l3ce":
+        model = create_model(L3CEnsembleDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "ffc":
+        model = create_model(FFCDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "ffce":
+        model = create_model(FFCEnsembleDiscriminator.name, device_ids=device_ids)
+    elif discriminator == "l3cffce":
+        model = create_model(L3CFFCEnsembleDiscriminator.name, device_ids=device_ids)
+    else:
+        model = create_model(discriminator, device_ids=device_ids)
+    return model.to(device)
+
+
+def to_dtype(x, dtype):
+    if isinstance(x, (tuple, list)):
+        return [xx.to(dtype) for xx in x]
+    else:
+        return x.to(dtype)
+
+
+def diff_dequant_noise(inputs):
+    # Remove 8bit conversion marks
+    scale = (1.0 / 255.0) * 0.5
+    noise = (torch.randn_like(inputs[0]) * 0.5).clamp(-1, 1) * scale
+    return [input + noise for input in inputs]
+
+
+def get_last_layer(model):
+    if model.name == "inpaint.light_inpaint_v1":
+        return model.to_image[-1].weight
+    if model.name == "inpaint.light_video_inpaint_v1":
+        return model.to_image.weight
+    else:
+        raise NotImplementedError()
+
+
+def inf_loss():
+    return float(-time.time() / 1000000000)
+
+
+def ste_clamp(x, overshoot_scale=0.1):
+    x_clamp = x.clamp(0, 1)
+    x = x_clamp + (x - x_clamp) * overshoot_scale
+    return x + x.clamp(0, 1).detach() - x.detach()
+
+
+class InpaintEnv(I2IEnv):
+    def __init__(self, model, criterion, sampler, discriminator=None):
+        super().__init__(model, criterion=criterion, eval_criterion=criterion)
+        self.sampler = sampler
+        self.discriminator = discriminator
+        if discriminator:
+            loss_weights = getattr(self.discriminator, "loss_weights", (1.0,))
+            self.discriminator_criterion = GANMaskHingeLoss(loss_weights=loss_weights).to(self.device)
+        else:
+            self.discriminator_criterion = None
+
+        self.diff_aug = TP.RandomChoice([
+            DiffPairRandomTranslate(size=8, padding_mode="reflection", expand=False, instance_random=False),
+            DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
+            TP.Identity()], p=[0.33, 0.33, 0.33])
+
+        self.adaptive_weight_ema = None
+        self.epoch_iteration = 0
+
+    def clear_loss(self):
+        super().clear_loss()
+        self.sum_loss = 0
+        self.sum_p_loss = 0
+        self.sum_d_weight = 0
+        self.sum_g_loss = 0
+        self.sum_d_loss = 0
+        self.sum_step = 0
+
+    def get_current_iteration(self):
+        batch_iteration = (self.trainer.epoch - 1) * self.trainer.args.num_samples
+        batch_iteration = batch_iteration // (self.trainer.args.batch_size * self.trainer.args.backward_step)
+        iteration = batch_iteration + self.epoch_iteration // self.trainer.args.backward_step
+        return iteration
+
+    def get_generator_warmup_weight(self, k=4):
+        t = self.get_current_iteration()
+        n = self.trainer.args.generator_warmup_iteration
+        if n == 0 or t > n:
+            return 1.0
+
+        x = t / n
+        return (math.exp(k * x) - 1) / (math.exp(k) - 1)
+
+    def train_begin(self):
+        super().train_begin()
+        self.epoch_iteration = 0
+        if self.discriminator is not None:
+            self.discriminator.train()
 
     def train_step(self, data):
+        self.epoch_iteration += 1
         x, mask, y, *_ = data
         x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
+
+        if x.ndim == 5:
+            # video (1, SEQ, C, H, W) -> (SEQ, C, H, W)
+            assert x.shape[0] == 1
+            x = x.reshape(*x.shape[1:])
+            mask = mask.reshape(*mask.shape[1:])
+            y = y.reshape(*y.shape[1:])
+
         with self.autocast():
-            z = self.model(x, mask)
-            loss = self.criterion(z, y)
-        if not torch.isnan(loss):
-            self.sum_loss += loss.item()
-            self.sum_step += 1
+            if self.discriminator is None:
+                x, mask = self.model.preprocess(x, mask)
+                z = to_dtype(self.model(x, mask), x.dtype)
+                if self.trainer.args.diff_aug:
+                    z, y = self.diff_aug(z, y)
+                loss = self.criterion(z, y)
+                if not torch.isnan(loss):
+                    self.sum_loss += loss.item()
+                    self.sum_step += 1
+            else:
+                if hasattr(self.discriminator, "round"):
+                    self.discriminator.round()
+
+                self.discriminator.requires_grad_(False)
+
+                x, mask = self.model.preprocess(x, mask)
+                z = to_dtype(self.model(x, mask), x.dtype)
+                if self.trainer.args.diff_aug:
+                    z, y = self.diff_aug(z, y)
+                z, y = diff_dequant_noise((z, y))
+                y = y.clamp(0, 1)
+                fake = z
+                cond = y
+
+                z_real = to_dtype(self.discriminator(ste_clamp(fake), cond, mask=None), fake.dtype)
+                recon_loss = self.criterion(z, y)
+                generator_loss = self.discriminator_criterion(z_real)
+
+                self.sum_p_loss += recon_loss.item()
+                self.sum_g_loss += generator_loss.item()
+
+                self.discriminator.requires_grad_(True)
+                real = y
+                z_fake, z_mask = to_dtype(self.discriminator(fake.detach().clamp(0, 1), cond, mask=mask), fake.dtype)
+                z_real = to_dtype(self.discriminator(real, cond, mask=None), real.dtype)
+                discriminator_loss = self.discriminator_criterion(z_real, z_fake, z_mask > 0)
+
+                self.sum_d_loss += discriminator_loss.item()
+                loss = (recon_loss, generator_loss, discriminator_loss)
+                self.sum_step += 1
+
         return loss
+
+    def calc_weight(self, recon_loss, generator_loss, grad_scaler):
+        last_layer = get_last_layer(self.model)
+        weight = self.calculate_adaptive_weight(
+            recon_loss, generator_loss, last_layer, grad_scaler,
+            min=1e-3,
+            max=10.0,
+            mode="norm",
+            adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema
+        )
+        weight_is_nan = math.isnan(weight)
+        if not weight_is_nan:
+            if self.adaptive_weight_ema is None:
+                self.adaptive_weight_ema = weight
+            else:
+                alpha = 0.99
+                self.adaptive_weight_ema = self.adaptive_weight_ema * alpha + weight * (1 - alpha)
+            weight = self.adaptive_weight_ema
+        elif self.adaptive_weight_ema is not None:
+            weight = self.adaptive_weight_ema
+        else:
+            weight = 1.0  # inf
+
+        if weight_is_nan:
+            use_disc_loss = False
+        else:
+            use_disc_loss = True
+
+        return weight, use_disc_loss
+
+    def train_backward_step(self, loss, optimizers, grad_scalers, update):
+        if self.discriminator is None:
+            super().train_backward_step(loss, optimizers, grad_scalers, update)
+        else:
+            backward_step = self.trainer.args.backward_step
+            recon_loss, generator_loss, d_loss = loss
+            g_opt, d_opt = optimizers
+            optimizers = []
+
+            # update generator
+            weight, use_disc_loss = self.calc_weight(recon_loss, generator_loss, grad_scalers[0])
+            warmup_weight = self.get_generator_warmup_weight()
+            if warmup_weight < 0.1:
+                warmup_weight = 0.0
+            if use_disc_loss:
+                g_loss = (recon_loss + generator_loss * weight * self.trainer.args.discriminator_weight * warmup_weight)
+            else:
+                g_loss = recon_loss
+            self.sum_d_weight += weight
+            self.backward(g_loss, grad_scalers[0])
+            optimizers.append((g_opt, grad_scalers[0]))
+
+            logger.debug(
+                (f"iteration: {self.get_current_iteration()}, "
+                 f"recon: {round(recon_loss.item() * backward_step, 4)}, "
+                 f"gen: {round(generator_loss.item() * backward_step, 4)}, "
+                 f"disc: {round(d_loss.item() * backward_step, 4)}, "
+                 f"weight: {round(weight, 6)}"
+                 ) + (f", warmup weight: {round(warmup_weight, 4)}" if warmup_weight < 1 else "")
+            )
+            # update discriminator
+            self.backward(d_loss, grad_scalers[1])
+            optimizers.append((d_opt, grad_scalers[1]))
+
+            if optimizers and update:
+                for optimizer, grad_scaler in optimizers:
+                    self.optimizer_step(optimizer, grad_scaler)
+
+    def train_loss_hook(self, data, loss):
+        super().train_loss_hook(data, loss)
+        if not self.trainer.args.disable_hard_example:
+            index = data[-1]
+            if isinstance(loss, (list, tuple)):
+                loss = loss[0]  # recon_loss
+            self.sampler.update_losses(index, loss.item())
+
+    def train_end(self):
+        if not self.trainer.args.disable_hard_example:
+            self.sampler.update_weights()
+
+        # show loss
+        mean_loss = self.sum_loss / self.sum_step
+        if self.discriminator is not None:
+            mean_p_loss = self.sum_p_loss / self.sum_step
+            mean_d_loss = self.sum_d_loss / self.sum_step
+            mean_g_loss = self.sum_g_loss / self.sum_step
+            mean_d_weight = self.sum_d_weight / self.sum_step
+            print(f"loss: {round(mean_loss, 6)}, "
+                  f"reconstruction loss: {round(mean_p_loss, 6)}, "
+                  f"generator loss: {round(mean_g_loss, 6)}, "
+                  f"discriminator loss: {round(mean_d_loss, 6)}, "
+                  f"discriminator weight: {round(mean_d_weight, 6)}")
+            mean_loss = mean_loss + mean_d_loss
+        else:
+            print(f"loss: {round(mean_loss, 6)}")
+
+        return mean_loss
 
     def eval_begin(self):
         super().eval_begin()
@@ -40,25 +307,45 @@ class InpaintEnv(RGBPSNREnv):
     def eval_step(self, data):
         x, mask, y, *_ = data
         x, mask, y = self.to_device(x), self.to_device(mask), self.to_device(y)
+
+        if x.ndim == 5:
+            # video (1, SEQ, C, H, W) -> (SEQ, C, H, W)
+            assert x.shape[0] == 1
+            x = x.reshape(*x.shape[1:])
+            mask = mask.reshape(*mask.shape[1:])
+            y = y.reshape(*y.shape[1:])
+
         model = self.get_eval_model()
         with self.autocast():
+            x, mask = self.model.preprocess(x, mask)
             z = model(x, mask)
             loss = self.eval_criterion(z, y)
             self.eval_count += 1
-            if self.eval_count % 20 == 0:
-                self.save_eval(x, y, z, self.eval_count // 20)
+            if self.eval_count % self.trainer.args.save_eval_step == 0:
+                self.save_eval(x, y, z, self.eval_count // self.trainer.args.save_eval_step)
 
         self.sum_loss += loss.item()
         self.sum_step += 1
 
     def save_eval(self, x, y, z, i):
+        batch_offset = (x.shape[0] - z.shape[0]) // 2
         offset = (x.shape[2] - z.shape[2]) // 2
         x = F.pad(x, (-offset, ) * 4)
+        if batch_offset > 0:
+            x = x[batch_offset:-batch_offset]
         x = torch.cat([x, z, y], dim=3)
         eval_output_dir = path.join(self.trainer.args.model_dir, "eval")
         os.makedirs(eval_output_dir, exist_ok=True)
         output_file = path.join(eval_output_dir, f"{i}.png")
         TF.to_pil_image(make_grid(x, nrow=1)).save(output_file)
+
+    def eval_end(self, file=sys.stdout):
+        if self.discriminator is not None:
+            return inf_loss()
+
+        mean_loss = self.sum_loss / self.sum_step
+        self.print_eval_result(mean_loss, file=file)
+        return mean_loss
 
 
 class InpaintTrainer(Trainer):
@@ -71,24 +358,34 @@ class InpaintTrainer(Trainer):
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
         model_offset = self.model.i2i_offset
+        if self.args.video:
+            dataset_class = VideoInpaintDataset
+            dataset_kwargs = dict(model_sequence_offset=self.model.sequence_offset)
+            batch_size = 1
+            num_samples = self.args.num_samples // VIDEO_SEQ
+        else:
+            dataset_class = InpaintDataset
+            dataset_kwargs = {}
+            batch_size = self.args.batch_size
+            num_samples = self.args.num_samples
+
         if type == "train":
-            dataset = InpaintDataset(path.join(self.args.data_dir, "train"), model_offset,
-                                     training=True)
+            dataset = dataset_class(path.join(self.args.data_dir, "train"), model_offset, training=True, **dataset_kwargs)
+            self.sampler = dataset.create_sampler(num_samples)
             loader = torch.utils.data.DataLoader(
                 dataset,
-                sampler=torch.utils.data.RandomSampler(dataset, num_samples=self.args.num_samples),
-                batch_size=self.args.batch_size,
+                sampler=self.sampler,
+                batch_size=batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=True)
             return loader
         else:
-            dataset = InpaintDataset(path.join(self.args.data_dir, "eval"), model_offset,
-                                     training=False)
+            dataset = dataset_class(path.join(self.args.data_dir, "eval"), model_offset, training=False, **dataset_kwargs)
             loader = torch.utils.data.DataLoader(
                 dataset,
-                batch_size=self.args.batch_size,
+                batch_size=batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
@@ -98,24 +395,79 @@ class InpaintTrainer(Trainer):
     def create_env(self):
         if self.args.loss == "dct":
             criterion = WeightedLoss(
-                (DCTLoss(window_size=4, clamp=True),
-                 DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-                 DCTLoss(clamp=True, random_instance_rotate=True)),
+                (
+                    DCTLoss(window_size=4, clamp=True),
+                    DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+                    DCTLoss(clamp=True, random_instance_rotate=True)
+                ),
                 weights=(0.2, 0.2, 0.6),
-                preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True))
-        elif self.args.loss == "dctlpips":
-            dct_loss = WeightedLoss(
-                (DCTLoss(window_size=4, clamp=True),
-                 DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-                 DCTLoss(clamp=True, random_instance_rotate=True)),
-                weights=(0.2, 0.2, 0.6),
-                preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True))
-            criterion = LPIPSWith(dct_loss, weight=0.2)
+            )
+        elif self.args.loss == "l1lpips":
+            criterion = LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4)
+        elif self.args.loss == "l1dctlpips":
+            base_loss = WeightedLoss(
+                (
+                    DCTLoss(window_size=32, clamp=True, overlap=True),
+                    ClampLoss(torch.nn.L1Loss())
+                ),
+                weights=(0.5, 0.5)
+            )
+            criterion = LPIPSWith(base_loss, weight=0.2)
+        elif self.args.loss == "temporal_l1lpips":
+            base_loss = WeightedLoss((
+                ClampLoss(torch.nn.L1Loss()),
+                TemporalGradientLoss(),
+                TemporalSmoothingPenalty()
+            ), weights=(0.8, 0.2, 0.01))
+            criterion = LPIPSWith(base_loss, weight=0.2)
+        elif self.args.loss == "temporal_l1dctlpips":
+            base_loss = WeightedLoss((
+                ClampLoss(torch.nn.L1Loss()),
+                DCTLoss(window_size=32, clamp=True, overlap=True),
+                TemporalGradientLoss(),
+                TemporalSmoothingPenalty()
+            ), weights=(0.4, 0.4, 0.2, 0.01))
+            criterion = LPIPSWith(base_loss, weight=0.2)
+        elif self.args.loss == "l1dinov2":
+            criterion = DINOv2CosineWith(ClampLoss(torch.nn.L1Loss()), weight=0.1)
+        else:
+            raise ValueError(f"{self.args.loss}")
 
-        return InpaintEnv(self.model, criterion)
+        return InpaintEnv(self.model, criterion=criterion, sampler=self.sampler, discriminator=self.discriminator)
+
+    def setup_model(self):
+        self.discriminator = create_discriminator(self.args.discriminator, self.args.gpu, self.device)
+
+    def create_optimizers(self):
+        if self.discriminator is not None:
+            g_opt = self.create_optimizer(self.model)
+            d_opt = self.create_optimizer(self.discriminator)
+            return g_opt, d_opt
+        else:
+            return super().create_optimizers()
+
+    def create_grad_scalers(self):
+        if self.discriminator is not None:
+            return [self.create_grad_scaler(), self.create_grad_scaler()]
+        else:
+            return super().create_grad_scalers()
 
 
 def train(args):
+    if args.loss is None:
+        if args.video:
+            args.loss = "temporal_l1lpips"
+        else:
+            args.loss = "l1lpips"
+
+    if args.arch is None:
+        if args.video:
+            args.arch = "inpaint.light_video_inpaint_v1"
+        else:
+            args.arch = "inpaint.light_inpaint_v1"
+
+    args.diff_aug = args.loss not in {"dct"}
+
     trainer = InpaintTrainer(args)
     trainer.fit()
 
@@ -126,24 +478,37 @@ def register(subparsers, default_parser):
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="inpaint.light_inpaint_v1", help="network arch")
+    parser.add_argument("--arch", type=str, help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, nargs="?", default=None, const="dct",
-                        choices=["dct", "dctlpips"], help="loss")
+    parser.add_argument("--loss", type=str, choices=["dct", "l1lpips", "l1dinov2", "l1dctlpips",
+                                                     "temporal_l1lpips", "temporal_l1dctlpips"],
+                        help="loss")
+    parser.add_argument("--discriminator", type=str, help="discriminator")
+    parser.add_argument("--generator-warmup-iteration", type=int, default=500,
+                        help=("warm-up iterations for the discriminator loss affecting the generator."))
+    parser.add_argument("--discriminator-weight", type=float, default=0.2,
+                        help="discriminator loss weight")
+    parser.add_argument("--video", action="store_true", help="Use video dataset")
+    parser.add_argument("--save-eval-step", type=int, default=10)
+    parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
 
     parser.set_defaults(
-        batch_size=4,
-        optimizer="adam",
+        batch_size=8,
+        backward_step=4,  # image: 8x4=32, video: 12*4=48
+        optimizer="adamw",
         learning_rate=0.0001,
         learning_rate_cosine_min=1e-8,
-        scheduler="cosine",
+        scheduler="cosine_wd",
         learning_rate_cycles=5,
         max_epoch=200,
         learning_rate_decay=0.99,
         learning_rate_decay_step=[1],
         momentum=0.9,
         weight_decay=0.001,
+        weight_decay_end=0.01,
+        eval_step=4,
+        ignore_nan=True,
     )
     parser.set_defaults(handler=train)
 

@@ -13,8 +13,64 @@ def gaussian_blur(x):
     return x
 
 
-def dilate(x):
-    return F.max_pool2d(x, kernel_size=3, stride=1, padding=1)
+def dilate(mask, kernel_size=3):
+    if isinstance(kernel_size, (list, tuple)):
+        pad = (kernel_size[0] // 2, kernel_size[1] // 2)
+    else:
+        pad = kernel_size // 2
+    return F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=pad)
+
+
+def erode(mask, kernel_size=3):
+    if isinstance(kernel_size, (list, tuple)):
+        pad = (kernel_size[0] // 2, kernel_size[1] // 2)
+    else:
+        pad = kernel_size // 2
+    return -F.max_pool2d(-mask, kernel_size=kernel_size, stride=1, padding=pad)
+
+
+def closing(mask, kernel_size=3, n_iter=2):
+    mask = mask.float()
+    for _ in range(n_iter):
+        mask = dilate(mask, kernel_size=kernel_size)
+    for _ in range(n_iter):
+        mask = erode(mask, kernel_size=kernel_size)
+
+    return mask
+
+
+def dilate_outer(mask, n_iter, base_width=None):
+    # right view base
+    if n_iter <= 0:
+        return mask
+
+    mask_dtype = mask.dtype
+    mask = mask.bool()
+
+    if base_width is not None:
+        n_iter = max(round(mask.shape[-1] / base_width * n_iter), 1)
+
+    for i in range(n_iter):
+        mask = mask | F.pad(mask, (1, 0, 0, 0))[:, :, :, :-1]
+
+    return mask.to(mask_dtype)
+
+
+def dilate_inner(mask, n_iter, base_width=None):
+    # right view base
+    if n_iter <= 0:
+        return mask
+
+    mask_dtype = mask.dtype
+    mask = mask.bool()
+
+    if base_width is not None:
+        n_iter = max(round(mask.shape[-1] / base_width * n_iter), 1)
+
+    for i in range(n_iter):
+        mask = mask | F.pad(mask, (0, 1, 0, 0))[:, :, :, 1:]
+
+    return mask.to(mask_dtype)
 
 
 def edge_weight(x):
@@ -42,13 +98,23 @@ def dilate_edge(x, n):
     return x
 
 
-if __name__ == "__main__":
+def mask_closing(mask, kernel_size=3, n_iter=2):
+    mask = mask_org = mask.float()
+    mask = closing(mask, kernel_size=kernel_size, n_iter=n_iter)
+
+    # Add erased isolated pixels
+    mask = (mask + mask_org).clamp(0, 1)
+
+    return mask
+
+
+def _test_dialte_edge():
     import time
-    import torchvision.io as IO
+    import torchvision.io as io
     import torchvision.transforms.functional as TF
 
-    x1 = (IO.read_image("cc0/depth/dog.png") / 65535.0).mean(dim=0, keepdim=True)
-    x2 = (IO.read_image("cc0/depth/light_house.png") / 65535.0).mean(dim=0, keepdim=True)
+    x1 = (io.read_image("cc0/depth/dog.png") / 65535.0).mean(dim=0, keepdim=True)
+    x2 = (io.read_image("cc0/depth/light_house.png") / 65535.0).mean(dim=0, keepdim=True)
     x = torch.stack([x1, x2])
     z = edge_weight(x)
     TF.to_pil_image(z[0]).show()
@@ -61,3 +127,25 @@ if __name__ == "__main__":
     time.sleep(2)
     TF.to_pil_image(z[1]).show()
     time.sleep(2)
+
+
+def _test_mask():
+    import time
+    import torchvision.io as io
+    import torchvision.transforms.functional as TF
+
+    mask = io.read_image("cc0/mask/dog.png") / 255.0
+    mask = mask.unsqueeze(0)
+    inner = dilate_inner(mask, n_iter=2, base_width=mask.shape[-1] // 2)[0]
+    outer = dilate_outer(mask, n_iter=2)[0]
+
+    TF.to_pil_image(mask[0]).show()
+    time.sleep(2)
+    TF.to_pil_image(inner).show()
+    time.sleep(2)
+    TF.to_pil_image(outer).show()
+
+
+if __name__ == "__main__":
+    # _test_dialte_edge()
+    _test_mask()

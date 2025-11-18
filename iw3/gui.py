@@ -215,8 +215,9 @@ class MainFrame(wx.Frame):
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
                                       choices=["mlbw_l2", "mlbw_l4", "mlbw_l2s",
+                                               "mlbw_l2_inpaint",
                                                "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
-                                               "forward_fill"],
+                                               "forward_fill", "forward_inpaint"],
                                       name="cbo_method")
         self.cbo_method.SetEditable(False)
         self.cbo_method.SetSelection(2)
@@ -257,6 +258,25 @@ class MainFrame(wx.Frame):
         self.chk_edge_dilation.SetValue(True)
         self.cbo_edge_dilation.SetSelection(2)
         self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+
+        self.lbl_mask_dilation = wx.StaticText(self.grp_stereo, label=T("Mask Dilation"))
+        self.cbo_mask_inner_dilation = EditableComboBox(self.grp_stereo,
+                                                        choices=["0", "1", "2"],
+                                                        name="cbo_mask_inner_dilation")
+        self.cbo_mask_inner_dilation.SetSelection(0)
+        self.cbo_mask_inner_dilation.SetToolTip(T("Inner"))
+
+        self.cbo_mask_outer_dilation = EditableComboBox(self.grp_stereo,
+                                                        choices=["0", "1", "2"],
+                                                        name="cbo_mask_outer_dilation")
+        self.cbo_mask_outer_dilation.SetSelection(0)
+        self.cbo_mask_outer_dilation.SetToolTip(T("Outer"))
+
+        self.lbl_inpaint_max_width = wx.StaticText(self.grp_stereo, label=T("Inpaint Max Width"))
+        self.cbo_inpaint_max_width = EditableComboBox(self.grp_stereo,
+                                                      choices=["", "1920"],
+                                                      name="cbo_inpaint_max_width")
+        self.cbo_inpaint_max_width.SetSelection(0)
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
                                              label=T("Flicker Reduction"),
@@ -342,6 +362,11 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_synthetic_view, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_mask_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_mask_inner_dilation, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_mask_outer_dilation, (i, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_inpaint_max_width, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_inpaint_max_width, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_stereo_width, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_width, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -646,6 +671,7 @@ class MainFrame(wx.Frame):
 
         self.update_model_selection()
         self.update_edge_dilation()
+        self.update_inpaint_options()
         self.update_ema_normalize()
         self.update_scene_segment()
         self.grp_video.update_controls()
@@ -849,7 +875,7 @@ class MainFrame(wx.Frame):
 
     def update_preserve_screen_border(self):
         if self.cbo_method.GetValue() in {"row_flow_v2", "row_flow_v3", "row_flow_v3_sym",
-                                          "mlbw_l2", "mlbw_l2s", "mlbw_l4"}:
+                                          "mlbw_l2", "mlbw_l2s", "mlbw_l4", "mlbw_l2_inpaint"}:
             self.chk_preserve_screen_border.Enable()
         else:
             self.chk_preserve_screen_border.Disable()
@@ -857,6 +883,7 @@ class MainFrame(wx.Frame):
     def on_selected_index_changed_cbo_method(self, event):
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_inpaint_options()
 
     def on_selected_index_changed_cbo_stereo_format(self, event):
         self.update_input_option_state()
@@ -874,6 +901,22 @@ class MainFrame(wx.Frame):
             self.cbo_edge_dilation.Enable()
         else:
             self.cbo_edge_dilation.Disable()
+
+    def update_inpaint_options(self):
+        if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint"}:
+            self.lbl_mask_dilation.Show()
+            self.cbo_mask_outer_dilation.Show()
+            self.cbo_mask_inner_dilation.Show()
+            self.lbl_inpaint_max_width.Show()
+            self.cbo_inpaint_max_width.Show()
+        else:
+            self.lbl_mask_dilation.Hide()
+            self.cbo_mask_outer_dilation.Hide()
+            self.cbo_mask_inner_dilation.Hide()
+            self.lbl_inpaint_max_width.Hide()
+            self.cbo_inpaint_max_width.Hide()
+
+        self.GetSizer().Layout()
 
     def on_changed_chk_edge_dilation(self, event):
         self.update_edge_dilation()
@@ -945,6 +988,18 @@ class MainFrame(wx.Frame):
             return None
         if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
+            return None
+        if self.lbl_mask_dilation.IsShown() and not (
+                validate_number(self.cbo_mask_inner_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False) and
+                validate_number(self.cbo_mask_outer_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False)
+        ):
+            self.show_validation_error_message(T("Mask Dilation"), 0, 20)
+            return None
+        if (
+                self.lbl_inpaint_max_width.IsShown() and
+                not validate_number(self.cbo_inpaint_max_width.GetValue(), 126, 8192, is_int=True, allow_empty=True)
+        ):
+            self.show_validation_error_message(T("Inpaint Max Width"), 126, 8192)
             return None
         if not validate_number(self.grp_video.max_fps, 0.25, 1000.0, allow_empty=False):
             self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
@@ -1050,6 +1105,20 @@ class MainFrame(wx.Frame):
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
         edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
+        if self.lbl_mask_dilation.IsShown():
+            mask_inner_dilation = int(self.cbo_mask_inner_dilation.GetValue())
+            mask_outer_dilation = int(self.cbo_mask_outer_dilation.GetValue())
+        else:
+            mask_inner_dilation = None
+            mask_outer_dilation = None
+        if self.lbl_inpaint_max_width.IsShown():
+            if self.cbo_inpaint_max_width.GetValue():
+                inpaint_max_width = int(self.cbo_inpaint_max_width.GetValue())
+            else:
+                inpaint_max_width = None
+        else:
+            inpaint_max_width = None
+
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
         scene_detect = self.chk_scene_detect.IsEnabled() and self.chk_scene_detect.IsChecked()
@@ -1070,6 +1139,9 @@ class MainFrame(wx.Frame):
             foreground_scale=float(self.cbo_foreground_scale.GetValue()),
             depth_aa=depth_aa,
             edge_dilation=edge_dilation,
+            mask_inner_dilation=mask_inner_dilation,
+            mask_outer_dilation=mask_outer_dilation,
+            inpaint_max_width=inpaint_max_width,
             vr180=vr180,
             half_sbs=half_sbs,
             tb=tb,
@@ -1380,6 +1452,11 @@ class MainFrame(wx.Frame):
                     max_divergence = 10.0
                 else:
                     max_divergence = 10.0 * 0.5
+            elif method in {"forward_inpaint", "mlbw_l2_inpaint"}:
+                if synthetic_view == "both":
+                    max_divergence = 5.0
+                else:
+                    max_divergence = 5.0 * 0.5
 
             if divergence > max_divergence:
                 self.lbl_divergence_warning.SetLabel(

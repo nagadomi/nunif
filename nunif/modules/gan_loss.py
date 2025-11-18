@@ -19,6 +19,22 @@ def _compute_loss(real, fake, generator_loss, discriminator_loss, loss_weights):
         return loss_fn(real, fake)
 
 
+def _compute_loss_with_mask(real, fake, mask, generator_loss, discriminator_loss, loss_weights):
+    loss_fn = generator_loss if fake is None else discriminator_loss
+    if isinstance(real, (list, tuple)):
+        loss_weights = loss_weights[:len(real)]
+        sum_weight = sum(loss_weights)
+        loss_weights = [w / sum_weight for w in loss_weights]
+        if fake is None:
+            fake = (None,) * len(real)
+        loss = 0
+        for w, r, f, m in zip(loss_weights, real, fake, mask):
+            loss = loss + loss_fn(r, f, m) * w
+        return loss
+    else:
+        return loss_fn(real, fake, mask)
+
+
 class GANBCELoss(nn.Module):
     def __init__(self, loss_weights=(1.0,)):
         super().__init__()
@@ -65,6 +81,45 @@ class GANHingeLoss(nn.Module):
             generator_loss=self.generator_loss,
             discriminator_loss=self.discriminator_loss,
             loss_weights=self.loss_weights)
+
+
+class GANMaskHingeLoss(nn.Module):
+    def __init__(self, loss_weights=(1.0,)):
+        super().__init__()
+        self.loss_weights = loss_weights
+
+    @staticmethod
+    def generator_loss(real, fake, mask=None):
+        if mask is not None:
+            return torch.sum(-real[mask]) / (mask.sum() + 1e-4)
+        else:
+            return -torch.mean(real)
+
+    def discriminator_loss(self, real, fake, mask):
+        if mask is not None:
+            real_loss = F.relu(1. - real[mask]).sum() / (mask.sum() + 1e-4)
+            fake_loss = F.relu(1. + fake[mask]).sum() / (mask.sum() + 1e-4)
+        else:
+            real_loss = F.relu(1. - real).mean()
+            fake_loss = F.relu(1. + fake).mean()
+
+        return (real_loss + fake_loss) * 0.5
+
+    def forward(self, real, fake=None, mask=None):
+        if mask is not None:
+            return _compute_loss_with_mask(
+                real, fake, mask=mask,
+                generator_loss=self.generator_loss,
+                discriminator_loss=self.discriminator_loss,
+                loss_weights=self.loss_weights
+            )
+        else:
+            return _compute_loss(
+                real, fake,
+                generator_loss=self.generator_loss,
+                discriminator_loss=self.discriminator_loss,
+                loss_weights=self.loss_weights
+            )
 
 
 class GANHingeClampLoss(GANHingeLoss):

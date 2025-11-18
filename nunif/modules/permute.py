@@ -160,6 +160,62 @@ def window_reverse2d(x, out_shape, window_size):
     return x
 
 
+def bcdhw_to_bnc(x, window_size):
+    """
+    BCDHW -> BNC
+    For sequential models (transformer, lstm) on 3D input
+    x: (B, C, D, H, W)
+    window_size: (SD, SH, SW)
+    Returns: (B * (D//SD) * (H//SH) * (W//SW), SD*SH*SW, C)
+    """
+    B, C, D, H, W = x.shape
+    SD, SH, SW = window_size if isinstance(window_size, (list, tuple)) else [window_size, window_size, window_size]
+    assert D % SD == 0 and H % SH == 0 and W % SW == 0
+
+    OD = D // SD
+    OH = H // SH
+    OW = W // SW
+
+    # (B, C, OD, SD, OH, SH, OW, SW)
+    x = x.reshape(B, C, OD, SD, OH, SH, OW, SW)
+    # (B, OD, OH, OW, SD, SH, SW, C)
+    x = x.permute(0, 2, 4, 6, 3, 5, 7, 1)
+    # (B*OD*OH*OW, SD*SH*SW, C)
+    x = x.reshape(B * OD * OH * OW, SD * SH * SW, C)
+    return x
+
+
+def bnc_to_bcdhw(x, out_shape, window_size):
+    """
+    BNC -> BCDHW
+    Reverse of bcdhw_to_bnc
+    x: (B*OD*OH*OW, SD*SH*SW, C)
+    out_shape: (B, C, D, H, W)
+    window_size: (SD, SH, SW)
+    Returns: (B, C, D, H, W)
+    """
+    OB, OC, OD_tot, OH_tot, OW_tot = out_shape
+    SD, SH, SW = window_size if isinstance(window_size, (list, tuple)) else [window_size, window_size, window_size]
+    assert OD_tot % SD == 0 and OH_tot % SH == 0 and OW_tot % SW == 0
+
+    OD = OD_tot // SD
+    OH = OH_tot // SH
+    OW = OW_tot // SW
+
+    BNC_B, N, C = x.shape
+    assert N == SD * SH * SW
+    assert OB * OD * OH * OW == BNC_B
+    assert OC == C
+
+    # (B, OD, OH, OW, SD, SH, SW, C)
+    x = x.reshape(OB, OD, OH, OW, SD, SH, SW, C)
+    # (B, C, OD, SD, OH, SH, OW, SW)
+    x = x.permute(0, 7, 1, 4, 2, 5, 3, 6)
+    # back (B, C, D, H, W)
+    x = x.reshape(OB, OC, OD_tot, OH_tot, OW_tot)
+    return x
+
+
 def kernel2d_to_conv2d_weight(in_channels, kernel):
     assert kernel.ndim == 2
     kernel = kernel.reshape(1, 1, *kernel.shape)
@@ -223,7 +279,21 @@ def _test_bnc():
     assert x.shape == (4 * 3 * 2, 2 * 3, 3)
     x = bnc_to_bchw(x, original_shape, (2, 3))
     assert src.shape == x.shape and (src - x).abs().sum() == 0
-    print("pass _test_bnc")
+
+
+def _test_3d_bnc():
+    src = x = torch.rand((4, 3, 6, 6, 6))
+    original_shape = x.shape
+    x = bcdhw_to_bnc(x, 2)
+    assert x.shape == (4 * 3 * 3 * 3, 2 * 2 * 2, 3)
+    x = bnc_to_bcdhw(x, original_shape, 2)
+    assert src.shape == x.shape and (src - x).abs().sum() == 0
+
+    x = bcdhw_to_bnc(x, (2, 2, 3))
+    assert x.shape == (4 * 3 * 3 * 2, 2 * 2 * 3, 3)
+    x = bnc_to_bcdhw(x, original_shape, (2, 2, 3))
+    assert src.shape == x.shape and (src - x).abs().sum() == 0
+
 
 
 def _test_window():
@@ -238,4 +308,5 @@ if __name__ == "__main__":
     _test_bhwc()
     _test_pixel_shuffle()
     _test_bnc()
+    _test_3d_bnc()
     _test_window()

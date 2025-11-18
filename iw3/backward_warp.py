@@ -1,5 +1,6 @@
 import torch
 from .mapper import get_mapper
+from .dilation import closing, dilate_inner, dilate_outer
 from nunif.device import autocast, device_is_mps
 import torch.nn.functional as F
 from nunif.modules.replication_pad2d import replication_pad2d
@@ -114,8 +115,13 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_vi
     return left_eye, right_eye
 
 
-def apply_divergence_nn_LR(model, c, depth, divergence, convergence, steps,
-                           mapper, synthetic_view, preserve_screen_border, enable_amp):
+def apply_divergence_nn_LR(
+        model, c, depth, divergence, convergence, steps,
+        mapper,
+        synthetic_view="both",
+        preserve_screen_border=False,
+        enable_amp=True,
+):
     assert synthetic_view in {"both", "right", "left"}
     steps = 1 if steps is None else steps
 
@@ -149,14 +155,32 @@ def apply_divergence_nn_LR(model, c, depth, divergence, convergence, steps,
     return left_eye, right_eye
 
 
-def apply_divergence_nn(model, c, depth, divergence, convergence, steps,
-                        mapper, shift, preserve_screen_border, enable_amp):
+def apply_divergence_nn(
+        model, c, depth, divergence, convergence, steps,
+        mapper, shift,
+        preserve_screen_border=False,
+        enable_amp=True,
+):
     if model.name == "sbs.mlbw":
-        return apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
-                                                mapper, shift, preserve_screen_border, enable_amp)
+        return apply_divergence_nn_delta_weight(
+            model, c, depth,
+            divergence=divergence,
+            convergence=convergence,
+            steps=steps,
+            mapper=mapper,
+            shift=shift,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp)
     else:
-        return apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
-                                         mapper, shift, preserve_screen_border, enable_amp)
+        return apply_divergence_nn_delta(
+            model, c, depth,
+            divergence=divergence,
+            convergence=convergence,
+            steps=steps,
+            mapper=mapper,
+            shift=shift,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp)
 
 
 def pad_convergence_shift_05(c, divergence, convergence):
@@ -168,8 +192,12 @@ def pad_convergence_shift_05(c, divergence, convergence):
     return c
 
 
-def apply_divergence_nn_delta(model, c, depth, divergence, convergence, steps,
-                              mapper, shift, preserve_screen_border, enable_amp):
+def apply_divergence_nn_delta(
+        model, c, depth, divergence, convergence, steps,
+        mapper, shift,
+        preserve_screen_border=False,
+        enable_amp=True
+):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -232,8 +260,13 @@ def mlbw_debug_output(z):
     z = TF.to_pil_image(z).save(f"tmp/mlbw_debug/{_mlbw_debug_count}.png")
 
 
-def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, steps,
-                                     mapper, shift, preserve_screen_border, enable_amp):
+def apply_divergence_nn_delta_weight(
+        model, c, depth, divergence, convergence, steps,
+        mapper, shift,
+        preserve_screen_border=False,
+        enable_amp=True,
+        return_mask=False,
+):
     # BCHW
     assert model.delta_output
     if shift > 0:
@@ -259,7 +292,11 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
                                        preserve_screen_border=preserve_screen_border)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
-        delta, layer_weight = model(x)
+        if model.hole_mask:
+            delta, layer_weight, hole_mask_logits = model(x)
+        else:
+            delta, layer_weight = model(x)
+            hole_mask_logits = None
 
     if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
         layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
@@ -277,18 +314,41 @@ def apply_divergence_nn_delta_weight(model, c, depth, divergence, convergence, s
         z += bw
         if MLBW_DEBUG_OUTPUT:
             debug.append(bw)
+
+    if MLBW_DEBUG_OUTPUT and hole_mask_logits is not None:
+        hole_mask_logits = F.interpolate(hole_mask_logits, size=c.shape[-2:],
+                                         mode="bilinear", align_corners=True, antialias=False)
+        hole_mask = torch.sigmoid(hole_mask_logits)
+        debug.append(hole_mask.expand_as(c))
+
     if MLBW_DEBUG_OUTPUT:
         mlbw_debug_output(debug)
     del debug
 
     if use_pad_convergence:
         z = pad_convergence_shift_05(z, divergence, convergence)
+        if hole_mask_logits is not None:
+            hole_mask_logits = pad_convergence_shift_05(hole_mask_logits, divergence, convergence)
     z = z.clamp(0, 1)
 
     if shift > 0:
-        z = torch.flip(z, (3,))
+        z = z.flip((3,))
+        if hole_mask_logits is not None:
+            hole_mask_logits = hole_mask_logits.flip((3,))
 
-    return z
+    if return_mask:
+        return z, hole_mask_logits
+    else:
+        if hole_mask_logits is not None:
+            # hole fill for visualize
+            hole_mask = postprocess_hole_mask(
+                hole_mask_logits,
+                target_size=c.shape[-2:],
+                threshold=0.15,
+            )
+            z = z * (1 - hole_mask.float())
+
+        return z
 
 
 def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
@@ -324,3 +384,60 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
         right_eye = c
 
     return left_eye, right_eye
+
+
+def postprocess_hole_mask(mask_logits, target_size, threshold, inner_dilation=0, outer_dilation=0):
+    base_width = mask_logits.shape[-1]
+    mask_logits = closing(mask_logits, n_iter=1)
+    if target_size != mask_logits.shape[-2:]:
+        mask_logits = F.interpolate(mask_logits, size=target_size,
+                                    mode="bilinear", align_corners=True, antialias=False)
+    mask = torch.sigmoid(mask_logits)
+    mask = (mask > threshold)
+    mask = dilate_inner(mask, n_iter=inner_dilation, base_width=base_width)
+    mask = dilate_outer(mask, n_iter=outer_dilation, base_width=base_width)
+
+    return mask
+
+
+def nonwarp_mask(model, c, depth, divergence, convergence, mapper, threshold=0.15, inner_dilation=0, outer_dilation=0):
+    # warp depth to the left
+    warped_depth, _ = apply_divergence_nn_delta_weight(
+        model, depth, depth, divergence=divergence, convergence=convergence, steps=1,
+        mapper=mapper, shift=-1, preserve_screen_border=False, enable_amp=True,
+        return_mask=True,  # prevent hole fill
+    )
+    # warp warped_depth to the right and back to original position
+    dummy = torch.zeros_like(c)
+    _, mask_logits = apply_divergence_nn_delta_weight(
+        model, dummy, warped_depth, divergence=divergence, convergence=convergence, steps=1,
+        mapper=mapper, shift=1, preserve_screen_border=False, enable_amp=True,
+        return_mask=True,
+    )
+    mask = postprocess_hole_mask(mask_logits, c.shape[-2:], threshold=threshold,
+                                 inner_dilation=inner_dilation, outer_dilation=outer_dilation)
+
+    return c, mask
+
+
+def _test_nonwarp_mask():
+    import torchvision.transforms.functional as TF
+    import torchvision.io as io
+    from .stereo_model_factory import create_stereo_model
+    from . import models  # noqa
+
+    model = create_stereo_model("mask_mlbw_l2", divergence=10, device_id=0)
+
+    x = io.read_image("cc0/320/dog.png") / 255.0
+    depth = io.read_image("cc0/depth/dog.png") / 65536.0
+    x = x.unsqueeze(0).cuda()
+    depth = depth.unsqueeze(0).cuda()
+
+    x, mask = nonwarp_mask(model, x, depth, divergence=4 * 2, convergence=0, mapper="none", threshold=0.15)
+    x = x.mean(dim=1, keepdim=True)
+    x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
+    TF.to_pil_image(x).show()
+
+
+if __name__ == "__main__":
+    _test_nonwarp_mask()
