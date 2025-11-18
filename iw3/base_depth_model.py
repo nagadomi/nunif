@@ -96,12 +96,12 @@ class BaseDepthModel(metaclass=ABCMeta):
     def load_model(self, model_type, resolution, device):
         pass
 
-    def load(self, gpu=0, resolution=None):
+    def load(self, gpu=0, resolution=None, **kwargs):
         self.device = create_device(gpu)
 
         with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
             try:
-                self.model = self.load_model(self.model_type, resolution=resolution, device=self.device)
+                self.model = self.load_model(self.model_type, resolution=resolution, device=self.device, **kwargs)
             except (RuntimeError, pickle.PickleError) as e:
                 if isinstance(e, RuntimeError):
                     do_handle = "PytorchStreamReader" in repr(e)

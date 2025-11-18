@@ -20,7 +20,7 @@ AA_SUPPORTED_MODELS = {
 }
 
 
-def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1):
+def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1, raw_output=False):
     amp_dtype = torch.bfloat16 if (x.device.type == "cuda" and torch.cuda.is_bf16_supported()) else None
     with autocast(device=x.device, enabled=enable_amp, dtype=amp_dtype):
         x = x.unsqueeze(1)  # (B, S, C, H, W)
@@ -32,15 +32,19 @@ def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1):
     disparity_maps = []
     for depth, sky_mask, sky_weight in zip(depths, sky_masks, sky_weights):
         # TODO: improve this
-        non_sky_pixels = sky_mask.numel() - sky_mask.sum()
-        if non_sky_pixels < 10:
-            # all sky
-            depth = 1.0 / (torch.ones_like(depth) * 100.0)
+        if not raw_output:
+            non_sky_pixels = sky_mask.numel() - sky_mask.sum()
+            if non_sky_pixels < 10:
+                # all sky
+                depth = 1.0 / (torch.ones_like(depth) * 100.0)
+            else:
+                max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
+                depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
+                shift = (max_rel_dist - depth.min()) * shift_ratio + 1e-5
+                depth = 1.0 / (depth + shift)
         else:
             max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
             depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
-            shift = (max_rel_dist - depth.min()) * shift_ratio + 1e-5
-            depth = 1.0 / (depth + shift)
 
         disparity_maps.append(depth)
 
@@ -52,6 +56,7 @@ def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1):
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
                 output_device="cpu", device=None, edge_dilation=2, depth_aa=None,
+                raw_output=False,
                 **kwargs):
     device = device if device is not None else model.device
     batch = False
@@ -71,33 +76,37 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
     if not low_vram:
         if flip_aug:
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
-        out = _forward(model, x, enable_amp)
+        out = _forward(model, x, enable_amp, raw_output=raw_output)
     else:
         x_org = x
-        out = _forward(model, x, enable_amp)
+        out = _forward(model, x, enable_amp, raw_output=raw_output)
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
-            out2 = _forward(model, x, enable_amp)
+            out2 = _forward(model, x, enable_amp, raw_output=raw_output)
             out = torch.cat([out, out2], dim=0)
     if depth_aa is not None:
         out = depth_aa.infer(out)
 
     if edge_dilation > 0:
-        out = dilate_edge(out, edge_dilation)
+        if not raw_output:
+            out = dilate_edge(out, edge_dilation)
+        else:
+            out = -dilate_edge(-out, edge_dilation)
 
     # invert for zoedepth compatibility
-    out.neg_()
+    if not raw_output:
+        out.neg_()
 
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
             z = torch.empty((n, *out.shape[1:]), device=out.device)
             for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 128
+                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 0.5
         else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 128
+            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 0.5
     else:
-        z = out * 256
+        z = out
     if not batch:
         assert z.shape[0] == 1
         z = z.squeeze(0)
@@ -111,7 +120,7 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
     def __init__(self, model_type):
         super().__init__(model_type)
 
-    def load_model(self, model_type, resolution=None, device=None):
+    def load_model(self, model_type, resolution=None, device=None, raw_output=False):
         # load aa model
         if model_type in AA_SUPPORTED_MODELS:
             self.depth_aa = DepthAA().load().eval().to(device)
@@ -131,9 +140,10 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
 
         model.prep_lower_bound = resolution or 392
         if model.prep_lower_bound % 14 != 0:
-            # From GUI, 512 -> 504
-            model.prep_lower_bound -= model.prep_lower_bound % 14
+            # From GUI, 512 -> 518
+            model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
         model.device = device
+        self.raw_output = raw_output
 
         return model
 
@@ -147,6 +157,7 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
             device=x.device,
             edge_dilation=edge_dilation,
             depth_aa=self.depth_aa if depth_aa else None,
+            raw_output=self.raw_output,
         )
 
     @classmethod
