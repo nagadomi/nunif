@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
 from nunif.modules.reflection_pad2d import reflection_pad2d_loop
-from . dilation import dilate_edge
+from . dilation import dilate_edge, edge_dilation_is_enabled
 from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 
 
@@ -121,7 +121,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
             out = torch.cat([out, out2], dim=0)
 
     out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
-    if edge_dilation > 0:
+    if edge_dilation_is_enabled(edge_dilation):
         # NOTE: dilate_edge() was developed for DepthAnything and it is not inverted depth
         #       so must be calculated in negative space.
         out = -dilate_edge(-out, edge_dilation)

@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.device import create_device, autocast, device_is_mps # noqa
-from .dilation import dilate_edge
+from .dilation import dilate_edge, edge_dilation_is_enabled
 from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 
 
@@ -106,7 +106,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
     if unpad > 0:
         out = out[:, :, unpad:-unpad, unpad:-unpad]
 
-    if edge_dilation > 0:
+    if edge_dilation_is_enabled(edge_dilation):
         if force_disparity:
             out = dilate_edge(out, edge_dilation)
         else:

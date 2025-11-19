@@ -23,7 +23,7 @@ from nunif.utils.ticket_lock import TicketLock
 from nunif.device import create_device, device_is_cuda, mps_is_available, xpu_is_available
 from nunif.models.data_parallel import DeviceSwitchInference
 from . import export_config
-from .dilation import dilate_edge
+from .dilation import dilate_edge, edge_dilation_is_enabled
 from .forward_warp import apply_divergence_forward_warp
 from .anaglyph import apply_anaglyph_redcyan
 from .mapper import get_mapper, resolve_mapper_name, MAPPER_ALL
@@ -1537,7 +1537,7 @@ def process_config_video(config, args, side_model):
 
     @torch.inference_mode()
     def batch_callback(x, depths, test=False):
-        if not config.skip_edge_dilation and args.edge_dilation > 0:
+        if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
             # apply --edge-dilation
             depths = -dilate_edge(-depths, args.edge_dilation)
         with sbs_lock:
@@ -1712,7 +1712,7 @@ def process_config_images(config, args, side_model):
                     raise ValueError(f"No match {rgb_filename} and {depth_filename}")
                 rgb = TF.to_tensor(rgb).to(args.state["device"])
                 depth = depth.to(args.state["device"])
-                if not config.skip_edge_dilation and args.edge_dilation > 0:
+                if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
                     depth = -dilate_edge(-depth.unsqueeze(0), args.edge_dilation).squeeze(0)
 
                 left_eye, right_eye = apply_divergence(depth, rgb, args, side_model)
@@ -1915,7 +1915,7 @@ def create_parser(required_true=True):
     parser.add_argument("--scene-detect", action="store_true",
                         help=("splitting a scene using shot boundary detection. "
                               "ema and other states will be reset at the boundary of the scene."))
-    parser.add_argument("--edge-dilation", type=int, nargs="?", default=None, const=2,
+    parser.add_argument("--edge-dilation", type=int, nargs="*",
                         help="loop count of edge dilation.")
     parser.add_argument("--mask-inner-dilation", type=int, default=0,
                         help="loop count of inner mask dilation")
@@ -2108,11 +2108,23 @@ def iw3_main(args):
         depth_model.force_update()
 
     if args.edge_dilation is None:
-        if depth_model.get_name() in {"DepthAnything", "DepthPro", "VideoDepthAnything"} and not (args.rgbd or args.half_rgbd):
+        if (
+                depth_model.get_name() in {
+                    "DepthAnything",
+                    "DepthAnythingV3Mono",
+                    "DepthPro",
+                    "VideoDepthAnything",
+                    "VideoDepthAnythingStreaming"
+                } and
+                not (args.rgbd or args.half_rgbd)
+        ):
             # TODO: This may not be a sensible choice
             args.edge_dilation = 2
         else:
             args.edge_dilation = 0
+    elif isinstance(args.edge_dilation, list) and len(args.edge_dilation) == 0:
+        # only --edge-dilation
+        args.edge_dilation = 2
 
     if not is_yaml(args.input):
         if not depth_model.loaded():

@@ -174,7 +174,7 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
     IW3U.set_state_args(args, stop_event=stop_event, depth_model=depth_model)
     args.state["fps_event"] = fps_event
     args.state["args_lock"] = args_lock if args_lock is not None else threading.Lock()
-    if args.edge_dilation is None:
+    if args.edge_dilation is None or (isinstance(args.edge_dilation, list) and len(args.edge_dilation) == 0):
         args.edge_dilation = 2
 
 

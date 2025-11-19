@@ -6,7 +6,7 @@ from torchvision.transforms import functional as TF
 from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
 from nunif.models.utils import compile_model
 from nunif.modules.reflection_pad2d import reflection_pad2d_naive
-from .dilation import dilate_edge
+from .dilation import dilate_edge, edge_dilation_is_enabled
 from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 from . depth_anything_model import batch_preprocess as batch_preprocess_da
 from .models import DepthAA
@@ -81,7 +81,7 @@ def _postprocess(out, edge_dilation,
         out = F.pad(out, (-METRIC_PADDING,) * 4)
 
     is_disparity = not metric_depth or (metric_depth and force_disparity)
-    if edge_dilation > 0:
+    if edge_dilation_is_enabled(edge_dilation):
         if is_disparity:
             out = dilate_edge(out, edge_dilation)
         else:
