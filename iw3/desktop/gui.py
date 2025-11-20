@@ -209,7 +209,7 @@ class MainFrame(wx.Frame):
                                                      name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(3)
 
-        self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
+        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"), name="lbl_edge_dilation")
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
                                                   choices=["0", "1", "2", "3", "4"],
                                                   size=self.FromDIP((90, -1)),
@@ -217,10 +217,9 @@ class MainFrame(wx.Frame):
         self.cbo_edge_dilation_y = EditableComboBox(self.grp_stereo,
                                                     choices=["", "0", "1", "2"],
                                                     name="cbo_edge_dilation_y")
-        self.chk_edge_dilation.SetValue(True)
         self.cbo_edge_dilation.SetSelection(2)
         self.cbo_edge_dilation_y.SetSelection(0)
-        self.chk_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+        self.lbl_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
         self.cbo_edge_dilation.SetToolTip(T("X or XY"))
         self.cbo_edge_dilation_y.SetToolTip(T("Y"))
 
@@ -273,7 +272,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
         layout.Add(self.cbo_edge_dilation_y, (i, 2), flag=wx.EXPAND)
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -583,7 +582,6 @@ class MainFrame(wx.Frame):
         self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
 
         self.chk_small_model_only.Bind(wx.EVT_CHECKBOX, self.update_depth_model_list)
-        self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_edge_dilation)
         self.cbo_edge_dilation_y.Bind(wx.EVT_TEXT, self.on_changed_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
@@ -822,13 +820,6 @@ class MainFrame(wx.Frame):
             self.chk_cross_eyed.Hide()
 
     def update_edge_dilation(self):
-        if self.chk_edge_dilation.IsChecked():
-            self.cbo_edge_dilation.Enable()
-            self.cbo_edge_dilation_y.Enable()
-        else:
-            self.cbo_edge_dilation.Disable()
-            self.cbo_edge_dilation_y.Disable()
-
         if self.cbo_edge_dilation_y.GetValue():
             self.cbo_edge_dilation.SetToolTip(T("X"))
         else:
@@ -940,13 +931,10 @@ class MainFrame(wx.Frame):
             self.depth_model_device_id = None
             gc_collect()
 
-        if self.chk_edge_dilation.IsChecked():
-            if self.cbo_edge_dilation_y.GetValue():
-                edge_dilation = [int(self.cbo_edge_dilation.GetValue()), int(self.cbo_edge_dilation_y.GetValue())]
-            else:
-                edge_dilation = int(self.cbo_edge_dilation.GetValue())
+        if self.cbo_edge_dilation_y.GetValue():
+            edge_dilation = [int(self.cbo_edge_dilation.GetValue()), int(self.cbo_edge_dilation_y.GetValue())]
         else:
-            edge_dilation = 0
+            edge_dilation = int(self.cbo_edge_dilation.GetValue())
 
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
         bind_addr = self.txt_bind_addr.GetAddress() if self.chk_bind_addr.IsChecked() else None

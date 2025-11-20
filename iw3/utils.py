@@ -1915,8 +1915,8 @@ def create_parser(required_true=True):
     parser.add_argument("--scene-detect", action="store_true",
                         help=("splitting a scene using shot boundary detection. "
                               "ema and other states will be reset at the boundary of the scene."))
-    parser.add_argument("--edge-dilation", type=int, nargs="*",
-                        help="loop count of edge dilation.")
+    parser.add_argument("--edge-dilation", type=int, nargs="+", default=[2, 1],
+                        help="loop count of edge dilation. <x> <y> or <xy>")
     parser.add_argument("--mask-inner-dilation", type=int, default=0,
                         help="loop count of inner mask dilation")
     parser.add_argument("--mask-outer-dilation", type=int, default=0,
@@ -2106,25 +2106,6 @@ def iw3_main(args):
     depth_model = args.state["depth_model"]
     if args.update:
         depth_model.force_update()
-
-    if args.edge_dilation is None:
-        if (
-                depth_model.get_name() in {
-                    "DepthAnything",
-                    "DepthAnythingV3Mono",
-                    "DepthPro",
-                    "VideoDepthAnything",
-                    "VideoDepthAnythingStreaming"
-                } and
-                not (args.rgbd or args.half_rgbd)
-        ):
-            # TODO: This may not be a sensible choice
-            args.edge_dilation = 2
-        else:
-            args.edge_dilation = 0
-    elif isinstance(args.edge_dilation, list) and len(args.edge_dilation) == 0:
-        # only --edge-dilation
-        args.edge_dilation = 2
 
     if not is_yaml(args.input):
         if not depth_model.loaded():
