@@ -435,12 +435,12 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.SetSelection(0)
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
-        self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "16:9"],
+        self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "top", "16:9"],
                                         name="cbo_pad_mode")
         self.cbo_pad_mode.SetEditable(False)
         self.cbo_pad_mode.SetSelection(0)
         self.cbo_pad_mode.SetToolTip(T("Padding Mode"))
-        self.cbo_pad = EditableComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "1"],
+        self.cbo_pad = EditableComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "0.5", "1"],
                                         name="cbo_pad")
         self.cbo_pad.SetSelection(0)
         self.cbo_pad.SetToolTip(T("Padding Ratio"))

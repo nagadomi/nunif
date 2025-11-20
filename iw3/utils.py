@@ -337,7 +337,7 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
 
 
 def postprocess_padding(left_eye, right_eye, pad, pad_mode):
-    assert pad_mode in {"tblr", "tb", "lr", "16:9"}
+    assert pad_mode in {"tblr", "tb", "lr", "16:9", "top"}
     if pad_mode in {"tblr", "tb", "lr"}:
         pad_h = pad_w = 0
         if "tb" in pad_mode:
@@ -346,6 +346,10 @@ def postprocess_padding(left_eye, right_eye, pad, pad_mode):
             pad_w = round(left_eye.shape[2] * pad) // 2
         left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
+    elif pad_mode == "top":
+        pad_top = round(left_eye.shape[1] * pad)
+        left_eye = TF.pad(left_eye, (0, pad_top, 0, 0), padding_mode="constant")
+        right_eye = TF.pad(right_eye, (0, pad_top, 0, 0), padding_mode="constant")
     elif pad_mode == "16:9":
         # fit to 16:9
         # pad size is ignored
@@ -1812,7 +1816,7 @@ def create_parser(required_true=True):
     parser.add_argument("--yes", "-y", action="store_true", default=False,
                         help="overwrite output files")
     parser.add_argument("--pad", type=float, help="pad_size = round(width * pad) // 2")
-    parser.add_argument("--pad-mode", type=str, default="tblr", choices=["tblr", "tb", "lr", "16:9"], help="padding mode")
+    parser.add_argument("--pad-mode", type=str, default="tblr", choices=["tblr", "tb", "lr", "16:9", "top"], help="padding mode")
     parser.add_argument("--depth-model", type=str, default="ZoeD_Any_N",
                         choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
                                  "Any_S", "Any_B", "Any_L",
