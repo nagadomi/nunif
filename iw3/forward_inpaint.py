@@ -218,7 +218,7 @@ class ForwardInpaintVideo(nn.Module):
             return None, None
 
     def flush(self):
-        if self.frame_queue.empty():
+        if self.frame_queue is None or self.frame_queue.empty():
             return None, None
 
         pad = self.frame_queue.fill()

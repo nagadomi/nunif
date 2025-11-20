@@ -286,7 +286,7 @@ class MLBWInpaintVideo(nn.Module):
             return None, None
 
     def flush(self, enable_amp=True):
-        if self.frame_queue.empty():
+        if self.frame_queue is None or self.frame_queue.empty():
             return None, None
 
         pad = self.frame_queue.fill()
