@@ -2,6 +2,28 @@ import torch.nn.functional as F
 import torch
 
 
+def edge_dilation_parse(edge_dilation):
+    if isinstance(edge_dilation, list):
+        if len(edge_dilation) == 0:
+            x = y = 0
+        elif len(edge_dilation) == 1:
+            x = y = edge_dilation[0]
+        else:
+            x = edge_dilation[0]
+            y = edge_dilation[1]
+    elif isinstance(edge_dilation, int):
+        x = y = edge_dilation
+    else:
+        x = y = 0
+
+    return x, y
+
+
+def edge_dilation_is_enabled(edge_dilation):
+    x, y = edge_dilation_parse(edge_dilation)
+    return x != 0 or y != 0
+
+
 def gaussian_blur(x):
     kernel = torch.tensor([
         [21, 31, 21],
@@ -89,10 +111,29 @@ def edge_weight(x):
 
 @torch.inference_mode()
 def dilate_edge(x, n):
-    for _ in range(n):
+    x_iter, y_iter = edge_dilation_parse(n)
+    xy_iter = min(x_iter, y_iter)
+    x_iter = x_iter - xy_iter
+    y_iter = y_iter - xy_iter
+
+    # print(xy_iter, x_iter, y_iter)
+
+    for _ in range(xy_iter):
         w = edge_weight(x)
         x2 = gaussian_blur(x)
-        x2 = dilate(x2)
+        x2 = dilate(x2, kernel_size=(3, 3))
+        x = (x * (1 - w)) + (x2 * w)
+
+    for _ in range(y_iter):
+        w = edge_weight(x)
+        x2 = gaussian_blur(x)
+        x2 = dilate(x2, kernel_size=(3, 1))
+        x = (x * (1 - w)) + (x2 * w)
+
+    for _ in range(x_iter):
+        w = edge_weight(x)
+        x2 = gaussian_blur(x)
+        x2 = dilate(x2, kernel_size=(1, 3))
         x = (x * (1 - w)) + (x2 * w)
 
     return x

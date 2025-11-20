@@ -3,7 +3,7 @@ from os import path
 import torch
 from torchvision.transforms import functional as TF
 from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
-from .dilation import dilate_edge
+from .dilation import dilate_edge, edge_dilation_is_enabled
 from .base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 from .depth_anything_model import batch_preprocess
 from .models import DepthAA
@@ -87,7 +87,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
     if depth_aa is not None:
         out = depth_aa.infer(out)
 
-    if edge_dilation > 0:
+    if edge_dilation_is_enabled(edge_dilation):
         if not raw_output:
             out = dilate_edge(out, edge_dilation)
         else:

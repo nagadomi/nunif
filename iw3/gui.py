@@ -251,13 +251,19 @@ class MainFrame(wx.Frame):
         self.chk_depth_aa = wx.CheckBox(self.grp_stereo, label=T("Depth Anti-aliasing"), name="chk_depth_aa")
         self.chk_depth_aa.SetValue(False)
 
-        self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
+        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"))
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
                                                   choices=["0", "1", "2", "3", "4"],
+                                                  size=self.FromDIP((90, -1)),
                                                   name="cbo_edge_dilation")
-        self.chk_edge_dilation.SetValue(True)
+        self.cbo_edge_dilation_y = EditableComboBox(self.grp_stereo,
+                                                    choices=["", "0", "1", "2"],
+                                                    name="cbo_edge_dilation_y")
         self.cbo_edge_dilation.SetSelection(2)
-        self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+        self.cbo_edge_dilation_y.SetSelection(2)
+        self.lbl_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+        self.cbo_edge_dilation.SetToolTip(T("X or XY"))
+        self.cbo_edge_dilation_y.SetToolTip(T("Y"))
 
         self.lbl_mask_dilation = wx.StaticText(self.grp_stereo, label=T("Mask Dilation"))
         self.cbo_mask_inner_dilation = EditableComboBox(self.grp_stereo,
@@ -375,8 +381,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_edge_dilation, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_edge_dilation_y, (i, 2), flag=wx.EXPAND)
         layout.Add(self.chk_depth_aa, (i := i + 1, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
@@ -623,7 +630,7 @@ class MainFrame(wx.Frame):
         self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
 
         self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
-        self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
+        self.cbo_edge_dilation_y.Bind(wx.EVT_TEXT, self.on_changed_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
 
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
@@ -742,6 +749,10 @@ class MainFrame(wx.Frame):
             self.cbo_resolution,
             self.cbo_stereo_width,
             self.cbo_edge_dilation,
+            self.cbo_edge_dilation_y,
+            self.cbo_mask_outer_dilation,
+            self.cbo_mask_inner_dilation,
+            self.cbo_inpaint_max_width,
             self.cbo_ema_decay,
             self.cbo_ema_buffer,
             *self.grp_video.get_editable_comboboxes(),
@@ -897,10 +908,10 @@ class MainFrame(wx.Frame):
         self.update_video_codec()
 
     def update_edge_dilation(self):
-        if self.chk_edge_dilation.IsChecked():
-            self.cbo_edge_dilation.Enable()
+        if self.cbo_edge_dilation_y.GetValue():
+            self.cbo_edge_dilation.SetToolTip(T("X"))
         else:
-            self.cbo_edge_dilation.Disable()
+            self.cbo_edge_dilation.SetToolTip(T("X, Y"))
 
     def update_inpaint_options(self):
         if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint"}:
@@ -918,7 +929,7 @@ class MainFrame(wx.Frame):
 
         self.GetSizer().Layout()
 
-    def on_changed_chk_edge_dilation(self, event):
+    def on_changed_edge_dilation(self, event):
         self.update_edge_dilation()
 
     def update_ema_normalize(self):
@@ -987,6 +998,9 @@ class MainFrame(wx.Frame):
             self.show_validation_error_message(T("Padding"), 0.0, 10.0)
             return None
         if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
+            self.show_validation_error_message(T("Edge Fix"), 0, 20)
+            return None
+        if not validate_number(self.cbo_edge_dilation_y.GetValue(), 0, 20, is_int=True, allow_empty=True):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
             return None
         if self.lbl_mask_dilation.IsShown() and not (
@@ -1104,7 +1118,11 @@ class MainFrame(wx.Frame):
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
-        edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
+
+        if self.cbo_edge_dilation_y.GetValue():
+            edge_dilation = [int(self.cbo_edge_dilation.GetValue()), int(self.cbo_edge_dilation_y.GetValue())]
+        else:
+            edge_dilation = int(self.cbo_edge_dilation.GetValue())
         if self.lbl_mask_dilation.IsShown():
             mask_inner_dilation = int(self.cbo_mask_inner_dilation.GetValue())
             mask_outer_dilation = int(self.cbo_mask_outer_dilation.GetValue())
