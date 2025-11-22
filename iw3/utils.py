@@ -374,7 +374,7 @@ def postprocess_padding(left_eye, right_eye, pad, pad_mode):
 
 def postprocess_image(left_eye, right_eye, args):
     # CHW
-    ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
+    ipd_pad = int(abs(args.ipd_offset) * 0.01 * max(left_eye.shape[-2:]))
     ipd_pad -= ipd_pad % 2
     if ipd_pad > 0 and not (args.rgbd or args.half_rgbd):
         pad_o, pad_i = (ipd_pad * 2, ipd_pad) if args.ipd_offset > 0 else (ipd_pad, ipd_pad * 2)
