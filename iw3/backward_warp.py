@@ -97,19 +97,21 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_vi
     if synthetic_view != "both":
         divergence = divergence * 2
 
+    base_size = max(H, W)
     shift_size = divergence * 0.01
     index_shift = depth * shift_size - (shift_size * convergence)
     delta = torch.cat([index_shift, torch.zeros_like(index_shift)], dim=1)
+    delta_scale = base_size / W
     grid = make_grid(B, W, H, c.device)
 
     if synthetic_view == "both":
-        left_eye = backward_warp(c, grid, -delta, 1)
-        right_eye = backward_warp(c, grid, delta, 1)
+        left_eye = backward_warp(c, grid, -delta, delta_scale)
+        right_eye = backward_warp(c, grid, delta, delta_scale)
     elif synthetic_view == "right":
         left_eye = c
-        right_eye = backward_warp(c, grid, delta, 1)
+        right_eye = backward_warp(c, grid, delta, delta_scale)
     elif synthetic_view == "left":
-        left_eye = backward_warp(c, grid, -delta, 1)
+        left_eye = backward_warp(c, grid, -delta, delta_scale)
         right_eye = c
 
     return left_eye, right_eye
@@ -205,6 +207,7 @@ def apply_divergence_nn_delta(
         depth = torch.flip(depth, (3,))
 
     B, _, H, W = depth.shape
+    base_size = max(H, W)
     divergence_step = divergence / steps
     grid = make_grid(B, W, H, c.device)
     delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
@@ -215,7 +218,7 @@ def apply_divergence_nn_delta(
         x = torch.stack([make_input_tensor(None, depth_warp[i],
                                            divergence=divergence_step,
                                            convergence=convergence,
-                                           image_width=W,
+                                           image_width=base_size,
                                            mapper=mapper,
                                            preserve_screen_border=preserve_screen_border)
                          for i in range(depth_warp.shape[0])])
@@ -284,10 +287,11 @@ def apply_divergence_nn_delta_weight(
         use_pad_convergence = True
 
     B, _, H, W = depth.shape
+    base_size = max(H, W)
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
                                        convergence=input_convergence,
-                                       image_width=W,
+                                       image_width=base_size,
                                        mapper=mapper,
                                        preserve_screen_border=preserve_screen_border)
                      for i in range(depth.shape[0])])
@@ -439,5 +443,47 @@ def _test_nonwarp_mask():
     TF.to_pil_image(x).show()
 
 
+def _test_aspect():
+    import torchvision.io as io
+    from .stereo_model_factory import create_stereo_model
+    from . import models  # noqa
+
+    x = io.read_image("cc0/518/lighthouse.png") / 255.0
+    depth = io.read_image("cc0/518/depth/lighthouse.png") / 65536.0
+    x = x.unsqueeze(0).cuda()
+    depth = depth.unsqueeze(0).cuda()
+    D = 4.0
+
+    sx = 84
+    ex = 518 - 84
+
+    for method in ["row_flow_v3", "mlbw_l2", "mask_mlbw_l2"]:
+        model = create_stereo_model(method, divergence=D, device_id=0)
+        view = apply_divergence_nn(model, x, depth, divergence=D, convergence=1, steps=1,
+                                   mapper="none", shift=-1)
+
+        x_v = x[:, :, :, sx:ex]
+        depth_v = depth[:, :, :, sx:ex]
+
+        view_v = apply_divergence_nn(model, x_v, depth_v, divergence=D, convergence=1, steps=1,
+                                     mapper="none", shift=-1)
+
+        diff = (view[:, :, :, sx:ex] - view_v).abs().mean().item()
+        print(method, round(diff * 256, 2))
+
+    for method in ["backward"]:
+        view, _ = apply_divergence_grid_sample(x, depth, divergence=D, convergence=1, synthetic_view="left")
+
+        x_v = x[:, :, :, sx:ex]
+        depth_v = depth[:, :, :, sx:ex]
+
+        view_v, _ = apply_divergence_grid_sample(x_v, depth_v, divergence=D, convergence=1, synthetic_view="left")
+
+        diff = (view[:, :, :, sx:ex] - view_v).abs().mean().item()
+        print(method, round(diff * 256, 2))
+
+
 if __name__ == "__main__":
-    _test_nonwarp_mask()
+    # _test_nonwarp_mask()
+    # _test_aspect()
+    pass

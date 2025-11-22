@@ -267,7 +267,7 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         left_eye, right_eye = apply_divergence_forward_warp(
             im, depth,
             args.divergence, convergence=args.convergence,
-            method=args.method, synthetic_view=args.synthetic_view)
+            method=args.method, synthetic_view=args.synthetic_view, width_base=False)
         if not batch:
             left_eye = left_eye.squeeze(0)
             right_eye = right_eye.squeeze(0)
@@ -374,7 +374,7 @@ def postprocess_padding(left_eye, right_eye, pad, pad_mode):
 
 def postprocess_image(left_eye, right_eye, args):
     # CHW
-    ipd_pad = int(abs(args.ipd_offset) * 0.01 * left_eye.shape[2])
+    ipd_pad = int(abs(args.ipd_offset) * 0.01 * max(left_eye.shape[-2:]))
     ipd_pad -= ipd_pad % 2
     if ipd_pad > 0 and not (args.rgbd or args.half_rgbd):
         pad_o, pad_i = (ipd_pad * 2, ipd_pad) if args.ipd_offset > 0 else (ipd_pad, ipd_pad * 2)

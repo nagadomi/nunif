@@ -301,7 +301,8 @@ def main(args):
                         method="forward_fill",
                         synthetic_view="both",
                         return_mask=True,
-                        inconsistent_shift=True)
+                        inconsistent_shift=True,
+                        width_base=True)
 
                     sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
                     sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
