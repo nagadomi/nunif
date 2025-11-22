@@ -267,7 +267,7 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         left_eye, right_eye = apply_divergence_forward_warp(
             im, depth,
             args.divergence, convergence=args.convergence,
-            method=args.method, synthetic_view=args.synthetic_view)
+            method=args.method, synthetic_view=args.synthetic_view, width_base=False)
         if not batch:
             left_eye = left_eye.squeeze(0)
             right_eye = right_eye.squeeze(0)

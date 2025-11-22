@@ -139,7 +139,8 @@ def gen_mask2(mask):
 
 def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=True,
                                       synthetic_view="both",
-                                      return_mask=False, inconsistent_shift=False):
+                                      return_mask=False, inconsistent_shift=False,
+                                      width_base=True):
     src_image = c
     assert synthetic_view in {"both", "right", "left"}
     if c.shape[2] != depth.shape[2] or c.shape[3] != depth.shape[3]:
@@ -149,8 +150,12 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
         divergence *= 2
 
     # pad
-    org_width = c.shape[3]
-    padding_size = int(org_width * divergence * 0.01 + 2)
+    if width_base:
+        base_size = c.shape[-1]
+    else:
+        base_size = max(c.shape[-2:])
+
+    padding_size = int(base_size * divergence * 0.01 + 2)
     pad = ReplicationPad2d((padding_size, padding_size, 0, 0))
     unpad = ReplicationPad2d((-padding_size, -padding_size, 0, 0))
     c = pad(c)
@@ -158,7 +163,7 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 
     # forward warping
     B, _, H, W = depth.shape
-    shift_size = divergence * 0.01 * org_width * 0.5
+    shift_size = divergence * 0.01 * base_size * 0.5
     index_shift = depth * shift_size - (shift_size * convergence)
     index_shift = index_shift.view(B, H, W)
     x_index = torch.arange(0, W, device=c.device).view(1, 1, W).expand(B, H, W)
@@ -241,13 +246,14 @@ def depth_order_bilinear_forward_warp(c, depth, divergence, convergence, fill=Tr
 def apply_divergence_forward_warp(c, depth, divergence, convergence, method=None,
                                   synthetic_view="both",
                                   return_mask=False, inconsistent_shift=False,
-                                  inpaint_max_width=1920):
+                                  width_base=True):
     fill = (method == "forward_fill")
     with torch.inference_mode():
         return depth_order_bilinear_forward_warp(c, depth, divergence, convergence,
                                                  fill=fill, synthetic_view=synthetic_view,
                                                  return_mask=return_mask,
-                                                 inconsistent_shift=inconsistent_shift)
+                                                 inconsistent_shift=inconsistent_shift,
+                                                 width_base=width_base)
 
 
 def nonwarp_mask(c, depth, divergence, convergence, view="right"):
@@ -347,6 +353,34 @@ def _test_nonwarp_mask():
     TF.to_pil_image(x).show()
 
 
+def _test_aspect():
+    import torchvision.io as io
+
+    x = io.read_image("cc0/518/lighthouse.png") / 255.0
+    depth = io.read_image("cc0/518/depth/lighthouse.png") / 65536.0
+    x = x.unsqueeze(0).cuda()
+    depth = depth.unsqueeze(0).cuda()
+    D = 4.0
+
+    sx = 84
+    ex = 518 - 84
+
+    for method in ["forward_fill"]:
+        view, _ = apply_divergence_forward_warp(x, depth, divergence=D, convergence=1,
+                                                method="forward_fill", synthetic_view="left", width_base=False)
+
+        x_v = x[:, :, :, sx:ex]
+        depth_v = depth[:, :, :, sx:ex]
+
+        view_v, _ = apply_divergence_forward_warp(x_v, depth_v, divergence=D, convergence=1,
+                                                  method="forward_fill", synthetic_view="left", width_base=False)
+
+        diff = (view[:, :, :, sx:ex] - view_v).abs().mean().item()
+        print(method, round(diff * 256, 2))
+
+
 if __name__ == "__main__":
     _bench()
-    _test_nonwarp_mask()
+    # _test_nonwarp_mask()
+    # _test_aspect()
+    pass

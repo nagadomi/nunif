@@ -83,7 +83,8 @@ class ForwardInpaintImage(nn.Module):
         left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
             x, depth,
             divergence=divergence, convergence=convergence,
-            synthetic_view=synthetic_view, return_mask=True
+            synthetic_view=synthetic_view, return_mask=True,
+            width_base=False,
         )
         forward_kwargs = dict(
             inner_dilation=inner_dilation,
@@ -197,7 +198,8 @@ class ForwardInpaintVideo(nn.Module):
         left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
             x, depth,
             divergence=divergence, convergence=convergence,
-            synthetic_view=synthetic_view, return_mask=True
+            synthetic_view=synthetic_view, return_mask=True,
+            width_base=False,
         )
         for i in range(left_eye.shape[0]):
             repeat = self.pre_padding + 1 if self.frame_queue.empty() else 1
