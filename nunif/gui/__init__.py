@@ -15,6 +15,7 @@ from .common import (
     set_icon_ex, load_icon,
     start_file,
     is_dark_mode, apply_dark_mode,
+    init_win32_dpi,
 )
 from .video_encoding_box import VideoEncodingBox
 from .io_path_panel import IOPathPanel
@@ -40,5 +41,6 @@ __all__ = [
     "IOPathPanel",
     "apply_dark_mode",
     "is_dark_mode",
-    "get_default_locale"
+    "get_default_locale",
+    "init_win32_dpi",
 ]

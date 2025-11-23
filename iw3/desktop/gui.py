@@ -530,7 +530,7 @@ class MainFrame(wx.Frame):
         if LAYOUT_DEBUG:
             self.pnl_process.SetBackgroundColour("#fcc")
 
-        self.txt_url = wx.TextCtrl(self.pnl_process, size=(300, -1), style=wx.TE_READONLY)
+        self.txt_url = wx.TextCtrl(self.pnl_process, size=self.FromDIP((300, -1)), style=wx.TE_READONLY)
         self.btn_url = GenBitmapButton(self.pnl_process, bitmap=load_icon("go-next.png"))
         self.btn_url.Disable()
         self.btn_url.SetToolTip(T("Open in Browser"))

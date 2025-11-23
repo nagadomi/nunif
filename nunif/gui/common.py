@@ -245,3 +245,13 @@ def is_dark_mode():
                 return value == 0
         except: # noqa
             return False
+
+
+def init_win32_dpi():
+    if sys.platform == "win32":
+        import ctypes
+        try:
+            # Fix mouse position when Display Scaling is not 100%
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except: # noqa
+            pass

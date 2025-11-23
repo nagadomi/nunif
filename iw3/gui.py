@@ -31,6 +31,7 @@ from nunif.gui import (
     set_icon_ex, apply_dark_mode, is_dark_mode,
     VideoEncodingBox, IOPathPanel,
     get_default_locale,
+    init_win32_dpi,
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
@@ -153,7 +154,7 @@ class MainFrame(wx.Frame):
                                         name="chk_metadata")
         self.chk_metadata.SetValue(False)
 
-        self.sep_image_format = wx.StaticLine(self.pnl_file_option, size=(2, 16), style=wx.LI_VERTICAL)
+        self.sep_image_format = wx.StaticLine(self.pnl_file_option, size=self.FromDIP((2, 16)), style=wx.LI_VERTICAL)
         self.lbl_image_format = wx.StaticText(self.pnl_file_option, label=" " + T("Image Format"))
         self.cbo_image_format = wx.ComboBox(self.pnl_file_option, choices=["png", "jpeg", "webp"],
                                             name="cbo_image_format")
@@ -426,7 +427,7 @@ class MainFrame(wx.Frame):
         self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
 
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
-        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
+        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=self.FromDIP((200, -1)),
                                       name="cbo_rotate")
         self.cbo_rotate.SetEditable(False)
         self.cbo_rotate.Append("", "")
@@ -484,7 +485,7 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA, Low VRAM, fp16
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), name="cbo_device")
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), name="cbo_device")
         self.cbo_device.SetEditable(False)
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
@@ -559,7 +560,7 @@ class MainFrame(wx.Frame):
         self.pnl_preset = wx.Panel(self)
         self.lbl_preset = wx.StaticText(self.pnl_preset, label=" " + T("Preset"))
         self.cbo_app_preset = EditableComboBox(self.pnl_preset, choices=self.list_preset(),
-                                               size=(200, -1),
+                                               size=self.FromDIP((200, -1)),
                                                name="cbo_app_preset")
         self.cbo_app_preset.SetSelection(0)
         self.btn_load_preset = wx.Button(self.pnl_preset, label=T("Load"))
@@ -567,11 +568,11 @@ class MainFrame(wx.Frame):
         self.btn_delete_preset = wx.Button(self.pnl_preset, label=T("Delete"))
 
         # copy command
-        self.sep_command = wx.StaticLine(self.pnl_preset, size=(2, 20), style=wx.LI_VERTICAL)
+        self.sep_command = wx.StaticLine(self.pnl_preset, size=self.FromDIP((2, 20)), style=wx.LI_VERTICAL)
         self.btn_copy_command = wx.Button(self.pnl_preset, label=T("Copy Command"))
 
         # language
-        self.sep_language = wx.StaticLine(self.pnl_preset, size=(2, 20), style=wx.LI_VERTICAL)
+        self.sep_language = wx.StaticLine(self.pnl_preset, size=self.FromDIP((2, 20)), style=wx.LI_VERTICAL)
         self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
         self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
         lang_selection = 0
@@ -1630,4 +1631,5 @@ def main():
 
 
 if __name__ == "__main__":
+    init_win32_dpi()
     main()
