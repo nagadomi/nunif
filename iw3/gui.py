@@ -566,6 +566,10 @@ class MainFrame(wx.Frame):
         self.btn_save_preset = wx.Button(self.pnl_preset, label=T("Save"))
         self.btn_delete_preset = wx.Button(self.pnl_preset, label=T("Delete"))
 
+        # copy command
+        self.sep_command = wx.StaticLine(self.pnl_preset, size=(2, 20), style=wx.LI_VERTICAL)
+        self.btn_copy_command = wx.Button(self.pnl_preset, label=T("Copy Command"))
+
         # language
         self.sep_language = wx.StaticLine(self.pnl_preset, size=(2, 20), style=wx.LI_VERTICAL)
         self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
@@ -585,6 +589,11 @@ class MainFrame(wx.Frame):
         layout.Add(self.btn_load_preset, flag=wx.ALL, border=2)
         layout.Add(self.btn_save_preset, flag=wx.ALL, border=2)
         layout.Add(self.btn_delete_preset, flag=wx.ALL, border=2)
+        layout.AddSpacer(2)
+        layout.Add(self.sep_command, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT)
+        layout.AddSpacer(4)
+        layout.Add(self.btn_copy_command, flag=wx.ALL, border=2)
+
         layout.AddSpacer(2)
         layout.Add(self.sep_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT)
         layout.AddSpacer(4)
@@ -643,6 +652,7 @@ class MainFrame(wx.Frame):
         self.btn_load_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_load_preset)
         self.btn_save_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_save_preset)
         self.btn_delete_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_delete_preset)
+        self.btn_copy_command.Bind(wx.EVT_BUTTON, self.on_click_btn_copy_command)
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
@@ -987,7 +997,7 @@ class MainFrame(wx.Frame):
                 style=wx.OK) as dlg:
             dlg.ShowModal()
 
-    def parse_args(self):
+    def parse_args(self, skip_set_state=False):
         if not validate_number(self.cbo_divergence.GetValue(), 0.0, 100.0):
             self.show_validation_error_message(T("3D Strength"), 0.0, 100.0)
             return None
@@ -1127,8 +1137,9 @@ class MainFrame(wx.Frame):
             mask_inner_dilation = int(self.cbo_mask_inner_dilation.GetValue())
             mask_outer_dilation = int(self.cbo_mask_outer_dilation.GetValue())
         else:
-            mask_inner_dilation = None
-            mask_outer_dilation = None
+            mask_inner_dilation = 0
+            mask_outer_dilation = 0
+
         if self.lbl_inpaint_max_width.IsShown():
             if self.cbo_inpaint_max_width.GetValue():
                 inpaint_max_width = int(self.cbo_inpaint_max_width.GetValue())
@@ -1136,6 +1147,13 @@ class MainFrame(wx.Frame):
                 inpaint_max_width = None
         else:
             inpaint_max_width = None
+
+        if self.chk_ema_normalize.GetValue():
+            ema_options = dict(ema_normalize=True,
+                               ema_decay=float(self.cbo_ema_decay.GetValue()),
+                               ema_buffer=int(self.cbo_ema_buffer.GetValue()))
+        else:
+            ema_options = {}
 
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
@@ -1175,9 +1193,7 @@ class MainFrame(wx.Frame):
             export_depth_fit=export_depth_fit,
 
             debug_depth=debug_depth,
-            ema_normalize=self.chk_ema_normalize.GetValue(),
-            ema_decay=float(self.cbo_ema_decay.GetValue()),
-            ema_buffer=int(self.cbo_ema_buffer.GetValue()),
+            **ema_options,
             scene_detect=scene_detect,
 
             format=self.cbo_image_format.GetValue(),
@@ -1221,12 +1237,13 @@ class MainFrame(wx.Frame):
             end_time=end_time,
         )
         args = parser.parse_args()
-        set_state_args(
-            args,
-            stop_event=self.stop_event,
-            suspend_event=self.suspend_event,
-            tqdm_fn=functools.partial(TQDMGUI, self),
-            depth_model=self.depth_model)
+        if not skip_set_state:
+            set_state_args(
+                args,
+                stop_event=self.stop_event,
+                suspend_event=self.suspend_event,
+                tqdm_fn=functools.partial(TQDMGUI, self),
+                depth_model=self.depth_model)
         return args
 
     def on_click_btn_start(self, event):
@@ -1514,6 +1531,73 @@ class MainFrame(wx.Frame):
             self.cbo_pad.Disable()
         else:
             self.cbo_pad.Enable()
+
+    def get_cli_command(self):
+        from subprocess import list2cmdline
+        import argparse
+
+        gui_args = self.parse_args(skip_set_state=True)
+        if gui_args is None:
+            return None
+        default_parser = create_parser(required_true=False)
+        default_args = default_parser.parse_args()
+        gui_args = vars(gui_args)
+        default_args = vars(default_args)
+
+        argv = []
+        yes = False
+        for name in default_args.keys():
+            action = next(a for a in default_parser._actions if a.dest == name)
+            a = gui_args.get(name)
+            b = default_args.get(name)
+            if name == "input":
+                name = "-i"
+            elif name == "output":
+                name = "-o"
+            else:
+                name = "--" + name.replace("_", "-")
+            if name == "--yes":
+                yes = True
+                continue
+
+            if isinstance(action, argparse._StoreTrueAction):
+                if a:
+                    argv.append(name)
+                continue
+            if isinstance(action, argparse._StoreFalseAction):
+                if not a:
+                    argv.append(name)
+                continue
+
+            if a == b:
+                continue
+
+            if isinstance(a, (list, tuple)):
+                argv.append(name)
+                for item in a:
+                    argv.append(item)
+            else:
+                argv.append(name)
+                argv.append(a)
+
+        if yes:
+            argv.append("--yes")
+
+        return list2cmdline(["python", "-m", "iw3"] + [str(v) for v in argv])
+
+    def on_click_btn_copy_command(self, event):
+        command = self.get_cli_command()
+        if command is None:
+            # parse error
+            return
+
+        # print(command)
+
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(command))
+            wx.TheClipboard.Close()
+        else:
+            wx.MessageBox(T("Failed to open Clipbaord"), T("Error"), wx.OK | wx.ICON_ERROR)
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
