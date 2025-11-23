@@ -29,6 +29,7 @@ from nunif.gui import (
     set_icon_ex,
     VideoEncodingBox, IOPathPanel,
     get_default_locale,
+    init_win32_dpi
 )
 from .locales import LOCALES
 from . import models # noqa
@@ -193,7 +194,7 @@ class MainFrame(wx.Frame):
 
         # -- image
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
-        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
+        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=self.FromDIP((200, -1)),
                                       style=wx.CB_READONLY, name="cbo_rotate")
         self.cbo_rotate.Append("", "")
         self.cbo_rotate.Append(T("Left 90 (counterclockwise)"), "left")
@@ -231,7 +232,7 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(240, -1), style=wx.CB_READONLY,
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((240, -1)), style=wx.CB_READONLY,
                                       name="cbo_device")
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
@@ -649,4 +650,5 @@ def main():
 
 
 if __name__ == "__main__":
+    init_win32_dpi()
     main()
