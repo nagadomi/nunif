@@ -867,7 +867,12 @@ def process_video(input_path, output_path,
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
         if packet.stream.type == "video":
-            for frame in packet.decode():
+            try:
+                frames = packet.decode()
+            except:
+                frames = []
+                print("[WARN] packet.decode failed! input video may be corrupted but continuing anyway!")
+            for frame in frames:
                 frame = fps_filter.update(frame)
                 if frame is not None:
                     frame = frame.reformat(**rgb24_options) if rgb24_options else frame
