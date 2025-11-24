@@ -1042,7 +1042,9 @@ def generate_video(output_path,
             try_replace(output_path_tmp, output_path)
 
 
-def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., title=None, stop_event=None, suspend_event=None):
+def process_video_keyframes(input_path, frame_callback,
+                            min_interval_sec=4., vf="",
+                            title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -1052,24 +1054,38 @@ def process_video_keyframes(input_path, frame_callback, min_interval_sec=4., tit
         container_duration = None
 
     video_input_stream = input_container.streams.video[0]
-    video_input_stream.thread_type = "AUTO"
+    # video_input_stream.thread_type = "AUTO"  # slow
     video_input_stream.codec_context.skip_frame = "NONKEY"
+
+    video_filter = VideoFilter(video_input_stream, vf=vf)
 
     max_progress = get_duration(video_input_stream, container_duration=container_duration)
     desc = (title if title else input_path)
     ncols = len(desc) + 60
-    pbar = tqdm(desc=desc, total=max_progress, ncols=ncols)
+    tqdm_fn = tqdm_fn or tqdm
+    pbar = tqdm_fn(desc=desc, total=max_progress, ncols=ncols)
     prev_sec = 0
     for frame in input_container.decode(video_input_stream):
         current_sec = math.ceil(frame.pts * video_input_stream.time_base)
         if current_sec - prev_sec >= min_interval_sec:
-            frame_callback(frame)
+            frame = video_filter.update(frame)
+            if frame:
+                frame_callback(frame)
             pbar.update(current_sec - prev_sec)
             prev_sec = current_sec
         if suspend_event is not None:
             suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
+
+    while True:
+        frame = video_filter.update(None)
+        if frame is not None:
+            frame_callback(frame)
+            pbar.update(1)
+        else:
+            break
+
     pbar.close()
     input_container.close()
 
