@@ -4,9 +4,12 @@ from .light_inpaint_v1 import LightInpaintV1
 from .light_video_inpaint_v1 import LightVideoInpaintV1
 from .depth_aa import DepthAA
 from .mlbw import MLBW
+from .da3mono_disparity import DA3MonoDisparity
+
 
 __all__ = [
     "RowFlowV2", "RowFlowV3", "MLBW",
     "DepthAA",
     "LightInpaintV1", "LightVideoInpaintV1",
+    "DA3MonoDisparity",
 ]
