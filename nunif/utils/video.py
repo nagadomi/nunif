@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 import time
 import numpy as np
+import sys
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -767,6 +768,15 @@ def test_audio_copy(input_path, output_path):
         return True
 
 
+def safe_decode(packet):
+    try:
+        frames = packet.decode()
+    except av.error.InvalidDataError:
+        frames = []
+        print("\n[WARN] Input video has invalid data/frames! continuing anyway...", file=sys.stderr)
+    return frames
+
+
 def process_video(input_path, output_path,
                   frame_callback,
                   config_callback=default_config_callback,
@@ -867,7 +877,7 @@ def process_video(input_path, output_path,
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
         if packet.stream.type == "video":
-            for frame in packet.decode():
+            for frame in safe_decode(packet):
                 frame = fps_filter.update(frame)
                 if frame is not None:
                     frame = frame.reformat(**rgb24_options) if rgb24_options else frame
@@ -884,7 +894,7 @@ def process_video(input_path, output_path,
                     packet.stream = audio_output_stream
                     output_container.mux(packet)
                 else:
-                    for frame in packet.decode():
+                    for frame in safe_decode(packet):
                         frame.pts = None
                         enc_packet = audio_output_stream.encode(frame)
                         if enc_packet:
@@ -991,7 +1001,7 @@ def generate_video(output_path,
                         packet.stream = audio_output_stream
                         output_container.mux(packet)
                     else:
-                        for frame in packet.decode():
+                        for frame in safe_decode(packet):
                             frame.pts = None
                             enc_packet = audio_output_stream.encode(frame)
                             if enc_packet:
@@ -1137,7 +1147,7 @@ def hook_frame(input_path,
         if packet.pts is not None:
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
-        for frame in packet.decode():
+        for frame in safe_decode(packet):
             frame = fps_filter.update(frame)
             if frame is not None:
                 frame = frame.reformat(**rgb24_options) if rgb24_options else frame
@@ -1221,7 +1231,7 @@ def export_audio(input_path, output_path, start_time=None, end_time=None,
                 packet.stream = audio_output_stream
                 output_container.mux(packet)
             else:
-                for frame in packet.decode():
+                for frame in safe_decode(packet):
                     frame.pts = None
                     enc_packet = audio_output_stream.encode(frame)
                     if enc_packet:
