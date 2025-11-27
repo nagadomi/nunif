@@ -112,8 +112,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
         else:
             out = -dilate_edge(-out, edge_dilation)
 
-    if force_disparity:
-        out = out.neg()
+    if not force_disparity:
+        out = -out
 
     if flip_aug:
         if batch:

@@ -97,10 +97,6 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
         else:
             out = -dilate_edge(-out, edge_dilation)
 
-    # invert for zoedepth compatibility
-    if not raw_output:
-        out.neg_()
-
     if flip_aug:
         if batch:
             n = out.shape[0] // 2

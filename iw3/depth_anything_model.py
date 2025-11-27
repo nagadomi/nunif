@@ -149,11 +149,11 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
         if not model.metric_depth:
             out = dilate_edge(out, edge_dilation)
         else:
-            out = dilate_edge(out.neg_(), edge_dilation).neg_()
+            out = -dilate_edge(-out, edge_dilation)
 
-    if not model.metric_depth:
+    if model.metric_depth:
         # invert for zoedepth compatibility
-        out.neg_()
+        out = -out
 
     if flip_aug:
         if batch:
