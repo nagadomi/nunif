@@ -20,7 +20,7 @@ AA_SUPPORTED_MODELS = {
 }
 
 
-def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1, raw_output=False):
+def _forward(model, x, enable_amp, sky_thresh=0.3, raw_output=False):
     amp_dtype = torch.bfloat16 if (x.device.type == "cuda" and torch.cuda.is_bf16_supported()) else None
     with autocast(device=x.device, enabled=enable_amp, dtype=amp_dtype):
         x = x.unsqueeze(1)  # (B, S, C, H, W)
@@ -38,9 +38,13 @@ def _forward(model, x, enable_amp, sky_thresh=0.4, shift_ratio=0.1, raw_output=F
                 # all sky
                 depth = 1.0 / (torch.ones_like(depth) * 100.0)
             else:
+                # The conversion formula and parameters are determined by iw3/training/da3mono/find_shift.py
                 max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
-                depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
-                shift = (max_rel_dist - depth.min()) * shift_ratio + 1e-5
+                sky_shift = 0.25
+                shift = 0.35
+                depth = depth.clamp(max=max_rel_dist)
+                sky_depth = max_rel_dist + sky_shift
+                depth = (depth * (1 - sky_weight) + sky_weight * sky_depth)
                 depth = 1.0 / (depth + shift)
         else:
             max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)

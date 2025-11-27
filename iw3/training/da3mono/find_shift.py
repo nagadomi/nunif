@@ -20,9 +20,10 @@ def normalize(depth):
     return (depth - depth.min()) / (depth.max() - depth.min())
 
 
-def convert_to_disparity(depth, shift_ratio):
-    depth_range = depth.max() - depth.min()
-    return 1.0 / (depth + depth_range * shift_ratio)
+def convert_to_disparity(depth, shift, sky_shift):
+    sky_mask = depth == depth.max()
+    depth = torch.where(sky_mask, depth + sky_shift, depth)
+    return 1.0 / (depth + shift)
 
 
 def psnr(input, target):
@@ -35,19 +36,21 @@ def main():
     parser.add_argument("--input", "-i", type=str, required=True, help="input dir")
     args = parser.parse_args()
 
-    for shift_ratio in torch.arange(0, 0.5, 0.02):
-        shift_ratio = shift_ratio.item()
-        sum_psnr = 0.0
-        files = load_files(args.input)
-        for da3, da2 in files:
-            da3, _ = BaseDepthModel.load_depth(da3)
-            da2, _ = BaseDepthModel.load_depth(da2)
-            da2 = normalize(da2)
-            da3 = normalize(convert_to_disparity(da3, shift_ratio=shift_ratio))
+    for shift in torch.arange(0.1, 0.5, 0.05):
+        shift = shift.item()
+        for sky_shift in torch.arange(0.0, 0.5, 0.05):
+            sky_shift = sky_shift.item()
+            sum_psnr = 0.0
+            files = load_files(args.input)
+            for da3, da2 in files:
+                da3, _ = BaseDepthModel.load_depth(da3)
+                da2, _ = BaseDepthModel.load_depth(da2)
+                da2 = normalize(da2)
+                da3 = normalize(convert_to_disparity(da3, shift=shift, sky_shift=sky_shift))
 
-            sum_psnr += psnr(da3, da2)
+                sum_psnr += psnr(da3, da2)
 
-        print(shift_ratio, sum_psnr / len(files))
+            print(shift, sky_shift, sum_psnr / len(files))
 
 
 if __name__ == "__main__":
