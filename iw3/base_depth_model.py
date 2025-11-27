@@ -36,7 +36,11 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.model = None
         self.model_backup = None  # for compile
         self.model_type = model_type
-        self.scaler = EMAMinMaxScaler(decay=0, buffer_size=1)
+        self.scaler = self.create_depth_scaler()
+
+    def create_depth_scaler(self):
+        # This can be overridden
+        return EMAMinMaxScaler(decay=0, buffer_size=1)
 
     def compile_context(self, enabled=True):
         if enabled:

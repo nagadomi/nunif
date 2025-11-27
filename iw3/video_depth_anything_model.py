@@ -85,11 +85,11 @@ def _postprocess(out, edge_dilation,
         if is_disparity:
             out = dilate_edge(out, edge_dilation)
         else:
-            out = dilate_edge(out.neg_(), edge_dilation).neg_()
+            out = -dilate_edge(-out, edge_dilation)
 
-    if is_disparity:
+    if not is_disparity:
         # invert for zoedepth compatibility
-        out.neg_()
+        out = -out
     if out.dtype != torch.float32:
         out = out.to(torch.float32)
     return out

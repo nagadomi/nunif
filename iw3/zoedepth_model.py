@@ -124,18 +124,21 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
     if edge_dilation_is_enabled(edge_dilation):
         # NOTE: dilate_edge() was developed for DepthAnything and it is not inverted depth
         #       so must be calculated in negative space.
-        out = -dilate_edge(-out, edge_dilation)
+        out = dilate_edge(-out, edge_dilation)
+    else:
+        # flip depth
+        out = -out
 
     if flip_aug:
         if batch:
             n = out.shape[0] // 2
             z = torch.empty((n, *out.shape[1:]), device=out.device)
             for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 128
+                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 0.5
         else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 128
+            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 0.5
     else:
-        z = out * 256
+        z = out
     if not batch:
         assert z.shape[0] == 1
         z = z.squeeze(0)
