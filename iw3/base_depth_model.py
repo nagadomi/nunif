@@ -11,7 +11,7 @@ from nunif.device import create_device
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision.transforms import functional as TF
-from . depth_scaler import EMAMinMaxScaler
+from .depth_scaler import EMAMinMaxScaler
 
 
 HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
