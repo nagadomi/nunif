@@ -876,7 +876,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     ):
         side_model = compile_model(side_model)
 
-    if is_output_dir(output_path):
+    output_parent_dir = path.basename(output_path)
+    input_parent_dir = path.basename(path.dirname(input_filename))
+    if is_output_dir(output_path) or (output_parent_dir != "" and output_parent_dir == input_parent_dir):
         os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
             output_path,
