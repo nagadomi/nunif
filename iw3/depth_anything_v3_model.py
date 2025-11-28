@@ -7,6 +7,7 @@ from .dilation import dilate_edge, edge_dilation_is_enabled
 from .base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 from .depth_anything_model import batch_preprocess
 from .models import DepthAA
+from .depth_scaler import EMAMinMaxScaler
 
 
 NAME_MAP = {
@@ -36,16 +37,13 @@ def _forward(model, x, enable_amp, sky_thresh=0.3, raw_output=False):
             non_sky_pixels = sky_mask.numel() - sky_mask.sum()
             if non_sky_pixels < 10:
                 # all sky
-                depth = 1.0 / (torch.ones_like(depth) * 100.0)
+                depth = torch.zeros_like(depth)
             else:
-                # The conversion formula and parameters are determined by iw3/training/da3mono/find_shift.py
-                max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
-                sky_shift = 0.25
-                shift = 0.35
-                depth = depth.clamp(max=max_rel_dist)
-                sky_depth = max_rel_dist + sky_shift
-                depth = (depth * (1 - sky_weight) + sky_weight * sky_depth)
+                # TODO: This value should ideally be adjustable via the foreground scale option,
+                #       but currently it is not possible.
+                shift = 0.2
                 depth = 1.0 / (depth + shift)
+                depth = depth * (1 - sky_weight)
         else:
             max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
             depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
@@ -119,6 +117,9 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
 class DepthAnythingV3MonoModel(BaseDepthModel):
     def __init__(self, model_type):
         super().__init__(model_type)
+
+    def create_depth_scaler(self):
+        return EMAMinMaxScaler(decay=0, buffer_size=1, mode="max")
 
     def load_model(self, model_type, resolution=None, device=None, raw_output=False):
         # load aa model
