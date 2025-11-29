@@ -8,6 +8,7 @@ import functools
 from time import time
 import threading
 from pprint import pprint # noqa
+import torch
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
@@ -20,6 +21,7 @@ from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.git import get_current_branch
+from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -33,13 +35,13 @@ from nunif.gui import (
 )
 from .locales import LOCALES
 from . import models # noqa
-import torch
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
 VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
-CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "waifu2x-gui.cfg")
-os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
+CONFIG_DIR = ensure_home_dir("waifu2x", path.join(path.dirname(__file__), "..", "tmp"))
+CONFIG_PATH = path.join(CONFIG_DIR, "waifu2x-gui.cfg")
+os.makedirs(CONFIG_DIR, exist_ok=True)
 
 
 LAYOUT_DEBUG = False
@@ -48,7 +50,7 @@ LAYOUT_DEBUG = False
 class Waifu2xApp(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        self.instance = wx.SingleInstanceChecker("waifu2x-gui.lock", CONFIG_DIR)
         if self.instance.IsAnotherRunning():
             wx.MessageBox(T("Another instance is running"), T("Error"), style=wx.ICON_ERROR)
             return False
