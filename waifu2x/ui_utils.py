@@ -17,10 +17,10 @@ from nunif.utils import video as VU
 from nunif.utils.ui import (
     is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir)
 from .utils import Waifu2x
+from .model_dir import MODEL_DIR
 from .download_models import main as download_main
 
 
-MODEL_DIR = path.join(path.dirname(path.abspath(__file__)), "pretrained_models")
 DEFAULT_ART_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art")
 DEFAULT_ART_SCAN_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art_scan")
 DEFAULT_PHOTO_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "photo")
@@ -363,8 +363,7 @@ def waifu2x_main(args):
         args.method = "noise_scale"
 
     # download models
-    pretrained_model_dir = path.join(path.dirname(__file__), "pretrained_models")
-    if not path.exists(pretrained_model_dir):
+    if not path.exists(MODEL_DIR):
         download_main()
 
     # main

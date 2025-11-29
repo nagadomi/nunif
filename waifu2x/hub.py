@@ -1,12 +1,12 @@
 from os import path
 import torch
-from .utils import Waifu2x
-from .download_models import main as download_main
-from nunif.utils import pil_io
 import PIL
+from nunif.utils import pil_io
+from .model_dir import MODEL_DIR
+from .download_models import main as download_main
+from .utils import Waifu2x
 
 
-MODEL_DIR = path.join(path.dirname(path.abspath(__file__)), "pretrained_models")
 MODEL_TYPES = {
     # default models.
     "art": path.join(MODEL_DIR, "swin_unet", "art"),

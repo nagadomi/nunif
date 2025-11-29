@@ -22,6 +22,7 @@ from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIO
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.git import get_current_branch
+from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -53,7 +54,7 @@ import torch
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
 VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 YAML_EXTENSIONS = extension_list_to_wildcard((".yml", ".yaml"))
-CONFIG_DIR = path.join(path.dirname(__file__), "..", "tmp")
+CONFIG_DIR = ensure_home_dir("iw3", path.join(path.dirname(__file__), "..", "tmp"))
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui.cfg")
 LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
@@ -67,7 +68,7 @@ LAYOUT_DEBUG = False
 class IW3App(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        self.instance = wx.SingleInstanceChecker("iw3-gui.lock", CONFIG_DIR)
         if self.instance.IsAnotherRunning():
             with wx.MessageDialog(None,
                                   message=(T("Another instance is running") + "\n" +

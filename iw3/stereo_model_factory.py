@@ -1,11 +1,8 @@
 from nunif.models import load_model
 from nunif.utils.ui import TorchHubDir
-from os import path
+from .hub_dir import HUB_MODEL_DIR
 from .forward_inpaint import ForwardInpaint
 from .mlbw_inpaint import MLBWInpaint
-
-
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 
 
 def pth_url(filename):

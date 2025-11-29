@@ -19,6 +19,7 @@ from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.models.utils import check_compile_support
 from nunif.utils.filename import sanitize_filename
+from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
     IpAddrCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -46,7 +47,7 @@ from .utils import (
 )
 
 
-CONFIG_DIR = path.join(path.dirname(__file__), "..", "..", "tmp")
+CONFIG_DIR = ensure_home_dir("iw3", path.join(path.dirname(__file__), "..", "..", "tmp"))
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-desktop.cfg")
 LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-desktop-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
@@ -90,7 +91,7 @@ class FPSGUI():
 class IW3DesktopApp(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        self.instance = wx.SingleInstanceChecker("iw3-desktop-gui.lock", CONFIG_DIR)
         if self.instance.IsAnotherRunning():
             with wx.MessageDialog(None,
                                   message=T("Another instance is running"),
