@@ -13,7 +13,7 @@ MD5_SALT = "stlizer"
 
 def get_cache_dir():
     if is_nunif_home_set():
-        cache_dir = path.join(ensure_home_dir("stlizer", path.dirname(__file__)), "cache")
+        cache_dir = path.join(ensure_home_dir("stlizer"), "cache")
     else:
         cache_dir = user_cache_dir(appname="stlizer", appauthor="nunif")
 

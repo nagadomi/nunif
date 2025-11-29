@@ -31,7 +31,7 @@ SUPERPOINT_CONF = {
 ANGLE_MAX_HARD = 90.0
 KEYPOINT_COSINE_THRESHOLD = 0.3
 
-HUB_MODEL_DIR = path.join(ensure_home_dir("stlizer", path.dirname(__file__)), "pretrained_models", "hub")
+HUB_MODEL_DIR = path.join(ensure_home_dir("stlizer"), "pretrained_models", "hub")
 OUTPAINT_MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/torchhub/stlizer_light_outpaint_v1_20241230.pth"
 
 
