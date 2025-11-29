@@ -10,9 +10,10 @@ from nunif.models import load_model
 from nunif.logger import logger
 from .utils import predict_resize_quality, create_patch_loader, copyfile
 from .models import scale_factor  # noqa
+from .model_dir import MODEL_DIR
 
 
-DEFAULT_CHECKPOINT_FILE = path.join(path.dirname(__file__), "pretrained_models", "scale_factor.pth")
+DEFAULT_CHECKPOINT_FILE = path.join(MODEL_DIR, "scale_factor.pth")
 
 
 def main():
