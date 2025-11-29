@@ -29,6 +29,7 @@ from .anaglyph import apply_anaglyph_redcyan
 from .mapper import get_mapper, resolve_mapper_name, MAPPER_ALL
 from .depth_model_factory import create_depth_model
 from .base_depth_model import BaseDepthModel
+from .hub_dir import HUB_MODEL_DIR
 from .equirectangular import equirectangular_projection
 from .backward_warp import (
     apply_divergence_grid_sample,
@@ -37,7 +38,6 @@ from .backward_warp import (
 from .stereo_model_factory import create_stereo_model
 
 
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
 ROW_FLOW_V3_MAX_DIVERGENCE = 5.0
 ROW_FLOW_V2_AUTO_STEP_DIVERGENCE = 2.0

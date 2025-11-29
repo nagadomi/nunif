@@ -4,17 +4,14 @@ from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.models.utils import compile_model
 import os
-from os import path
 import pickle
 import torch
-from nunif.device import create_device
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision.transforms import functional as TF
+from nunif.device import create_device
 from .depth_scaler import EMAMinMaxScaler
-
-
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+from .hub_dir import HUB_MODEL_DIR
 
 
 class _CompileContext():
