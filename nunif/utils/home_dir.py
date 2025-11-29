@@ -5,9 +5,9 @@ def get_home_dir(project_name, default_path):
     nunif_home = os.getenv("NUNIF_HOME")
     if nunif_home:
         nunif_home = os.path.expanduser(nunif_home)
-        return os.path.join(nunif_home, project_name)
+        return os.path.normpath(os.path.join(nunif_home, project_name))
 
-    return default_path
+    return os.path.normpath(default_path)
 
 
 def ensure_home_dir(project_name, default_path):
