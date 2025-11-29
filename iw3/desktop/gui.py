@@ -664,7 +664,7 @@ class MainFrame(wx.Frame):
             if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
                 depth_models.append("Distill_Any_L")
 
-            depth_models += ["Any_V3_Mono"]
+            depth_models += ["Any_V3_Mono", "Any_V3_Mono_01"]
 
             depth_models += ["VDA_Stream_S"]
             if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_B"):

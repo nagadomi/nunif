@@ -426,7 +426,8 @@ See https://github.com/nagadomi/nunif/pull/484 and [Inpainting Model Training](h
 | `Any_V2_K_S`| Depth-Anything-V2 Metric Depth model VKITTI small. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_B`| Depth-Anything-V2 Metric Depth model VKITTI base. Tuned for outdoor scenes (dashboard camera view).
 | `Any_V2_K_L`| Depth-Anything-V2 Metric Depth model VKITTI large. Tuned for outdoor scenes (dashboard camera view). (cc-by-nc-4.0)
-| `Any_V3_Mono`  | Depth-Anything-3 Monocular Depth large.
+| `Any_V3_Mono`  | Depth-Anything-3 Monocular Depth large. In iw3, it is adjusted to generate SBS for VR devices (Max Scaler).
+| `Any_V3_Mono_01`  | Depth-Anything-3 Monocular Depth large. For anaglyph or 3D TV (Min-Max Scaler).
 | `DepthPro`  | Depth Pro model. 1536x1536 resolution. For image use.
 | `DepthPro_S`  | Depth Pro model. 1024x1024 modified resolution. For image use.
 | `Distill_Any_S`  | Distill Any Depth model small.

@@ -12,12 +12,15 @@ from .depth_scaler import EMAMinMaxScaler
 
 NAME_MAP = {
     "Any_V3_Mono": "da3mono-large",
+    "Any_V3_Mono_01": "da3mono-large",
 }
 MODEL_FILES = {
     "Any_V3_Mono": path.join(HUB_MODEL_DIR, "checkpoints", "da3mono-large.safetensors"),
+    "Any_V3_Mono_01": path.join(HUB_MODEL_DIR, "checkpoints", "da3mono-large.safetensors"),
 }
 AA_SUPPORTED_MODELS = {
     "Any_V3_Mono",
+    "Any_V3_Mono_01",
 }
 
 
@@ -119,7 +122,12 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
         super().__init__(model_type)
 
     def create_depth_scaler(self):
-        return EMAMinMaxScaler(decay=0, buffer_size=1, mode="max")
+        if self.model_type == "Any_V3_Mono":
+            # Max=1 scaling
+            return EMAMinMaxScaler(decay=0, buffer_size=1, mode="max")
+        elif self.model_type == "Any_V3_Mono_01":
+            # Max=1 and Min=0 scaling
+            return EMAMinMaxScaler(decay=0, buffer_size=1, mode="minmax")
 
     def load_model(self, model_type, resolution=None, device=None, raw_output=False):
         # load aa model
