@@ -48,6 +48,7 @@ from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingMod
 from .depth_anything_v3_model import AA_SUPPORTED_MODELS as DA3_AA_SUPPORTED_MODELS
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
+from .inpaint_utils import INPAINT_MODELS
 import torch
 
 
@@ -224,6 +225,13 @@ class MainFrame(wx.Frame):
         self.cbo_method.SetEditable(False)
         self.cbo_method.SetSelection(2)
 
+        self.lbl_inpaint_model = wx.StaticText(self.grp_stereo, label=T("Inpainting Model"))
+        self.cbo_inpaint_model = wx.ComboBox(self.grp_stereo,
+                                             choices=list(INPAINT_MODELS.keys()),
+                                             name="cbo_inpaint_model")
+        self.cbo_inpaint_model.SetEditable(False)
+        self.cbo_inpaint_model.SetSelection(0)
+
         self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Processing Width"))
         self.cbo_stereo_width = EditableComboBox(self.grp_stereo,
                                                  choices=["Default", "1920", "1280", "640"],
@@ -370,6 +378,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_synthetic_view, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_inpaint_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_inpaint_model, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_mask_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_mask_inner_dilation, (i, 1), flag=wx.EXPAND)
         layout.Add(self.cbo_mask_outer_dilation, (i, 2), flag=wx.EXPAND)
@@ -927,12 +937,16 @@ class MainFrame(wx.Frame):
 
     def update_inpaint_options(self):
         if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint"}:
+            self.lbl_inpaint_model.Show()
+            self.cbo_inpaint_model.Show()
             self.lbl_mask_dilation.Show()
             self.cbo_mask_outer_dilation.Show()
             self.cbo_mask_inner_dilation.Show()
             self.lbl_inpaint_max_width.Show()
             self.cbo_inpaint_max_width.Show()
         else:
+            self.lbl_inpaint_model.Hide()
+            self.cbo_inpaint_model.Hide()
             self.lbl_mask_dilation.Hide()
             self.cbo_mask_outer_dilation.Hide()
             self.cbo_mask_inner_dilation.Hide()
@@ -1135,19 +1149,19 @@ class MainFrame(wx.Frame):
             edge_dilation = [int(self.cbo_edge_dilation.GetValue()), int(self.cbo_edge_dilation_y.GetValue())]
         else:
             edge_dilation = int(self.cbo_edge_dilation.GetValue())
-        if self.lbl_mask_dilation.IsShown():
+
+        if self.lbl_inpaint_model.IsShown():
+            inpaint_model = self.cbo_inpaint_model.GetValue()
             mask_inner_dilation = int(self.cbo_mask_inner_dilation.GetValue())
             mask_outer_dilation = int(self.cbo_mask_outer_dilation.GetValue())
-        else:
-            mask_inner_dilation = 0
-            mask_outer_dilation = 0
-
-        if self.lbl_inpaint_max_width.IsShown():
             if self.cbo_inpaint_max_width.GetValue():
                 inpaint_max_width = int(self.cbo_inpaint_max_width.GetValue())
             else:
                 inpaint_max_width = None
         else:
+            inpaint_model = None
+            mask_inner_dilation = 0
+            mask_outer_dilation = 0
             inpaint_max_width = None
 
         if self.chk_ema_normalize.GetValue():
@@ -1177,6 +1191,7 @@ class MainFrame(wx.Frame):
             foreground_scale=float(self.cbo_foreground_scale.GetValue()),
             depth_aa=depth_aa,
             edge_dilation=edge_dilation,
+            inpaint_model=inpaint_model,
             mask_inner_dilation=mask_inner_dilation,
             mask_outer_dilation=mask_outer_dilation,
             inpaint_max_width=inpaint_max_width,

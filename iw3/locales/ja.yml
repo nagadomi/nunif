@@ -46,6 +46,7 @@
 "Only used for row_flow_v3 and row_flow_v2": "row_flow_v3とrow_flow_v2でのみ使用"
 "Foreground Scale": "前景拡大"
 "Edge Fix": "境界修正"
+"Inpainting Model": "インペイントモデル"
 "Mask Dilation": "マスク拡張"
 "Inpaint Max Width": "インペイント最大幅"
 "Inner": "内側"

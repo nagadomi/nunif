@@ -36,6 +36,7 @@ from .backward_warp import (
     apply_divergence_nn_LR,
 )
 from .stereo_model_factory import create_stereo_model
+from .inpaint_utils import INPAINT_MODELS
 
 
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
@@ -1923,12 +1924,16 @@ def create_parser(required_true=True):
                               "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--edge-dilation", type=int, nargs="+", default=[2, 1],
                         help="loop count of edge dilation. <x> <y> or <xy>")
+
+    parser.add_argument("--inpaint-model", type=str, default=None, choices=list(INPAINT_MODELS.keys()),
+                        help="inpaint model name defined in iw3/inpaint_models.yml")
     parser.add_argument("--mask-inner-dilation", type=int, default=0,
                         help="loop count of inner mask dilation")
     parser.add_argument("--mask-outer-dilation", type=int, default=0,
                         help="loop count of outer mask dilation")
     parser.add_argument("--inpaint-max-width", type=int, default=None,
                         help="max width of inpaint result")
+
     parser.add_argument("--depth-aa", action="store_true",
                         help="apply depth antialiasing. ignored for unsupported models")
     parser.add_argument("--max-workers", type=int, default=0, choices=[0, 1, 2, 3, 4, 8, 16],
@@ -2133,7 +2138,8 @@ def iw3_main(args):
     side_model = create_stereo_model(
         args.method,
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
-        device_id=args.gpu[0]
+        device_id=args.gpu[0],
+        inpaint_model=args.inpaint_model,
     )
     if side_model is not None and len(args.gpu) > 1 and args.method not in {"forward_inpaint", "mlbw_l2_inpaint"}:
         side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)

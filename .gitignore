@@ -41,6 +41,7 @@ tmp
 /windows_package/nunif
 /iw3/pretrained_models/hub
 /iw3/pretrained_models/rembg
+/iw3/inpaint_models.yml
 /stlizer/pretrained_models/hub
 .python-version
 

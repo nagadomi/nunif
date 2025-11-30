@@ -1,0 +1,26 @@
+# This is a sample file for inpaint_models.yml.
+# Copy inpaint_models.yml.sample to inpaint_models.yml, then edit it as needed.
+#
+# Format
+#
+# name:
+#   image: <image model url or path>
+#   video: <video model url or path>
+#
+# The `name` can be specified with `--inpaint-model <name>` option.
+
+# If a URL is specified, the file will be downloaded and saved to iw3/pretrained_models/hub/checkpoints.
+# Make sure that the file name does not conflict with existing ones.
+remote_inpaint_model:
+  image: https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_light_inpaint_v1_20250919.pth
+  video: https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_light_video_inpaint_v1_20250919.pth
+
+# If the file path is relative, it is interpreted relative to the root of the nunif repository.
+# Absolute (full) paths are used as is.
+local_model:
+  image: models/inpant_v7/inpaint.light_inpaint_v1.pth
+  video: iw3/pretrained_models/hub/checkpoints/iw3_light_video_inpaint_v1_20250919.pth
+
+# If only the video or image is defined, the one not specified will use the default model.
+only_video_model:
+  video: https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_light_video_inpaint_v1_20250919.pth

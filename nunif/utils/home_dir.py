@@ -5,11 +5,17 @@ def get_home_dir(project_name, default_path=None):
     nunif_home = os.getenv("NUNIF_HOME")
     if nunif_home:
         nunif_home = os.path.expanduser(nunif_home)
-        return os.path.normpath(os.path.join(nunif_home, project_name))
+        if project_name:
+            return os.path.normpath(os.path.join(nunif_home, project_name))
+        else:
+            return os.path.normpath(nunif_home)
 
     if default_path is None:
         repository_root = os.path.join(os.path.dirname(__file__), "..", "..")
-        return os.path.normpath(os.path.join(repository_root, project_name))
+        if project_name:
+            return os.path.normpath(os.path.join(repository_root, project_name))
+        else:
+            return os.path.normpath(repository_root)
 
     return os.path.normpath(default_path)
 

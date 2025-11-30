@@ -73,9 +73,9 @@ def apply_divergence(model, c, depth, divergence, convergence, mapper, preserve_
 
 
 class MLBWInpaintImage(nn.Module):
-    def __init__(self, device_id=-1, mask_mlbw=None):
+    def __init__(self, name=None, device_id=-1, mask_mlbw=None):
         super().__init__()
-        self.model = load_image_inpaint_model(device_id=device_id)
+        self.model = load_image_inpaint_model(name, device_id=device_id)
         if mask_mlbw is None:
             mask_mlbw = load_mask_mlbw(device_id=device_id)
         self.mask_mlbw = mask_mlbw
@@ -157,8 +157,9 @@ class MLBWInpaintImage(nn.Module):
 
 class MLBWInpaintVideo(nn.Module):
     # TODO: Refactor with ForwardInpaintVideo
-    def __init__(self, pre_padding=3, post_padding=3, device_id=-1, mask_mlbw=None):
+    def __init__(self, name=None, pre_padding=3, post_padding=3, device_id=-1, mask_mlbw=None):
         super().__init__()
+        self.model = load_video_inpaint_model(name, device_id=device_id)
         if mask_mlbw is None:
             mask_mlbw = load_mask_mlbw(device_id=device_id)
         self.mask_mlbw = mask_mlbw
@@ -166,7 +167,6 @@ class MLBWInpaintVideo(nn.Module):
         self.model_seq = 12
         self.pre_padding = pre_padding
         self.post_padding = post_padding
-        self.model = load_video_inpaint_model(device_id=device_id)
         self.frame_queue = None
         self.synthetic_view = None
         self.inner_dilation = None
@@ -300,10 +300,11 @@ class MLBWInpaintVideo(nn.Module):
 
 
 class MLBWInpaint(nn.Module):
-    def __init__(self, device_id):
+    def __init__(self, name, device_id):
         super().__init__()
         self.device = create_device(device_id)
-        self.model = nn.ModuleList([MLBWInpaintImage(device_id=device_id), MLBWInpaintVideo(device_id=device_id)])
+        self.model = nn.ModuleList([MLBWInpaintImage(name, device_id=device_id),
+                                    MLBWInpaintVideo(name, device_id=device_id)])
         self.mode = 0
         self.to(self.device)
         self.eval()

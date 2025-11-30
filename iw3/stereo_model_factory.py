@@ -116,12 +116,13 @@ def load_row_flow_model(method, device_id):
 def create_stereo_model(
         method, divergence, device_id,
         use_weak_convergence_model=False,
+        inpaint_model=None,
 ):
     with TorchHubDir(HUB_MODEL_DIR):
         if method.startswith("row_flow"):
             return load_row_flow_model(method, device_id=device_id)
         elif method in {"mlbw_l2_inpaint"}:
-            return MLBWInpaint(device_id=device_id)
+            return MLBWInpaint(name=inpaint_model, device_id=device_id)
         elif method.startswith("mlbw_") or method.startswith("mask_mlbw_"):
             return load_mlbw_model(
                 method,
@@ -132,6 +133,6 @@ def create_stereo_model(
         elif method in {"forward", "forward_fill", "backward"}:
             return None
         elif method in {"forward_inpaint"}:
-            return ForwardInpaint(device_id=device_id)
+            return ForwardInpaint(name=inpaint_model, device_id=device_id)
         else:
             raise ValueError(method)

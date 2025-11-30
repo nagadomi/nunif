@@ -41,9 +41,9 @@ def forward_left(model, left_eye, left_mask, inner_dilation, outer_dilation, bas
 
 
 class ForwardInpaintImage(nn.Module):
-    def __init__(self, device_id=-1):
+    def __init__(self, name=None, device_id=-1):
         super().__init__()
-        self.model = load_image_inpaint_model(device_id=device_id)
+        self.model = load_image_inpaint_model(name, device_id=device_id)
         self.eval()
 
     def train(self, mode=True):
@@ -104,12 +104,12 @@ class ForwardInpaintImage(nn.Module):
 
 
 class ForwardInpaintVideo(nn.Module):
-    def __init__(self, pre_padding=3, post_padding=3, device_id=-1):
+    def __init__(self, name=None, pre_padding=3, post_padding=3, device_id=-1):
         super().__init__()
+        self.model = load_video_inpaint_model(name, device_id=device_id)
         self.model_seq = 12
         self.pre_padding = pre_padding
         self.post_padding = post_padding
-        self.model = load_video_inpaint_model(device_id=device_id)
         self.frame_queue = None
         self.synthetic_view = None
         self.inner_dilation = None
@@ -233,10 +233,11 @@ class ForwardInpaintVideo(nn.Module):
 
 
 class ForwardInpaint(nn.Module):
-    def __init__(self, device_id):
+    def __init__(self, name, device_id):
         super().__init__()
         self.device = create_device(device_id)
-        self.model = nn.ModuleList([ForwardInpaintImage(device_id=device_id), ForwardInpaintVideo(device_id=device_id)])
+        self.model = nn.ModuleList([ForwardInpaintImage(name, device_id=device_id),
+                                    ForwardInpaintVideo(name, device_id=device_id)])
         self.mode = 0
         self.to(self.device)
         self.eval()
