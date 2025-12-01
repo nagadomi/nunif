@@ -157,8 +157,7 @@ python train.py inpaint -i ./data/video_inpaint_v1 --model-dir models/video_inpa
 
 ## 3. Using a Trained Model
 
-Currently, there are no special runtime options.
-In `iw3/inpaint_utils.py`, set `VIDEO_MODEL_URL` to the full path of `inpaint.light_video_inpaint_v1.pth` saved in the `--model-dir` directory.
+See https://github.com/nagadomi/nunif/pull/552
 
 ## 4. Code Structure
 

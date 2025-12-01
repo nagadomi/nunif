@@ -138,9 +138,7 @@ python train.py inpaint -i ./data/video_inpaint_v1 --model-dir models/video_inpa
 
 ## 3. 学習済みモデルの利用
 
-現時点では特別な実行時オプションはありません。
-
-`iw3/inpaint_utils.py`の`VIDEO_MODEL_URL`を、`--model-dir`配下に保存された`inpaint.light_video_inpaint_v1.pth`へのフルパスに書き換えてください。
+参照 https://github.com/nagadomi/nunif/pull/552
 
 ## 4. コード構成
 

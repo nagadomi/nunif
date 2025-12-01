@@ -101,9 +101,7 @@ python train.py inpaint -i ./data/inpaint_v1 --model-dir models/inpaint_gan_v1/ 
 
 ## 3. 学習済みモデルの利用
 
-現時点では特別な実行時オプションはありません。
-
-`iw3/inpaint_utils.py`の`IMAGE_MODEL_URL`を、`--model-dir`配下に保存された`inpaint.light_inpaint_v1.pth`へのフルパスに書き換えてください。
+参照 https://github.com/nagadomi/nunif/pull/552
 
 ## 4. コード構成
 

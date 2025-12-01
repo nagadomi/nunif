@@ -114,8 +114,7 @@ Currently, if `--max-epoch` is too high, the effect of adversarial loss may be l
 
 ## 3. Using a Trained Model
 
-Currently, there are no special runtime options.
-In `iw3/inpaint_utils.py`, set `IMAGE_MODEL_URL` to the full path of `inpaint.light_inpaint_v1.pth` saved in the `--model-dir` directory.
+See https://github.com/nagadomi/nunif/pull/552
 
 ## 4. Code Structure
 
