@@ -48,6 +48,7 @@
 "Foreground Scale": "前景缩放"
 "Edge Fix": "边缘修复"
 "Mask Dilation": "掩码膨胀"
+"Inpainting Model": "图像修复模型"
 "Inpaint Max Width": "修复最大宽度"
 "Inner": "内侧"
 "Outer": "外侧"
