@@ -18,7 +18,7 @@ remote_inpaint_model:
 # If the file path is relative, it is interpreted relative to the root of the nunif repository.
 # Absolute (full) paths are used as is.
 local_model:
-  image: models/inpant_v7/inpaint.light_inpaint_v1.pth
+  image: models/inpaint_v7/inpaint.light_inpaint_v1.pth
   video: iw3/pretrained_models/hub/checkpoints/iw3_light_video_inpaint_v1_20250919.pth
 
 # If only the video or image is defined, the one not specified will use the default model.
