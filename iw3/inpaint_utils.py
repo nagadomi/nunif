@@ -73,7 +73,7 @@ def load_image_inpaint_model(name, device_id):
         if name is None:
             name = INPAINT_MODEL_DEFAULT
         if name not in INPAINT_MODELS:
-            raise ValueError(f"inpaint_name={name} is not defined")
+            raise ValueError(f"inpaint model `{name}` is not defined")
         model, _ = load_model(INPAINT_MODELS[name]["image"], device_ids=[device_id], weights_only=True)
         return model.eval()
 
@@ -83,7 +83,7 @@ def load_video_inpaint_model(name, device_id):
         if name is None:
             name = INPAINT_MODEL_DEFAULT
         if name not in INPAINT_MODELS:
-            raise ValueError(f"inpaint_name={name} is not defined")
+            raise ValueError(f"inpaint model `{name}` is not defined")
         model, _ = load_model(INPAINT_MODELS[name]["video"], device_ids=[device_id], weights_only=True)
         return model.eval()
 
