@@ -43,7 +43,7 @@ def _load_inpaint_model_list():
         with open(INPAINT_CONFIG_FILE, encoding="utf-8") as f:
             try:
                 config = yaml.safe_load(f)
-            except yaml.parser.ParserError as e:
+            except yaml.YAMLError as e:
                 print(f"{INPAINT_CONFIG_FILE}: Error: {e}", file=sys.stderr)
                 config = None
 
