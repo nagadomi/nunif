@@ -1,7 +1,7 @@
 ## 1. Install dependencies packages
 
 ```
-sudo apt-get install git-core libmagickwand-dev libraqm-dev
+sudo apt-get install git-core libmagickwand-dev libraqm-dev python3-dev
 ```
 
 ## 2. Clone
