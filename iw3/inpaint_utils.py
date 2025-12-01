@@ -58,7 +58,7 @@ def _load_inpaint_model_list():
 
                 # Use the default model when the video or image path is not defined
                 if inpaint_models[name]["video"] is None:
-                    inpaint_models[name]["video"] = inpaint_models[INPAINT_MODEL_DEFAULT]["image"]
+                    inpaint_models[name]["video"] = inpaint_models[INPAINT_MODEL_DEFAULT]["video"]
                 if inpaint_models[name]["image"] is None:
                     inpaint_models[name]["image"] = inpaint_models[INPAINT_MODEL_DEFAULT]["image"]
 
