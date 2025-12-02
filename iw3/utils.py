@@ -138,9 +138,14 @@ def make_output_filename(input_filename, args, video=False):
             ema = f"_ema{to_deciaml(args.ema_decay, 100, 2)}"
         else:
             ema = ""
+        if isinstance(args.edge_dilation, (list, tuple)):
+            edge_dilation = "x".join([str(v) for v in args.edge_dilation])
+        else:
+            edge_dilation = args.edge_dilation
+
         metadata = (f"_{args.depth_model}_{resolution}{tta}{args.method}_"
                     f"d{to_deciaml(args.divergence, 10, 2)}_c{to_deciaml(args.convergence, 10, 2)}_"
-                    f"di{args.edge_dilation}_fs{args.foreground_scale}_ipd{to_deciaml(args.ipd_offset, 1)}{ema}")
+                    f"di{edge_dilation}_fs{args.foreground_scale}_ipd{to_deciaml(args.ipd_offset, 1)}{ema}")
     else:
         metadata = ""
 
