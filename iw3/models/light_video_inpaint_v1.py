@@ -232,8 +232,8 @@ class LightVideoInpaintV1Medium(LightVideoInpaintV1):
     name = "inpaint.light_video_inpaint_v1_medium"
     name_alias = ()
 
-    def __init__(self):
-        super(LightVideoInpaintV1Medium, self).__init__(base_dim=128, lv2_mlp_ratio=2)
+    def __init__(self, base_dim=128, lv2_mlp_ratio=2):
+        super(LightVideoInpaintV1Medium, self).__init__(base_dim=base_dim, lv2_mlp_ratio=lv2_mlp_ratio)
 
 
 @register_model
@@ -241,8 +241,8 @@ class LightVideoInpaintV1Large(LightVideoInpaintV1):
     name = "inpaint.light_video_inpaint_v1_large"
     name_alias = ()
 
-    def __init__(self):
-        super(LightVideoInpaintV1Large, self).__init__(base_dim=192, lv2_mlp_ratio=2)
+    def __init__(self, base_dim=192, lv2_mlp_ratio=2):
+        super(LightVideoInpaintV1Large, self).__init__(base_dim=base_dim, lv2_mlp_ratio=lv2_mlp_ratio)
 
 
 def _bench(name):
