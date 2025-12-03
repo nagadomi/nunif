@@ -90,25 +90,26 @@ SEQ_LEN = 12
 @register_model
 class LightVideoInpaintV1(I2IBaseModel):
     name = "inpaint.light_video_inpaint_v1"
+    name_alias = ("inpaint.light_video_inpaint_v1_small",)
 
-    def __init__(self):
+    def __init__(self, base_dim=96, lv2_mlp_ratio=1):
         super(LightVideoInpaintV1, self).__init__(locals(), scale=1, offset=16, in_channels=3, blend_size=8)
         self.sequence_offset = 0
         self.downscaling_factor = 4
         self.mod = 16
         pack = self.downscaling_factor ** 2
-        C = 96
+        C = base_dim
         C2 = C * 2
         self.mask_bias = nn.Parameter(torch.zeros(1, C, 1, 1))
         self.patch = nn.Conv2d(3, C, kernel_size=self.downscaling_factor, stride=self.downscaling_factor, padding=0)
         self.enc1 = GMLPBlock(C, mlp_ratio=2, window_size=16, shift=False)
         self.down = nn.Conv2d(C, C2, kernel_size=2, stride=2, padding=0)
         self.enc2 = nn.ModuleList([
-            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=1, shift=True),
+            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=True),
             GMLP3DBlock(C2, window_size=(SEQ_LEN, 1, 1), mlp_ratio=2, shift=False),
-            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=1, shift=False),
+            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=False),
             GMLP3DBlock(C2, window_size=(SEQ_LEN, 1, 1), mlp_ratio=2, shift=False),
-            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=1, shift=True),
+            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=True),
         ])
         self.up = nn.Conv2d(C2, C * 4, kernel_size=1, stride=1, padding=0)
         self.dec1 = GMLPBlock(C, mlp_ratio=2, window_size=16, shift=False)
@@ -226,6 +227,24 @@ class LightVideoInpaintV1(I2IBaseModel):
         return src
 
 
+@register_model
+class LightVideoInpaintV1Medium(LightVideoInpaintV1):
+    name = "inpaint.light_video_inpaint_v1_medium"
+    name_alias = ()
+
+    def __init__(self):
+        super(LightVideoInpaintV1Medium, self).__init__(base_dim=128, lv2_mlp_ratio=2)
+
+
+@register_model
+class LightVideoInpaintV1Large(LightVideoInpaintV1):
+    name = "inpaint.light_video_inpaint_v1_large"
+    name_alias = ()
+
+    def __init__(self):
+        super(LightVideoInpaintV1Large, self).__init__(base_dim=192, lv2_mlp_ratio=2)
+
+
 def _bench(name):
     from nunif.models import create_model
     import time
@@ -262,4 +281,6 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    _bench("inpaint.light_video_inpaint_v1")
+    _bench("inpaint.light_video_inpaint_v1_small")  # same as `inpaint.light_video_inpaint_v1`
+    _bench("inpaint.light_video_inpaint_v1_medium")
+    _bench("inpaint.light_video_inpaint_v1_large")
