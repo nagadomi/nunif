@@ -509,6 +509,7 @@ def register(subparsers, default_parser):
         weight_decay_end=0.01,
         eval_step=4,
         ignore_nan=True,
+        seed=-1,  # Use a random seed for each command execution
     )
     parser.set_defaults(handler=train)
 
