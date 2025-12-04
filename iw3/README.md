@@ -564,6 +564,9 @@ The command syncs the following repositories.
 - https://github.com/nagadomi/ZoeDepth_iw3
 - https://github.com/nagadomi/MiDaS_iw3
 - https://github.com/nagadomi/Depth-Anything_iw3
+- https://github.com/nagadomi/ml-depth-pro_iw3
+- https://github.com/nagadomi/Video-Depth-Anything_iw3
+- https://github.com/nagadomi/Depth-Anything-3_iw3
 
 If you already downloaded the model files (checkpoint filess), downloading model files will be skipped.
 
