@@ -99,9 +99,9 @@ def main():
             processed_frames += num_frames
 
     print("* Image")
-    print(f"PSNR↑: {round(psnr_sum / processed_frames, 4)}, LPIPS↓: {round(lpips_sum / processed_frames, 4)}")
+    print(f"PSNR↑: {round(psnr_sum / processed_frames, 2)}, LPIPS↓: {round(lpips_sum / processed_frames, 4)}")
     print("* Mask Region")
-    print(f"PSNR↑: {round(psnr_mask_sum / processed_frames, 4)}, LPIPS↓: {round(lpips_mask_sum / processed_frames, 4)}")
+    print(f"PSNR↑: {round(psnr_mask_sum / processed_frames, 2)}, LPIPS↓: {round(lpips_mask_sum / processed_frames, 4)}")
     print(f"\nTarget frames: {target_frames}, Processed frames: {processed_frames}, Skipped frames: {skipped_frames}")
 
 
