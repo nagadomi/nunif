@@ -22,6 +22,11 @@ filelock
 timm
 av==15.0.0
 truststore; python_version >= '3.10'
+# depthpro da3
 pillow_heif
+# da3
 safetensors
 einops
+# da3
+omegaconf
+addict

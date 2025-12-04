@@ -74,6 +74,11 @@ We usually support the latest version. If there are bugs or compatibility issues
 
 For Intel GPUs, additionally see section [INSTALL-xpu](INSTALL-xpu.md).
 
+#### About NUNIF_HOME
+
+If the environment variable `NUNIF_HOME` is defined, downloaded pretrained models, configuration files, cache, temporary files, and lock files will be saved under `NUNIF_HOME`. This may be useful when packaging or in situations where the source directory does not have write permissions.
+The `~` character at the beginning of a path string is expanded to the home directory.
+
 ### License Notes
 
 Note that if you distribute binary builds, it is possible that it will be GPL.

@@ -1,6 +1,5 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
-import locale
 import sys
 import os
 from os import path
@@ -9,6 +8,7 @@ import functools
 from time import time
 import threading
 from pprint import pprint # noqa
+import torch
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
@@ -21,6 +21,7 @@ from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.git import get_current_branch
+from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -28,17 +29,19 @@ from nunif.gui import (
     extension_list_to_wildcard,
     validate_number,
     set_icon_ex,
-    VideoEncodingBox, IOPathPanel
+    VideoEncodingBox, IOPathPanel,
+    get_default_locale,
+    init_win32_dpi
 )
 from .locales import LOCALES
 from . import models # noqa
-import torch
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
 VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
-CONFIG_PATH = path.join(path.dirname(__file__), "..", "tmp", "waifu2x-gui.cfg")
-os.makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
+CONFIG_DIR = ensure_home_dir("waifu2x", path.join(path.dirname(__file__), "..", "tmp"))
+CONFIG_PATH = path.join(CONFIG_DIR, "waifu2x-gui.cfg")
+os.makedirs(CONFIG_DIR, exist_ok=True)
 
 
 LAYOUT_DEBUG = False
@@ -47,7 +50,7 @@ LAYOUT_DEBUG = False
 class Waifu2xApp(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        self.instance = wx.SingleInstanceChecker("waifu2x-gui.lock", CONFIG_DIR)
         if self.instance.IsAnotherRunning():
             wx.MessageBox(T("Another instance is running"), T("Error"), style=wx.ICON_ERROR)
             return False
@@ -66,10 +69,12 @@ class MainFrame(wx.Frame):
         else:
             branch_tag = f" ({branch_name})"
 
+        python_version_tag = f" ({sys.implementation.name}-{sys.version_info[0]}.{sys.version_info[1]})"
+
         super(MainFrame, self).__init__(
             None,
             name="waifu2x-gui",
-            title=T("waifu2x-gui") + branch_tag,
+            title=T("waifu2x-gui") + branch_tag + python_version_tag,
             size=(1000, 740),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
@@ -191,7 +196,7 @@ class MainFrame(wx.Frame):
 
         # -- image
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
-        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
+        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=self.FromDIP((200, -1)),
                                       style=wx.CB_READONLY, name="cbo_rotate")
         self.cbo_rotate.Append("", "")
         self.cbo_rotate.Append(T("Left 90 (counterclockwise)"), "left")
@@ -229,7 +234,7 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(240, -1), style=wx.CB_READONLY,
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((240, -1)), style=wx.CB_READONLY,
                                       name="cbo_device")
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
@@ -618,7 +623,7 @@ class MainFrame(wx.Frame):
             pass
 
 
-LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
+LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 LOCALE_DICT_EN = LOCALES["en_US"]
 
 
@@ -647,4 +652,5 @@ def main():
 
 
 if __name__ == "__main__":
+    init_win32_dpi()
     main()

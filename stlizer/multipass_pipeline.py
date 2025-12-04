@@ -9,6 +9,7 @@ from nunif.models import load_model
 from nunif.modules.gaussian_filter import get_gaussian_kernel1d
 from nunif.modules.replication_pad2d import replication_pad1d_naive
 from nunif.utils.ui import TorchHubDir
+from nunif.utils.home_dir import ensure_home_dir
 from . import models  # noqa
 from tqdm import tqdm
 import scipy
@@ -30,7 +31,7 @@ SUPERPOINT_CONF = {
 ANGLE_MAX_HARD = 90.0
 KEYPOINT_COSINE_THRESHOLD = 0.3
 
-TORCH_HUB_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+HUB_MODEL_DIR = path.join(ensure_home_dir("stlizer"), "pretrained_models", "hub")
 OUTPAINT_MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/torchhub/stlizer_light_outpaint_v1_20241230.pth"
 
 
@@ -157,7 +158,9 @@ def list_chunk(seq, size):
 def pass1(args):
     device = args.state["device"]
 
-    keypoint_model = KU.SuperPoint(**SUPERPOINT_CONF).load().to(device)
+    with TorchHubDir(HUB_MODEL_DIR):
+        keypoint_model = KU.SuperPoint(**SUPERPOINT_CONF).load().to(device)
+
     mean_match_scores = []
     points1 = []
     points2 = []
@@ -373,7 +376,7 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     if args.border in {"outpaint", "expand_outpaint"}:
-        with TorchHubDir(TORCH_HUB_DIR):
+        with TorchHubDir(HUB_MODEL_DIR):
             outpaint_model, _ = load_model(OUTPAINT_MODEL_URL, device_ids=[-1])
         outpaint_model = outpaint_model.eval().to(device)
     else:

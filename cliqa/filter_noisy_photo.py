@@ -2,7 +2,6 @@
 import os
 from os import path
 import argparse
-import shutil
 from tqdm import tqdm
 from multiprocessing import cpu_count
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
@@ -11,9 +10,10 @@ from nunif.models import load_model
 from nunif.logger import logger
 from .utils import predict_grain_noise_psnr, create_patch_loader, copyfile
 from .models import grain_noise_level  # noqa
+from .model_dir import MODEL_DIR
 
 
-DEFAULT_CHECKPOINT_FILE = path.join(path.dirname(__file__), "pretrained_models", "grain_noise_level.pth")
+DEFAULT_CHECKPOINT_FILE = path.join(MODEL_DIR, "grain_noise_level.pth")
 
 
 def main():

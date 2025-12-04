@@ -4,17 +4,14 @@ from nunif.utils.ui import HiddenPrints, TorchHubDir
 from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.models.utils import compile_model
 import os
-from os import path
 import pickle
 import torch
-from nunif.device import create_device
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision.transforms import functional as TF
-from . depth_scaler import EMAMinMaxScaler
-
-
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+from nunif.device import create_device
+from .depth_scaler import EMAMinMaxScaler
+from .hub_dir import HUB_MODEL_DIR
 
 
 class _CompileContext():
@@ -36,7 +33,11 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.model = None
         self.model_backup = None  # for compile
         self.model_type = model_type
-        self.scaler = EMAMinMaxScaler(decay=0, buffer_size=1)
+        self.scaler = self.create_depth_scaler()
+
+    def create_depth_scaler(self):
+        # This can be overridden
+        return EMAMinMaxScaler(decay=0, buffer_size=1)
 
     def compile_context(self, enabled=True):
         if enabled:
@@ -96,12 +97,12 @@ class BaseDepthModel(metaclass=ABCMeta):
     def load_model(self, model_type, resolution, device):
         pass
 
-    def load(self, gpu=0, resolution=None):
+    def load(self, gpu=0, resolution=None, **kwargs):
         self.device = create_device(gpu)
 
         with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
             try:
-                self.model = self.load_model(self.model_type, resolution=resolution, device=self.device)
+                self.model = self.load_model(self.model_type, resolution=resolution, device=self.device, **kwargs)
             except (RuntimeError, pickle.PickleError) as e:
                 if isinstance(e, RuntimeError):
                     do_handle = "PytorchStreamReader" in repr(e)

@@ -4,6 +4,7 @@ import torch
 from fractions import Fraction
 import hashlib
 from platformdirs import user_cache_dir
+from nunif.utils.home_dir import ensure_home_dir, is_nunif_home_set
 
 
 CACHE_VERSION = 1.0
@@ -11,7 +12,11 @@ MD5_SALT = "stlizer"
 
 
 def get_cache_dir():
-    cache_dir = user_cache_dir(appname="stlizer", appauthor="nunif")
+    if is_nunif_home_set():
+        cache_dir = path.join(ensure_home_dir("stlizer"), "cache")
+    else:
+        cache_dir = user_cache_dir(appname="stlizer", appauthor="nunif")
+
     if not path.exists(cache_dir):
         os.makedirs(cache_dir, exist_ok=True)
     return cache_dir

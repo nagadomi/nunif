@@ -38,7 +38,7 @@ class WABlock(nn.Module):
 class MLBW(I2IBaseModel):
     name = "sbs.mlbw"
 
-    def __init__(self, num_layers=2, base_dim=32, small=False, **kwargs):
+    def __init__(self, num_layers=2, base_dim=32, small=False, cycle=False, hole_mask=False, **kwargs):
         super(MLBW, self).__init__(locals(), scale=1, offset=OFFSET, in_channels=8, blend_size=4)
         self.downscaling_factor = (1, 8)
         self.mod = 4
@@ -64,12 +64,15 @@ class MLBW(I2IBaseModel):
                 WABlock(C, (4, 4), shift=(True, True), num_heads=self.num_layers),
                 WABlock(C, (4, 4), shift=(False, False), num_heads=self.num_layers),
             )
+
+        self.cycle = cycle
+        self.hole_mask = hole_mask
+        additional_output = 1 if self.hole_mask else 0
         self.lv1_out = nn.Sequential(
             ReplicationPad2dNaive((4, 4, 0, 0), detach=True),
-            nn.Conv2d(C // pack, self.num_layers * 2, kernel_size=(1, 9), stride=1, padding=0),
+            nn.Conv2d(C // pack, self.num_layers * 2 + additional_output, kernel_size=(1, 9), stride=1, padding=0),
         )
         self.delta_output = False
-        self.cycle = False
         self.symmetric = False
 
     def _calc_pad(self, x):
@@ -98,12 +101,17 @@ class MLBW(I2IBaseModel):
         x = pixel_shuffle(x, self.downscaling_factor)
         x = self.lv1_out(x + x1)
         x = F.pad(x, (-pad_w1, -pad_w2, -pad_h1, -pad_h2), mode="constant")
-        delta, layer_weight = x.chunk(2, dim=1)
+        if self.hole_mask:
+            delta, layer_weight = x[:, :self.num_layers * 2].chunk(2, dim=1)
+            hole_mask_logits = x[:, self.num_layers * 2:]
+        else:
+            delta, layer_weight = x.chunk(2, dim=1)
+            hole_mask_logits = None
 
         layer_weight = layer_weight.to(torch.float32)
         layer_weight = F.softmax(layer_weight, dim=1)
 
-        return delta, layer_weight
+        return delta, layer_weight, hole_mask_logits
 
     def _warp(self, rgb, grid, delta, delta_scale):
         output_dtye = rgb.dtype
@@ -122,7 +130,7 @@ class MLBW(I2IBaseModel):
         rgb = x[:, 0:3, :, ]
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
-        delta, layer_weight = self._forward(x)
+        delta, layer_weight, _ = self._forward(x)
         delta = delta.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
 
@@ -144,12 +152,40 @@ class MLBW(I2IBaseModel):
         else:
             return torch.clamp(z, 0., 1.)
 
+    def _forward_hole_mask_composite(self, x):
+        rgb = x[:, 0:3, :, ]
+        grid = x[:, 6:8, :, ]
+        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        delta, layer_weight, hole_mask_logits = self._forward(x)
+        delta = delta.to(torch.float32)
+        delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
+
+        # composite
+        z = torch.zeros_like(rgb)
+        for i in range(delta.shape[1]):
+            d = delta[:, i:i + 1, :, :]
+            w = layer_weight[:, i:i + 1, :, :]
+            z = z + self._warp(rgb, grid, d, delta_scale) * w
+        z = F.pad(z, (-OFFSET,) * 4)
+        hole_mask_logits = F.pad(hole_mask_logits, (-OFFSET,) * 4)
+        return z, grid, delta, layer_weight, hole_mask_logits
+
+    def _forward_hole_mask(self, x):
+        delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
+        z, grid, delta, layer_weight, hole_mask_logits = self._forward_hole_mask_composite(x)
+        if self.training:
+            grid = (grid[:, 0:1, :, :] / delta_scale).detach()
+            return z, grid + delta, layer_weight, hole_mask_logits
+        else:
+            hole_mask_logits = hole_mask_logits.to(torch.float32)
+            return torch.clamp(z, 0., 1.), torch.sigmoid(hole_mask_logits)
+
     def _forward_cycle_composite(self, x):
         rgb = x[:, 0:3, :, ]
         depth = x[:, 3:4, :, ]
         grid = x[:, 6:8, :, ]
         x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
-        delta1, layer_weight1 = self._forward(x)
+        delta1, layer_weight1, _ = self._forward(x)
         delta1 = delta1.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
 
@@ -168,7 +204,7 @@ class MLBW(I2IBaseModel):
         warp_depth = torch.flip(warp_depth, dims=[-1])
         warp_rgb_flip = torch.flip(warp_rgb, dims=[-1]).detach()
         x = torch.cat([warp_depth, x[:, 1:]], dim=1).detach()
-        delta2, layer_weight2 = self._forward(x)
+        delta2, layer_weight2, _ = self._forward(x)
         delta2 = delta2.to(torch.float32)
 
         reverse_warp_rgb = torch.zeros_like(warp_rgb)
@@ -195,14 +231,20 @@ class MLBW(I2IBaseModel):
 
     def _forward_delta_only(self, x):
         assert not self.training
-        delta, layer_weight = self._forward(x)
+        delta, layer_weight, hole_mask_logits = self._forward(x)
         delta = delta.to(torch.float32)
-        return delta, layer_weight
+        if self.hole_mask:
+            hole_mask_logits = hole_mask_logits.to(torch.float32)
+            return delta, layer_weight, hole_mask_logits
+        else:
+            return delta, layer_weight
 
     def forward(self, x):
         if not self.delta_output:
             if self.cycle:
                 return self._forward_cycle(x)
+            elif self.hole_mask:
+                return self._forward_hole_mask(x)
             else:
                 return self._forward_default(x)
         else:
@@ -224,6 +266,15 @@ register_model_factory(
 register_model_factory(
     "sbs.mlbw_l4s",
     lambda **kwargs: MLBW(num_layers=4, base_dim=32, small=True, **kwargs)
+)
+
+register_model_factory(
+    "sbs.cycle_mlbw_l2",
+    lambda **kwargs: MLBW(num_layers=2, base_dim=32, cycle=True, **kwargs)
+)
+register_model_factory(
+    "sbs.mask_mlbw_l2",
+    lambda **kwargs: MLBW(num_layers=2, base_dim=32, hole_mask=True, **kwargs)
 )
 
 
@@ -255,6 +306,7 @@ def _bench(name):
 if __name__ == "__main__":
     # 305 FPS on RTX3070Ti
     _bench("sbs.mlbw_l2")
+    _bench("sbs.mask_mlbw_l2")
     # 150 FPS on RTX3070Ti
     _bench("sbs.mlbw_l4")
 

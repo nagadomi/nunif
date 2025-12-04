@@ -1,9 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.parametrizations import spectral_norm
 from contextlib import nullcontext
-from .permute import bchw_to_bnc, bnc_to_bchw, bchw_to_bhwc, bhwc_to_bchw, window_partition2d
+from .permute import (
+    bchw_to_bnc, bnc_to_bchw,
+    bcdhw_to_bnc, bnc_to_bcdhw,
+    bchw_to_bhwc, bhwc_to_bchw,
+    window_partition2d,
+)
 from .init import basic_module_init
 from .replication_pad2d import ReplicationPad2dNaive
 
@@ -248,6 +252,51 @@ class OverlapWindowMHA2d(nn.Module):
         return x
 
 
+class WindowMHA3d(nn.Module):
+    """ 3D WindowMHA
+    BCDHW input/output
+    """
+    def __init__(self, in_channels, num_heads, window_size=(4, 4, 4), qkv_dim=None, shift=False):
+        super().__init__()
+        self.window_size = (window_size if isinstance(window_size, (tuple, list))
+                            else (window_size, window_size, window_size))
+        self.shift = (shift if isinstance(shift, (tuple, list))
+                      else (shift, shift, shift))
+        self.pad_h = self.pad_w = self.pad_d = 0
+        if any(self.shift):
+            if self.shift[0]:
+                assert self.window_size[0] % 2 == 0
+                self.pad_d = self.window_size[0] // 2
+            if self.shift[1]:
+                assert self.window_size[1] % 2 == 0
+                self.pad_h = self.window_size[1] // 2
+            if self.shift[2]:
+                assert self.window_size[2] % 2 == 0
+                self.pad_w = self.window_size[2] // 2
+
+        if not hasattr(self, "shift_mask_bias"):
+            self.shift_mask_bias = None
+
+        self.num_heads = num_heads
+        self.mha = MHA(in_channels, num_heads, qkv_dim)
+        basic_module_init(self)
+
+    def forward(self, x, attn_mask=None, layer_norm=None):
+        if any(self.shift):
+            x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h, 0, 0), mode="constant", value=0)
+            x = F.pad(x, (0, 0, 0, 0, self.pad_d, self.pad_d), mode="reflect")
+
+        out_shape = x.shape
+        x = bcdhw_to_bnc(x, self.window_size)
+        if layer_norm is not None:
+            x = layer_norm(x)
+        x = self.mha(x, attn_mask=attn_mask)
+        x = bnc_to_bcdhw(x, out_shape, self.window_size)
+        if any(self.shift):
+            x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h, -self.pad_d, -self.pad_d))
+        return x
+
+
 class CrossMHA(nn.Module):
     def __init__(self, embed_dim, num_heads, qkv_dim=None):
         super().__init__()
@@ -472,6 +521,103 @@ def window_distance_matrix(window_size):
     return distance
 
 
+@torch.no_grad()
+def _gen_window_score_bias_input_3d(window_size1, window_size2, reduction):
+    D1, H1, W1 = window_size1
+    D2, H2, W2 = window_size2
+
+    # positions1: (N1, 3)
+    positions1 = torch.stack(
+        torch.meshgrid(
+            torch.arange(0, D1),
+            torch.arange(0, H1),
+            torch.arange(0, W1),
+            indexing="ij"
+        ), dim=3
+    ).reshape(-1, 3)
+
+    # positions2: (N2, 3)
+    positions2 = torch.stack(
+        torch.meshgrid(
+            torch.arange(0, D2),
+            torch.arange(0, H2),
+            torch.arange(0, W2),
+            indexing="ij"
+        ), dim=3
+    ).reshape(-1, 3)
+    positions2.mul_(reduction)
+
+    N1 = positions1.shape[0]
+    N2 = positions2.shape[0]
+
+    delta = torch.zeros((N1, N2, 3), dtype=torch.long)
+    for i in range(N1):
+        for j in range(N2):
+            delta[i, j] = positions1[i] - positions2[j]
+
+    delta = delta.view(N1 * N2, 3)
+    delta = [tuple(p) for p in delta.tolist()]
+    unique_delta = sorted(list(set(delta)))
+    index = [unique_delta.index(d) for d in delta]
+    index = torch.tensor(index, dtype=torch.int64)
+    unique_delta = torch.tensor(unique_delta, dtype=torch.float32)
+    unique_delta = unique_delta / unique_delta.abs().max()
+
+    # print(len(unique_delta))
+
+    return index, unique_delta
+
+
+class WindowScoreBias3d(nn.Module):
+    def __init__(self, window_size, hidden_dim=None, reduction=1, num_heads=None):
+        super().__init__()
+        if isinstance(window_size, int):
+            window_size1 = [window_size] * 3
+        else:
+            window_size1 = window_size
+
+        D, H, W = window_size1
+        assert D % reduction == 0 and H % reduction == 0 and W % reduction == 0
+
+        window_size2 = [D // reduction, H // reduction, W // reduction]
+
+        self.window_size1 = window_size1
+        self.window_size2 = window_size2
+        self.num_heads = num_heads
+
+        index, unique_delta = _gen_window_score_bias_input_3d(window_size1, window_size2, reduction)
+        self.register_buffer("index", index)
+        self.register_buffer("delta", unique_delta)
+
+        if hidden_dim is None:
+            hidden_dim = int((D * H * W)**0.5) * 2
+            if hidden_dim % 4 != 0:
+                hidden_dim = hidden_dim + (4 - hidden_dim % 4)
+        if self.num_heads is None:
+            output_dim = 1
+        else:
+            output_dim = num_heads
+
+        self.to_bias = nn.Sequential(
+            nn.Linear(3, hidden_dim, bias=True),
+            nn.GELU(),
+            nn.Linear(hidden_dim, output_dim, bias=True)
+        )
+
+    def forward(self):
+        N1 = self.window_size1[0] * self.window_size1[1] * self.window_size1[2]
+        N2 = self.window_size2[0] * self.window_size2[1] * self.window_size2[2]
+
+        bias = self.to_bias(self.delta)
+        bias = bias[self.index]
+
+        if self.num_heads is None:
+            bias = bias.reshape(N1, N2)
+        else:
+            bias = bias.permute(1, 0).contiguous().reshape(self.num_heads, N1, N2)
+        return bias
+
+
 class GMLP(nn.Module):
     # gMLP
     def __init__(self, embed_dim, seq_len, mlp_ratio=1):
@@ -543,6 +689,49 @@ class WindowGMLP2d(nn.Module):
 
         if self.shift:
             x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h))
+
+        return x
+
+
+class WindowGMLP3d(nn.Module):
+    """
+    3D WindowGMLP
+    BCDHW input/output
+    """
+    def __init__(self, in_channels, window_size=(4, 4, 4), mlp_ratio=2, shift=False):
+        super().__init__()
+        self.window_size = (window_size if isinstance(window_size, (tuple, list))
+                            else (window_size, window_size, window_size))
+        self.shift = (shift if isinstance(shift, (tuple, list))
+                      else (shift, shift, shift))
+        self.pad_h = self.pad_w = self.pad_d = 0
+
+        if any(self.shift):
+            if self.shift[0]:
+                assert self.window_size[0] % 2 == 0
+                self.pad_d = self.window_size[0] // 2
+            if self.shift[1]:
+                assert self.window_size[1] % 2 == 0
+                self.pad_h = self.window_size[1] // 2
+            if self.shift[2]:
+                assert self.window_size[2] % 2 == 0
+                self.pad_w = self.window_size[2] // 2
+
+        self.seq_len = self.window_size[0] * self.window_size[1] * self.window_size[2]
+        self.gmlp = GMLP(in_channels, seq_len=self.seq_len, mlp_ratio=mlp_ratio)
+
+    def forward(self, x, norm1=None, norm2=None):
+        if any(self.shift):
+            x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h, 0, 0), mode="constant", value=0)
+            x = F.pad(x, (0, 0, 0, 0, self.pad_d, self.pad_d), mode="reflect")
+
+        out_shape = x.shape
+        x = bcdhw_to_bnc(x, self.window_size)
+        x = self.gmlp(x, norm1, norm2)
+        x = bnc_to_bcdhw(x, out_shape, self.window_size)
+
+        if any(self.shift):
+            x = F.pad(x, (-self.pad_w, -self.pad_w, -self.pad_h, -self.pad_h, -self.pad_d, -self.pad_d))
 
         return x
 
@@ -666,10 +855,28 @@ def _test_shift():
     # I also tested with print debug at WindowMHA2d.forward
 
 
+def _test_2d():
+    x = torch.zeros((4, 32, 64, 64))
+    window_size = (8, 8)
+    bias = WindowScoreBias(window_size)
+    mha = WindowMHA2d(32, num_heads=4, window_size=window_size)
+    assert mha(x, attn_mask=bias()).shape == x.shape
+
+
+def _test_3d():
+    x = torch.zeros((4, 32, 16, 64, 64))
+    window_size = (4, 8, 8)
+    bias = WindowScoreBias3d(window_size)
+    mha = WindowMHA3d(32, num_heads=4, window_size=window_size)
+    assert mha(x, attn_mask=bias()).shape == x.shape
+
+
 if __name__ == "__main__":
-    _test_spatial_reduction()
+    # _test_spatial_reduction()
     _test_neighborhood()
     _test_bias()
     _test_bias2()
     _test_shift()
+    _test_2d()
+    _test_3d()
     pass

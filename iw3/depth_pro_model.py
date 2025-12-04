@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 from nunif.device import create_device, autocast, device_is_mps # noqa
-from .dilation import dilate_edge
+from .dilation import dilate_edge, edge_dilation_is_enabled
 from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 
 
@@ -46,14 +46,14 @@ def batch_preprocess(x, img_size=1536, padding=False):
     return x, pad
 
 
-def _forward(model, x, input_shape, min_dist=0.1, max_dist=40.0):
+def _forward(model, x, input_shape, min_dist=1e-4, max_dist=1e4, force_disparity=False):
     if x.dtype != torch.float16:
         x = x.half()
     H, W = input_shape[2:]
     canonical_inverse_depth, fov_deg = model(x)
     canonical_inverse_depth = canonical_inverse_depth.to(torch.float32)
 
-    if True:
+    if not force_disparity:
         # distance
         f_px = 0.5 * W / torch.tan(0.5 * torch.deg2rad(fov_deg.to(torch.float)))
         inverse_depth = canonical_inverse_depth * (W / f_px)
@@ -73,7 +73,7 @@ def _forward(model, x, input_shape, min_dist=0.1, max_dist=40.0):
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
                 output_device="cpu", device=None,
-                edge_dilation=2,
+                edge_dilation=2, force_disparity=False,
                 **kwargs):
     device = device if device is not None else model.device
     batch = False
@@ -94,20 +94,26 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
     if not low_vram:
         if flip_aug:
             x = torch.cat([x, torch.flip(x, dims=[3])], dim=0)
-        out = _forward(model, x, input_shape, enable_amp)
+        out = _forward(model, x, input_shape, force_disparity=force_disparity)
     else:
         x_org = x
-        out = _forward(model, x, input_shape, enable_amp)
+        out = _forward(model, x, input_shape, force_disparity=force_disparity)
         if flip_aug:
             x = torch.flip(x_org, dims=[3])
-            out2 = _forward(model, x, input_shape, enable_amp)
+            out2 = _forward(model, x, input_shape, force_disparity=force_disparity)
             out = torch.cat([out, out2], dim=0)
 
     if unpad > 0:
         out = out[:, :, unpad:-unpad, unpad:-unpad]
 
-    if edge_dilation > 0:
-        out = -dilate_edge(-out, edge_dilation)
+    if edge_dilation_is_enabled(edge_dilation):
+        if force_disparity:
+            out = dilate_edge(out, edge_dilation)
+        else:
+            out = -dilate_edge(-out, edge_dilation)
+
+    if not force_disparity:
+        out = -out
 
     if flip_aug:
         if batch:
@@ -133,6 +139,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
 class DepthProModel(BaseDepthModel):
     def __init__(self, model_type):
         super().__init__(model_type)
+        # if True, use 1 / depth and is_metric==False
+        self.force_disparity = True
 
     def load_model(self, model_type, resolution=None, device=None):
         assert model_type in MODEL_FILES
@@ -169,7 +177,8 @@ class DepthProModel(BaseDepthModel):
             enable_amp=enable_amp,
             output_device=x.device,
             device=x.device,
-            edge_dilation=edge_dilation)
+            edge_dilation=edge_dilation,
+            force_disparity=self.force_disparity)
 
     @classmethod
     def get_name(cls):
@@ -188,7 +197,7 @@ class DepthProModel(BaseDepthModel):
         return MODEL_FILES[model_type]
 
     def is_metric(self):
-        return True
+        return not self.force_disparity
 
     def is_video_supported(self):
         return False

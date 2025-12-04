@@ -1,9 +1,8 @@
 from nunif.models import load_model
 from nunif.utils.ui import TorchHubDir
-from os import path
-
-
-HUB_MODEL_DIR = path.join(path.dirname(__file__), "pretrained_models", "hub")
+from .hub_dir import HUB_MODEL_DIR
+from .forward_inpaint import ForwardInpaint
+from .mlbw_inpaint import MLBWInpaint
 
 
 def pth_url(filename):
@@ -32,45 +31,63 @@ MLBW_L2_D3_WEAK_URL = pth_url("iw3_mlbw_l2_d3_weak_20250627.pth")
 MLBW_L4_D2_WEAK_URL = pth_url("iw3_mlbw_l4_d2_weak_20250627.pth")
 MLBW_L4_D3_WEAK_URL = pth_url("iw3_mlbw_l4_d3_weak_20250627.pth")
 
+# mlbw with hole mask estimation
+MASK_MLBW_L2_D1_URL = pth_url("iw3_mask_mlbw_l2_d1_20250903.pth")
+
+
+def get_mlbw_divergence_level(d):
+    if d <= 4:
+        return 1
+    elif d <= 7:
+        return 2
+    else:
+        return 3
+
 
 def load_mlbw_model(
         method, divergence, device_id,
         use_weak_convergence_model=False,
 ):
+    level = get_mlbw_divergence_level(divergence)
     if method in {"mlbw_l2", "mlbw_l2s"}:
-        if divergence <= 4:
+        if level == 1:
             if method == "mlbw_l2s":
                 url = MLBW_L2S_D1_URL
             else:
                 url = MLBW_L2_D1_URL
-        elif divergence <= 7:
+        elif level == 2:
             if use_weak_convergence_model:
                 url = MLBW_L2_D2_WEAK_URL
             else:
                 url = MLBW_L2_D2_URL
-        else:
+        elif level == 3:
             if use_weak_convergence_model:
                 url = MLBW_L2_D3_WEAK_URL
             else:
                 url = MLBW_L2_D3_URL
     elif method in {"mlbw_l4", "mlbw_l4s"}:
-        if divergence <= 4:
+        if level == 1:
             if method == "mlbw_l4s":
                 url = MLBW_L4S_D1_URL
             else:
                 url = MLBW_L4_D1_URL
-        elif divergence <= 7:
+        elif level == 2:
             if use_weak_convergence_model:
                 url = MLBW_L4_D2_WEAK_URL
             else:
                 url = MLBW_L4_D2_URL
-        else:
+        elif level == 3:
             if use_weak_convergence_model:
                 url = MLBW_L4_D3_WEAK_URL
             else:
                 url = MLBW_L4_D3_URL
+
+    elif method in {"mask_mlbw_l2"}:
+        url = MASK_MLBW_L2_D1_URL
     else:
         raise ValueError(method)
+
+    # print("load_mlbw_model", url)
 
     model = load_model(url, weights_only=True, device_ids=[device_id])[0].eval()
     model.delta_output = True
@@ -99,11 +116,14 @@ def load_row_flow_model(method, device_id):
 def create_stereo_model(
         method, divergence, device_id,
         use_weak_convergence_model=False,
+        inpaint_model=None,
 ):
     with TorchHubDir(HUB_MODEL_DIR):
         if method.startswith("row_flow"):
             return load_row_flow_model(method, device_id=device_id)
-        elif method.startswith("mlbw_"):
+        elif method in {"mlbw_l2_inpaint"}:
+            return MLBWInpaint(name=inpaint_model, device_id=device_id)
+        elif method.startswith("mlbw_") or method.startswith("mask_mlbw_"):
             return load_mlbw_model(
                 method,
                 divergence=divergence,
@@ -112,5 +132,7 @@ def create_stereo_model(
             )
         elif method in {"forward", "forward_fill", "backward"}:
             return None
+        elif method in {"forward_inpaint"}:
+            return ForwardInpaint(name=inpaint_model, device_id=device_id)
         else:
             raise ValueError(method)

@@ -206,7 +206,7 @@ def gen_edge_dilation(model_type):
     if model_type.startswith("ZoeD"):
         return random.choice([0] * 6 + [1, 2, 3, 4])
     else:
-        return random.choice([2] * 6 + [0, 1, 3, 4])
+        return random.choice([0] * 6 + [1, 2, 2, 2, 3, 4])
 
 
 def gen_depth_aa(model_type):
@@ -220,6 +220,9 @@ def main(args):
     from ...depth_model_factory import create_depth_model
 
     assert args.min_size - OFFSET * 2 >= args.size
+    if args.model_type.startswith("VDA_"):
+        raise ValueError("VDA is not supported")
+
     # force_update_midas()
     # force_update_zoedepth()
 
@@ -298,7 +301,8 @@ def main(args):
                         method="forward_fill",
                         synthetic_view="both",
                         return_mask=True,
-                        inconsistent_shift=True)
+                        inconsistent_shift=True,
+                        width_base=True)
 
                     sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
                     sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))

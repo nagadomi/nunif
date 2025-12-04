@@ -1,9 +1,10 @@
 import torch
-from torch import nn
+import torch.nn as nn
+import torch.nn.functional as F
 import lpips
 from os import path
 from .compile_wrapper import conditional_compile
-from .pad import get_pad_size
+from .pad import get_pad_size, get_crop_size
 from .local_std_mask import local_std_mask
 from .reflection_pad2d import reflection_pad2d_naive
 
@@ -95,6 +96,31 @@ class LPIPSWith(nn.Module):
         else:
             lpips_loss = self.lpips(input, target, normalize=True).mean()
         return base_loss + lpips_loss * self.weight
+
+
+class LPIPSMetric(nn.Module):
+    def __init__(self, net="alex"):
+        super().__init__()
+        self.lpips = lpips.LPIPS(net=net, spatial=True).eval()
+        self.lpips.requires_grad_(False)
+
+    def train(self, mode=True):
+        super().train(mode)
+        self.lpips.train(False)
+        self.lpips.requires_grad_(False)
+
+    def forward(self, input, target, mask=None):
+        pad = get_crop_size(input, 16, random_shift=False)
+        input = F.pad(input, pad)
+        target = F.pad(target, pad)
+        if mask is not None:
+            lpips = self.lpips(input, target, normalize=True)
+            mask = F.interpolate(mask.float(), size=lpips.shape[-2:], mode="bilinear", align_corners=False)
+            lpips = (lpips * mask).sum() / (mask.sum() + 1e-5)
+        else:
+            lpips = self.lpips(input, target, normalize=True).mean()
+
+        return lpips
 
 
 def _test():

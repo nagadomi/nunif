@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.io as io
 import torchvision.transforms.functional as TF
-from nunif.modules.dinov2 import DINOv2Loss, DINOv2PoolLoss
+from nunif.modules.dinov2 import DINOv2Loss, DINOv2PoolLoss, DINOv2StyleLoss
 from nunif.modules.lpips import LPIPSWith
 from dino.models.l4sn import L4SNLoss
 from dctorch.functional import dct2
@@ -134,13 +134,14 @@ def main():
     parser.add_argument("--init", type=str, choices=["noise", "jpeg", "shift", "resize"], default="noise", help="initial image")
     parser.add_argument("--init-image", type=str, help="initial image")
     parser.add_argument("--model", type=str,
-                        choices=["dct", "pool", "swd", "patch-swd", "pos-swd", "dists", "lpips", "fdl",
+                        choices=["dct", "pool", "style", "swd", "patch-swd", "pos-swd", "dists", "lpips", "fdl",
                                  "l4sn", "l4sn-swd"],
                         required=True)
     parser.add_argument("--iteration", type=int, default=20000, help="iteration")
     parser.add_argument("--fp32", action="store_true", help="use fp32")
     parser.add_argument("--save-interval", type=int, default=100, help="save interval")
     parser.add_argument("--disable-random-shift", action="store_true")
+    parser.add_argument("--l4sn-type", type=str, default="photo", help="model_type of L4SNLoss")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
@@ -160,9 +161,9 @@ def main():
                 x = shift(y, 3, 3)
             case "resize":
                 x = y.unsqueeze(0)
-                x = F.interpolate(x, size=(x.shape[2] // 4,x.shape[3] // 4),
+                x = F.interpolate(x, size=(x.shape[2] // 4, x.shape[3] // 4),
                                   mode="bilinear", align_corners=False, antialias=True)
-                x = F.interpolate(x, size=(x.shape[2] * 4,x.shape[3] * 4),
+                x = F.interpolate(x, size=(x.shape[2] * 4, x.shape[3] * 4),
                                   mode="bilinear", align_corners=False)
                 x = x.squeeze(0)
 
@@ -176,6 +177,8 @@ def main():
             model = DINOv2Loss(DCTLoss(), random_projection=64).cuda()
         case "pool":
             model = DINOv2PoolLoss().cuda()
+        case "style":
+            model = DINOv2StyleLoss().cuda()
         case "swd":
             model = DINOv2Loss(SlicedWasserstein(), random_projection=384).cuda()
         case "patch-swd":
@@ -189,10 +192,10 @@ def main():
         case "fdl":
             model = FDLLoss().eval().cuda()
         case "l4sn":
-            model = L4SNLoss(activation=True)
+            model = L4SNLoss(model_type=args.l4sn_type)
             model = model.eval().cuda()
         case "l4sn-swd":
-            model = L4SNLoss(activation=True, swd_weight=0.5, swd_indexes=[0, 1], swd_window_size=8)
+            model = L4SNLoss(model_type=args.l4sn_type, swd_weight=0.5, swd_indexes=[0, 1], swd_window_size=8)
             model = model.eval().cuda()
 
     optimizer = torch.optim.Adam([x], lr=1e-3, betas=(0.9, 0.99))

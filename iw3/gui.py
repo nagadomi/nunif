@@ -1,6 +1,5 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
-import locale
 import sys
 import os
 from os import path
@@ -23,6 +22,7 @@ from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIO
 from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.git import get_current_branch
+from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -30,7 +30,9 @@ from nunif.gui import (
     persistent_manager_restore_all, persistent_manager_register,
     extension_list_to_wildcard, validate_number,
     set_icon_ex, apply_dark_mode, is_dark_mode,
-    VideoEncodingBox, IOPathPanel
+    VideoEncodingBox, IOPathPanel,
+    get_default_locale,
+    init_win32_dpi,
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
@@ -43,16 +45,17 @@ from .video_depth_anything_model import (
     AA_SUPPORT_MODELS as VDA_AA_SUPPORTED_MODELS
 )
 from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel, AA_SUPPORT_MODELS as VDA_STREAM_AA_SUPPORTED_MODELS
-from .depth_pro_model import DepthProModel
+from .depth_anything_v3_model import AA_SUPPORTED_MODELS as DA3_AA_SUPPORTED_MODELS
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
+from .inpaint_utils import INPAINT_MODELS
 import torch
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
 VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 YAML_EXTENSIONS = extension_list_to_wildcard((".yml", ".yaml"))
-CONFIG_DIR = path.join(path.dirname(__file__), "..", "tmp")
+CONFIG_DIR = ensure_home_dir("iw3", path.join(path.dirname(__file__), "..", "tmp"))
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui.cfg")
 LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
@@ -66,7 +69,7 @@ LAYOUT_DEBUG = False
 class IW3App(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        self.instance = wx.SingleInstanceChecker("iw3-gui.lock", CONFIG_DIR)
         if self.instance.IsAnotherRunning():
             with wx.MessageDialog(None,
                                   message=(T("Another instance is running") + "\n" +
@@ -89,10 +92,12 @@ class MainFrame(wx.Frame):
         else:
             branch_tag = f" ({branch_name})"
 
+        python_version_tag = f" ({sys.implementation.name}-{sys.version_info[0]}.{sys.version_info[1]})"
+
         super(MainFrame, self).__init__(
             None,
             name="iw3-gui",
-            title=T("iw3-gui") + branch_tag,
+            title=T("iw3-gui") + branch_tag + python_version_tag,
             size=(1000, 840),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
@@ -151,7 +156,7 @@ class MainFrame(wx.Frame):
                                         name="chk_metadata")
         self.chk_metadata.SetValue(False)
 
-        self.sep_image_format = wx.StaticLine(self.pnl_file_option, size=(2, 16), style=wx.LI_VERTICAL)
+        self.sep_image_format = wx.StaticLine(self.pnl_file_option, size=self.FromDIP((2, 16)), style=wx.LI_VERTICAL)
         self.lbl_image_format = wx.StaticText(self.pnl_file_option, label=" " + T("Image Format"))
         self.cbo_image_format = wx.ComboBox(self.pnl_file_option, choices=["png", "jpeg", "webp"],
                                             name="cbo_image_format")
@@ -213,11 +218,19 @@ class MainFrame(wx.Frame):
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
         self.cbo_method = wx.ComboBox(self.grp_stereo,
                                       choices=["mlbw_l2", "mlbw_l4", "mlbw_l2s",
+                                               "mlbw_l2_inpaint",
                                                "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
-                                               "forward_fill"],
+                                               "forward_fill", "forward_inpaint"],
                                       name="cbo_method")
         self.cbo_method.SetEditable(False)
         self.cbo_method.SetSelection(2)
+
+        self.lbl_inpaint_model = wx.StaticText(self.grp_stereo, label=T("Inpainting Model"))
+        self.cbo_inpaint_model = wx.ComboBox(self.grp_stereo,
+                                             choices=list(INPAINT_MODELS.keys()),
+                                             name="cbo_inpaint_model")
+        self.cbo_inpaint_model.SetEditable(False)
+        self.cbo_inpaint_model.SetSelection(0)
 
         self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Processing Width"))
         self.cbo_stereo_width = EditableComboBox(self.grp_stereo,
@@ -248,13 +261,38 @@ class MainFrame(wx.Frame):
         self.chk_depth_aa = wx.CheckBox(self.grp_stereo, label=T("Depth Anti-aliasing"), name="chk_depth_aa")
         self.chk_depth_aa.SetValue(False)
 
-        self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
+        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"))
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
                                                   choices=["0", "1", "2", "3", "4"],
+                                                  size=self.FromDIP((90, -1)),
                                                   name="cbo_edge_dilation")
-        self.chk_edge_dilation.SetValue(True)
+        self.cbo_edge_dilation_y = EditableComboBox(self.grp_stereo,
+                                                    choices=["", "0", "1", "2"],
+                                                    name="cbo_edge_dilation_y")
         self.cbo_edge_dilation.SetSelection(2)
-        self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+        self.cbo_edge_dilation_y.SetSelection(2)
+        self.lbl_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+        self.cbo_edge_dilation.SetToolTip(T("X or XY"))
+        self.cbo_edge_dilation_y.SetToolTip(T("Y"))
+
+        self.lbl_mask_dilation = wx.StaticText(self.grp_stereo, label=T("Mask Dilation"))
+        self.cbo_mask_inner_dilation = EditableComboBox(self.grp_stereo,
+                                                        choices=["0", "1", "2"],
+                                                        name="cbo_mask_inner_dilation")
+        self.cbo_mask_inner_dilation.SetSelection(0)
+        self.cbo_mask_inner_dilation.SetToolTip(T("Inner"))
+
+        self.cbo_mask_outer_dilation = EditableComboBox(self.grp_stereo,
+                                                        choices=["0", "1", "2"],
+                                                        name="cbo_mask_outer_dilation")
+        self.cbo_mask_outer_dilation.SetSelection(0)
+        self.cbo_mask_outer_dilation.SetToolTip(T("Outer"))
+
+        self.lbl_inpaint_max_width = wx.StaticText(self.grp_stereo, label=T("Inpaint Max Width"))
+        self.cbo_inpaint_max_width = EditableComboBox(self.grp_stereo,
+                                                      choices=["", "1920"],
+                                                      name="cbo_inpaint_max_width")
+        self.cbo_inpaint_max_width.SetSelection(0)
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
                                              label=T("Flicker Reduction"),
@@ -340,6 +378,13 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_synthetic_view, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_inpaint_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_inpaint_model, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_mask_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_mask_inner_dilation, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_mask_outer_dilation, (i, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_inpaint_max_width, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_inpaint_max_width, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_stereo_width, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_width, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -348,8 +393,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_edge_dilation, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_edge_dilation_y, (i, 2), flag=wx.EXPAND)
         layout.Add(self.chk_depth_aa, (i := i + 1, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
@@ -392,7 +438,7 @@ class MainFrame(wx.Frame):
         self.txt_vf = wx.TextCtrl(self.grp_video_filter, name="txt_vf")
 
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
-        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=(200, -1),
+        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=self.FromDIP((200, -1)),
                                       name="cbo_rotate")
         self.cbo_rotate.SetEditable(False)
         self.cbo_rotate.Append("", "")
@@ -401,12 +447,12 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.SetSelection(0)
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
-        self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "16:9"],
+        self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "top", "16:9"],
                                         name="cbo_pad_mode")
         self.cbo_pad_mode.SetEditable(False)
         self.cbo_pad_mode.SetSelection(0)
         self.cbo_pad_mode.SetToolTip(T("Padding Mode"))
-        self.cbo_pad = EditableComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "1"],
+        self.cbo_pad = EditableComboBox(self.grp_video_filter, choices=["", "0.01", "0.05", "0.5", "1"],
                                         name="cbo_pad")
         self.cbo_pad.SetSelection(0)
         self.cbo_pad.SetToolTip(T("Padding Ratio"))
@@ -414,6 +460,7 @@ class MainFrame(wx.Frame):
         self.lbl_max_output_size = wx.StaticText(self.grp_video_filter, label=T("Output Size Limit"))
         self.cbo_max_output_size = wx.ComboBox(self.grp_video_filter,
                                                choices=["",
+                                                        "7680x2160",
                                                         "1920x1080", "1280x720", "640x360",
                                                         "1080x1920", "720x1280", "360x640"],
                                                name="cbo_max_output_size")
@@ -450,7 +497,7 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA, Low VRAM, fp16
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=(200, -1), name="cbo_device")
+        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), name="cbo_device")
         self.cbo_device.SetEditable(False)
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
@@ -525,15 +572,19 @@ class MainFrame(wx.Frame):
         self.pnl_preset = wx.Panel(self)
         self.lbl_preset = wx.StaticText(self.pnl_preset, label=" " + T("Preset"))
         self.cbo_app_preset = EditableComboBox(self.pnl_preset, choices=self.list_preset(),
-                                               size=(200, -1),
+                                               size=self.FromDIP((200, -1)),
                                                name="cbo_app_preset")
         self.cbo_app_preset.SetSelection(0)
         self.btn_load_preset = wx.Button(self.pnl_preset, label=T("Load"))
         self.btn_save_preset = wx.Button(self.pnl_preset, label=T("Save"))
         self.btn_delete_preset = wx.Button(self.pnl_preset, label=T("Delete"))
 
+        # copy command
+        self.sep_command = wx.StaticLine(self.pnl_preset, size=self.FromDIP((2, 20)), style=wx.LI_VERTICAL)
+        self.btn_copy_command = wx.Button(self.pnl_preset, label=T("Copy Command"))
+
         # language
-        self.sep_language = wx.StaticLine(self.pnl_preset, size=(2, 20), style=wx.LI_VERTICAL)
+        self.sep_language = wx.StaticLine(self.pnl_preset, size=self.FromDIP((2, 20)), style=wx.LI_VERTICAL)
         self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
         self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
         lang_selection = 0
@@ -551,6 +602,11 @@ class MainFrame(wx.Frame):
         layout.Add(self.btn_load_preset, flag=wx.ALL, border=2)
         layout.Add(self.btn_save_preset, flag=wx.ALL, border=2)
         layout.Add(self.btn_delete_preset, flag=wx.ALL, border=2)
+        layout.AddSpacer(2)
+        layout.Add(self.sep_command, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT)
+        layout.AddSpacer(4)
+        layout.Add(self.btn_copy_command, flag=wx.ALL, border=2)
+
         layout.AddSpacer(2)
         layout.Add(self.sep_language, flag=wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_LEFT)
         layout.AddSpacer(4)
@@ -596,7 +652,7 @@ class MainFrame(wx.Frame):
         self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
 
         self.cbo_depth_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_depth_model)
-        self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
+        self.cbo_edge_dilation_y.Bind(wx.EVT_TEXT, self.on_changed_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
 
         self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_stereo_format)
@@ -609,6 +665,7 @@ class MainFrame(wx.Frame):
         self.btn_load_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_load_preset)
         self.btn_save_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_save_preset)
         self.btn_delete_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_delete_preset)
+        self.btn_copy_command.Bind(wx.EVT_BUTTON, self.on_click_btn_copy_command)
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
@@ -644,6 +701,7 @@ class MainFrame(wx.Frame):
 
         self.update_model_selection()
         self.update_edge_dilation()
+        self.update_inpaint_options()
         self.update_ema_normalize()
         self.update_scene_segment()
         self.grp_video.update_controls()
@@ -679,6 +737,8 @@ class MainFrame(wx.Frame):
         if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
             depth_models.append("Distill_Any_L")
 
+        depth_models += ["Any_V3_Mono", "Any_V3_Mono_01"]
+
         depth_models += ["VDA_S"]
         if VideoDepthAnythingModel.has_checkpoint_file("VDA_B"):
             depth_models.append("VDA_B")
@@ -697,6 +757,12 @@ class MainFrame(wx.Frame):
         if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
             depth_models.append("VDA_Stream_L")
 
+        depth_models += ["VDA_Stream_Metric_S"]
+        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_B"):
+            depth_models.append("VDA_Stream_Metric_B")
+        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_L"):
+            depth_models.append("VDA_Stream_Metric_L")
+
         return depth_models
 
     def get_editable_comboboxes(self):
@@ -706,6 +772,10 @@ class MainFrame(wx.Frame):
             self.cbo_resolution,
             self.cbo_stereo_width,
             self.cbo_edge_dilation,
+            self.cbo_edge_dilation_y,
+            self.cbo_mask_outer_dilation,
+            self.cbo_mask_inner_dilation,
+            self.cbo_inpaint_max_width,
             self.cbo_ema_decay,
             self.cbo_ema_buffer,
             *self.grp_video.get_editable_comboboxes(),
@@ -795,16 +865,6 @@ class MainFrame(wx.Frame):
 
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
-        if (
-                DepthAnythingModel.supported(name) or
-                DepthProModel.supported(name) or
-                VideoDepthAnythingModel.supported(name) or
-                VideoDepthAnythingStreamingModel.supported(name) or
-                name.startswith("ZoeD_Any_")
-        ):
-            self.cbo_edge_dilation.Enable()
-        else:
-            self.cbo_edge_dilation.Disable()
 
         if name in DEPTH_PRO_MODELS:
             self.cbo_resolution.Disable()
@@ -813,7 +873,12 @@ class MainFrame(wx.Frame):
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
 
-        if name in DA_AA_SUPPORTED_MODELS or name in VDA_AA_SUPPORTED_MODELS or name in VDA_STREAM_AA_SUPPORTED_MODELS:
+        if (
+                name in DA_AA_SUPPORTED_MODELS or
+                name in VDA_AA_SUPPORTED_MODELS or
+                name in VDA_STREAM_AA_SUPPORTED_MODELS or
+                name in DA3_AA_SUPPORTED_MODELS
+        ):
             self.chk_depth_aa.Enable()
         else:
             self.chk_depth_aa.Disable()
@@ -844,7 +909,7 @@ class MainFrame(wx.Frame):
 
     def update_preserve_screen_border(self):
         if self.cbo_method.GetValue() in {"row_flow_v2", "row_flow_v3", "row_flow_v3_sym",
-                                          "mlbw_l2", "mlbw_l2s", "mlbw_l4"}:
+                                          "mlbw_l2", "mlbw_l2s", "mlbw_l4", "mlbw_l2_inpaint"}:
             self.chk_preserve_screen_border.Enable()
         else:
             self.chk_preserve_screen_border.Disable()
@@ -852,6 +917,7 @@ class MainFrame(wx.Frame):
     def on_selected_index_changed_cbo_method(self, event):
         self.update_divergence_warning()
         self.update_preserve_screen_border()
+        self.update_inpaint_options()
 
     def on_selected_index_changed_cbo_stereo_format(self, event):
         self.update_input_option_state()
@@ -865,12 +931,32 @@ class MainFrame(wx.Frame):
         self.update_video_codec()
 
     def update_edge_dilation(self):
-        if self.chk_edge_dilation.IsChecked():
-            self.cbo_edge_dilation.Enable()
+        if self.cbo_edge_dilation_y.GetValue():
+            self.cbo_edge_dilation.SetToolTip(T("X"))
         else:
-            self.cbo_edge_dilation.Disable()
+            self.cbo_edge_dilation.SetToolTip(T("X, Y"))
 
-    def on_changed_chk_edge_dilation(self, event):
+    def update_inpaint_options(self):
+        if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint"}:
+            self.lbl_inpaint_model.Show()
+            self.cbo_inpaint_model.Show()
+            self.lbl_mask_dilation.Show()
+            self.cbo_mask_outer_dilation.Show()
+            self.cbo_mask_inner_dilation.Show()
+            self.lbl_inpaint_max_width.Show()
+            self.cbo_inpaint_max_width.Show()
+        else:
+            self.lbl_inpaint_model.Hide()
+            self.cbo_inpaint_model.Hide()
+            self.lbl_mask_dilation.Hide()
+            self.cbo_mask_outer_dilation.Hide()
+            self.cbo_mask_inner_dilation.Hide()
+            self.lbl_inpaint_max_width.Hide()
+            self.cbo_inpaint_max_width.Hide()
+
+        self.GetSizer().Layout()
+
+    def on_changed_edge_dilation(self, event):
         self.update_edge_dilation()
 
     def update_ema_normalize(self):
@@ -928,7 +1014,7 @@ class MainFrame(wx.Frame):
                 style=wx.OK) as dlg:
             dlg.ShowModal()
 
-    def parse_args(self):
+    def parse_args(self, skip_set_state=False):
         if not validate_number(self.cbo_divergence.GetValue(), 0.0, 100.0):
             self.show_validation_error_message(T("3D Strength"), 0.0, 100.0)
             return None
@@ -940,6 +1026,21 @@ class MainFrame(wx.Frame):
             return None
         if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
+            return None
+        if not validate_number(self.cbo_edge_dilation_y.GetValue(), 0, 20, is_int=True, allow_empty=True):
+            self.show_validation_error_message(T("Edge Fix"), 0, 20)
+            return None
+        if self.lbl_mask_dilation.IsShown() and not (
+                validate_number(self.cbo_mask_inner_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False) and
+                validate_number(self.cbo_mask_outer_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False)
+        ):
+            self.show_validation_error_message(T("Mask Dilation"), 0, 20)
+            return None
+        if (
+                self.lbl_inpaint_max_width.IsShown() and
+                not validate_number(self.cbo_inpaint_max_width.GetValue(), 126, 8192, is_int=True, allow_empty=True)
+        ):
+            self.show_validation_error_message(T("Inpaint Max Width"), 126, 8192)
             return None
         if not validate_number(self.grp_video.max_fps, 0.25, 1000.0, allow_empty=False):
             self.show_validation_error_message(T("Max FPS"), 0.25, 1000.0)
@@ -1044,7 +1145,33 @@ class MainFrame(wx.Frame):
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
-        edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
+
+        if self.cbo_edge_dilation_y.GetValue():
+            edge_dilation = [int(self.cbo_edge_dilation.GetValue()), int(self.cbo_edge_dilation_y.GetValue())]
+        else:
+            edge_dilation = int(self.cbo_edge_dilation.GetValue())
+
+        if self.lbl_inpaint_model.IsShown():
+            inpaint_model = self.cbo_inpaint_model.GetValue()
+            mask_inner_dilation = int(self.cbo_mask_inner_dilation.GetValue())
+            mask_outer_dilation = int(self.cbo_mask_outer_dilation.GetValue())
+            if self.cbo_inpaint_max_width.GetValue():
+                inpaint_max_width = int(self.cbo_inpaint_max_width.GetValue())
+            else:
+                inpaint_max_width = None
+        else:
+            inpaint_model = None
+            mask_inner_dilation = 0
+            mask_outer_dilation = 0
+            inpaint_max_width = None
+
+        if self.chk_ema_normalize.GetValue():
+            ema_options = dict(ema_normalize=True,
+                               ema_decay=float(self.cbo_ema_decay.GetValue()),
+                               ema_buffer=int(self.cbo_ema_buffer.GetValue()))
+        else:
+            ema_options = {}
+
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
         scene_detect = self.chk_scene_detect.IsEnabled() and self.chk_scene_detect.IsChecked()
@@ -1065,6 +1192,10 @@ class MainFrame(wx.Frame):
             foreground_scale=float(self.cbo_foreground_scale.GetValue()),
             depth_aa=depth_aa,
             edge_dilation=edge_dilation,
+            inpaint_model=inpaint_model,
+            mask_inner_dilation=mask_inner_dilation,
+            mask_outer_dilation=mask_outer_dilation,
+            inpaint_max_width=inpaint_max_width,
             vr180=vr180,
             half_sbs=half_sbs,
             tb=tb,
@@ -1080,9 +1211,7 @@ class MainFrame(wx.Frame):
             export_depth_fit=export_depth_fit,
 
             debug_depth=debug_depth,
-            ema_normalize=self.chk_ema_normalize.GetValue(),
-            ema_decay=float(self.cbo_ema_decay.GetValue()),
-            ema_buffer=int(self.cbo_ema_buffer.GetValue()),
+            **ema_options,
             scene_detect=scene_detect,
 
             format=self.cbo_image_format.GetValue(),
@@ -1126,12 +1255,13 @@ class MainFrame(wx.Frame):
             end_time=end_time,
         )
         args = parser.parse_args()
-        set_state_args(
-            args,
-            stop_event=self.stop_event,
-            suspend_event=self.suspend_event,
-            tqdm_fn=functools.partial(TQDMGUI, self),
-            depth_model=self.depth_model)
+        if not skip_set_state:
+            set_state_args(
+                args,
+                stop_event=self.stop_event,
+                suspend_event=self.suspend_event,
+                tqdm_fn=functools.partial(TQDMGUI, self),
+                depth_model=self.depth_model)
         return args
 
     def on_click_btn_start(self, event):
@@ -1375,6 +1505,11 @@ class MainFrame(wx.Frame):
                     max_divergence = 10.0
                 else:
                     max_divergence = 10.0 * 0.5
+            elif method in {"forward_inpaint", "mlbw_l2_inpaint"}:
+                if synthetic_view == "both":
+                    max_divergence = 5.0
+                else:
+                    max_divergence = 5.0 * 0.5
 
             if divergence > max_divergence:
                 self.lbl_divergence_warning.SetLabel(
@@ -1415,9 +1550,76 @@ class MainFrame(wx.Frame):
         else:
             self.cbo_pad.Enable()
 
+    def get_cli_command(self):
+        from subprocess import list2cmdline
+        import argparse
+
+        gui_args = self.parse_args(skip_set_state=True)
+        if gui_args is None:
+            return None
+        default_parser = create_parser(required_true=False)
+        default_args = default_parser.parse_args()
+        gui_args = vars(gui_args)
+        default_args = vars(default_args)
+
+        argv = []
+        yes = False
+        for name in default_args.keys():
+            action = next(a for a in default_parser._actions if a.dest == name)
+            a = gui_args.get(name)
+            b = default_args.get(name)
+            if name == "input":
+                name = "-i"
+            elif name == "output":
+                name = "-o"
+            else:
+                name = "--" + name.replace("_", "-")
+            if name == "--yes":
+                yes = True
+                continue
+
+            if isinstance(action, argparse._StoreTrueAction):
+                if a:
+                    argv.append(name)
+                continue
+            if isinstance(action, argparse._StoreFalseAction):
+                if not a:
+                    argv.append(name)
+                continue
+
+            if a == b:
+                continue
+
+            if isinstance(a, (list, tuple)):
+                argv.append(name)
+                for item in a:
+                    argv.append(item)
+            else:
+                argv.append(name)
+                argv.append(a)
+
+        if yes:
+            argv.append("--yes")
+
+        return list2cmdline(["python", "-m", "iw3"] + [str(v) for v in argv])
+
+    def on_click_btn_copy_command(self, event):
+        command = self.get_cli_command()
+        if command is None:
+            # parse error
+            return
+
+        # print(command)
+
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(command))
+            wx.TheClipboard.Close()
+        else:
+            wx.MessageBox(T("Failed to open Clipbaord"), T("Error"), wx.OK | wx.ICON_ERROR)
+
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
-LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
+LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 
 def T(s):
@@ -1446,4 +1648,5 @@ def main():
 
 
 if __name__ == "__main__":
+    init_win32_dpi()
     main()

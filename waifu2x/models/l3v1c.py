@@ -19,10 +19,10 @@ from .disc_utils import (
 
 class ImageToCondition(nn.Module):
     # 1x1 vector
-    def __init__(self, embed_dim, outputs):
+    def __init__(self, embed_dim, outputs, scale_factor):
         super().__init__()
         self.features = nn.Sequential(
-            nn.AvgPool2d((4, 4)),
+            nn.AvgPool2d((scale_factor, scale_factor)) if scale_factor > 1 else nn.Identity(),
             nn.Conv2d(3, embed_dim, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
             nn.GroupNorm(4, embed_dim),
             nn.ReLU(inplace=True),
@@ -96,10 +96,10 @@ class L3Discriminator(Discriminator):
 class L3ConditionalDiscriminator(L3Discriminator):
     name = "waifu2x.l3_conditional_discriminator"
 
-    def __init__(self, in_channels=3, out_channels=1, negative_slope=0.2):
+    def __init__(self, in_channels=3, out_channels=1, negative_slope=0.2, scale_factor=4):
         super().__init__(in_channels=in_channels, out_channels=out_channels,
                          negative_slope=negative_slope)
-        self.to_cond = ImageToCondition(32, [64, 256])
+        self.to_cond = ImageToCondition(32, [64, 256], scale_factor=scale_factor)
 
     @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
@@ -149,10 +149,10 @@ class V1Discriminator(Discriminator):
 class V1ConditionalDiscriminator(V1Discriminator):
     name = "waifu2x.v1_conditional_discriminator"
 
-    def __init__(self, in_channels=3, out_channels=1, negative_slope=0.2):
+    def __init__(self, in_channels=3, out_channels=1, negative_slope=0.2, scale_factor=4):
         super().__init__(in_channels=in_channels, out_channels=out_channels,
                          negative_slope=negative_slope)
-        self.to_cond = ImageToCondition(32, [64, 128])
+        self.to_cond = ImageToCondition(32, [64, 128], scale_factor=scale_factor)
 
     @conditional_compile("NUNIF_DISC_COMPILE")
     def forward(self, x, c=None, scale_factor=None):
@@ -185,10 +185,14 @@ class L3V1Discriminator(Discriminator):
 class L3V1ConditionalDiscriminator(Discriminator):
     name = "waifu2x.l3v1_conditional_discriminator"
 
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=1, scale_factor=4):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
-        self.l3 = L3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels)
-        self.v1 = V1ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels)
+        self.l3 = L3ConditionalDiscriminator(in_channels=in_channels,
+                                             out_channels=out_channels,
+                                             scale_factor=scale_factor)
+        self.v1 = V1ConditionalDiscriminator(in_channels=in_channels,
+                                             out_channels=out_channels,
+                                             scale_factor=scale_factor)
 
     def forward(self, x, c=None, scale_factor=None):
         l3 = self.l3(x, c, scale_factor)
@@ -200,7 +204,7 @@ class L3V1ConditionalDiscriminator(Discriminator):
 class L3V1EnsembleConditionalDiscriminator(Discriminator):
     name = "waifu2x.l3v1_ensemble_conditional_discriminator"
 
-    def __init__(self, in_channels=3, out_channels=1, imbalanced_prob=False):
+    def __init__(self, in_channels=3, out_channels=1, imbalanced_prob=False, scale_factor=4):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
         N = 3
         if imbalanced_prob:
@@ -212,11 +216,15 @@ class L3V1EnsembleConditionalDiscriminator(Discriminator):
         self.index = 0
 
         self.l3 = nn.ModuleList([
-            L3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels)
+            L3ConditionalDiscriminator(in_channels=in_channels,
+                                       out_channels=out_channels,
+                                       scale_factor=scale_factor)
             for i in range(N)
         ])
         self.v1 = nn.ModuleList([
-            V1ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels)
+            V1ConditionalDiscriminator(in_channels=in_channels,
+                                       out_channels=out_channels,
+                                       scale_factor=scale_factor)
             for i in range(N)
         ])
 

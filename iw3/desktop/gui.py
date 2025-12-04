@@ -1,6 +1,5 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
-import locale
 import sys
 import os
 import time
@@ -20,6 +19,7 @@ from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.models.utils import check_compile_support
 from nunif.utils.filename import sanitize_filename
+from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
     IpAddrCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -28,6 +28,7 @@ from nunif.gui import (
     validate_number,
     set_icon_ex, load_icon, start_file,
     apply_dark_mode, is_dark_mode,
+    get_default_locale,
 )
 from ..depth_anything_model import DepthAnythingModel
 from ..video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
@@ -41,11 +42,12 @@ from .utils import (
     create_parser, set_state_args,
     get_monitor_size_list,
     enum_window_names,
+    is_mss_supported,
     IW3U, ENABLE_GPU_JPEG,
 )
 
 
-CONFIG_DIR = path.join(path.dirname(__file__), "..", "..", "tmp")
+CONFIG_DIR = ensure_home_dir("iw3", path.join(path.dirname(__file__), "..", "..", "tmp"))
 CONFIG_PATH = path.join(CONFIG_DIR, "iw3-desktop.cfg")
 LANG_CONFIG_PATH = path.join(CONFIG_DIR, "iw3-gui-desktop-lang.cfg")
 PRESET_DIR = path.join(CONFIG_DIR, "presets")
@@ -89,7 +91,7 @@ class FPSGUI():
 class IW3DesktopApp(wx.App):
     def OnInit(self):
         main_frame = MainFrame()
-        self.instance = wx.SingleInstanceChecker(main_frame.GetTitle())
+        self.instance = wx.SingleInstanceChecker("iw3-desktop-gui.lock", CONFIG_DIR)
         if self.instance.IsAnotherRunning():
             with wx.MessageDialog(None,
                                   message=T("Another instance is running"),
@@ -112,10 +114,12 @@ class MainFrame(wx.Frame):
         else:
             branch_tag = f" ({branch_name})"
 
+        python_version_tag = f" ({sys.implementation.name}-{sys.version_info[0]}.{sys.version_info[1]})"
+
         super(MainFrame, self).__init__(
             None,
             name="iw3-desktop",
-            title=T("iw3-desktop") + branch_tag,
+            title=T("iw3-desktop") + branch_tag + python_version_tag,
             size=(720, 560),
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
         )
@@ -206,14 +210,19 @@ class MainFrame(wx.Frame):
                                                      name="cbo_foreground_scale")
         self.cbo_foreground_scale.SetSelection(3)
 
-        self.chk_edge_dilation = wx.CheckBox(self.grp_stereo, label=T("Edge Fix"), name="chk_edge_dilation")
+        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"), name="lbl_edge_dilation")
         self.cbo_edge_dilation = EditableComboBox(self.grp_stereo,
                                                   choices=["0", "1", "2", "3", "4"],
+                                                  size=self.FromDIP((90, -1)),
                                                   name="cbo_edge_dilation")
-        self.chk_edge_dilation.SetValue(True)
-
+        self.cbo_edge_dilation_y = EditableComboBox(self.grp_stereo,
+                                                    choices=["", "0", "1", "2"],
+                                                    name="cbo_edge_dilation_y")
         self.cbo_edge_dilation.SetSelection(2)
-        self.cbo_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+        self.cbo_edge_dilation_y.SetSelection(0)
+        self.lbl_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
+        self.cbo_edge_dilation.SetToolTip(T("X or XY"))
+        self.cbo_edge_dilation_y.SetToolTip(T("Y"))
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
                                              label=T("Flicker Reduction"),
@@ -239,35 +248,41 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_format.SetEditable(False)
         self.cbo_stereo_format.SetSelection(0)
         self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
+        self.chk_cross_eyed = wx.CheckBox(self.grp_stereo, label=T("Cross Eyed"), name="chk_cross_eyed")
+        self.chk_cross_eyed.SetToolTip(T("Swap left image and right image"))
+        self.chk_cross_eyed.SetValue(False)
+        self.chk_cross_eyed.Hide()
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.SetEmptyCellSize((0, 0))
 
         i = 0
         layout.Add(self.lbl_divergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_divergence, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_divergence, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 3), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_convergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_convergence, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_convergence, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_synthetic_view, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_synthetic_view, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_synthetic_view, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_method, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_small_model_only, (i := i + 1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_small_model_only, (i := i + 1, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_depth_model, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_depth_model, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_resolution, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_foreground_scale, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_edge_dilation_y, (i, 2), flag=wx.EXPAND)
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_ema_decay, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stereo_format, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_format_device, (i := i + 1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stereo_format, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_cross_eyed, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_format_device, (i, 1), (1, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
 
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -382,7 +397,11 @@ class MainFrame(wx.Frame):
         self.cbo_device.SetSelection(0)
 
         self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
-        screenshot_backends = ["pil", "pil_mp"] + (["wc_mp"] if HAS_WINDOWS_CAPTURE else [])
+        screenshot_backends = ["pil"]
+        if is_mss_supported():
+            screenshot_backends += ["mss"]
+        if HAS_WINDOWS_CAPTURE:
+            screenshot_backends += ["wc_mp"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
@@ -468,14 +487,18 @@ class MainFrame(wx.Frame):
             self.grp_adjustment.SetBackgroundColour("#ccc")
 
         self.lbl_adj_divergence = wx.StaticText(self.grp_adjustment, label=T("3D Strength"))
-        self.sld_adj_divergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.00", min=0.0, max=5.0, inc=0.25)
+        self.sld_adj_divergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.00", min=0.0, max=10.0, inc=0.25)
         self.sld_adj_divergence.SetDigits(2)
         self.lbl_adj_convergence = wx.StaticText(self.grp_adjustment, label=T("Convergence Plane"))
         self.sld_adj_convergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.0", min=0.0, max=1.0, inc=0.1)
         self.lbl_adj_foreground_scale = wx.StaticText(self.grp_adjustment, label=T("Foreground Scale"))
         self.sld_adj_foreground_scale = wx.SpinCtrlDouble(self.grp_adjustment, value="0", min=-3.0, max=3.0, inc=0.2)
         self.lbl_adj_edge_dilation = wx.StaticText(self.grp_adjustment, label=T("Edge Fix"))
-        self.sld_adj_edge_dilation = wx.SpinCtrl(self.grp_adjustment, value="0", min=0, max=10)
+        self.sld_adj_edge_dilation = wx.SpinCtrl(self.grp_adjustment, value="0", min=0, max=10,
+                                                 name="sld_adj_edge_dilation")
+        self.cbo_adj_edge_dilation_y = EditableComboBox(self.grp_adjustment,
+                                                        choices=["", "0", "1", "2"],
+                                                        name="cbo_adj_edge_dilation_y")
 
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
@@ -488,6 +511,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.sld_adj_foreground_scale, (1, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_adj_edge_dilation, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.sld_adj_edge_dilation, (1, 3), flag=wx.EXPAND)
+        layout.Add(self.cbo_adj_edge_dilation_y, (1, 4), flag=wx.EXPAND)
 
         sizer_adjustment = wx.StaticBoxSizer(self.grp_adjustment, wx.VERTICAL)
         sizer_adjustment.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -507,7 +531,7 @@ class MainFrame(wx.Frame):
         if LAYOUT_DEBUG:
             self.pnl_process.SetBackgroundColour("#fcc")
 
-        self.txt_url = wx.TextCtrl(self.pnl_process, size=(300, -1), style=wx.TE_READONLY)
+        self.txt_url = wx.TextCtrl(self.pnl_process, size=self.FromDIP((300, -1)), style=wx.TE_READONLY)
         self.btn_url = GenBitmapButton(self.pnl_process, bitmap=load_icon("go-next.png"))
         self.btn_url.Disable()
         self.btn_url.SetToolTip(T("Open in Browser"))
@@ -559,7 +583,7 @@ class MainFrame(wx.Frame):
         self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
 
         self.chk_small_model_only.Bind(wx.EVT_CHECKBOX, self.update_depth_model_list)
-        self.chk_edge_dilation.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_edge_dilation)
+        self.cbo_edge_dilation_y.Bind(wx.EVT_TEXT, self.on_changed_edge_dilation)
         self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
         self.txt_bind_addr.Bind(wx.EVT_TEXT, self.update_bind_addr_warning)
@@ -575,6 +599,7 @@ class MainFrame(wx.Frame):
         self.sld_adj_divergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_convergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_edge_dilation.Bind(wx.EVT_SPINCTRL, self.update_args_adjustment)
+        self.cbo_adj_edge_dilation_y.Bind(wx.EVT_TEXT, self.update_args_adjustment)
         self.sld_adj_foreground_scale.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
 
         self.cbo_view_mode.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_view_mode)
@@ -614,7 +639,7 @@ class MainFrame(wx.Frame):
 
     def get_depth_models(self, small_only):
         if small_only:
-            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S"]
+            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S", "VDA_Stream_Metric_S"]
         else:
             depth_models = [
                 "ZoeD_N", "ZoeD_K", "ZoeD_NK",
@@ -640,9 +665,19 @@ class MainFrame(wx.Frame):
             if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
                 depth_models.append("Distill_Any_L")
 
+            depth_models += ["Any_V3_Mono", "Any_V3_Mono_01"]
+
             depth_models += ["VDA_Stream_S"]
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_B"):
+                depth_models.append("VDA_Stream_B")
             if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
                 depth_models.append("VDA_Stream_L")
+
+            depth_models += ["VDA_Stream_Metric_S"]
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_B"):
+                depth_models.append("VDA_Stream_Metric_B")
+            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_L"):
+                depth_models.append("VDA_Stream_Metric_L")
 
             return depth_models
 
@@ -652,6 +687,7 @@ class MainFrame(wx.Frame):
             self.cbo_convergence,
             self.cbo_resolution,
             self.cbo_edge_dilation,
+            self.cbo_edge_dilation_y,
             self.cbo_ema_decay,
             self.cbo_foreground_scale,
             self.cbo_stream_fps,
@@ -692,20 +728,24 @@ class MainFrame(wx.Frame):
             convergence = float(self.cbo_convergence.GetValue())
             foreground_scale = float(self.cbo_foreground_scale.GetValue())
             edge_dilation = int(self.cbo_edge_dilation.GetValue())
+            edge_dilation_y = self.cbo_edge_dilation_y.GetValue()
 
-            divergence = self.sld_adj_divergence.SetValue(divergence)
-            convergence = self.sld_adj_convergence.SetValue(convergence)
-            foreground_scale = self.sld_adj_foreground_scale.SetValue(foreground_scale)
-            edge_dilation = self.sld_adj_edge_dilation.SetValue(edge_dilation)
+            self.sld_adj_divergence.SetValue(divergence)
+            self.sld_adj_convergence.SetValue(convergence)
+            self.sld_adj_foreground_scale.SetValue(foreground_scale)
+            self.sld_adj_edge_dilation.SetValue(edge_dilation)
+            self.cbo_adj_edge_dilation_y.SetValue(edge_dilation_y)
         else:
             divergence = self.sld_adj_divergence.GetValue()
             convergence = self.sld_adj_convergence.GetValue()
             foreground_scale = self.sld_adj_foreground_scale.GetValue()
             edge_dilation = self.sld_adj_edge_dilation.GetValue()
+            edge_dilation_y = self.cbo_adj_edge_dilation_y.GetValue()
             self.cbo_divergence.SetValue(str(divergence))
             self.cbo_convergence.SetValue(str(convergence))
             self.cbo_foreground_scale.SetValue(str(foreground_scale))
             self.cbo_edge_dilation.SetValue(str(edge_dilation))
+            self.cbo_edge_dilation_y.SetValue(edge_dilation_y)
 
     def update_args_adjustment(self, event):
         if self.args is None:
@@ -715,11 +755,19 @@ class MainFrame(wx.Frame):
             convergence = self.sld_adj_convergence.GetValue()
             foreground_scale = self.sld_adj_foreground_scale.GetValue()
             edge_dilation = self.sld_adj_edge_dilation.GetValue()
+            edge_dilation_y = self.cbo_adj_edge_dilation_y.GetValue()
             # update
             self.args.divergence = divergence
             self.args.convergence = convergence
-            self.args.edge_dilation = edge_dilation
             self.args.foreground_scale = foreground_scale
+
+            if edge_dilation_y:
+                try:
+                    self.args.edge_dilation = [edge_dilation, int(edge_dilation_y)]
+                except ValueError:
+                    self.args.edge_dilation = edge_dilation
+            else:
+                self.args.edge_dilation = edge_dilation
 
             if self.args.state["depth_model"]:
                 is_metric = self.args.state["depth_model"].is_metric()
@@ -763,20 +811,22 @@ class MainFrame(wx.Frame):
 
     def update_stereo_format(self, *args, **kwargs):
         stereo_format = self.cbo_stereo_format.GetValue()
+        self.chk_cross_eyed.Show()
         if stereo_format == "Half SBS":
             self.lbl_format_device.SetLabel("Meta Quest 2/3")
         elif stereo_format == "Full SBS":
             self.lbl_format_device.SetLabel("PICO 4")
         else:
             self.lbl_format_device.SetLabel("")
+            self.chk_cross_eyed.Hide()
 
     def update_edge_dilation(self):
-        if self.chk_edge_dilation.IsChecked():
-            self.cbo_edge_dilation.Enable()
+        if self.cbo_edge_dilation_y.GetValue():
+            self.cbo_edge_dilation.SetToolTip(T("X"))
         else:
-            self.cbo_edge_dilation.Disable()
+            self.cbo_edge_dilation.SetToolTip(T("X, Y"))
 
-    def on_changed_chk_edge_dilation(self, event):
+    def on_changed_edge_dilation(self, event):
         self.update_edge_dilation()
 
     def update_preserve_screen_border(self):
@@ -823,6 +873,9 @@ class MainFrame(wx.Frame):
             self.show_validation_error_message(T("Convergence Plane"), -100.0, 100.0)
             return None
         if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
+            self.show_validation_error_message(T("Edge Fix"), 0, 20)
+            return None
+        if not validate_number(self.cbo_edge_dilation_y.GetValue(), 0, 20, is_int=True, allow_empty=True):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
             return None
         if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
@@ -879,7 +932,11 @@ class MainFrame(wx.Frame):
             self.depth_model_device_id = None
             gc_collect()
 
-        edge_dilation = int(self.cbo_edge_dilation.GetValue()) if self.chk_edge_dilation.IsChecked() else 0
+        if self.cbo_edge_dilation_y.GetValue():
+            edge_dilation = [int(self.cbo_edge_dilation.GetValue()), int(self.cbo_edge_dilation_y.GetValue())]
+        else:
+            edge_dilation = int(self.cbo_edge_dilation.GetValue())
+
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
         bind_addr = self.txt_bind_addr.GetAddress() if self.chk_bind_addr.IsChecked() else None
         if self.chk_auth.IsChecked():
@@ -889,9 +946,10 @@ class MainFrame(wx.Frame):
             user = password = None
 
         monitor_index = int(self.cbo_monitor_index.GetValue())
-        if self.cbo_screenshot.GetValue() != "wc_mp":
-            monitor_index = 0
         window_name = self.cbo_window_name.GetValue()
+        if self.cbo_screenshot.GetValue() not in {"wc_mp", "mss"}:
+            monitor_index = 0
+            window_name = None
         if not window_name:
             window_name = None
 
@@ -929,7 +987,7 @@ class MainFrame(wx.Frame):
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
-
+            cross_eyed=self.chk_cross_eyed.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
             monitor_index=monitor_index,
             window_name=window_name,
@@ -1138,7 +1196,7 @@ class MainFrame(wx.Frame):
         self.update_window_names()
 
     def update_monitor_index(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() == "wc_mp":
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
             self.lbl_monitor_index.Show()
             self.cbo_monitor_index.Show()
         else:
@@ -1148,7 +1206,7 @@ class MainFrame(wx.Frame):
         self.GetSizer().Layout()
 
     def update_window_names(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() == "wc_mp":
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()
@@ -1211,7 +1269,7 @@ class MainFrame(wx.Frame):
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
-LOCALE_DICT = LOCALES.get(locale.getdefaultlocale()[0], {})
+LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 
 def T(s):

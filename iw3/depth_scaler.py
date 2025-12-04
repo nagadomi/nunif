@@ -2,13 +2,31 @@ import torch
 
 
 def minmax_normalize(frame, min_value, max_value):
-    # TODO: Fix this inversion `1 - value`
     if torch.is_tensor(min_value):
         min_value = min_value.to(frame.device)
         max_value = max_value.to(frame.device)
-    frame = 1.0 - ((frame - min_value) / (max_value - min_value))
-    frame = frame.clamp(0.0, 1.0)
-    frame = frame.nan_to_num()
+
+    scale = (max_value - min_value)
+    if scale > 0:
+        frame = (frame - min_value) / scale
+        frame = frame.clamp(0.0, 1.0)
+    else:
+        # all zero
+        frame = frame.clamp(0.0, 1.0)
+
+    return frame
+
+
+def max_normalize(frame, min_value, max_value):
+    if torch.is_tensor(max_value):
+        max_value = max_value.to(frame.device)
+    if max_value > 0:
+        frame = frame / max_value
+        frame = frame.clamp(0.0, 1.0)
+    else:
+        # all zero
+        frame = frame.clamp(0.0, 1.0)
+
     return frame
 
 
@@ -47,7 +65,9 @@ class EMAMinMaxScaler():
     #   SimpleMinMaxScaler: decay=0, buffer_size=1
     # IncrementalEMAScaler: decay=0.75, buffer_size=1
     #      WindowEMAScaler: decay=0.9, buffer_size=30
-    def __init__(self, decay=0, buffer_size=1):
+    def __init__(self, decay=0, buffer_size=1, mode="minmax"):
+        assert mode in {"minmax", "max"}
+        self.normalize = {"minmax": minmax_normalize, "max": max_normalize}[mode]
         self.frame_queue = []
         assert buffer_size > 0
         self.reset(decay=decay, buffer_size=buffer_size)
@@ -92,7 +112,7 @@ class EMAMinMaxScaler():
             self.max_value = self.decay * self.max_value + (1. - self.decay) * max_value
 
         frame = self.frame_queue.pop(0)
-        frame = minmax_normalize(frame, self.min_value, self.max_value)
+        frame = self.normalize(frame, self.min_value, self.max_value)
 
         if return_minmax:
             return (frame, self.min_value, self.max_value)
@@ -110,13 +130,13 @@ class EMAMinMaxScaler():
             min_value, max_value = self.min_value, self.max_value
 
         if return_minmax:
-            frames = [(minmax_normalize(frame, min_value, max_value),
+            frames = [(self.normalize(frame, min_value, max_value),
                        min_value, max_value)
                       for frame in self.frame_queue]
             self.reset()
             return frames
         else:
-            frames = [minmax_normalize(frame, min_value, max_value)
+            frames = [self.normalize(frame, min_value, max_value)
                       for frame in self.frame_queue]
             self.reset()
             return frames

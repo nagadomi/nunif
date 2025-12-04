@@ -84,5 +84,10 @@ iw3 uses forked version of Video-Depth-Anything
 https://github.com/DepthAnything/Video-Depth-Anything
 DepthAnything / Apache License 2.0
 
+---
+iw3 uses forked version of Depth-Anything-3
+https://github.com/ByteDance-Seed/Depth-Anything-3
+ByteDance Ltd. and/or its affiliates / Apache License 2.0
+
 ----
 Other libraries used are listed in `requirements.txt`.

@@ -14,6 +14,8 @@ from nunif.modules.dct_loss import window_dct_loss, dct_loss
 from nunif.modules.gaussian_filter import GaussianFilter2d
 from .dataset import SBSDataset
 from ... import models # noqa
+from ...dilation import mask_closing
+from torchvision.ops import sigmoid_focal_loss
 
 
 class DeltaPenalty(nn.Module):
@@ -47,6 +49,8 @@ class MLBWLoss(nn.Module):
         z, grid, *_ = input
         y, mask = target
 
+        mask = (mask > 0).float()
+
         delta_penalty = self.delta_penalty(grid, None)
         if self.mask_weight > 0:
             mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
@@ -74,6 +78,8 @@ class CycleMLBWLoss(nn.Module):
         z1, z2, grid1, grid2, src_rgb = input
         y, mask = target
 
+        mask = (mask > 0).float()
+
         delta_penalty = (self.delta_penalty(grid1, None) + self.delta_penalty(grid2, None)) * 0.5
 
         if self.mask_weight > 0:
@@ -97,6 +103,39 @@ class CycleMLBWLoss(nn.Module):
         return loss + delta_penalty
 
 
+class MaskMLBWLoss(nn.Module):
+    def __init__(self, mask_weight):
+        super().__init__()
+        self.mask_weight = mask_weight
+        self.blur = GaussianFilter2d(1, 3, padding=1)
+        self.delta_penalty = DeltaPenalty()
+
+    def forward(self, input, target):
+        z, grid, _, hole_mask_logits = input
+        y, mask = target
+
+        mask_all = (mask > 0).float()
+
+        delta_penalty = self.delta_penalty(grid, None)
+        if self.mask_weight > 0:
+            loss_mask = 1.0 - torch.clamp(mask_all + self.blur(mask_all), 0, 1) * self.mask_weight
+            z = z * loss_mask
+            y = y * loss_mask
+            warp_loss = (window_dct_loss(z, y, window_size=24) +
+                         window_dct_loss(z, y, window_size=4) +
+                         dct_loss(z, y)) * 0.3
+        else:
+            warp_loss = (window_dct_loss(z, y, window_size=24) +
+                         window_dct_loss(z, y, window_size=4) +
+                         dct_loss(z, y)) * 0.3
+
+        mask = (mask > 0.9).float()  # only hole mask
+        mask = mask_closing(mask)
+        mask_loss = sigmoid_focal_loss(hole_mask_logits, mask, gamma=1, reduction="mean")
+
+        return warp_loss + mask_loss + delta_penalty
+
+
 class RowFlowV3Loss(nn.Module):
     def __init__(self, mask_weight):
         super().__init__()
@@ -112,6 +151,8 @@ class RowFlowV3Loss(nn.Module):
     def forward(self, input, target):
         z, grid = input
         y, mask = target
+
+        mask = (mask > 0).float()
 
         delta_penalty = self.delta_penalty(grid, None)
         if self.mask_weight > 0:
@@ -149,6 +190,26 @@ class MaskedPSNR(nn.Module):
             input = torch.cat((z_l * mask_l, z_r * mask_r), dim=1)
             target = torch.cat((y_l * mask_l, y_r * mask_r), dim=1)
             return self.psnr(input, target)
+
+
+class MaskMLBEval(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.psnr = PSNR()
+
+    def forward(self, input, target):
+        z, hole_mask = input
+        y, mask = target
+        loss_mask = 1 - mask
+
+        warp_psnr = self.psnr(z * loss_mask, y * loss_mask)
+        if False:
+            mask = mask_closing(mask)
+            mask_psnr = self.psnr(hole_mask, mask)
+
+            return warp_psnr * 0.5 + mask_psnr * 0.5
+        else:
+            return warp_psnr
 
 
 class CyclePSNR(nn.Module):
@@ -196,8 +257,6 @@ class SBSTrainer(Trainer):
         model = create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
         if self.args.symmetric:
             model.symmetric = True
-        if self.args.cycle:
-            model.cycle = True
         model = model.to(self.device)
         return model
 
@@ -250,6 +309,9 @@ class SBSTrainer(Trainer):
         elif self.args.loss == "cycle_mlbw":
             criterion = CycleMLBWLoss(mask_weight=self.args.mask_weight).to(self.device)
             eval_criterion = CyclePSNR().to(self.device)
+        elif self.args.loss == "mask_mlbw":
+            criterion = MaskMLBWLoss(mask_weight=self.args.mask_weight).to(self.device)
+            eval_criterion = MaskMLBEval().to(self.device)
         elif self.args.loss == "aux_l1":
             criterion = AuxiliaryLoss(
                 (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()),
@@ -264,14 +326,17 @@ def train(args):
         args.loss = "aux_l1"
     elif args.arch == "sbs.row_flow_v3":
         args.loss = "row_flow_v3"
-    elif args.cycle:
+    elif args.arch.startswith("sbs.cycle_mlbw"):
         args.loss = "cycle_mlbw"
+        args.mask_weight = 1.0
+        print("Change mask_weight=1", file=sys.stderr)
+    elif args.arch.startswith("sbs.mask_mlbw"):
+        args.loss = "mask_mlbw"
+        if args.optimizer != "adamw_schedulefree":
+            print("Recommend using `--optimizer adamw_schedulefree`. ", file=sys.stderr)
+
     elif args.arch.startswith("sbs.mlbw"):
         args.loss = "mlbw"
-
-    if args.cycle:
-        args.mask_weight = 1.0
-        print("change mask_weight=1")
 
     trainer = SBSTrainer(args)
     trainer.fit()
@@ -291,8 +356,6 @@ def register(subparsers, default_parser):
                         help="hole mask weight. 1 means completely excluded from the loss")
     parser.add_argument("--symmetric", action="store_true",
                         help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
-    parser.add_argument("--cycle", action="store_true",
-                        help="use cycle warp training. only for `--arch sbs.mlbw_*`")
     parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
     parser.add_argument("--weak-convergence", action="store_true", help="Use 0.3 <= convergence <= 0.7 only ")
 

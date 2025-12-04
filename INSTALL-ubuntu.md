@@ -1,7 +1,7 @@
 ## 1. Install dependencies packages
 
 ```
-sudo apt-get install git-core libmagickwand-dev libraqm-dev
+sudo apt-get install git-core libmagickwand-dev libraqm-dev python3-dev
 ```
 
 ## 2. Clone
@@ -35,11 +35,8 @@ source .venv/bin/activate
 
 ## 4. Install Pytorch and pip packages
 
-### Pip packages
-```
-pip3 install -r requirements.txt
-```
 ### Pytorch
+
 If you are using an NVIDIA GPU, 
 ```
 pip3 install -r requirements-torch.txt
@@ -48,6 +45,12 @@ or if you are using an AMD GPU.
 ```
 pip3 install -r requirements-torch-rocm.txt
 ```
+
+### Pip packages
+```
+pip3 install -r requirements.txt
+```
+
 ### GUI (optional)
 If you want to use GUI, install wxpython >= 4.0.0
 ```

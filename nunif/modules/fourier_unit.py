@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm as _spectral_norm
 
 
@@ -15,9 +16,10 @@ class FourierUnit(nn.Module):
     def __init__(self, in_channels, out_channels,
                  norm_layer=lambda dim: nn.BatchNorm2d(dim),
                  activation_layer=lambda dim: nn.ReLU(inplace=True),
-                 spectral_norm=False, bias=False, residual=True):
+                 spectral_norm=False, bias=False, residual=True, size=None):
         super().__init__()
 
+        self.size = size
         self.conv = torch.nn.Conv2d(in_channels * 2, out_channels * 2,
                                     kernel_size=1, stride=1, padding=0, bias=bias)
         if spectral_norm:
@@ -33,38 +35,37 @@ class FourierUnit(nn.Module):
             self.identity = None
 
     def forward(self, x):
+        shortcut = x
+        if self.size is not None:
+            org_size = x.shape[-2:]
+            x = F.interpolate(x, size=(self.size, self.size), mode="bilinear", align_corners=False)
+
+        x = x.to(torch.float32)
         B, C, H, W = x.shape
 
-        # (B, C, H, W/2+1, 2)
-        if x.dtype == torch.float16:
-            ffted = torch.fft.rfftn(x.to(torch.float32), dim=(-2, -1), norm="ortho")
-            ffted = torch.stack((ffted.real, ffted.imag), dim=-1).to(torch.float16)
-        else:
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            # (B, C, H, W/2+1, 2)
             ffted = torch.fft.rfftn(x, dim=(-2, -1), norm="ortho")
             ffted = torch.stack((ffted.real, ffted.imag), dim=-1)
-        # (B, C, 2, H, W/2+1)
-        ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()
-        # (B, C*2, H, W/2+1)
-        ffted = ffted.view((B, -1) + ffted.shape[3:])
-
-        # (B, OUT_C*2, H, W/2+1)
-        ffted = self.act(self.norm(self.conv(ffted)))
-        # (B, OUT_C, H, W/2+1, 2)
-        ffted = ffted.view((B, -1, 2) + ffted.shape[2:]).permute(0, 1, 3, 4, 2).contiguous()
-        if x.dtype == torch.float16:
-            # (B, OUT_C, H, W/2+1)
+            # (B, C, 2, H, W/2+1)
+            ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()
+            # (B, C*2, H, W/2+1)
+            ffted = ffted.view((B, -1) + ffted.shape[3:])
+            # (B, OUT_C*2, H, W/2+1)
+            ffted = self.act(self.norm(self.conv(ffted)))
+            # (B, OUT_C, H, W/2+1, 2)
+            ffted = ffted.view((B, -1, 2) + ffted.shape[2:]).permute(0, 1, 3, 4, 2).contiguous()
             ffted = ffted.to(torch.float32)
-            ffted = torch.complex(ffted[..., 0], ffted[..., 1])
-            # (B, OUT_C, H, W)
-            output = torch.fft.irfftn(ffted, s=(H, W), dim=(-2, -1), norm="ortho").to(torch.float16)
-        else:
             # (B, OUT_C, H, W/2+1)
             ffted = torch.complex(ffted[..., 0], ffted[..., 1])
             # (B, OUT_C, H, W)
             output = torch.fft.irfftn(ffted, s=(H, W), dim=(-2, -1), norm="ortho")
 
+        if self.size is not None:
+            output = F.interpolate(output, size=org_size, mode="bilinear", align_corners=False)
+
         if self.identity is not None:
-            output = output + self.identity(x)
+            output = output + self.identity(shortcut)
 
         return output
 

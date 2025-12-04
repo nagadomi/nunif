@@ -10,33 +10,34 @@ from torchvision.transforms import (
     InterpolationMode)
 
 
-def take_screenshot(mouse_position=None):
+def take_screenshot(mouse_position=None, draw_cursor_enabled=True):
     frame = ImageGrab.grab(include_layered_windows=True)
     if frame.mode != "RGB":
         frame = frame.convert("RGB")
-    if mouse_position is not None:
+    if mouse_position is not None and draw_cursor_enabled:
         gc = ImageDraw.Draw(frame)
         gc.circle(mouse_position, radius=4, fill=None, outline=(0x33, 0x80, 0x80), width=2)
 
     return frame
 
 
-def to_tensor(pil_image, device, frame_buffer):
+def to_tensor(pil_image, device, frame_buffer, non_blocking=False):
     # Transfer the image data to VRAM as uint8 first, then convert it to float.
     x = np.array(pil_image)
-    x = frame_buffer.copy_(torch.from_numpy(x).permute(2, 0, 1)).to(device)
+    x = frame_buffer.copy_(torch.from_numpy(x).permute(2, 0, 1)).to(device, non_blocking=non_blocking)
     x = x / 255.0  # to float
     return x
 
 
 class ScreenshotThreadPIL(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, **_ignore_unsupported_kwargs):
+    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, draw_cursor_enabled=True, **_ignore_unsupported_kwargs):
         super().__init__(daemon=True)
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.monitor_index = monitor_index  # TODO: not implemented
         self.window_name = window_name  # TODO: not implemented
         self.device = device
+        self.draw_cursor_enabled = draw_cursor_enabled
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
         self.frame = None
@@ -53,19 +54,19 @@ class ScreenshotThreadPIL(threading.Thread):
         frame_buffer = None
         while True:
             tick = time.perf_counter()
-            frame = take_screenshot(wx.GetMousePosition())
+            frame = take_screenshot(wx.GetMousePosition(), draw_cursor_enabled=self.draw_cursor_enabled)
             if frame_buffer is None:
                 frame_buffer = torch.ones((3, frame.height, frame.width), dtype=torch.uint8)
                 if torch.cuda.is_available():
                     frame_buffer = frame_buffer.pin_memory()
             if self.cuda_stream is not None:
                 with torch.cuda.stream(self.cuda_stream):
-                    frame = to_tensor(frame, self.device, frame_buffer)
+                    frame = to_tensor(frame, self.device, frame_buffer, non_blocking=True)
                     if frame.shape[2] > self.frame_height:
                         frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
                                           interpolation=InterpolationMode.BILINEAR,
                                           antialias=True)
-                    self.cuda_stream.synchronize()
+                frame.record_stream(self.cuda_stream)
             else:
                 frame = to_tensor(frame, self.device, frame_buffer)
                 if frame.shape[2] > self.frame_height:
@@ -91,6 +92,8 @@ class ScreenshotThreadPIL(threading.Thread):
             if not self.is_alive():
                 raise RuntimeError("thread is already dead")
         with self.frame_lock:
+            if self.cuda_stream is not None:
+                torch.cuda.current_stream().wait_stream(self.cuda_stream)
             frame = self.frame
             self.frame = None
             self.frame_set_event.clear()
