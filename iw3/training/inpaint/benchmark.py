@@ -12,13 +12,22 @@ from .dataset_video import VideoInpaintDataset
 
 
 def psnr(input, target, mask=None):
+    assert input.ndim == 4
+    sum_psnr = 0
+    input = input.clamp(0, 1)
+    target = target.clamp(0, 1)
     if mask is not None:
-        mse = F.mse_loss(torch.clamp(input, 0, 1), torch.clamp(target, 0, 1), reduction="none")
-        mse = (mse * mask).sum() / mask.sum()
-        return 10 * torch.log10(1.0 / (mse + 1.0e-6))
+        for x, y, m in zip(input, target, mask):
+            assert m.sum() > 0
+            mse = F.mse_loss(x, y, reduction="none")
+            mse = (mse * m).sum() / m.sum()
+            sum_psnr = sum_psnr + 10 * torch.log10(1.0 / (mse + 1.0e-6))
     else:
-        mse = F.mse_loss(torch.clamp(input, 0, 1), torch.clamp(target, 0, 1))
-        return 10 * torch.log10(1.0 / (mse + 1.0e-6))
+        for x, y in zip(input, target):
+            mse = F.mse_loss(x, y)
+            sum_psnr = sum_psnr + 10 * torch.log10(1.0 / (mse + 1.0e-6))
+
+    return sum_psnr / input.shape[0]
 
 
 def main():
@@ -49,11 +58,15 @@ def main():
     psnr_sum = 0
     lpips_mask_sum = 0
     psnr_mask_sum = 0
-    data_count = 0
+    frame_count = 0
+    processed_count = 0
+    skip_count = 0
 
     for x, mask, y, *_ in tqdm(dataset, ncols=80):
+        frame_count += mask.shape[0]
         mask_y = F.pad(mask, (-model_offset,) * 4).float()
-        if mask_y.sum() == 0:
+        if not mask_y.sum() > 0:
+            skip_count += mask_y.shape[0]
             continue
 
         if x.ndim == 3:
@@ -72,16 +85,24 @@ def main():
             x, mask = model.preprocess(x, mask)
             z = model(x, mask)
 
-            lpips_sum = lpips_sum + lpips(z, y).item()
-            lpips_mask_sum = lpips_mask_sum + lpips(z, y, mask=mask_y).item()
-            psnr_sum = psnr_sum + psnr(z, y).item()
-            psnr_mask_sum = psnr_mask_sum + psnr(z, y, mask=mask_y).item()
-            data_count += 1
+            valid_index = (mask_y.sum(dim=(1, 2, 3)) > 0).nonzero(as_tuple=True)[0]
+            z = z[valid_index]
+            y = y[valid_index]
+            mask_y = mask_y[valid_index]
+            num_frames = z.shape[0]
+            skip_count += x.shape[0] - mask_y.shape[0]
+
+            lpips_sum = lpips_sum + lpips(z, y).item() * num_frames
+            lpips_mask_sum = lpips_mask_sum + lpips(z, y, mask=mask_y).item() * num_frames
+            psnr_sum = psnr_sum + psnr(z, y).item() * num_frames
+            psnr_mask_sum = psnr_mask_sum + psnr(z, y, mask=mask_y).item() * num_frames
+            processed_count += num_frames
 
     print("* Image")
-    print(f"PSNR↑: {round(psnr_sum / data_count, 4)}, LPIPS↓: {round(lpips_sum / data_count, 4)}")
+    print(f"PSNR↑: {round(psnr_sum / processed_count, 4)}, LPIPS↓: {round(lpips_sum / processed_count, 4)}")
     print("* Mask Region")
-    print(f"PSNR↑: {round(psnr_mask_sum / data_count, 4)}, LPIPS↓: {round(lpips_mask_sum / data_count, 4)}")
+    print(f"PSNR↑: {round(psnr_mask_sum / processed_count, 4)}, LPIPS↓: {round(lpips_mask_sum / processed_count, 4)}")
+    print(f"\nTarget frames: {frame_count}, Processed frames: {processed_count}, Skipped frames: {skip_count}")
 
 
 if __name__ == "__main__":
