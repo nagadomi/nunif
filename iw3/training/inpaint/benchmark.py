@@ -58,15 +58,15 @@ def main():
     psnr_sum = 0
     lpips_mask_sum = 0
     psnr_mask_sum = 0
-    frame_count = 0
-    processed_count = 0
-    skip_count = 0
+    target_frames = 0
+    processed_frames = 0
+    skipped_frames = 0
 
     for x, mask, y, *_ in tqdm(dataset, ncols=80):
-        frame_count += mask.shape[0]
+        target_frames += mask.shape[0]
         mask_y = F.pad(mask, (-model_offset,) * 4).float()
         if not mask_y.sum() > 0:
-            skip_count += mask_y.shape[0]
+            skipped_frames += mask_y.shape[0]
             continue
 
         if x.ndim == 3:
@@ -90,19 +90,19 @@ def main():
             y = y[valid_index]
             mask_y = mask_y[valid_index]
             num_frames = z.shape[0]
-            skip_count += x.shape[0] - mask_y.shape[0]
+            skipped_frames += x.shape[0] - mask_y.shape[0]
 
             lpips_sum = lpips_sum + lpips(z, y).item() * num_frames
             lpips_mask_sum = lpips_mask_sum + lpips(z, y, mask=mask_y).item() * num_frames
             psnr_sum = psnr_sum + psnr(z, y).item() * num_frames
             psnr_mask_sum = psnr_mask_sum + psnr(z, y, mask=mask_y).item() * num_frames
-            processed_count += num_frames
+            processed_frames += num_frames
 
     print("* Image")
-    print(f"PSNR↑: {round(psnr_sum / processed_count, 4)}, LPIPS↓: {round(lpips_sum / processed_count, 4)}")
+    print(f"PSNR↑: {round(psnr_sum / processed_frames, 4)}, LPIPS↓: {round(lpips_sum / processed_frames, 4)}")
     print("* Mask Region")
-    print(f"PSNR↑: {round(psnr_mask_sum / processed_count, 4)}, LPIPS↓: {round(lpips_mask_sum / processed_count, 4)}")
-    print(f"\nTarget frames: {frame_count}, Processed frames: {processed_count}, Skipped frames: {skip_count}")
+    print(f"PSNR↑: {round(psnr_mask_sum / processed_frames, 4)}, LPIPS↓: {round(lpips_mask_sum / processed_frames, 4)}")
+    print(f"\nTarget frames: {target_frames}, Processed frames: {processed_frames}, Skipped frames: {skipped_frames}")
 
 
 if __name__ == "__main__":
