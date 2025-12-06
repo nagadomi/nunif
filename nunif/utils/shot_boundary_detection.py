@@ -109,3 +109,33 @@ def detect_boundary(
 
     # NOTE: pts is the end point of the segment. It is not the starting point.
     return segment_pts
+
+
+def _hevc_deadlock_test():
+    import argparse
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="hevc input video file")
+    args = parser.parse_args()
+
+    for i in range(1, 60):
+        for j in [2, 3, 4, 5, 6, 8, 16]:
+            pts = detect_boundary(
+                args.input,
+                device="cuda",
+                window_size=100, padding_size=25, threshold=0.5,
+                max_fps=30,
+                start_time=str(i),
+                end_time=str(i + j),
+                stop_event=None,
+                suspend_event=None,
+                tqdm_fn=None,
+                tqdm_title=None,
+            )
+            print(i, j, pts)
+
+
+if __name__ == "__main__":
+    # _hevc_deadlock_test()
+    pass

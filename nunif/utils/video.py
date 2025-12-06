@@ -1127,7 +1127,12 @@ def hook_frame(input_path,
         input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
 
     video_input_stream = input_container.streams.video[0]
-    video_input_stream.thread_type = "AUTO"
+    if video_input_stream.codec.name == "hevc":
+        # TODO: pyav has an HEVC deadlock issue
+        # but since it has already been fixed on the FFmpeg side, it will be resolved.
+        pass
+    else:
+        video_input_stream.thread_type = "AUTO"
 
     config = config_callback(video_input_stream)
     config.fps = convert_known_fps(config.fps)
