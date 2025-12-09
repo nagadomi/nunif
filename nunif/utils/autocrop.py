@@ -1,9 +1,10 @@
 import torch
+import torch.nn.functional as F
 import threading
 from . import video as VU
 
 
-class AutoCrop():
+class AutoCropDetector():
     def __init__(self, mode="black", mod=2, frame_variation_threshold=0.95):
         mode = mode.lower()
         mode in {
@@ -53,23 +54,23 @@ class AutoCrop():
             return slice(None), slice(None)
 
         if self.mode in {"black_tb", "flat_tb"}:
-            slice_tb = self.mask_to_crop_tb(self.border_count_tb / self.frame_count >= frame_variation_threshold)
+            slice_tb = self.mask_to_slice_tb(self.border_count_tb / self.frame_count >= frame_variation_threshold)
             slice_tb = self.apply_mod(slice_tb, self.mod)
             slice_lr = slice(None)
         elif self.mode in {"black_lr", "flat_lr"}:
-            slice_lr = self.mask_to_crop_lr(self.border_count_lr / self.frame_count >= frame_variation_threshold)
+            slice_lr = self.mask_to_slice_lr(self.border_count_lr / self.frame_count >= frame_variation_threshold)
             slice_lr = self.apply_mod(slice_lr, self.mod)
             slice_tb = slice(None)
         elif self.mode in {"black", "flat"}:
-            slice_tb = self.mask_to_crop_tb(self.border_count_tb / self.frame_count >= frame_variation_threshold)
+            slice_tb = self.mask_to_slice_tb(self.border_count_tb / self.frame_count >= frame_variation_threshold)
             slice_tb = self.apply_mod(slice_tb, self.mod)
-            slice_lr = self.mask_to_crop_lr(self.border_count_lr / self.frame_count >= frame_variation_threshold)
+            slice_lr = self.mask_to_slice_lr(self.border_count_lr / self.frame_count >= frame_variation_threshold)
             slice_lr = self.apply_mod(slice_lr, self.mod)
 
         return slice_tb, slice_lr
 
     @classmethod
-    def autocrop(cls, frame, mode="black", mod=2):
+    def detect(cls, frame, mode="black", mod=2):
         mode = mode.lower()
         mode in {
             "black_tb", "black_lr", "black"
@@ -84,17 +85,17 @@ class AutoCrop():
             mask_lr = cls.detect_lr(frame, black_only=black_only)
 
         if mode in {"black_tb", "flat_tb"}:
-            slice_tb = cls.mask_to_crop_tb(mask_tb)
+            slice_tb = cls.mask_to_slice_tb(mask_tb)
             slice_tb = cls.apply_mod(slice_tb, mod)
             slice_lr = slice(None)
         elif mode in {"black_lr", "flat_lr"}:
-            slice_lr = cls.mask_to_crop_lr(mask_lr)
+            slice_lr = cls.mask_to_slice_lr(mask_lr)
             slice_lr = cls.apply_mod(slice_lr, mod)
             slice_tb = slice(None)
         elif mode in {"black", "flat"}:
-            slice_tb = cls.mask_to_crop_tb(mask_tb)
+            slice_tb = cls.mask_to_slice_tb(mask_tb)
             slice_tb = cls.apply_mod(slice_tb, mod)
-            slice_lr = cls.mask_to_crop_lr(mask_lr)
+            slice_lr = cls.mask_to_slice_lr(mask_lr)
             slice_lr = cls.apply_mod(slice_lr, mod)
 
         return slice_tb, slice_lr
@@ -140,35 +141,41 @@ class AutoCrop():
     @classmethod
     def detect_tb(cls, x, black_only):
         y = cls.rgb_to_y(x, tv_range=black_only)
-        mean = y.mean(dim=-1, keepdim=True)
         if black_only:
+            mean = y.mean(dim=-1, keepdim=True)
             is_dark = (mean <= 32.0 / 255.0)
             is_flat = (y - mean).abs().amax(dim=-1, keepdim=True) < 16 / 255.0
             is_bar = is_dark & is_flat
             return is_bar
         else:
-            is_flat = (y - mean).abs().amax(dim=-1, keepdim=True) < 16 / 255.0
+            median = y.median(dim=-1, keepdim=True).values
+            diff = (y - median).abs()
+            within_thresh = (diff < 16.0 / 255.0).float().mean(dim=-1, keepdim=True)
+            is_flat = within_thresh > 0.99
             return is_flat
 
     @classmethod
     def detect_lr(cls, x, black_only):
         y = cls.rgb_to_y(x, tv_range=black_only)
-        mean = y.mean(dim=-2, keepdim=True)
         if black_only:
+            mean = y.mean(dim=-2, keepdim=True)
             is_dark = (mean <= 32.0 / 255.0)
             is_flat = (y - mean).abs().amax(dim=-2, keepdim=True) < 16 / 255.0
             is_bar = is_dark & is_flat
             return is_bar
         else:
-            is_flat = (y - mean).abs().amax(dim=-2, keepdim=True) < 16 / 255.0
+            median = y.median(dim=-2, keepdim=True).values
+            diff = (y - median).abs()
+            within_thresh = (diff < 16.0 / 255.0).float().mean(dim=-2, keepdim=True)
+            is_flat = within_thresh > 0.99
             return is_flat
 
     @classmethod
-    def mask_to_crop_tb(cls, mask):
+    def mask_to_slice_tb(cls, mask):
         assert mask.ndim == 3 and mask.shape[0] == 1 and mask.shape[2] == 1
 
         non_border_index = torch.nonzero(~mask.view(-1), as_tuple=False)
-        if non_border_index.numel() == mask.numel():
+        if non_border_index.numel() == mask.numel() or non_border_index.numel() == 0:
             return slice(None, None)
 
         top = non_border_index[0].item()
@@ -182,12 +189,12 @@ class AutoCrop():
         return slice(top, bottom)
 
     @classmethod
-    def mask_to_crop_lr(cls, mask):
+    def mask_to_slice_lr(cls, mask):
         assert mask.ndim == 3 and mask.shape[0] == 1 and mask.shape[1] == 1
 
         non_border_index = torch.nonzero(~mask.flatten(), as_tuple=False)
 
-        if non_border_index.numel() == mask.numel():
+        if non_border_index.numel() == mask.numel() or non_border_index.numel() == 0:
             return slice(None, None)
 
         left = non_border_index[0].item()
@@ -201,9 +208,9 @@ class AutoCrop():
         return slice(left, right)
 
 
-def detect_border(
+def autocrop_analyze_video(
         video_file,
-        mode="horizontal",
+        mode="black",
         mod=2,
         max_frames=1000,
         min_interval_sec=0.0,
@@ -215,13 +222,24 @@ def detect_border(
         tqdm_fn=None,
         tqdm_title=None,
 ):
-    model = AutoCrop(mode=mode, mod=mod)
-    stop_event = stop_event or threading.Event()
+    model = AutoCropDetector(mode=mode, mod=mod)
+    user_stop_event = stop_event
+    local_stop_event = threading.Event()
+    frame_width = frame_height = 0
 
     def batch_callback(x):
+        nonlocal frame_height, frame_width
+        H, W = x.shape[-2:]
+        frame_width = max(frame_width, W)
+        frame_height = max(frame_height, H)
+
         model.update(x)
-        if model.frame_count > max_frames:
-            stop_event.set()
+        if (
+                model.frame_count > max_frames or
+                (user_stop_event is not None and user_stop_event.is_set())
+        ):
+            # break
+            local_stop_event.set()
 
     callback_pool = VU.FrameCallbackPool(
         batch_callback,
@@ -232,11 +250,174 @@ def detect_border(
     VU.process_video_keyframes(
         video_file, callback_pool, vf=vf,
         min_interval_sec=min_interval_sec,
-        stop_event=stop_event, suspend_event=suspend_event,
+        stop_event=local_stop_event, suspend_event=suspend_event,
         tqdm_fn=tqdm_fn,
-        title=tqdm_title or "Border Detection",
+        title=tqdm_title or "AutoCrop Analyzation",
     )
-    return model.get_crop()
+    return model.get_crop() + (frame_height, frame_width)
+
+
+class AutoCrop():
+    def __init__(self, slice_h, slice_w, pad, pad_value, crop_range, uncrop_enabled):
+        self.slice_h = slice_h
+        self.slice_w = slice_w
+        self.pad = pad
+        self.crop_range = crop_range
+        self.pad_value = pad_value
+        self.uncrop_enabled = uncrop_enabled
+
+    def get_slice(self):
+        return self.slice_h, self.slice_w
+
+    def get_pad(self):
+        return self.pad
+
+    def get_crop(self):
+        return self.crop_range
+
+    @staticmethod
+    def calc_pad(slice_h, slice_w, H, W):
+        h_start, h_stop, _ = slice_h.indices(H)
+        w_start, w_stop, _ = slice_w.indices(W)
+        pad_top = h_start
+        pad_bottom = max(0, H - h_stop)
+        pad_left = w_start
+        pad_right = max(0, W - w_stop)
+        pad = (pad_left, pad_right, pad_top, pad_bottom)
+        return pad
+
+    @staticmethod
+    def calc_crop(slice_h, slice_w, H, W):
+        h_start, h_stop, _ = slice_h.indices(H)
+        w_start, w_stop, _ = slice_w.indices(W)
+        y = h_start
+        height = H - (y + max(0, H - h_stop))
+        x = w_start
+        width = W - (x + max(0, W - w_stop))
+
+        if y == 0 and x == 0 and height == H and width == W:
+            return None
+        else:
+            return (x, y, width, height)
+
+    @classmethod
+    def from_image(cls, frame, mode="black", mod=2, pad_value=0, uncrop_enabled=True):
+        if frame.ndim == 4:
+            assert frame.shape[0] == 1, "batch size > 1 is not supported"
+            frame = frame.squeeze(0)
+
+        H, W = frame.shape[-2:]
+        slice_h, slice_w = AutoCropDetector.detect(frame, mode=mode, mod=mod)
+        pad = cls.calc_pad(slice_h, slice_w, H, W)
+        crop_range = cls.calc_crop(slice_h, slice_w, H, W)
+
+        return cls(slice_h=slice_h, slice_w=slice_w,
+                   pad=pad, pad_value=pad_value,
+                   crop_range=crop_range, uncrop_enabled=uncrop_enabled)
+
+    @classmethod
+    def from_video_file(
+            cls,
+            video_file,
+            mode="black",
+            mod=2,
+            pad_value=0,
+            uncrop_enabled=True,
+            max_frames=1000,
+            min_interval_sec=0.0,
+            vf="",
+            device="cuda",
+            batch_size=2,
+            stop_event=None,
+            suspend_event=None,
+            tqdm_fn=None,
+            tqdm_title=None,
+    ):
+        slice_h, slice_w, H, W = autocrop_analyze_video(
+            video_file=video_file,
+            mode=mode,
+            mod=mod,
+            max_frames=max_frames,
+            min_interval_sec=min_interval_sec,
+            vf=vf,
+            device=device,
+            batch_size=batch_size,
+            stop_event=stop_event,
+            suspend_event=suspend_event,
+            tqdm_fn=tqdm_fn,
+            tqdm_title=tqdm_title,
+        )
+        pad = cls.calc_pad(slice_h, slice_w, H, W)
+        crop_range = cls.calc_crop(slice_h, slice_w, H, W)
+        return cls(slice_h=slice_h, slice_w=slice_w,
+                   pad=pad, pad_value=pad_value,
+                   crop_range=crop_range, uncrop_enabled=uncrop_enabled)
+
+    def crop(self, frame):
+        if frame.ndim == 3:
+            frame = frame[:, self.slice_h, self.slice_w]
+        elif frame.ndim == 4:
+            frame = frame[:, :, self.slice_h, self.slice_w]
+        else:
+            raise ValueError(f"ndim={frame.ndim} is not supported")
+
+        return frame
+
+    def uncrop(self, frame):
+        if self.uncrop_enabled:
+            return F.pad(frame, self.pad, mode="constant", value=self.pad_value)
+        else:
+            return frame
+
+
+class AutoCropDummy():
+    def __init__(self):
+        pass
+
+    def crop(self, frame):
+        return frame
+
+    def uncrop(self, frame):
+        return frame
+
+
+class VideoAutoCrop():
+    def __init__(self, slice_h, slice_w, pad):
+        self.slice_h = slice_h
+        self.slice_w = slice_w
+        self.pad = pad
+
+    @classmethod
+    def from_video(cls, frame, mode="black", mod=2):
+        if frame.ndim == 4:
+            assert frame.shape[0] == 1, "batch size > 1 is not supported"
+            frame = frame.squeeze(0)
+
+        H, W = frame.shape[-2:]
+        slice_h, slice_w = AutoCropDetector.detect(frame, mode=mode, mod=mod)
+
+        h_start, h_stop, _ = slice_h.indices(H)
+        w_start, w_stop, _ = slice_w.indices(W)
+        pad_top = h_start
+        pad_bottom = max(0, H - h_stop)
+        pad_left = w_start
+        pad_right = max(0, W - w_stop)
+        pad = (pad_left, pad_right, pad_top, pad_bottom)
+
+        return cls(slice_h, slice_w, pad)
+
+    def crop(self, frame):
+        if frame.ndim == 3:
+            frame = frame[:, self.slice_h, self.slice_w]
+        elif frame.ndim == 4:
+            frame = frame[:, :, self.slice_h, self.slice_w]
+        else:
+            raise ValueError(f"ndim={frame.ndim} is not supported")
+
+        return frame
+
+    def uncrop(self, frame, value=0):
+        return F.pad(frame, self.pad, mode="constant", value=value)
 
 
 def _bench():
@@ -254,7 +435,7 @@ def _bench():
 
     t = time.perf_counter()
     torch.cuda.synchronize()
-    autocrop = AutoCrop(mode="BLACK", mod=1)
+    autocrop = AutoCropDetector(mode="BLACK", mod=1)
     for i in range(10):
         frame = torch.rand((3, *S), device=device)
         autocrop.update(frame)
@@ -274,7 +455,7 @@ def _bench():
     assert top == h.start and bottom == h.stop and left == w.start and right == w.stop
 
 
-def _run_test():
+def _input_test():
     import argparse
     import torchvision.transforms.functional as TF
     import torchvision.io as io
@@ -289,23 +470,81 @@ def _run_test():
 
     if args.input.lower().endswith((".jpg", ".png", ".jpeg")):
         x = io.read_image(args.input) / 255.0
-        h, w = AutoCrop.autocrop(x, mode=args.mode)
-        print(h, w)
-        mask = torch.zeros_like(x, dtype=torch.bool)
-        mask[:, h, w] = True
-        mask = ~mask
-        x[mask] = torch.tensor([1.0, 0.0, 1.0], dtype=x.dtype, device=x.device).view(3, 1, 1).expand_as(x)[mask]
-        TF.to_pil_image(x[0]).show()
+        autocrop = AutoCrop.from_image(x, mode=args.mode)
+        x = autocrop.crop(x)
+        x = autocrop.uncrop(x, value=0.5)
+        TF.to_pil_image(x).show()
     else:
         # video
-        h, w = detect_border(
-            args.input,
-            mode=args.mode,
-            vf=args.vf
-        )
-        print(h, w)
+        autocrop = AutoCrop.from_video_file(args.input, mode=args.mode, vf=args.vf)
+        print(autocrop.get_slice(), autocrop.get_pad())
+
+
+def _edgecase_test():
+    H = 320
+    W = 640
+    # no crop
+    full_black_frame = torch.zeros((3, H, W))
+    autocrop = AutoCrop.from_image(full_black_frame, mode="black", mod=2)
+    frame = autocrop.crop(full_black_frame)
+    assert frame.shape[-2] == H and frame.shape[-1] == W
+
+    # no crop
+    full_noise_frame = torch.rand((3, H, W))
+    autocrop = AutoCrop.from_image(full_noise_frame, mode="black", mod=2)
+    frame = autocrop.crop(full_noise_frame)
+    assert frame.shape[-2] == H and frame.shape[-1] == W
+
+
+def _detection_test():
+    import random
+
+    H = 320
+    W = 640
+
+    def random_size(max=32, mod=2):
+        size = random.randint(0, 32)
+        return size - size % mod  # mod2
+
+    for _ in range(100):
+        top = random_size()
+        bottom = random_size()
+        left = random_size()
+        right = random_size()
+
+        frame = torch.rand((3, H, W))
+        frame = F.pad(frame, (left, right, top, bottom), mode="constant", value=0)
+        autocrop = AutoCrop.from_image(frame, mode="black", mod=2)
+        frame = autocrop.crop(frame)
+        assert frame.shape[-2] == H and frame.shape[-1] == W
+
+    for _ in range(100):
+        top = random_size(mod=1)
+        bottom = random_size(mod=1)
+        left = random_size(mod=1)
+        right = random_size(mod=1)
+
+        frame = torch.rand((3, H, W))
+        frame = F.pad(frame, (left, right, top, bottom), mode="constant", value=0)
+        autocrop = AutoCrop.from_image(frame, mode="black", mod=1)
+        frame = autocrop.crop(frame)
+        assert frame.shape[-2] == H and frame.shape[-1] == W
+
+    for _ in range(100):
+        top = random_size(mod=1)
+        bottom = random_size(mod=1)
+        left = random_size(mod=1)
+        right = random_size(mod=1)
+
+        frame = torch.rand((3, H, W))
+        frame = F.pad(frame, (left, right, top, bottom), mode="constant", value=0)
+        autocrop = AutoCrop.from_image(frame, mode="black_tb", mod=1)
+        cropped_frame = autocrop.crop(frame)
+        assert cropped_frame.shape[-2] == H and cropped_frame.shape[-1] == frame.shape[-1]
 
 
 if __name__ == "__main__":
     # _bench()
-    _run_test()
+    # _input_test()
+    _edgecase_test()
+    _detection_test()
