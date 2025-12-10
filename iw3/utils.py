@@ -1962,7 +1962,7 @@ def create_parser(required_true=True):
                               "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--autocrop", type=str.upper, default=None,
                         choices=["BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],
-                        help=("autocrop mode. automatically removes black bars."
+                        help=("autocrop mode. automatically removes black bars. "
                               "BLACK_TB: Removes only the top and bottom black bars. "
                               "BLACK: Automatically removes black bars from all sides. "
                               "FLAT_TB: Removes only the top and bottom flat-color borders."
