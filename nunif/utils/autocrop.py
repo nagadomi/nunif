@@ -381,45 +381,6 @@ class AutoCropDummy():
         return frame
 
 
-class VideoAutoCrop():
-    def __init__(self, slice_h, slice_w, pad):
-        self.slice_h = slice_h
-        self.slice_w = slice_w
-        self.pad = pad
-
-    @classmethod
-    def from_video(cls, frame, mode="black", mod=2):
-        if frame.ndim == 4:
-            assert frame.shape[0] == 1, "batch size > 1 is not supported"
-            frame = frame.squeeze(0)
-
-        H, W = frame.shape[-2:]
-        slice_h, slice_w = AutoCropDetector.detect(frame, mode=mode, mod=mod)
-
-        h_start, h_stop, _ = slice_h.indices(H)
-        w_start, w_stop, _ = slice_w.indices(W)
-        pad_top = h_start
-        pad_bottom = max(0, H - h_stop)
-        pad_left = w_start
-        pad_right = max(0, W - w_stop)
-        pad = (pad_left, pad_right, pad_top, pad_bottom)
-
-        return cls(slice_h, slice_w, pad)
-
-    def crop(self, frame):
-        if frame.ndim == 3:
-            frame = frame[:, self.slice_h, self.slice_w]
-        elif frame.ndim == 4:
-            frame = frame[:, :, self.slice_h, self.slice_w]
-        else:
-            raise ValueError(f"ndim={frame.ndim} is not supported")
-
-        return frame
-
-    def uncrop(self, frame, value=0):
-        return F.pad(frame, self.pad, mode="constant", value=value)
-
-
 def _bench():
     import time
     import random
