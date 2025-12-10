@@ -433,7 +433,7 @@ def _input_test():
         x = io.read_image(args.input) / 255.0
         autocrop = AutoCrop.from_image(x, mode=args.mode)
         x = autocrop.crop(x)
-        x = autocrop.uncrop(x, value=0.5)
+        x = autocrop.uncrop(x)
         TF.to_pil_image(x).show()
     else:
         # video
