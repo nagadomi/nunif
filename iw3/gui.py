@@ -473,7 +473,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_autocrop = wx.StaticText(self.grp_video_filter, label=T("AutoCrop"))
         self.cbo_autocrop = wx.ComboBox(self.grp_video_filter,
-                                        choices=["", "BLACK", "BLACK_TB", "FLAT"],
+                                        choices=["", "BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],
                                         name="cbo_autocrop")
         self.cbo_autocrop.SetEditable(False)
         self.cbo_autocrop.SetSelection(0)
