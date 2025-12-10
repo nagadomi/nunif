@@ -30,7 +30,7 @@ class AutoCropDetector():
 
         assert frame.ndim == 3
 
-        if self.mode in {"black_tb", "black", "flat_lr", "flat"}:
+        if self.mode in {"black_tb", "black", "flat_tb", "flat"}:
             mask = self.detect_tb(frame, black_only=self.black_only)
             if self.border_count_tb is None:
                 self.border_count_tb = mask.int()
