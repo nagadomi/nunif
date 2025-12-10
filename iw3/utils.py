@@ -20,6 +20,7 @@ from nunif.models import compile_model
 import nunif.utils.video as VU
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.utils.ticket_lock import TicketLock
+from nunif.utils.autocrop import AutoCrop, AutoCropDummy
 from nunif.device import create_device, device_is_cuda, mps_is_available, xpu_is_available
 from nunif.models.data_parallel import DeviceSwitchInference
 from . import export_config
@@ -453,11 +454,17 @@ def debug_depth_image(depth, args):
     return out
 
 
-def process_image(x, args, depth_model, side_model):
+def process_image(x, args, depth_model, side_model, skip_autocrop=None, autocrop_uncrop=True):
     assert depth_model.get_ema_buffer_size() == 1
+
+    if args.autocrop is None or skip_autocrop:
+        autocrop = AutoCropDummy()
+    else:
+        autocrop = AutoCrop.from_image(x, mode=args.autocrop, uncrop_enabled=autocrop_uncrop)
 
     with torch.inference_mode():
         x = preprocess_image(x, args)
+        x = autocrop.crop(x)
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation,
@@ -468,6 +475,8 @@ def process_image(x, args, depth_model, side_model):
             return debug_depth_image(depth, args)
         elif args.rgbd or args.half_rgbd:
             left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
+            left_eye = autocrop.uncrop(left_eye)
+            right_eye = autocrop.uncrop(right_eye)
             sbs = postprocess_image(left_eye, right_eye, args)
             return sbs
         else:
@@ -478,8 +487,12 @@ def process_image(x, args, depth_model, side_model):
             if left_eye.ndim == 4:
                 # NOTE: side_model is video inpaint model.
                 #       This may be called from test_callback.
-                sbs = postprocess_image(left_eye[0], right_eye[0], args)
+                left_eye = autocrop.uncrop(left_eye[0])
+                right_eye = autocrop.uncrop(right_eye[0])
+                sbs = postprocess_image(left_eye, right_eye, args)
             else:
+                left_eye = autocrop.uncrop(left_eye)
+                right_eye = autocrop.uncrop(right_eye)
                 sbs = postprocess_image(left_eye, right_eye, args)
             return sbs
 
@@ -919,6 +932,26 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         gc_collect()
     else:
         segment_pts = set()
+    if args.autocrop is not None:
+        crop = AutoCrop.from_video_file(
+            input_filename,
+            mode=args.autocrop,
+            uncrop_enabled=False,
+            vf=args.vf,
+            device=args.state["device"],
+            batch_size=args.batch_size,
+            stop_event=args.state["stop_event"],
+            suspend_event=args.state["suspend_event"],
+            tqdm_fn=args.state["tqdm_fn"],
+            tqdm_title=f"{path.basename(input_filename)}: AutoCrop Analyzation",
+        ).get_crop()
+        if crop is not None:
+            crop_filter = f"crop=x={crop[0]}:y={crop[1]}:w={crop[2]}:h={crop[3]}"
+            video_filter = args.vf + f",{crop_filter}" if args.vf else crop_filter
+        else:
+            video_filter = args.vf
+    else:
+        video_filter = args.vf
 
     def config_callback(stream):
         fps = VU.get_fps(stream)
@@ -940,7 +973,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         decay, buffer_size = depth_model.get_ema_state()
         depth_model.disable_ema()
         x = VU.to_tensor(frame, device=args.state["device"])
-        x = process_image(x, args, depth_model, side_model)
+        x = process_image(x, args, depth_model, side_model, skip_autocrop=True)
         if ema_normalize:
             # reset ema to avoid affecting test frames
             depth_model.enable_ema(decay=decay, buffer_size=buffer_size)
@@ -961,7 +994,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                                  args=args
                              ),
                              test_callback=test_callback,
-                             vf=args.vf,
+                             vf=video_filter,
                              stop_event=args.state["stop_event"],
                              suspend_event=args.state["suspend_event"],
                              tqdm_fn=args.state["tqdm_fn"],
@@ -977,10 +1010,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                                  depth_model=depth_model,
                                  side_model=side_model,
                                  segment_pts=segment_pts,
-                                 args=args
+                                 args=args,
                              ),
                              test_callback=test_callback,
-                             vf=args.vf,
+                             vf=video_filter,
                              stop_event=args.state["stop_event"],
                              suspend_event=args.state["suspend_event"],
                              tqdm_fn=args.state["tqdm_fn"],
@@ -1014,7 +1047,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                                  config_callback=config_callback,
                                  frame_callback=frame_callback,
                                  test_callback=test_callback,
-                                 vf=args.vf,
+                                 vf=video_filter,
                                  stop_event=args.state["stop_event"],
                                  suspend_event=args.state["suspend_event"],
                                  tqdm_fn=args.state["tqdm_fn"],
@@ -1927,6 +1960,15 @@ def create_parser(required_true=True):
     parser.add_argument("--scene-detect", action="store_true",
                         help=("splitting a scene using shot boundary detection. "
                               "ema and other states will be reset at the boundary of the scene."))
+    parser.add_argument("--autocrop", type=str.upper, default=None,
+                        choices=["BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],
+                        help=("autocrop mode. automatically removes black bars."
+                              "BLACK_TB: Removes only the top and bottom black bars. "
+                              "BLACK: Automatically removes black bars from all sides. "
+                              "FLAT_TB: Removes only the top and bottom flat-color borders."
+                              "FLAT: Removes flat-color borders. ",
+                              ))
+
     parser.add_argument("--edge-dilation", type=int, nargs="+", default=[2, 1],
                         help="loop count of edge dilation. <x> <y> or <xy>")
 
