@@ -1078,7 +1078,6 @@ def process_video_keyframes(input_path, frame_callback,
     for packet in input_container.demux([video_input_stream]):
         for frame in safe_decode(packet):
             current_sec = math.ceil(frame.pts * video_input_stream.time_base)
-            print(current_sec)
             if current_sec - prev_sec >= min_interval_sec:
                 frame = video_filter.update(frame)
                 if frame:
