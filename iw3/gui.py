@@ -1661,7 +1661,7 @@ class MainFrame(wx.Frame):
                     stop_event=self.stop_event,
                     suspend_event=self.suspend_event,
                     tqdm_fn=functools.partial(TQDMGUI, self),
-                    tqdm_title=f"{path.basename(args.input)}: AutoCrop Analyzation",
+                    tqdm_title=f"{path.basename(args.input)}: AutoCrop Analysis",
                 ).get_crop()
                 return crop
 

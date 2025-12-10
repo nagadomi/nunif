@@ -252,7 +252,7 @@ def autocrop_analyze_video(
         min_interval_sec=min_interval_sec,
         stop_event=local_stop_event, suspend_event=suspend_event,
         tqdm_fn=tqdm_fn,
-        title=tqdm_title or "AutoCrop Analyzation",
+        title=tqdm_title or "AutoCrop Analysis",
     )
     return model.get_crop() + (frame_height, frame_width)
 

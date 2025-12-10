@@ -943,7 +943,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             stop_event=args.state["stop_event"],
             suspend_event=args.state["suspend_event"],
             tqdm_fn=args.state["tqdm_fn"],
-            tqdm_title=f"{path.basename(input_filename)}: AutoCrop Analyzation",
+            tqdm_title=f"{path.basename(input_filename)}: AutoCrop Analysis",
         ).get_crop()
         if crop is not None:
             crop_filter = f"crop=x={crop[0]}:y={crop[1]}:w={crop[2]}:h={crop[3]}"
