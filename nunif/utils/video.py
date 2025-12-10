@@ -1075,18 +1075,20 @@ def process_video_keyframes(input_path, frame_callback,
     tqdm_fn = tqdm_fn or tqdm
     pbar = tqdm_fn(desc=desc, total=max_progress, ncols=ncols)
     prev_sec = 0
-    for frame in input_container.decode(video_input_stream):
-        current_sec = math.ceil(frame.pts * video_input_stream.time_base)
-        if current_sec - prev_sec >= min_interval_sec:
-            frame = video_filter.update(frame)
-            if frame:
-                frame_callback(frame)
-            pbar.update(current_sec - prev_sec)
-            prev_sec = current_sec
-        if suspend_event is not None:
-            suspend_event.wait()
-        if stop_event is not None and stop_event.is_set():
-            break
+    for packet in input_container.demux([video_input_stream]):
+        for frame in safe_decode(packet):
+            current_sec = math.ceil(frame.pts * video_input_stream.time_base)
+            print(current_sec)
+            if current_sec - prev_sec >= min_interval_sec:
+                frame = video_filter.update(frame)
+                if frame:
+                    frame_callback(frame)
+                pbar.update(current_sec - prev_sec)
+                prev_sec = current_sec
+            if suspend_event is not None:
+                suspend_event.wait()
+            if stop_event is not None and stop_event.is_set():
+                break
 
     while True:
         frame = video_filter.update(None)
