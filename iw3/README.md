@@ -269,6 +269,23 @@ This includes:
 
 See https://github.com/nagadomi/nunif/issues/406
 
+## AutoCrop
+
+Removes movie black bars (Letterbox) and image borders.
+
+For videos, AutoCrop is applied as a video filter (`crop` filter). It is applied after the user-specified `vf` option.
+
+If you want to restore black bars to make it 16:9, use `Padding = 16:9` (`--pad-mode 16:9`) option.
+
+| Mode     |                           |
+|----------|---------------------------
+|`BLACK_TB`| Removes only the top and bottom black bars.
+|`BLACK`   | Automatically removes black bars from all sides.
+|`FLAT_TB` | Removes only the top and bottom flat-color borders.
+|`FLAT`    | Removes flat-color borders.
+
+`FLAT*` mode is mainly intended for images. This also removes non-black borders. Please note that it may not work well with non-photographic artwork (e.g., Anime).
+
 ## Trouble shooting
 
 ### Output video is not SBS

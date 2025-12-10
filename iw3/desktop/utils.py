@@ -180,7 +180,7 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
 
 def test_output_size(size, args, depth_model, side_model):
     frame = torch.zeros((3, *size), dtype=torch.float32).to(args.state["device"])
-    sbs = IW3U.process_image(frame, args, depth_model, side_model)
+    sbs = IW3U.process_image(frame, args, depth_model, side_model, autocrop_uncrop=True)
     depth_model.reset()
     return sbs.shape[-2:]
 
@@ -364,7 +364,7 @@ def iw3_desktop_main(args, init_wxapp=True):
             with args.state["args_lock"]:
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
-                sbs = IW3U.process_image(frame, args, depth_model, side_model)
+                sbs = IW3U.process_image(frame, args, depth_model, side_model, autocrop_uncrop=True)
 
                 if not args.local_viewer:
                     if args.gpu_jpeg:

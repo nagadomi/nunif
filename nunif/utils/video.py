@@ -1059,7 +1059,7 @@ def process_video_keyframes(input_path, frame_callback,
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
     if input_container.duration:
-        container_duration = float(input_container.duration * av.time_base)
+        container_duration = float(input_container.duration / av.time_base)
     else:
         container_duration = None
 
