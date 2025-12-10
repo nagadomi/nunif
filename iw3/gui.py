@@ -471,6 +471,13 @@ class MainFrame(wx.Frame):
                                                  name="chk_keep_aspect_ratio")
         self.chk_keep_aspect_ratio.SetValue(False)
 
+        self.lbl_autocrop = wx.StaticText(self.grp_video_filter, label=T("AutoCrop"))
+        self.cbo_autocrop = wx.ComboBox(self.grp_video_filter,
+                                        choices=["", "BLACK", "BLACK_TB", "FLAT"],
+                                        name="cbo_autocrop")
+        self.cbo_autocrop.SetEditable(False)
+        self.cbo_autocrop.SetSelection(0)
+
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_start_time, (0, 1), (0, 2), flag=wx.EXPAND)
@@ -483,12 +490,14 @@ class MainFrame(wx.Frame):
         layout.Add(self.txt_vf, (3, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_rotate, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_rotate, (4, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_pad, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pad_mode, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.cbo_pad, (5, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_max_output_size, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_max_output_size, (6, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_keep_aspect_ratio, (7, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_autocrop, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_autocrop, (5, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_pad, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pad_mode, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_pad, (6, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_max_output_size, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_max_output_size, (7, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_keep_aspect_ratio, (8, 1), (0, 2), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -1236,7 +1245,7 @@ class MainFrame(wx.Frame):
             max_output_width=max_output_width,
             max_output_height=max_output_height,
             keep_aspect_ratio=self.chk_keep_aspect_ratio.GetValue(),
-
+            autocrop=self.cbo_autocrop.GetValue() if self.cbo_autocrop.GetValue() else None,
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             resolution=resolution,
@@ -1356,12 +1365,13 @@ class MainFrame(wx.Frame):
             pos = self.prg_tqdm.GetValue()
             end_pos = self.prg_tqdm.GetRange()
             fps = (pos - self.suspend_pos) / (now - self.start_time + 1e-6)
-            remaining_time = int((end_pos - pos) / fps)
-            h = remaining_time // 3600
-            m = (remaining_time - h * 3600) // 60
-            s = (remaining_time - h * 3600 - m * 60)
-            t = f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
-            self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ] {desc}")
+            if fps > 0:
+                remaining_time = int((end_pos - pos) / fps)
+                h = remaining_time // 3600
+                m = (remaining_time - h * 3600) // 60
+                s = (remaining_time - h * 3600 - m * 60)
+                t = f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
+                self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ] {desc}")
         elif type == 2:
             # close
             pass
