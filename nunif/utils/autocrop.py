@@ -78,7 +78,7 @@ class AutoCropDetector():
         }
         black_only = mode in {"black_tb", "black_lr", "black"}
 
-        if mode in {"black_tb", "black", "flat_lr", "flat"}:
+        if mode in {"black_tb", "black", "flat_tb", "flat"}:
             mask_tb = cls.detect_tb(frame, black_only=black_only)
 
         if mode in {"black_lr", "black", "flat_lr", "flat"}:
