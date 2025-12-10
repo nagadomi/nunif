@@ -1647,8 +1647,6 @@ class MainFrame(wx.Frame):
             return
 
         device = create_device(args.gpu[0])
-        result = [None]
-
         if is_video(args.input):
             def _run():
                 crop = AutoCrop.from_video_file(
