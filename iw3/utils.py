@@ -454,7 +454,7 @@ def debug_depth_image(depth, args):
     return out
 
 
-def process_image(x, args, depth_model, side_model, skip_autocrop=None, autocrop_uncrop=True):
+def process_image(x, args, depth_model, side_model, skip_autocrop=None, autocrop_uncrop=False):
     assert depth_model.get_ema_buffer_size() == 1
 
     if args.autocrop is None or skip_autocrop:
