@@ -1084,10 +1084,10 @@ def process_video_keyframes(input_path, frame_callback,
                     frame_callback(frame)
                 pbar.update(current_sec - prev_sec)
                 prev_sec = current_sec
-            if suspend_event is not None:
-                suspend_event.wait()
-            if stop_event is not None and stop_event.is_set():
-                break
+        if suspend_event is not None:
+            suspend_event.wait()
+        if stop_event is not None and stop_event.is_set():
+            break
 
     while True:
         frame = video_filter.update(None)
