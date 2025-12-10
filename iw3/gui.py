@@ -11,9 +11,10 @@ import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
 import wx.lib.stattext as stattext
+import torch
 from .utils import (
     create_parser, set_state_args, iw3_main,
-    is_text, is_video, is_output_dir, is_yaml, make_output_filename,
+    is_text, is_video, is_image, is_output_dir, is_yaml, make_output_filename,
 )
 from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available, create_device
@@ -23,6 +24,8 @@ from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nv
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.git import get_current_branch
 from nunif.utils.home_dir import ensure_home_dir
+from nunif.utils.autocrop import AutoCrop
+import nunif.utils.pil_io as pil_io
 from nunif.gui import (
     TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
     EditableComboBox, EditableComboBoxPersistentHandler,
@@ -49,7 +52,6 @@ from .depth_anything_v3_model import AA_SUPPORTED_MODELS as DA3_AA_SUPPORTED_MOD
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
 from . import export_config
 from .inpaint_utils import INPAINT_MODELS
-import torch
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
@@ -478,6 +480,10 @@ class MainFrame(wx.Frame):
         self.cbo_autocrop.SetEditable(False)
         self.cbo_autocrop.SetSelection(0)
 
+        self.btn_autocrop_test = wx.Button(self.grp_video_filter, label=T("Test"))
+        self.txt_autocrop_test = wx.TextCtrl(self.grp_video_filter, name="txt_autocrop_test", style=wx.TE_READONLY)
+        self.txt_autocrop_test.SetValue("")
+
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_start_time, (0, 1), (0, 2), flag=wx.EXPAND)
@@ -492,12 +498,14 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_rotate, (4, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_autocrop, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_autocrop, (5, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_pad, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_pad_mode, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.cbo_pad, (6, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_max_output_size, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_max_output_size, (7, 1), (0, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_keep_aspect_ratio, (8, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.btn_autocrop_test, (6, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_autocrop_test, (6, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_pad, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_pad_mode, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_pad, (7, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_max_output_size, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_max_output_size, (8, 1), (0, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_keep_aspect_ratio, (9, 1), (0, 2), flag=wx.EXPAND)
 
         sizer_video_filter = wx.StaticBoxSizer(self.grp_video_filter, wx.VERTICAL)
         sizer_video_filter.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -676,6 +684,8 @@ class MainFrame(wx.Frame):
         self.btn_delete_preset.Bind(wx.EVT_BUTTON, self.on_click_btn_delete_preset)
         self.btn_copy_command.Bind(wx.EVT_BUTTON, self.on_click_btn_copy_command)
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
+
+        self.btn_autocrop_test.Bind(wx.EVT_BUTTON, self.on_click_btn_autocrop_test)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -1280,6 +1290,7 @@ class MainFrame(wx.Frame):
         if not self.confirm_overwrite(args):
             return
 
+        self.btn_autocrop_test.Disable()
         self.btn_start.Disable()
         self.btn_cancel.Enable()
         self.btn_suspend.Enable()
@@ -1322,6 +1333,7 @@ class MainFrame(wx.Frame):
         self.btn_cancel.Disable()
         self.btn_suspend.Disable()
         self.btn_suspend.SetLabel(T("Suspend"))
+        self.btn_autocrop_test.Enable()
         self.update_start_button_state()
 
         # free vram
@@ -1626,6 +1638,96 @@ class MainFrame(wx.Frame):
             wx.TheClipboard.Close()
         else:
             wx.MessageBox(T("Failed to open Clipbaord"), T("Error"), wx.OK | wx.ICON_ERROR)
+
+    def test_autocrop(self):
+        self.txt_autocrop_test.SetValue("")
+
+        args = self.parse_args()
+        if args is None or not args.autocrop:
+            return
+
+        device = create_device(args.gpu[0])
+        result = [None]
+
+        if is_video(args.input):
+            def _run():
+                crop = AutoCrop.from_video_file(
+                    args.input,
+                    mode=args.autocrop,
+                    uncrop_enabled=False,
+                    vf=args.vf,
+                    device=device,
+                    batch_size=args.batch_size,
+                    stop_event=self.stop_event,
+                    suspend_event=self.suspend_event,
+                    tqdm_fn=functools.partial(TQDMGUI, self),
+                    tqdm_title=f"{path.basename(args.input)}: AutoCrop Analyzation",
+                ).get_crop()
+                return crop
+
+            def _on_exit(ret):
+                try:
+                    crop = ret.get()
+                    if crop is not None:
+                        result = f"crop=x={crop[0]}:y={crop[1]}:w={crop[2]}:h={crop[3]}"
+                        self.txt_autocrop_test.SetValue(result)
+                        self.SetStatusText(result)
+                    else:
+                        self.txt_autocrop_test.SetValue("")
+                        self.SetStatusText(T("No crop detected"))
+                except: # noqa
+                    self.SetStatusText(T("Error"))
+                    e_type, e, tb = sys.exc_info()
+                    message = getattr(e, "message", str(e))
+                    traceback.print_tb(tb)
+                    wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
+
+                self.processing = False
+                self.btn_cancel.Disable()
+                self.btn_suspend.Disable()
+                self.btn_autocrop_test.Enable()
+                self.btn_suspend.SetLabel(T("Suspend"))
+                self.update_start_button_state()
+
+            self.btn_start.Disable()
+            self.btn_autocrop_test.Disable()
+            self.btn_cancel.Enable()
+            self.btn_suspend.Enable()
+            self.stop_event.clear()
+            self.suspend_event.set()
+            self.prg_tqdm.SetValue(0)
+            self.SetStatusText("...")
+            startWorker(_on_exit, _run)
+            self.processing = True
+
+        elif is_image(args.input):
+            x, _ = pil_io.load_image_simple(args.input, exif_transpose=self.chk_exif_transpose.GetValue())
+            if x is None:
+                raise RuntimeError(f"Load Error: {args.input}")
+            x = pil_io.to_tensor(x)
+            x = x.to(device)
+            autocrop = AutoCrop.from_image(x, mode=args.autocrop)
+            crop = autocrop.get_crop()
+            if crop is not None:
+                result = f"crop=x={crop[0]}:y={crop[1]}:w={crop[2]}:h={crop[3]}"
+                self.txt_autocrop_test.SetValue(result)
+                self.SetStatusText(result)
+            else:
+                self.txt_autocrop_test.SetValue("")
+                self.SetStatusText(T("No crop detected"))
+        elif path.isdir(args.input):
+            pass
+        else:
+            raise RuntimeError("Unsupported format")
+
+    def on_click_btn_autocrop_test(self, event):
+        try:
+            self.test_autocrop()
+        except: # noqa
+            e_type, e, tb = sys.exc_info()
+            message = getattr(e, "message", str(e))
+            traceback.print_tb(tb)
+            wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
