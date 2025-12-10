@@ -180,7 +180,7 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
 
 def test_output_size(size, args, depth_model, side_model):
     frame = torch.zeros((3, *size), dtype=torch.float32).to(args.state["device"])
-    sbs = IW3U.process_image(frame, args, depth_model, side_model)
+    sbs = IW3U.process_image(frame, args, depth_model, side_model, skip_autocrop=True)
     depth_model.reset()
     return sbs.shape[-2:]
 

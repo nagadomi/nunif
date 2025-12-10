@@ -447,6 +447,13 @@ class MainFrame(wx.Frame):
                                        allow_none=False, min=0, max=500, name="txt_crop_bottom")
         self.txt_crop_bottom.SetValue(0)
 
+        self.lbl_autocrop = wx.StaticText(self.grp_processor, label=T("AutoCrop"))
+        self.cbo_autocrop = wx.ComboBox(self.grp_processor,
+                                        choices=["", "BLACK", "BLACK_TB", "FLAT"],
+                                        name="cbo_autocrop")
+        self.cbo_autocrop.SetEditable(False)
+        self.cbo_autocrop.SetSelection(0)
+
         self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
@@ -476,7 +483,11 @@ class MainFrame(wx.Frame):
         crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
 
         layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_compile, (5, 0), flag=wx.EXPAND)
+
+        layout.Add(self.lbl_autocrop, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_autocrop, (5, 1), flag=wx.EXPAND)
+
+        layout.Add(self.chk_compile, (6, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -986,6 +997,7 @@ class MainFrame(wx.Frame):
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
+            autocrop=self.cbo_autocrop.GetValue() if self.cbo_autocrop.GetValue() else None,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
             cross_eyed=self.chk_cross_eyed.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
