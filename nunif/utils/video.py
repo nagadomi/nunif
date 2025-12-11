@@ -1343,6 +1343,7 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
         if frame is not None:
             frame_callback(frame)
             pbar.update(1)
+            sample_count += 1
         else:
             break
 
