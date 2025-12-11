@@ -120,7 +120,7 @@ def guess_frames(stream, fps=None, start_time=None, end_time=None, container_dur
         input_path=input_path,
         to_int=False)
 
-    if duration is None:
+    if duration < 0:
         # N/A
         if return_duration:
             return -1, -1
