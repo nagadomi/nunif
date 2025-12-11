@@ -1237,6 +1237,8 @@ def hook_frame(input_path,
 
 def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe_only=False,
                   vf="", title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
+    assert offset < 0.5, f"offset must be less than 0.5"
+
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
