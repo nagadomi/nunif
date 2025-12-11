@@ -1237,7 +1237,7 @@ def hook_frame(input_path,
 
 def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe_only=False,
                   vf="", title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
-    assert offset < 0.5, f"offset must be less than 0.5"
+    assert offset < 0.5, "offset must be less than 0.5"
 
     input_container = av.open(input_path)
     if len(input_container.streams.video) == 0:
@@ -1333,6 +1333,7 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
             if pos == 0 or pos == prev_seek_pos:
                 pos += av.time_base
             input_container.seek(pos, backward=True, any_frame=False)
+            prev_seek_pos = pos
             sample_count += sample_one()
             if stop_event is not None and stop_event.is_set():
                 break
@@ -1703,6 +1704,7 @@ def _test_sample_frames():
     parser.add_argument("--output", "-o", type=str, default=None, help="output dir")
     parser.add_argument("--num-samples", "-n", type=int, required=True, help="number of samples")
     parser.add_argument("--vf", type=str, default="", help="video filter")
+    parser.add_argument("--offset", type=float, default=0.05, help="skip offset")
 
     args = parser.parse_args()
     if args.output is not None:
@@ -1716,7 +1718,7 @@ def _test_sample_frames():
             frame.to_image().save(path.join(args.output, f"{processed_count}.png"))
         return
 
-    sample_count = sample_frames(args.input, frame_callback=callback, num_samples=args.num_samples, vf=args.vf)
+    sample_count = sample_frames(args.input, frame_callback=callback, num_samples=args.num_samples, vf=args.vf, offset=args.offset)
     print("sample_count", sample_count, "processed_count", processed_count)
 
 
