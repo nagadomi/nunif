@@ -111,12 +111,19 @@ def get_fps(stream):
     return stream.guessed_rate
 
 
-def guess_frames(stream, fps=None, start_time=None, end_time=None, container_duration=None):
+def guess_frames(stream, fps=None, start_time=None, end_time=None, container_duration=None, input_path=None,
+                 return_duration=False):
     fps = fps or get_fps(stream)
-    duration = get_duration(stream, container_duration, to_int=False)
+    duration = guess_duration(
+        stream,
+        container_duration=container_duration,
+        input_path=input_path,
+        to_int=False)
 
-    if duration is None:
+    if duration < 0:
         # N/A
+        if return_duration:
+            return -1, -1
         return -1
 
     if start_time is not None and end_time is not None:
@@ -127,6 +134,9 @@ def guess_frames(stream, fps=None, start_time=None, end_time=None, container_dur
         duration = min(end_time, duration)
     else:
         pass
+
+    if return_duration:
+        return math.ceil(duration * fps), duration
 
     return math.ceil(duration * fps)
 
@@ -147,7 +157,48 @@ def get_duration(stream, container_duration=None, to_int=True):
         return duration
 
 
-def get_frames(stream, container_duration=None):
+def guess_duration_by_last_packet(input_path):
+    with av.open(input_path) as container:
+        if len(container.streams.video) > 0:
+            stream = container.streams.video[0]
+        elif len(container.streams.audio) > 0:
+            stream = container.streams.audio[0]
+        else:
+            return None
+
+        # Seek to the last keyframe
+        large_pts = 10 * 24 * 3600 * av.time_base
+        container.seek(large_pts, backward=True, any_frame=False)
+        last_time = None
+        # Find the last packet time
+        for packet in container.demux([stream]):
+            if packet.pts is not None:
+                last_time = float(packet.pts * packet.time_base)
+        if last_time is not None:
+            return last_time
+        else:
+            return None
+
+
+def guess_duration(stream, container_duration=None, input_path=None, to_int=True):
+    if stream.duration:
+        duration = float(stream.duration * stream.time_base)
+    else:
+        duration = container_duration
+
+    if duration is None and input_path is not None:
+        duration = guess_duration_by_last_packet(input_path)
+
+    if duration is None:
+        return -1
+
+    if to_int:
+        return math.ceil(duration)
+    else:
+        return duration
+
+
+def get_frames(stream, container_duration=None, input_path=None):
     if container_duration is None:
         if stream.container and stream.container.duration:
             container_duration = float(stream.container.duration / av.time_base)
@@ -155,7 +206,7 @@ def get_frames(stream, container_duration=None):
         return stream.frames
     else:
         # frames is unknown
-        return guess_frames(stream, container_duration=container_duration)
+        return guess_frames(stream, container_duration=container_duration, input_path=input_path)
 
 
 def from_image(im):
@@ -867,8 +918,11 @@ def process_video(input_path, output_path,
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     # TODO: `total` may be less when start_time is specified
-    total = guess_frames(video_input_stream, output_fps, start_time=start_time, end_time=end_time,
-                         container_duration=container_duration)
+    total = guess_frames(video_input_stream,
+                         fps=output_fps,
+                         start_time=start_time, end_time=end_time,
+                         container_duration=container_duration,
+                         input_path=input_path)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
 
@@ -1069,7 +1123,7 @@ def process_video_keyframes(input_path, frame_callback,
 
     video_filter = VideoFilter(video_input_stream, vf=vf)
 
-    max_progress = get_duration(video_input_stream, container_duration=container_duration)
+    max_progress = guess_duration(video_input_stream, container_duration=container_duration, input_path=input_path)
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
@@ -1145,8 +1199,11 @@ def hook_frame(input_path,
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
-    total = guess_frames(video_input_stream, config.fps, start_time=start_time, end_time=end_time,
-                         container_duration=container_duration)
+    total = guess_frames(video_input_stream,
+                         fps=config.fps,
+                         start_time=start_time, end_time=end_time,
+                         container_duration=container_duration,
+                         input_path=input_path)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
 
     for packet in input_container.demux([video_input_stream]):
@@ -1176,6 +1233,124 @@ def hook_frame(input_path,
     frame_callback(None)
     input_container.close()
     pbar.close()
+
+
+def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe_only=False,
+                  vf="", title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
+    assert offset < 0.5, "offset must be less than 0.5"
+
+    input_container = av.open(input_path)
+    if len(input_container.streams.video) == 0:
+        raise ValueError("No video stream")
+
+    video_input_stream = input_container.streams.video[0]
+    if input_container.duration:
+        container_duration = float(input_container.duration / av.time_base)
+    else:
+        container_duration = None
+
+    num_frames, duration = guess_frames(
+        video_input_stream,
+        container_duration=container_duration,
+        input_path=input_path,
+        return_duration=True
+    )
+    if duration <= 0 or num_frames <= 0:
+        print(f"sample_frames: No duration available: {input_path}", file=sys.stderr)
+        return -1
+
+    max_progress = num_samples
+    video_filter = VideoFilter(video_input_stream, vf=vf)
+    desc = (title if title else input_path)
+    ncols = len(desc) + 60
+    tqdm_fn = tqdm_fn or tqdm
+    pbar = tqdm_fn(desc=desc, total=max_progress, ncols=ncols)
+    prev_sec = 0
+    sample_count = 0
+
+    if num_samples * 4 > num_frames or duration < num_samples:
+        # Full decoding
+        step_sec = duration / num_samples
+        if keyframe_only:
+            video_input_stream.codec_context.skip_frame = "NONKEY"
+
+        for packet in input_container.demux([video_input_stream]):
+            for frame in safe_decode(packet):
+                if frame.pts is None:
+                    continue
+                current_sec = float(frame.pts * packet.time_base)
+                if current_sec - prev_sec >= step_sec:
+                    frame = video_filter.update(frame)
+                    if frame:
+                        frame_callback(frame)
+                    pbar.update(1)
+                    sample_count += 1
+                    prev_sec = current_sec
+            if suspend_event is not None:
+                suspend_event.wait()
+            if stop_event is not None and stop_event.is_set():
+                break
+    else:
+        # Sampling
+
+        prev_seek_pos = 0
+        step_sec = duration * (1.0 - offset * 2) / num_samples
+        seek_offset = int(duration * offset * av.time_base)
+
+        if step_sec > 4 or keyframe_only:
+            video_input_stream.codec_context.skip_frame = "NONKEY"
+            keyframe_only = True
+        else:
+            keyframe_only = False
+
+        def sample_one():
+            nonlocal prev_sec
+            for packet in input_container.demux([video_input_stream]):
+                if suspend_event is not None:
+                    suspend_event.wait()
+                if stop_event is not None and stop_event.is_set():
+                    break
+                for frame in safe_decode(packet):
+                    if frame.pts is None:
+                        continue
+                    current_sec = float(frame.pts * packet.time_base)
+                    if current_sec <= prev_sec:
+                        # Seek loop detected
+                        return 0
+                    if not keyframe_only and current_sec - prev_sec < step_sec:
+                        continue
+
+                    frame = video_filter.update(frame)
+                    if frame:
+                        frame_callback(frame)
+                    pbar.update(1)
+                    prev_sec = current_sec
+                    return 1
+            return 0
+
+        for i in range(num_samples):
+            pos = int(i * step_sec * av.time_base) + seek_offset
+            if pos == 0 or pos == prev_seek_pos:
+                pos += av.time_base
+            input_container.seek(pos, backward=True, any_frame=False)
+            prev_seek_pos = pos
+            sample_count += sample_one()
+            if stop_event is not None and stop_event.is_set():
+                break
+
+    while True:
+        frame = video_filter.update(None)
+        if frame is not None:
+            frame_callback(frame)
+            pbar.update(1)
+            sample_count += 1
+        else:
+            break
+
+    pbar.close()
+    input_container.close()
+
+    return sample_count
 
 
 def export_audio(input_path, output_path, start_time=None, end_time=None,
@@ -1522,7 +1697,34 @@ def _test_reencode():
     process_video(args.input, args.output, config_callback=make_config, frame_callback=callback)
 
 
+def _test_sample_frames():
+    import argparse
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
+    parser.add_argument("--output", "-o", type=str, default=None, help="output dir")
+    parser.add_argument("--num-samples", "-n", type=int, required=True, help="number of samples")
+    parser.add_argument("--vf", type=str, default="", help="video filter")
+    parser.add_argument("--offset", type=float, default=0.05, help="skip offset")
+
+    args = parser.parse_args()
+    if args.output is not None:
+        os.makedirs(args.output, exist_ok=True)
+    processed_count = 0
+
+    def callback(frame):
+        nonlocal processed_count
+        processed_count += 1
+        if args.output is not None:
+            frame.to_image().save(path.join(args.output, f"{processed_count}.png"))
+        return
+
+    sample_count = sample_frames(args.input, frame_callback=callback, num_samples=args.num_samples, vf=args.vf, offset=args.offset)
+    print("sample_count", sample_count, "processed_count", processed_count)
+
+
 if __name__ == "__main__":
     # _test_process_video()
     # _test_export_audio()
+    # _test_sample_frames()
     _test_reencode()
