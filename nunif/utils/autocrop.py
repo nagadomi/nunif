@@ -1,6 +1,5 @@
 import torch
 import torch.nn.functional as F
-import threading
 from . import video as VU
 
 
@@ -212,8 +211,7 @@ def autocrop_analyze_video(
         video_file,
         mode="black",
         mod=2,
-        max_frames=1000,
-        min_interval_sec=0.0,
+        max_frames=40,
         vf="",
         device="cuda",
         batch_size=2,
@@ -223,8 +221,6 @@ def autocrop_analyze_video(
         tqdm_title=None,
 ):
     model = AutoCropDetector(mode=mode, mod=mod)
-    user_stop_event = stop_event
-    local_stop_event = threading.Event()
     frame_width = frame_height = 0
 
     def batch_callback(x):
@@ -234,12 +230,6 @@ def autocrop_analyze_video(
         frame_height = max(frame_height, H)
 
         model.update(x)
-        if (
-                model.frame_count > max_frames or
-                (user_stop_event is not None and user_stop_event.is_set())
-        ):
-            # break
-            local_stop_event.set()
 
     callback_pool = VU.FrameCallbackPool(
         batch_callback,
@@ -247,10 +237,12 @@ def autocrop_analyze_video(
         device=device,
         max_workers=0,
     )
-    VU.process_video_keyframes(
-        video_file, callback_pool, vf=vf,
-        min_interval_sec=min_interval_sec,
-        stop_event=local_stop_event, suspend_event=suspend_event,
+    VU.sample_frames(
+        video_file, callback_pool,
+        num_samples=max_frames,
+        keyframe_only=True,
+        vf=vf,
+        stop_event=stop_event, suspend_event=suspend_event,
         tqdm_fn=tqdm_fn,
         title=tqdm_title or "AutoCrop Analysis",
     )
@@ -323,8 +315,7 @@ class AutoCrop():
             mod=2,
             pad_value=0,
             uncrop_enabled=True,
-            max_frames=1000,
-            min_interval_sec=0.0,
+            max_frames=40,
             vf="",
             device="cuda",
             batch_size=2,
@@ -338,7 +329,6 @@ class AutoCrop():
             mode=mode,
             mod=mod,
             max_frames=max_frames,
-            min_interval_sec=min_interval_sec,
             vf=vf,
             device=device,
             batch_size=batch_size,
