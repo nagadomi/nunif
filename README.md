@@ -58,6 +58,10 @@ CLI tools are also available to filter out low quality images using these result
 - [nunif windows package](windows_package/docs/README.md)
 - [nunif windows package (日本語)](windows_package/docs/README_ja.md)
 
+### Bazzite (Fedora Atomic) + AMD BC-250
+
+- [Bazzite install (ROCm gfx1013, iw3 GUI)](docs/install_bazzite.md)
+
 ### For developers
 
 #### Dependencies
