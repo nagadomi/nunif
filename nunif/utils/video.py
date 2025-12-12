@@ -38,6 +38,8 @@ VIDEO_EXTENSIONS = [
     ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
 ]
 
+AV_READ_OPTIONS = dict(mode="r", metadata_errors="ignore")
+
 
 def list_videos(directory, extensions=VIDEO_EXTENSIONS):
     return sorted(
@@ -158,7 +160,7 @@ def get_duration(stream, container_duration=None, to_int=True):
 
 
 def guess_duration_by_last_packet(input_path):
-    with av.open(input_path) as container:
+    with av.open(input_path, **AV_READ_OPTIONS) as container:
         if len(container.streams.video) > 0:
             stream = container.streams.video[0]
         elif len(container.streams.audio) > 0:
@@ -799,7 +801,7 @@ def test_audio_copy(input_path, output_path):
     buff.name = path.basename(output_path)
     try:
         with (
-                av.open(input_path) as input_container,
+                av.open(input_path, **AV_READ_OPTIONS) as input_container,
                 av.open(buff, mode="w") as output_container,
         ):
             if len(input_container.streams.audio) > 0:
@@ -844,7 +846,7 @@ def process_video(input_path, output_path,
             raise ValueError("end_time must be greater than start_time")
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
-    input_container = av.open(input_path,metadata_errors='ignore')
+    input_container = av.open(input_path, **AV_READ_OPTIONS)
 
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
@@ -1018,7 +1020,7 @@ def generate_video(output_path,
     reformatter = config.state["reformatter"]
 
     if audio_file is not None:
-        input_container = av.open(audio_file)
+        input_container = av.open(audio_file, **AV_READ_OPTIONS)
         if input_container.duration:
             container_duration = float(input_container.duration * av.time_base)
         else:
@@ -1109,7 +1111,7 @@ def generate_video(output_path,
 def process_video_keyframes(input_path, frame_callback,
                             min_interval_sec=4., vf="",
                             title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
-    input_container = av.open(input_path)
+    input_container = av.open(input_path, **AV_READ_OPTIONS)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
     if input_container.duration:
@@ -1169,7 +1171,7 @@ def hook_frame(input_path,
         if start_time is not None and not (start_time < end_time):
             raise ValueError("end_time must be greater than start_time")
 
-    input_container = av.open(input_path)
+    input_container = av.open(input_path, **AV_READ_OPTIONS)
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
     else:
@@ -1239,7 +1241,7 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
                   vf="", title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
     assert offset < 0.5, "offset must be less than 0.5"
 
-    input_container = av.open(input_path)
+    input_container = av.open(input_path, **AV_READ_OPTIONS)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
 
@@ -1363,7 +1365,7 @@ def export_audio(input_path, output_path, start_time=None, end_time=None,
         if start_time is not None and not (start_time < end_time):
             raise ValueError("end_time must be greater than start_time")
 
-    input_container = av.open(input_path)
+    input_container = av.open(input_path, **AV_READ_OPTIONS)
     if len(input_container.streams.audio) == 0:
         input_container.close()
         return False
