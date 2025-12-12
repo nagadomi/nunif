@@ -108,8 +108,6 @@ Note that the transformation formula is different for ZoeDepth models(`ZoeD_N`, 
 
 (`Edge Fix` in GUI)
 
-This parameter is used only for DepthAnything models (`Any_S`, `Any_B`, `ANY_L`).
-
 DepthAnything model outputs very accurate depth, but in stereo generation, it causes artifacts at foreground and background edges.
 
 This approach reduces artifacts by dilating foreground segments (high value area).
@@ -117,6 +115,8 @@ This approach reduces artifacts by dilating foreground segments (high value area
 ![edge-dilation](https://github.com/nagadomi/nunif/assets/287255/cb67b93a-bf26-4ea2-ac8b-418d5dc716c3)
 
 `0` is disabled. `2` by default. `4` is the most eye-friendly, but it degrades depth accuracy.
+
+With a later update, the option now allows specifying both the X (horizontal) and Y (vertical) axes separately. In the GUI, the first value corresponds to the horizontal direction and the second to the vertical direction. If the second value is left empty, both axes will use the first setting, as before. See https://github.com/nagadomi/nunif/pull/540 .
 
 ## About Colorspace
 
