@@ -844,7 +844,7 @@ def process_video(input_path, output_path,
             raise ValueError("end_time must be greater than start_time")
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
-    input_container = av.open(input_path)
+    input_container = av.open(input_path,metadata_errors='ignore')
 
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
