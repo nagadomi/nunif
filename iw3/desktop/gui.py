@@ -3,6 +3,7 @@ import nunif.gui.subprocess_patch  # noqa
 import sys
 import os
 import time
+import math
 from os import path
 import traceback
 import threading
@@ -60,6 +61,15 @@ HAS_WINDOWS_CAPTURE = importlib.util.find_spec("windows_capture")
 
 myEVT_FPS = wx.NewEventType()
 EVT_FPS = wx.PyEventBinder(myEVT_FPS, 0)
+
+
+# Spin inclrement value
+DIVERGENCE_INC_DEFAULT = 0.25
+DIVERGENCE_INC_FINE = 0.01
+CONVERGENCE_INC_DEFAULT = 0.1
+CONVERGENCE_INC_FINE = 0.01
+FOREGROUNDSCALE_INC_DEFAULT = 0.2
+FOREGROUNDSCALE_INC_FINE = 0.01
 
 
 class FPSEvent(wx.PyCommandEvent):
@@ -447,6 +457,13 @@ class MainFrame(wx.Frame):
                                        allow_none=False, min=0, max=500, name="txt_crop_bottom")
         self.txt_crop_bottom.SetValue(0)
 
+        self.lbl_autocrop = wx.StaticText(self.grp_processor, label=T("AutoCrop"))
+        self.cbo_autocrop = wx.ComboBox(self.grp_processor,
+                                        choices=["", "BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],
+                                        name="cbo_autocrop")
+        self.cbo_autocrop.SetEditable(False)
+        self.cbo_autocrop.SetSelection(0)
+
         self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
@@ -476,7 +493,11 @@ class MainFrame(wx.Frame):
         crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
 
         layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_compile, (5, 0), flag=wx.EXPAND)
+
+        layout.Add(self.lbl_autocrop, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_autocrop, (5, 1), flag=wx.EXPAND)
+
+        layout.Add(self.chk_compile, (6, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -487,18 +508,27 @@ class MainFrame(wx.Frame):
             self.grp_adjustment.SetBackgroundColour("#ccc")
 
         self.lbl_adj_divergence = wx.StaticText(self.grp_adjustment, label=T("3D Strength"))
-        self.sld_adj_divergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.00", min=0.0, max=10.0, inc=0.25)
+        self.sld_adj_divergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.00",
+                                                    min=0.0, max=10.0, inc=DIVERGENCE_INC_DEFAULT)
         self.sld_adj_divergence.SetDigits(2)
         self.lbl_adj_convergence = wx.StaticText(self.grp_adjustment, label=T("Convergence Plane"))
-        self.sld_adj_convergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.0", min=0.0, max=1.0, inc=0.1)
+        self.sld_adj_convergence = wx.SpinCtrlDouble(self.grp_adjustment, value="1.0",
+                                                     min=0.0, max=1.0, inc=CONVERGENCE_INC_DEFAULT)
         self.lbl_adj_foreground_scale = wx.StaticText(self.grp_adjustment, label=T("Foreground Scale"))
-        self.sld_adj_foreground_scale = wx.SpinCtrlDouble(self.grp_adjustment, value="0", min=-3.0, max=3.0, inc=0.2)
+        self.sld_adj_foreground_scale = wx.SpinCtrlDouble(self.grp_adjustment, value="0",
+                                                          min=-3.0, max=3.0, inc=FOREGROUNDSCALE_INC_DEFAULT)
         self.lbl_adj_edge_dilation = wx.StaticText(self.grp_adjustment, label=T("Edge Fix"))
         self.sld_adj_edge_dilation = wx.SpinCtrl(self.grp_adjustment, value="0", min=0, max=10,
                                                  name="sld_adj_edge_dilation")
         self.cbo_adj_edge_dilation_y = EditableComboBox(self.grp_adjustment,
                                                         choices=["", "0", "1", "2"],
                                                         name="cbo_adj_edge_dilation_y")
+        self.tgl_adj_fine = wx.ToggleButton(self.grp_adjustment, label=T("Fine Adjustment"),
+                                            name="tgl_adj_fine")
+        self.btn_adj_align = wx.Button(self.grp_adjustment, label=T("Align to Step"))
+
+        self.set_flat_size(self.tgl_adj_fine)
+        self.set_flat_size(self.btn_adj_align)
 
         layout = wx.GridBagSizer(vgap=5, hgap=4)
         layout.SetEmptyCellSize((0, 0))
@@ -512,6 +542,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_adj_edge_dilation, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.sld_adj_edge_dilation, (1, 3), flag=wx.EXPAND)
         layout.Add(self.cbo_adj_edge_dilation_y, (1, 4), flag=wx.EXPAND)
+        layout.Add(self.tgl_adj_fine, (2, 0), flag=wx.EXPAND)
+        layout.Add(self.btn_adj_align, (2, 1), flag=wx.EXPAND)
 
         sizer_adjustment = wx.StaticBoxSizer(self.grp_adjustment, wx.VERTICAL)
         sizer_adjustment.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -596,6 +628,8 @@ class MainFrame(wx.Frame):
         self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
         self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
 
+        self.tgl_adj_fine.Bind(wx.EVT_TOGGLEBUTTON, self.on_toggle_finetuning)
+        self.btn_adj_align.Bind(wx.EVT_BUTTON, self.on_click_align)
         self.sld_adj_divergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_convergence.Bind(wx.EVT_SPINCTRLDOUBLE, self.update_args_adjustment)
         self.sld_adj_edge_dilation.Bind(wx.EVT_SPINCTRL, self.update_args_adjustment)
@@ -632,6 +666,7 @@ class MainFrame(wx.Frame):
         self.update_view_mode()
         self.update_monitor_index()
         self.update_window_names()
+        self.update_finetuning()
         self.update_compile()
 
         self.grp_adjustment.Hide()
@@ -986,6 +1021,7 @@ class MainFrame(wx.Frame):
             ema_normalize=self.chk_ema_normalize.GetValue(),
             ema_decay=float(self.cbo_ema_decay.GetValue()),
             resolution=resolution,
+            autocrop=self.cbo_autocrop.GetValue() if self.cbo_autocrop.GetValue() else None,
             compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
             cross_eyed=self.chk_cross_eyed.IsChecked(),
             screenshot=self.cbo_screenshot.GetValue(),
@@ -1266,6 +1302,42 @@ class MainFrame(wx.Frame):
 
         self.GetSizer().Layout()
         self.Fit()
+
+    def update_finetuning(self):
+        # Fine-tuning spin controls
+        if self.tgl_adj_fine.GetValue():
+            self.sld_adj_divergence.SetIncrement(DIVERGENCE_INC_FINE)
+            self.sld_adj_convergence.SetIncrement(CONVERGENCE_INC_FINE)
+            self.sld_adj_foreground_scale.SetIncrement(FOREGROUNDSCALE_INC_FINE)
+        else:
+            self.sld_adj_divergence.SetIncrement(DIVERGENCE_INC_DEFAULT)
+            self.sld_adj_convergence.SetIncrement(CONVERGENCE_INC_DEFAULT)
+            self.sld_adj_foreground_scale.SetIncrement(FOREGROUNDSCALE_INC_DEFAULT)
+
+    def on_toggle_finetuning(self, event):
+        # Fine-tuning spin controls
+        self.update_finetuning()
+
+    def on_click_align(self, event):
+        def align(w):
+            inc = w.GetIncrement()
+            value = w.GetValue()
+            w.SetValue(math.floor(round(value / inc, 10)) * inc)
+
+        align(self.sld_adj_divergence)
+        align(self.sld_adj_convergence)
+        align(self.sld_adj_foreground_scale)
+
+    @staticmethod
+    def set_flat_size(w):
+        size = w.GetSize()
+        new_size = (size.width, int(size.height * 0.8))
+        w.SetMinSize(new_size)
+        w.SetSize(new_size)
+
+        font = w.GetFont()
+        font.SetPointSize(int(font.GetPointSize() * 0.8))
+        w.SetFont(font)
 
 
 LOCAL_LIST = sorted(list(LOCALES.keys()))
