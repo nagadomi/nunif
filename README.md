@@ -77,6 +77,7 @@ We usually support the latest version. If there are bugs or compatibility issues
 - [INSTALL-macos](INSTALL-macos.md)
 
 For Intel GPUs, additionally see section [INSTALL-xpu](INSTALL-xpu.md).
+- For Bazzite/BC-250 (gfx1013) with ROCm, see [INSTALL-bazzite](docs/INSTALL-bazzite.md).
 
 #### About NUNIF_HOME
 
