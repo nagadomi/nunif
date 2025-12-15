@@ -1,0 +1,55 @@
+name: Build Python dev files for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - python_dev
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        python-version: [3.10.11, 3.12.10]
+
+    steps:
+      - name: Set up environment
+        run: |
+          echo "PYVER=${{ matrix.python-version }}" >> $env:GITHUB_ENV
+          echo "ZIP_NAME=python-${{ matrix.python-version }}-dev.zip" >> $env:GITHUB_ENV
+
+
+      - name: Install official Python via Chocolatey
+        shell: pwsh
+        run: |
+          choco install python --version=${{ matrix.python-version }} -y --force --no-progress
+          $ver = "${{ matrix.python-version }}"
+          $pyVer = $ver -replace '^(\d+\.\d+).*$', '$1'
+          $installPath = & py -$pyVer -c "import sys, os; print(os.path.dirname(sys.executable))"
+          echo "PYTHON_PATH=$installPath" >> $env:GITHUB_ENV
+          echo "Installed Python at: $installPath"
+
+      - name: Collect include and libs
+        shell: pwsh
+        run: |
+          $outDir = "output"
+          mkdir $outDir -Force
+          xcopy "${env:PYTHON_PATH}\include" "$outDir\include" /E /I /H /K /Y
+          xcopy "${env:PYTHON_PATH}\libs" "$outDir\libs" /E /I /H /K /Y
+          Compress-Archive -Path "$outDir\*" -DestinationPath ${env:ZIP_NAME}
+          echo "Created ${env:ZIP_NAME}"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: python_dev_release
+          name: Python dev files for Windows
+          draft: true
+          preserve_order: true
+          overwrite_files: true
+          files: ${{ env.ZIP_NAME }}
