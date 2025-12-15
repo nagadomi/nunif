@@ -10,25 +10,31 @@ Also, I am not familiar with Docker. If you are familiar with Docker, do it your
 
 # Building Docker Image
 
+From the repository root directory:
 ```
-docker build -t nunif Dockerfiles
+docker build -f extra_build/docker/Dockerfile -t nunif extra_build/docker
+```
+or
+```
+cd extra_build/docker
+docker build -t nunif .
 ```
 
-When specifying a docfile (For example `Dockerfiles/Dockerfile.cpu_noavx`)
+When specifying a docfile (For example `extra_build/docker/Dockerfile.cpu_noavx`)
 ```
-docker build -t nunif -f Dockerfiles/Dockerfile.cpu_noavx Dockerfiles
+docker build -f extra_build/docker/Dockerfile.cpu_noavx -t nunif extra_build/docker
 ```
 
 ## Running waifu2x.web with larger file limit
 
 ```
-docker run --gpus all -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --no-size-limit
+docker run -it --gpus all -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --no-size-limit
 ```
 Open http://localhost:8812/ 
 
 For CPU only mode (use `--gpu -1` option)
 ```
-docker run -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --no-size-limit --gpu -1
+docker run -it -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-addr 0.0.0.0 --no-size-limit --gpu -1
 ```
 
 ## waifu2x.cli command
@@ -36,11 +42,11 @@ docker run -p 8812:8812 --rm nunif python3 -m waifu2x.web --port 8812 --bind-add
 For CLI commands, it is required to access the input and output directories from the docker container side to the host side.
 So, mount the drive on the host side and use it.
 ```
-docker run --gpus all -v path_to_input_dir:/input_dir -v path_to_output_dir:/output_dir --rm nunif python3 -m waifu2x.cli -m scale -i /input_dir -o /output_dir
+docker run -it --gpus all -v path_to_input_dir:/input_dir -v path_to_output_dir:/output_dir --rm nunif python3 -m waifu2x.cli -m scale -i /input_dir -o /output_dir
 ```
 Note that directory paths for `-v` option must be specified as absolute paths.
 ```
-docker run --gpus all -v `pwd`/waifu2x/docs/images:/input_dir -v /tmp/output:/output_dir --rm nunif python3 -m waifu2x.cli -m scale -i /input_dir -o /output_dir
+docker run -it --gpus all -v `pwd`/waifu2x/docs/images:/input_dir -v /tmp/output:/output_dir --rm nunif python3 -m waifu2x.cli -m scale -i /input_dir -o /output_dir
 ```
 
 See also [waifu2x Command Line Interface](../waifu2x/docs/cli.md) for example commands.

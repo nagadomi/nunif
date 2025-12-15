@@ -74,6 +74,8 @@ We usually support the latest version. If there are bugs or compatibility issues
 
 For Intel GPUs, additionally see section [INSTALL-xpu](INSTALL-xpu.md).
 
+For container, packages, or special hardware builds, see [extra_build](extra_build).
+
 #### About NUNIF_HOME
 
 If the environment variable `NUNIF_HOME` is defined, downloaded pretrained models, configuration files, cache, temporary files, and lock files will be saved under `NUNIF_HOME`. This may be useful when packaging or in situations where the source directory does not have write permissions.
