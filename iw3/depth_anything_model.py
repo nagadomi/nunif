@@ -63,14 +63,21 @@ AA_SUPPORTED_MODELS = {
     "Any_V2_B",
     "Any_V2_L",
 }
+MIN_RESOLUTION = 224
 
 
-def batch_preprocess(x, lower_bound=392, max_aspect_ratio=4):
+def batch_preprocess(x, lower_bound=392, max_aspect_ratio=4, limit_resolution=False):
     # x: BCHW float32 0-1
     B, C, H, W = x.shape
 
     # resize
     ensure_multiple_of = 14
+
+    if limit_resolution and lower_bound > min(W, H):
+        lower_bound = min(W, H)
+        lower_bound -= lower_bound % ensure_multiple_of
+        lower_bound = max(lower_bound, MIN_RESOLUTION)
+
     if W < H:
         scale_factor = lower_bound / W
     else:
@@ -115,6 +122,7 @@ def _forward(model, x, enable_amp):
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
                 output_device="cpu", device=None, edge_dilation=2, depth_aa=None,
+                limit_resolution=False,
                 **kwargs):
     device = device if device is not None else model.device
     batch = False
@@ -129,7 +137,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
-    x = batch_preprocess(x, model.prep_lower_bound)
+    x = batch_preprocess(x, model.prep_lower_bound, limit_resolution=limit_resolution)
 
     if not low_vram:
         if flip_aug:
@@ -240,7 +248,9 @@ class DepthAnythingModel(BaseDepthModel):
             device=x.device,
             edge_dilation=edge_dilation,
             depth_aa=self.depth_aa if depth_aa else None,
-            resize_depth=False)
+            resize_depth=False,
+            limit_resolution=self.limit_resolution
+        )
 
     @classmethod
     def get_name(cls):

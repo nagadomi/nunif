@@ -102,6 +102,7 @@
 "Processor": "处理器"
 "Device": "设备"
 "Resolution": "分辨率"
+"Limit to source resolution": "限制为源分辨率"
 "Batch Size": "批处理大小"
 "Depth": "深度"
 "Stereo": "立体"

@@ -48,12 +48,12 @@ METRIC_DEPTH_TYPES = {
 }
 
 
-def batch_preprocess(x, lower_bound, metric_depth):
+def batch_preprocess(x, lower_bound, metric_depth, limit_resolution=False):
     if metric_depth:
-        x = batch_preprocess_da(x, lower_bound - METRIC_PADDING * 2)
+        x = batch_preprocess_da(x, lower_bound - METRIC_PADDING * 2, limit_resolution=limit_resolution)
         x = reflection_pad2d_naive(x, (METRIC_PADDING,) * 4)
     else:
-        x = batch_preprocess_da(x, lower_bound)
+        x = batch_preprocess_da(x, lower_bound, limit_resolution=limit_resolution)
     assert x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0
     return x
 
@@ -174,7 +174,9 @@ class VideoDepthAnythingModel(BaseDepthModel):
             batch = True
 
         self.reset()
-        x = batch_preprocess(x, self.model.prep_lower_bound, metric_depth=self.model.metric_depth)
+        x = batch_preprocess(x, self.model.prep_lower_bound,
+                             metric_depth=self.model.metric_depth,
+                             limit_resolution=self.limit_resolution)
         self.model.infer(x[0], use_amp=enable_amp)
         self.input_frame_count = 1
         out = torch.stack(self._flush())
@@ -193,7 +195,9 @@ class VideoDepthAnythingModel(BaseDepthModel):
         depth_aa = self.depth_aa if depth_aa else None
 
         B = x.shape[0]
-        x = batch_preprocess(x, self.model.prep_lower_bound, metric_depth=self.model.metric_depth)
+        x = batch_preprocess(x, self.model.prep_lower_bound,
+                             metric_depth=self.model.metric_depth,
+                             limit_resolution=self.limit_resolution)
         outputs = []
         for i in range(B):
             self.input_frame_count += 1

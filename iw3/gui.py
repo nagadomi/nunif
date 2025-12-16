@@ -50,6 +50,7 @@ from .video_depth_anything_model import (
 from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel, AA_SUPPORT_MODELS as VDA_STREAM_AA_SUPPORTED_MODELS
 from .depth_anything_v3_model import AA_SUPPORTED_MODELS as DA3_AA_SUPPORTED_MODELS
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
+from .zoedepth_model import MODEL_FILES as ZOEDPETH_MODELS
 from . import export_config
 from .inpaint_utils import INPAINT_MODELS
 
@@ -114,6 +115,7 @@ class MainFrame(wx.Frame):
         self.depth_model_type = None
         self.depth_model_device_id = None
         self.depth_model_height = None
+        self.depth_model_limit_resolution = None
         self.initialize_component()
         if is_dark_mode():
             apply_dark_mode(self)
@@ -254,6 +256,9 @@ class MainFrame(wx.Frame):
                                                name="cbo_zoed_resolution")
         self.cbo_resolution.SetSelection(0)
 
+        self.chk_limit_resolution = wx.CheckBox(self.grp_stereo, label=T("Limit to source resolution"),
+                                                name="chk_limit_resolution")
+
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
         self.cbo_foreground_scale = EditableComboBox(self.grp_stereo,
                                                      choices=["-3", "-2", "-1", "0", "1", "2", "3"],
@@ -393,6 +398,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_depth_model, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_limit_resolution, (i := i + 1, 1), (1, 2), flag=wx.EXPAND)
+
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -892,6 +899,11 @@ class MainFrame(wx.Frame):
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
 
+        if name in ZOEDPETH_MODELS or name in DEPTH_PRO_MODELS:
+            self.chk_limit_resolution.Disable()
+        else:
+            self.chk_limit_resolution.Enable()
+
         if (
                 name in DA_AA_SUPPORTED_MODELS or
                 name in VDA_AA_SUPPORTED_MODELS or
@@ -1085,6 +1097,7 @@ class MainFrame(wx.Frame):
                 self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 224, 8190)
                 return
             resolution = int(resolution)
+        limit_resolution = self.chk_limit_resolution.IsChecked()
 
         stereo_width = self.cbo_stereo_width.GetValue()
         if stereo_width == "Default" or stereo_width == "":
@@ -1148,10 +1161,13 @@ class MainFrame(wx.Frame):
         depth_model_type = self.cbo_depth_model.GetValue()
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
                                          self.depth_model_device_id != device_id or
-                                         self.depth_model_height != resolution)):
+                                         self.depth_model_height != resolution or
+                                         self.depth_model_limit_resolution != limit_resolution)):
             self.depth_model = None
             self.depth_model_type = None
             self.depth_model_device_id = None
+            self.depth_model_height = None
+            self.depth_model_limit_resolution = None
             gc_collect()
 
         max_output_width = max_output_height = None
@@ -1259,6 +1275,7 @@ class MainFrame(wx.Frame):
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             resolution=resolution,
+            limit_resolution=limit_resolution,
             stereo_width=stereo_width,
             max_workers=int(self.cbo_max_workers.GetValue()),
             tta=self.chk_tta.GetValue(),
@@ -1316,6 +1333,7 @@ class MainFrame(wx.Frame):
             self.depth_model_type = args.depth_model
             self.depth_model_device_id = args.gpu
             self.depth_model_height = args.resolution
+            self.depth_model_limit_resolution = args.limit_resolution
 
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())

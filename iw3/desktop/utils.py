@@ -258,7 +258,7 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     depth_model = args.state["depth_model"]
     if not depth_model.loaded():
-        depth_model.load(gpu=args.gpu, resolution=args.resolution)
+        depth_model.load(gpu=args.gpu, resolution=args.resolution, limit_resolution=args.limit_resolution)
 
     # Use Flicker Reduction to prevent 3D sickness
     depth_model.enable_ema(args.ema_decay, buffer_size=1)

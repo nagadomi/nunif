@@ -61,6 +61,7 @@ def _forward(model, x, enable_amp, sky_thresh=0.3, raw_output=False):
 @torch.inference_mode()
 def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
                 output_device="cpu", device=None, edge_dilation=2, depth_aa=None,
+                limit_resolution=False,
                 raw_output=False,
                 **kwargs):
     device = device if device is not None else model.device
@@ -76,7 +77,7 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
         # PIL
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
-    x = batch_preprocess(x, model.prep_lower_bound)
+    x = batch_preprocess(x, model.prep_lower_bound, limit_resolution=limit_resolution)
 
     if not low_vram:
         if flip_aug:
@@ -167,6 +168,7 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
             edge_dilation=edge_dilation,
             depth_aa=self.depth_aa if depth_aa else None,
             raw_output=self.raw_output,
+            limit_resolution=self.limit_resolution,
         )
 
     @classmethod

@@ -86,7 +86,9 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         else:
             batch = True
 
-        x = batch_preprocess(x, self.model.prep_lower_bound, metric_depth=self.metric_depth)
+        x = batch_preprocess(x, self.model.prep_lower_bound,
+                             metric_depth=self.metric_depth,
+                             limit_resolution=self.limit_resolution)
         outputs = []
         for frame in x:
             outputs.append(self.model.infer_video_depth_one(frame, use_amp=enable_amp).to(torch.float32))

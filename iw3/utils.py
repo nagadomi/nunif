@@ -1948,6 +1948,9 @@ def create_parser(required_true=True):
                         help="set the end time offset for video. hh:mm:ss or mm:ss format")
     parser.add_argument("--resolution", type=int,
                         help="input resolution(small side) for depth model")
+    parser.add_argument("--limit-resolution", action="store_true",
+                        help=("if the source resolution is lower than --resolution, "
+                              "the depth resolution will be limited to the source resolution."))
     parser.add_argument("--stereo-width", type=int,
                         help="input width for row_flow_v3/row_flow_v2 model")
     parser.add_argument("--ipd-offset", type=float, default=0,
@@ -2167,7 +2170,7 @@ def iw3_main(args):
 
     if not is_yaml(args.input):
         if not depth_model.loaded():
-            depth_model.load(gpu=args.gpu, resolution=args.resolution)
+            depth_model.load(gpu=args.gpu, resolution=args.resolution, limit_resolution=args.limit_resolution)
 
         is_metric = depth_model.is_metric()
         args.mapper = resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
