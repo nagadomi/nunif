@@ -63,7 +63,7 @@ AA_SUPPORTED_MODELS = {
     "Any_V2_B",
     "Any_V2_L",
 }
-MIN_RESOLUTION = 196
+MIN_RESOLUTION = 224
 
 
 def batch_preprocess(x, lower_bound=392, max_aspect_ratio=4, limit_resolution=False):
