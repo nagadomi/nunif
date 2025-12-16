@@ -254,6 +254,9 @@ class MainFrame(wx.Frame):
                                                name="cbo_zoed_resolution")
         self.cbo_resolution.SetSelection(0)
 
+        self.chk_limit_resolution = wx.CheckBox(self.grp_stereo, label=T("Limit to source resolution"),
+                                                name="chk_limit_resolution")
+
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
         self.cbo_foreground_scale = EditableComboBox(self.grp_stereo,
                                                      choices=["-3", "-2", "-1", "0", "1", "2", "3"],
@@ -393,6 +396,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_depth_model, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.chk_limit_resolution, (i := i + 1, 1), (1, 2), flag=wx.EXPAND)
+
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -888,9 +893,11 @@ class MainFrame(wx.Frame):
         if name in DEPTH_PRO_MODELS:
             self.cbo_resolution.Disable()
             self.chk_fp16.Disable()
+            self.chk_limit_resolution.Disable()
         else:
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
+            self.chk_limit_resolution.Enable()
 
         if (
                 name in DA_AA_SUPPORTED_MODELS or
@@ -1259,6 +1266,7 @@ class MainFrame(wx.Frame):
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             resolution=resolution,
+            limit_resolution=self.chk_limit_resolution.IsChecked(),
             stereo_width=stereo_width,
             max_workers=int(self.cbo_max_workers.GetValue()),
             tta=self.chk_tta.GetValue(),

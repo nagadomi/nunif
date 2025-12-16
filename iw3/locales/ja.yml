@@ -96,6 +96,7 @@
 "Processor": "プロセッサ"
 "Device": "デバイス"
 "Resolution": "解像度"
+"Limit to source resolution": "ソース解像度に制限"
 "Batch Size": "バッチサイズ"
 "Depth": "深度"
 "Stereo": "ステレオ"
