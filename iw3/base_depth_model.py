@@ -34,6 +34,7 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.model_backup = None  # for compile
         self.model_type = model_type
         self.scaler = self.create_depth_scaler()
+        self.limit_resolution = False
 
     def create_depth_scaler(self):
         # This can be overridden
@@ -97,8 +98,9 @@ class BaseDepthModel(metaclass=ABCMeta):
     def load_model(self, model_type, resolution, device):
         pass
 
-    def load(self, gpu=0, resolution=None, **kwargs):
+    def load(self, gpu=0, resolution=None, limit_resolution=False, **kwargs):
         self.device = create_device(gpu)
+        self.limit_resolution = limit_resolution
 
         with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
             try:
