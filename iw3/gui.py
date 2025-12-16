@@ -50,6 +50,7 @@ from .video_depth_anything_model import (
 from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel, AA_SUPPORT_MODELS as VDA_STREAM_AA_SUPPORTED_MODELS
 from .depth_anything_v3_model import AA_SUPPORTED_MODELS as DA3_AA_SUPPORTED_MODELS
 from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
+from .zoedepth_model import MODEL_FILES as ZOEDPETH_MODELS
 from . import export_config
 from .inpaint_utils import INPAINT_MODELS
 
@@ -894,10 +895,13 @@ class MainFrame(wx.Frame):
         if name in DEPTH_PRO_MODELS:
             self.cbo_resolution.Disable()
             self.chk_fp16.Disable()
-            self.chk_limit_resolution.Disable()
         else:
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
+
+        if name in ZOEDPETH_MODELS or name in DEPTH_PRO_MODELS:
+            self.chk_limit_resolution.Disable()
+        else:
             self.chk_limit_resolution.Enable()
 
         if (
