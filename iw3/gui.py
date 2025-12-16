@@ -114,6 +114,7 @@ class MainFrame(wx.Frame):
         self.depth_model_type = None
         self.depth_model_device_id = None
         self.depth_model_height = None
+        self.depth_model_limit_resolution = None
         self.initialize_component()
         if is_dark_mode():
             apply_dark_mode(self)
@@ -1092,6 +1093,7 @@ class MainFrame(wx.Frame):
                 self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 224, 8190)
                 return
             resolution = int(resolution)
+        limit_resolution = self.chk_limit_resolution.IsChecked()
 
         stereo_width = self.cbo_stereo_width.GetValue()
         if stereo_width == "Default" or stereo_width == "":
@@ -1155,10 +1157,13 @@ class MainFrame(wx.Frame):
         depth_model_type = self.cbo_depth_model.GetValue()
         if (self.depth_model is None or (self.depth_model_type != depth_model_type or
                                          self.depth_model_device_id != device_id or
-                                         self.depth_model_height != resolution)):
+                                         self.depth_model_height != resolution or
+                                         self.depth_model_limit_resolution != limit_resolution)):
             self.depth_model = None
             self.depth_model_type = None
             self.depth_model_device_id = None
+            self.depth_model_height = None
+            self.depth_model_limit_resolution = None
             gc_collect()
 
         max_output_width = max_output_height = None
@@ -1266,7 +1271,7 @@ class MainFrame(wx.Frame):
             gpu=device_id,
             batch_size=int(self.cbo_batch_size.GetValue()),
             resolution=resolution,
-            limit_resolution=self.chk_limit_resolution.IsChecked(),
+            limit_resolution=limit_resolution,
             stereo_width=stereo_width,
             max_workers=int(self.cbo_max_workers.GetValue()),
             tta=self.chk_tta.GetValue(),
@@ -1324,6 +1329,7 @@ class MainFrame(wx.Frame):
             self.depth_model_type = args.depth_model
             self.depth_model_device_id = args.gpu
             self.depth_model_height = args.resolution
+            self.depth_model_limit_resolution = args.limit_resolution
 
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
