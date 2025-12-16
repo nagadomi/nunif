@@ -74,7 +74,7 @@ def batch_preprocess(x, lower_bound=392, max_aspect_ratio=4, limit_resolution=Fa
     ensure_multiple_of = 14
 
     if limit_resolution and lower_bound > min(W, H):
-        lower_bound = min(lower_bound, min(W, H))
+        lower_bound = min(W, H)
         lower_bound -= lower_bound % ensure_multiple_of
         lower_bound = max(lower_bound, MIN_RESOLUTION)
 
