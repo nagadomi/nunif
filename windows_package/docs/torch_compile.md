@@ -24,7 +24,7 @@ For more details, see Microsoft’s documentation:
 The **Embeddable Python** used by `nunif-windows` does not include development headers or libraries.  
 This script installs the required development files into the environment.
 
-## GPU Usage
+## GPU
 
 `torch.compile` for GPU on Windows is **not officially supported** by PyTorch or Triton.  
 Use the Windows port of Triton available at the following repository:  
@@ -42,7 +42,7 @@ Compilation caches are stored in the following directory:
 
 You can safely delete this folder if you no longer need the cache.
 
-## CPU Usage
+## CPU
 
 To use `torch.compile` on CPU, you must install **Visual Studio 2022** or **2019**.
 Below is the recommended setup for Visual Studio 2022 Community Edition.
