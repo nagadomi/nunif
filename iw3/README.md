@@ -124,7 +124,11 @@ See [Colorspace](docs/colorspace.md) and https://github.com/nagadomi/nunif/issue
 
 ## About Depth Resolution
 
-See https://github.com/nagadomi/nunif/discussions/168 .
+Specify the depth resolution.
+
+For details, see https://github.com/nagadomi/nunif/discussions/168 .
+
+If `Limit to source resolution`(`--limit-resolution`) is enabled and the source resolution is lower than `--resolution`, the depth resolution will be limited to the source resolution.
 
 ## About Video Format
 
