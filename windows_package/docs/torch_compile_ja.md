@@ -5,7 +5,13 @@ torch.compile を使用することで、一部のモデルで実行速度が向
 
 ## GPU と CPU 共通の手順
 
-インストールスクリプトは `torch_compile` フォルダ内にあります。存在しない場合は`update-installer.bat`を実行してください。
+最初にnunif-windowsを最新に更新します。
+
+1. `update.bat`を実行します
+2. `update-installer.bat`を実行します
+3. もう一度`update.bat`を実行します
+
+`torch.compile`用のインストールスクリプトは `torch_compile` フォルダ内にあります。
 
 1. `enable_long_path.reg` を実行します
 2. コンピューターを再起動します

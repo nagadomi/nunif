@@ -5,7 +5,13 @@ Using `torch.compile` may improve the execution speed of some models, but the fi
 
 ## Common Steps for GPU and CPU
 
-All installation scripts are located in the `torch_compile` folder. If the folder does not exist, run `update-installer.bat`.
+First, update nunif-windows to the latest version.
+
+1. Run `update.bat`
+2. Run `update-installer.bat`
+3. Run `update.bat` again
+
+All installation scripts for torch.compile are located in the `torch_compile` folder.
 
 1. Run `enable_long_path.reg`
 2. Restart your computer
