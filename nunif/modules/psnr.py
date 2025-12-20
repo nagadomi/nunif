@@ -1,5 +1,6 @@
 import torch
-from torch import nn
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 """
@@ -16,6 +17,22 @@ class PSNR(nn.Module):
     def forward(self, input, target):
         mse = self.mse(torch.clamp(input, 0, 1), torch.clamp(target, 0, 1))
         return -10 * torch.log10(1.0 / (mse + 1.0e-6))
+
+
+class PSNRPerImage(nn.Module):
+    def forward(self, input, target):
+        if input.ndim == 4:
+            input = torch.clamp(input, 0, 1)
+            target = torch.clamp(target, 0, 1)
+            psnr_sum = 0
+            for x, y in zip(input, target):
+                mse = F.mse_loss(x, y)
+                psnr = -10 * torch.log10(1.0 / (mse + 1.0e-6))
+                psnr_sum = psnr_sum + psnr
+            return psnr_sum / input.shape[0]
+        else:
+            mse = F.mse_loss(torch.clamp(input, 0, 1), torch.clamp(target, 0, 1))
+            return -10 * torch.log10(1.0 / (mse + 1.0e-6))
 
 
 class LuminancePSNR(nn.Module):
