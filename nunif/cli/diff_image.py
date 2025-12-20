@@ -5,6 +5,7 @@
 import argparse
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple, to_tensor
+import torchvision.transforms.functional as TF
 import torch
 from os import path
 import math
@@ -26,6 +27,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", "-i", type=str, nargs="+", required=True, help="input file or directory")
     parser.add_argument("--verbose", "-v", action="store_true", help="output result for each images")
+    parser.add_argument("--resize", action="store_true", help="allow resizing to fit the image")
     args = parser.parse_args()
     if len(args.input) != 2:
         raise ValueError("Specify two files")
@@ -34,7 +36,11 @@ def main():
         im1, _ = load_image_simple(args.input[0], color="any")
         im2, _ = load_image_simple(args.input[1], color="any")
         if not compare_size(im1, im2):
-            print("size differ")
+            if not args.resize:
+                print("size differ")
+            else:
+                im1 = TF.resize(im1, size=(im2.height, im2.width))
+                print(f"PSNR: {calc_psnr(im1, im2)}")
         else:
             print(f"PSNR: {calc_psnr(im1, im2)}")
     elif path.isfile(args.input[0]) and path.isdir(args.input[1]):
@@ -49,7 +55,11 @@ def main():
         for i in range(len(files2)):
             im2, _ = load_image_simple(files2[i], color="any")
             if not compare_size(im1, im2):
-                psnr = float("nan")
+                if not args.resize:
+                    psnr = float("nan")
+                else:
+                    im1 = TF.resize(im1, size=(im2.height, im2.width))
+                    psnr = calc_psnr(im1, im2)
             else:
                 psnr = calc_psnr(im1, im2)
             if math.isnan(psnr):
@@ -74,8 +84,13 @@ def main():
         for i in range(len(files1)):
             im1, _ = load_image_simple(files1[i], color="any")
             im2, _ = load_image_simple(files2[i], color="any")
+
             if not compare_size(im1, im2):
-                psnr = float("nan")
+                if not args.resize:
+                    psnr = float("nan")
+                else:
+                    im1 = TF.resize(im1, size=(im2.height, im2.width))
+                    psnr = calc_psnr(im1, im2)
             else:
                 psnr = calc_psnr(im1, im2)
             psnr_sum += psnr
@@ -85,7 +100,7 @@ def main():
                 else:
                     print(f"PSNR: {psnr} {path.basename(files1[i])}")
 
-        print(f"Mean PSNR: {round(psnr_sum/len(files1), 3)}")
+        print(f"Mean PSNR: {round(psnr_sum / len(files1), 3)}")
     else:
         raise ValueError("input = `file file` or `file dir` or `dir dir`")
 
