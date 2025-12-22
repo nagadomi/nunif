@@ -3,7 +3,7 @@ from . import models # noqa
 
 
 def addon_config():
-    return [SBS3DAddon(), InpaintAddon(), VideoInpaintAddon(), DepthAAAddon(), DA3MonoAddon()]
+    return [SBS3DAddon(), InpaintAddon(), VideoInpaintAddon(), DepthAAAddon(), DA3MonoAddon(), DSODAddon()]
 
 
 class SBS3DAddon(Addon):
@@ -60,4 +60,17 @@ class DA3MonoAddon(Addon):
 
     def register_create_training_data(self, subparsers, default_parser):
         from .training.da3mono.create_training_data import register
+        return register(subparsers, default_parser)
+
+
+class DSODAddon(Addon):
+    def __init__(self):
+        super().__init__("dosd")
+
+    def register_train(self, subparsers, default_parser):
+        from .training.dsod.trainer import register
+        return register(subparsers, default_parser)
+
+    def register_create_training_data(self, subparsers, default_parser):
+        from .training.dsod.create_training_data import register
         return register(subparsers, default_parser)
