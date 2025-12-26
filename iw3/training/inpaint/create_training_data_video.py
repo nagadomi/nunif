@@ -161,7 +161,6 @@ def main(args):
     if args.model_type.startswith("VDA_"):
         raise ValueError("VDA is not supported")
 
-    max_workers = cpu_count() // 2 or 1
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     filename_prefix = filename_prefix + md5(path.basename(args.dataset_dir)) + "_"
     depth_model = create_depth_model(args.model_type)
@@ -179,7 +178,7 @@ def main(args):
             fps = args.max_fps
         return VU.VideoOutputConfig(fps=fps)
 
-    with PoolExecutor(max_workers=max_workers) as pool:
+    with PoolExecutor(max_workers=args.max_workers) as pool:
         futures = []
         seq_no = 0
         skip_counter = args.skip_first
@@ -216,6 +215,7 @@ def main(args):
 
 
 def register(subparsers, default_parser):
+    max_workers = cpu_count() // 2 or 1
     parser = subparsers.add_parser(
         "video_inpaint",
         parents=[default_parser],
@@ -234,6 +234,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--skip-interval", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--skip-first", type=int, default=0)
+    parser.add_argument("--max-workers", type=int, default=max_workers,
+                        help="Number of worker threads. Set to 1 to disable.")
 
     parser.set_defaults(handler=main)
 

@@ -260,8 +260,9 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         # BCHW
         pass
 
+    depth = get_mapper(args.mapper)(depth)
+
     if args.method in {"grid_sample", "backward"}:
-        depth = get_mapper(args.mapper)(depth)
         left_eye, right_eye = apply_divergence_grid_sample(
             im, depth,
             args.divergence, convergence=args.convergence,
@@ -270,7 +271,6 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             left_eye = left_eye.squeeze(0)
             right_eye = right_eye.squeeze(0)
     elif args.method in {"forward", "forward_fill"}:
-        depth = get_mapper(args.mapper)(depth)
         left_eye, right_eye = apply_divergence_forward_warp(
             im, depth,
             args.divergence, convergence=args.convergence,
@@ -279,11 +279,6 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             left_eye = left_eye.squeeze(0)
             right_eye = right_eye.squeeze(0)
     elif args.method in {"forward_inpaint", "mlbw_l2_inpaint"}:
-        if args.method == "forward_inpaint":
-            depth = get_mapper(args.mapper)(depth)
-            mapper = None
-        else:
-            mapper = args.mapper
         left_eyes = []
         right_eyes = []
         reset_pts = reset_pts if reset_pts is not None else [False] * depth.shape[0]
@@ -291,7 +286,6 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             left_eye, right_eye = side_model.infer(
                 im[i:i + 1], depth[i:i + 1],
                 divergence=args.divergence, convergence=args.convergence,
-                mapper=mapper,
                 preserve_screen_border=args.preserve_screen_border,
                 synthetic_view=args.synthetic_view,
                 inner_dilation=args.mask_inner_dilation,
@@ -331,7 +325,6 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         left_eye, right_eye = apply_divergence_nn_LR(
             side_model, im, depth,
             args.divergence, args.convergence, args.warp_steps,
-            mapper=args.mapper,
             synthetic_view=args.synthetic_view,
             preserve_screen_border=args.preserve_screen_border,
             enable_amp=not args.disable_amp,
