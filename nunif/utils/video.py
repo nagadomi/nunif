@@ -932,8 +932,8 @@ def process_video(input_path, output_path,
                          container_duration=container_duration,
                          input_path=input_path)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
-
-    demuxer = input_container.demux([s for s in [video_input_stream, audio_input_stream] if s is not None])
+    streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
+    demuxer = input_container.demux(streams)
     while True:
         try:
             packet = next(demuxer)
