@@ -866,6 +866,7 @@ def process_video(input_path, output_path,
         input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
 
     video_input_stream = input_container.streams.video[0]
+    frame_dim = [video_input_stream.codec_context.width, video_input_stream.codec_context.height]
     video_input_stream.thread_type = "AUTO"
     # _print_len(video_input_stream)
     audio_input_stream = audio_output_stream = None
@@ -944,6 +945,9 @@ def process_video(input_path, output_path,
                 for frame in safe_decode(packet):
                     frame = fps_filter.update(frame)
                     if frame is not None:
+                        if frame.width != frame_dim[0] or frame.height != frame_dim[1]: # video has inconsistent size!
+                            print("\n[WARN] Converting", [frame.width, frame.height], "to", frame_dim, "!", file=sys.stderr)
+                            frame = frame.reformat(width=frame_dim[0], height=frame_dim[1])
                         frame = frame.reformat(**rgb24_options) if rgb24_options else frame
                         for new_frame in get_new_frames(frame_callback(frame)):
                             reformatted_frame = reformatter(new_frame)
@@ -979,6 +983,9 @@ def process_video(input_path, output_path,
     while True:
         frame = fps_filter.update(None)
         if frame is not None:
+            if frame.width != frame_dim[0] or frame.height != frame_dim[1]: # video has inconsistent size!
+                print("\n[WARN] Converting", [frame.width, frame.height], "to", frame_dim, "!", file=sys.stderr)
+                frame = frame.reformat(width=frame_dim[0], height=frame_dim[1])
             frame = frame.reformat(**rgb24_options) if rgb24_options else frame
             for new_frame in get_new_frames(frame_callback(frame)):
                 new_frame = reformatter(new_frame)
