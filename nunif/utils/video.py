@@ -824,9 +824,15 @@ def test_audio_copy(input_path, output_path):
 def safe_decode(packet):
     try:
         frames = packet.decode()
-    except av.error.InvalidDataError:
+    except av.error.InvalidDataError: # corrupted frame
         frames = []
         print("\n[WARN] Input video has invalid data/frames! continuing anyway...", file=sys.stderr)
+    except av.error.PermissionError: # wmv drm protection
+        frames = []
+        print("\n[WARN] No permission to read data/frames! continuing anyway...", file=sys.stderr)
+    except av.error.PatchWelcomeError: # pyAV unimplemented
+        frames = []
+        print("\n[WARN] Unknown data/frames type (pyAV Unimplemented)! continuing anyway...", file=sys.stderr)
     return frames
 
 
