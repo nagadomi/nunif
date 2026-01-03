@@ -22,7 +22,7 @@ mimetypes.add_type("video/x-ms-asf", ".asf")
 mimetypes.add_type("video/x-ms-vob", ".vob")
 mimetypes.add_type("video/divx", ".divx")
 mimetypes.add_type("video/3gpp", ".3gp")
-mimetypes.add_type("video/ogg", ".ogg")
+mimetypes.add_type("video/ogg", ".ogv")
 mimetypes.add_type("video/3gpp2", ".3g2")
 mimetypes.add_type("video/m2ts", ".m2ts")
 mimetypes.add_type("video/m2ts", ".m2t")
@@ -35,7 +35,7 @@ mimetypes.add_type("video/x-matroska", ".mkv")  # May not be defined for some re
 
 VIDEO_EXTENSIONS = [
     ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".avi", ".wmv", ".mov", ".flv", ".webm",
-    ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
+    ".asf", ".vob", ".divx", ".3gp", ".ogv", ".3g2", ".m2ts", ".ts", ".rm",
 ]
 
 AV_READ_OPTIONS = dict(mode="r", metadata_errors="ignore")
