@@ -1,3 +1,5 @@
+import sys
+import traceback
 import os
 from os import path
 import warnings
@@ -45,6 +47,13 @@ ROW_FLOW_V3_MAX_DIVERGENCE = 5.0
 ROW_FLOW_V2_AUTO_STEP_DIVERGENCE = 2.0
 ROW_FLOW_V3_AUTO_STEP_DIVERGENCE = 4.0
 IMAGE_IO_QUEUE_MAX = 100
+
+
+def print_exception(filename):
+    e_type, e, tb = sys.exc_info()
+    message = getattr(e, "message", str(e))
+    print(f"Error: {filename}: {message}", file=sys.stderr)
+    traceback.print_tb(tb, file=sys.stderr)
 
 
 def chunks(array, n):
@@ -1836,6 +1845,8 @@ def create_parser(required_true=True):
                         help="process all subdirectories")
     parser.add_argument("--resume", action="store_true",
                         help="skip processing when the output file already exists")
+    parser.add_argument("--skip-error", action="store_true",
+                        help="continue processing even if an error occurs for a specific file during batch processing.")
     parser.add_argument("--batch-size", type=int, default=2, choices=[Range(1, 64)],
                         help="batch size. ignored when --low-vram")
     parser.add_argument("--max-fps", type=float, default=30,
@@ -2211,7 +2222,13 @@ def iw3_main(args):
                 for video_file in VU.list_videos(args.input):
                     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                         return args
-                    process_video(video_file, args.output, args, depth_model, side_model)
+                    try:
+                        process_video(video_file, args.output, args, depth_model, side_model)
+                    except: # noqa
+                        if not args.skip_error:
+                            print(f"Error: {video_file}", file=sys.stderr)
+                            raise
+                        print_exception(video_file)
                     gc_collect()
         else:
             subdirs = list_subdir(args.input, include_root=True, excludes=args.output)
@@ -2227,7 +2244,13 @@ def iw3_main(args):
                     for video_file in VU.list_videos(input_dir):
                         if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                             return args
-                        process_video(video_file, output_dir, args, depth_model, side_model)
+                        try:
+                            process_video(video_file, output_dir, args, depth_model, side_model)
+                        except: # noqa
+                            if not args.skip_error:
+                                print(f"Error: {video_file}", file=sys.stderr)
+                                raise
+                            print_exception(video_file)
                         gc_collect()
 
     elif is_yaml(args.input):
