@@ -932,6 +932,7 @@ def process_video(input_path, output_path,
                          container_duration=container_duration,
                          input_path=input_path)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
+    frame_dim = None
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     demuxer = input_container.demux(streams)
     while True:
@@ -944,6 +945,11 @@ def process_video(input_path, output_path,
                 for frame in safe_decode(packet):
                     frame = fps_filter.update(frame)
                     if frame is not None:
+                        if frame_dim is None:
+                            frame_dim = [frame.width, frame.height]
+                        elif frame.width != frame_dim[0] or frame.height != frame_dim[1]: # video has inconsistent size!
+                            print("\n[WARN] Converting", [frame.width, frame.height], "to", frame_dim, "!", file=sys.stderr)
+                            frame = frame.reformat(width=frame_dim[0], height=frame_dim[1])
                         frame = frame.reformat(**rgb24_options) if rgb24_options else frame
                         for new_frame in get_new_frames(frame_callback(frame)):
                             reformatted_frame = reformatter(new_frame)
@@ -979,6 +985,11 @@ def process_video(input_path, output_path,
     while True:
         frame = fps_filter.update(None)
         if frame is not None:
+            if frame_dim is None:
+                frame_dim = [frame.width, frame.height]
+            elif frame.width != frame_dim[0] or frame.height != frame_dim[1]: # video has inconsistent size!
+                print("\n[WARN] Converting", [frame.width, frame.height], "to", frame_dim, "!", file=sys.stderr)
+                frame = frame.reformat(width=frame_dim[0], height=frame_dim[1])
             frame = frame.reformat(**rgb24_options) if rgb24_options else frame
             for new_frame in get_new_frames(frame_callback(frame)):
                 new_frame = reformatter(new_frame)
