@@ -933,38 +933,48 @@ def process_video(input_path, output_path,
                          input_path=input_path)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
-
-    for packet in input_container.demux(streams):
-        if packet.pts is not None:
-            if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+    demuxer = input_container.demux(streams)
+    while True:
+        try:
+            packet = next(demuxer)
+            if packet.pts is not None:
+                if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+                    break
+            if packet.stream.type == "video":
+                for frame in safe_decode(packet):
+                    frame = fps_filter.update(frame)
+                    if frame is not None:
+                        frame = frame.reformat(**rgb24_options) if rgb24_options else frame
+                        for new_frame in get_new_frames(frame_callback(frame)):
+                            reformatted_frame = reformatter(new_frame)
+                            # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
+                            enc_packet = video_output_stream.encode(reformatted_frame)
+                            if enc_packet:
+                                output_container.mux(enc_packet)
+                            pbar.update(1)
+            elif packet.stream.type == "audio":
+                if packet.dts is not None:
+                    if audio_copy:
+                        packet.stream = audio_output_stream
+                        output_container.mux(packet)
+                    else:
+                        for frame in safe_decode(packet):
+                            frame.pts = None
+                            enc_packet = audio_output_stream.encode(frame)
+                            if enc_packet:
+                                output_container.mux(enc_packet)
+            if suspend_event is not None:
+                suspend_event.wait()
+            if stop_event is not None and stop_event.is_set():
                 break
-        if packet.stream.type == "video":
-            for frame in safe_decode(packet):
-                frame = fps_filter.update(frame)
-                if frame is not None:
-                    frame = frame.reformat(**rgb24_options) if rgb24_options else frame
-                    for new_frame in get_new_frames(frame_callback(frame)):
-                        reformatted_frame = reformatter(new_frame)
-                        # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
-                        enc_packet = video_output_stream.encode(reformatted_frame)
-                        if enc_packet:
-                            output_container.mux(enc_packet)
-                        pbar.update(1)
-        elif packet.stream.type == "audio":
-            if packet.dts is not None:
-                if audio_copy:
-                    packet.stream = audio_output_stream
-                    output_container.mux(packet)
-                else:
-                    for frame in safe_decode(packet):
-                        frame.pts = None
-                        enc_packet = audio_output_stream.encode(frame)
-                        if enc_packet:
-                            output_container.mux(enc_packet)
-        if suspend_event is not None:
-            suspend_event.wait()
-        if stop_event is not None and stop_event.is_set():
+        except StopIteration:
             break
+        except av.error.InvalidDataError: # corrupted packet
+            print("\n[WARN] Invalid data found when processing input! continuing anyway...", file=sys.stderr)
+            continue
+        except av.error.MemoryError: # not enough memory
+            print("\n[WARN] Could not allocate memory (Packet too large?)! continuing anyway...", file=sys.stderr)
+            continue
 
     while True:
         frame = fps_filter.update(None)
