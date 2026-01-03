@@ -22,7 +22,7 @@ mimetypes.add_type("video/x-ms-asf", ".asf")
 mimetypes.add_type("video/x-ms-vob", ".vob")
 mimetypes.add_type("video/divx", ".divx")
 mimetypes.add_type("video/3gpp", ".3gp")
-mimetypes.add_type("video/ogg", ".ogg")
+mimetypes.add_type("video/ogg", ".ogv")
 mimetypes.add_type("video/3gpp2", ".3g2")
 mimetypes.add_type("video/m2ts", ".m2ts")
 mimetypes.add_type("video/m2ts", ".m2t")
@@ -35,7 +35,7 @@ mimetypes.add_type("video/x-matroska", ".mkv")  # May not be defined for some re
 
 VIDEO_EXTENSIONS = [
     ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".avi", ".wmv", ".mov", ".flv", ".webm",
-    ".asf", ".vob", ".divx", ".3gp", ".ogg", ".3g2", ".m2ts", ".ts", ".rm",
+    ".asf", ".vob", ".divx", ".3gp", ".ogv", ".3g2", ".m2ts", ".ts", ".rm",
 ]
 
 AV_READ_OPTIONS = dict(mode="r", metadata_errors="ignore")
@@ -824,9 +824,15 @@ def test_audio_copy(input_path, output_path):
 def safe_decode(packet):
     try:
         frames = packet.decode()
-    except av.error.InvalidDataError:
+    except av.error.InvalidDataError: # corrupted frame
         frames = []
         print("\n[WARN] Input video has invalid data/frames! continuing anyway...", file=sys.stderr)
+    except av.error.PermissionError: # wmv drm protection
+        frames = []
+        print("\n[WARN] No permission to read data/frames! continuing anyway...", file=sys.stderr)
+    except av.error.PatchWelcomeError: # pyAV unimplemented
+        frames = []
+        print("\n[WARN] Unknown data/frames type (Unimplemented, could you help pyAV patch this?)", file=sys.stderr)
     return frames
 
 
@@ -838,6 +844,7 @@ def process_video(input_path, output_path,
                   stop_event=None, suspend_event=None, tqdm_fn=None,
                   start_time=None, end_time=None,
                   test_callback=None):
+    print("[INFO] Proceessing video:", input_path, "...", file=sys.stderr)
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
     if isinstance(end_time, str):
@@ -854,7 +861,7 @@ def process_video(input_path, output_path,
         container_duration = None
 
     if len(input_container.streams.video) == 0:
-        raise ValueError("No video stream")
+        raise ValueError("No video stream")# NOTE: This will ruin batch process that have some audio file with video extension?
 
     if start_time is not None:
         input_container.seek(start_time * av.time_base, backward=True, any_frame=False)
@@ -926,43 +933,62 @@ def process_video(input_path, output_path,
                          container_duration=container_duration,
                          input_path=input_path)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
-    streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
+    frame_dim = None
 
-    for packet in input_container.demux(streams):
-        if packet.pts is not None:
-            if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
-                break
-        if packet.stream.type == "video":
-            for frame in safe_decode(packet):
-                frame = fps_filter.update(frame)
-                if frame is not None:
-                    frame = frame.reformat(**rgb24_options) if rgb24_options else frame
-                    for new_frame in get_new_frames(frame_callback(frame)):
-                        reformatted_frame = reformatter(new_frame)
-                        # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
-                        enc_packet = video_output_stream.encode(reformatted_frame)
-                        if enc_packet:
-                            output_container.mux(enc_packet)
-                        pbar.update(1)
-        elif packet.stream.type == "audio":
-            if packet.dts is not None:
-                if audio_copy:
-                    packet.stream = audio_output_stream
-                    output_container.mux(packet)
-                else:
+    for stream in [video_input_stream, audio_input_stream]:
+        if stream is None: continue
+        try: # if this try - except is put inside the next "for" it will not catch the demux error :(
+            for packet in input_container.demux(stream): # how to demux only one packet?
+                if packet.pts is not None:
+                    if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+                        break
+                if packet.stream.type == "video":
                     for frame in safe_decode(packet):
-                        frame.pts = None
-                        enc_packet = audio_output_stream.encode(frame)
-                        if enc_packet:
-                            output_container.mux(enc_packet)
-        if suspend_event is not None:
-            suspend_event.wait()
-        if stop_event is not None and stop_event.is_set():
-            break
+                        frame = fps_filter.update(frame)
+                        if frame is not None:
+                            if frame_dim is None:
+                                frame_dim = [frame.width, frame.height]
+                            elif frame.width != frame_dim[0] or frame.height != frame_dim[1]: # video has inconsistent size!
+                                print("\n[WARN] Converting", [frame.width, frame.height], "to", frame_dim, "!", file=sys.stderr)
+                                frame = frame.reformat(width=frame_dim[0], height=frame_dim[1])
+                            frame = frame.reformat(**rgb24_options) if rgb24_options else frame
+                            for new_frame in get_new_frames(frame_callback(frame)):
+                                reformatted_frame = reformatter(new_frame)
+                                # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
+                                enc_packet = video_output_stream.encode(reformatted_frame)
+                                if enc_packet:
+                                    output_container.mux(enc_packet)
+                                pbar.update(1)
+                elif packet.stream.type == "audio":
+                    if packet.dts is not None:
+                        if audio_copy:
+                            packet.stream = audio_output_stream
+                            output_container.mux(packet)
+                        else:
+                            for frame in safe_decode(packet):
+                                frame.pts = None
+                                enc_packet = audio_output_stream.encode(frame)
+                                if enc_packet:
+                                    output_container.mux(enc_packet)
+                if suspend_event is not None:
+                    suspend_event.wait()
+                if stop_event is not None and stop_event.is_set():
+                    break
+        except av.error.InvalidDataError: # corrupted packet
+            print("\n[WARN] Invalid data found when processing input! continuing anyway...", file=sys.stderr)
+            continue
+        except av.error.MemoryError: # not enough memory
+            print("\n[WARN] Could not allocate memory (Packet too large?)! continuing anyway...", file=sys.stderr)
+            continue
 
     while True:
         frame = fps_filter.update(None)
         if frame is not None:
+            if frame_dim is None:
+                frame_dim = [frame.width, frame.height]
+            elif frame.width != frame_dim[0] or frame.height != frame_dim[1]: # video has inconsistent size!
+                print("\n[WARN] Converting", [frame.width, frame.height], "to", frame_dim, "!", file=sys.stderr)
+                frame = frame.reformat(width=frame_dim[0], height=frame_dim[1])
             frame = frame.reformat(**rgb24_options) if rgb24_options else frame
             for new_frame in get_new_frames(frame_callback(frame)):
                 new_frame = reformatter(new_frame)
