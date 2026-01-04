@@ -934,7 +934,8 @@ def process_video(input_path, output_path,
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     demuxer = input_container.demux(streams)
-    while True:
+    video_has_more_data = True
+    while video_has_more_data:
         try:
             packet = next(demuxer)
             if packet.pts is not None:
@@ -971,12 +972,15 @@ def process_video(input_path, output_path,
             break
         except av.error.InvalidDataError: # corrupted packet
             print("\n[WARN] Invalid data found when processing input! continuing anyway...", file=sys.stderr)
-            continue
         except av.error.MemoryError: # not enough memory
             print("\n[WARN] Could not allocate memory (Packet too large?)! continuing anyway...", file=sys.stderr)
-            continue
+        except av.error.ValueError: # most likely caused by incorrect dts timestamp
+            print("\n[WARN] Packet has non monotonically increasing DTS timestamp! continuing anyway...", file=sys.stderr)
+        except IndexError: # out of range raised by `packet = next(demuxer)` indicating sudden end in video file
+            print("\n[WARN] Index out of range! Loop didn't end gracefully!'", file=sys.stderr)
+            video_has_more_data = False # end of video (set to prevent infinite loop on next while loop)
 
-    while True:
+    while video_has_more_data:
         frame = fps_filter.update(None)
         if frame is not None:
             frame = frame.reformat(**rgb24_options) if rgb24_options else frame
