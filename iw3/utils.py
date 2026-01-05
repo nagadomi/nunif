@@ -914,8 +914,13 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     else:
         output_filename = output_path
 
-    if args.resume and path.exists(output_filename):
-        return
+    if (
+            # --resume and already processed
+            (args.resume and path.exists(output_filename)) or
+            # --skip-error and already terminated with an error
+            (args.skip_error and path.exists(VU.make_error_file_path(output_filename)))
+    ):
+        return  # skip
 
     if not args.yes and path.exists(output_filename):
         y = input(f"File '{output_filename}' already exists. Overwrite? [y/N]").lower()
