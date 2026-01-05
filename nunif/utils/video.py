@@ -998,6 +998,12 @@ def process_video(input_path, output_path,
         packet = video_output_stream.encode(None)
         if packet:
             output_container.mux(packet)
+
+    except KeyboardInterrupt:
+        pbar.close()
+        output_container.close()
+        input_container.close()
+        raise
     except:  # noqa
         pbar.close()
         output_container.close()
