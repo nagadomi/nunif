@@ -4,7 +4,6 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.ops import sigmoid_focal_loss
 from nunif.models import create_model
 from nunif.training.env import I2IEnv
 from nunif.modules.psnr import PSNRPerImage
@@ -19,11 +18,6 @@ def normalize(x):
     min_value = x_flat.min(dim=1, keepdim=True)[0].reshape(B, 1, 1, 1)
     max_value = x_flat.max(dim=1, keepdim=True)[0].reshape(B, 1, 1, 1)
     return (x - min_value) / ((max_value - min_value) + 1e-6)
-
-
-class SigmoidFocalLoss(nn.Module):
-    def __call__(self, input, target):
-        return sigmoid_focal_loss(input, target, gamma=1, reduction="mean")
 
 
 class DSODEnv(I2IEnv):
@@ -41,9 +35,8 @@ class MultiBCEWithLogitsLoss(nn.Module):
         for i, x in enumerate(input):
             if x.shape[-2:] != target.shape[-2:]:
                 x = F.interpolate(x, size=target.shape[-2:], mode="bilinear", antialias=False, align_corners=False)
-            weight = 1#1 / (i + 1)
+            weight = 1 / len(input)  # 1 / (i + 1)
             loss = loss + F.binary_cross_entropy_with_logits(x, target) * weight
-            #loss = loss + F.binary_cross_entropy(x, target) * weight
         return loss
 
 
@@ -91,7 +84,7 @@ class DSODTrainer(Trainer):
 
     def create_env(self):
         eval_criterion = PSNRPerImage().to(self.device)
-        criterion = MultiBCEWithLogitsLoss()#SigmoidFocalLoss().to(self.device)
+        criterion = MultiBCEWithLogitsLoss()
         return DSODEnv(self.model, criterion, eval_criterion=eval_criterion)
 
 
