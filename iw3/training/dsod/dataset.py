@@ -1,3 +1,4 @@
+import torch
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms as T
 from torchvision.transforms import (
@@ -61,14 +62,20 @@ def resize(size, *images):
 def load_image(depth_path, training):
     depth, _ = BaseDepthModel.load_depth(depth_path)
     if training:
+        rgb_dir = "DUTS-TR-Image"
         mask_dir = "DUTS-TR-Mask"
     else:
+        rgb_dir = "DUTS-TE-Image"
         mask_dir = "DUTS-TE-Mask"
+
+    rgb_path = path.join(path.dirname(depth_path), "..", "..", rgb_dir, path.splitext(path.basename(depth_path))[0] + ".jpg")
     mask_path = path.join(path.dirname(depth_path), "..", "..", mask_dir, path.basename(depth_path))
+    rgb, _ = load_image_simple(rgb_path, color="rgb")
     mask, _ = load_image_simple(mask_path, color="gray")
+    rgb = TF.to_tensor(rgb)
     mask = TF.to_tensor(mask)
 
-    return depth, mask
+    return rgb, depth, mask
 
 
 class DSODDataset(Dataset):
@@ -87,15 +94,16 @@ class DSODDataset(Dataset):
         return len(self.files)
 
     def __getitem__(self, index):
-        depth, mask = load_image(self.files[index], self.training)
+        rgb, depth, mask = load_image(self.files[index], self.training)
 
         if self.training:
-            depth, mask = resize(self.size + 64, depth, mask)
-            depth, mask = random_hflip(depth, mask)
-            depth, mask = random_resized_crop(self.size, depth, mask)
+            rgb, depth, mask = resize(self.size + 64, rgb, depth, mask)
+            rgb, depth, mask = random_hflip(rgb, depth, mask)
+            rgb, depth, mask = random_resized_crop(self.size, rgb, depth, mask)
         else:
-            depth, mask = resize(self.size, depth, mask)
+            rgb, depth, mask = resize(self.size, rgb, depth, mask)
 
         mask = (mask > 0.5).float()
+        x = torch.cat((rgb, depth), dim=0)
 
-        return depth, mask, index
+        return x, mask, index

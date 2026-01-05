@@ -10,8 +10,8 @@ class DSODV1(I2IBaseModel):
     name = "iw3.dsod_v1"
 
     def __init__(self):
-        super(DSODV1, self).__init__(locals(), scale=1, offset=0, in_channels=3, blend_size=0)
-        self.u2netp = U2NETP()
+        super(DSODV1, self).__init__(locals(), scale=1, offset=0, in_channels=4, blend_size=0)
+        self.u2netp = U2NETP(in_ch=6)
 
     @staticmethod
     def to_feature(depth):
@@ -23,18 +23,18 @@ class DSODV1(I2IBaseModel):
     @conditional_compile(["NUNIF_TRAIN"])
     def forward(self, x):
         H, W = x.shape[-2:]
-        x = self.to_feature(x)
+        rgb, depth = x[:, 0:3], x[:, 3:4]
+        x = torch.cat((rgb, self.to_feature(depth)), dim=1)
         outputs = self.u2netp(x)
         return outputs
 
     @torch.inference_mode()
-    def infer(self, x):
-        H, W = x.shape[-2:]
-        B = x.shape[0]
+    def infer(self, rgb, depth):
+        B = rgb.shape[0]
+        rgb = F.interpolate(rgb, (192, 192), mode="bilinear", antialias=False, align_corners=False)
+        depth = F.interpolate(depth, (192, 192), mode="bilinear", antialias=False, align_corners=False)
 
-        if not (H == 192 and W == 192):
-            x = F.interpolate(x, (192, 192), mode="bilinear", antialias=True, align_corners=False)
-
+        x = torch.cat((rgb, depth), dim=1)
         w = self.forward(x)
         w = w.float()
         x = x.float()
@@ -55,14 +55,16 @@ def _bench(name):
     do_compile = True
     N = 100
     B = 8
-    S = (512, 910)  # this reiszed to 192x192
+    S_DEPTH = (512, 910)
+    S_RGB = (2160, 4384)
 
     model = create_model(name).to(device).eval()
     if do_compile:
         model = torch.compile(model)
-    x = torch.zeros((B, 1, *S)).to(device)
+    rgb = torch.zeros((B, 3, *S_RGB)).to(device)
+    depth = torch.zeros((B, 1, *S_DEPTH)).to(device)
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
-        z = model.infer(x)
+        z = model.infer(rgb, depth)
         print(z.shape)
         params = sum([p.numel() for p in model.parameters()])
         print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
@@ -72,7 +74,7 @@ def _bench(name):
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
-            z = model.infer(x)
+            z = model.infer(rgb, depth)
     torch.cuda.synchronize()
     print(1 / ((time.time() - t) / (B * N)), "FPS")
     max_vram_mb = int(torch.cuda.max_memory_allocated(device) / (1024 * 1024))
@@ -80,5 +82,5 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    # 500 FPS on RTX3070ti
+    # 485 FPS on RTX3070ti
     _bench("iw3.dsod_v1")

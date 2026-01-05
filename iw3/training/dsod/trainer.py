@@ -108,7 +108,7 @@ def register(subparsers, default_parser):
         batch_size=16,
         optimizer="adam",
         scheduler="step",
-        learning_rate=1e-6,
+        learning_rate=1e-4,
         max_epoch=200,
         eval_step=4,
     )
