@@ -783,6 +783,14 @@ def configure_video_codec(config):
             config.pix_fmt = "p010le"
 
 
+def make_temporary_file_path(output_path):
+    return path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
+
+
+def make_error_file_path(output_path):
+    return path.join(path.dirname(output_path), "_error_" + path.basename(output_path))
+
+
 def try_replace(output_path_tmp, output_path):
     try_count = 4
     while try_count >= 0:
@@ -824,13 +832,13 @@ def test_audio_copy(input_path, output_path):
 def safe_decode(packet):
     try:
         frames = packet.decode()
-    except av.error.InvalidDataError: # corrupted frame
+    except av.error.InvalidDataError:  # corrupted frame
         frames = []
         print("\n[WARN] Input video has invalid data/frames! continuing anyway...", file=sys.stderr)
-    except av.error.PermissionError: # wmv drm protection
+    except av.error.PermissionError:  # wmv drm protection
         frames = []
         print("\n[WARN] No permission to read data/frames! continuing anyway...", file=sys.stderr)
-    except av.error.PatchWelcomeError: # pyAV unimplemented
+    except av.error.PatchWelcomeError:  # pyAV unimplemented
         frames = []
         print("\n[WARN] Unknown data/frames type (pyAV Unimplemented)! continuing anyway...", file=sys.stderr)
     return frames
@@ -851,7 +859,7 @@ def process_video(input_path, output_path,
         if start_time is not None and not (start_time < end_time):
             raise ValueError("end_time must be greater than start_time")
 
-    output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
+    output_path_tmp = make_temporary_file_path(output_path)
     input_container = av.open(input_path, **AV_READ_OPTIONS)
 
     if input_container.duration:
@@ -934,61 +942,71 @@ def process_video(input_path, output_path,
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
 
-    for packet in input_container.demux(streams):
-        if packet.pts is not None:
-            if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+    try:
+        for packet in input_container.demux(streams):
+            if packet.pts is not None:
+                if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+                    break
+            if packet.stream.type == "video":
+                for frame in safe_decode(packet):
+                    frame = fps_filter.update(frame)
+                    if frame is not None:
+                        frame = frame.reformat(**rgb24_options) if rgb24_options else frame
+                        for new_frame in get_new_frames(frame_callback(frame)):
+                            reformatted_frame = reformatter(new_frame)
+                            # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
+                            enc_packet = video_output_stream.encode(reformatted_frame)
+                            if enc_packet:
+                                output_container.mux(enc_packet)
+                            pbar.update(1)
+            elif packet.stream.type == "audio":
+                if packet.dts is not None:
+                    if audio_copy:
+                        packet.stream = audio_output_stream
+                        output_container.mux(packet)
+                    else:
+                        for frame in safe_decode(packet):
+                            frame.pts = None
+                            enc_packet = audio_output_stream.encode(frame)
+                            if enc_packet:
+                                output_container.mux(enc_packet)
+            if suspend_event is not None:
+                suspend_event.wait()
+            if stop_event is not None and stop_event.is_set():
                 break
-        if packet.stream.type == "video":
-            for frame in safe_decode(packet):
-                frame = fps_filter.update(frame)
-                if frame is not None:
-                    frame = frame.reformat(**rgb24_options) if rgb24_options else frame
-                    for new_frame in get_new_frames(frame_callback(frame)):
-                        reformatted_frame = reformatter(new_frame)
-                        # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
-                        enc_packet = video_output_stream.encode(reformatted_frame)
-                        if enc_packet:
-                            output_container.mux(enc_packet)
-                        pbar.update(1)
-        elif packet.stream.type == "audio":
-            if packet.dts is not None:
-                if audio_copy:
-                    packet.stream = audio_output_stream
-                    output_container.mux(packet)
-                else:
-                    for frame in safe_decode(packet):
-                        frame.pts = None
-                        enc_packet = audio_output_stream.encode(frame)
-                        if enc_packet:
-                            output_container.mux(enc_packet)
-        if suspend_event is not None:
-            suspend_event.wait()
-        if stop_event is not None and stop_event.is_set():
-            break
 
-    while True:
-        frame = fps_filter.update(None)
-        if frame is not None:
-            frame = frame.reformat(**rgb24_options) if rgb24_options else frame
-            for new_frame in get_new_frames(frame_callback(frame)):
-                new_frame = reformatter(new_frame)
-                enc_packet = video_output_stream.encode(new_frame)
-                if enc_packet:
-                    output_container.mux(enc_packet)
-                pbar.update(1)
-        else:
-            break
+        while True:
+            frame = fps_filter.update(None)
+            if frame is not None:
+                frame = frame.reformat(**rgb24_options) if rgb24_options else frame
+                for new_frame in get_new_frames(frame_callback(frame)):
+                    new_frame = reformatter(new_frame)
+                    enc_packet = video_output_stream.encode(new_frame)
+                    if enc_packet:
+                        output_container.mux(enc_packet)
+                    pbar.update(1)
+            else:
+                break
 
-    for new_frame in get_new_frames(frame_callback(None)):
-        new_frame = reformatter(new_frame)
-        enc_packet = video_output_stream.encode(new_frame)
-        if enc_packet:
-            output_container.mux(enc_packet)
-        pbar.update(1)
+        for new_frame in get_new_frames(frame_callback(None)):
+            new_frame = reformatter(new_frame)
+            enc_packet = video_output_stream.encode(new_frame)
+            if enc_packet:
+                output_container.mux(enc_packet)
+            pbar.update(1)
 
-    packet = video_output_stream.encode(None)
-    if packet:
-        output_container.mux(packet)
+        packet = video_output_stream.encode(None)
+        if packet:
+            output_container.mux(packet)
+    except:  # noqa
+        pbar.close()
+        output_container.close()
+        input_container.close()
+        output_path_error = make_error_file_path(output_path)
+        if path.exists(output_path_tmp):
+            try_replace(output_path_tmp, output_path_error)
+        raise
+
     pbar.close()
     output_container.close()
     input_container.close()
