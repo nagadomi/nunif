@@ -151,6 +151,12 @@ class MainFrame(wx.Frame):
                                          name="chk_recursive")
         self.chk_recursive.SetValue(False)
 
+        self.chk_skip_error = wx.CheckBox(self.pnl_file_option, label=T("Skip Error"), name="chk_skip_erro")
+        self.chk_skip_error.SetToolTip(T("Skip videos that cause errors during batch processing and those that previously encountered errors."))
+        self.chk_skip_error.SetValue(False)
+
+        self.sep_batch_options = wx.StaticLine(self.pnl_file_option, size=self.FromDIP((2, 16)), style=wx.LI_VERTICAL)
+
         self.chk_exif_transpose = wx.CheckBox(self.pnl_file_option, label=T("EXIF Transpose"),
                                               name="chk_exif_transpose")
         self.chk_exif_transpose.SetValue(True)
@@ -172,6 +178,8 @@ class MainFrame(wx.Frame):
         layout.AddSpacer(4)
         layout.Add(self.chk_resume, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_recursive, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_skip_error, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_batch_options, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_exif_transpose, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_metadata, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.sep_image_format, flag=wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
@@ -1178,6 +1186,7 @@ class MainFrame(wx.Frame):
         input_path = self.pnl_file.input_path
         resume = self.chk_resume.IsEnabled() and self.chk_resume.GetValue()
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
+        skip_error = self.chk_skip_error.IsEnabled() and self.chk_skip_error.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
 
@@ -1286,6 +1295,7 @@ class MainFrame(wx.Frame):
 
             resume=resume,
             recursive=recursive,
+            skip_error=skip_error,
             metadata=metadata,
             start_time=start_time,
             end_time=end_time,
