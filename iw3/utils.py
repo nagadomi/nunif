@@ -2229,6 +2229,8 @@ def iw3_main(args):
                         return args
                     try:
                         process_video(video_file, args.output, args, depth_model, side_model)
+                    except KeyboardInterrupt:
+                        raise
                     except: # noqa
                         if not args.skip_error:
                             print(f"Error: {video_file}", file=sys.stderr)
@@ -2251,6 +2253,8 @@ def iw3_main(args):
                             return args
                         try:
                             process_video(video_file, output_dir, args, depth_model, side_model)
+                        except KeyboardInterrupt:
+                            raise
                         except: # noqa
                             if not args.skip_error:
                                 print(f"Error: {video_file}", file=sys.stderr)
