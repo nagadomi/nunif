@@ -52,8 +52,10 @@ class DSODTrainer(Trainer):
         if type == "train":
             depth_root_dir = path.join(self.args.data_dir, "DUTS-TR", "depth")
             mask_dir = path.join(self.args.data_dir, "DUTS-TR", "DUTS-TR-Mask")
-            dataset = DSODDataset(depth_root_dir,
-                                  mask_dir,
+            rgb_dir = path.join(self.args.data_dir, "DUTS-TR", "DUTS-TR-Image")
+            dataset = DSODDataset(depth_dir=depth_root_dir,
+                                  mask_dir=mask_dir,
+                                  rgb_dir=rgb_dir,
                                   size=self.args.size,
                                   training=True)
             loader = torch.utils.data.DataLoader(
@@ -68,9 +70,10 @@ class DSODTrainer(Trainer):
         else:
             depth_root_dir = path.join(self.args.data_dir, "DUTS-TE", "depth")
             mask_dir = path.join(self.args.data_dir, "DUTS-TE", "DUTS-TE-Mask")
-
-            dataset = DSODDataset(depth_root_dir,
-                                  mask_dir,
+            rgb_dir = path.join(self.args.data_dir, "DUTS-TE", "DUTS-TE-Image")
+            dataset = DSODDataset(depth_dir=depth_root_dir,
+                                  mask_dir=mask_dir,
+                                  rgb_dir=rgb_dir,
                                   size=self.args.size,
                                   training=False)
             loader = torch.utils.data.DataLoader(

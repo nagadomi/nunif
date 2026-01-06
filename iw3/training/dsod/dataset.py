@@ -59,43 +59,35 @@ def resize(size, *images):
     return tuple(results)
 
 
-def load_image(depth_path, training):
-    depth, _ = BaseDepthModel.load_depth(depth_path)
-    if training:
-        rgb_dir = "DUTS-TR-Image"
-        mask_dir = "DUTS-TR-Mask"
-    else:
-        rgb_dir = "DUTS-TE-Image"
-        mask_dir = "DUTS-TE-Mask"
-
-    rgb_path = path.join(path.dirname(depth_path), "..", "..", rgb_dir, path.splitext(path.basename(depth_path))[0] + ".jpg")
-    mask_path = path.join(path.dirname(depth_path), "..", "..", mask_dir, path.basename(depth_path))
-    rgb, _ = load_image_simple(rgb_path, color="rgb")
-    mask, _ = load_image_simple(mask_path, color="gray")
-    rgb = TF.to_tensor(rgb)
-    mask = TF.to_tensor(mask)
-
-    return rgb, depth, mask
-
-
 class DSODDataset(Dataset):
-    def __init__(self, input_dir, mask_dir, size, training):
+    def __init__(self, depth_dir, mask_dir, rgb_dir, size, training):
         super().__init__()
         self.size = size
         self.training = training
         self.mask_dir = mask_dir
+        self.rgb_dir = rgb_dir
         self.files = []
-        for d in os.listdir(input_dir):
-            self.files += ImageLoader.listdir(path.join(input_dir, d))
+        for d in os.listdir(depth_dir):
+            self.files += ImageLoader.listdir(path.join(depth_dir, d))
         if not self.files:
-            raise RuntimeError(f"{input_dir} is empty")
+            raise RuntimeError(f"{depth_dir} is empty")
 
     def __len__(self):
         return len(self.files)
 
-    def __getitem__(self, index):
-        rgb, depth, mask = load_image(self.files[index], self.training)
+    def load_image(self, depth_path):
+        depth, _ = BaseDepthModel.load_depth(depth_path)
+        rgb_path = path.join(self.rgb_dir, path.splitext(path.basename(depth_path))[0] + ".jpg")
+        mask_path = path.join(self.mask_dir, path.basename(depth_path))
+        rgb, _ = load_image_simple(rgb_path, color="rgb")
+        mask, _ = load_image_simple(mask_path, color="gray")
+        rgb = TF.to_tensor(rgb)
+        mask = TF.to_tensor(mask)
 
+        return rgb, depth, mask
+
+    def __getitem__(self, index):
+        rgb, depth, mask = self.load_image(self.files[index])
         if self.training:
             rgb, depth, mask = resize(self.size + 64, rgb, depth, mask)
             rgb, depth, mask = random_hflip(rgb, depth, mask)
