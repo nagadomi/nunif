@@ -3,7 +3,6 @@ from .mapper import get_mapper
 from .dilation import closing, dilate_inner, dilate_outer
 from nunif.device import autocast, device_is_mps
 import torch.nn.functional as F
-from nunif.modules.replication_pad2d import replication_pad2d
 
 
 def make_divergence_feature_value(divergence, convergence, image_width):
@@ -183,15 +182,6 @@ def apply_divergence_nn(
             enable_amp=enable_amp)
 
 
-def pad_convergence_shift_05(c, divergence, convergence):
-    if abs(float(convergence) - 0.5) > 1e-4:
-        shift_size = divergence * 0.01 * 0.5 * c.shape[-1]
-        convergence = convergence - 0.5
-        convergence_shift = round(shift_size * convergence)
-        c = replication_pad2d(c, (-convergence_shift, convergence_shift, 0, 0))
-    return c
-
-
 def apply_divergence_nn_delta(
         model, c, depth, divergence, convergence, steps,
         shift,
@@ -273,21 +263,11 @@ def apply_divergence_nn_delta_weight(
         c = torch.flip(c, (3,))
         depth = torch.flip(depth, (3,))
 
-    if True:  # if preserve_screen_border:
-        input_convergence = convergence
-        use_pad_convergence = False
-    else:
-        # use constant convergence
-        # NOTE: In theory, this should be better, but because there is no noticeable difference
-        #       and it could lead to confusion, it is currently not used.
-        input_convergence = 0.5
-        use_pad_convergence = True
-
     B, _, H, W = depth.shape
     base_size = max(H, W)
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
-                                       convergence=input_convergence,
+                                       convergence=convergence,
                                        image_width=base_size,
                                        preserve_screen_border=preserve_screen_border)
                      for i in range(depth.shape[0])])
@@ -325,10 +305,6 @@ def apply_divergence_nn_delta_weight(
         mlbw_debug_output(debug)
     del debug
 
-    if use_pad_convergence:
-        z = pad_convergence_shift_05(z, divergence, convergence)
-        if hole_mask_logits is not None:
-            hole_mask_logits = pad_convergence_shift_05(hole_mask_logits, divergence, convergence)
     z = z.clamp(0, 1)
 
     if shift > 0:
