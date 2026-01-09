@@ -1851,7 +1851,7 @@ def create_parser(required_true=True):
     parser.add_argument("--warp-steps", type=int, help=("warp steps for row_flow_v3"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5,
                         help=("(normalized) distance of convergence plane(screen position). 0-1 is reasonable value"))
-    parser.add_argument("--convergence-mode", type=str, choices=["constant", "dsod_v1"], default="constant",
+    parser.add_argument("--convergence-mode", type=str, choices=["constant", "sod_v1"], default="constant",
                         help=("auto convergence mode"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
@@ -2054,7 +2054,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         depth_model = create_depth_model(args.depth_model)
 
     convergence_model = None
-    if args.convergence_mode == "dsod_v1":
+    if args.convergence_mode == "sod_v1":
         convergence_model = ConvergenceEstimator(args.convergence, device_id=args.gpu[0])
 
     if args.export_disparity:

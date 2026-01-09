@@ -59,7 +59,7 @@ def resize(size, *images):
     return tuple(results)
 
 
-class DSODDataset(Dataset):
+class SODDataset(Dataset):
     def __init__(self, depth_dir, mask_dir, rgb_dir, size, training):
         super().__init__()
         self.size = size

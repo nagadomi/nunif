@@ -6,11 +6,12 @@ from nunif.utils.u2netp import U2NETP
 
 
 @register_model
-class DSODV1(I2IBaseModel):
-    name = "iw3.dsod_v1"
+class SODV1(I2IBaseModel):
+    name = "iw3.sod_v1"
+    name_alias = ("iw3.dsod_v1",)
 
     def __init__(self):
-        super(DSODV1, self).__init__(locals(), scale=1, offset=0, in_channels=4, blend_size=0, in_size=192)
+        super(SODV1, self).__init__(locals(), scale=1, offset=0, in_channels=4, blend_size=0, in_size=192)
         self.u2netp = U2NETP(in_ch=6)
 
     @staticmethod
@@ -74,4 +75,4 @@ def _bench(name):
 
 if __name__ == "__main__":
     # 485 FPS on RTX3070ti
-    _bench("iw3.dsod_v1")
+    _bench("iw3.sod_v1")

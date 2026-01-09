@@ -61,7 +61,7 @@ def main(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "dsod",
+        "sod",
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 

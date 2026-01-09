@@ -6,7 +6,7 @@ import torch
 from nunif.device import create_device, autocast
 import torchvision.transforms.functional as TF
 from nunif.models import load_model
-from .dataset import DSODDataset
+from .dataset import SODDataset
 from ... import models  # noqa
 
 
@@ -26,11 +26,11 @@ def main():
     depth_dir = path.join(args.data_dir, "DUTS-TE", "depth")
     mask_dir = path.join(args.data_dir, "DUTS-TE", "DUTS-TE-Mask")
     rgb_dir = path.join(args.data_dir, "DUTS-TE", "DUTS-TE-Image")
-    dataset = DSODDataset(depth_dir=depth_dir,
-                          mask_dir=mask_dir,
-                          rgb_dir=rgb_dir,
-                          size=192,
-                          training=False)
+    dataset = SODDataset(depth_dir=depth_dir,
+                         mask_dir=mask_dir,
+                         rgb_dir=rgb_dir,
+                         size=192,
+                         training=False)
     loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=4,

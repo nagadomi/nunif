@@ -8,7 +8,7 @@ from nunif.models import create_model
 from nunif.training.env import I2IEnv
 from nunif.modules.psnr import PSNRPerImage
 from nunif.training.trainer import Trainer
-from .dataset import DSODDataset
+from .dataset import SODDataset
 from ... import models # noqa
 
 
@@ -20,7 +20,7 @@ def normalize(x):
     return (x - min_value) / ((max_value - min_value) + 1e-6)
 
 
-class DSODEnv(I2IEnv):
+class SODEnv(I2IEnv):
     def __init__(self, model, criterion, eval_criterion=None):
         super().__init__(model, criterion, eval_criterion=eval_criterion)
 
@@ -40,7 +40,7 @@ class MultiBCEWithLogitsLoss(nn.Module):
         return loss
 
 
-class DSODTrainer(Trainer):
+class SODTrainer(Trainer):
     def create_model(self):
         kwargs = {}
         model = create_model(self.args.arch, device_ids=self.args.gpu, **kwargs)
@@ -53,11 +53,11 @@ class DSODTrainer(Trainer):
             depth_root_dir = path.join(self.args.data_dir, "DUTS-TR", "depth")
             mask_dir = path.join(self.args.data_dir, "DUTS-TR", "DUTS-TR-Mask")
             rgb_dir = path.join(self.args.data_dir, "DUTS-TR", "DUTS-TR-Image")
-            dataset = DSODDataset(depth_dir=depth_root_dir,
-                                  mask_dir=mask_dir,
-                                  rgb_dir=rgb_dir,
-                                  size=self.args.size,
-                                  training=True)
+            dataset = SODDataset(depth_dir=depth_root_dir,
+                                 mask_dir=mask_dir,
+                                 rgb_dir=rgb_dir,
+                                 size=self.args.size,
+                                 training=True)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 sampler=torch.utils.data.RandomSampler(dataset, num_samples=self.args.num_samples),
@@ -71,11 +71,11 @@ class DSODTrainer(Trainer):
             depth_root_dir = path.join(self.args.data_dir, "DUTS-TE", "depth")
             mask_dir = path.join(self.args.data_dir, "DUTS-TE", "DUTS-TE-Mask")
             rgb_dir = path.join(self.args.data_dir, "DUTS-TE", "DUTS-TE-Image")
-            dataset = DSODDataset(depth_dir=depth_root_dir,
-                                  mask_dir=mask_dir,
-                                  rgb_dir=rgb_dir,
-                                  size=self.args.size,
-                                  training=False)
+            dataset = SODDataset(depth_dir=depth_root_dir,
+                                 mask_dir=mask_dir,
+                                 rgb_dir=rgb_dir,
+                                 size=self.args.size,
+                                 training=False)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -88,21 +88,21 @@ class DSODTrainer(Trainer):
     def create_env(self):
         eval_criterion = PSNRPerImage().to(self.device)
         criterion = MultiBCEWithLogitsLoss()
-        return DSODEnv(self.model, criterion, eval_criterion=eval_criterion)
+        return SODEnv(self.model, criterion, eval_criterion=eval_criterion)
 
 
 def train(args):
-    trainer = DSODTrainer(args)
+    trainer = SODTrainer(args)
     trainer.fit()
 
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "dsod",
+        "sod",
         parents=[default_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--arch", type=str, default="iw3.dsod_v1", help="network arch")
+    parser.add_argument("--arch", type=str, default="iw3.sod_v1", help="network arch")
     parser.add_argument("--num-samples", type=int, default=20000,
                         help="number of samples for each epoch")
     parser.add_argument("--size", type=int, default=192, help="input size")

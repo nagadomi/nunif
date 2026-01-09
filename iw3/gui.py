@@ -202,7 +202,7 @@ class MainFrame(wx.Frame):
         self.cbo_divergence.SetSelection(4)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
-        self.cbo_convergence_mode = wx.ComboBox(self.grp_stereo, choices=["constant", "dsod_v1"],
+        self.cbo_convergence_mode = wx.ComboBox(self.grp_stereo, choices=["constant", "sod_v1"],
                                                 name="cbo_convergence_mode")
         self.cbo_convergence_mode.SetSelection(0)
 
