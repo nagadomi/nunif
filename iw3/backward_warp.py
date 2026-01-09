@@ -205,7 +205,7 @@ def apply_divergence_nn_delta(
     for j in range(steps):
         x = torch.stack([make_input_tensor(None, depth_warp[i],
                                            divergence=divergence_step,
-                                           convergence=convergence,
+                                           convergence=convergence[i].item() if torch.is_tensor(convergence) else convergence,
                                            image_width=base_size,
                                            preserve_screen_border=preserve_screen_border)
                          for i in range(depth_warp.shape[0])])
@@ -267,7 +267,7 @@ def apply_divergence_nn_delta_weight(
     base_size = max(H, W)
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
-                                       convergence=convergence,
+                                       convergence=convergence[i].item() if torch.is_tensor(convergence) else convergence,
                                        image_width=base_size,
                                        preserve_screen_border=preserve_screen_border)
                      for i in range(depth.shape[0])])
@@ -340,7 +340,7 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
 
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
-                                       convergence=convergence,
+                                       convergence=convergence[i].item() if torch.is_tensor(convergence) else convergence,
                                        image_width=W)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):

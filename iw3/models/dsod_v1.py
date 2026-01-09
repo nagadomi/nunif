@@ -10,7 +10,7 @@ class DSODV1(I2IBaseModel):
     name = "iw3.dsod_v1"
 
     def __init__(self):
-        super(DSODV1, self).__init__(locals(), scale=1, offset=0, in_channels=4, blend_size=0)
+        super(DSODV1, self).__init__(locals(), scale=1, offset=0, in_channels=4, blend_size=0, in_size=192)
         self.u2netp = U2NETP(in_ch=6)
 
     @staticmethod
@@ -29,23 +29,14 @@ class DSODV1(I2IBaseModel):
         return outputs
 
     @torch.inference_mode()
-    def infer(self, rgb, depth):
-        B = rgb.shape[0]
-        rgb = F.interpolate(rgb, (192, 192), mode="bilinear", antialias=False, align_corners=False)
-        depth = F.interpolate(depth, (192, 192), mode="bilinear", antialias=False, align_corners=False)
+    def infer(self, rgb, depth, point):
+        s = (self.i2i_in_size, self.i2i_in_size)
+        rgb = F.interpolate(rgb, s, mode="bilinear", antialias=False, align_corners=False)
+        depth = F.interpolate(depth, s, mode="bilinear", antialias=False, align_corners=False)
 
         x = torch.cat((rgb, depth), dim=1)
         w = self.forward(x)
-        w = w.float()
-        x = x.float()
-        dim = tuple(range(1, x.ndim))
-        x_flat = x.flatten(start_dim=1)
-        low_q = x_flat.quantile(0.1, dim=1, keepdim=True).view(B, 1, 1, 1)
-        high_q = x_flat.quantile(0.9, dim=1, keepdim=True).view(B, 1, 1, 1)
-        mask = (x >= low_q) & (x <= high_q)
-        mean_sod_pos = (w * x * mask).sum(dim=dim, keepdim=True) / ((w * mask).sum(dim=dim, keepdim=True) + 1e-6)
-
-        return mean_sod_pos
+        return w, depth
 
 
 def _bench(name):
