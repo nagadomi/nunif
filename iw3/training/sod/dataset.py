@@ -15,7 +15,7 @@ import random
 
 
 def random_resized_crop(size, *images):
-    i, j, h, w = T.RandomResizedCrop.get_params(images[0], scale=(0.08, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0))
+    i, j, h, w = T.RandomResizedCrop.get_params(images[0], scale=(0.333, 1.0), ratio=(1.0 / 2.0, 2.0 / 1.0))
     results = []
     for im in images:
         results.append(TF.resized_crop(im, i, j, h, w, size=(size, size),
@@ -44,6 +44,13 @@ def center_crop(size, *images):
     return tuple(results)
 
 
+def max_image_size(*images):
+    max_size = 0
+    for im in images:
+        max_size = max(max_size, min(im.shape[-2:]))
+    return max_size
+
+
 def resize(size, *images):
     results = []
     for im in images:
@@ -57,6 +64,10 @@ def resize(size, *images):
         results.append(resized)
 
     return tuple(results)
+
+
+def resize_with_max_limit(size, *images):
+    return resize(min(max_image_size(*images), size), *images)
 
 
 class SODDataset(Dataset):
@@ -89,7 +100,7 @@ class SODDataset(Dataset):
     def __getitem__(self, index):
         rgb, depth, mask = self.load_image(self.files[index])
         if self.training:
-            rgb, depth, mask = resize(self.size + 64, rgb, depth, mask)
+            rgb, depth, mask = resize_with_max_limit(int(self.size * 1.6) // 8 * 8, rgb, depth, mask)
             rgb, depth, mask = random_hflip(rgb, depth, mask)
             rgb, depth, mask = random_resized_crop(self.size, rgb, depth, mask)
         else:
