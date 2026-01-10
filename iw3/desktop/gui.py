@@ -181,7 +181,7 @@ class MainFrame(wx.Frame):
         self.cbo_convergence_mode.SetEditable(False)
         self.cbo_convergence_mode.SetSelection(0)
 
-        self.cbo_convergence = EditableComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
+        self.cbo_convergence = EditableComboBox(self.grp_stereo, choices=["0.0", "0.25", "0.5", "1.0"],
                                                 name="cbo_convergence")
         self.cbo_convergence.SetSelection(2)
         self.cbo_convergence.SetToolTip("Convergence")
