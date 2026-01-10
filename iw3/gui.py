@@ -1006,11 +1006,7 @@ class MainFrame(wx.Frame):
             self.cbo_ema_buffer.Disable()
 
     def update_scene_segment(self, *args, **kwargs):
-        if self.chk_ema_normalize.IsChecked():
-            self.chk_scene_detect.Enable()
-        else:
-            if not VideoDepthAnythingModel.supported(self.cbo_depth_model.GetValue()):
-                self.chk_scene_detect.Disable()
+        pass
 
     def on_changed_chk_ema_normalize(self, event):
         self.update_ema_normalize()
