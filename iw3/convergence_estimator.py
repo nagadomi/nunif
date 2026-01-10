@@ -68,14 +68,14 @@ class ConvergenceEstimator():
             reset_pts = reset_pts if reset_pts is not None else [False] * depth.shape[0]
             results = []
             for i in range(z_pos.shape[0]):
-                if reset_pts[i]:
-                    self.reset()
                 p = z_pos[i]
                 if self.convergence_ema is None:
                     self.convergence_ema = p.clone()
                 else:
                     self.convergence_ema = self.decay * self.convergence_ema + (1. - self.decay) * p
                 results.append(self.convergence_ema.clone())
+                if reset_pts[i]:
+                    self.reset()
 
             z_pos = torch.stack(results, dim=0)
 
