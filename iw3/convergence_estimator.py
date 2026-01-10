@@ -5,7 +5,7 @@ from nunif.device import create_device, autocast
 from .hub_dir import HUB_MODEL_DIR
 
 
-SOD_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_dsod_v1_20260106.pth"
+SOD_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_sod_v1_20260109.pth"
 
 
 class ConvergenceEstimator():
