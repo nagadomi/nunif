@@ -89,5 +89,10 @@ iw3 uses forked version of Depth-Anything-3
 https://github.com/ByteDance-Seed/Depth-Anything-3
 ByteDance Ltd. and/or its affiliates / Apache License 2.0
 
+--
+nunif/utils/u2netp.py: U2NETP
+From U2-Net https://github.com/xuebinqin/U-2-Net
+Xuebin Qin / Apache License, Version 2.0
+
 ----
 Other libraries used are listed in `requirements.txt`.

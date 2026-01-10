@@ -40,6 +40,7 @@ from .backward_warp import (
 )
 from .stereo_model_factory import create_stereo_model
 from .inpaint_utils import INPAINT_MODELS
+from .convergence_estimator import ConvergenceEstimator
 
 
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
@@ -152,9 +153,13 @@ def make_output_filename(input_filename, args, video=False):
             edge_dilation = "x".join([str(v) for v in args.edge_dilation])
         else:
             edge_dilation = args.edge_dilation
+        if args.convergence_mode != "constant":
+            convergence_name = "ac"
+        else:
+            convergence_name = "c"
 
         metadata = (f"_{args.depth_model}_{resolution}{tta}{args.method}_"
-                    f"d{to_deciaml(args.divergence, 10, 2)}_c{to_deciaml(args.convergence, 10, 2)}_"
+                    f"d{to_deciaml(args.divergence, 10, 2)}_{convergence_name}{to_deciaml(args.convergence, 10, 2)}_"
                     f"di{edge_dilation}_fs{args.foreground_scale}_ipd{to_deciaml(args.ipd_offset, 1)}{ema}")
     else:
         metadata = ""
@@ -269,38 +274,41 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         # BCHW
         pass
 
-    if args.method in {"grid_sample", "backward"}:
+    if args.state["convergence_model"] is not None:
+        convergence = args.state["convergence_model"](im, depth, reset_pts=reset_pts)
+        mapper_fn = get_mapper(args.mapper)
+        convergence = mapper_fn(convergence)
+        depth = mapper_fn(depth)
+    else:
+        convergence = args.convergence
         depth = get_mapper(args.mapper)(depth)
+
+    if args.method in {"grid_sample", "backward"}:
         left_eye, right_eye = apply_divergence_grid_sample(
             im, depth,
-            args.divergence, convergence=args.convergence,
+            args.divergence, convergence=convergence,
             synthetic_view=args.synthetic_view)
         if not batch:
             left_eye = left_eye.squeeze(0)
             right_eye = right_eye.squeeze(0)
     elif args.method in {"forward", "forward_fill"}:
-        depth = get_mapper(args.mapper)(depth)
         left_eye, right_eye = apply_divergence_forward_warp(
             im, depth,
-            args.divergence, convergence=args.convergence,
+            args.divergence, convergence=convergence,
             method=args.method, synthetic_view=args.synthetic_view, width_base=False)
         if not batch:
             left_eye = left_eye.squeeze(0)
             right_eye = right_eye.squeeze(0)
     elif args.method in {"forward_inpaint", "mlbw_l2_inpaint"}:
-        if args.method == "forward_inpaint":
-            depth = get_mapper(args.mapper)(depth)
-            mapper = None
-        else:
-            mapper = args.mapper
         left_eyes = []
         right_eyes = []
         reset_pts = reset_pts if reset_pts is not None else [False] * depth.shape[0]
         for i in range(depth.shape[0]):
+            conv_i = convergence[i:i + 1] if torch.is_tensor(convergence) else convergence
             left_eye, right_eye = side_model.infer(
                 im[i:i + 1], depth[i:i + 1],
-                divergence=args.divergence, convergence=args.convergence,
-                mapper=mapper,
+                divergence=args.divergence,
+                convergence=conv_i,
                 preserve_screen_border=args.preserve_screen_border,
                 synthetic_view=args.synthetic_view,
                 inner_dilation=args.mask_inner_dilation,
@@ -327,6 +335,7 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         else:
             left_eye = right_eye = None
     else:
+        # row_flow*, mlbw*
         if args.stereo_width is not None:
             # NOTE: use src aspect ratio instead of depth aspect ratio
             H, W = im.shape[2:]
@@ -339,8 +348,7 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
                 depth = torch.clamp(depth, 0, 1)
         left_eye, right_eye = apply_divergence_nn_LR(
             side_model, im, depth,
-            args.divergence, args.convergence, args.warp_steps,
-            mapper=args.mapper,
+            args.divergence, convergence, args.warp_steps,
             synthetic_view=args.synthetic_view,
             preserve_screen_border=args.preserve_screen_border,
             enable_amp=not args.disable_amp,
@@ -512,6 +520,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("image")
         side_model.reset()
+    if args.state["convergence_model"] is not None:
+        args.state["convergence_model"].reset(enable_ema=False)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -583,6 +593,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
         frames = []
         for depth in depths:
             x, pts = src_queue.pop(0)
+            reset_pts = [pts in segment_pts]
             if frame_cpu_offload:
                 x = x.to(args.state["device"]).permute(2, 0, 1) / torch.iinfo(x.dtype).max
             if args.debug_depth:
@@ -591,7 +602,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
                 out = postprocess_image(left_eye, right_eye, args)
             else:
-                left_eye, right_eye = apply_divergence(depth, x, args, side_model)
+                left_eye, right_eye = apply_divergence(depth, x, args, side_model, reset_pts=reset_pts)
                 if left_eye is not None:
                     if left_eye.ndim == 3:
                         out = postprocess_image(left_eye, right_eye, args)
@@ -690,31 +701,37 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 else:
                     depths = depths.to(device)
                 if frame_cpu_offload:
-                    x_srcs = torch.stack([src_queue.pop(0)[0] for _ in range(len(depths))])
+                    x_srcs = []
+                    pts = []
+                    for _ in range(len(depths)):
+                        x_src, t = src_queue.pop(0)
+                        x_srcs.append(x_src)
+                        pts.append(t)
+                    x_srcs = torch.stack(x_srcs)
                 else:
-                    x_srcs, _ = src_queue.pop(0)
+                    x_srcs, pts = src_queue.pop(0)
+                src_depth_pairs.append((x_srcs, depths, pts))
 
-                src_depth_pairs.append((x_srcs, depths))
+            results = []
+            for x_srcs, depths, pts in src_depth_pairs:
+                reset_pts = [t in segment_pts for t in pts]
+                if frame_cpu_offload:
+                    x_srcs = x_srcs.to(device).permute(0, 3, 1, 2) / torch.iinfo(x_srcs.dtype).max
 
-        results = []
-        for x_srcs, depths in src_depth_pairs:
-            if frame_cpu_offload:
-                x_srcs = x_srcs.to(device).permute(0, 3, 1, 2) / torch.iinfo(x_srcs.dtype).max
-
-            with sbs_lock:  # TODO: unclear whether this is actually needed
-                if args.rgbd or args.half_rgbd:
-                    left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
-                else:
-                    if args.method in {"forward_fill", "forward"}:
-                        # lock all threads (sbs_lock -> ticket_lock -> depth_lock order)
-                        with enqueue_ticket_lock, dequeue_ticket_lock, depth_lock:
-                            left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+                with sbs_lock:  # TODO: unclear whether this is actually needed
+                    if args.rgbd or args.half_rgbd:
+                        left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                     else:
-                        left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model)
+                        if args.method in {"forward_fill", "forward"}:
+                            # lock all threads (sbs_lock -> ticket_lock -> depth_lock order)
+                            with enqueue_ticket_lock, dequeue_ticket_lock, depth_lock:
+                                left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
+                        else:
+                            left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
 
-            frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
-                      for i in range(left_eyes.shape[0])]
-            results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
+                frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
+                          for i in range(left_eyes.shape[0])]
+                results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
         return results
 
@@ -892,10 +909,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
 
-    if side_model is not None and hasattr(side_model, "set_mode"):
-        side_model.set_mode("video")
-        side_model.reset()
-
     if (
             args.compile and
             side_model is not None and
@@ -994,6 +1007,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         depth_model.reset()
         if side_model is not None and hasattr(side_model, "reset"):
             side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset()
 
         return VU.to_frame(x, use_16bit=use_16bit)
 
@@ -1112,6 +1127,12 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
     # disable ema minmax for each process
     depth_model.reset()
     depth_model.disable_ema()
+
+    if side_model is not None and hasattr(side_model, "set_mode"):
+        side_model.set_mode("video")
+        side_model.reset()
+    if args.state["convergence_model"] is not None:
+        args.state["convergence_model"].reset(enable_ema=True)
 
     if args.keyframe:
         process_video_keyframes(input_filename, output_path, args, depth_model, side_model)
@@ -1560,6 +1581,8 @@ def process_config_video(config, args, side_model):
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("video")
         side_model.reset()
+    if args.state["convergence_model"] is not None:
+        args.state["convergence_model"].reset(enable_ema=True)
 
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
@@ -1585,6 +1608,11 @@ def process_config_video(config, args, side_model):
     if len(rgb_files) == 0:
         raise ValueError(f"{rgb_dir} is empty")
 
+    if "scene_boundary" in config.user_data and isinstance(config.user_data["scene_boundary"], str):
+        segment_pts = set(config.user_data["scene_boundary"].split(","))
+    else:
+        segment_pts = set()
+
     rgb_loader = ImageLoader(
         files=rgb_files,
         load_func=load_image_simple,
@@ -1595,7 +1623,7 @@ def process_config_video(config, args, side_model):
     sbs_lock = threading.Lock()
 
     @torch.inference_mode()
-    def batch_callback(x, depths, test=False):
+    def batch_callback(x, depths, reset_pts, test=False):
         if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
             # apply --edge-dilation
             depths = -dilate_edge(-depths, args.edge_dilation)
@@ -1603,13 +1631,13 @@ def process_config_video(config, args, side_model):
             if test:
                 assert x.shape[0] == 1
                 while True:
-                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
                     if left_eyes is not None:
                         break
                 left_eyes = left_eyes[0:1]
                 right_eyes = right_eyes[0:1]
             else:
-                left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+                left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
 
         if left_eyes is not None:
             return torch.stack([
@@ -1622,7 +1650,12 @@ def process_config_video(config, args, side_model):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
-        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), test=True)
+        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), [False], test=True)
+        if side_model is not None and hasattr(side_model, "reset"):
+            side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset()
+
         return frame.shape[2:]
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -1630,23 +1663,30 @@ def process_config_video(config, args, side_model):
     def generator():
         rgb_batch = []
         depth_batch = []
+        reset_pts_batch = []
         for rgb, depth in zip(rgb_loader, depth_loader):
             rgb = TF.to_tensor(rgb[0])
             rgb_batch.append(rgb)
             depth_batch.append(depth[0])
+            depth_basename = path.splitext(path.basename(depth[1]["filename"]))[0]
+            reset_pts_batch.append(depth_basename in segment_pts)
             if len(rgb_batch) == minibatch_size:
                 frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                        torch.stack(depth_batch).to(args.state["device"]))
+                                        torch.stack(depth_batch).to(args.state["device"]),
+                                        reset_pts_batch)
                 rgb_batch.clear()
                 depth_batch.clear()
+                reset_pts_batch.clear()
 
                 yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
         if rgb_batch:
             frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                    torch.stack(depth_batch).to(args.state["device"]))
+                                    torch.stack(depth_batch).to(args.state["device"]),
+                                    reset_pts_batch)
             rgb_batch.clear()
             depth_batch.clear()
+            reset_pts_batch.clear()
 
             yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
@@ -1703,6 +1743,8 @@ def process_config_images(config, args, side_model):
     if side_model is not None and hasattr(side_model, "set_mode"):
         side_model.set_mode("image")
         side_model.reset()
+    if args.state["convergence_model"] is not None:
+        args.state["convergence_model"].reset(enable_ema=False)
 
     def fix_rgb_depth_pair(rgb_files, depth_files):
         rgb_db = {path.splitext(path.basename(fn))[0]: fn for fn in rgb_files}
@@ -1844,6 +1886,8 @@ def create_parser(required_true=True):
     parser.add_argument("--warp-steps", type=int, help=("warp steps for row_flow_v3"))
     parser.add_argument("--convergence", "-c", type=float, default=0.5,
                         help=("(normalized) distance of convergence plane(screen position). 0-1 is reasonable value"))
+    parser.add_argument("--convergence-mode", type=str, choices=["constant", "sod_v1"], default="constant",
+                        help=("auto convergence mode"))
     parser.add_argument("--update", action="store_true",
                         help="force update midas models from torch hub")
     parser.add_argument("--recursive", "-r", action="store_true",
@@ -2046,6 +2090,10 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
     if depth_model is None:
         depth_model = create_depth_model(args.depth_model)
 
+    convergence_model = None
+    if args.convergence_mode == "sod_v1":
+        convergence_model = ConvergenceEstimator(args.convergence, device_id=args.gpu[0])
+
     if args.export_disparity:
         args.export = True
     if args.export_depth_only and not args.export:
@@ -2091,6 +2139,7 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
         "suspend_event": suspend_event,
         "tqdm_fn": tqdm_fn,
         "depth_model": depth_model,
+        "convergence_model": convergence_model,
         "device": create_device(args.gpu),
         "devices": [create_device(gpu_id) for gpu_id in args.gpu],
     }
@@ -2297,6 +2346,8 @@ def iw3_main(args):
         if side_model is not None and hasattr(side_model, "set_mode"):
             side_model.set_mode("image")
             side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset(enable_ema=False)
 
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)

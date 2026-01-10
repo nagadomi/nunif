@@ -210,7 +210,12 @@ class MainFrame(wx.Frame):
         self.cbo_divergence.SetSelection(4)
 
         self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
-        self.cbo_convergence = EditableComboBox(self.grp_stereo, choices=["0.0", "0.5", "1.0"],
+        self.cbo_convergence_mode = wx.ComboBox(self.grp_stereo, choices=["constant", "sod_v1"],
+                                                name="cbo_convergence_mode")
+        self.cbo_convergence_mode.SetEditable(False)
+        self.cbo_convergence_mode.SetSelection(0)
+
+        self.cbo_convergence = EditableComboBox(self.grp_stereo, choices=["0.0", "0.25", "0.5", "1.0"],
                                                 name="cbo_convergence")
         self.cbo_convergence.SetSelection(1)
         self.cbo_convergence.SetToolTip("Convergence")
@@ -386,7 +391,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_divergence, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 3), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_convergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_convergence, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.cbo_convergence_mode, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_convergence, (i, 2), flag=wx.EXPAND)
+
         layout.Add(self.lbl_ipd_offset, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.sld_ipd_offset, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_synthetic_view, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -1007,11 +1014,7 @@ class MainFrame(wx.Frame):
             self.cbo_ema_buffer.Disable()
 
     def update_scene_segment(self, *args, **kwargs):
-        if self.chk_ema_normalize.IsChecked():
-            self.chk_scene_detect.Enable()
-        else:
-            if not VideoDepthAnythingModel.supported(self.cbo_depth_model.GetValue()):
-                self.chk_scene_detect.Disable()
+        pass
 
     def on_changed_chk_ema_normalize(self, event):
         self.update_ema_normalize()
@@ -1228,6 +1231,7 @@ class MainFrame(wx.Frame):
 
             divergence=float(self.cbo_divergence.GetValue()),
             convergence=float(self.cbo_convergence.GetValue()),
+            convergence_mode=self.cbo_convergence_mode.GetValue(),
             ipd_offset=float(self.sld_ipd_offset.GetValue()),
             synthetic_view=self.cbo_synthetic_view.GetValue(),
             method=self.cbo_method.GetValue(),

@@ -183,7 +183,6 @@ def main(args):
     if args.model_type.startswith("VDA_"):
         raise ValueError("VDA is not supported")
 
-    max_workers = cpu_count() // 2 or 1
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     filename_prefix = filename_prefix + md5(path.basename(args.dataset_dir)) + "_"
     depth_model = create_depth_model(args.model_type)
@@ -215,7 +214,7 @@ def main(args):
                              load_func=load_image_simple,
                              load_func_kwargs={"color": "rgb"})
         seq = 1
-        with PoolExecutor(max_workers=max_workers) as pool:
+        with PoolExecutor(max_workers=args.max_workers) as pool:
             futures = []
             seq = 0
             for im, meta in tqdm(loader, ncols=80):
@@ -238,6 +237,7 @@ def main(args):
 
 
 def register(subparsers, default_parser):
+    max_workers = cpu_count() // 2 or 1
     parser = subparsers.add_parser(
         "inpaint",
         parents=[default_parser],
@@ -252,6 +252,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_Any_L", help="depth model")
     parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
+    parser.add_argument("--max-workers", type=int, default=max_workers,
+                        help="Number of worker threads. Set to 1 to disable.")
 
     parser.set_defaults(handler=main)
 
