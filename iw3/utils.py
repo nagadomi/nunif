@@ -291,9 +291,11 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         right_eyes = []
         reset_pts = reset_pts if reset_pts is not None else [False] * depth.shape[0]
         for i in range(depth.shape[0]):
+            conv_i = convergence[i:i + 1] if torch.is_tensor(convergence) else convergence
             left_eye, right_eye = side_model.infer(
                 im[i:i + 1], depth[i:i + 1],
-                divergence=args.divergence, convergence=convergence,
+                divergence=args.divergence,
+                convergence=conv_i,
                 preserve_screen_border=args.preserve_screen_border,
                 synthetic_view=args.synthetic_view,
                 inner_dilation=args.mask_inner_dilation,
@@ -1588,6 +1590,11 @@ def process_config_video(config, args, side_model):
     if len(rgb_files) == 0:
         raise ValueError(f"{rgb_dir} is empty")
 
+    if "scene_boundary" in config.user_data and isinstance(config.user_data["scene_boundary"], str):
+        segment_pts = set(config.user_data["scene_boundary"].split(","))
+    else:
+        segment_pts = set()
+
     rgb_loader = ImageLoader(
         files=rgb_files,
         load_func=load_image_simple,
@@ -1598,7 +1605,7 @@ def process_config_video(config, args, side_model):
     sbs_lock = threading.Lock()
 
     @torch.inference_mode()
-    def batch_callback(x, depths, test=False):
+    def batch_callback(x, depths, reset_pts, test=False):
         if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
             # apply --edge-dilation
             depths = -dilate_edge(-depths, args.edge_dilation)
@@ -1606,13 +1613,13 @@ def process_config_video(config, args, side_model):
             if test:
                 assert x.shape[0] == 1
                 while True:
-                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
                     if left_eyes is not None:
                         break
                 left_eyes = left_eyes[0:1]
                 right_eyes = right_eyes[0:1]
             else:
-                left_eyes, right_eyes = apply_divergence(depths, x, args, side_model)
+                left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
 
         if left_eyes is not None:
             return torch.stack([
@@ -1625,7 +1632,12 @@ def process_config_video(config, args, side_model):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
-        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), test=True)
+        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), [False], test=True)
+        if side_model is not None and hasattr(side_model, "reset"):
+            side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset()
+
         return frame.shape[2:]
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -1633,31 +1645,36 @@ def process_config_video(config, args, side_model):
     def generator():
         rgb_batch = []
         depth_batch = []
+        reset_pts_batch = []
         for rgb, depth in zip(rgb_loader, depth_loader):
             rgb = TF.to_tensor(rgb[0])
             rgb_batch.append(rgb)
             depth_batch.append(depth[0])
+            depth_basename = path.splitext(path.basename(depth[1]["filename"]))[0]
+            reset_pts_batch.append(depth_basename in segment_pts)
             if len(rgb_batch) == minibatch_size:
                 frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                        torch.stack(depth_batch).to(args.state["device"]))
+                                        torch.stack(depth_batch).to(args.state["device"]),
+                                        reset_pts_batch)
                 rgb_batch.clear()
                 depth_batch.clear()
+                reset_pts_batch.clear()
 
                 yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
         if rgb_batch:
             frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                    torch.stack(depth_batch).to(args.state["device"]))
+                                    torch.stack(depth_batch).to(args.state["device"]),
+                                    reset_pts_batch)
             rgb_batch.clear()
             depth_batch.clear()
+            reset_pts_batch.clear()
 
             yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
     output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
     if side_model is not None and hasattr(side_model, "reset"):
         side_model.reset()
-    if args.state["convergence_model"] is not None:
-        args.state["convergence_model"].reset(enable_ema=False)
 
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
