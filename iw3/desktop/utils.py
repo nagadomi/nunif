@@ -262,6 +262,9 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     # Use Flicker Reduction to prevent 3D sickness
     depth_model.enable_ema(args.ema_decay, buffer_size=1)
+    if args.state["convergence_model"] is not None:
+        args.state["convergence_model"].reset(enable_ema=True, decay=0.98)
+
     args.mapper = IW3U.resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
                                            metric_depth=depth_model.is_metric())
 
