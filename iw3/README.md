@@ -69,6 +69,8 @@ You can adjust the screen position by zoom-in/zoom-out on the VR Video Player.
 - `1` is the most friendly for curved display setting.
 - `0.5` by default.
 
+Please refer to https://github.com/nagadomi/nunif/pull/600 for details about the convergence mode.
+
 ### What is `--ipd-offset` option?
 
 (`Your Own Size` in GUI)
