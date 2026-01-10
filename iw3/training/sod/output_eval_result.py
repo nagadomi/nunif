@@ -44,6 +44,7 @@ def main():
         x = x.to(device)
         with torch.inference_mode(), autocast(x.device):
             batch = model(x)
+            batch = (batch > 0.5).float()
         for im in batch:
             TF.to_pil_image(im).save(path.join(args.output, f"{i}.png"))
             i += 1
