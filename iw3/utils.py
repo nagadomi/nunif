@@ -20,6 +20,7 @@ from nunif.utils.pil_io import load_image_simple
 import nunif.utils.shot_boundary_detection as SBD
 from nunif.models import compile_model
 import nunif.utils.video as VU
+import nunif.utils.pyav_extra as pyav_extra
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.utils.ticket_lock import TicketLock
 from nunif.utils.autocrop import AutoCrop, AutoCropDummy
@@ -167,7 +168,7 @@ def make_output_filename(input_filename, args, video=False):
     return basename + metadata + auto_detect_suffix + (args.video_extension if video else get_image_ext(args.format))
 
 
-def make_video_codec_option(args):
+def make_video_codec_option(args, input_path=None):
     if args.video_codec in {"libx264", "libx265", "hevc_nvenc", "h264_nvenc"}:
         options = {"preset": args.preset, "crf": str(args.crf)}
 
@@ -181,7 +182,15 @@ def make_video_codec_option(args):
             x265_params = ["log-level=warning", "high-tier=enabled"]
             if args.profile_level:
                 x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
+
+            if (input_path is not None and
+                args.colorspace in {"auto", "bt2020-tv", "bt2020-pq-tv"}
+            ):
+                hdr_metadata = pyav_extra.get_hdr_metadata(input_path)
+                x265_params += hdr_metadata.to_x265_params()
+
             options["x265-params"] = ":".join(x265_params)
+            # print(options)
         elif args.video_codec == "libx264":
             # TODO:
             # if args.tb or args.half_tb:
@@ -991,7 +1000,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             video_codec=args.video_codec,
             pix_fmt=args.pix_fmt,
             colorspace=args.colorspace,
-            options=make_video_codec_option(args),
+            options=make_video_codec_option(args, input_filename),
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
