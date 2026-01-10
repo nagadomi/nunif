@@ -202,10 +202,15 @@ def apply_divergence_nn_delta(
     depth_warp = depth
     delta_steps = []
 
+    if torch.is_tensor(convergence):
+        convergence = convergence.flatten().cpu().tolist()
+    else:
+        convergence = [convergence] * depth.shape[0]
+
     for j in range(steps):
         x = torch.stack([make_input_tensor(None, depth_warp[i],
                                            divergence=divergence_step,
-                                           convergence=convergence[i].item() if torch.is_tensor(convergence) else convergence,
+                                           convergence=convergence[i],
                                            image_width=base_size,
                                            preserve_screen_border=preserve_screen_border)
                          for i in range(depth_warp.shape[0])])
@@ -265,9 +270,14 @@ def apply_divergence_nn_delta_weight(
 
     B, _, H, W = depth.shape
     base_size = max(H, W)
+    if torch.is_tensor(convergence):
+        convergence = convergence.flatten().cpu().tolist()
+    else:
+        convergence = [convergence] * depth.shape[0]
+
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
-                                       convergence=convergence[i].item() if torch.is_tensor(convergence) else convergence,
+                                       convergence=convergence[i],
                                        image_width=base_size,
                                        preserve_screen_border=preserve_screen_border)
                      for i in range(depth.shape[0])])
@@ -337,10 +347,14 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
 
     if synthetic_view != "both":
         divergence *= 2
+    if torch.is_tensor(convergence):
+        convergence = convergence.flatten().cpu().tolist()
+    else:
+        convergence = [convergence] * depth.shape[0]
 
     x = torch.stack([make_input_tensor(None, depth[i],
                                        divergence=divergence,
-                                       convergence=convergence[i].item() if torch.is_tensor(convergence) else convergence,
+                                       convergence=convergence[i],
                                        image_width=W)
                      for i in range(depth.shape[0])])
     with autocast(device=depth.device, enabled=enable_amp):
