@@ -56,7 +56,7 @@ def _bench(name):
     rgb = torch.zeros((B, 3, *S_RGB)).to(device)
     depth = torch.zeros((B, 1, *S_DEPTH)).to(device)
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
-        z = model.infer(rgb, depth)
+        z, _ = model.infer(rgb, depth, 0.5)
         print(z.shape)
         params = sum([p.numel() for p in model.parameters()])
         print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
@@ -66,7 +66,7 @@ def _bench(name):
     t = time.time()
     with torch.inference_mode(), torch.autocast(device_type="cuda"):
         for _ in range(N):
-            z = model.infer(rgb, depth)
+            z, _ = model.infer(rgb, depth, 0.5)
     torch.cuda.synchronize()
     print(1 / ((time.time() - t) / (B * N)), "FPS")
     max_vram_mb = int(torch.cuda.max_memory_allocated(device) / (1024 * 1024))
