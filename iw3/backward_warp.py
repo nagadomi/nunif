@@ -21,7 +21,11 @@ def make_input_tensor(c, depth, divergence, convergence,
         depth = get_mapper(mapper)(depth)
     divergence_value, convergence_value = make_divergence_feature_value(divergence, convergence, image_width)
     divergence_feat = torch.full_like(depth, divergence_value, device=depth.device)
-    convergence_feat = torch.full_like(depth, convergence_value, device=depth.device)
+    if torch.is_tensor(convergence_value):
+        convergence_feat = convergence_value.expand_as(depth).clone()
+    else:
+        # float
+        convergence_feat = torch.full_like(depth, convergence_value, device=depth.device)
 
     if preserve_screen_border:
         # Force set screen border parallax to zero.
@@ -203,7 +207,7 @@ def apply_divergence_nn_delta(
     delta_steps = []
 
     if torch.is_tensor(convergence):
-        convergence = convergence.flatten().cpu().tolist()
+        convergence = convergence.flatten()
     else:
         convergence = [convergence] * depth.shape[0]
 
@@ -271,7 +275,7 @@ def apply_divergence_nn_delta_weight(
     B, _, H, W = depth.shape
     base_size = max(H, W)
     if torch.is_tensor(convergence):
-        convergence = convergence.flatten().cpu().tolist()
+        convergence = convergence.flatten()
     else:
         convergence = [convergence] * depth.shape[0]
 
@@ -348,7 +352,7 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
     if synthetic_view != "both":
         divergence *= 2
     if torch.is_tensor(convergence):
-        convergence = convergence.flatten().cpu().tolist()
+        convergence = convergence.flatten()
     else:
         convergence = [convergence] * depth.shape[0]
 

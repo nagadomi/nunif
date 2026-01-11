@@ -38,7 +38,7 @@ class ConvergenceEstimator():
             if d.numel() == 0:
                 # Depth values are normalized to the [0, 1] range,
                 # with 0.5 corresponding to the mid depth.
-                result.append(0.5)
+                result.append(torch.tensor(0.5, device=saliency_map.device, dtype=saliency_map.dtype))
                 continue
 
             q01 = d.quantile(0.1)
@@ -51,10 +51,9 @@ class ConvergenceEstimator():
                 # effectively 3x the usable depth range around the central region.
                 center = (q01 + q09) / 2
                 expanded_range = q_range * 3.0
-                q_pos = (center + (pos - 0.5) * expanded_range).clamp(0, 1)
-            result.append(q_pos.item())
-
-        return torch.tensor(result, device=depth.device).view(B, 1, 1, 1)
+                q_pos = (center + (pos - 0.5) * expanded_range)
+            result.append(q_pos)
+        return torch.stack(result, dim=0).reshape(B, 1, 1, 1).clamp(0, 1)
 
     def __call__(self, rgb, depth, reset_pts=None):
         rgb = rgb.to(self.device)
