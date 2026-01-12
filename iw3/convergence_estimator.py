@@ -12,7 +12,7 @@ class ConvergenceEstimator():
     def __init__(self, convergence, device_id, enable_ema=False, decay=0.9):
         with TorchHubDir(HUB_MODEL_DIR):
             self.model, _ = load_model(SOD_URL, device_ids=[device_id], weights_only=True)
-            self.model.eval()
+            self.model = self.model.eval().fuse()
             self.convergence = convergence
 
         self.device = create_device(device_id)

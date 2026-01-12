@@ -14,6 +14,10 @@ class SODV1(I2IBaseModel):
         super(SODV1, self).__init__(locals(), scale=1, offset=0, in_channels=4, blend_size=0, in_size=192)
         self.u2netp = U2NETP(in_ch=6)
 
+    def fuse(self, mode=True):
+        self.u2netp.fuse()
+        return self
+
     @staticmethod
     def to_feature(depth):
         depth_sqrt = depth ** 0.5
@@ -40,17 +44,17 @@ class SODV1(I2IBaseModel):
         return w, depth
 
 
-def _bench(name):
+def _bench(name, batch_size=8):
     from nunif.models import create_model
     import time
     device = "cuda:0"
     do_compile = True
     N = 100
-    B = 8
+    B = batch_size
     S_DEPTH = (512, 910)
     S_RGB = (2160, 4384)
 
-    model = create_model(name).to(device).eval()
+    model = create_model(name).to(device).eval().fuse()
     if do_compile:
         model = torch.compile(model)
     rgb = torch.zeros((B, 3, *S_RGB)).to(device)
@@ -74,5 +78,7 @@ def _bench(name):
 
 
 if __name__ == "__main__":
-    # 485 FPS on RTX3070ti
-    _bench("iw3.sod_v1")
+    # 560 FPS on RTX3070ti
+    _bench("iw3.sod_v1", batch_size=8)
+    # 240 FPS on RTX3070ti
+    _bench("iw3.sod_v1", batch_size=1)
