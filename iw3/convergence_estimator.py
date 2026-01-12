@@ -9,10 +9,13 @@ SOD_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_sod_v1_
 
 
 class ConvergenceEstimator():
-    def __init__(self, convergence, device_id, enable_ema=False, decay=0.9):
+    def __init__(self, convergence, device_id, enable_ema=False, decay=0.9, compile=False):
         with TorchHubDir(HUB_MODEL_DIR):
             self.model, _ = load_model(SOD_URL, device_ids=[device_id], weights_only=True)
             self.model = self.model.eval().fuse()
+            # SOD input is resized to 192×192, recompilation does not occur due to image size differences.
+            # However, recompilation does occur when the batch size changes.
+            self.model = self.model.compile(mode=compile)
             self.convergence = convergence
 
         self.device = create_device(device_id)
