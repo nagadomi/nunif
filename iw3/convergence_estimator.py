@@ -9,10 +9,13 @@ SOD_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_sod_v1_
 
 
 class ConvergenceEstimator():
-    def __init__(self, convergence, device_id, enable_ema=False, decay=0.9):
+    def __init__(self, convergence, device_id, enable_ema=False, decay=0.9, compile=False):
         with TorchHubDir(HUB_MODEL_DIR):
             self.model, _ = load_model(SOD_URL, device_ids=[device_id], weights_only=True)
-            self.model.eval()
+            self.model = self.model.eval().fuse()
+            # SOD input is resized to 192x192, recompilation does not occur due to image size differences.
+            # However, recompilation does occur when the batch size changes.
+            self.model = self.model.compile(mode=compile)
             self.convergence = convergence
 
         self.device = create_device(device_id)
@@ -38,7 +41,7 @@ class ConvergenceEstimator():
             if d.numel() == 0:
                 # Depth values are normalized to the [0, 1] range,
                 # with 0.5 corresponding to the mid depth.
-                result.append(0.5)
+                result.append(torch.tensor(0.5, device=saliency_map.device, dtype=saliency_map.dtype))
                 continue
 
             q01 = d.quantile(0.1)
@@ -51,10 +54,9 @@ class ConvergenceEstimator():
                 # effectively 3x the usable depth range around the central region.
                 center = (q01 + q09) / 2
                 expanded_range = q_range * 3.0
-                q_pos = (center + (pos - 0.5) * expanded_range).clamp(0, 1)
-            result.append(q_pos.item())
-
-        return torch.tensor(result, device=depth.device).view(B, 1, 1, 1)
+                q_pos = (center + (pos - 0.5) * expanded_range)
+            result.append(q_pos)
+        return torch.stack(result, dim=0).reshape(B, 1, 1, 1).clamp(0, 1)
 
     def __call__(self, rgb, depth, reset_pts=None):
         rgb = rgb.to(self.device)

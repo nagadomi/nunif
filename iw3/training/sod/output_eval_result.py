@@ -21,7 +21,7 @@ def main():
     device = create_device(args.gpu[0])
 
     model, _ = load_model(args.model_file, device_ids=args.gpu)
-    model.eval()
+    model = model.eval().fuse()
 
     depth_dir = path.join(args.data_dir, "DUTS-TE", "depth")
     mask_dir = path.join(args.data_dir, "DUTS-TE", "DUTS-TE-Mask")
@@ -44,6 +44,7 @@ def main():
         x = x.to(device)
         with torch.inference_mode(), autocast(x.device):
             batch = model(x)
+            # This may cause the thresholding results to vary depending on fuse()
             batch = (batch > 0.5).float()
         for im in batch:
             TF.to_pil_image(im).save(path.join(args.output, f"{i}.png"))

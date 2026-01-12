@@ -2101,7 +2101,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
 
     convergence_model = None
     if args.convergence_mode == "sod_v1":
-        convergence_model = ConvergenceEstimator(args.convergence, device_id=args.gpu[0])
+        convergence_model = ConvergenceEstimator(args.convergence, device_id=args.gpu[0],
+                                                 compile=args.compile)
 
     if args.export_disparity:
         args.export = True

@@ -5,6 +5,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils import fuse_conv_bn_eval
 
 
 class REBNCONV(nn.Module):
@@ -14,10 +15,22 @@ class REBNCONV(nn.Module):
         self.conv_s1 = nn.Conv2d(in_ch, out_ch, 3, padding=1 * dirate, dilation=1 * dirate)
         self.bn_s1 = nn.BatchNorm2d(out_ch)
         self.relu_s1 = nn.ReLU(inplace=True)
+        self.fused_conv = None
+
+    def fuse(self, mode=True):
+        if mode:
+            self.fused_conv = fuse_conv_bn_eval(self.conv_s1, self.bn_s1)
+        else:
+            self.fused_conv = None
+
+        return self
 
     def forward(self, x):
         hx = x
-        xout = self.relu_s1(self.bn_s1(self.conv_s1(hx)))
+        if self.fused_conv is not None:
+            xout = self.relu_s1(self.fused_conv(hx))
+        else:
+            xout = self.relu_s1(self.bn_s1(self.conv_s1(hx)))
 
         return xout
 
@@ -341,6 +354,12 @@ class U2NETP(nn.Module):
         self.side6 = nn.Conv2d(64, out_ch, 3, padding=1)
 
         self.outconv = nn.Conv2d(6 * out_ch, out_ch, 1)
+
+    def fuse(self, mode=True):
+        for m in self.modules():
+            if isinstance(m, REBNCONV):
+                m.fuse(mode)
+        return self
 
     def forward(self, x):
         hx = x
