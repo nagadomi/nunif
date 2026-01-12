@@ -13,7 +13,7 @@ class ConvergenceEstimator():
         with TorchHubDir(HUB_MODEL_DIR):
             self.model, _ = load_model(SOD_URL, device_ids=[device_id], weights_only=True)
             self.model = self.model.eval().fuse()
-            # SOD input is resized to 192×192, recompilation does not occur due to image size differences.
+            # SOD input is resized to 192x192, recompilation does not occur due to image size differences.
             # However, recompilation does occur when the batch size changes.
             self.model = self.model.compile(mode=compile)
             self.convergence = convergence
