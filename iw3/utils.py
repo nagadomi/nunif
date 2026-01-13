@@ -183,9 +183,7 @@ def make_video_codec_option(args, input_path=None):
             if args.profile_level:
                 x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
 
-            if (input_path is not None and
-                args.colorspace in {"auto", "bt2020-tv", "bt2020-pq-tv"}
-            ):
+            if (input_path is not None and args.colorspace in {"auto", "bt2020-tv", "bt2020-pq-tv"}):
                 hdr_metadata = pyav_extra.get_hdr_metadata(input_path)
                 x265_params += hdr_metadata.to_x265_params()
 
@@ -1038,7 +1036,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              tqdm_fn=args.state["tqdm_fn"],
                              title=path.basename(input_filename),
                              start_time=args.start_time,
-                             end_time=args.end_time)
+                             end_time=args.end_time,
+                             device=args.state["device"])
 
     elif args.low_vram or args.debug_depth or is_video_depth_anything_streaming or is_inpaint_model:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
@@ -1057,7 +1056,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                              tqdm_fn=args.state["tqdm_fn"],
                              title=path.basename(input_filename),
                              start_time=args.start_time,
-                             end_time=args.end_time)
+                             end_time=args.end_time,
+                             device=args.state["device"])
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -1091,7 +1091,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                                  tqdm_fn=args.state["tqdm_fn"],
                                  title=path.basename(input_filename),
                                  start_time=args.start_time,
-                                 end_time=args.end_time)
+                                 end_time=args.end_time,
+                                 device=args.state["device"])
         finally:
             frame_callback.shutdown()
 

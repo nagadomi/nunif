@@ -202,7 +202,8 @@ def process_video(ctx, input_filename, output_path, args):
                      tqdm_fn=args.state["tqdm_fn"],
                      title=path.basename(input_filename),
                      start_time=args.start_time,
-                     end_time=args.end_time)
+                     end_time=args.end_time,
+                     device=args.state["device"])
 
 
 def load_files(txt):
