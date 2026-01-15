@@ -166,8 +166,8 @@ If you want to output an HDR source as HDR, please use the following settings.
 | Setting    | Value
 |------------|-----------------------------------------
 |Video Codec | libx265
-|Colorspace  | auto
 |Pixel Format| yuv420p10le
+|Colorspace  | auto
 
 Using other settings may result in the HDR metadata being lost.
 
