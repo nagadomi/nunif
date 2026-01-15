@@ -9,6 +9,9 @@ class AVRational(ctypes.Structure):
         ("den", ctypes.c_int),
     ]
 
+    def float(self):
+        return self.num / self.den if self.den else 0.0
+
     def __repr__(self):
         return f"AVRational({self.num}/{self.den})"
 
@@ -39,17 +42,15 @@ class AVMasteringDisplayMetadata(ctypes.Structure):
         )
 
     def to_x265_params(self):
-        def r2f(r):
-            return r.num / r.den if r.den else 0.0
 
         if not self.has_primaries:
             return None
 
         prim = self.display_primaries
-        Gx, Gy = r2f(prim[1][0]), r2f(prim[1][1])
-        Bx, By = r2f(prim[2][0]), r2f(prim[2][1])
-        Rx, Ry = r2f(prim[0][0]), r2f(prim[0][1])
-        Wx, Wy = r2f(self.white_point[0]), r2f(self.white_point[1])
+        Gx, Gy = prim[1][0].float(), prim[1][1].float()
+        Bx, By = prim[2][0].float(), prim[2][1].float()
+        Rx, Ry = prim[0][0].float(), prim[0][1].float()
+        Wx, Wy = self.white_point[0].float(), self.white_point[1].float()
 
         def xy(v):
             return int(round(v * 50000))
@@ -66,8 +67,8 @@ class AVMasteringDisplayMetadata(ctypes.Structure):
         )
 
         if self.has_luminance:
-            maxLum = r2f(self.max_luminance)
-            minLum = r2f(self.min_luminance)
+            maxLum = self.max_luminance.float()
+            minLum = self.min_luminance.float()
             s += f"L({lum(maxLum)},{lum(minLum)})"
 
         return s
