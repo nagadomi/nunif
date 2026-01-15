@@ -158,6 +158,29 @@ This will cause an error if the wrong level is selected for a video that is out 
 There is no way to specify H.264 profile.
 However, it seems to be `Constrained Baseline` when `--preset ultrafast` and `High` otherwise.
 
+
+## HDR Support
+
+If you want to output an HDR source as HDR, please use the following settings.
+
+| Setting    | Value
+|------------|-----------------------------------------
+|Video Codec | libx265
+|Colorspace  | auto
+|Pixel Format| yuv420p10le
+
+Using other settings may result in the HDR metadata being lost.
+
+---
+
+If you want to output an HDR source as SDR, please use the following settings.
+
+| Setting    | Value
+|------------|-----------------------------------------
+|Colorspace  | bt709 (recommended) or bt601
+
+Tone mapping will be applied when the source video is HDR.
+
 ## About VR Player
 
 I have tested the results with the following software.
