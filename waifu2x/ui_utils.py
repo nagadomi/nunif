@@ -268,7 +268,7 @@ def create_parser(required_true=True):
                         help="constant quality value. smaller value is higher quality (video only)")
     parser.add_argument("--video-bitrate", type=str, default="8M",
                         help="bitrate option for libopenh264")
-    parser.add_argument("--preset", type=str, default="ultrafast",
+    parser.add_argument("--preset", type=str, default="medium",
                         choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
                                  "medium", "slow", "slower", "veryslow", "placebo",
                                  "p1", "p2", "p3", "p4", "p5", "p6", "p7"],
@@ -279,7 +279,7 @@ def create_parser(required_true=True):
                         help="encoder tunings option (video only)")
     parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
                         help=("pixel format (video only)"))
-    parser.add_argument("--colorspace", type=str, default="unspecified",
+    parser.add_argument("--colorspace", type=str, default="auto",
                         choices=["unspecified", "auto",
                                  "bt709", "bt709-pc", "bt709-tv",
                                  "bt601", "bt601-pc", "bt601-tv",

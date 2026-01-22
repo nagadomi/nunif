@@ -66,9 +66,7 @@ def create_parser(required_true=True):
     parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
                         help="video container format")
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
-
-    # TODO: Change the default value from "unspecified" to "auto"
-    parser.add_argument("--colorspace", type=str, default="unspecified",
+    parser.add_argument("--colorspace", type=str, default="auto",
                         choices=["unspecified", "auto",
                                  "bt709", "bt709-pc", "bt709-tv",
                                  "bt601", "bt601-pc", "bt601-tv",

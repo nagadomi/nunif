@@ -15,8 +15,8 @@ PRESET_LIBX264 = ["ultrafast", "superfast", "veryfast", "faster", "fast",
                   "medium", "slow", "slower", "veryslow", "placebo"]
 PRESET_NVENC = ["fast", "medium", "slow",
                 "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
-
 PRESET_ALL = list(dict.fromkeys(PRESET_LIBX264 + PRESET_NVENC))
+PRESET_DEFAULT = "medium"
 
 CODEC_ALL = ["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo", "ffv1"]
 
@@ -105,7 +105,7 @@ class VideoEncodingBox():
             self.grp_video, choices=PRESET_ALL,
             name=f"{prefix}cbo_preset")
         self.cbo_preset.SetEditable(False)
-        self.cbo_preset.SetSelection(0)
+        self.cbo_preset.SetSelection(PRESET_ALL.index(PRESET_DEFAULT))
 
         self.lbl_tune = wx.StaticText(self.grp_video, label=T("Tune"))
         self.cbo_tune = wx.ComboBox(
@@ -323,16 +323,13 @@ class VideoEncodingBox():
         # preset
         if container_format in {"mp4", "mkv"}:
             preset = self.cbo_preset.GetValue()
+            default_preset = PRESET_DEFAULT
             if codec in {"libx265", "libx264", "libopenh264"}:
-                # preset
                 choices = PRESET_LIBX264
-                default_preset = "ultrafast"
             elif codec in {"h264_nvenc", "hevc_nvenc"}:
                 choices = PRESET_NVENC
-                default_preset = "medium"
             else:
                 choices = PRESET_ALL
-                default_preset = "ultrafast"
 
             self.cbo_preset.SetItems(choices)
             if preset in choices:
