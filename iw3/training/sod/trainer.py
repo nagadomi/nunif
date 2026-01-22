@@ -50,10 +50,10 @@ class SODTrainer(Trainer):
     def create_dataloader(self, type):
         assert (type in {"train", "eval"})
         if type == "train":
-            depth_root_dir = path.join(self.args.data_dir, "DUTS-TR", "depth")
-            mask_dir = path.join(self.args.data_dir, "DUTS-TR", "DUTS-TR-Mask")
-            rgb_dir = path.join(self.args.data_dir, "DUTS-TR", "DUTS-TR-Image")
-            dataset = SODDataset(depth_dir=depth_root_dir,
+            depth_dir = path.join(self.args.data_dir, "train", "depth")
+            mask_dir = path.join(self.args.data_dir, "train", "mask")
+            rgb_dir = path.join(self.args.data_dir, "train", "image")
+            dataset = SODDataset(depth_dir=depth_dir,
                                  mask_dir=mask_dir,
                                  rgb_dir=rgb_dir,
                                  size=self.args.size,
@@ -68,10 +68,10 @@ class SODTrainer(Trainer):
                 drop_last=True)
             return loader
         else:
-            depth_root_dir = path.join(self.args.data_dir, "DUTS-TE", "depth")
-            mask_dir = path.join(self.args.data_dir, "DUTS-TE", "DUTS-TE-Mask")
-            rgb_dir = path.join(self.args.data_dir, "DUTS-TE", "DUTS-TE-Image")
-            dataset = SODDataset(depth_dir=depth_root_dir,
+            depth_dir = path.join(self.args.data_dir, "eval", "depth")
+            mask_dir = path.join(self.args.data_dir, "eval", "mask")
+            rgb_dir = path.join(self.args.data_dir, "eval", "image")
+            dataset = SODDataset(depth_dir=depth_dir,
                                  mask_dir=mask_dir,
                                  rgb_dir=rgb_dir,
                                  size=self.args.size,

@@ -23,9 +23,9 @@ def main():
     model, _ = load_model(args.model_file, device_ids=args.gpu)
     model = model.eval().fuse()
 
-    depth_dir = path.join(args.data_dir, "DUTS-TE", "depth")
-    mask_dir = path.join(args.data_dir, "DUTS-TE", "DUTS-TE-Mask")
-    rgb_dir = path.join(args.data_dir, "DUTS-TE", "DUTS-TE-Image")
+    depth_dir = path.join(args.data_dir, "eval", "depth")
+    mask_dir = path.join(args.data_dir, "eval", "mask")
+    rgb_dir = path.join(args.data_dir, "eval", "image")
     dataset = SODDataset(depth_dir=depth_dir,
                          mask_dir=mask_dir,
                          rgb_dir=rgb_dir,
