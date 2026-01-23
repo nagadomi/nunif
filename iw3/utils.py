@@ -2039,7 +2039,7 @@ def create_parser(required_true=True):
                               "BLACK_TB: Removes only the top and bottom black bars. "
                               "BLACK: Automatically removes black bars from all sides. "
                               "FLAT_TB: Removes only the top and bottom flat-color borders."
-                              "FLAT: Removes flat-color borders. ",
+                              "FLAT: Removes flat-color borders. "
                               ))
 
     parser.add_argument("--edge-dilation", type=int, nargs="+", default=[2, 1],
