@@ -63,7 +63,7 @@ class ConvergenceEstimator():
         depth = depth.to(self.device)
 
         with torch.inference_mode(), autocast(self.device):
-            saliency_map, depth_scaled = self.model.infer(rgb, depth, self.convergence)
+            saliency_map, depth_scaled = self.model.infer(rgb, depth)
             z_pos = self.depth_position_from_ratio(saliency_map, depth_scaled, self.convergence)
 
         if self.enable_ema:

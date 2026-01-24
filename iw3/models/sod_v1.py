@@ -46,7 +46,7 @@ class SODV1(I2IBaseModel):
         return outputs
 
     @torch.inference_mode()
-    def infer(self, rgb, depth, point):
+    def infer(self, rgb, depth):
         s = (self.i2i_in_size, self.i2i_in_size)
         rgb = F.interpolate(rgb, s, mode="bilinear", antialias=False, align_corners=False)
         depth = F.interpolate(depth, s, mode="bilinear", antialias=False, align_corners=False)
