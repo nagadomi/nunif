@@ -269,8 +269,9 @@ class MainFrame(wx.Frame):
                                                name="cbo_zoed_resolution")
         self.cbo_resolution.SetSelection(0)
 
-        self.chk_limit_resolution = wx.CheckBox(self.grp_stereo, label=T("Limit to source resolution"),
+        self.chk_limit_resolution = wx.CheckBox(self.grp_stereo, label=T("Limit to source"),
                                                 name="chk_limit_resolution")
+        self.chk_limit_resolution.SetToolTip(T("Limit to source resolution"))
 
         self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
         self.cbo_foreground_scale = EditableComboBox(self.grp_stereo,
@@ -412,8 +413,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_depth_model, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_limit_resolution, (i := i + 1, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.cbo_resolution, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_limit_resolution, (i, 2), flag=wx.EXPAND)
 
         layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
