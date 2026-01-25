@@ -21,6 +21,9 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="gpu ids. -1 for CPU")
     args = parser.parse_args()
 
+    if args.depth_model.startswith("VDA_"):
+        raise ValueError("VDA is not supported")
+
     device = create_device(args.gpu[0])
     sod_model, _ = load_model(args.model_file, device_ids=args.gpu)
     sod_model = sod_model.eval().fuse()
