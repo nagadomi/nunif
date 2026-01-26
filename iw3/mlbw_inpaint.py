@@ -34,18 +34,18 @@ def forward_left(model, left_eye, left_mask, inner_dilation, outer_dilation, bas
     return left_eye
 
 
-def apply_divergence(model, c, depth, divergence, convergence, mapper, preserve_screen_border, synthetic_view, enable_amp):
+def apply_divergence(model, c, depth, divergence, convergence, preserve_screen_border, synthetic_view, enable_amp):
     if synthetic_view == "both":
         left_eye, left_mask = apply_divergence_nn_delta_weight(
             model, c, depth, divergence=divergence, convergence=convergence, steps=1,
-            mapper=mapper, shift=-1,
+            shift=-1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=True,
         )
         right_eye, right_mask = apply_divergence_nn_delta_weight(
             model, c, depth, divergence=divergence, convergence=convergence, steps=1,
-            mapper=mapper, shift=1,
+            shift=1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=True,
@@ -54,7 +54,7 @@ def apply_divergence(model, c, depth, divergence, convergence, mapper, preserve_
         left_eye, left_mask = c, None
         right_eye, right_mask = apply_divergence_nn_delta_weight(
             model, c, depth, divergence=divergence * 2, convergence=convergence, steps=1,
-            mapper=mapper, shift=1,
+            shift=1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=True,
@@ -62,7 +62,7 @@ def apply_divergence(model, c, depth, divergence, convergence, mapper, preserve_
     elif synthetic_view == "left":
         left_eye, left_mask = apply_divergence_nn_delta_weight(
             model, c, depth, divergence=divergence * 2, convergence=convergence, steps=1,
-            mapper=mapper, shift=-1,
+            shift=-1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=True,
@@ -94,7 +94,6 @@ class MLBWInpaintImage(nn.Module):
     def infer(
             self, x, depth,
             divergence, convergence,
-            mapper="none",
             preserve_screen_border=False,
             synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=None,
@@ -103,7 +102,6 @@ class MLBWInpaintImage(nn.Module):
     ):
         return self.forward(
             x, depth, divergence=divergence, convergence=convergence,
-            mapper=mapper,
             preserve_screen_border=preserve_screen_border,
             synthetic_view=synthetic_view,
             inner_dilation=inner_dilation, outer_dilation=outer_dilation,
@@ -114,7 +112,6 @@ class MLBWInpaintImage(nn.Module):
     def forward(
             self, x, depth,
             divergence, convergence,
-            mapper="none",
             preserve_screen_border=False,
             synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=None,
@@ -132,7 +129,6 @@ class MLBWInpaintImage(nn.Module):
         left_eye, right_eye, left_mask, right_mask = apply_divergence(
             self.mask_mlbw, x, depth,
             divergence=divergence, convergence=convergence,
-            mapper=mapper,
             preserve_screen_border=preserve_screen_border,
             synthetic_view=synthetic_view,
             enable_amp=enable_amp,
@@ -229,7 +225,6 @@ class MLBWInpaintVideo(nn.Module):
     def infer(
             self, x, depth,
             divergence, convergence,
-            mapper="none",
             preserve_screen_border=False,
             synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=None,
@@ -261,7 +256,6 @@ class MLBWInpaintVideo(nn.Module):
         left_eye, right_eye, left_mask, right_mask = apply_divergence(
             self.mask_mlbw, x, depth,
             divergence=divergence, convergence=convergence,
-            mapper=mapper,
             preserve_screen_border=preserve_screen_border,
             synthetic_view=synthetic_view,
             enable_amp=enable_amp,
@@ -341,7 +335,6 @@ class MLBWInpaint(nn.Module):
     def infer(
             self, x, depth,
             divergence, convergence,
-            mapper,
             preserve_screen_border=False,
             synthetic_view="both",
             inner_dilation=0, outer_dilation=0, max_width=None,
@@ -352,7 +345,6 @@ class MLBWInpaint(nn.Module):
             x, depth,
             divergence=divergence,
             convergence=convergence,
-            mapper=mapper,
             preserve_screen_border=preserve_screen_border,
             synthetic_view=synthetic_view,
             inner_dilation=inner_dilation,

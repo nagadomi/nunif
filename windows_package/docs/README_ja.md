@@ -95,3 +95,27 @@ Windowsによって警告が表示される場合は、**詳細**をクリック
 - 学習済みモデルファイルを(フォルダ内に)ダウンロード
 
 意図的にはフォルダ外にアクセスしません。
+
+## dev branch
+
+以下の手順で `dev` ブランチに切り替えることができます。
+
+1. `nunif-prompt.bat` を実行します。
+2. コンソールで `git checkout -B dev origin/dev` と入力し、Enterキーを押します。
+3. `update.bat` を実行します。
+
+切り替えが成功すると、GUIウィンドウのタイトルに (dev) ラベルが追加されます。
+
+### master ブランチに戻す
+
+以下の手順で、既定の `master` ブランチに戻すことができます。
+
+1. `nunif-prompt.bat` を実行します。
+2. コンソールで `git checkout master` と入力し、Enterキーを押します。
+3. `update.bat` を実行します。
+
+切り替えが成功すると、GUIウィンドウのタイトルから (dev) ラベルが削除されます。
+
+## torch.compile を有効にするための追加インストール
+
+詳細は [torch_compile_ja.md](torch_compile_ja.md) を参照してください。

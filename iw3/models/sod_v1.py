@@ -1,0 +1,101 @@
+import torch
+import torch.nn.functional as F
+from nunif.models import I2IBaseModel, register_model
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.utils.u2netp import U2NETP
+from nunif.models.utils import compile_model
+
+
+@register_model
+class SODV1(I2IBaseModel):
+    name = "iw3.sod_v1"
+    name_alias = ("iw3.dsod_v1",)
+
+    def __init__(self):
+        super(SODV1, self).__init__(locals(), scale=1, offset=0, in_channels=4, blend_size=0, in_size=192)
+        self.u2netp = U2NETP(in_ch=6)
+        self.u2netp_compiled = None
+
+    def compile(self, mode=True):
+        if mode:
+            self.u2netp_compiled = compile_model(self.u2netp)
+        else:
+            self.u2netp_compiled = None
+        return self
+
+    def fuse(self, mode=True):
+        self.u2netp.fuse()
+        return self
+
+    @staticmethod
+    def to_feature(depth):
+        depth_sqrt = depth ** 0.5
+        depth_pow = depth ** 2
+        x = torch.cat([depth, depth_sqrt, depth_pow], dim=1)
+        return x
+
+    @conditional_compile(["NUNIF_TRAIN"])
+    def forward(self, x):
+        H, W = x.shape[-2:]
+        rgb, depth = x[:, 0:3], x[:, 3:4]
+        x = torch.cat((rgb, self.to_feature(depth)), dim=1)
+        if self.u2netp_compiled is not None:
+            outputs = self.u2netp_compiled(x)
+        else:
+            outputs = self.u2netp(x)
+        return outputs
+
+    @torch.inference_mode()
+    def infer(self, rgb, depth):
+        s = (self.i2i_in_size, self.i2i_in_size)
+        rgb = F.interpolate(rgb, s, mode="bilinear", antialias=False, align_corners=False)
+        depth = F.interpolate(depth, s, mode="bilinear", antialias=False, align_corners=False)
+
+        x = torch.cat((rgb, depth), dim=1)
+        w = self.forward(x)
+        return w, depth
+
+
+def _bench(name, batch_size=8, do_compile=False):
+    print(name, f"batch_size={batch_size}", f"compile={do_compile}")
+    from nunif.models import create_model
+    import time
+    device = "cuda:0"
+    N = 100
+    B = batch_size
+    S_DEPTH = (512, 910)
+    S_RGB = (2160, 4384)
+
+    model = create_model(name).to(device).eval().fuse()
+    if do_compile:
+        model = model.compile()
+    rgb = torch.zeros((B, 3, *S_RGB)).to(device)
+    depth = torch.zeros((B, 1, *S_DEPTH)).to(device)
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
+        z, _ = model.infer(rgb, depth, 0.5)
+        print(z.shape)
+        params = sum([p.numel() for p in model.parameters()])
+        print(model.name, model.i2i_offset, model.i2i_scale, f"{params}")
+
+    # benchmark
+    torch.cuda.synchronize()
+    t = time.time()
+    with torch.inference_mode(), torch.autocast(device_type="cuda"):
+        for _ in range(N):
+            z, _ = model.infer(rgb, depth, 0.5)
+    torch.cuda.synchronize()
+    print(1 / ((time.time() - t) / (B * N)), "FPS")
+    max_vram_mb = int(torch.cuda.max_memory_allocated(device) / (1024 * 1024))
+    print(f"GPU Max Memory Allocated {max_vram_mb}MB")
+
+
+if __name__ == "__main__":
+    # 560 FPS on RTX3070ti
+    _bench("iw3.sod_v1", batch_size=8, do_compile=False)
+    # 240 FPS on RTX3070ti
+    _bench("iw3.sod_v1", batch_size=1, do_compile=False)
+
+    # 1000 FPS on RTX3070ti
+    _bench("iw3.sod_v1", batch_size=8, do_compile=True)
+    # 320 FPS on RTX3070ti
+    _bench("iw3.sod_v1", batch_size=1, do_compile=True)

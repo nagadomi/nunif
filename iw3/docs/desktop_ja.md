@@ -1,130 +1,129 @@
-# iw3 desktop streaming
+# iw3-desktop: PCデスクトップ3Dストリーミングツール
 
-(警告: これは非常に実験的なツールです。
- 今のところMeta QuestとPICO 4で動作することが分かっています。VisionProでは動作しません。
- またLinux/Waylandで非常に遅い。)
+## 概要
 
-iw3.desktopはPCのデスクトップ画面を3D変換してWiFi経由でストリーミング配信するツールです。
-Meta Quest上のブラウザからサイドバイサイド3Dとして視聴できます。
+`iw3-desktop`は、PCのデスクトップ画面をリアルタイムで3D変換し、WiFi経由でストリーミング配信するツールです。Meta QuestなどのVRデバイスのブラウザからサイドバイサイド3Dとして視聴できます。
 
-PC上に表示されたあらゆる画像と動画をリアルタイムで視聴できます。
+PC上に表示されるあらゆる画像や動画をリアルタイムでVR空間で視聴することが可能です。PCの操作には、引き続きPCのキーボードとマウスを使用し、音声もPCから出力されます。VRデバイスはディスプレイとして機能します。
 
-PCを操作するには、PCのキーボートとマウスを使います。オーディオもPCから使用します。ディスプレイだけMeta Questを使います。
+GUIウィンドウやテキストの深度推定結果は完全ではないため、3D酔いに注意が必要です。本ツールは、基本的に画像や動画を全画面再生する用途を想定しています。
 
-GUIウィンドウや文字の深度推定結果は多分よくないので、3D酔いに注意してください。
-基本的には画像や動画を全画面再生する使い方を想定しています。
+Webストリーミングに加えて、ローカルビューワーとしてのウィンドウ表示にも対応しています。これは、ウィンドウまたは仮想モニターをキャプチャーする機能を持つ3DモニターやVRデスクトップソフトウェア（Virtual DesktopやBigscreenなど）の配信機能を活用するものです。
+
+## 既知の問題
+
+*   Meta QuestおよびPICO 4での動作は確認済みですが、VisionProでは動作しません。
+*   Linux/Wayland環境ではパフォーマンスが著しく低下します。Linuxをご利用の場合はX11環境での使用を推奨します。
 
 ## セキュリティに関する注意
 
-iw3.desktopは、デフォルトではパスワードなしのHTTPサーバーを起動します。
-同じネットワーク内であれば他のPCからアクセスされる可能性があることに注意してください。
+`iw3-desktop`は、デフォルトでパスワードなしのHTTPサーバーを起動します。同一ネットワーク内の他のPCからアクセスされる可能性があるため、ご注意ください。
 
-ベーシック認証のパスワードを`--passward`オプションで設定できます。
+ベーシック認証のパスワードは`--password`オプションで設定できます。
 
-## PC上でのサーバー起動
+## GUIの使用方法
 
-以下のコマンドで起動します。
+Windowsで`nunif-windows-package`を使用している場合、`iw3-desktop-gui.bat`を実行することでGUIが起動します。もし`iw3-desktop-gui.bat`が存在しない場合は、`update-installer.bat`と`update.bat`を実行してください。
 
-```
-python -m iw3.desktop
-```
+コマンドラインから起動する場合は、以下のコマンドを使用します。
 
-Windows上でnunif-windows-packageを使っている場合は、`nunif-prompt.bat`を起動してコンソール上からコマンドを入力してください。
-
-起動に成功すると以下のようなのメッセージが表示されます。
-
-```
-Open http://192.168.11.6:1303
-Estimated FPS = 30.24, Streaming FPS = 0.00
-```
-(`192.168.11.6`のアドレス部分は、ネットワーク環境によって異なります)
-
-(New) または以下のコマンドでGUIが起動します。
-
-```
+```bash
 python -m iw3.desktop.gui
 ```
 
 ![iw3-desktop-gui](https://github.com/user-attachments/assets/18175b2a-a027-42ce-ae5c-a9ee7ae178e5)
 
-(Windowsでnunif-windows-packageを使っている場合は、`iw3-desktop-gui.bat`を実行してください。それがない場合は`update-installer.bat`と`update.bat`を実行すると現れます。)
+## CLIの使用方法
 
-ファイヤウォールのダイアログが表示された場合は許可してください。
+以下のコマンドでサーバーを起動します。
 
-URLをPCのブラウザで開いて動画が再生できるかチェックしてください。ウェブページはGoogle ChromeとMeta Quest 2 Browserで動作確認しています。Firefoxでは動作しません。
-
-LAN内のPCアドレスが正しく検出されてない場合は、`--bind-addr`オプションで指定できます。
+```bash
+python -m iw3.desktop
 ```
+(Windowsで`nunif-windows-package`を使用している場合、`nunif-prompt.bat`を起動し、コンソールから上記のコマンドを入力してください。)
+
+サーバーが正常に起動すると、以下のようなメッセージが表示されます。
+
+```
+Open http://192.168.11.6:1303
+Estimated FPS = 30.24, Streaming FPS = 0.00
+```
+(`192.168.11.6`のアドレスは、ネットワーク環境によって異なります。)
+
+ファイアウォールのダイアログが表示された場合は、アクセスを許可してください。
+
+PCのブラウザで表示されたURLを開き、動画が再生されることを確認してください。ウェブページはGoogle ChromeとMeta Quest 2 Browserで動作確認済みです。Firefoxでは動作しません。
+
+LAN内のPCアドレスが正しく検出されない場合は、`--bind-addr`オプションでIPアドレスを指定できます。
+
+```bash
 python -m iw3.desktop --bind-addr 192.168.1.2
 ```
 
-## Meta Quest上での視聴
+## Meta Questでの視聴方法
 
-Meta Quest 2で動作確認しています。
+Meta Quest 2での動作を確認しています。以下の手順で3D動画を再生できます。
 
-Meta Quest上で以下の手順により動画を3D再生できます。
+1.  `Browser`を起動します。
+2.  サーバーのURLを入力します。
+3.  (オプション) URLをお気に入りに登録します。
+4.  動画を再生します。
+5.  Browser右上のアイコンから**ブラウザ**を全画面表示にします。
+6.  動画右下のアイコンから**動画**を全画面表示にします。
+7.  Browser下部のフロントメニューのスクリーンアイコンから`ディスプレイモード > 3Dサイドバイサイド`に設定します。
+8.  (オプション) カーブウィンドウに設定します。
 
-1. `Browser`を起動する
-2. サーバーのURLを入力する
-3. (オプション) URLをお気に入りに登録する
-4. 動画を再生する
-5. Browserの右上のアイコンから**ブラウザ**を全画面にする
-6. 動画の右下のアイコンから**動画**を全画面にする
-7. Browserの下のフロントメニューのスクリーンアイコンから`ディスプレイモード > 3Dサイドバイサイド`に設定する
-8. (オプション) カーブウィンドウに設定する
+ディスプレイモードは、動画とブラウザの両方が全画面表示になっている場合にのみ変更できる点にご注意ください。
 
-動画とブラウザを両方とも全画面にしなければディスプレイモードが変更できないことに注意してください。
-
-その後はPCのキーボードとマウスを使って表示されているスクリーンを操作できます。
+その後はPCのキーボードとマウスを使用して、表示されているスクリーンを操作できます。
 
 ## オプション
 
-### PICO 4用のオプション
+### PICO 4用オプション
 
-ユーザーからの報告によるとPICO 4のブラウザは動画をFull SBSで表示します。
+ユーザーからの報告によると、PICO 4のブラウザは動画をFull SBSで表示します。
 
-`--full-sbs`オプションでストリーミング動画をFull SBSに変更できます。
+`--full-sbs`オプションを使用することで、ストリーミング動画をFull SBSに変更できます。
 
-```
+```bash
 python -m iw3.desktop --full-sbs
 ```
-デフォルトはHalf SBSです。Meta QuestのブラウザはHalf SBSにしか対応していません。
+デフォルトはHalf SBSです。Meta QuestのブラウザはHalf SBSのみに対応しています。
 
-### 解像度
+### 解像度 (動画解像度)
 
-`--stream-height`オプションで画面の縦サイズを指定できます。デフォルトは1080pxです。
+`--stream-height`オプションで画面の垂直方向の解像度を指定できます。デフォルトは1080pxです。
 
-```
+```bash
 python -m iw3.desktop --stream-height 720
 ```
 
 ### FPS
 
-`--stream-fps`オプションでストリーミングのFPSを指定できます。デフォルトは15FPSです。
+`--stream-fps`オプションでストリーミングのフレームレート（FPS）を指定できます。デフォルトは15FPSです。
 
-```
+```bash
 python -m iw3.desktop --stream-fps 30
 ```
 
-`Estimated FPS`が指定されたFPSより著しく低い場合、PCの性能は指定されたFPSを処理するのに十分ではありません。
+`Estimated FPS`が指定されたFPSよりも著しく低い場合、PCの性能が指定されたFPSの処理に追いついていないことを意味します。
 
-`--batch-size 1`で処理している理由でFPSは動画変換時よりかなり低くなります。
-
-また、おそらくブラウザの制限により`Streaming FPS = 30`より高いFPSは達成できません。
+`--batch-size 1`での処理のため、FPSは動画変換時よりもかなり低くなります。また、ブラウザの制限により、`Streaming FPS = 30`を超えるFPSは達成できない可能性があります。
 
 ### MJPEG 設定
 
-`--stream-quality`でJPEG品質を指定できます。 (0-100)
-```
+`--stream-quality`オプションでJPEGの品質を指定できます（0-100）。
+
+```bash
 python -m iw3.desktop --stream-quality 80
 ```
 デフォルトは90です。低い値を指定すると、ネットワークトラフィックが削減されます。
 
 ### ステレオ設定
 
-GUI/CLIと同じオプションが指定できます。
+GUI/CLIと同じオプションを指定できます。
 
-```
+```bash
 python -m iw3.desktop --depth-model ZoeD_Any_N --divergence 2 --convergence 0.5 --resolution 518
 ```
 
@@ -132,13 +131,15 @@ python -m iw3.desktop --depth-model ZoeD_Any_N --divergence 2 --convergence 0.5 
 
 ### ネットワーク
 
-`--bind-addr`と`--port`オプションでHTTPサーバーを起動するアドレスを指定できます。
-```
+`--bind-addr`と`--port`オプションでHTTPサーバーを起動するアドレスとポートを指定できます。
+
+```bash
 python -m iw3.desktop --port 7860
 ```
 
-サーバーをインターネットに公開する場合 (オススメしません)
-```
+サーバーをインターネットに公開する場合（**非推奨**）：
+
+```bash
 python -m iw3.desktop --bind-addr 0.0.0.0 --port 7860
 ```
 
@@ -146,9 +147,17 @@ python -m iw3.desktop --bind-addr 0.0.0.0 --port 7860
 
 `--user`と`--password`オプションでHTTPベーシック認証を設定できます。
 
-```
+```bash
 python -m iw3.desktop --password iw3
 ```
-```
+
+```bash
 python -m iw3.desktop --user admin --password 1234
 ```
+
+### ローカルビューワー
+
+`--local-viewer`オプションを指定します。
+
+CLIから指定した場合でもGUIウィンドウが表示されるため、wxpythonとOpenGLが必要です（`requirements-gui.txt`からインストールされます）。
+

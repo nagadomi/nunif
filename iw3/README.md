@@ -69,6 +69,8 @@ You can adjust the screen position by zoom-in/zoom-out on the VR Video Player.
 - `1` is the most friendly for curved display setting.
 - `0.5` by default.
 
+Please refer to https://github.com/nagadomi/nunif/pull/600 for details about the convergence mode.
+
 ### What is `--ipd-offset` option?
 
 (`Your Own Size` in GUI)
@@ -124,7 +126,11 @@ See [Colorspace](docs/colorspace.md) and https://github.com/nagadomi/nunif/issue
 
 ## About Depth Resolution
 
-See https://github.com/nagadomi/nunif/discussions/168 .
+Specify the depth resolution.
+
+For details, see https://github.com/nagadomi/nunif/discussions/168 .
+
+If `Limit to source resolution`(`--limit-resolution`) is enabled and the source resolution is lower than `--resolution`, the depth resolution will be limited to the source resolution.
 
 ## About Video Format
 
@@ -151,6 +157,29 @@ This will cause an error if the wrong level is selected for a video that is out 
 
 There is no way to specify H.264 profile.
 However, it seems to be `Constrained Baseline` when `--preset ultrafast` and `High` otherwise.
+
+
+## HDR Support
+
+If you want to output an HDR source as HDR, please use the following settings.
+
+| Setting    | Value
+|------------|-----------------------------------------
+|Video Codec | libx265
+|Pixel Format| yuv420p10le
+|Colorspace  | auto
+
+Using other settings may result in the HDR metadata being lost.
+
+---
+
+If you want to output an HDR source as SDR, please use the following settings.
+
+| Setting    | Value
+|------------|-----------------------------------------
+|Colorspace  | bt709 (recommended) or bt601
+
+Tone mapping will be applied when the source video is HDR.
 
 ## About VR Player
 

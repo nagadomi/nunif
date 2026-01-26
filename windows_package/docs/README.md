@@ -112,3 +112,7 @@ You can switch back to `master` branch (default branch) by following steps.
 3. Run `update.bat`
 
 If it is successful, `(dev)` label is removed from the title of the GUI window.
+
+## Additional installation required to enable `torch.compile`
+
+See [torch_compile.md](torch_compile.md).

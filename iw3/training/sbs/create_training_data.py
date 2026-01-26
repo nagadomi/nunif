@@ -4,7 +4,6 @@ import sys
 import argparse
 import torch
 from PIL import Image
-import numpy as np
 from os import path
 from tqdm import tqdm
 import random
@@ -226,7 +225,6 @@ def main(args):
     # force_update_midas()
     # force_update_zoedepth()
 
-    max_workers = cpu_count() // 2 or 1
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     model = create_depth_model(args.model_type)
     model.load(gpu=args.gpu, resolution=args.resolution)
@@ -254,7 +252,7 @@ def main(args):
                              load_func=load_image_simple,
                              load_func_kwargs={"color": "rgb"})
         seq = 1
-        with PoolExecutor(max_workers=max_workers) as pool:
+        with PoolExecutor(max_workers=args.max_workers) as pool:
             futures = []
             for im, meta in tqdm(loader, ncols=80):
                 if im is None:
@@ -321,6 +319,7 @@ def main(args):
 
 
 def register(subparsers, default_parser):
+    max_workers = cpu_count() // 2 or 1
     parser = subparsers.add_parser(
         "sbs",
         parents=[default_parser],
@@ -340,6 +339,8 @@ def register(subparsers, default_parser):
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
     parser.add_argument("--mapper", type=str, default="random", help="depth mapper function")
     parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
+    parser.add_argument("--max-workers", type=int, default=max_workers,
+                        help="Number of worker threads. Set to 1 to disable.")
 
     parser.set_defaults(handler=main)
 
