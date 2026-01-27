@@ -196,6 +196,13 @@ With recent updates, most features of 3D Full SBS are now working.
 
 To adjust the screen position, you must select `Cinema Scene > SELECT THEATER > VOID`.
 
+### immerGallery VR Media Player
+
+Plays back 3D Full SBS videos and photos.
+
+- easily navigate prev/next image with joystick
+- modify screen height position under Settings - Customize - 3D Wall: Up / Down
+
 ## About file naming rule
 
 VR Player detects media format by filename.
@@ -207,6 +214,7 @@ Reference:
 - Pigasus requires `LRF` https://hanginghatstudios.com/pigasus-faq/#acc-tb_obg1300-0
 - SKYBOX requires `Full_SBS`, https://forum.skybox.xyz/d/2161-skybox-vr-quest-v116-added-multi-language-keyboard-and-casting
 - DeoVR requires `SBS` or `LR`(`LRF` seems to not work), https://deovr.com/app/doc#naming
+- immerGallery requires `_LR` or `_Full_SBS`, https://immervr.com/files/Image_File_Format_Hints_immerGallery_1_2_8.pdf
 
 I confirmed that `_LRF_Full_SBS` works with all of the above software.
 
