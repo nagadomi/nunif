@@ -19,6 +19,7 @@ from .. import utils as IW3U
 from ..stereo_model_factory import get_mlbw_divergence_level
 from .. import models  # noqa
 from .screenshot_thread_pil import ScreenshotThreadPIL
+from .screenshot_thread_cuda import ScreenshotThreadWCCUDA
 from .screenshot_process import ( # noqa
     ScreenshotProcess,
     get_monitor_size_list,
@@ -147,7 +148,7 @@ def create_parser():
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
-    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "mss", "wc_mp"],
+    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "mss", "wc_mp", "wc_cuda"],
                         help="Screenshot method")
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
@@ -254,6 +255,8 @@ def iw3_desktop_main(args, init_wxapp=True):
         screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="mss")
     elif args.screenshot == "wc_mp":
         screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="windows_capture")
+    elif args.screenshot == "wc_cuda":
+        screenshot_factory = lambda *args, **kwargs: ScreenshotThreadWCCUDA(*args, **kwargs)
 
     device = create_device(args.gpu)
 
@@ -368,6 +371,8 @@ def iw3_desktop_main(args, init_wxapp=True):
             with args.state["args_lock"]:
                 tick = time.perf_counter()
                 frame = screenshot_thread.get_frame()
+                if frame is None:
+                    break
                 sbs = IW3U.process_image(frame, args, depth_model, side_model, autocrop_uncrop=True)
 
                 if not args.local_viewer:

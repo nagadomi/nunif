@@ -7,3 +7,6 @@ PyOpenGL >= 3.1.9
 # PyOpenGL_accelerate is not required, but it is recommended.
 # If installation fails, you can ignore it.
 PyOpenGL_accelerate >= 3.1.9
+
+# https://github.com/nagadomi/wc_cuda
+wc_cuda @ https://github.com/nagadomi/wc_cuda/releases/download/v0.1.0/wc_cuda-0.1.0-cp310-abi3-win_amd64.whl; sys_platform=='win32'

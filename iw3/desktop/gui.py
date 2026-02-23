@@ -56,7 +56,8 @@ os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(PRESET_DIR, exist_ok=True)
 
 LAYOUT_DEBUG = False
-HAS_WINDOWS_CAPTURE = importlib.util.find_spec("windows_capture")
+HAS_WINDOWS_CAPTURE = bool(importlib.util.find_spec("windows_capture"))
+HAS_WINDOWS_CAPTURE_CUDA = bool(importlib.util.find_spec("wc_cuda")) and torch.cuda.is_available()
 
 
 myEVT_FPS = wx.NewEventType()
@@ -435,6 +436,8 @@ class MainFrame(wx.Frame):
             screenshot_backends += ["mss"]
         if HAS_WINDOWS_CAPTURE:
             screenshot_backends += ["wc_mp"]
+        if HAS_WINDOWS_CAPTURE_CUDA:
+            screenshot_backends += ["wc_cuda"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
@@ -1028,7 +1031,7 @@ class MainFrame(wx.Frame):
 
         monitor_index = int(self.cbo_monitor_index.GetValue())
         window_name = self.cbo_window_name.GetValue()
-        if self.cbo_screenshot.GetValue() not in {"wc_mp", "mss"}:
+        if self.cbo_screenshot.GetValue() not in {"wc_mp", "wc_cuda", "mss"}:
             monitor_index = 0
             window_name = None
         if not window_name:
@@ -1151,6 +1154,7 @@ class MainFrame(wx.Frame):
             self.SetStatusText(T("Error"))
             e_type, e, tb = sys.exc_info()
             message = getattr(e, "message", str(e))
+            print(e, file=sys.stderr)
             traceback.print_tb(tb)
             wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
@@ -1286,7 +1290,7 @@ class MainFrame(wx.Frame):
         self.update_window_names()
 
     def update_monitor_index(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "wc_cuda", "mss"}:
             self.lbl_monitor_index.Show()
             self.cbo_monitor_index.Show()
         else:
@@ -1296,7 +1300,7 @@ class MainFrame(wx.Frame):
         self.GetSizer().Layout()
 
     def update_window_names(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() in {"wc_mp", "mss"}:
+        if self.cbo_screenshot.GetValue() in {"wc_mp", "wc_cuda", "mss"}:
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()
