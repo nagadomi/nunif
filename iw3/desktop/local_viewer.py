@@ -221,6 +221,10 @@ class GLCanvas(glcanvas.GLCanvas):
         GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, self.pbo)
 
         if self.use_cuda and frame.is_cuda:
+            # Ensure the frame is on the same device as the OpenGL PBO
+            if frame.get_device() != self.device_id:
+                frame = frame.to(f"cuda:{self.device_id}")
+
             # Zero-copy transfer using CUDA-GL Interop
             # 1. Convert to uint8 on GPU
             frame = frame.permute(1, 2, 0).contiguous()
