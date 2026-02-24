@@ -2,7 +2,7 @@
 "_LOCALE": ["he_IL"]
 "_NAME": "עברית"
 "Language": "שפה"
-"The language setting will be applied after restarting": "הגדרת השפה תוחל לאחר הפעלה מחדש"
+"The language stting will be applied after restarting": "הגדרת השפה תוחל לאחר הפעלה מחדש"
 
 "Load": "טעינה"
 "Save": "שמירה"
@@ -125,6 +125,7 @@
 "Address": "כתובת"
 "Port": "פורט"
 "Streaming FPS": "FPS הזרמה"
+"Uncap FPS": "ביטול הגבלת FPS"
 "Streaming Resolution": "רזולוציית הזרמה"
 "MJPEG Quality": "איכות MJPEG"
 "Screenshot": "צילום מסך"
