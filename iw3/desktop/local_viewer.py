@@ -107,7 +107,7 @@ class _CUDART:
 class GLCanvas(glcanvas.GLCanvas):
     def __init__(self, parent, width, height,
                  use_cuda=False, device_id=0,
-                 unlock_fps=False, polling_interval=POLLING_INTERVAL):
+                 uncap_fps=False, polling_interval=POLLING_INTERVAL):
         attribs = [
             glcanvas.WX_GL_RGBA,
             glcanvas.WX_GL_DOUBLEBUFFER,
@@ -130,7 +130,7 @@ class GLCanvas(glcanvas.GLCanvas):
         self.cuda_resource = None
         self._cudart = None
 
-        if unlock_fps:
+        if uncap_fps:
             self.Bind(wx.EVT_IDLE, self.on_idle)
         self.Bind(wx.EVT_PAINT, self.on_paint)
         self.Bind(wx.EVT_SIZE, self.on_resize)
@@ -347,12 +347,12 @@ class GLCanvas(glcanvas.GLCanvas):
 class LocalViewerWindow(wx.Frame):
     def __init__(self, width, height, size=(960, 540),
                  use_cuda=False, device_id=0,
-                 unlock_fps=False, polling_interval=POLLING_INTERVAL):
+                 uncap_fps=False, polling_interval=POLLING_INTERVAL):
         super().__init__(None, title="iw3-desktop: Local Viewer",
                          size=size, style=wx.DEFAULT_FRAME_STYLE | wx.CLIP_CHILDREN)
         self.canvas = GLCanvas(self, width=width, height=height,
                                use_cuda=use_cuda, device_id=device_id,
-                               unlock_fps=unlock_fps, polling_interval=polling_interval)
+                               uncap_fps=uncap_fps, polling_interval=polling_interval)
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_char)
@@ -391,7 +391,7 @@ class LocalViewerWindow(wx.Frame):
 class LocalViewer():
     def __init__(self, lock, width, height,
                  use_cuda=False, device_id=0,
-                 unlock_fps=False, polling_interval=POLLING_INTERVAL,
+                 uncap_fps=False, polling_interval=POLLING_INTERVAL,
                  **_unsupported_kwargs):
         self.width = width
         self.height = height
@@ -402,7 +402,7 @@ class LocalViewer():
         self.last_frame_time = 0
         self.use_cuda = use_cuda
         self.device_id = device_id
-        self.unlock_fps = unlock_fps
+        self.uncap_fps = uncap_fps
         self.polling_interval = polling_interval
 
     def stop(self):
@@ -418,7 +418,7 @@ class LocalViewer():
             if self.window is None:
                 self.window = LocalViewerWindow(width=self.width, height=self.height,
                                                 use_cuda=self.use_cuda, device_id=self.device_id,
-                                                unlock_fps=self.unlock_fps, polling_interval=self.polling_interval)
+                                                uncap_fps=self.uncap_fps, polling_interval=self.polling_interval)
                 self.window.Show()
                 self.initialized = True
 
@@ -546,7 +546,7 @@ def _test():
 
     def main():
         lock = threading.RLock()
-        server = LocalViewer(lock, width=W, height=H, use_cuda=args.cuda, unlock_fps=True, polling_interval=0)
+        server = LocalViewer(lock, width=W, height=H, use_cuda=args.cuda, uncap_fps=True, polling_interval=0)
         server.start()
         time.sleep(2)
         frames = torch.rand(4, 3, H, W).cuda()
