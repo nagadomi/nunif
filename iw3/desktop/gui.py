@@ -57,7 +57,8 @@ os.makedirs(PRESET_DIR, exist_ok=True)
 
 LAYOUT_DEBUG = False
 HAS_WINDOWS_CAPTURE = bool(importlib.util.find_spec("windows_capture"))
-HAS_WINDOWS_CAPTURE_CUDA = bool(importlib.util.find_spec("wc_cuda")) and torch.cuda.is_available()
+IS_ROCM = getattr(torch.version, "hip", None) is not None
+HAS_WINDOWS_CAPTURE_CUDA = bool(importlib.util.find_spec("wc_cuda")) and torch.cuda.is_available() and not IS_ROCM
 
 
 myEVT_FPS = wx.NewEventType()
