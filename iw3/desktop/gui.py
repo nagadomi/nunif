@@ -350,9 +350,9 @@ class MainFrame(wx.Frame):
                                 allow_none=False, min=1025, max=65535, name="txt_port")
         self.txt_port.SetValue(1303)
         self.lbl_stream_fps = wx.StaticText(self.grp_network, label=T("Streaming FPS"))
-        self.cbo_stream_fps = EditableComboBox(self.grp_network, choices=["30", "24", "15", "8"],
+        self.cbo_stream_fps = EditableComboBox(self.grp_network, choices=["60", "30", "24", "15", "8"],
                                                name="cbo_stream_fps")
-        self.cbo_stream_fps.SetSelection(0)
+        self.cbo_stream_fps.SetSelection(1)
 
         self.lbl_stream_height = wx.StaticText(self.grp_network, label=T("Streaming Resolution"))
         self.cbo_stream_height = EditableComboBox(self.grp_network, choices=["1080", "720"],
@@ -963,8 +963,8 @@ class MainFrame(wx.Frame):
         if not validate_number(self.cbo_foreground_scale.GetValue(), -3.0, 3.0, allow_empty=False):
             self.show_validation_error_message(T("Foreground Scale"), -3, 3)
             return None
-        if not validate_number(self.cbo_stream_fps.GetValue(), 1, 60, allow_empty=False):
-            self.show_validation_error_message(T("Streaming FPS"), 1, 60)
+        if not validate_number(self.cbo_stream_fps.GetValue(), 1, 240, allow_empty=False):
+            self.show_validation_error_message(T("Streaming FPS"), 1, 240)
             return None
         if not validate_number(self.cbo_stream_height.GetValue(), 320, 4320, allow_empty=False):
             self.show_validation_error_message(T("Streaming Resolution"), 320, 4320)
