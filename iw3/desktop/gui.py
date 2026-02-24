@@ -704,6 +704,7 @@ class MainFrame(wx.Frame):
 
         self.btn_start.SetFocus()
         self.Fit()
+        wx.CallAfter(self.Fit)
 
     def get_depth_models(self, small_only):
         if small_only:
