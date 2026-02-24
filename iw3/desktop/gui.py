@@ -354,6 +354,9 @@ class MainFrame(wx.Frame):
                                                name="cbo_stream_fps")
         self.cbo_stream_fps.SetSelection(1)
 
+        self.chk_uncap_fps = wx.CheckBox(self.grp_network, label=T("Uncap FPS"), name="chk_uncap_fps")
+        self.chk_uncap_fps.SetValue(False)
+
         self.lbl_stream_height = wx.StaticText(self.grp_network, label=T("Streaming Resolution"))
         self.cbo_stream_height = EditableComboBox(self.grp_network, choices=["1080", "720"],
                                                   name="cbo_stream_height")
@@ -392,19 +395,20 @@ class MainFrame(wx.Frame):
 
         layout.Add(self.lbl_stream_fps, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stream_fps, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_height, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_height, (5, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_quality, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_quality, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_gpu_jpeg, (7, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_pad_16_9, (8, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.sep_network1, (9, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
+        layout.Add(self.chk_uncap_fps, (5, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_height, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_height, (6, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_quality, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_quality, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_gpu_jpeg, (8, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_pad_16_9, (9, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_network1, (10, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
 
-        layout.Add(self.chk_auth, (10, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (11, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (11, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (12, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (12, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_auth, (11, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (12, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (12, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (13, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (13, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -1045,6 +1049,7 @@ class MainFrame(wx.Frame):
                 local_viewer=True,
                 stream_fps=int(self.cbo_stream_fps.GetValue()),
                 stream_height=int(self.cbo_stream_height.GetValue()),
+                uncap_fps=self.chk_uncap_fps.GetValue(),
             )
         else:
             viewer_kwargs = dict(
@@ -1352,12 +1357,20 @@ class MainFrame(wx.Frame):
             self.lbl_auth_password,
             self.txt_auth_password,
         ]
+        local_viewer_options = [
+            self.chk_uncap_fps,
+        ]
+
         if local_viewer:
             for control in streaming_options:
                 control.Hide()
+            for control in local_viewer_options:
+                control.Show()
         else:
             for control in streaming_options:
                 control.Show()
+            for control in local_viewer_options:
+                control.Hide()
 
         self.GetSizer().Layout()
         self.Fit()

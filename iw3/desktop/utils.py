@@ -145,6 +145,8 @@ def create_parser():
     parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")
     parser.add_argument("--password", type=str, help="HTTP Basic Authentication password")
     parser.add_argument("--stream-fps", type=int, default=30, help="Streaming FPS")
+    parser.add_argument("--uncap-fps", action="store_true",
+                        help="Allows LocalViewer to render at frame rates beyond the display's refresh rate")
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
@@ -336,7 +338,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         IS_ROCM = getattr(torch.version, "hip", None) is not None
         USE_CUDA = torch.cuda.is_available() and not IS_ROCM
         server = LocalViewer(lock=lock, width=output_frame_width, height=output_frame_height,
-                             use_cuda=USE_CUDA)
+                             use_cuda=USE_CUDA, uncap_fps=args.uncap_fps)
 
     screenshot_thread = screenshot_factory(
         fps=args.stream_fps,

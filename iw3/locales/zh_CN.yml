@@ -125,6 +125,7 @@
 "Address": "地址"
 "Port": "端口"
 "Streaming FPS": "流媒体帧率"
+"Uncap FPS": "解除帧率上限"
 "Streaming Resolution": "流媒体分辨率"
 "MJPEG Quality": "MJPEG画质"
 "Screenshot": "截屏"
