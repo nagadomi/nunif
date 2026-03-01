@@ -270,6 +270,29 @@ def preprocess_image(x, args):
     return x
 
 
+def hwc_to_chw_float(x, device):
+    if x.ndim == 3:
+        x = x.permute(2, 0, 1).contiguous()
+    elif x.ndim == 4:
+        x = x.permute(0, 3, 1, 2).contiguous()
+    else:
+        raise ValueError(f"Unsupported ndim={x.ndim}")
+
+    if not torch.is_floating_point(x):
+        if str(device).startswith("mps"):
+            # On MPS (Apple Silicon), integer division after .to(device)
+            # corrupts chroma channels, producing grayscale output.
+            # Perform int->float conversion on CPU first, then transfer.
+            value_max = float(torch.iinfo(x.dtype).max)
+            x = x.to(torch.float32) / value_max
+            return x.to(device)
+        else:
+            # CUDA handles integer->float on device correctly
+            return x.to(device).to(torch.float32) / torch.iinfo(x.dtype).max
+
+    return x.to(device)
+
+
 def apply_divergence(depth, im, args, side_model, reset_pts=None):
     batch = True
     if depth.ndim != 4:
@@ -602,7 +625,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             x, pts = src_queue.pop(0)
             reset_pts = [pts in segment_pts]
             if frame_cpu_offload:
-                x = x.to(args.state["device"]).permute(2, 0, 1) / torch.iinfo(x.dtype).max
+                x = hwc_to_chw_float(x, device=args.state["device"])
             if args.debug_depth:
                 out = debug_depth_image(depth, args)
             elif args.rgbd or args.half_rgbd:
@@ -723,7 +746,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             for x_srcs, depths, pts in src_depth_pairs:
                 reset_pts = [t in segment_pts for t in pts]
                 if frame_cpu_offload:
-                    x_srcs = x_srcs.to(device).permute(0, 3, 1, 2) / torch.iinfo(x_srcs.dtype).max
+                    x_srcs = hwc_to_chw_float(x_srcs, device=device)
 
                 with sbs_lock:  # TODO: unclear whether this is actually needed
                     if args.rgbd or args.half_rgbd:
@@ -829,8 +852,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                 x_pts = [src_queue.pop(0) for _ in range(len(depths))]
                 reset_pts = [pts in segment_pts for _, pts in x_pts]
                 x_srcs = [x for x, _ in x_pts]
-                x_srcs = torch.stack(x_srcs).to(args.state["device"]).permute(0, 3, 1, 2)
-                x_srcs = x_srcs / torch.iinfo(x_srcs.dtype).max
+                x_srcs = hwc_to_chw_float(torch.stack(x_srcs), device=args.state["device"])
                 if args.rgbd or args.half_rgbd:
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
