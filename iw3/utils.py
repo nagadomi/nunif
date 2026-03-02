@@ -272,6 +272,8 @@ def preprocess_image(x, args):
 
 def hwc_to_chw_float(x, device):
     src_dtype = x.dtype
+    x = x.to(device)
+
     if x.ndim == 3:
         x = x.permute(2, 0, 1).contiguous()
     elif x.ndim == 4:
@@ -279,7 +281,6 @@ def hwc_to_chw_float(x, device):
     else:
         raise ValueError(f"Unsupported ndim={x.ndim}")
 
-    x = x.to(device)
     if not torch.is_floating_point(x):
         x = x.to(torch.float32)
         x = x / float(torch.iinfo(src_dtype).max)
