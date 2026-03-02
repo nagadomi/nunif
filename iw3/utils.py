@@ -271,6 +271,7 @@ def preprocess_image(x, args):
 
 
 def hwc_to_chw_float(x, device):
+    src_dtype = x.dtype
     if x.ndim == 3:
         x = x.permute(2, 0, 1).contiguous()
     elif x.ndim == 4:
@@ -278,19 +279,12 @@ def hwc_to_chw_float(x, device):
     else:
         raise ValueError(f"Unsupported ndim={x.ndim}")
 
+    x = x.to(device)
     if not torch.is_floating_point(x):
-        if str(device).startswith("mps"):
-            # On MPS (Apple Silicon), integer division after .to(device)
-            # corrupts chroma channels, producing grayscale output.
-            # Perform int->float conversion on CPU first, then transfer.
-            value_max = float(torch.iinfo(x.dtype).max)
-            x = x.to(torch.float32) / value_max
-            return x.to(device)
-        else:
-            # CUDA handles integer->float on device correctly
-            return x.to(device).to(torch.float32) / torch.iinfo(x.dtype).max
+        x = x.to(torch.float32)
+        x = x / float(torch.iinfo(src_dtype).max)
 
-    return x.to(device)
+    return x
 
 
 def apply_divergence(depth, im, args, side_model, reset_pts=None):
