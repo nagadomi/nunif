@@ -447,10 +447,16 @@ class MainFrame(wx.Frame):
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
         self.cbo_screenshot.SetEditable(False)
-        if sys.platform == "win32" and HAS_WINDOWS_CAPTURE:
-            self.cbo_screenshot.SetSelection(2)
-        else:
-            self.cbo_screenshot.SetSelection(0)
+        default_screenshot_index = 0
+        if sys.platform == "win32":
+            if "wc_cuda" in screenshot_backends:
+                default_screenshot_index = screenshot_backends("wc_cuda")
+            elif "wc_mp" in screenshot_backends:
+                default_screenshot_index = screenshot_backends("wc_mp")
+        elif sys.platform == "darwin":
+            if "mss" in screenshot_backends:
+                default_screenshot_index = screenshot_backends.index("mss")
+        self.cbo_screenshot.SetSelection(default_screenshot_index)
 
         self.lbl_monitor_index = wx.StaticText(self.grp_processor, label=T("Monitor Index"))
         self.cbo_monitor_index = wx.ComboBox(self.grp_processor,
