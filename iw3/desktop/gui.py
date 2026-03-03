@@ -450,9 +450,9 @@ class MainFrame(wx.Frame):
         default_screenshot_index = 0
         if sys.platform == "win32":
             if "wc_cuda" in screenshot_backends:
-                default_screenshot_index = screenshot_backends("wc_cuda")
+                default_screenshot_index = screenshot_backends.index("wc_cuda")
             elif "wc_mp" in screenshot_backends:
-                default_screenshot_index = screenshot_backends("wc_mp")
+                default_screenshot_index = screenshot_backends.index("wc_mp")
         elif sys.platform == "darwin":
             if "mss" in screenshot_backends:
                 default_screenshot_index = screenshot_backends.index("mss")
