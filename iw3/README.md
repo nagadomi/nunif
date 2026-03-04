@@ -386,8 +386,8 @@ Both work with the default option.
 
 Install NVIDIA Driver 570 or newer.
 
-It's also important to note that hardware encoders have resolution limitations, and exceeding those limits can cause encoding to fail with an error.
-This issue is particularly common with VR90 (--vr180), as it produces very large video resolutions that are more likely to exceed hardware encoder limits.
+It's also important to note that hardware encoders have resolution limitations, and exceeding those limits can cause encoding to fail with an error.  
+It depends on the GPU generation, but in most cases, the limits are 4096 for `h264_nvenc` and 8192 for `hevc_nvenc`.
 
 ### How to convert rotated(height width swapped) video correctly
 
