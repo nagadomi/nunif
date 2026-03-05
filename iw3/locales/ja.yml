@@ -60,6 +60,7 @@
 "Anaglyph Method": "アナグリフ方式"
 "Flicker Reduction": "ちらつき軽減"
 "Scene Boundary Detection": "シーン境界検出"
+"Use scene boundary cache": "シーン境界キャッシュを使用"
 "Reset model and Flicker Reduction states at scene boundaries": "シーン境界でモデルとちらつき軽減の状態をリセットする"
 "(experimental)": "(実験的)"
 "Depth Only": "深度画像のみ"

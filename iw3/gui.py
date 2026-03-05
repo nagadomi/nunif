@@ -336,6 +336,11 @@ class MainFrame(wx.Frame):
         self.chk_scene_detect.SetValue(False)
         self.chk_scene_detect.SetToolTip(T("Reset model and Flicker Reduction states at scene boundaries"))
 
+        self.chk_scene_detect_cache = wx.CheckBox(self.grp_stereo,
+                                                  label=T("Use scene boundary cache"),
+                                                  name="chk_scene_detect_cache")
+        self.chk_scene_detect_cache.SetValue(True)
+
         self.chk_preserve_screen_border = wx.CheckBox(self.grp_stereo,
                                                       label=T("Preserve Screen Border"),
                                                       name="chk_preserve_screen_border")
@@ -425,7 +430,8 @@ class MainFrame(wx.Frame):
         layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_ema_decay, (i, 1), flag=wx.EXPAND)
         layout.Add(self.cbo_ema_buffer, (i, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_scene_detect, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_scene_detect, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_scene_detect_cache, (i, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stereo_format, (i, 1), (1, 2), flag=wx.EXPAND)
@@ -1222,7 +1228,8 @@ class MainFrame(wx.Frame):
 
         metadata = "filename" if self.chk_metadata.GetValue() else None
         preserve_screen_border = self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
-        scene_detect = self.chk_scene_detect.IsEnabled() and self.chk_scene_detect.IsChecked()
+        scene_detect = self.chk_scene_detect.IsChecked()
+        disable_scene_cache = not self.chk_scene_detect_cache.IsChecked()
         depth_aa = self.chk_depth_aa.IsShown() and self.chk_depth_aa.IsEnabled() and self.chk_depth_aa.IsChecked()
 
         parser.set_defaults(
@@ -1262,6 +1269,7 @@ class MainFrame(wx.Frame):
             debug_depth=debug_depth,
             **ema_options,
             scene_detect=scene_detect,
+            disable_scene_cache=disable_scene_cache,
 
             format=self.cbo_image_format.GetValue(),
 

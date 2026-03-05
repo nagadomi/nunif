@@ -61,6 +61,7 @@
 "Anaglyph Method": "שיטת אנאגליף (אדום-כחול)"
 "Flicker Reduction": "הפחתת הבהוב"
 "Scene Boundary Detection": "זיהוי גבולות סצנה"
+"Use scene boundary cache": "השתמש במטמון גבולות סצנה"
 "Reset model and Flicker Reduction states at scene boundaries": "איפוס המודל ומצב הפחתת ההבהוב בגבולות סצנה"
 "(experimental)": "(ניסיוני)"
 "Depth Only": "עומק בלבד"
