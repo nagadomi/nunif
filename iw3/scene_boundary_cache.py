@@ -17,12 +17,12 @@ def get_cache_dir():
         cache_dir = path.join(path.dirname(__file__), "..", "tmp", "iw3_scene_cache")
 
     if not path.exists(cache_dir):
-        os.makedirs(cache_dir, exist_ok=True)
+        os.makedirs(cache_dir)
     return cache_dir
 
 
-def get_cache_path(input_video_path, max_fps):
-    cache_dir = get_cache_dir()
+def get_cache_path(input_video_path, max_fps, cache_dir=None):
+    cache_dir = cache_dir or get_cache_dir()
 
     max_fps_key = str(max_fps)
     path_key = path.abspath(input_video_path)
@@ -36,6 +36,9 @@ def get_cache_path(input_video_path, max_fps):
 
 
 def save_cache_with_filename(cache_path, input_video_path, pts, max_fps, start_time, end_time):
+    parent_dir = path.dirname(cache_path)
+    if not path.exists(parent_dir):
+        os.makedirs(parent_dir)
     data = {
         "pts": sorted(list(pts)),
         "max_fps": max_fps,
@@ -46,8 +49,8 @@ def save_cache_with_filename(cache_path, input_video_path, pts, max_fps, start_t
         json.dump(data, f)
 
 
-def save_cache(input_video_path, pts, max_fps, start_time, end_time):
-    cache_path = get_cache_path(input_video_path, max_fps)
+def save_cache(input_video_path, pts, max_fps, start_time, end_time, cache_dir=None):
+    cache_path = get_cache_path(input_video_path, max_fps, cache_dir=cache_dir)
     save_cache_with_filename(
         cache_path, input_video_path, pts,
         max_fps=max_fps,
@@ -93,8 +96,8 @@ def try_load_cache_with_filename(cache_path, input_video_path, max_fps, start_ti
         return None
 
 
-def try_load_cache(input_video_path, max_fps, start_time, end_time):
-    cache_path = get_cache_path(input_video_path, max_fps=max_fps)
+def try_load_cache(input_video_path, max_fps, start_time, end_time, cache_dir=None):
+    cache_path = get_cache_path(input_video_path, max_fps=max_fps, cache_dir=cache_dir)
     return try_load_cache_with_filename(
         cache_path, input_video_path,
         max_fps=max_fps,

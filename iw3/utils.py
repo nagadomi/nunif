@@ -939,7 +939,8 @@ def try_load_scene_cache(video_path, args):
             video_path,
             max_fps=args.max_fps,
             start_time=args.start_time,
-            end_time=args.end_time
+            end_time=args.end_time,
+            cache_dir=args.scene_cache_dir,
         )
     return segment_pts
 
@@ -960,7 +961,8 @@ def save_scene_cache(video_path, segment_pts, args):
             segment_pts,
             max_fps=args.max_fps,
             start_time=args.start_time,
-            end_time=args.end_time
+            end_time=args.end_time,
+            cache_dir=args.scene_cache_dir,
         )
 
 
@@ -2111,6 +2113,8 @@ def create_parser(required_true=True):
                         help="disable --scene-detect cache")
     parser.add_argument("--scene-cache-file", type=str,
                         help="force specify cache file for --scene-detect")
+    parser.add_argument("--scene-cache-dir", type=str,
+                        help="specify cache directory for --scene-detect")
     parser.add_argument("--scene-detect-only", action="store_true",
                         help="run only --scene-detect and skip the subsequent video processing")
 
@@ -2358,6 +2362,10 @@ def iw3_main(args):
     if path.isdir(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
+        if args.scene_cache_file is not None:
+            raise ValueError("--scene-cache-file cannot be used in batch processing."
+                             " Use --scene-cache-dir instead.")
+
         if not args.recursive:
             if depth_model.is_image_supported():
                 image_files = ImageLoader.listdir(args.input)
@@ -2411,6 +2419,10 @@ def iw3_main(args):
     elif is_text(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
+        if args.scene_cache_file is not None:
+            raise ValueError("--scene-cache-file cannot be used in batch processing."
+                             " Use --scene-cache-dir instead.")
+
         files = []
         with open(args.input, mode="r", encoding="utf-8") as f:
             for line in f.readlines():
