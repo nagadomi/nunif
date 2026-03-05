@@ -42,6 +42,7 @@ from .backward_warp import (
 from .stereo_model_factory import create_stereo_model
 from .inpaint_utils import INPAINT_MODELS
 from .convergence_estimator import ConvergenceEstimator
+from . import scene_boundary_cache as SceneBoundaryCache
 
 
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
@@ -966,21 +967,35 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     make_parent_dir(output_filename)
     if args.scene_detect:
-        with TorchHubDir(HUB_MODEL_DIR):
-            segment_pts = SBD.detect_boundary(
-                input_filename,
-                max_fps=args.max_fps,
-                device=args.state["device"],
-                start_time=args.start_time,
-                end_time=args.end_time,
-                stop_event=args.state["stop_event"],
-                suspend_event=args.state["suspend_event"],
-                tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
-            )
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                return
-        gc_collect()
+        segment_pts = SceneBoundaryCache.try_load_cache(
+            input_filename,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+        if segment_pts is None:
+            with TorchHubDir(HUB_MODEL_DIR):
+                segment_pts = SBD.detect_boundary(
+                    input_filename,
+                    max_fps=args.max_fps,
+                    device=args.state["device"],
+                    start_time=args.start_time,
+                    end_time=args.end_time,
+                    stop_event=args.state["stop_event"],
+                    suspend_event=args.state["suspend_event"],
+                    tqdm_fn=args.state["tqdm_fn"],
+                    tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
+                )
+                SceneBoundaryCache.save_cache(
+                    input_filename,
+                    segment_pts,
+                    max_fps=args.max_fps,
+                    start_time=args.start_time,
+                    end_time=args.end_time
+                )
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return
+            gc_collect()
     else:
         segment_pts = set()
     if args.autocrop is not None:
@@ -1502,21 +1517,35 @@ def export_video(input_filename, output_dir, args, title=None):
     os.makedirs(depth_dir, exist_ok=True)
 
     if args.scene_detect:
-        with TorchHubDir(HUB_MODEL_DIR):
-            segment_pts = SBD.detect_boundary(
-                input_filename,
-                max_fps=args.max_fps,
-                device=args.state["device"],
-                start_time=args.start_time,
-                end_time=args.end_time,
-                stop_event=args.state["stop_event"],
-                suspend_event=args.state["suspend_event"],
-                tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
-            )
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                return
-        gc_collect()
+        segment_pts = SceneBoundaryCache.try_load_cache(
+            input_filename,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+        if segment_pts is None:
+            with TorchHubDir(HUB_MODEL_DIR):
+                segment_pts = SBD.detect_boundary(
+                    input_filename,
+                    max_fps=args.max_fps,
+                    device=args.state["device"],
+                    start_time=args.start_time,
+                    end_time=args.end_time,
+                    stop_event=args.state["stop_event"],
+                    suspend_event=args.state["suspend_event"],
+                    tqdm_fn=args.state["tqdm_fn"],
+                    tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
+                )
+                SceneBoundaryCache.save_cache(
+                    input_filename,
+                    segment_pts,
+                    max_fps=args.max_fps,
+                    start_time=args.start_time,
+                    end_time=args.end_time
+                )
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return
+            gc_collect()
     else:
         segment_pts = set()
     config.user_data["scene_boundary"] = ",".join([str(pts).zfill(8) for pts in sorted(list(segment_pts))])
