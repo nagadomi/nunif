@@ -967,12 +967,14 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     make_parent_dir(output_filename)
     if args.scene_detect:
-        segment_pts = SceneBoundaryCache.try_load_cache(
-            input_filename,
-            max_fps=args.max_fps,
-            start_time=args.start_time,
-            end_time=args.end_time
-        )
+        segment_pts = None
+        if not args.disable_scene_cache:
+            segment_pts = SceneBoundaryCache.try_load_cache(
+                input_filename,
+                max_fps=args.max_fps,
+                start_time=args.start_time,
+                end_time=args.end_time
+            )
         if segment_pts is None:
             with TorchHubDir(HUB_MODEL_DIR):
                 segment_pts = SBD.detect_boundary(
@@ -1517,12 +1519,14 @@ def export_video(input_filename, output_dir, args, title=None):
     os.makedirs(depth_dir, exist_ok=True)
 
     if args.scene_detect:
-        segment_pts = SceneBoundaryCache.try_load_cache(
-            input_filename,
-            max_fps=args.max_fps,
-            start_time=args.start_time,
-            end_time=args.end_time
-        )
+        segment_pts = None
+        if not args.disable_scene_cache:
+            segment_pts = SceneBoundaryCache.try_load_cache(
+                input_filename,
+                max_fps=args.max_fps,
+                start_time=args.start_time,
+                end_time=args.end_time
+            )
         if segment_pts is None:
             with TorchHubDir(HUB_MODEL_DIR):
                 segment_pts = SBD.detect_boundary(
@@ -2079,6 +2083,9 @@ def create_parser(required_true=True):
     parser.add_argument("--scene-detect", action="store_true",
                         help=("splitting a scene using shot boundary detection. "
                               "ema and other states will be reset at the boundary of the scene."))
+    parser.add_argument("--disable-scene-cache", action="store_true",
+                        help=("disable --scene-detect cache"))
+
     parser.add_argument("--autocrop", type=str.upper, default=None,
                         choices=["BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],
                         help=("autocrop mode. automatically removes black bars. "
