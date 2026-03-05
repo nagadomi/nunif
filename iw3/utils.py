@@ -1005,7 +1005,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return
 
     make_parent_dir(output_filename)
-    if args.scene_detect:
+    if args.scene_detect or args.scene_detect_only:
         segment_pts = None
         if not args.disable_scene_cache:
             segment_pts = try_load_scene_cache(input_filename, args)
@@ -1029,6 +1029,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             gc_collect()
     else:
         segment_pts = set()
+    if args.scene_detect_only:
+        return
+
     if args.autocrop is not None:
         crop = AutoCrop.from_video_file(
             input_filename,
@@ -1547,7 +1550,7 @@ def export_video(input_filename, output_dir, args, title=None):
         os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
-    if args.scene_detect:
+    if args.scene_detect or args.scene_detect_only:
         segment_pts = None
         if not args.disable_scene_cache:
             segment_pts = try_load_scene_cache(input_filename, args)
@@ -1570,6 +1573,9 @@ def export_video(input_filename, output_dir, args, title=None):
             gc_collect()
     else:
         segment_pts = set()
+    if args.scene_detect_only:
+        return
+
     config.user_data["scene_boundary"] = ",".join([str(pts).zfill(8) for pts in sorted(list(segment_pts))])
 
     if args.resume:
@@ -2100,11 +2106,13 @@ def create_parser(required_true=True):
     parser.add_argument("--ema-buffer", type=int, default=30, help="TODO")
     parser.add_argument("--scene-detect", action="store_true",
                         help=("splitting a scene using shot boundary detection. "
-                              "ema and other states will be reset at the boundary of the scene."))
+                              "ema and other states will be reset at the boundary of the scene"))
     parser.add_argument("--disable-scene-cache", action="store_true",
-                        help=("disable --scene-detect cache"))
+                        help="disable --scene-detect cache")
     parser.add_argument("--scene-cache-file", type=str,
-                        help=("force specify cache file for --scene-detect"))
+                        help="force specify cache file for --scene-detect")
+    parser.add_argument("--scene-detect-only", action="store_true",
+                        help="run only --scene-detect and skip the subsequent video processing")
 
     parser.add_argument("--autocrop", type=str.upper, default=None,
                         choices=["BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],
