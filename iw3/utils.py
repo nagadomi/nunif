@@ -925,6 +925,45 @@ def try_compile_context(side_model, enabled):
         return contextlib.nullcontext()
 
 
+def try_load_scene_cache(video_path, args):
+    if args.scene_cache_file:
+        segment_pts = SceneBoundaryCache.try_load_cache_with_filename(
+            args.scene_cache_file,
+            video_path,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+    else:
+        segment_pts = SceneBoundaryCache.try_load_cache(
+            video_path,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+    return segment_pts
+
+
+def save_scene_cache(video_path, segment_pts, args):
+    if args.scene_cache_file:
+        SceneBoundaryCache.save_cache_with_filename(
+            args.scene_cache_file,
+            video_path,
+            segment_pts,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+    else:
+        SceneBoundaryCache.save_cache(
+            video_path,
+            segment_pts,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+
+
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
@@ -969,12 +1008,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     if args.scene_detect:
         segment_pts = None
         if not args.disable_scene_cache:
-            segment_pts = SceneBoundaryCache.try_load_cache(
-                input_filename,
-                max_fps=args.max_fps,
-                start_time=args.start_time,
-                end_time=args.end_time
-            )
+            segment_pts = try_load_scene_cache(input_filename, args)
+
         if segment_pts is None:
             with TorchHubDir(HUB_MODEL_DIR):
                 segment_pts = SBD.detect_boundary(
@@ -988,13 +1023,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     tqdm_fn=args.state["tqdm_fn"],
                     tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
                 )
-                SceneBoundaryCache.save_cache(
-                    input_filename,
-                    segment_pts,
-                    max_fps=args.max_fps,
-                    start_time=args.start_time,
-                    end_time=args.end_time
-                )
+                save_scene_cache(input_filename, segment_pts, args)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     return
             gc_collect()
@@ -1521,12 +1550,7 @@ def export_video(input_filename, output_dir, args, title=None):
     if args.scene_detect:
         segment_pts = None
         if not args.disable_scene_cache:
-            segment_pts = SceneBoundaryCache.try_load_cache(
-                input_filename,
-                max_fps=args.max_fps,
-                start_time=args.start_time,
-                end_time=args.end_time
-            )
+            segment_pts = try_load_scene_cache(input_filename, args)
         if segment_pts is None:
             with TorchHubDir(HUB_MODEL_DIR):
                 segment_pts = SBD.detect_boundary(
@@ -1540,13 +1564,7 @@ def export_video(input_filename, output_dir, args, title=None):
                     tqdm_fn=args.state["tqdm_fn"],
                     tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
                 )
-                SceneBoundaryCache.save_cache(
-                    input_filename,
-                    segment_pts,
-                    max_fps=args.max_fps,
-                    start_time=args.start_time,
-                    end_time=args.end_time
-                )
+                save_scene_cache(input_filename, segment_pts, args)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     return
             gc_collect()
@@ -2085,6 +2103,8 @@ def create_parser(required_true=True):
                               "ema and other states will be reset at the boundary of the scene."))
     parser.add_argument("--disable-scene-cache", action="store_true",
                         help=("disable --scene-detect cache"))
+    parser.add_argument("--scene-cache-file", type=str,
+                        help=("force specify cache file for --scene-detect"))
 
     parser.add_argument("--autocrop", type=str.upper, default=None,
                         choices=["BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],

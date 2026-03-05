@@ -35,8 +35,7 @@ def get_cache_path(input_video_path, max_fps):
     return cache_path
 
 
-def save_cache(input_video_path, pts, max_fps, start_time, end_time):
-    cache_path = get_cache_path(input_video_path, max_fps)
+def save_cache_with_filename(cache_path, input_video_path, pts, max_fps, start_time, end_time):
     data = {
         "pts": sorted(list(pts)),
         "max_fps": max_fps,
@@ -45,6 +44,16 @@ def save_cache(input_video_path, pts, max_fps, start_time, end_time):
     }
     with open(cache_path, mode="w", encoding="utf-8") as f:
         json.dump(data, f)
+
+
+def save_cache(input_video_path, pts, max_fps, start_time, end_time):
+    cache_path = get_cache_path(input_video_path, max_fps)
+    save_cache_with_filename(
+        cache_path, input_video_path, pts,
+        max_fps=max_fps,
+        start_time=start_time,
+        end_time=end_time
+    )
 
 
 def is_within_range(data, start_time, end_time):
@@ -68,8 +77,7 @@ def is_within_range(data, start_time, end_time):
     return data_start <= query_start and query_end <= data_end
 
 
-def try_load_cache(input_video_path, max_fps, start_time, end_time):
-    cache_path = get_cache_path(input_video_path, max_fps=max_fps)
+def try_load_cache_with_filename(cache_path, input_video_path, max_fps, start_time, end_time):
     if path.exists(cache_path):
         try:
             with open(cache_path, mode="r", encoding="utf-8") as f:
@@ -83,6 +91,16 @@ def try_load_cache(input_video_path, max_fps, start_time, end_time):
             return None
     else:
         return None
+
+
+def try_load_cache(input_video_path, max_fps, start_time, end_time):
+    cache_path = get_cache_path(input_video_path, max_fps=max_fps)
+    return try_load_cache_with_filename(
+        cache_path, input_video_path,
+        max_fps=max_fps,
+        start_time=start_time,
+        end_time=end_time
+    )
 
 
 def purge_cache(input_video_path, max_fps):
