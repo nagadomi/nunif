@@ -1,9 +1,9 @@
 ## 1. Install dependencies packages
 
-Install Python 3.10+
+Install Python 3.12.
 
 ```
-brew install python3
+brew install python@3.12
 ```
 
 Install ImageMagick and libraqm.
@@ -22,7 +22,7 @@ cd nunif
 
 initialize
 ```
-python3 -m venv .venv
+python3.12 -m venv .venv
 ```
 
 activate
@@ -33,7 +33,8 @@ source .venv/bin/activate
 ## 4. Install PyTorch and pip packages
 
 ```
-pip3 install -r requirements-torch.txt
-pip3 install -r requirements.txt
-pip3 install -r requirements-gui.txt
+python3.12 -m pip install -r requirements-torch.txt
+python3.12 -m pip install -r requirements.txt
+python3.12 -m pip install -r requirements-gui.txt
 ```
+(If you are using a venv, you can just use `python` command)
