@@ -3,6 +3,7 @@ from wx.lib.buttons import GenBitmapButton
 from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
 from wx.lib.masked.ipaddrctrl import IpAddrCtrl as _IpAddrCtrl
 import wx.lib.agw.persist as persist
+import os
 from os import path
 import sys
 import subprocess
@@ -189,8 +190,16 @@ def start_file(file_path):
     elif not path.exists(file_path):
         return
 
+    env = os.environ.copy()
+    keys_to_remove = [
+        # This is defined in opencv-python and breaks video players that use Qt on Linux.
+        "QT_QPA_PLATFORM_PLUGIN_PATH",
+    ]
+    for key in keys_to_remove:
+        env.pop(key, None)
+
     fd = subprocess.DEVNULL
-    options = {"stderr": fd, "stdout": fd, "stdin": fd}
+    options = {"stderr": fd, "stdout": fd, "stdin": fd, "env": env}
     if sys.platform == "win32":
         if path.isdir(file_path):
             subprocess.Popen(["explorer", file_path], shell=True, **options)
