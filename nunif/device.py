@@ -63,23 +63,8 @@ def autocast(device, dtype=None, enabled=True):
         amp_dtype = torch.bfloat16
         if enabled:
             enabled = False
-    elif device_is_mps(device):  # TODO: xpu work or not
-        # currently pytorch does not support mps autocast
-        # disabled
-        amp_device_type = "cpu"
-        amp_dtype = torch.bfloat16
-        if enabled:
-            enabled = False
-    elif device_is_cuda(device):
-        amp_device_type = device.split(":")[0] if isinstance(device, str) else device.type
-        amp_dtype = dtype
-        if False:
-            # TODO: I think better to do this, but leave it to the user (use --disable-amp option)
-            cuda_capability = torch.cuda.get_device_capability(device)
-            if enabled and cuda_capability < (7, 0):
-                enabled = False
     else:
-        # Unknown device
+        # For CUDA, MPS, XPU, and unknown devices, this passes through to the standard PyTorch implementation.
         amp_device_type = device.split(":")[0] if isinstance(device, str) else device.type
         amp_dtype = dtype
 

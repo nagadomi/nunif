@@ -1,0 +1,9 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+# Linux
+torch==2.7.1+cu126; sys_platform == "linux"
+torchvision==0.22.1+cu126; sys_platform == "linux"
+
+# Windows
+torch==2.7.1+cu126; sys_platform == "win32"
+torchvision==0.22.1+cu126; sys_platform == "win32"

@@ -42,6 +42,7 @@ from .backward_warp import (
 from .stereo_model_factory import create_stereo_model
 from .inpaint_utils import INPAINT_MODELS
 from .convergence_estimator import ConvergenceEstimator
+from . import scene_boundary_cache as SceneBoundaryCache
 
 
 ROW_FLOW_V2_MAX_DIVERGENCE = 2.5
@@ -924,6 +925,47 @@ def try_compile_context(side_model, enabled):
         return contextlib.nullcontext()
 
 
+def try_load_scene_cache(video_path, args):
+    if args.scene_cache_file:
+        segment_pts = SceneBoundaryCache.try_load_cache_with_filename(
+            args.scene_cache_file,
+            video_path,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+    else:
+        segment_pts = SceneBoundaryCache.try_load_cache(
+            video_path,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time,
+            cache_dir=args.scene_cache_dir,
+        )
+    return segment_pts
+
+
+def save_scene_cache(video_path, segment_pts, args):
+    if args.scene_cache_file:
+        SceneBoundaryCache.save_cache_with_filename(
+            args.scene_cache_file,
+            video_path,
+            segment_pts,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time
+        )
+    else:
+        SceneBoundaryCache.save_cache(
+            video_path,
+            segment_pts,
+            max_fps=args.max_fps,
+            start_time=args.start_time,
+            end_time=args.end_time,
+            cache_dir=args.scene_cache_dir,
+        )
+
+
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
@@ -965,24 +1007,33 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             return
 
     make_parent_dir(output_filename)
-    if args.scene_detect:
-        with TorchHubDir(HUB_MODEL_DIR):
-            segment_pts = SBD.detect_boundary(
-                input_filename,
-                max_fps=args.max_fps,
-                device=args.state["device"],
-                start_time=args.start_time,
-                end_time=args.end_time,
-                stop_event=args.state["stop_event"],
-                suspend_event=args.state["suspend_event"],
-                tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
-            )
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                return
-        gc_collect()
+    if args.scene_detect or args.scene_detect_only:
+        segment_pts = None
+        if not args.disable_scene_cache:
+            segment_pts = try_load_scene_cache(input_filename, args)
+
+        if segment_pts is None:
+            with TorchHubDir(HUB_MODEL_DIR):
+                segment_pts = SBD.detect_boundary(
+                    input_filename,
+                    max_fps=args.max_fps,
+                    device=args.state["device"],
+                    start_time=args.start_time,
+                    end_time=args.end_time,
+                    stop_event=args.state["stop_event"],
+                    suspend_event=args.state["suspend_event"],
+                    tqdm_fn=args.state["tqdm_fn"],
+                    tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
+                )
+                save_scene_cache(input_filename, segment_pts, args)
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return
+            gc_collect()
     else:
         segment_pts = set()
+    if args.scene_detect_only:
+        return
+
     if args.autocrop is not None:
         crop = AutoCrop.from_video_file(
             input_filename,
@@ -1501,24 +1552,32 @@ def export_video(input_filename, output_dir, args, title=None):
         os.makedirs(rgb_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
 
-    if args.scene_detect:
-        with TorchHubDir(HUB_MODEL_DIR):
-            segment_pts = SBD.detect_boundary(
-                input_filename,
-                max_fps=args.max_fps,
-                device=args.state["device"],
-                start_time=args.start_time,
-                end_time=args.end_time,
-                stop_event=args.state["stop_event"],
-                suspend_event=args.state["suspend_event"],
-                tqdm_fn=args.state["tqdm_fn"],
-                tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
-            )
-            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-                return
-        gc_collect()
+    if args.scene_detect or args.scene_detect_only:
+        segment_pts = None
+        if not args.disable_scene_cache:
+            segment_pts = try_load_scene_cache(input_filename, args)
+        if segment_pts is None:
+            with TorchHubDir(HUB_MODEL_DIR):
+                segment_pts = SBD.detect_boundary(
+                    input_filename,
+                    max_fps=args.max_fps,
+                    device=args.state["device"],
+                    start_time=args.start_time,
+                    end_time=args.end_time,
+                    stop_event=args.state["stop_event"],
+                    suspend_event=args.state["suspend_event"],
+                    tqdm_fn=args.state["tqdm_fn"],
+                    tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
+                )
+                save_scene_cache(input_filename, segment_pts, args)
+                if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                    return
+            gc_collect()
     else:
         segment_pts = set()
+    if args.scene_detect_only:
+        return
+
     config.user_data["scene_boundary"] = ",".join([str(pts).zfill(8) for pts in sorted(list(segment_pts))])
 
     if args.resume:
@@ -2049,7 +2108,16 @@ def create_parser(required_true=True):
     parser.add_argument("--ema-buffer", type=int, default=30, help="TODO")
     parser.add_argument("--scene-detect", action="store_true",
                         help=("splitting a scene using shot boundary detection. "
-                              "ema and other states will be reset at the boundary of the scene."))
+                              "ema and other states will be reset at the boundary of the scene"))
+    parser.add_argument("--disable-scene-cache", action="store_true",
+                        help="disable --scene-detect cache")
+    parser.add_argument("--scene-cache-file", type=str,
+                        help="force specify cache file for --scene-detect")
+    parser.add_argument("--scene-cache-dir", type=str,
+                        help="specify cache directory for --scene-detect")
+    parser.add_argument("--scene-detect-only", action="store_true",
+                        help="run only --scene-detect and skip the subsequent video processing")
+
     parser.add_argument("--autocrop", type=str.upper, default=None,
                         choices=["BLACK_TB", "BLACK", "FLAT_TB", "FLAT"],
                         help=("autocrop mode. automatically removes black bars. "
@@ -2294,6 +2362,10 @@ def iw3_main(args):
     if path.isdir(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
+        if args.scene_cache_file is not None:
+            raise ValueError("--scene-cache-file cannot be used in batch processing."
+                             " Use --scene-cache-dir instead.")
+
         if not args.recursive:
             if depth_model.is_image_supported():
                 image_files = ImageLoader.listdir(args.input)
@@ -2347,6 +2419,10 @@ def iw3_main(args):
     elif is_text(args.input):
         if not is_output_dir(args.output):
             raise ValueError("-o must be a directory")
+        if args.scene_cache_file is not None:
+            raise ValueError("--scene-cache-file cannot be used in batch processing."
+                             " Use --scene-cache-dir instead.")
+
         files = []
         with open(args.input, mode="r", encoding="utf-8") as f:
             for line in f.readlines():
