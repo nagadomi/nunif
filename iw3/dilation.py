@@ -13,6 +13,8 @@ def edge_dilation_parse(edge_dilation):
             y = edge_dilation[1]
     elif isinstance(edge_dilation, int):
         x = y = edge_dilation
+    elif edge_dilation is None:
+        x = y = 0
     else:
         raise ValueError(f"Unsupported edge_dilation type {type(edge_dilation)}. "
                          "Supported types: int, list, tuple.")
