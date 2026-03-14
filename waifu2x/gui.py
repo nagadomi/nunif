@@ -19,7 +19,7 @@ from .ui_utils import (
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
-from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
+from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc, has_qsv
 from nunif.utils.git import get_current_branch
 from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
@@ -173,7 +173,8 @@ class MainFrame(wx.Frame):
 
         # video encoding
         # max-fps, crf, preset, tune
-        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T, has_nvenc=has_nvenc())
+        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T,
+                                          has_nvenc=has_nvenc(), has_qsv=has_qsv())
 
         # input video filter
         # deinterlace, rotate, vf

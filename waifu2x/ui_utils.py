@@ -133,6 +133,12 @@ def process_video(ctx, input_filename, output_path, args):
                 options["qp"] = str(args.crf)
                 if torch.cuda.is_available() and args.gpu[0] >= 0:
                     options["gpu"] = str(args.gpu[0])
+        elif args.video_codec in {"h264_qsv", "hevc_qsv"}:
+            options = {
+                "preset": args.preset,
+                "crf": str(args.crf),
+                "global_quality": str(args.crf)
+            }
         elif args.video_codec == "libopenh264":
             # NOTE: It seems libopenh264 does not support most options.
             options = {"b": args.video_bitrate}

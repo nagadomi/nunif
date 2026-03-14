@@ -32,6 +32,9 @@ mimetypes.add_type("video/vnd.rn-realmedia", ".rm")  # fake
 mimetypes.add_type("video/x-flv", ".flv")  # Not defined on Windows
 mimetypes.add_type("video/x-matroska", ".mkv")  # May not be defined for some reason
 
+# Hide libva message
+os.environ["LIBVA_MESSAGING_LEVEL"] = os.environ.get("LIBVA_MESSAGING_LEVEL", "1")
+
 
 VIDEO_EXTENSIONS = [
     ".mp4", ".m4v", ".mkv", ".mpeg", ".mpg", ".avi", ".wmv", ".mov", ".flv", ".webm",
@@ -107,6 +110,11 @@ def is_bt601(stream):
 def has_nvenc():
     return ("h264_nvenc" in av.codec.codecs_available and
             "hevc_nvenc" in av.codec.codecs_available)
+
+
+def has_qsv():
+    return ("h264_qsv" in av.codec.codecs_available and
+            "hevc_qsv" in av.codec.codecs_available)
 
 
 def get_fps(stream):
@@ -229,7 +237,6 @@ def to_ndarray(frame):
         format = "rgb48le"
     else:
         format = "rgb24"
-
     return frame.to_ndarray(format=format)
 
 
@@ -890,6 +897,13 @@ def configure_video_codec(config):
     if config.video_codec in {"h264_nvenc", "hevc_nvenc"}:
         if config.pix_fmt == "yuv420p10le":
             config.pix_fmt = "p010le"
+    if config.video_codec in {"h264_qsv", "hevc_qsv"}:
+        if config.pix_fmt == "yuv420p":
+            config.pix_fmt = "nv12"
+        elif config.pix_fmt == "yuv420p10le":
+            config.pix_fmt = "p010le"
+        else:
+            raise ValueError("qsv supported format: yuv420p(nv12), yuv420p10le(p010le)")
 
 
 def make_temporary_file_path(output_path):
