@@ -338,7 +338,7 @@ def update_hdr2sdr_video_filter(vf, colorspace, color_trc, output_colorspace):
         if "bt709" in output_colorspace:
             colorspace_filter = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"
         else:
-            colorspace_filter = "setparams=colorspace=smpte170m:color_primaries=smpte170m:color_trc=smpte170m"
+            colorspace_filter = "setparams=colorspace=bt470bg:color_primaries=bt470bg:color_trc=smpte170m"
 
         lut_filter = f"lut3d={lut_path},{colorspace_filter}"
         vf = f"{vf},{lut_filter}" if vf else lut_filter
