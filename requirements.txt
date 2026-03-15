@@ -20,7 +20,7 @@ filelock
 
 # iw3
 timm
-av==16.1.0
+av==17.0.0
 
 # iw3-player
 fastapi
