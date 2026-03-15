@@ -76,7 +76,8 @@ COLOR_TRC_ARIB_STD_B67 = 18
 COLOR_TRC_SMPTE2084 = 16
 KNOWN_COLORSPACES = {Colorspace.ITU601.value, Colorspace.ITU709.value,
                      COLORSPACE_SMPTE170M, COLORSPACE_SMPTE240M, COLORSPACE_BT2020}
-
+RGB_8BIT = "rgb24"
+RGB_16BIT = "gbrp16le"
 
 if "libx264" in av.codecs_available:
     LIBH264 = "libx264"
@@ -234,9 +235,9 @@ def to_tensor(frame, device=None):
 def to_ndarray(frame):
     use_16bit = frame.format.components[0].bits > 8
     if use_16bit:
-        format = "rgb48le"
+        format = RGB_16BIT
     else:
-        format = "rgb24"
+        format = RGB_8BIT
     return frame.to_ndarray(format=format)
 
 
@@ -254,9 +255,9 @@ def from_tensor(x, use_16bit=False):
 
 def from_ndarray(x):
     if x.dtype == np.uint8:
-        format = "rgb24"
+        format = RGB_8BIT
     elif x.dtype == np.uint16:
-        format = "rgb48le"
+        format = RGB_16BIT
     else:
         raise ValueError(f"unsupported dtype {x.dtype}")
 
@@ -282,7 +283,7 @@ def pix_fmt_requires_16bit(pix_fmt):
         "yuv422p10le", "yuv444p10le",
         "yuv420p12le", "yuv422p12le", "yuv444p12le",
         "yuv444p16le",
-        "gbrp16le", "gbrp12le", "gbrp10le", "rgb48le",
+        RGB_16BIT, "gbrp12le", "gbrp10le", "rgb48le",
     }
 
 
@@ -326,7 +327,7 @@ def hdr2sdr(
     assert color_trc in {COLOR_TRC_SMPTE2084, COLOR_TRC_ARIB_STD_B67}
 
     # 1. Convert to RGB48 and Tensor
-    rgb_ndarray = av_frame.to_ndarray(format="rgb48le",
+    rgb_ndarray = av_frame.to_ndarray(format=RGB_16BIT,
                                       src_color_range=av_frame.color_range,
                                       dst_color_range=ColorRange.JPEG)
     x = torch.from_numpy(rgb_ndarray).contiguous().to(device).permute(2, 0, 1) / 65535.0  # float()
@@ -403,7 +404,7 @@ def hdr2sdr(
 
     # 6. Output Frame Reconstruction
     output_tensor = (sdr_gamma.clamp(0, 1) * 65535).to(torch.uint16).cpu().permute(1, 2, 0).numpy()
-    output_frame = av.video.frame.VideoFrame.from_ndarray(output_tensor, format="rgb48le")
+    output_frame = av.video.frame.VideoFrame.from_ndarray(output_tensor, format=RGB_16BIT)
 
     # Set metadata
     if output_colorspace == "bt709":
@@ -635,9 +636,9 @@ def guess_rgb24_options(input_stream, target_colorspace):
 
         use_16bit = input_stream is not None and input_stream.format.components[0].bits > 8
         if use_16bit:
-            format = "rgb48le"
+            format = RGB_16BIT
         else:
-            format = "rgb24"
+            format = RGB_8BIT
         return dict(
             format=format,
             src_color_range=src_color_range, dst_color_range=ColorRange.JPEG,
@@ -1831,12 +1832,15 @@ def _test_reencode():
                                  "yuv420p10le",
                                  "rgb24", "gbrp16le"],
                         help="colorspace")
-    parser.add_argument("--colorspace", type=str, default="unspecified",
+    parser.add_argument("--colorspace", type=str, default="auto",
                         choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv",
                                  "bt2020-tv", "bt2020-pq-tv"],
                         help="colorspace")
     parser.add_argument("--video-codec", type=str, default=LIBH264,
-                        choices=["libx264", "libopenh264", "libx265", "h264_nvenc", "hevc_nvenc", "utvideo", "ffv1"],
+                        choices=["libx264", "libopenh264", "libx265",
+                                 "h264_nvenc", "hevc_nvenc",
+                                 "h264_qsv", "hevc_qsv",
+                                 "utvideo", "ffv1"],
                         help="video codec")
     parser.add_argument("--max-workers", type=int, default=0, help="max worker threads")
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")
