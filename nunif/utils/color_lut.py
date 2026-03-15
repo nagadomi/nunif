@@ -191,6 +191,12 @@ def load_hdr2sdr_lut(name):
     return load_lut(HDR2SDR_LUT[name])
 
 
+def get_hdr2sdr_lut_path(name):
+    assert name in HDR2SDR_LUT
+    _download_lut()
+    return HDR2SDR_LUT[name]
+
+
 def _test_lut():
     import torchvision.transforms.functional as TF
     import torchvision.io as IO

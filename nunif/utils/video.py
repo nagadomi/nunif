@@ -14,7 +14,7 @@ import time
 import numpy as np
 import sys
 from .video_filter import VideoPreprocessor, convert_fps_fraction
-from .color_lut import load_hdr2sdr_lut, apply_lut
+from .color_lut import load_lut, apply_lut, get_hdr2sdr_lut_path  # noqa
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -301,6 +301,7 @@ def hdr2sdr(
         lut,
         av_frame, color_trc, output_colorspace,
 ):
+    output_colorspace = output_colorspace.split("-")[0]
     assert output_colorspace in {"bt709", "bt601"}
     assert av_frame.colorspace == COLORSPACE_BT2020
     assert color_trc in {COLOR_TRC_SMPTE2084, COLOR_TRC_ARIB_STD_B67}
@@ -327,6 +328,39 @@ def hdr2sdr(
     # output_frame.side_data = av_frame.side_data
 
     return output_frame
+
+
+def update_hdr2sdr_video_filter(vf, colorspace, color_trc, output_colorspace):
+    lut_path = get_lut_path(colorspace=colorspace,
+                            color_trc=color_trc,
+                            output_colorspace=output_colorspace)
+    if lut_path is not None:
+        if "bt709" in output_colorspace:
+            colorspace_filter = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"
+        else:
+            colorspace_filter = "setparams=colorspace=smpte170m:color_primaries=smpte170m:color_trc=smpte170m"
+
+        lut_filter = f"lut3d={lut_path},{colorspace_filter}"
+        vf = f"{vf},{lut_filter}" if vf else lut_filter
+        return vf
+    else:
+        return vf
+
+
+def get_lut_path(colorspace, color_trc, output_colorspace):
+    use_hdr2sdr = (colorspace == COLORSPACE_BT2020 and
+                   color_trc in {COLOR_TRC_SMPTE2084, COLOR_TRC_ARIB_STD_B67} and
+                   output_colorspace in {"bt709", "bt709-tv", "bt709-pc",
+                                         "bt601", "bt601-tv", "bt601-pc"})
+    if use_hdr2sdr:
+        return get_hdr2sdr_lut_path({
+            (COLOR_TRC_SMPTE2084, "bt709"): "pq2bt709",
+            (COLOR_TRC_SMPTE2084, "bt601"): "pq2bt601",
+            (COLOR_TRC_ARIB_STD_B67, "bt709"): "hlg2bt709",
+            (COLOR_TRC_ARIB_STD_B67, "bt601"): "hlg2bt601",
+        }[(color_trc, output_colorspace.split("-")[0])])
+    else:
+        return None
 
 
 class VideoOutputConfig():
@@ -861,6 +895,13 @@ def process_video(input_path, output_path,
     configure_video_codec(config)
 
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
+
+    vf = update_hdr2sdr_video_filter(
+        vf,
+        colorspace=video_input_stream.codec_context.colorspace,
+        color_trc=video_input_stream.codec_context.color_trc,
+        output_colorspace=config.colorspace
+    )
     fps_filter = VideoPreprocessor(video_input_stream, fps=config.fps, vf=vf)
     if config.output_width is not None and config.output_height is not None:
         output_size = config.output_width, config.output_height
@@ -880,33 +921,12 @@ def process_video(input_path, output_path,
     video_output_stream.options = config.options
     rgb24_options = config.state["rgb24_options"]
     reformatter = config.state["reformatter"]
-    lut_cache = None
 
     def input_reformatter(frame):
-        nonlocal lut_cache
-        use_hdr2sdr = (frame.colorspace == COLORSPACE_BT2020 and
-                       video_input_stream.codec_context.color_trc in {COLOR_TRC_SMPTE2084, COLOR_TRC_ARIB_STD_B67} and
-                       config.colorspace in {"bt709", "bt709-tv", "bt709-pc",
-                                             "bt601", "bt601-tv", "bt601-pc"})
-        if use_hdr2sdr:
-            color_trc = video_input_stream.codec_context.color_trc
-            output_colorspace = config.colorspace.split("-")[0]
-            if lut_cache is None:
-                lut_cache = load_hdr2sdr_lut({
-                    (COLOR_TRC_SMPTE2084, "bt709"): "pq2bt709",
-                    (COLOR_TRC_SMPTE2084, "bt601"): "pq2bt601",
-                    (COLOR_TRC_ARIB_STD_B67, "bt709"): "hlg2bt709",
-                    (COLOR_TRC_ARIB_STD_B67, "bt601"): "hlg2bt601",
-                }[(color_trc, output_colorspace)]).to(device)
-            return hdr2sdr(
-                lut_cache, frame,
-                color_trc=color_trc, output_colorspace=output_colorspace,
-            )
+        if rgb24_options:
+            return frame.reformat(**rgb24_options)
         else:
-            if rgb24_options:
-                return frame.reformat(**rgb24_options)
-            else:
-                return frame
+            return frame
 
     # utvideo + flac crashes on windows media player
     # default_acodec = "flac" if config.container_format == "avi" else "aac"
@@ -1677,6 +1697,7 @@ def _test_reencode():
     parser.add_argument("--max-workers", type=int, default=0, help="max worker threads")
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")
     parser.add_argument("--batch-size", type=int, default=4, help="batch size")
+    parser.add_argument("--vf", type=str, default="", help="video filter")
 
     args = parser.parse_args()
     device = "cpu" if args.gpu < 0 else f"cuda:{args.gpu}"
@@ -1704,7 +1725,7 @@ def _test_reencode():
                                  max_batch_queue=args.max_workers + 1,
                                  use_16bit=use_16bit)
 
-    process_video(args.input, args.output, config_callback=make_config, frame_callback=callback)
+    process_video(args.input, args.output, config_callback=make_config, frame_callback=callback, vf=args.vf)
 
 
 def _test_sample_frames():
