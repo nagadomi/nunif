@@ -8,13 +8,12 @@ import math
 from tqdm import tqdm
 from PIL import Image
 import mimetypes
-import re
 import torch
 from concurrent.futures import ThreadPoolExecutor
-from fractions import Fraction
 import time
 import numpy as np
 import sys
+from .video_filter import VideoPreprocessor, convert_fps_fraction
 
 
 # Add video mimetypes that does not exist in mimetypes
@@ -296,24 +295,6 @@ def _print_len(stream):
     print("guessed_rate", float(stream.guessed_rate))
 
 
-def convert_known_fps(fps):
-    if isinstance(fps, float):
-        if fps == 29.97:
-            return Fraction(30000, 1001)
-        elif fps == 23.976:
-            return Fraction(24000, 1001)
-        elif fps == 59.94:
-            return Fraction(60000, 1001)
-        else:
-            fps_frac = Fraction(fps)
-            fps_frac = fps_frac.limit_denominator(0x7fffffff)
-            if fps_frac.denominator > 0x7fffffff or fps_frac.numerator > 0x7fffffff:
-                raise ValueError(f"FPS={fps} could not be converted to Fraction={fps_frac}")
-            return fps_frac
-
-    return fps
-
-
 def hdr2sdr(
         av_frame, color_trc, output_colorspace,
         pq_exposure=110.0, pq_white_point=5.0,
@@ -424,71 +405,6 @@ def hdr2sdr(
     return output_frame
 
 
-class FixedFPSFilter():
-    @staticmethod
-    def parse_vf_option(vf):
-        video_filters = []
-        vf = vf.strip()
-        if not vf:
-            return video_filters
-
-        for line in re.split(r'(?<!\\),', vf):
-            line = line.strip()
-            if line:
-                col = re.split(r'(?<!\\)=', line, 1)
-                if len(col) == 2:
-                    filter_name, filter_option = col
-                else:
-                    filter_name, filter_option = col[0], ""
-                filter_name, filter_option = filter_name.strip(), filter_option.strip()
-                video_filters.append((filter_name, filter_option))
-        return video_filters
-
-    @staticmethod
-    def build_graph(graph, template_stream, video_filters):
-        buffer = graph.add_buffer(template=template_stream)
-        prev_filter = buffer
-        for filter_name, filter_option in video_filters:
-            new_filter = graph.add(filter_name, filter_option if filter_option else None)
-            prev_filter.link_to(new_filter)
-            prev_filter = new_filter
-        buffersink = graph.add("buffersink")
-        prev_filter.link_to(buffersink)
-        graph.configure()
-
-    def __init__(self, video_stream, fps, vf="", deny_filters=[], colorspace=None):
-        self.graph = av.filter.Graph()
-        video_filters = self.parse_vf_option(vf)
-        if colorspace is not None:
-            video_filters.append(("colorspace", colorspace))
-        if fps is not None:
-            video_filters.append(("fps", str(fps)))
-        video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
-        self.build_graph(self.graph, video_stream, video_filters)
-
-    def update(self, frame):
-        self.graph.push(frame)
-        try:
-            return self.graph.pull()
-        except av.error.BlockingIOError:
-            return None
-        except av.error.EOFError:
-            # finished
-            return None
-
-
-class VideoFilter(FixedFPSFilter):
-    def __init__(self, video_stream, vf):
-        super().__init__(video_stream, fps=None, vf=vf)
-        self.dummy = not vf
-
-    def update(self, frame):
-        if self.dummy:
-            return frame
-        else:
-            return super().update(frame)
-
-
 class VideoOutputConfig():
     def __init__(self, pix_fmt="yuv420p", fps=30, options={}, container_options={},
                  output_width=None, output_height=None, colorspace=None,
@@ -546,7 +462,7 @@ SIZE_SAFE_FILTERS = [
 
 
 def test_output_size(test_callback, video_stream, vf):
-    video_filter = FixedFPSFilter(video_stream, fps=60, vf=vf, deny_filters=SIZE_SAFE_FILTERS)
+    video_filter = VideoPreprocessor(video_stream, fps=59.94, vf=vf, deny_filters=SIZE_SAFE_FILTERS)
     empty_image = Image.new("RGB", (video_stream.codec_context.width,
                                     video_stream.codec_context.height), (128, 128, 128))
     test_frame = av.video.frame.VideoFrame.from_image(empty_image).reformat(
@@ -558,13 +474,17 @@ def test_output_size(test_callback, video_stream, vf):
     try_count = 0
     while True:
         while True:
-            frame = video_filter.update(test_frame)
+            frames = video_filter.update(test_frame)
             test_frame.pts = (test_frame.pts + pts_step)
-            if frame is not None:
+            test_frame.time_base = video_stream.time_base
+
+            if frames:
                 break
             try_count += 1
             if try_count * video_stream.codec_context.width * video_stream.codec_context.height * 3 > 2000 * 1024 * 1024:
                 raise RuntimeError("Unable to estimate output size of video filter")
+
+        frame = frames[0]
         output_frame = get_new_frames(test_callback(frame))
         if output_frame:
             output_frame = output_frame[0]
@@ -1007,8 +927,8 @@ def process_video(input_path, output_path,
         audio_input_stream = input_container.streams.audio[0]
 
     config = config_callback(video_input_stream)
-    config.fps = convert_known_fps(config.fps)
-    config.output_fps = convert_known_fps(config.output_fps)
+    config.fps = convert_fps_fraction(config.fps)
+    config.output_fps = convert_fps_fraction(config.output_fps)
 
     if not config.container_format:
         config.container_format = path.splitext(output_path)[-1].lower()[1:]
@@ -1017,7 +937,7 @@ def process_video(input_path, output_path,
     configure_video_codec(config)
 
     output_container = av.open(output_path_tmp, 'w', options=config.container_options)
-    fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf)
+    fps_filter = VideoPreprocessor(video_input_stream, fps=config.fps, vf=vf)
     if config.output_width is not None and config.output_height is not None:
         output_size = config.output_width, config.output_height
     else:
@@ -1092,8 +1012,7 @@ def process_video(input_path, output_path,
                     break
             if packet.stream.type == "video":
                 for frame in safe_decode(packet):
-                    frame = fps_filter.update(frame)
-                    if frame is not None:
+                    for frame in fps_filter.update(frame):
                         frame = input_reformatter(frame)
                         for new_frame in get_new_frames(frame_callback(frame)):
                             reformatted_frame = reformatter(new_frame)
@@ -1118,18 +1037,14 @@ def process_video(input_path, output_path,
             if stop_event is not None and stop_event.is_set():
                 break
 
-        while True:
-            frame = fps_filter.update(None)
-            if frame is not None:
-                frame = input_reformatter(frame)
-                for new_frame in get_new_frames(frame_callback(frame)):
-                    new_frame = reformatter(new_frame)
-                    enc_packet = video_output_stream.encode(new_frame)
-                    if enc_packet:
-                        output_container.mux(enc_packet)
-                    pbar.update(1)
-            else:
-                break
+        for frame in fps_filter.flush():
+            frame = input_reformatter(frame)
+            for new_frame in get_new_frames(frame_callback(frame)):
+                new_frame = reformatter(new_frame)
+                enc_packet = video_output_stream.encode(new_frame)
+                if enc_packet:
+                    output_container.mux(enc_packet)
+                pbar.update(1)
 
         for new_frame in get_new_frames(frame_callback(None)):
             new_frame = reformatter(new_frame)
@@ -1183,7 +1098,7 @@ def generate_video(output_path,
         config.video_codec = get_default_video_codec(config.container_format)
     configure_video_codec(config)
 
-    video_output_stream = output_container.add_stream(config.video_codec, convert_known_fps(config.fps))
+    video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps))
     configure_colorspace(video_output_stream, None, config)
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
@@ -1296,7 +1211,7 @@ def process_video_keyframes(input_path, frame_callback,
     # video_input_stream.thread_type = "AUTO"  # slow
     video_input_stream.codec_context.skip_frame = "NONKEY"
 
-    video_filter = VideoFilter(video_input_stream, vf=vf)
+    video_filter = VideoPreprocessor(video_input_stream, vf=vf)
 
     max_progress = guess_duration(video_input_stream, container_duration=container_duration, input_path=input_path)
     desc = (title if title else input_path)
@@ -1308,8 +1223,7 @@ def process_video_keyframes(input_path, frame_callback,
         for frame in safe_decode(packet):
             current_sec = math.ceil(frame.pts * video_input_stream.time_base)
             if current_sec - prev_sec >= min_interval_sec:
-                frame = video_filter.update(frame)
-                if frame:
+                for frame in video_filter.update(frame):
                     frame_callback(frame)
                 pbar.update(current_sec - prev_sec)
                 prev_sec = current_sec
@@ -1318,13 +1232,9 @@ def process_video_keyframes(input_path, frame_callback,
         if stop_event is not None and stop_event.is_set():
             break
 
-    while True:
-        frame = video_filter.update(None)
-        if frame is not None:
-            frame_callback(frame)
-            pbar.update(1)
-        else:
-            break
+    for frame in video_filter.flush():
+        frame_callback(frame)
+        pbar.update(1)
 
     pbar.close()
     input_container.close()
@@ -1365,11 +1275,11 @@ def hook_frame(input_path,
         video_input_stream.thread_type = "AUTO"
 
     config = config_callback(video_input_stream)
-    config.fps = convert_known_fps(config.fps)
+    config.fps = convert_fps_fraction(config.fps)
     configure_colorspace(None, video_input_stream, config)
     rgb24_options = config.state["rgb24_options"]
 
-    fps_filter = FixedFPSFilter(video_input_stream, fps=config.fps, vf=vf)
+    fps_filter = VideoPreprocessor(video_input_stream, fps=config.fps, vf=vf)
 
     desc = (title if title else input_path)
     ncols = len(desc) + 60
@@ -1386,8 +1296,7 @@ def hook_frame(input_path,
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
         for frame in safe_decode(packet):
-            frame = fps_filter.update(frame)
-            if frame is not None:
+            for frame in fps_filter.update(frame):
                 frame = frame.reformat(**rgb24_options) if rgb24_options else frame
                 frame_callback(frame)
                 pbar.update(1)
@@ -1396,14 +1305,10 @@ def hook_frame(input_path,
         if stop_event is not None and stop_event.is_set():
             break
 
-    while True:
-        frame = fps_filter.update(None)
-        if frame is not None:
-            frame = frame.reformat(**rgb24_options) if rgb24_options else frame
-            frame_callback(frame)
-            pbar.update(1)
-        else:
-            break
+    for frame in fps_filter.flush():
+        frame = frame.reformat(**rgb24_options) if rgb24_options else frame
+        frame_callback(frame)
+        pbar.update(1)
 
     frame_callback(None)
     input_container.close()
@@ -1435,7 +1340,7 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
         return -1
 
     max_progress = num_samples
-    video_filter = VideoFilter(video_input_stream, vf=vf)
+    video_filter = VideoPreprocessor(video_input_stream, vf=vf)
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
@@ -1455,11 +1360,10 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
                     continue
                 current_sec = float(frame.pts * packet.time_base)
                 if current_sec - prev_sec >= step_sec:
-                    frame = video_filter.update(frame)
-                    if frame:
+                    for frame in video_filter.update(frame):
                         frame_callback(frame)
-                    pbar.update(1)
-                    sample_count += 1
+                        pbar.update(1)
+                        sample_count += 1
                     prev_sec = current_sec
             if suspend_event is not None:
                 suspend_event.wait()
@@ -1495,8 +1399,7 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
                     if not keyframe_only and current_sec - prev_sec < step_sec:
                         continue
 
-                    frame = video_filter.update(frame)
-                    if frame:
+                    for frame in video_filter.update(frame):
                         frame_callback(frame)
                     pbar.update(1)
                     prev_sec = current_sec
@@ -1513,14 +1416,10 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
             if stop_event is not None and stop_event.is_set():
                 break
 
-    while True:
-        frame = video_filter.update(None)
-        if frame is not None:
-            frame_callback(frame)
-            pbar.update(1)
-            sample_count += 1
-        else:
-            break
+    for frame in video_filter.flush():
+        frame_callback(frame)
+        pbar.update(1)
+        sample_count += 1
 
     pbar.close()
     input_container.close()
