@@ -57,6 +57,7 @@ tmp
 /cliqa/pretrained_models
 
 /nunif/utils/color_lut
+/tests/data
 
 # ----- Python.gitignore
 
