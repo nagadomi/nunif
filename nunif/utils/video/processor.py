@@ -7,33 +7,14 @@ import io
 import math
 from tqdm import tqdm
 from PIL import Image
-import mimetypes
 import torch
 from concurrent.futures import ThreadPoolExecutor
 import time
 import numpy as np
 import sys
-from .video_filter import VideoPreprocessor, convert_fps_fraction
-from .color_lut import load_lut, apply_lut, get_hdr2sdr_lut_path  # noqa
-
-
-# Add video mimetypes that does not exist in mimetypes
-mimetypes.add_type("video/x-ms-asf", ".asf")
-mimetypes.add_type("video/x-ms-vob", ".vob")
-mimetypes.add_type("video/divx", ".divx")
-mimetypes.add_type("video/3gpp", ".3gp")
-mimetypes.add_type("video/ogg", ".ogv")
-mimetypes.add_type("video/3gpp2", ".3g2")
-mimetypes.add_type("video/m2ts", ".m2ts")
-mimetypes.add_type("video/m2ts", ".m2t")
-mimetypes.add_type("video/m2ts", ".mts")
-mimetypes.add_type("video/m2ts", ".ts")
-mimetypes.add_type("video/vnd.rn-realmedia", ".rm")  # fake
-mimetypes.add_type("video/x-flv", ".flv")  # Not defined on Windows
-mimetypes.add_type("video/x-matroska", ".mkv")  # May not be defined for some reason
-
-# Hide libva message
-os.environ["LIBVA_MESSAGING_LEVEL"] = os.environ.get("LIBVA_MESSAGING_LEVEL", "1")
+from fractions import Fraction
+from .video_preprocessor import VideoPreprocessor
+from ..color_lut import load_lut, apply_lut, get_hdr2sdr_lut_path  # noqa
 
 
 VIDEO_EXTENSIONS = [
@@ -219,6 +200,24 @@ def get_frames(stream, container_duration=None, input_path=None):
     else:
         # frames is unknown
         return guess_frames(stream, container_duration=container_duration, input_path=input_path)
+
+
+def convert_fps_fraction(fps):
+    if isinstance(fps, (float, int)):
+        fps = float(fps)
+        if fps == 29.97:
+            return Fraction(30000, 1001)
+        elif fps == 23.976:
+            return Fraction(24000, 1001)
+        elif fps == 59.94:
+            return Fraction(60000, 1001)
+        else:
+            fps_frac = Fraction(fps)
+            fps_frac = fps_frac.limit_denominator(0x7fffffff)
+            if fps_frac.denominator > 0x7fffffff or fps_frac.numerator > 0x7fffffff:
+                raise ValueError(f"FPS={fps} could not be converted to Fraction={fps_frac}")
+            return fps_frac
+    return fps
 
 
 def from_image(im):
@@ -420,10 +419,11 @@ SIZE_SAFE_FILTERS = [
 
 
 def test_output_size(test_callback, video_stream, vf):
-    video_filter = VideoPreprocessor(video_stream, fps=59.94, vf=vf, deny_filters=SIZE_SAFE_FILTERS)
+    video_filter = VideoPreprocessor(video_stream, fps=convert_fps_fraction(59.94),
+                                     vf=vf, deny_filters=SIZE_SAFE_FILTERS)
     empty_image = Image.new("RGB", (video_stream.codec_context.width,
                                     video_stream.codec_context.height), (128, 128, 128))
-    test_frame = av.video.frame.VideoFrame.from_image(empty_image).reformat(
+    test_frame = av.VideoFrame.from_image(empty_image).reformat(
         format=video_stream.pix_fmt,
         src_color_range=ColorRange.JPEG, dst_color_range=video_stream.codec_context.color_range)
     pts_step = int((1. / video_stream.time_base) / 30) or 1
