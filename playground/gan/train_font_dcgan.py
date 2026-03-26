@@ -317,7 +317,7 @@ class GANTrainer(Trainer):
                 if font_info is None:
                     raise ValueError(f"{font_name} not found")
                 fonts.append(font_info)
-            dataset = FontDataset(fonts, size=IMAGE_SIZE, chars=list(Char.JIS1))
+            dataset = FontDataset(fonts, size=IMAGE_SIZE, chars=list(Char.JIS1()))
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -362,7 +362,7 @@ def _test_dataset():
     print("`q` key to exit")
 
     fonts = [load_font(font_name) for font_name in FONT_NAMES]
-    dataset = FontDataset(fonts, size=IMAGE_SIZE, chars=list(Char.JIS1))
+    dataset = FontDataset(fonts, size=IMAGE_SIZE, chars=list(Char.JIS1()))
     for _ in range(100):
         im = dataset[random.randint(0, len(dataset) - 1)]
         if show_image(TF.to_pil_image(im)) in {ord("q"), ord("x")}:

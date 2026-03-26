@@ -11,10 +11,11 @@ from multiprocessing import shared_memory
 import numpy as np
 import sys
 import wx
+from typing import Any
 
 
-_x11_connection_pool = {}
-_mss_pool = {}
+_x11_connection_pool: dict[int, Any] = {}
+_mss_pool: dict[int, Any] = {}
 
 
 def is_linux_x11():

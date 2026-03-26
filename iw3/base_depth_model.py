@@ -48,7 +48,7 @@ class BaseDepthModel(metaclass=ABCMeta):
 
     @classmethod
     @abstractmethod
-    def get_name():
+    def get_name(cls):
         pass
 
     def loaded(self):

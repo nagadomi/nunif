@@ -45,8 +45,8 @@ ADDITIONAL_COLORSPACE_VALUES = {
 AV_VERSION_14 = packaging_version.parse(av.__version__).major >= 14
 if not AV_VERSION_14:
     for name, value in ADDITIONAL_COLORSPACE_VALUES.items():
-        if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and value not in Colorspace._by_value:
-            Colorspace._create(name, value)
+        if getattr(Colorspace, "_by_value") and getattr(Colorspace, "_create") and value not in Colorspace._by_value:  # type: ignore
+            Colorspace._create(name, value)  # type: ignore
 
 
 COLORSPACE_UNSPECIFIED = 2

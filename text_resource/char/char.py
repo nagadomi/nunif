@@ -11,7 +11,6 @@ class Char():
     hiragana_basic = None
 
     @classmethod
-    @property
     def JIS1(cls):
         if cls.jis1 is None:
             with open(path.join(path.dirname(__file__), "jis1.txt"),
@@ -20,7 +19,6 @@ class Char():
         return cls.jis1
 
     @classmethod
-    @property
     def HIRAGANA(cls):
         if cls.hiragana is None:
             with open(path.join(path.dirname(__file__), "hiragana.txt"),
@@ -29,7 +27,6 @@ class Char():
         return cls.hiragana
 
     @classmethod
-    @property
     def HIRAGANA_BASIC(cls):
         if cls.hiragana_basic is None:
             with open(path.join(path.dirname(__file__), "hiragana_basic.txt"),
@@ -39,6 +36,6 @@ class Char():
 
 
 if __name__ == "__main__":
-    print(Char.JIS1)
-    print(Char.HIRAGANA)
-    print(Char.HIRAGANA_BASIC)
+    print(Char.JIS1())
+    print(Char.HIRAGANA())
+    print(Char.HIRAGANA_BASIC())

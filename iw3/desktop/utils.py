@@ -28,6 +28,8 @@ from .screenshot_process import ( # noqa
     is_mss_supported,
 )
 from .streaming_server import StreamingServer
+
+LocalViewer: object | None
 try:
     from .local_viewer import LocalViewer
 except ImportError:

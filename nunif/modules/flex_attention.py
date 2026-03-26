@@ -3,8 +3,10 @@ import torch.nn as nn
 from .permute import bchw_to_bnc, bnc_to_bchw
 from .init import basic_module_init
 from torch import Tensor
+from typing import Callable, Any
 
 
+flex_attention: Callable[..., Any] | None
 try:
     from torch.nn.attention.flex_attention import flex_attention
 except ModuleNotFoundError:
@@ -22,6 +24,8 @@ def sliced_flex_attention(q, k, v, num_heads, score_mod):
     q = q.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
     k = k.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
     v = v.view(B, N, num_heads, qkv_dim).permute(0, 2, 1, 3)
+    if flex_attention is None:
+        raise NotImplementedError("flex_attention")
     x = flex_attention(q, k, v, score_mod=score_mod)
     return x.permute(0, 2, 1, 3).reshape(B, N, qkv_dim * num_heads)
 
@@ -50,6 +54,7 @@ class FlexAttention(nn.Module):
 class WindowNeighborhoodMHA2d(nn.Module):
     # TODO: probably better to use block_mask.
     #       but it does not work with torch.compile() at the moment.
+    window_h: torch.Tensor
     def __init__(self, embed_dim, num_heads, window_size, max_distance=None, relative_bias=False, qkv_dim=None):
         assert max_distance is not None or relative_bias
         super().__init__()

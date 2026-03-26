@@ -5,7 +5,8 @@ from functools import lru_cache
 
 
 class Model(nn.Module):
-    name = "nunif.Model"
+    name: str = "nunif.Model"
+    name_alias: tuple[str, ...] = ()
 
     def __init__(self, kwargs):
         super(Model, self).__init__()

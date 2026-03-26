@@ -10,7 +10,6 @@ scipy
 waitress
 bottle==0.12.25
 diskcache
-flake8
 psutil
 pyyaml
 platformdirs
