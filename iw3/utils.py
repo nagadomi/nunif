@@ -20,7 +20,7 @@ from nunif.utils.pil_io import load_image_simple
 import nunif.utils.shot_boundary_detection as SBD
 from nunif.models import compile_model
 import nunif.utils.video as VU
-import nunif.utils.pyav_hdr as pyav_hdr
+from nunif.utils.video.hdr_metadata import get_hdr_metadata
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.utils.ticket_lock import TicketLock
 from nunif.utils.autocrop import AutoCrop, AutoCropDummy
@@ -185,7 +185,7 @@ def make_video_codec_option(args, input_path=None):
                 x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
 
             if (input_path is not None and args.colorspace in {"auto", "bt2020-tv", "bt2020-pq-tv"}):
-                hdr_metadata = pyav_hdr.get_hdr_metadata(input_path)
+                hdr_metadata = get_hdr_metadata(input_path)
                 x265_params += hdr_metadata.to_x265_params()
 
             options["x265-params"] = ":".join(x265_params)

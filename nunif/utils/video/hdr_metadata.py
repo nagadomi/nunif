@@ -96,6 +96,14 @@ class HDRMetadata:
 
         self.is_hdr = is_hdr
 
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"is_hdr={self.is_hdr}, "
+            f"master_display={self.master_display}, "
+            f"max_cll={self.max_cll})"
+        )
+
     def has_data(self):
         return self.master_display is not None or self.max_cll is not None
 
