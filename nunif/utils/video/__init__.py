@@ -20,5 +20,4 @@ mimetypes.add_type("video/x-matroska", ".mkv")  # May not be defined for some re
 # Hide libva message
 os.environ["LIBVA_MESSAGING_LEVEL"] = os.environ.get("LIBVA_MESSAGING_LEVEL", "1")
 
-
 from .processor import *  # noqa
