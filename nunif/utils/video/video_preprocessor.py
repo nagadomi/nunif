@@ -1,5 +1,5 @@
 from .video_filter.fps import FPSFilter
-from .av_filter_graph import AVFilterGraph
+from .video_filter.av_filter_graph import AVFilterGraph
 
 
 class VideoPreprocessor():
