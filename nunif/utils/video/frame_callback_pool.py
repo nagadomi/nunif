@@ -133,8 +133,7 @@ class FrameCallbackPool():
         frames = future.result()
         if self.postprocess_callback is not None:
             frames = self.postprocess_callback(frames)
-
-        return [to_frame(frame, use_16bit=self.use_16bit) for frame in frames] if frames is not None else []
+        return [frame for frame in frames] if frames is not None else []
 
     def submit(self, *args):
         if self.preprocess_callback is not None:

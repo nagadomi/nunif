@@ -1,3 +1,4 @@
+import torch
 from fractions import Fraction
 from typing import Any, Callable, Dict, Optional
 
@@ -15,6 +16,7 @@ class VideoOutputConfig():
     video_codec: Optional[str]
     state_updated: Optional[Callable[["VideoOutputConfig"], None]]
     state: Dict[str, Any]
+    device: Optional[torch.device]
 
     def __init__(
             self,
@@ -27,7 +29,8 @@ class VideoOutputConfig():
             colorspace: Optional[str] = None,
             container_format: Optional[str] = None,
             video_codec: Optional[str] = None,
-            output_fps: Optional[str] = None
+            output_fps: Optional[str] = None,
+            device: Optional[torch.device] = None
     ):
         self.pix_fmt = pix_fmt
         self.fps = fps
@@ -42,6 +45,7 @@ class VideoOutputConfig():
             self.colorspace = "unspecified"
         self.container_format = container_format
         self.video_codec = video_codec
+        self.device = device
 
         self.state_updated = lambda config: None
         self.state = dict(

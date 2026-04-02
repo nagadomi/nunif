@@ -619,10 +619,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     frame_cpu_offload = depth_model.get_ema_buffer_size() > 1
-    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depths, flush):
-        frames = []
         for depth in depths:
             x, pts = src_queue.pop(0)
             reset_pts = [pts in segment_pts]
@@ -655,22 +653,21 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                     o[0, 0:8, :] = 1.0
 
             for o in out:
-                frames.append(VU.to_frame(o, use_16bit=use_16bit))
+                yield o
 
         if flush and hasattr(side_model, "flush"):
             left_eye, right_eye = side_model.flush(enable_amp=not args.disable_amp)
             if left_eye is not None:
                 for left, right in zip(left_eye, right_eye):
                     out = postprocess_image(left, right, args)
-                    frames.append(VU.to_frame(out, use_16bit=use_16bit))
-
-        return frames
+                    yield out
 
     @torch.inference_mode()
     def _frame_callback(frame):
         if frame is None:
             # flush
-            return _postprocess(depth_model.flush_minmax_normalize(), flush=True)
+            yield from _postprocess(depth_model.flush_minmax_normalize(), flush=True)
+            return
 
         frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
         pix_dtype, pix_max = frame_hwc.dtype, torch.iinfo(frame_hwc.dtype).max
@@ -702,7 +699,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             depths += depth_model.flush_minmax_normalize()
             depth_model.reset_state()
 
-        return _postprocess(depths, flush=flush)
+        yield from _postprocess(depths, flush=flush)
 
     return _frame_callback
 
@@ -763,7 +760,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
 
                 frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
                           for i in range(left_eyes.shape[0])]
-                results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
+                results += frames
 
         return results
 
@@ -837,17 +834,15 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     batch_queue = []
     pts_queue = []
     depth_model.reset()
-    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depth_list, flush=False):
-        results = []
         if args.debug_depth:
             for depth in depth_list:
                 out = debug_depth_image(depth, args)
                 _, pts = src_queue.pop(0)
                 if pts in segment_pts:
                     out[0, 0:8, :] = 1.0
-                results.append(VU.to_frame(out, use_16bit=use_16bit))
+                yield out
         else:
             for depths in chunks(depth_list, args.batch_size):
                 depths = torch.stack(depths)
@@ -860,18 +855,14 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                 else:
                     left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
                 if left_eyes is not None:
-                    frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
-                              for i in range(left_eyes.shape[0])]
-                    results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
+                    for i in range(left_eyes.shape[0]):
+                        yield postprocess_image(left_eyes[i], right_eyes[i], args)
 
         if flush and hasattr(side_model, "flush"):
             left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
             if left_eyes is not None:
                 for left_eye, right_eye in zip(left_eyes, right_eyes):
-                    out = postprocess_image(left_eye, right_eye, args)
-                    results.append(VU.to_frame(out, use_16bit=use_16bit))
-
-        return results
+                    yield postprocess_image(left_eye, right_eye, args)
 
     def _batch_infer():
         x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2)
@@ -901,25 +892,21 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     def frame_callback(frame):
         if frame is None:
             # flush
-            results = []
             if batch_queue:
-                results += _batch_infer()
+                yield from _batch_infer()
             depth_list = depth_model.flush_with_normalize(
                 enable_amp=not args.disable_amp,
                 edge_dilation=args.edge_dilation,
                 depth_aa=args.depth_aa)
-            results += _postprocess(depth_list, flush=True)
-            return [VU.to_frame(new_frame, use_16bit=use_16bit) for new_frame in results]
+            yield from _postprocess(depth_list, flush=True)
+            return
 
         frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
         batch_queue.append(frame_hwc)
         pts_queue.append(frame.pts)
 
         if len(batch_queue) == args.batch_size:
-            results = _batch_infer()
-            return [VU.to_frame(new_frame, use_16bit=use_16bit) for new_frame in results]
-        else:
-            return None
+            yield from _batch_infer()
 
     return frame_callback
 
@@ -1074,6 +1061,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             colorspace=args.colorspace,
             options=make_video_codec_option(args, input_filename),
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
+            device=args.state["device"],
         )
 
     @torch.inference_mode()
@@ -1732,23 +1720,20 @@ def process_config_video(config, args, side_model):
                 left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
 
         if left_eyes is not None:
-            return torch.stack([
-                postprocess_image(left_eyes[i], right_eyes[i], args)
-                for i in range(left_eyes.shape[0])])
-        else:
-            return []
+            for i in range(left_eyes.shape[0]):
+                yield postprocess_image(left_eyes[i], right_eyes[i], args)
 
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
-        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), [False], test=True)
+        frame = next(batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), [False], test=True))
         if side_model is not None and hasattr(side_model, "reset"):
             side_model.reset()
         if args.state["convergence_model"] is not None:
             args.state["convergence_model"].reset()
 
-        return frame.shape[2:]
+        return frame.shape[-2:]
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
 
@@ -1763,24 +1748,20 @@ def process_config_video(config, args, side_model):
             depth_basename = path.splitext(path.basename(depth[1]["filename"]))[0]
             reset_pts_batch.append(depth_basename in segment_pts)
             if len(rgb_batch) == minibatch_size:
-                frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                        torch.stack(depth_batch).to(args.state["device"]),
-                                        reset_pts_batch)
+                yield from batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
+                                          torch.stack(depth_batch).to(args.state["device"]),
+                                          reset_pts_batch)
                 rgb_batch.clear()
                 depth_batch.clear()
                 reset_pts_batch.clear()
 
-                yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
-
         if rgb_batch:
-            frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                    torch.stack(depth_batch).to(args.state["device"]),
-                                    reset_pts_batch)
+            yield from batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
+                                      torch.stack(depth_batch).to(args.state["device"]),
+                                      reset_pts_batch)
             rgb_batch.clear()
             depth_batch.clear()
             reset_pts_batch.clear()
-
-            yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
     output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
     if side_model is not None and hasattr(side_model, "reset"):

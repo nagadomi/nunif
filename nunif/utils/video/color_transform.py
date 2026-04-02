@@ -676,6 +676,16 @@ class TensorFrame:
         return self.planes.shape[-2]
 
 
+def pix_fmt_requires_16bit(pix_fmt):
+    return pix_fmt in {
+        "yuv420p10le", "p010le",
+        "yuv422p10le", "yuv444p10le",
+        "yuv420p12le", "yuv422p12le", "yuv444p12le",
+        "yuv444p16le",
+        "gbrp16le", "gbrp12le", "gbrp10le", "rgb48le",
+    }
+
+
 class InputTransform:
     # Convert av.VideoFrame to RGB Full Range tensor/ndarray
     # For src_*, use SoftwareVideoFormat class
@@ -829,7 +839,6 @@ class OutputTransform:
         dst_color_primaries: Union[ColorPrimaries, int],
         dst_color_trc: Union[ColorTrc, int],
         dst_color_range: Union[ColorRange, int],
-        use_16bit: bool,
         cuda_context: Optional[CudaContext] = None,
     ) -> None:
         self.dst_pix_fmt = dst_pix_fmt
@@ -837,8 +846,20 @@ class OutputTransform:
         self.dst_color_primaries = dst_color_primaries
         self.dst_color_trc = dst_color_trc
         self.dst_color_range = dst_color_range
-        self.use_16bit = use_16bit
+        self.use_16bit = pix_fmt_requires_16bit(dst_pix_fmt)
         self.cuda_context = cuda_context
+
+    def from_video_frame(self, frame: av.VideoFrame):
+        frame = frame.reformat(
+            format=self.dst_pix_fmt,
+            src_colorspace=self.dst_colorspace,
+            src_color_range=ColorRange.JPEG,
+            dst_colorspace=self.dst_colorspace,
+            dst_color_primaries=self.dst_color_primaries,
+            dst_color_trc=self.dst_color_trc,
+            dst_color_range=self.dst_color_range,
+        )
+        return frame
 
     def from_ndarray(self, x: np.ndarray) -> av.VideoFrame:
         format: str
@@ -850,16 +871,7 @@ class OutputTransform:
             raise ValueError(f"unsupported dtype {x.dtype}")
 
         frame = av.VideoFrame.from_ndarray(x, format=format)
-        frame = frame.reformat(
-            format=self.dst_pix_fmt,
-            src_colorspace=self.dst_colorspace,
-            src_color_range=ColorRange.JPEG,
-            dst_colorspace=self.dst_colorspace,
-            dst_color_primaries=self.dst_color_primaries,
-            dst_color_trc=self.dst_color_trc,
-            dst_color_range=self.dst_color_range,
-        )
-        return frame
+        return self.from_video_frame(frame)
 
     def from_tensor(self, x: torch.Tensor) -> av.VideoFrame:
         dtype: Any
@@ -884,7 +896,7 @@ class OutputTransform:
         return (
             self.cuda_context is not None
             and x.device.type == "cuda"
-            and self.dst_pix_fmt in {"yuv420p", "yuv420p10le"}
+            and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuv420p10le"}
         )
 
     def from_cuda_tensor(self, x: torch.Tensor) -> av.VideoFrame:
@@ -927,7 +939,7 @@ class OutputTransform:
             x = x.planes
 
         if isinstance(x, av.VideoFrame):
-            return x
+            return self.from_video_frame(x)
         elif isinstance(x, np.ndarray):
             return self.from_ndarray(x)
 
@@ -953,13 +965,6 @@ def configure_colorspace(
     """Configure output stream and store state based on user config."""
     config.state["rgb24_options"] = {}
     config.state["reformatter"] = lambda frame: frame
-
-    # Early return for RGB/GBRP or explicit 'unspecified'
-    if config.pix_fmt in {"rgb24", "gbrp"} or config.colorspace == "unspecified":
-        config.state["source_color_range"] = config.state["output_colorspace"] = None
-        if config.state_updated is not None:
-            config.state_updated(config)
-        return
 
     exported_output_colorspace: int = config.state.get(
         "output_colorspace", COLORSPACE_UNSPECIFIED
@@ -1020,12 +1025,18 @@ def configure_colorspace(
 
     # Define reformatter lambda for post-processing conversion
     # Source: (Processing Colorspace, Full Range) -> Destination: (Output Colorspace, Output Range)
-    config.state["reformatter"] = lambda frame: frame.reformat(
-        format=pix_fmt,
-        src_colorspace=colorspace,
+    cuda_context = None
+    if config.video_codec in {"h264_nvenc", "hevc_nvenc"} and config.pix_fmt in {"nv12", "p010le"}:
+        device_id = config.device.index if config.device is not None else 0
+        cuda_context = CudaContext(device_id=device_id, primary_ctx=False)
+
+    config.state["reformatter"] = OutputTransform(
+        dst_pix_fmt=pix_fmt,
         dst_colorspace=colorspace,
-        src_color_range=ColorRange.JPEG,
+        dst_color_primaries=color_primaries,
+        dst_color_trc=color_trc,
         dst_color_range=color_range,
+        cuda_context=cuda_context
     )
 
     config.state["rgb24_options"] = rgb24_options
@@ -1076,7 +1087,9 @@ def configure_video_codec(config: Any) -> None:
 
     # Hardware acceleration specific mappings (NVENC, QSV)
     if codec in {"h264_nvenc", "hevc_nvenc"}:
-        if pix_fmt == "yuv420p10le":
+        if pix_fmt == "yuv420p":
+            config.pix_fmt = "nv12"
+        elif pix_fmt == "yuv420p10le":
             config.pix_fmt = "p010le"
 
     if codec in {"h264_qsv", "hevc_qsv"}:
