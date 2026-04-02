@@ -1,16 +1,29 @@
+import av
+from fractions import Fraction
 from .video_filter.fps import FPSFilter
 from .video_filter.av_filter_graph import AVFilterGraph
+from .color_transform import SoftwareVideoFormat
+from typing import Optional, List
 
 
 class VideoPreprocessor():
-    def __init__(self, video_stream, fps=None, vf="", deny_filters=[]):
+    def __init__(
+            self,
+            video_stream: av.VideoStream,
+            sw_format: SoftwareVideoFormat,
+            fps: Optional[Fraction] = None,
+            vf: str = "",
+            deny_filters: List[str] = []
+    ):
         self.fps_filter = None
         self.video_filter = None
 
         if fps is not None:
+            if video_stream.guessed_rate is None or video_stream.time_base is None:
+                raise RuntimeError("guessed_rate/time_base is None")
             self.fps_filter = FPSFilter(fps, video_stream.time_base, video_stream.guessed_rate)
         if vf:
-            self.video_filter = AVFilterGraph(video_stream, vf, deny_filters)
+            self.video_filter = AVFilterGraph(video_stream, sw_format, vf, deny_filters)
 
     def update(self, frame):
         if self.fps_filter is not None:

@@ -1017,6 +1017,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     suspend_event=args.state["suspend_event"],
                     tqdm_fn=args.state["tqdm_fn"],
                     tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
                 )
                 save_scene_cache(input_filename, segment_pts, args)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
@@ -1083,43 +1085,51 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
     if is_video_depth_anything:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
-            VU.process_video(input_filename, output_filename,
-                             config_callback=config_callback,
-                             frame_callback=bind_vda_frame_callback(
-                                 depth_model=depth_model,
-                                 side_model=side_model,
-                                 segment_pts=segment_pts,
-                                 args=args
-                             ),
-                             test_callback=test_callback,
-                             vf=video_filter,
-                             stop_event=args.state["stop_event"],
-                             suspend_event=args.state["suspend_event"],
-                             tqdm_fn=args.state["tqdm_fn"],
-                             title=path.basename(input_filename),
-                             start_time=args.start_time,
-                             end_time=args.end_time,
-                             device=args.state["device"])
+            VU.process_video(
+                input_filename, output_filename,
+                config_callback=config_callback,
+                frame_callback=bind_vda_frame_callback(
+                    depth_model=depth_model,
+                    side_model=side_model,
+                    segment_pts=segment_pts,
+                    args=args
+                ),
+                test_callback=test_callback,
+                vf=video_filter,
+                stop_event=args.state["stop_event"],
+                suspend_event=args.state["suspend_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+                title=path.basename(input_filename),
+                start_time=args.start_time,
+                end_time=args.end_time,
+                device=args.state["device"],
+                hwaccel=args.hwaccel,
+                disable_software_fallback=args.disable_software_fallback,
+            )
 
     elif args.low_vram or args.debug_depth or is_video_depth_anything_streaming or is_inpaint_model:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
-            VU.process_video(input_filename, output_filename,
-                             config_callback=config_callback,
-                             frame_callback=bind_single_frame_callback(
-                                 depth_model=depth_model,
-                                 side_model=side_model,
-                                 segment_pts=segment_pts,
-                                 args=args,
-                             ),
-                             test_callback=test_callback,
-                             vf=video_filter,
-                             stop_event=args.state["stop_event"],
-                             suspend_event=args.state["suspend_event"],
-                             tqdm_fn=args.state["tqdm_fn"],
-                             title=path.basename(input_filename),
-                             start_time=args.start_time,
-                             end_time=args.end_time,
-                             device=args.state["device"])
+            VU.process_video(
+                input_filename, output_filename,
+                config_callback=config_callback,
+                frame_callback=bind_single_frame_callback(
+                    depth_model=depth_model,
+                    side_model=side_model,
+                    segment_pts=segment_pts,
+                    args=args,
+                ),
+                test_callback=test_callback,
+                vf=video_filter,
+                stop_event=args.state["stop_event"],
+                suspend_event=args.state["suspend_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+                title=path.basename(input_filename),
+                start_time=args.start_time,
+                end_time=args.end_time,
+                device=args.state["device"],
+                hwaccel=args.hwaccel,
+                disable_software_fallback=args.disable_software_fallback,
+            )
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -1143,18 +1153,22 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         )
         try:
             with depth_model.compile_context(enabled=args.compile):
-                VU.process_video(input_filename, output_filename,
-                                 config_callback=config_callback,
-                                 frame_callback=frame_callback,
-                                 test_callback=test_callback,
-                                 vf=video_filter,
-                                 stop_event=args.state["stop_event"],
-                                 suspend_event=args.state["suspend_event"],
-                                 tqdm_fn=args.state["tqdm_fn"],
-                                 title=path.basename(input_filename),
-                                 start_time=args.start_time,
-                                 end_time=args.end_time,
-                                 device=args.state["device"])
+                VU.process_video(
+                    input_filename, output_filename,
+                    config_callback=config_callback,
+                    frame_callback=frame_callback,
+                    test_callback=test_callback,
+                    vf=video_filter,
+                    stop_event=args.state["stop_event"],
+                    suspend_event=args.state["suspend_event"],
+                    tqdm_fn=args.state["tqdm_fn"],
+                    title=path.basename(input_filename),
+                    start_time=args.start_time,
+                    end_time=args.end_time,
+                    device=args.state["device"],
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
+                )
         finally:
             frame_callback.shutdown()
 
@@ -1655,7 +1669,6 @@ def export_video(input_filename, output_dir, args, title=None):
 
 
 def process_config_video(config, args, side_model):
-    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, audio_file = config.resolve_paths(base_dir)
     if side_model is not None and hasattr(side_model, "set_mode"):
@@ -2135,6 +2148,11 @@ def create_parser(required_true=True):
     parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"],
                         help="output image format")
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
+    parser.add_argument("--hwaccel", type=str, default=None,
+                        choices=VU.get_supported_hwdevices(),
+                        help="hardware accelerator for the video decoder")
+    parser.add_argument("--disable-software-fallback", action="store_true",
+                        help="disable software fallback for hardware hwaccel")
 
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")

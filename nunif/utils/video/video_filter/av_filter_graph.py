@@ -1,6 +1,8 @@
 import av
 import re
+from fractions import Fraction
 from typing import List, Optional, Tuple
+from ..color_transform import SoftwareVideoFormat, HW_PIX_FORMATS
 
 
 class AVFilterGraph:
@@ -8,19 +10,41 @@ class AVFilterGraph:
 
     def __init__(
         self,
-        video_stream: av.video.stream.VideoStream,
+        video_stream: av.VideoStream,
+        sw_format: SoftwareVideoFormat,
         vf: str,
         deny_filters: Optional[List[str]] = None,
     ):
+        assert video_stream.pix_fmt is not None
+        self.pix_fmt = sw_format.guess_pix_fmt(video_stream.pix_fmt)
+        self.sw_format = sw_format
         self.graph = av.filter.Graph()
         deny_filters = deny_filters or []
         video_filters = self.parse_vf_option(vf)
         video_filters = [
             (name, option) for name, option in video_filters if name not in deny_filters
         ]
-        self.build_graph(self.graph, video_stream, video_filters)
+        self.build_graph(
+            self.graph,
+            pix_fmt=self.pix_fmt,
+            width=video_stream.width,
+            height=video_stream.height,
+            time_base=video_stream.time_base,
+            video_filters=video_filters,
+        )
 
     def update(self, frame: av.VideoFrame) -> Optional[av.VideoFrame]:
+        if frame.format.name in HW_PIX_FORMATS:
+            # hwdownload
+            frame = frame.reformat(
+                format=self.pix_fmt,
+                src_colorspace=self.sw_format.colorspace,
+                src_color_range=self.sw_format.color_range,
+                dst_colorspace=self.sw_format.colorspace,
+                dst_color_primaries=self.sw_format.color_primaries,
+                dst_color_trc=self.sw_format.color_trc,
+                dst_color_range=self.sw_format.color_range,
+            )
         self.graph.push(frame)
         try:
             out_frame = self.graph.pull()
@@ -78,10 +102,18 @@ class AVFilterGraph:
     @staticmethod
     def build_graph(
         graph: av.filter.Graph,
-        template_stream: av.video.stream.VideoStream,
+        pix_fmt: str,
+        width: int,
+        height: int,
+        time_base: Fraction | None,
         video_filters: List[Tuple[str, str]],
     ) -> None:
-        buffer = graph.add_buffer(template=template_stream)
+        buffer = graph.add_buffer(
+            format=av.VideoFormat(pix_fmt, width=width, height=height),
+            width=width,
+            height=height,
+            time_base=time_base,
+        )
         prev_filter = buffer
         for filter_name, filter_option in video_filters:
             new_filter = graph.add(filter_name, filter_option if filter_option else None)

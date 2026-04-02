@@ -70,6 +70,23 @@ COLOR_CONFIG_MAP: Dict[
 }
 
 
+def _list_hw_format() -> Set[str]:
+    formats: Set[str] = set()
+    for name in av.codec.codecs_available:
+        try:
+            codec = av.codec.Codec(name, mode="r")
+        except ValueError:
+            continue
+        configs = codec.hardware_configs  # type: ignore
+        if configs:
+            for config in configs:
+                formats.add(config.format.name)
+    return formats
+
+
+HW_PIX_FORMATS: Set[str] = _list_hw_format()
+
+
 class SoftwareVideoFormat:
     format: av.VideoFormat  # pix_fmt
     colorspace: Union[Colorspace, int]
@@ -78,22 +95,42 @@ class SoftwareVideoFormat:
     color_range: Union[ColorRange, int]
     width: int
     height: int
+    time_base: Optional[Fraction]
     use_16bit: bool
 
     def __init__(self, video_path: str) -> None:
         with av.open(video_path, mode="r", metadata_errors="ignore") as container:
             if not len(container.streams.video) > 0:
                 raise ValueError("No video stream")
-            for frame in container.decode(video=0):
-                self.format = frame.format
-                self.colorspace = frame.colorspace
-                self.color_primaries = frame.color_primaries
-                self.color_trc = frame.color_trc
-                self.color_range = frame.color_range
-                self.width = frame.width
-                self.height = frame.height
-                self.use_16bit = frame.format.components[0].bits > 8
-                break
+
+            stream = container.streams.video[0]
+            self.format = stream.format
+            self.colorspace = stream.colorspace
+            self.color_primaries = stream.color_primaries
+            self.color_trc = stream.color_trc
+            self.color_range = stream.color_range
+            self.width = stream.width
+            self.height = stream.height
+            self.time_base = stream.time_base
+            self.use_16bit = stream.format.components[0].bits > 8
+
+    def guess_pix_fmt(self, stream_pix_fmt: str):
+        if stream_pix_fmt in HW_PIX_FORMATS:
+            # TODO: Need investigation
+            if self.format.name in {"yuv420p", "yuvj420p"}:
+                return "nv12"
+            elif self.format.name == "yuv420p10le":
+                return "p010le"
+            elif self.format.name == "yuv420p16le":
+                return "p016le"
+            else:
+                if stream_pix_fmt in {"yuv444p", "yuv422p"}:
+                    return stream_pix_fmt
+                raise NotImplementedError(
+                    f"Unsupported format conversion: format={self.format.name}, hw format={stream_pix_fmt}"
+                )
+        else:
+            return stream_pix_fmt
 
     @staticmethod
     def guess_color_range_static(

@@ -56,7 +56,7 @@ fi
 
 # tests/data/hdr.mkv
 if [ ! -f ${BASE_DIR}/hdr.mkv ]; then
-   generate_video h264 hdr yuv420p10le bt2020nc bt2020 smpte2084 tv "gradients=size=1280x720:rate=30:n=8:seed=1"
+   generate_video hevc hdr yuv420p10le bt2020nc bt2020 smpte2084 tv "gradients=size=1280x720:rate=30:n=8:seed=1"
 fi
 
 # tests/data/sd.png

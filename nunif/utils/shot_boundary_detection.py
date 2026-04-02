@@ -28,6 +28,8 @@ def detect_boundary(
         suspend_event=None,
         tqdm_fn=None,
         tqdm_title=None,
+        hwaccel=None,
+        disable_software_fallback=False,
 ):
     assert (window_size % padding_size == 0 and
             window_size // padding_size >= 3)  # pad1 + frames + pad2
@@ -88,7 +90,10 @@ def detect_boundary(
         start_time=start_time, end_time=end_time,
         stop_event=stop_event,
         suspend_event=suspend_event,
-        tqdm_fn=tqdm_fn
+        tqdm_fn=tqdm_fn,
+        hwaccel=hwaccel,
+        disable_software_fallback=disable_software_fallback,
+        device=device,
     )
     if stop_event is not None and stop_event.is_set():
         return set()
@@ -136,6 +141,24 @@ def _hevc_deadlock_test():
             print(i, j, pts)
 
 
+def _test():
+    import argparse
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input video file")
+    parser.add_argument("--hwaccel", type=str, help="hwaccel")
+    args = parser.parse_args()
+    device = torch.device("cuda")
+    pts = detect_boundary(
+        args.input,
+        device=device,
+        hwaccel=args.hwaccel,
+    )
+    print(pts)
+
+
 if __name__ == "__main__":
+    _test()
     # _hevc_deadlock_test()
     pass

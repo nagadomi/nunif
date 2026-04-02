@@ -1,6 +1,6 @@
 import av
 from av.video.reformatter import Colorspace, ColorTrc, ColorRange
-from av.codec.hwaccel import HWAccel, hwdevices_available
+from av.codec.hwaccel import HWAccel
 import os
 from os import path
 import io
@@ -23,15 +23,15 @@ from .frame_callback_pool import ( # noqa
 )
 from .color_transform import (
     SoftwareVideoFormat,
-    InputTransform,
-    OutputTransform,
     configure_colorspace,
     configure_video_codec,
     COLORSPACE_BT2020,
 )
+from .hwaccel import get_supported_hwdevices, create_hwaccel
 from .video_preprocessor import VideoPreprocessor
 from ..color_lut import load_lut, apply_lut, get_hdr2sdr_lut_path  # noqa
 from types import GeneratorType
+from typing import Optional, Union, Dict, cast
 
 
 VIDEO_EXTENSIONS = [
@@ -39,7 +39,7 @@ VIDEO_EXTENSIONS = [
     ".asf", ".vob", ".divx", ".3gp", ".ogv", ".3g2", ".m2ts", ".ts", ".rm",
 ]
 
-AV_READ_OPTIONS = dict(mode="r", metadata_errors="ignore")
+AV_READ_OPTIONS: Dict[str, str] = dict(mode="r", metadata_errors="ignore")
 
 
 def list_videos(directory, extensions=VIDEO_EXTENSIONS):
@@ -302,13 +302,12 @@ SIZE_SAFE_FILTERS = [
 ]
 
 
-def test_output_size(test_callback, video_stream, vf):
-    video_filter = VideoPreprocessor(video_stream, fps=convert_fps_fraction(59.94),
+def test_output_size(test_callback, video_stream, sw_format, vf):
+    video_filter = VideoPreprocessor(video_stream, sw_format, fps=convert_fps_fraction(59.94),
                                      vf=vf, deny_filters=SIZE_SAFE_FILTERS)
-    empty_image = Image.new("RGB", (video_stream.codec_context.width,
-                                    video_stream.codec_context.height), (128, 128, 128))
+    empty_image = Image.new("RGB", (sw_format.width, sw_format.height), (128, 128, 128))
     test_frame = av.VideoFrame.from_image(empty_image).reformat(
-        format=video_stream.pix_fmt,
+        format=sw_format.format.name,
         src_color_range=ColorRange.JPEG, dst_color_range=video_stream.codec_context.color_range)
     pts_step = int((1. / video_stream.time_base) / 30) or 1
     test_frame.pts = pts_step
@@ -440,8 +439,10 @@ def process_video(
         stop_event=None, suspend_event=None, tqdm_fn=None,
         start_time=None, end_time=None,
         test_callback=None,
-        device="cpu",
-        inference_mode=True,
+        device: Union[str, torch.device] = "cpu",
+        inference_mode: bool = True,
+        hwaccel: Optional[str] = None,
+        disable_software_fallback: bool = False,
 ):
     with torch.inference_mode(inference_mode):
         _process_video(
@@ -454,6 +455,8 @@ def process_video(
             start_time=start_time, end_time=end_time,
             test_callback=test_callback,
             device=device,
+            hwaccel=hwaccel,
+            disable_software_fallback=disable_software_fallback,
         )
 
 
@@ -466,7 +469,9 @@ def _process_video(
         stop_event, suspend_event, tqdm_fn,
         start_time, end_time,
         test_callback,
-        device,
+        device: Union[str, torch.device],
+        hwaccel: Optional[str],
+        disable_software_fallback: bool,
 ):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -478,8 +483,10 @@ def _process_video(
         device = torch.device(device)
 
     sw_format = SoftwareVideoFormat(input_path)
+    input_hwaccel = create_hwaccel(device=hwaccel, device_id=device.index,
+                                   disable_software_fallback=disable_software_fallback)
     output_path_tmp = make_temporary_file_path(output_path)
-    input_container = av.open(input_path, **AV_READ_OPTIONS)
+    input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
 
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
@@ -513,7 +520,10 @@ def _process_video(
 
     output_hwaccel = None
     if config.video_codec in {"h264_nvenc", "hevc_nvenc"}:
-        device_id = device.index if device.type == "cuda" else 0
+        if device.type == "cuda":
+            device_id = device.index if device.index is not None else 0
+        else:
+            device_id = None
         output_hwaccel = HWAccel(device_type="cuda", device=device_id, options={"primary_ctx": "0"})
     output_container = av.open(output_path_tmp, mode="w", options=config.container_options, hwaccel=output_hwaccel)
 
@@ -523,14 +533,14 @@ def _process_video(
         color_trc=video_input_stream.codec_context.color_trc,
         output_colorspace=config.colorspace
     )
-    fps_filter = VideoPreprocessor(video_input_stream, fps=config.fps, vf=vf)
+    fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
     if config.output_width is not None and config.output_height is not None:
         output_size = config.output_width, config.output_height
     else:
         if test_callback is None:
             # TODO: warning
             test_callback = frame_callback
-        output_size = test_output_size(test_callback, video_input_stream, vf)
+        output_size = test_output_size(test_callback, video_input_stream, sw_format, vf)
 
     output_fps = config.output_fps or config.fps
     video_output_stream = output_container.add_stream(config.video_codec, output_fps)
@@ -603,7 +613,7 @@ def _process_video(
                     else:
                         for frame in safe_decode(packet):
                             frame.pts = None
-                            enc_packet = audio_output_stream.encode(frame)
+                            enc_packet = cast(av.AudioStream, audio_output_stream).encode(frame)
                             if enc_packet:
                                 output_container.mux(enc_packet)
             if suspend_event is not None:
@@ -773,6 +783,7 @@ def generate_video(output_path,
 def process_video_keyframes(input_path, frame_callback,
                             min_interval_sec=4., vf="",
                             title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
+    sw_format = SoftwareVideoFormat(input_path)
     input_container = av.open(input_path, **AV_READ_OPTIONS)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -785,7 +796,7 @@ def process_video_keyframes(input_path, frame_callback,
     # video_input_stream.thread_type = "AUTO"  # slow
     video_input_stream.codec_context.skip_frame = "NONKEY"
 
-    video_filter = VideoPreprocessor(video_input_stream, vf=vf)
+    video_filter = VideoPreprocessor(video_input_stream, sw_format, vf=vf)
 
     max_progress = guess_duration(video_input_stream, container_duration=container_duration, input_path=input_path)
     desc = (title if title else input_path)
@@ -814,13 +825,18 @@ def process_video_keyframes(input_path, frame_callback,
     input_container.close()
 
 
-def hook_frame(input_path,
-               frame_callback,
-               config_callback=default_config_callback,
-               title=None,
-               vf="",
-               stop_event=None, suspend_event=None, tqdm_fn=None,
-               start_time=None, end_time=None):
+def hook_frame(
+        input_path,
+        frame_callback,
+        config_callback=default_config_callback,
+        title=None,
+        vf="",
+        stop_event=None, suspend_event=None, tqdm_fn=None,
+        start_time=None, end_time=None,
+        hwaccel=None,
+        disable_software_fallback=False,
+        device="cpu",
+):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
     if isinstance(end_time, str):
@@ -829,7 +845,9 @@ def hook_frame(input_path,
             raise ValueError("end_time must be greater than start_time")
 
     sw_format = SoftwareVideoFormat(input_path)
-    input_container = av.open(input_path, **AV_READ_OPTIONS)
+    input_hwaccel = create_hwaccel(device=hwaccel, device_id=device.index,
+                                   disable_software_fallback=disable_software_fallback)
+    input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
     else:
@@ -849,7 +867,7 @@ def hook_frame(input_path,
     configure_colorspace(None, sw_format, config)
     rgb24_options = config.state["rgb24_options"]
 
-    fps_filter = VideoPreprocessor(video_input_stream, fps=config.fps, vf=vf)
+    fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
 
     desc = (title if title else input_path)
     ncols = len(desc) + 60
@@ -888,7 +906,7 @@ def hook_frame(input_path,
 def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe_only=False,
                   vf="", title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
     assert offset < 0.5, "offset must be less than 0.5"
-
+    sw_format = SoftwareVideoFormat(input_path)
     input_container = av.open(input_path, **AV_READ_OPTIONS)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -910,7 +928,7 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
         return -1
 
     max_progress = num_samples
-    video_filter = VideoPreprocessor(video_input_stream, vf=vf)
+    video_filter = VideoPreprocessor(video_input_stream, sw_format, vf=vf)
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
@@ -1155,6 +1173,8 @@ def _test_reencode():
     parser.add_argument("--batch-size", type=int, default=4, help="batch size")
     parser.add_argument("--vf", type=str, default="", help="video filter")
     parser.add_argument("--half-sbs", action="store_true", help="output 1/2 resolution")
+    parser.add_argument("--hwaccel", type=str, default=None, choices=get_supported_hwdevices(),
+                        help="hwaccel for decode")
 
     args = parser.parse_args()
     device = "cpu" if args.gpu < 0 else f"cuda:{args.gpu}"
@@ -1188,7 +1208,14 @@ def _test_reencode():
                                  max_batch_queue=args.max_workers,
                                  use_16bit=use_16bit)
 
-    process_video(args.input, args.output, config_callback=make_config, frame_callback=callback, vf=args.vf, device=device)
+    process_video(
+        args.input,
+        args.output, config_callback=make_config,
+        frame_callback=callback,
+        vf=args.vf,
+        device=device,
+        hwaccel=args.hwaccel,
+    )
 
 
 def _test_sample_frames():
