@@ -123,6 +123,7 @@ class GLCanvas(glcanvas.GLCanvas):
         self.tex_w = width
         self.tex_h = height
         self.frame = None
+        self.ready_event = None
 
         self.use_cuda = use_cuda
         self.device_id = device_id
@@ -190,7 +191,7 @@ class GLCanvas(glcanvas.GLCanvas):
         self.closed = True
         self.delete_gl()
 
-    def update_frame(self, frame):
+    def update_frame(self, frame, ready_event=None):
         if self.closed:
             return
         if not self.initialized:
@@ -206,6 +207,7 @@ class GLCanvas(glcanvas.GLCanvas):
             frame.dtype == torch.float32
         )
         self.frame = frame
+        self.ready_event = ready_event
         self.Refresh()
 
     def set_tex(self):
@@ -213,12 +215,16 @@ class GLCanvas(glcanvas.GLCanvas):
             return False
 
         frame = self.frame
+        ready_event = self.ready_event
         c, h, w = frame.shape
         self.tex_w = w
         self.tex_h = h
 
         GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
         GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, self.pbo)
+
+        if ready_event is not None and frame.is_cuda:
+            torch.cuda.current_stream(device=frame.device).wait_event(ready_event)
 
         if self.use_cuda and frame.is_cuda:
             # Ensure the frame is on the same device as the OpenGL PBO
@@ -251,6 +257,7 @@ class GLCanvas(glcanvas.GLCanvas):
         GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, 0)
 
         self.frame = None
+        self.ready_event = None
         self.fps_counter.append(time.perf_counter())
 
         return True
@@ -377,9 +384,9 @@ class LocalViewerWindow(wx.Frame):
         else:
             evt.Skip()
 
-    def update_frame(self, frame):
+    def update_frame(self, frame, ready_event=None):
         if not self.canvas.closed:
-            self.canvas.update_frame(frame)
+            self.canvas.update_frame(frame, ready_event=ready_event)
 
     def get_fps(self):
         return self.canvas.get_fps()
@@ -437,9 +444,13 @@ class LocalViewer():
 
     def set_frame_data(self, frame_data):
         with self.op_lock:
-            frame, frame_time = frame_data
+            if len(frame_data) == 2:
+                frame, frame_time = frame_data
+                ready_event = None
+            else:
+                frame, frame_time, ready_event = frame_data
             if self.window is not None and self.last_frame_time < frame_time:
-                wx.CallAfter(self.window.update_frame, frame)
+                wx.CallAfter(self.window.update_frame, frame, ready_event)
                 self.last_frame_time = frame_time
 
     def get_fps(self):

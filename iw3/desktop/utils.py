@@ -42,6 +42,20 @@ TORCH_NUM_THREADS = torch.get_num_threads()
 _jpeg_encode_lock = threading.Lock()
 
 
+def make_cuda_ready_event(frame):
+    if frame.device.type != "cuda":
+        return None
+
+    ready_event = torch.cuda.Event(blocking=False)
+    ready_event.record(torch.cuda.current_stream(device=frame.device))
+    return ready_event
+
+
+def wait_for_cuda_ready(frame, ready_event):
+    if ready_event is not None and frame.device.type == "cuda":
+        torch.cuda.current_stream(device=frame.device).wait_event(ready_event)
+
+
 def init_win32():
     if sys.platform == "win32":
         import ctypes
@@ -107,8 +121,9 @@ def fps_sleep(start_time, fps, resolution=2e-4):
         time.sleep(resolution)
 
 
-def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
+def to_jpeg_data(frame, quality, tick, gpu_jpeg=True, ready_event=None):
     bio = io.BytesIO()
+    wait_for_cuda_ready(frame, ready_event)
 
     # Thread-safe JPEG encoding with lock
     with _jpeg_encode_lock:
@@ -386,9 +401,14 @@ def iw3_desktop_main(args, init_wxapp=True):
                     else:
                         with torch.no_grad():
                             sbs_gpu_clone = sbs.detach().clone().contiguous()
-                        server.set_frame_data(lambda sbs=sbs_gpu_clone: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=False))
+                        sbs_ready_event = make_cuda_ready_event(sbs_gpu_clone)
+                        server.set_frame_data(
+                            lambda sbs=sbs_gpu_clone, ready_event=sbs_ready_event:
+                                to_jpeg_data(sbs, quality=args.stream_quality, tick=tick,
+                                             gpu_jpeg=False, ready_event=ready_event)
+                        )
                 else:
-                    server.set_frame_data((sbs, tick))
+                    server.set_frame_data((sbs, tick, make_cuda_ready_event(sbs)))
 
                 if count > 1 and tick - last_status_time > 1:
                     last_status_time = tick
