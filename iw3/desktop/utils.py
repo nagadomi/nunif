@@ -371,6 +371,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         count = last_status_time = 0
         fps_counter = deque(maxlen=120)
         prev_divergence = args.divergence
+        release_frame = getattr(screenshot_thread, "release_frame", None)
 
         while True:
             with args.state["args_lock"]:
@@ -378,7 +379,11 @@ def iw3_desktop_main(args, init_wxapp=True):
                 frame = screenshot_thread.get_frame()
                 if frame is None:
                     break
-                sbs = IW3U.process_image(frame, args, depth_model, side_model, autocrop_uncrop=True)
+                try:
+                    sbs = IW3U.process_image(frame, args, depth_model, side_model, autocrop_uncrop=True)
+                finally:
+                    if release_frame is not None:
+                        release_frame(frame)
 
                 if not args.local_viewer:
                     if args.gpu_jpeg:

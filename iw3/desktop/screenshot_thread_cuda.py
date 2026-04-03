@@ -34,11 +34,18 @@ class ScreenshotThreadWCCUDA(threading.Thread):
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
         self.frame = None
+        self.in_use_frame = None
         self.frame_unset_event = threading.Event()
         self.frame_set_event = threading.Event()
+        self.frame_released_event = threading.Event()
         self.stop_event = threading.Event()
         self.fps_counter = deque(maxlen=120)
-        self.frame_buffer = torch.zeros((3, self.frame_height, self.frame_width), device=device, dtype=torch.float32)
+        self.frame_buffers = [
+            torch.zeros((3, self.frame_height, self.frame_width), device=device, dtype=torch.float32),
+            torch.zeros((3, self.frame_height, self.frame_width), device=device, dtype=torch.float32),
+        ]
+        self.free_buffers = self.frame_buffers.copy()
+        self.frame_released_event.set()
         self.frame_count = 0
         self.tick = 0
 
@@ -61,6 +68,19 @@ class ScreenshotThreadWCCUDA(threading.Thread):
 
         @capture.event
         def on_frame_arrived(frame, capture_control):
+            frame_buffer = None
+            while frame_buffer is None:
+                with self.frame_lock:
+                    if self.free_buffers:
+                        frame_buffer = self.free_buffers.pop()
+                        if not self.free_buffers:
+                            self.frame_released_event.clear()
+                if frame_buffer is None:
+                    if self.stop_event.is_set():
+                        capture_control.stop()
+                        return
+                    self.frame_released_event.wait()
+
             # BGRA HWC -> RGB CHW
             source_frame = frame.frame_buffer[..., [2, 1, 0]].permute(2, 0, 1)
             if self.window_name and (self.crop_top > 0 or self.crop_left > 0 or self.crop_right > 0 or self.crop_bottom > 0):
@@ -71,24 +91,24 @@ class ScreenshotThreadWCCUDA(threading.Thread):
                 right = w - self.crop_right if self.crop_right > 0 else w
                 source_frame = source_frame[:, top:bottom, left:right]
 
-            if self.frame_buffer.shape != source_frame.shape:
+            if frame_buffer.shape != source_frame.shape:
                 if self.window_name is not None:
-                    min_h = min(self.frame_buffer.shape[1], source_frame.shape[1])
-                    min_w = min(self.frame_buffer.shape[2], source_frame.shape[2])
+                    min_h = min(frame_buffer.shape[1], source_frame.shape[1])
+                    min_w = min(frame_buffer.shape[2], source_frame.shape[2])
                     if self.frame_count % 30 == 0:
-                        self.frame_buffer[:] = 0.0
+                        frame_buffer[:] = 0.0
 
-                    self.frame_buffer[:, 0:min_h, 0:min_w].copy_(source_frame[:, 0:min_h, 0:min_w]).div_(255.0)
+                    frame_buffer[:, 0:min_h, 0:min_w].copy_(source_frame[:, 0:min_h, 0:min_w]).div_(255.0)
                     self.frame_count += 1
                     if self.frame_count > 0xffff:
                         self.frame_count = 0
                 else:
-                    self.frame_buffer.copy_(resize_frame(source_frame, size=self.frame_buffer.shape[-2:]))
+                    frame_buffer.copy_(resize_frame(source_frame, size=frame_buffer.shape[-2:]))
             else:
-                self.frame_buffer.copy_(source_frame).div_(255.0)
+                frame_buffer.copy_(source_frame).div_(255.0)
 
             with self.frame_lock:
-                self.frame = self.frame_buffer
+                self.frame = frame_buffer
                 self.frame_set_event.set()
                 self.frame_unset_event.clear()
 
@@ -101,6 +121,12 @@ class ScreenshotThreadWCCUDA(threading.Thread):
 
             if self.stop_event.is_set():
                 capture_control.stop()
+            else:
+                # Keep ownership of frame_buffer on the capture side until the
+                # processing thread has consumed the frame.
+                self.frame_unset_event.wait()
+                if self.stop_event.is_set():
+                    capture_control.stop()
 
         @capture.event
         def on_closed():
@@ -121,6 +147,7 @@ class ScreenshotThreadWCCUDA(threading.Thread):
         with self.frame_lock:
             frame = self.frame
             self.frame = None
+            self.in_use_frame = frame
             self.frame_set_event.clear()
             self.frame_unset_event.set()
 
@@ -128,6 +155,16 @@ class ScreenshotThreadWCCUDA(threading.Thread):
             raise RuntimeError("thread is dead")
 
         return frame
+
+    def release_frame(self, frame):
+        if frame is None:
+            return
+
+        with self.frame_lock:
+            if self.in_use_frame is frame:
+                self.free_buffers.append(frame)
+                self.in_use_frame = None
+                self.frame_released_event.set()
 
     def get_fps(self):
         with self.fps_lock:
@@ -140,5 +177,6 @@ class ScreenshotThreadWCCUDA(threading.Thread):
     def stop(self):
         self.stop_event.set()
         self.frame_unset_event.set()
+        self.frame_released_event.set()
         if self.ident is not None:
             self.join(timeout=4)
