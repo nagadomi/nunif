@@ -122,6 +122,7 @@ def _hevc_deadlock_test():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True,
                         help="hevc input video file")
+    parser.add_argument("--hwaccel", type=str, help="hwaccel")
     args = parser.parse_args()
 
     for i in range(1, 60):
@@ -137,6 +138,7 @@ def _hevc_deadlock_test():
                 suspend_event=None,
                 tqdm_fn=None,
                 tqdm_title=None,
+                hwaccel=args.hwaccel,
             )
             print(i, j, pts)
 

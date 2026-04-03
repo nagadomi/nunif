@@ -1,5 +1,10 @@
 import mimetypes
 import os
+import av
+
+
+# NOTE: This appears to be required to avoid a deadlock with HWAccel and thread_type="AUTO".
+av.logging.set_level(None)
 
 
 # Add video mimetypes that does not exist in mimetypes
