@@ -9,6 +9,8 @@ import os
 from collections import deque
 import ctypes
 
+from .display_mode import LocalViewerDisplayModeController
+
 
 POLLING_INTERVAL = 1.0 / 240.0
 
@@ -351,27 +353,76 @@ class GLCanvas(glcanvas.GLCanvas):
 class LocalViewerWindow(wx.Frame):
     def __init__(self, width, height, size=(960, 540),
                  use_cuda=False, device_id=0,
-                 uncap_fps=False, polling_interval=POLLING_INTERVAL):
+                 uncap_fps=False, polling_interval=POLLING_INTERVAL,
+                 fullscreen_display_mode=False):
         super().__init__(None, title="iw3-desktop: Local Viewer",
                          size=size, style=wx.DEFAULT_FRAME_STYLE | wx.CLIP_CHILDREN)
         self.canvas = GLCanvas(self, width=width, height=height,
                                use_cuda=use_cuda, device_id=device_id,
                                uncap_fps=uncap_fps, polling_interval=polling_interval)
+        self.fullscreen_display_mode = fullscreen_display_mode
+        self.display_mode_controller = LocalViewerDisplayModeController()
+        self.fullscreen_reentry_token = 0
+        self.fullscreen_reentry_pending = False
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_char)
 
     def toggle_fullscreen(self):
         is_full = self.IsFullScreen()
-        self.ShowFullScreen(not is_full, style=wx.FULLSCREEN_ALL)
+        target_full = not is_full
+        self.ShowFullScreen(target_full, style=wx.FULLSCREEN_ALL)
+
+        if not self.fullscreen_display_mode:
+            return
+
+        if target_full:
+            self.enable_display_mode_for_fullscreen()
+        else:
+            self.cancel_fullscreen_reentry()
+            self.restore_display_mode()
 
     def escape_fullscreen(self):
-        self.ShowFullScreen(False, style=wx.FULLSCREEN_ALL)
+        if self.IsFullScreen():
+            self.ShowFullScreen(False, style=wx.FULLSCREEN_ALL)
+        if self.fullscreen_display_mode:
+            self.cancel_fullscreen_reentry()
+            self.restore_display_mode()
+
+    def enable_display_mode_for_fullscreen(self):
+        if self.display_mode_controller.is_active():
+            return
+
+        try:
+            if self.display_mode_controller.activate_for_window(self):
+                self.fullscreen_reentry_token += 1
+                self.fullscreen_reentry_pending = True
+                wx.CallLater(250, self.ensure_fullscreen_after_mode_change, self.fullscreen_reentry_token)
+        except Exception as e:
+            print(f"Failed to enable Local Viewer display mode: {e}", file=sys.stderr)
+
+    def cancel_fullscreen_reentry(self):
+        self.fullscreen_reentry_token += 1
+        self.fullscreen_reentry_pending = False
+
+    def ensure_fullscreen_after_mode_change(self, token):
+        if token != self.fullscreen_reentry_token or not self.fullscreen_reentry_pending:
+            return
+
+        self.fullscreen_reentry_pending = False
+        if self.IsShown() and not self.IsFullScreen():
+            self.ShowFullScreen(True, style=wx.FULLSCREEN_ALL)
+
+    def restore_display_mode(self):
+        try:
+            self.display_mode_controller.restore()
+        except Exception as e:
+            print(f"Failed to restore Local Viewer display mode: {e}", file=sys.stderr)
 
     def on_char(self, evt):
         code = evt.GetKeyCode()
         if code == wx.WXK_ESCAPE and self.IsFullScreen():
-            self.toggle_fullscreen()
+            self.escape_fullscreen()
         elif code == wx.WXK_F11:
             self.toggle_fullscreen()
         else:
@@ -385,6 +436,11 @@ class LocalViewerWindow(wx.Frame):
         return self.canvas.get_fps()
 
     def on_close(self, evt):
+        self.cancel_fullscreen_reentry()
+        try:
+            self.display_mode_controller.close()
+        except Exception as e:
+            print(f"Failed to close Local Viewer display mode controller: {e}", file=sys.stderr)
         self.canvas.destroy()
         evt.Skip()
 
@@ -396,6 +452,7 @@ class LocalViewer():
     def __init__(self, lock, width, height,
                  use_cuda=False, device_id=0,
                  uncap_fps=False, polling_interval=POLLING_INTERVAL,
+                 fullscreen_display_mode=False,
                  **_unsupported_kwargs):
         self.width = width
         self.height = height
@@ -408,6 +465,7 @@ class LocalViewer():
         self.device_id = device_id
         self.uncap_fps = uncap_fps
         self.polling_interval = polling_interval
+        self.fullscreen_display_mode = fullscreen_display_mode
 
     def stop(self):
         with self.op_lock:
@@ -422,7 +480,8 @@ class LocalViewer():
             if self.window is None:
                 self.window = LocalViewerWindow(width=self.width, height=self.height,
                                                 use_cuda=self.use_cuda, device_id=self.device_id,
-                                                uncap_fps=self.uncap_fps, polling_interval=self.polling_interval)
+                                                uncap_fps=self.uncap_fps, polling_interval=self.polling_interval,
+                                                fullscreen_display_mode=self.fullscreen_display_mode)
                 self.window.Show()
                 self.initialized = True
 
