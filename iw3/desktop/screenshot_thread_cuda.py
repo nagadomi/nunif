@@ -22,6 +22,8 @@ class ScreenshotThreadWCCUDA(threading.Thread):
                  crop_top=0, crop_left=0, crop_right=0, crop_bottom=0,
                  **_ignore_unsupported_kwargs):
         super().__init__(daemon=True)
+        if device.type != "cuda":
+            raise RuntimeError("wc_cuda requires a CUDA device")
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.monitor_index = monitor_index
@@ -34,13 +36,26 @@ class ScreenshotThreadWCCUDA(threading.Thread):
         self.frame_lock = threading.Lock()
         self.fps_lock = threading.Lock()
         self.frame = None
-        self.frame_unset_event = threading.Event()
         self.frame_set_event = threading.Event()
         self.stop_event = threading.Event()
         self.fps_counter = deque(maxlen=120)
-        self.frame_buffer = torch.zeros((3, self.frame_height, self.frame_width), device=device, dtype=torch.float32)
-        self.frame_count = 0
         self.tick = 0
+
+    def prepare_frame(self, source_frame):
+        output_size = (self.frame_height, self.frame_width)
+        if source_frame.shape[-2:] != output_size:
+            if self.window_name is not None:
+                # Window capture can fluctuate by a few pixels due to window effects or resizing.
+                frame = torch.zeros((3, *output_size), device=self.device, dtype=torch.float32)
+                min_h = min(frame.shape[1], source_frame.shape[1])
+                min_w = min(frame.shape[2], source_frame.shape[2])
+                frame[:, 0:min_h, 0:min_w].copy_(source_frame[:, 0:min_h, 0:min_w])
+                frame.div_(255.0)
+            else:
+                frame = resize_frame(source_frame, size=output_size)
+        else:
+            frame = source_frame.float().div_(255.0)
+        return frame
 
     def run(self):
         from wc_cuda import WindowsCapture
@@ -71,26 +86,11 @@ class ScreenshotThreadWCCUDA(threading.Thread):
                 right = w - self.crop_right if self.crop_right > 0 else w
                 source_frame = source_frame[:, top:bottom, left:right]
 
-            if self.frame_buffer.shape != source_frame.shape:
-                if self.window_name is not None:
-                    min_h = min(self.frame_buffer.shape[1], source_frame.shape[1])
-                    min_w = min(self.frame_buffer.shape[2], source_frame.shape[2])
-                    if self.frame_count % 30 == 0:
-                        self.frame_buffer[:] = 0.0
-
-                    self.frame_buffer[:, 0:min_h, 0:min_w].copy_(source_frame[:, 0:min_h, 0:min_w]).div_(255.0)
-                    self.frame_count += 1
-                    if self.frame_count > 0xffff:
-                        self.frame_count = 0
-                else:
-                    self.frame_buffer.copy_(resize_frame(source_frame, size=self.frame_buffer.shape[-2:]))
-            else:
-                self.frame_buffer.copy_(source_frame).div_(255.0)
+            prepared_frame = self.prepare_frame(source_frame)
 
             with self.frame_lock:
-                self.frame = self.frame_buffer
+                self.frame = prepared_frame
                 self.frame_set_event.set()
-                self.frame_unset_event.clear()
 
             now = time.perf_counter()
             if self.tick > 0:
@@ -111,7 +111,6 @@ class ScreenshotThreadWCCUDA(threading.Thread):
             capture.start()
         finally:
             self.frame_set_event.set()
-            self.frame_unset_event.clear()
             time.sleep(0.1)
 
     def get_frame(self):
@@ -122,7 +121,6 @@ class ScreenshotThreadWCCUDA(threading.Thread):
             frame = self.frame
             self.frame = None
             self.frame_set_event.clear()
-            self.frame_unset_event.set()
 
         if frame is None:
             raise RuntimeError("thread is dead")
@@ -139,6 +137,5 @@ class ScreenshotThreadWCCUDA(threading.Thread):
 
     def stop(self):
         self.stop_event.set()
-        self.frame_unset_event.set()
         if self.ident is not None:
             self.join(timeout=4)
