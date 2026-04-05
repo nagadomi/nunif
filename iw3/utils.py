@@ -309,7 +309,12 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         convergence = args.convergence
         depth = get_mapper(args.mapper)(depth)
 
-    if args.method in {"grid_sample", "backward"}:
+    if args.method == "NULL":
+        left_eye, right_eye = im.clone(), im.clone()
+        if not batch:
+            left_eye = left_eye.squeeze(0)
+            right_eye = right_eye.squeeze(0)
+    elif args.method in {"grid_sample", "backward"}:
         left_eye, right_eye = apply_divergence_grid_sample(
             im, depth,
             args.divergence, convergence=convergence,
@@ -1959,7 +1964,8 @@ def create_parser(required_true=True):
                                  "mask_mlbw_l2", "mlbw_l2_inpaint",
                                  "row_flow", "row_flow_sym",
                                  "row_flow_v3", "row_flow_v3_sym",
-                                 "row_flow_v2"],
+                                 "row_flow_v2",
+                                 "NULL"],
                         help="left-right divergence method")
     parser.add_argument("--synthetic-view", type=str, default="both", choices=["both", "right", "left"],
                         help=("the side that generates synthetic view."
