@@ -394,9 +394,10 @@ class ColorTransform:
                 plane, "__dlpack__"
             ):
                 if i == 0:
-                    # NOTE: Ensure hardware decoder has finished writing to the planes.
-                    #       This is required, otherwise green frames may occur.
-                    torch.cuda.default_stream().synchronize()
+                    # Ensure hardware decoder has finished writing to the planes.
+                    if torch.cuda.default_stream() != torch.cuda.current_stream():
+                        # hwcontext_cuda uses default stream(0x0)
+                        torch.cuda.default_stream().synchronize()
 
                 t = torch.from_dlpack(plane.__dlpack__())
 
@@ -1060,12 +1061,13 @@ class OutputTransform:
         y_p, uv_p = ColorTransform.to_yuv_planes(y, u, v, out_format=internal_pix_fmt)
 
         # Ensure PyTorch has finished writing to y_p and uv_p
-        torch.cuda.current_stream().synchronize()
+        if torch.cuda.default_stream() != torch.cuda.current_stream():
+            torch.cuda.current_stream().synchronize()
 
         frame = av.VideoFrame.from_dlpack(
             (y_p, uv_p),
             format=internal_pix_fmt,
-            primary_ctx=False,
+            primary_ctx=True,
             cuda_context=self.cuda_context,
         )
         frame.pts = None
@@ -1182,7 +1184,7 @@ def configure_colorspace(
         "p010le",
     }:
         device_id = config.device.index if config.device is not None else 0
-        cuda_context = CudaContext(device_id=device_id, primary_ctx=False)
+        cuda_context = CudaContext(device_id=device_id, primary_ctx=True)
 
     config.state["reformatter"] = OutputTransform(
         dst_pix_fmt=pix_fmt,

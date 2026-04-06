@@ -20,7 +20,12 @@ from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.models.utils import check_compile_support
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
-from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc, has_qsv
+from nunif.utils.video import (
+    VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS,
+    has_nvenc,
+    has_qsv,
+    pyav_init_cuda_primary_context,
+)
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.git import get_current_branch
 from nunif.utils.home_dir import ensure_home_dir
@@ -1813,5 +1818,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pyav_init_cuda_primary_context()
     init_win32_dpi()
     main()

@@ -41,7 +41,7 @@ def create_hwaccel(
             device_type="cuda",
             device=device_id,
             is_hw_owned=True,
-            options={"primary_ctx": "0"},
+            options={"primary_ctx": "1"},
             allow_software_fallback=allow_software_fallback,
         )
     elif device == "cuda_hwdownload":
@@ -52,7 +52,7 @@ def create_hwaccel(
             device_type="cuda",
             device=device_id,
             is_hw_owned=False,
-            options={"primary_ctx": "0"},
+            options={"primary_ctx": "1"},
             allow_software_fallback=allow_software_fallback,
         )
     else:

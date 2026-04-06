@@ -524,11 +524,12 @@ def _process_video(
 
     output_hwaccel = None
     if config.video_codec in {"h264_nvenc", "hevc_nvenc"}:
+        # It seems this isn't actually necessary.
         if device.type == "cuda":
             device_id = device.index if device.index is not None else 0
         else:
             device_id = None
-        output_hwaccel = HWAccel(device_type="cuda", device=device_id, options={"primary_ctx": "0"})
+        output_hwaccel = HWAccel(device_type="cuda", device=device_id, options={"primary_ctx": "1"})
     output_container = av.open(output_path_tmp, mode="w", options=config.container_options, hwaccel=output_hwaccel)
 
     vf = update_hdr2sdr_video_filter(
