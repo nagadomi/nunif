@@ -11,9 +11,9 @@ TEST_YAML=${OUTPUT_DIR}/sd/iw3_export.yml
 H264_ENC=h264_nvenc
 H265_ENC=hevc_nvenc
 
-#HWACCEL="--hwaccel cuda"
-#HWACCEL="--hwaccel cuda_download"
-HWACCEL="--hwaccel cuda_download --disable-software-fallback"
+HWACCEL="--hwaccel cuda"
+#HWACCEL="--hwaccel cuda_hwdownload"
+#HWACCEL="--hwaccel cuda_hwdownload --disable-software-fallback"
 #HWACCEL="--hwaccel vaapi --disable-software-fallback"
 
 set -x

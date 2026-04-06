@@ -2,28 +2,42 @@ import av
 from fractions import Fraction
 from .video_filter.fps import FPSFilter
 from .video_filter.av_filter_graph import AVFilterGraph
-from .color_transform import SoftwareVideoFormat
-from typing import Optional, List
+from .video_filter.tensor_filter_graph import TensorFilterGraph
+from .color_transform import SoftwareVideoFormat, InputTransform
+from typing import Optional, List, Union
 
 
-class VideoPreprocessor():
+class VideoPreprocessor:
+    fps_filter: Optional[FPSFilter]
+    input_transform: Optional[InputTransform]
+    video_filter: Optional[Union[TensorFilterGraph, AVFilterGraph]]
+
     def __init__(
-            self,
-            video_stream: av.VideoStream,
-            sw_format: SoftwareVideoFormat,
-            fps: Optional[Fraction] = None,
-            vf: str = "",
-            deny_filters: List[str] = []
+        self,
+        video_stream: av.VideoStream,
+        sw_format: SoftwareVideoFormat,
+        fps: Optional[Fraction] = None,
+        vf: str = "",
+        deny_filters: List[str] = [],
+        input_transform: Optional[InputTransform] = None,
     ):
         self.fps_filter = None
         self.video_filter = None
+        self.input_transform = input_transform
 
         if fps is not None:
             if video_stream.guessed_rate is None or video_stream.time_base is None:
                 raise RuntimeError("guessed_rate/time_base is None")
-            self.fps_filter = FPSFilter(fps, video_stream.time_base, video_stream.guessed_rate)
+            self.fps_filter = FPSFilter(
+                fps, video_stream.time_base, video_stream.guessed_rate
+            )
         if vf:
-            self.video_filter = AVFilterGraph(video_stream, sw_format, vf, deny_filters)
+            if self.input_transform is not None:
+                self.video_filter = TensorFilterGraph(vf, deny_filters=deny_filters)
+            else:
+                self.video_filter = AVFilterGraph(
+                    video_stream, sw_format, vf, deny_filters
+                )
 
     def update(self, frame):
         if self.fps_filter is not None:
@@ -33,6 +47,9 @@ class VideoPreprocessor():
 
         out_frames = []
         for frame in frames:
+            if self.input_transform is not None:
+                frame = self.input_transform(frame)
+
             if self.video_filter is not None:
                 frame = self.video_filter.update(frame)
                 if frame is not None:
@@ -50,6 +67,9 @@ class VideoPreprocessor():
 
         out_frames = []
         for frame in frames:
+            if self.input_transform is not None:
+                frame = self.input_transform(frame)
+
             if self.video_filter is not None:
                 frame = self.video_filter.update(frame)
                 if frame is not None:

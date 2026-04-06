@@ -114,7 +114,7 @@ class SoftwareVideoFormat:
             self.time_base = stream.time_base
             self.use_16bit = stream.format.components[0].bits > 8
 
-    def guess_pix_fmt(self, stream_pix_fmt: str):
+    def guess_pix_fmt(self, stream_pix_fmt: str) -> str:
         if stream_pix_fmt in HW_PIX_FORMATS:
             # TODO: Need investigation
             if self.format.name in {"yuv420p", "yuvj420p"}:
@@ -266,13 +266,20 @@ class SoftwareVideoFormat:
         )
 
     def get_reformat_options(
-        self, target_colorspace: Union[Colorspace, int]
+        self,
+        target_colorspace: Union[Colorspace, int],
+        target_color_primaries: Union[ColorPrimaries, int],
+        target_color_trc: Union[ColorTrc, int],
     ) -> Dict[str, Any]:
         """Generate options for ColorTransform.to_tensor or Transform."""
         return {
-            "src_colorspace": self.guess_colorspace(),
-            "src_color_range": self.guess_color_range(),
+            "src_colorspace": self.colorspace,
+            "src_color_primaries": self.color_primaries,
+            "src_color_trc": self.color_trc,
+            "src_color_range": self.color_range,
             "dst_colorspace": target_colorspace,
+            "dst_color_primaries": target_color_primaries,
+            "dst_color_trc": target_color_trc,
             "dst_color_range": ColorRange.JPEG,
         }
 
@@ -286,7 +293,9 @@ class ColorTransform:
     }
 
     # Matrix cache
-    _MATRIX_CACHE: Dict[Tuple[Any, ...], torch.Tensor] = {}
+    _MATRIX_CACHE: Dict[
+        Tuple[Any, ...], Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]
+    ] = {}
 
     # Format classification
     YUV_PLANAR: Set[str] = {
@@ -362,6 +371,7 @@ class ColorTransform:
     VERIFIED_FORMATS: Set[str] = {"yuv420p", "yuv444p", "yuv420p10le"}
 
     @staticmethod
+    @torch.no_grad()
     def to_tensor(
         frame: av.VideoFrame,
         dst_colorspace: Optional[Union[Colorspace, int]] = None,
@@ -373,7 +383,7 @@ class ColorTransform:
         """Convert PyAV VideoFrame to CHW RGB tensor."""
         src_fmt: str = frame.format.name
         fmt: str = src_fmt
-        planes: List[torch.Tensor] = []
+        planes_f: List[torch.Tensor] = []
         bpp: int = (
             ColorTransform.RGB_PACKED[fmt][0] if fmt in ColorTransform.RGB_PACKED else 1
         )
@@ -383,7 +393,13 @@ class ColorTransform:
             if src_fmt in ColorTransform.DLPACK_SUPPORTED_FORMATS and hasattr(
                 plane, "__dlpack__"
             ):
+                if i == 0:
+                    # NOTE: Ensure hardware decoder has finished writing to the planes.
+                    #       This is required, otherwise green frames may occur.
+                    torch.cuda.default_stream().synchronize()
+
                 t = torch.from_dlpack(plane.__dlpack__())
+
                 # TODO: Use sw_formt
                 if t.dtype == torch.uint8:
                     fmt = "nv12"
@@ -419,7 +435,11 @@ class ColorTransform:
             assert t is not None
             if str(t.device) != str(device):
                 t = t.to(device)
-            planes.append(t)
+
+            # Optimization: Convert to dtype immediately and don't keep the original (DLPack) tensor.
+            # This helps to free the underlying VideoFrame/hardware surface as soon as possible.
+            planes_f.append(t.to(dtype))
+            del t
 
         src_colorspace: Union[Colorspace, int] = frame.colorspace
         src_color_range: Union[ColorRange, int] = frame.color_range
@@ -443,9 +463,6 @@ class ColorTransform:
         else:
             div = 255.0
 
-        # Step 1: Normalize planes and convert to target float type
-        planes_f: List[torch.Tensor] = [p.to(dtype) / div for p in planes]
-
         rgb: torch.Tensor
         if fmt in ColorTransform.YUV_PLANAR:
             y, u, v = [p.unsqueeze(0).unsqueeze(0) for p in planes_f[:3]]
@@ -455,6 +472,7 @@ class ColorTransform:
                 v,
                 colorspace=src_colorspace,
                 color_range=src_color_range,
+                div=div,
                 mode=upsample_mode,
             )
         elif fmt in ColorTransform.YUV_SEMI_PLANAR:
@@ -470,17 +488,20 @@ class ColorTransform:
                 v,
                 colorspace=src_colorspace,
                 color_range=src_color_range,
+                div=div,
                 mode=upsample_mode,
             )
         elif fmt in ColorTransform.RGB_PLANAR:
-            g, b, r = [p.unsqueeze(0).unsqueeze(0) for p in planes_f[:3]]
+            g, b, r = [p.unsqueeze(0).unsqueeze(0).div_(div) for p in planes_f[:3]]
             rgb = torch.cat([r, g, b], dim=1)
         elif fmt in ColorTransform.RGB_PACKED:
             _, order = ColorTransform.RGB_PACKED[fmt]
             p0 = planes_f[0]
             if p0.dim() == 2:
                 p0 = p0.reshape(frame.height, frame.width, bpp)
-            channels = [p0[:, :, idx].unsqueeze(0).unsqueeze(0) for idx in order]
+            channels = [
+                p0[:, :, idx].unsqueeze(0).unsqueeze(0).div_(div) for idx in order
+            ]
             rgb = torch.cat(channels, dim=1)
         else:
             raise ValueError(f"Unsupported format for to_tensor: {fmt}")
@@ -508,6 +529,7 @@ class ColorTransform:
                     v_rt,
                     colorspace=dst_colorspace,
                     color_range=dst_color_range,
+                    div=1.0,  # rgb_to_yuv returns [0, 1] normalized planes
                     mode=upsample_mode,
                 )
 
@@ -531,31 +553,70 @@ class ColorTransform:
         device: torch.device,
         dtype: torch.dtype,
         direction: str = "yuv2rgb",
-    ) -> torch.Tensor:
-        key = (direction, int(colorspace), str(device), dtype)
+        color_range: Optional[Union[ColorRange, int]] = None,
+        div: float = 255.0,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        key = (
+            direction,
+            int(colorspace),
+            int(color_range) if color_range is not None else None,
+            str(device),
+            dtype,
+            div,
+        )
         if key in ColorTransform._MATRIX_CACHE:
             return ColorTransform._MATRIX_CACHE[key]
 
         kr, kb = ColorTransform.get_coeffs(colorspace)
         kg = 1.0 - kr - kb
 
-        matrix: List[List[float]]
         if direction == "yuv2rgb":
-            matrix = [
+            assert color_range is not None
+            # YUV to RGB matrix (for normalized Y, U, V in [0, 1] and centered U, V)
+            m = [
                 [1.0, 0.0, 2.0 * (1.0 - kr)],
                 [1.0, -kb * 2.0 * (1.0 - kb) / kg, -kr * 2.0 * (1.0 - kr) / kg],
                 [1.0, 2.0 * (1.0 - kb), 0.0],
             ]
-        else:  # rgb2yuv
-            matrix = [
+            matrix = torch.tensor(m, device=device, dtype=dtype)
+
+            # Range and normalization adjustment
+            offsets: torch.Tensor
+            gains: torch.Tensor
+            if color_range == ColorRange.JPEG:
+                offsets = torch.tensor(
+                    [0.0, 128.0 / 255.0, 128.0 / 255.0], device=device, dtype=dtype
+                )
+                gains = torch.tensor([1.0, 1.0, 1.0], device=device, dtype=dtype)
+            else:
+                offsets = torch.tensor(
+                    [16.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0],
+                    device=device,
+                    dtype=dtype,
+                )
+                gains = torch.tensor(
+                    [255.0 / 219.0, 255.0 / 224.0, 255.0 / 224.0],
+                    device=device,
+                    dtype=dtype,
+                )
+
+            gains = gains / div
+            weight = matrix * gains.unsqueeze(0)
+            bias = -torch.mv(weight * div, offsets)
+            weight = weight.view(3, 3, 1, 1)
+            res_y2r = (weight, bias)
+            ColorTransform._MATRIX_CACHE[key] = res_y2r
+            return res_y2r
+        else:
+            # rgb2yuv
+            m = [
                 [kr, kg, kb],
                 [-kr / (2.0 * (1.0 - kb)), -kg / (2.0 * (1.0 - kb)), 0.5],
                 [0.5, -kg / (2.0 * (1.0 - kr)), -kb / (2.0 * (1.0 - kr))],
             ]
-
-        weight = torch.tensor(matrix, device=device, dtype=dtype).view(3, 3, 1, 1)
-        ColorTransform._MATRIX_CACHE[key] = weight
-        return weight
+            weight_r2y = torch.tensor(m, device=device, dtype=dtype).view(3, 3, 1, 1)
+            ColorTransform._MATRIX_CACHE[key] = weight_r2y
+            return weight_r2y
 
     @staticmethod
     def yuv_to_rgb(
@@ -564,38 +625,47 @@ class ColorTransform:
         v: torch.Tensor,
         colorspace: Union[Colorspace, int] = Colorspace.ITU709,
         color_range: Union[ColorRange, int] = ColorRange.MPEG,
+        div: float = 255.0,
         mode: str = "bilinear",
     ) -> torch.Tensor:
+        res = ColorTransform._get_matrix(
+            colorspace, y.device, y.dtype, "yuv2rgb", color_range, div
+        )
+        assert isinstance(res, tuple)
+        weight, bias = res
+
+        # Optimization: Process planes sequentially to minimize peak VRAM.
+        # 1. Start with Y plane
+        rgb = F.conv2d(y, weight[:, 0:1])
+
+        # 2. Interpolate and add U plane
         if u.shape[-2:] != y.shape[-2:]:
-            if mode == "nearest":
-                u = F.interpolate(u, size=y.shape[-2:], mode="nearest")
-                v = F.interpolate(v, size=y.shape[-2:], mode="nearest")
-            else:
-                u = F.interpolate(
-                    u, size=y.shape[-2:], mode="bilinear", align_corners=False
-                )
-                v = F.interpolate(
-                    v, size=y.shape[-2:], mode="bilinear", align_corners=False
-                )
+            u = F.interpolate(
+                u,
+                size=y.shape[-2:],
+                mode=mode,
+                align_corners=False if mode == "bilinear" else None,
+            )
+        rgb.add_(F.conv2d(u, weight[:, 1:2]))
+        del u
 
-        y_n: torch.Tensor
-        u_n: torch.Tensor
-        v_n: torch.Tensor
-        if color_range == ColorRange.JPEG:
-            y_n, u_n, v_n = y, u - 0.5, v - 0.5
-        else:
-            # TV Range: [16/255, 235/255] -> [0, 1]
-            y_n = (y - (16.0 / 255.0)) * (255.0 / 219.0)
-            u_n = (u - (128.0 / 255.0)) * (255.0 / 224.0)
-            v_n = (v - (128.0 / 255.0)) * (255.0 / 224.0)
+        # 3. Interpolate and add V plane
+        if v.shape[-2:] != y.shape[-2:]:
+            v = F.interpolate(
+                v,
+                size=y.shape[-2:],
+                mode=mode,
+                align_corners=False if mode == "bilinear" else None,
+            )
+        rgb.add_(F.conv2d(v, weight[:, 2:3]))
+        del v
 
-        # Batch 1x1 Convolution for fast matrix multiplication
-        weight = ColorTransform._get_matrix(colorspace, y.device, y.dtype, "yuv2rgb")
-        yuv = torch.cat([y_n, u_n, v_n], dim=1)
-        rgb = F.conv2d(yuv, weight)
-        return rgb.clamp(0.0, 1.0)
+        # 4. Add Bias and Clamp
+        rgb.add_(bias.view(1, 3, 1, 1))
+        return rgb.clamp_(0.0, 1.0)
 
     @staticmethod
+    @torch.no_grad()
     def rgb_to_yuv(
         rgb: torch.Tensor,
         colorspace: Union[Colorspace, int] = Colorspace.ITU709,
@@ -606,6 +676,7 @@ class ColorTransform:
         weight = ColorTransform._get_matrix(
             colorspace, rgb.device, rgb.dtype, "rgb2yuv"
         )
+        assert isinstance(weight, torch.Tensor)
         yuv_n = F.conv2d(rgb, weight)
 
         y_n, u_n, v_n = yuv_n[:, 0:1], yuv_n[:, 1:2], yuv_n[:, 2:3]
@@ -681,6 +752,7 @@ class TensorFrame:
     color_trc: Union[ColorTrc, int]
     color_range: Union[ColorRange, int]
     side_data: Any
+    use_16bit: bool
 
     def __init__(
         self,
@@ -693,6 +765,7 @@ class TensorFrame:
         color_trc: Union[ColorTrc, int],
         color_range: Union[ColorRange, int],
         side_data: Any,
+        use_16bit: bool,
     ) -> None:
         self.planes = planes
         self.pts = pts
@@ -703,6 +776,7 @@ class TensorFrame:
         self.color_trc = color_trc
         self.color_range = color_range
         self.side_data = side_data
+        self.use_16bit = use_16bit
 
     @property
     def width(self) -> int:
@@ -712,14 +786,39 @@ class TensorFrame:
     def height(self) -> int:
         return self.planes.shape[-2]
 
+    def to(self, *args: Any, **kwargs: Any) -> "TensorFrame":
+        self.planes = self.planes.to(*args, **kwargs)
+        return self
 
-def pix_fmt_requires_16bit(pix_fmt):
+    def to_bchw(self) -> torch.Tensor:
+        if self.planes.ndim == 4:
+            return self.planes
+        else:
+            assert self.planes.ndim == 3
+            return self.planes.unsqueeze(0)
+
+    def to_chw(self) -> torch.Tensor:
+        if self.planes.ndim == 3:
+            return self.planes
+        else:
+            assert self.planes.ndim == 4 and self.planes.shape[0] == 1
+            return self.planes.squeeze(0)
+
+
+def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
     return pix_fmt in {
-        "yuv420p10le", "p010le",
-        "yuv422p10le", "yuv444p10le",
-        "yuv420p12le", "yuv422p12le", "yuv444p12le",
+        "yuv420p10le",
+        "p010le",
+        "yuv422p10le",
+        "yuv444p10le",
+        "yuv420p12le",
+        "yuv422p12le",
+        "yuv444p12le",
         "yuv444p16le",
-        "gbrp16le", "gbrp12le", "gbrp10le", "rgb48le",
+        "gbrp16le",
+        "gbrp12le",
+        "gbrp10le",
+        "rgb48le",
     }
 
 
@@ -733,7 +832,6 @@ class InputTransform:
     src_color_primaries: Union[ColorPrimaries, int]
     src_color_trc: Union[ColorTrc, int]
     src_color_range: Union[ColorRange, int]
-    dst_pix_fmt: str
     dst_colorspace: Union[Colorspace, int]
     dst_color_primaries: Union[ColorPrimaries, int]
     dst_color_trc: Union[ColorTrc, int]
@@ -750,7 +848,6 @@ class InputTransform:
         src_color_primaries: Union[ColorPrimaries, int],
         src_color_trc: Union[ColorTrc, int],
         src_color_range: Union[ColorRange, int],
-        dst_pix_fmt: str,
         dst_colorspace: Union[Colorspace, int],
         dst_color_primaries: Union[ColorPrimaries, int],
         dst_color_trc: Union[ColorTrc, int],
@@ -764,7 +861,6 @@ class InputTransform:
         self.src_color_primaries = src_color_primaries
         self.src_color_trc = src_color_trc
         self.src_color_range = src_color_range
-        self.dst_pix_fmt = dst_pix_fmt
         self.dst_colorspace = dst_colorspace
         self.dst_color_primaries = dst_color_primaries
         self.dst_color_trc = dst_color_trc
@@ -796,6 +892,7 @@ class InputTransform:
             color_trc=self.dst_color_trc,
             color_range=ColorRange.JPEG,
             side_data=frame.side_data,
+            use_16bit=self.use_16bit,
         )
 
     def to_tensor_av(self, frame: av.VideoFrame) -> TensorFrame:
@@ -832,12 +929,19 @@ class InputTransform:
             color_trc=self.dst_color_trc,
             color_range=ColorRange.JPEG,
             side_data=frame.side_data,
+            use_16bit=self.use_16bit,
         )
 
     def transform(self, frame: av.VideoFrame) -> TensorFrame:
         # Check source metadata
-        assert frame.colorspace == self.src_colorspace
-        assert frame.color_range == self.src_color_range
+        assert (
+            frame.colorspace == self.src_colorspace
+            or frame.colorspace == COLORSPACE_UNSPECIFIED
+        )
+        assert (
+            frame.color_range == self.src_color_range
+            or frame.color_range == ColorRange.UNSPECIFIED
+        )
 
         if frame.format.name == "cuda" and self.src_pix_fmt in {
             "yuv420p",
@@ -886,7 +990,7 @@ class OutputTransform:
         self.use_16bit = pix_fmt_requires_16bit(dst_pix_fmt)
         self.cuda_context = cuda_context
 
-    def from_video_frame(self, frame: av.VideoFrame):
+    def from_video_frame(self, frame: av.VideoFrame) -> av.VideoFrame:
         frame = frame.reformat(
             format=self.dst_pix_fmt,
             src_colorspace=self.dst_colorspace,
@@ -954,6 +1058,10 @@ class OutputTransform:
             out_format=internal_pix_fmt,
         )
         y_p, uv_p = ColorTransform.to_yuv_planes(y, u, v, out_format=internal_pix_fmt)
+
+        # Ensure PyTorch has finished writing to y_p and uv_p
+        torch.cuda.current_stream().synchronize()
+
         frame = av.VideoFrame.from_dlpack(
             (y_p, uv_p),
             format=internal_pix_fmt,
@@ -1026,7 +1134,9 @@ def configure_colorspace(
             color_trc,
             color_range,
         ) = sw_format.get_target_colorspace(config.colorspace, config.pix_fmt)
-        rgb24_options = sw_format.get_reformat_options(colorspace)
+        rgb24_options = sw_format.get_reformat_options(
+            colorspace, color_primaries, color_trc
+        )
         source_color_range = sw_format.guess_color_range()
     else:
         # Fallback logic for image import, using SoftwareVideoFormat's static logic
@@ -1044,8 +1154,12 @@ def configure_colorspace(
         )
         rgb24_options = {
             "src_colorspace": colorspace,
+            "src_color_primaries": color_primaries,
+            "src_color_trc": color_trc,
             "src_color_range": color_range,
             "dst_colorspace": colorspace,
+            "dst_color_primaries": color_primaries,
+            "dst_color_trc": color_trc,
             "dst_color_range": ColorRange.JPEG,
         }
         source_color_range = color_range
@@ -1063,7 +1177,10 @@ def configure_colorspace(
     # Define reformatter lambda for post-processing conversion
     # Source: (Processing Colorspace, Full Range) -> Destination: (Output Colorspace, Output Range)
     cuda_context = None
-    if config.video_codec in {"h264_nvenc", "hevc_nvenc"} and config.pix_fmt in {"nv12", "p010le"}:
+    if config.video_codec in {"h264_nvenc", "hevc_nvenc"} and config.pix_fmt in {
+        "nv12",
+        "p010le",
+    }:
         device_id = config.device.index if config.device is not None else 0
         cuda_context = CudaContext(device_id=device_id, primary_ctx=False)
 
@@ -1073,7 +1190,7 @@ def configure_colorspace(
         dst_color_primaries=color_primaries,
         dst_color_trc=color_trc,
         dst_color_range=color_range,
-        cuda_context=cuda_context
+        cuda_context=cuda_context,
     )
 
     config.state["rgb24_options"] = rgb24_options
@@ -1152,6 +1269,7 @@ def _test_configure() -> None:
                 "output_colorspace": 2,
             }
             self.state_updated = lambda c: print("Config updated callback triggered")
+            self.device = None
 
     class MockSWFormat(SoftwareVideoFormat):
         def __init__(
@@ -1176,23 +1294,25 @@ def _test_configure() -> None:
     assert cfg.state["output_colorspace"] == 1
     assert cfg.pix_fmt == "yuv420p"
     assert "reformatter" in cfg.state
+    assert cfg.state["rgb24_options"]["dst_color_primaries"] == 1
 
     print("Testing configure_colorspace (bt709-pc)...")
     cfg = MockConfig(colorspace="bt709-pc", pix_fmt="yuv420p")
     configure_colorspace(None, sw_hd, cfg)
     assert cfg.pix_fmt == "yuvj420p"
     assert cfg.state["source_color_range"] == 1
+    assert cfg.state["rgb24_options"]["dst_color_trc"] == 1
 
     print("Testing configure_colorspace (explicit unspecified)...")
     cfg = MockConfig(colorspace="unspecified", pix_fmt="yuv420p")
     configure_colorspace(None, sw_hd, cfg)
-    assert cfg.state["output_colorspace"] is None
+    assert cfg.state["output_colorspace"] == 2
     assert cfg.pix_fmt == "yuv420p"
 
     print("Testing configure_colorspace (RGB output)...")
     cfg = MockConfig(colorspace="auto", pix_fmt="rgb24")
     configure_colorspace(None, sw_hd, cfg)
-    assert cfg.state["output_colorspace"] is None
+    assert cfg.state["output_colorspace"] == 1
 
     print("Testing configure_video_codec...")
     cfg_nv = MockConfig(pix_fmt="yuv420p10le", video_codec="h264_nvenc")

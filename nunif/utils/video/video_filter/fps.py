@@ -77,4 +77,5 @@ class FPSFilter:
                 )
                 self.frames_out += 1
 
+        self.last_frame = None  # Free the reference to the last frame
         return out_frames

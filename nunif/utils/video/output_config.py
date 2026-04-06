@@ -3,7 +3,7 @@ from fractions import Fraction
 from typing import Any, Callable, Dict, Optional
 
 
-class VideoOutputConfig():
+class VideoOutputConfig:
     pix_fmt: str
     fps: int | float | Fraction
     output_fps: Optional[str]
@@ -19,18 +19,18 @@ class VideoOutputConfig():
     device: Optional[torch.device]
 
     def __init__(
-            self,
-            pix_fmt: str = "yuv420p",
-            fps: int | float | Fraction = 30,
-            options: Dict[str, str] = {},
-            container_options: Dict[str, str] = {},
-            output_width: Optional[int] = None,
-            output_height: Optional[int] = None,
-            colorspace: Optional[str] = None,
-            container_format: Optional[str] = None,
-            video_codec: Optional[str] = None,
-            output_fps: Optional[str] = None,
-            device: Optional[torch.device] = None
+        self,
+        pix_fmt: str = "yuv420p",
+        fps: int | float | Fraction = 30,
+        options: Dict[str, str] = {},
+        container_options: Dict[str, str] = {},
+        output_width: Optional[int] = None,
+        output_height: Optional[int] = None,
+        colorspace: Optional[str] = None,
+        container_format: Optional[str] = None,
+        video_codec: Optional[str] = None,
+        output_fps: Optional[str] = None,
+        device: Optional[torch.device] = None,
     ):
         self.pix_fmt = pix_fmt
         self.fps = fps

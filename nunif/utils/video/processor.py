@@ -2,6 +2,7 @@ import av
 from av.video.reformatter import Colorspace, ColorTrc, ColorRange
 from av.codec.hwaccel import HWAccel
 import os
+import gc
 from os import path
 import io
 import math
@@ -20,9 +21,11 @@ from .frame_callback_pool import ( # noqa
     from_tensor,
     to_frame,
     to_ndarray,
+    get_source_dtype,
 )
 from .color_transform import (
     SoftwareVideoFormat,
+    InputTransform,
     configure_colorspace,
     configure_video_codec,
     COLORSPACE_BT2020,
@@ -487,6 +490,7 @@ def _process_video(
                                    disable_software_fallback=disable_software_fallback)
     output_path_tmp = make_temporary_file_path(output_path)
     input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
+    use_tensor_frame = sw_format.format.name in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda"
 
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
@@ -533,7 +537,42 @@ def _process_video(
         color_trc=video_input_stream.codec_context.color_trc,
         output_colorspace=config.colorspace
     )
-    fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
+    output_fps = config.output_fps or config.fps
+    video_output_stream = output_container.add_stream(config.video_codec, output_fps)
+    configure_colorspace(video_output_stream, sw_format, config)
+    video_output_stream.thread_type = "AUTO"
+    video_output_stream.pix_fmt = config.pix_fmt
+    video_output_stream.options = config.options
+    rgb24_options = config.state["rgb24_options"]
+    reformatter = config.state["reformatter"]
+    if use_tensor_frame:
+        input_reformatter = lambda frame: frame
+        input_transform = InputTransform(
+            src_pix_fmt=sw_format.format.name,
+            src_colorspace=rgb24_options["src_colorspace"],
+            src_color_primaries=rgb24_options["src_color_primaries"],
+            src_color_trc=rgb24_options["src_color_trc"],
+            src_color_range=rgb24_options["src_color_range"],
+            dst_colorspace=rgb24_options["dst_colorspace"],
+            dst_color_primaries=rgb24_options["dst_color_primaries"],
+            dst_color_trc=rgb24_options["dst_color_trc"],
+            dst_color_range=rgb24_options["dst_color_range"],
+            use_16bit=sw_format.use_16bit,
+            device=device,
+        )
+        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf,
+                                       input_transform=input_transform)
+    else:
+        input_reformatter = lambda frame: frame.reformat(
+            src_colorspace=rgb24_options["src_colorspace"],
+            src_color_range=rgb24_options["src_color_range"],
+            dst_colorspace=rgb24_options["dst_colorspace"],
+            dst_color_primaries=rgb24_options["dst_color_primaries"],
+            dst_color_trc=rgb24_options["dst_color_trc"],
+            dst_color_range=rgb24_options["dst_color_range"],
+        )
+        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
+
     if config.output_width is not None and config.output_height is not None:
         output_size = config.output_width, config.output_height
     else:
@@ -541,23 +580,8 @@ def _process_video(
             # TODO: warning
             test_callback = frame_callback
         output_size = test_output_size(test_callback, video_input_stream, sw_format, vf)
-
-    output_fps = config.output_fps or config.fps
-    video_output_stream = output_container.add_stream(config.video_codec, output_fps)
-    configure_colorspace(video_output_stream, sw_format, config)
-    video_output_stream.thread_type = "AUTO"
-    video_output_stream.pix_fmt = config.pix_fmt
     video_output_stream.width = output_size[0]
     video_output_stream.height = output_size[1]
-    video_output_stream.options = config.options
-    rgb24_options = config.state["rgb24_options"]
-    reformatter = config.state["reformatter"]
-
-    def input_reformatter(frame):
-        if rgb24_options:
-            return frame.reformat(**rgb24_options)
-        else:
-            return frame
 
     # utvideo + flac crashes on windows media player
     # default_acodec = "flac" if config.container_format == "avi" else "aac"
@@ -590,21 +614,24 @@ def _process_video(
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
 
     try:
-        for packet in input_container.demux(streams):
+        for i, packet in enumerate(input_container.demux(streams)):
             if packet.pts is not None:
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
             if packet.stream.type == "video":
                 for frame in safe_decode(packet):
-                    for frame in fps_filter.update(frame):
-                        frame = input_reformatter(frame)
-                        for new_frame in get_new_frames(frame_callback(frame)):
+                    for out_frame in fps_filter.update(frame):
+                        ref_frame = input_reformatter(out_frame)
+                        for new_frame in get_new_frames(frame_callback(ref_frame)):
                             reformatted_frame = reformatter(new_frame)
                             # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
                             enc_packet = video_output_stream.encode(reformatted_frame)
                             if enc_packet:
                                 output_container.mux(enc_packet)
+                            del new_frame, enc_packet
                             pbar.update(1)
+                        del ref_frame, out_frame
+                    del frame
             elif packet.stream.type == "audio":
                 if packet.dts is not None:
                     if audio_copy:
@@ -616,25 +643,34 @@ def _process_video(
                             enc_packet = cast(av.AudioStream, audio_output_stream).encode(frame)
                             if enc_packet:
                                 output_container.mux(enc_packet)
+                            del frame
+
             if suspend_event is not None:
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
                 break
 
+            del packet
+            if i % 100 == 0:
+                gc.collect()
+
         for frame in fps_filter.flush():
             frame = input_reformatter(frame)
             for new_frame in get_new_frames(frame_callback(frame)):
-                new_frame = reformatter(new_frame)
-                enc_packet = video_output_stream.encode(new_frame)
+                ref_frame = reformatter(new_frame)
+                enc_packet = video_output_stream.encode(ref_frame)
                 if enc_packet:
                     output_container.mux(enc_packet)
+                del enc_packet, ref_frame, new_frame
                 pbar.update(1)
+            del frame
 
         for new_frame in get_new_frames(frame_callback(None)):
-            new_frame = reformatter(new_frame)
-            enc_packet = video_output_stream.encode(new_frame)
+            ref_frame = reformatter(new_frame)
+            enc_packet = video_output_stream.encode(ref_frame)
             if enc_packet:
                 output_container.mux(enc_packet)
+            del enc_packet, ref_frame, new_frame
             pbar.update(1)
 
         packet = video_output_stream.encode(None)
@@ -843,10 +879,14 @@ def hook_frame(
         end_time = parse_time(end_time)
         if start_time is not None and not (start_time < end_time):
             raise ValueError("end_time must be greater than start_time")
+    if isinstance(device, str):
+        device = torch.device(device)
 
     sw_format = SoftwareVideoFormat(input_path)
     input_hwaccel = create_hwaccel(device=hwaccel, device_id=device.index,
                                    disable_software_fallback=disable_software_fallback)
+    use_tensor_frame = sw_format.format.name in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda"
+
     input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
@@ -866,8 +906,33 @@ def hook_frame(
     config.fps = convert_fps_fraction(config.fps)
     configure_colorspace(None, sw_format, config)
     rgb24_options = config.state["rgb24_options"]
-
-    fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
+    if use_tensor_frame:
+        input_reformatter = lambda frame: frame
+        input_transform = InputTransform(
+            src_pix_fmt=sw_format.format.name,
+            src_colorspace=rgb24_options["src_colorspace"],
+            src_color_primaries=rgb24_options["src_color_primaries"],
+            src_color_trc=rgb24_options["src_color_trc"],
+            src_color_range=rgb24_options["src_color_range"],
+            dst_colorspace=rgb24_options["dst_colorspace"],
+            dst_color_primaries=rgb24_options["dst_color_primaries"],
+            dst_color_trc=rgb24_options["dst_color_trc"],
+            dst_color_range=rgb24_options["dst_color_range"],
+            use_16bit=sw_format.use_16bit,
+            device=device,
+        )
+        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf,
+                                       input_transform=input_transform)
+    else:
+        input_reformatter = lambda frame: frame.reformat(
+            src_colorspace=rgb24_options["src_colorspace"],
+            src_color_range=rgb24_options["src_color_range"],
+            dst_colorspace=rgb24_options["dst_colorspace"],
+            dst_color_primaries=rgb24_options["dst_color_primaries"],
+            dst_color_trc=rgb24_options["dst_color_trc"],
+            dst_color_range=rgb24_options["dst_color_range"],
+        )
+        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
 
     desc = (title if title else input_path)
     ncols = len(desc) + 60
@@ -879,23 +944,29 @@ def hook_frame(
                          input_path=input_path)
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
 
-    for packet in input_container.demux([video_input_stream]):
+    for i, packet in enumerate(input_container.demux([video_input_stream])):
         if packet.pts is not None:
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
         for frame in safe_decode(packet):
-            for frame in fps_filter.update(frame):
-                frame = frame.reformat(**rgb24_options) if rgb24_options else frame
-                frame_callback(frame)
+            for out_frame in fps_filter.update(frame):
+                ref_frame = input_reformatter(out_frame)
+                frame_callback(ref_frame)
+                del ref_frame, out_frame
                 pbar.update(1)
+            del frame
+        del packet
+        if i % 100 == 0:
+            gc.collect()
         if suspend_event is not None:
             suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
 
     for frame in fps_filter.flush():
-        frame = frame.reformat(**rgb24_options) if rgb24_options else frame
-        frame_callback(frame)
+        ref_frame = input_reformatter(frame)
+        frame_callback(ref_frame)
+        del ref_frame, frame
         pbar.update(1)
 
     frame_callback(None)
@@ -903,11 +974,30 @@ def hook_frame(
     pbar.close()
 
 
-def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe_only=False,
-                  vf="", title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
+def sample_frames(
+        input_path,
+        frame_callback,
+        num_samples,
+        offset=0.05,
+        keyframe_only=False,
+        vf="",
+        title=None,
+        stop_event=None,
+        suspend_event=None,
+        tqdm_fn=None,
+        hwaccel=None,
+        device="cpu",
+        disable_software_fallback=False,
+):
     assert offset < 0.5, "offset must be less than 0.5"
+    if isinstance(device, str):
+        device = torch.device(device)
+
     sw_format = SoftwareVideoFormat(input_path)
-    input_container = av.open(input_path, **AV_READ_OPTIONS)
+    input_hwaccel = create_hwaccel(device=hwaccel, device_id=device.index,
+                                   disable_software_fallback=disable_software_fallback)
+    input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # types: ignore
+
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
 
@@ -928,7 +1018,22 @@ def sample_frames(input_path, frame_callback, num_samples, offset=0.05, keyframe
         return -1
 
     max_progress = num_samples
-    video_filter = VideoPreprocessor(video_input_stream, sw_format, vf=vf)
+    input_transform = InputTransform(
+        src_pix_fmt=sw_format.format.name,
+        src_colorspace=sw_format.colorspace,
+        src_color_primaries=sw_format.color_primaries,
+        src_color_trc=sw_format.color_trc,
+        src_color_range=sw_format.color_range,
+        dst_colorspace=sw_format.colorspace,
+        dst_color_primaries=sw_format.color_primaries,
+        dst_color_trc=sw_format.color_trc,
+        dst_color_range=ColorRange.JPEG,
+        use_16bit=sw_format.use_16bit,
+        device=device,
+    )
+    video_filter = VideoPreprocessor(video_input_stream, sw_format, fps=None, vf=vf,
+                                     input_transform=input_transform)
+
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm

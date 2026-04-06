@@ -1707,6 +1707,8 @@ class MainFrame(wx.Frame):
                     mode=args.autocrop,
                     uncrop_enabled=False,
                     vf=args.vf,
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
                     device=device,
                     batch_size=args.batch_size,
                     stop_event=self.stop_event,

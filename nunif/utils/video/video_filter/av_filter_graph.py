@@ -116,7 +116,9 @@ class AVFilterGraph:
         )
         prev_filter = buffer
         for filter_name, filter_option in video_filters:
-            new_filter = graph.add(filter_name, filter_option if filter_option else None)
+            new_filter = graph.add(
+                filter_name, filter_option if filter_option else None
+            )
             prev_filter.link_to(new_filter)
             prev_filter = new_filter
         buffersink = graph.add("buffersink")

@@ -1,11 +1,15 @@
 import torch
 from concurrent.futures import ThreadPoolExecutor
+from .color_transform import TensorFrame
 import numpy as np
 import av
 
 
 RGB_8BIT = "rgb24"
 RGB_16BIT = "gbrp16le"
+
+
+# TODO: from* to* utilities will be deleted later
 
 
 def from_ndarray(x):
@@ -31,16 +35,31 @@ def from_tensor(x, use_16bit=False):
         dtype = torch.uint8
         value_scale = 255.0
 
-    x = (x.permute(1, 2, 0).contiguous() * value_scale).round_().to(dtype).detach().cpu().numpy()
+    x = (
+        (x.permute(1, 2, 0).contiguous() * value_scale)
+        .round_()
+        .to(dtype)
+        .detach()
+        .cpu()
+        .numpy()
+    )
     return from_ndarray(x)
 
 
 def to_tensor(frame, device=None):
-    x = torch.from_numpy(to_ndarray(frame))
-    if device is not None:
-        x = x.to(device)
-    # CHW float32
-    return x.permute(2, 0, 1).contiguous() / torch.iinfo(x.dtype).max
+    if isinstance(frame, TensorFrame):
+        x = frame.to_chw()
+        if device is not None:
+            x = x.to(device)
+        return x
+    elif isinstance(frame, av.VideoFrame):
+        x = torch.from_numpy(to_ndarray(frame))
+        if device is not None:
+            x = x.to(device)
+        # CHW float32
+        return x.permute(2, 0, 1).contiguous() / torch.iinfo(x.dtype).max
+    else:
+        raise ValueError(f"{type(frame)} not supported")
 
 
 def to_frame(x, use_16bit=False):
@@ -65,7 +84,19 @@ def to_ndarray(frame):
     return frame.to_ndarray(format=format)
 
 
-class _DummyFuture():
+def get_source_dtype(frame):
+    if isinstance(frame, TensorFrame):
+        use_16bit = frame.use_16bit
+    elif isinstance(frame, av.VideoFrame):
+        use_16bit = frame.format.components[0].bits > 8
+
+    if use_16bit:
+        return torch.uint16
+    else:
+        return torch.uint8
+
+
+class _DummyFuture:
     def __init__(self, result):
         self._result = result
 
@@ -76,7 +107,7 @@ class _DummyFuture():
         return True
 
 
-class _DummyThreadPool():
+class _DummyThreadPool:
     def __init__(self):
         pass
 
@@ -88,15 +119,25 @@ class _DummyThreadPool():
         pass
 
 
-class FrameCallbackPool():
+class FrameCallbackPool:
     """
     thread pool callback wrapper
     """
-    def __init__(self, frame_callback, batch_size, device, max_workers=1, max_batch_queue=2,
-                 require_pts=False, skip_pts=-1, require_flush=False,
-                 preprocess_callback=None,
-                 postprocess_callback=None,
-                 use_16bit=False):
+
+    def __init__(
+        self,
+        frame_callback,
+        batch_size,
+        device,
+        max_workers=1,
+        max_batch_queue=2,
+        require_pts=False,
+        skip_pts=-1,
+        require_flush=False,
+        preprocess_callback=None,
+        postprocess_callback=None,
+        use_16bit=False,
+    ):
         if max_workers > 0:
             self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         else:
@@ -147,12 +188,19 @@ class FrameCallbackPool():
     def __call__(self, frame):
         if False:
             # for debug
-            print("\n__call__",
-                  "frame_queue", len(self.frame_queue),
-                  "batch_queue", len(self.batch_queue),
-                  "pts_queue", len(self.pts_queue),
-                  "pts_batch_queue", len(self.pts_batch_queue),
-                  "futures", len(self.futures))
+            print(
+                "\n__call__",
+                "frame_queue",
+                len(self.frame_queue),
+                "batch_queue",
+                len(self.batch_queue),
+                "pts_queue",
+                len(self.pts_queue),
+                "pts_batch_queue",
+                len(self.pts_batch_queue),
+                "futures",
+                len(self.futures),
+            )
 
         if frame is None:
             return self.finish()
@@ -160,7 +208,8 @@ class FrameCallbackPool():
             return None
 
         self.pts_queue.append(frame.pts)
-        frame = to_tensor(frame, device=self.devices[self.round_robin_index % len(self.devices)])
+        device = self.devices[self.round_robin_index % len(self.devices)]
+        frame = to_tensor(frame, device=device)
 
         self.frame_queue.append(frame)
         if len(self.frame_queue) == self.batch_size:

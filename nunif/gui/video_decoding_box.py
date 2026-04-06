@@ -18,7 +18,7 @@ class VideoDecodingBox():
         prefix = name_prefix + "_" if name_prefix else ""
         self.grp_video_dec = wx.StaticBox(parent, label=T("Video Decoding"), **kwargs)
 
-        self.lbl_hwaccel = wx.StaticText(self.grp_video_dec, label=T("Hardware Acceleration"))
+        self.lbl_hwaccel = wx.StaticText(self.grp_video_dec, label=T("HWAccel"))
         self.cbo_hwaccel = wx.ComboBox(self.grp_video_dec, choices=[""] + get_supported_hwdevices(),
                                        name=f"{prefix}cbo_hwaccel")
         self.cbo_hwaccel.SetEditable(False)

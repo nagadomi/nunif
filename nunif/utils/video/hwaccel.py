@@ -8,9 +8,10 @@ def get_supported_hwdevices() -> List[str]:
     if "cuda" in devices:
         # TODO: direct cuda support
         supported_options.append("cuda")
-        supported_options.append("cuda_download")
+        supported_options.append("cuda_hwdownload")
 
-    for device in ("d3d11va", "d3d12va", "vaapi", "qsv", "amf", "videotoolbox"):
+    # TODO: Support "qsv"
+    for device in ("d3d11va", "d3d12va", "vaapi", "amf", "videotoolbox"):
         if device in devices:
             supported_options.append(device)
 
@@ -21,9 +22,9 @@ HW_DEVICES = get_supported_hwdevices()
 
 
 def create_hwaccel(
-        device: Optional[str],
-        device_id: Optional[int] = 0,
-        disable_software_fallback: bool = False
+    device: Optional[str],
+    device_id: Optional[int] = 0,
+    disable_software_fallback: bool = False,
 ) -> Optional[HWAccel]:
     if device is None:
         return None
@@ -43,7 +44,7 @@ def create_hwaccel(
             options={"primary_ctx": "0"},
             allow_software_fallback=allow_software_fallback,
         )
-    elif device == "cuda_downlaod":
+    elif device == "cuda_hwdownload":
         if device_id is None:
             device_id = 0
 

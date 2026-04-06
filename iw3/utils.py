@@ -295,6 +295,17 @@ def hwc_to_chw_float(x, device):
     return x
 
 
+def to_chw_float(x, device):
+    src_dtype = x.dtype
+    x = x.to(device)
+
+    if not torch.is_floating_point(x):
+        x = x.to(torch.float32)
+        x = x / float(torch.iinfo(src_dtype).max)
+
+    return x
+
+
 def apply_divergence(depth, im, args, side_model, reset_pts=None):
     batch = True
     if depth.ndim != 4:
@@ -625,7 +636,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             x, pts = src_queue.pop(0)
             reset_pts = [pts in segment_pts]
             if frame_cpu_offload:
-                x = hwc_to_chw_float(x, device=args.state["device"])
+                x = to_chw_float(x, device=args.state["device"])
             if args.debug_depth:
                 out = debug_depth_image(depth, args)
             elif args.rgbd or args.half_rgbd:
@@ -669,25 +680,12 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             yield from _postprocess(depth_model.flush_minmax_normalize(), flush=True)
             return
 
-        frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
-        pix_dtype, pix_max = frame_hwc.dtype, torch.iinfo(frame_hwc.dtype).max
+        pix_dtype = VU.get_source_dtype(frame)
+        pix_max = torch.iinfo(pix_dtype).max
+        x = VU.to_tensor(frame, device=args.state["device"])
 
-        if frame_cpu_offload:
-            # cpu buffer
-            if args.max_output_height is not None or args.rotate_right or args.rotate_left:
-                x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
-                x = preprocess_image(x, args)
-                frame_hwc = (x.permute(1, 2, 0) * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
-                src_queue.append((frame_hwc, frame.pts))
-            else:
-                src_queue.append((frame_hwc, frame.pts))
-                x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
-        else:
-            # gpu buffer
-            x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
-            x = preprocess_image(x, args)
-            src_queue.append((x, frame.pts))
-
+        # TODO: optimize cpu_offload
+        x = preprocess_image(x, args)
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation,
@@ -698,6 +696,14 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
         if flush:
             depths += depth_model.flush_minmax_normalize()
             depth_model.reset_state()
+
+        if frame_cpu_offload:
+            # cpu buffer
+            frame_chw = (x * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
+            src_queue.append((frame_chw, frame.pts))
+        else:
+            # gpu buffer
+            src_queue.append((x, frame.pts))
 
         yield from _postprocess(depths, flush=flush)
 
@@ -1011,14 +1017,14 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     input_filename,
                     max_fps=args.max_fps,
                     device=args.state["device"],
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
                     start_time=args.start_time,
                     end_time=args.end_time,
                     stop_event=args.state["stop_event"],
                     suspend_event=args.state["suspend_event"],
                     tqdm_fn=args.state["tqdm_fn"],
                     tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
-                    hwaccel=args.hwaccel,
-                    disable_software_fallback=args.disable_software_fallback,
                 )
                 save_scene_cache(input_filename, segment_pts, args)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
@@ -1035,6 +1041,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             mode=args.autocrop,
             uncrop_enabled=False,
             vf=args.vf,
+            hwaccel=args.hwaccel,
+            disable_software_fallback=args.disable_software_fallback,
             device=args.state["device"],
             batch_size=args.batch_size,
             stop_event=args.state["stop_event"],
@@ -1084,6 +1092,11 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         return VU.to_frame(x, use_16bit=use_16bit)
 
     if is_video_depth_anything:
+        hwaccel = args.hwaccel
+        if hwaccel == "cuda":
+            print("--hwaccel cuda is not supported for VDA. Use --hwaccel cuda_hwdownload instead.",
+                  file=sys.stderr)
+            hwaccel = "cuda_hwdownload"
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
             VU.process_video(
                 input_filename, output_filename,
@@ -1103,7 +1116,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 start_time=args.start_time,
                 end_time=args.end_time,
                 device=args.state["device"],
-                hwaccel=args.hwaccel,
+                hwaccel=hwaccel,
                 disable_software_fallback=args.disable_software_fallback,
             )
 
@@ -1570,6 +1583,8 @@ def export_video(input_filename, output_dir, args, title=None):
                     input_filename,
                     max_fps=args.max_fps,
                     device=args.state["device"],
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
                     start_time=args.start_time,
                     end_time=args.end_time,
                     stop_event=args.state["stop_event"],
@@ -1632,40 +1647,46 @@ def export_video(input_filename, output_dir, args, title=None):
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
 
-    with depth_model.compile_context(enabled=args.compile):
-        max_workers = max(args.max_workers, 8)
+    max_workers = max(args.max_workers, 8)
+    hwaccel = args.hwaccel
+    if hwaccel == "cuda":
+        hwaccel = "cuda_hwdownload"
+    with depth_model.compile_context(enabled=args.compile), PoolExecutor(max_workers=max_workers) as pool:
+        if args.state["depth_model"].get_name() == "VideoDepthAnything":
+            frame_callback = bind_export_vda_frame_callback(
+                depth_model=depth_model,
+                segment_pts=segment_pts,
+                rgb_dir=rgb_dir,
+                depth_dir=depth_dir,
+                pool=pool,
+                args=args,
+            )
+        else:
+            frame_callback = bind_export_single_frame_callback(
+                depth_model=depth_model,
+                segment_pts=segment_pts,
+                rgb_dir=rgb_dir,
+                depth_dir=depth_dir,
+                pool=pool,
+                args=args,
+            )
 
-        with PoolExecutor(max_workers=max_workers) as pool:
-            if args.state["depth_model"].get_name() == "VideoDepthAnything":
-                frame_callback = bind_export_vda_frame_callback(
-                    depth_model=depth_model,
-                    segment_pts=segment_pts,
-                    rgb_dir=rgb_dir,
-                    depth_dir=depth_dir,
-                    pool=pool,
-                    args=args,
-                )
-            else:
-                frame_callback = bind_export_single_frame_callback(
-                    depth_model=depth_model,
-                    segment_pts=segment_pts,
-                    rgb_dir=rgb_dir,
-                    depth_dir=depth_dir,
-                    pool=pool,
-                    args=args,
-                )
-
-            VU.hook_frame(input_filename,
-                          config_callback=config_callback,
-                          frame_callback=frame_callback,
-                          vf=args.vf,
-                          stop_event=args.state["stop_event"],
-                          suspend_event=args.state["suspend_event"],
-                          tqdm_fn=args.state["tqdm_fn"],
-                          title=title,
-                          start_time=args.start_time,
-                          end_time=args.end_time)
-        config.save(config_file)
+        VU.hook_frame(
+            input_filename,
+            config_callback=config_callback,
+            frame_callback=frame_callback,
+            vf=args.vf,
+            stop_event=args.state["stop_event"],
+            suspend_event=args.state["suspend_event"],
+            tqdm_fn=args.state["tqdm_fn"],
+            title=title,
+            start_time=args.start_time,
+            end_time=args.end_time,
+            device=args.state["device"],
+            hwaccel=hwaccel,
+            disable_software_fallback=args.disable_software_fallback
+        )
+    config.save(config_file)
 
 
 def process_config_video(config, args, side_model):

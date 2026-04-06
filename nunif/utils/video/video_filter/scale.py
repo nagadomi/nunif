@@ -1,20 +1,24 @@
 import torch
 import torch.nn.functional as F
 from .utils import get_evaluator
-from typing import Any
+from typing import Any, Dict
 
 
 class ScaleFilter:
     w_expr: str
     h_expr: str
+    mode: str
+    antialias: bool
     evaluator: Any
 
     def __init__(self, options: str):
         self.w_expr = "iw"
         self.h_expr = "ih"
+        self.mode = "bilinear"
+        self.antialias = False
 
         # Split options by ':' and parse key=value or positional arguments.
-        # Format: "width:height"
+        # Format: "width:height:flags=area:antialias=1"
         parts = options.split(":")
         for i, part in enumerate(parts):
             if "=" in part:
@@ -24,6 +28,18 @@ class ScaleFilter:
                     self.w_expr = v
                 elif k in ("h", "height"):
                     self.h_expr = v
+                elif k in ("flags", "interp_lib"):
+                    # Map FFmpeg flags to PyTorch modes
+                    if v == "neighbor":
+                        self.mode = "nearest"
+                    elif v in ("bilinear", "fast_bilinear"):
+                        self.mode = "bilinear"
+                    elif v in ("bicubic", "area"):
+                        self.mode = v
+                    else:
+                        self.mode = "bilinear"
+                elif k == "antialias":
+                    self.antialias = bool(int(v))
             else:
                 # Positional arguments: w:h
                 if i == 0:
@@ -38,7 +54,6 @@ class ScaleFilter:
         ih, iw = x.shape[-2:]
 
         # Variables for expression evaluation
-        # Subsampling (hsub, vsub) is fixed to 1 for RGB.
         self.evaluator.names.update(
             {
                 "iw": iw,
@@ -73,14 +88,20 @@ class ScaleFilter:
             n_scale = abs(oh)
             oh = int((ow / aspect) / n_scale + 0.5) * n_scale
 
+        # Skip if size is same
+        if ow == iw and oh == ih:
+            return x
+
         # F.interpolate expects 4D input (B, C, H, W)
         input_4d = x.unsqueeze(0) if x.dim() == 3 else x
-        output = F.interpolate(
-            input_4d,
-            size=(oh, ow),
-            mode="bilinear",
-            align_corners=False,
-        )
+
+        # Build arguments for interpolate based on mode
+        kwargs: Dict[str, Any] = {"size": (oh, ow), "mode": self.mode}
+        if self.mode in ("bilinear", "bicubic"):
+            kwargs["align_corners"] = False
+            kwargs["antialias"] = self.antialias
+
+        output = F.interpolate(input_4d, **kwargs)
 
         return output.squeeze(0) if x.dim() == 3 else output
 
@@ -90,20 +111,22 @@ def _test() -> None:
 
     def test_scale(expr: str, w: int, h: int) -> None:
         print(f"Testing '{expr}' with input {w}x{h}...")
-        tensor = torch.zeros((3, h, w))
+        tensor = torch.zeros((1, 3, h, w))
         s = ScaleFilter(expr)
         output = s(tensor)
-        print(f"Result: {output.shape[-1]}x{output.shape[-2]}")
+        print(
+            f"Result: {output.shape[-1]}x{output.shape[-2]}, mode={s.mode}, antialias={s.antialias}"
+        )
 
-    print("--- Start ScaleFilter tests (Always Bilinear) ---")
-    # Case 1: Simple scale
+    print("--- Start ScaleFilter tests ---")
+    # Case 1: Default (bilinear, no AA)
     test_scale("1280:720", 1920, 1080)
-    # Case 2: Maintain aspect ratio (-1)
-    test_scale("-1:540", 1920, 1080)
-    # Case 3: Multiple of 2 (-2)
-    test_scale("-2:541", 1920, 1080)
-    # Case 4: Multiple of 2 (-2:1920)
-    test_scale("-2:1920", 3840, 2161)
+    # Case 2: flags=area (Good for downscaling)
+    test_scale("640:360:flags=area", 1920, 1080)
+    # Case 3: antialias=1
+    test_scale("1280:720:antialias=1", 1920, 1080)
+    # Case 4: flags=fast_bilinear
+    test_scale("1280:720:flags=fast_bilinear", 1920, 1080)
     print("--- End ScaleFilter tests ---")
 
 
