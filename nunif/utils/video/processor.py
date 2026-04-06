@@ -628,10 +628,7 @@ def _process_video(
                             enc_packet = video_output_stream.encode(reformatted_frame)
                             if enc_packet:
                                 output_container.mux(enc_packet)
-                            del new_frame, enc_packet
                             pbar.update(1)
-                        del ref_frame, out_frame
-                    del frame
             elif packet.stream.type == "audio":
                 if packet.dts is not None:
                     if audio_copy:
@@ -643,14 +640,12 @@ def _process_video(
                             enc_packet = cast(av.AudioStream, audio_output_stream).encode(frame)
                             if enc_packet:
                                 output_container.mux(enc_packet)
-                            del frame
 
             if suspend_event is not None:
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
                 break
 
-            del packet
             if i % 100 == 0:
                 gc.collect()
 
@@ -661,16 +656,13 @@ def _process_video(
                 enc_packet = video_output_stream.encode(ref_frame)
                 if enc_packet:
                     output_container.mux(enc_packet)
-                del enc_packet, ref_frame, new_frame
                 pbar.update(1)
-            del frame
 
         for new_frame in get_new_frames(frame_callback(None)):
             ref_frame = reformatter(new_frame)
             enc_packet = video_output_stream.encode(ref_frame)
             if enc_packet:
                 output_container.mux(enc_packet)
-            del enc_packet, ref_frame, new_frame
             pbar.update(1)
 
         packet = video_output_stream.encode(None)
@@ -952,10 +944,7 @@ def hook_frame(
             for out_frame in fps_filter.update(frame):
                 ref_frame = input_reformatter(out_frame)
                 frame_callback(ref_frame)
-                del ref_frame, out_frame
                 pbar.update(1)
-            del frame
-        del packet
         if i % 100 == 0:
             gc.collect()
         if suspend_event is not None:
@@ -966,7 +955,6 @@ def hook_frame(
     for frame in fps_filter.flush():
         ref_frame = input_reformatter(frame)
         frame_callback(ref_frame)
-        del ref_frame, frame
         pbar.update(1)
 
     frame_callback(None)
