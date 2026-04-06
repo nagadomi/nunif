@@ -618,12 +618,12 @@ class MainFrame(wx.Frame):
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         sizer_video = wx.BoxSizer(wx.VERTICAL)
-        sizer_video.Add(self.grp_video_dec.sizer, 0, wx.ALL | wx.EXPAND, 0)
-        sizer_video.Add(self.grp_video.sizer, 1, wx.ALL | wx.EXPAND, 0)
+        sizer_video.Add(self.grp_video_dec.sizer, 0, wx.ALL | wx.EXPAND, border=4)
+        sizer_video.Add(self.grp_video.sizer, 1, wx.ALL | wx.EXPAND, border=4)
 
         layout = wx.GridBagSizer(wx.HORIZONTAL)
         layout.Add(sizer_stereo, pos=(0, 0), span=(2, 1), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_video, pos=(0, 1), span=(2, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(sizer_video, pos=(0, 1), span=(2, 1), flag=wx.ALL | wx.EXPAND, border=0)
         layout.Add(sizer_video_filter, pos=(0, 2), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_processor, pos=(1, 2), flag=wx.ALL | wx.EXPAND, border=4)
         self.pnl_options.SetSizer(layout)
