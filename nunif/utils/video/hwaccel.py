@@ -11,7 +11,7 @@ def get_supported_hwdevices() -> List[str]:
         supported_options.append("cuda_hwdownload")
 
     # TODO: Support "qsv"
-    for device in ("d3d11va", "d3d12va", "vaapi", "amf", "videotoolbox"):
+    for device in ("d3d12va", "d3d11va", "dxva2", "vaapi", "amf", "videotoolbox"):
         if device in devices:
             supported_options.append(device)
 
@@ -59,6 +59,6 @@ def create_hwaccel(
         return HWAccel(
             device_type=device,
             is_hw_owned=False,
-            options={"primary_ctx": "0"},
+            options={"primary_ctx": "1"},
             allow_software_fallback=allow_software_fallback,
         )
