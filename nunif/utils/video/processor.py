@@ -419,6 +419,9 @@ def test_audio_copy(input_path, output_path):
 
 
 def safe_decode(packet, strict=False):
+    if strict:
+        return packet.decode()
+
     try:
         frames = packet.decode()
     except av.error.InvalidDataError:  # corrupted frame
@@ -624,7 +627,7 @@ def _process_video(
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
             if packet.stream.type == "video":
-                for frame in safe_decode(packet):
+                for frame in safe_decode(packet, strict=disable_software_fallback):
                     for out_frame in fps_filter.update(frame):
                         ref_frame = input_reformatter(out_frame)
                         for new_frame in get_new_frames(frame_callback(ref_frame)):
@@ -943,7 +946,7 @@ def hook_frame(
         if packet.pts is not None:
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
-        for frame in safe_decode(packet):
+        for frame in safe_decode(packet, strict=disable_software_fallback):
             for out_frame in fps_filter.update(frame):
                 ref_frame = input_reformatter(out_frame)
                 frame_callback(ref_frame)
