@@ -20,7 +20,8 @@ set -x
 
 # base
 python -m iw3.cli -y -i ${TEST_VIDEO} -o ${OUTPUT_DIR} --depth-model Any_S --metadata --video-codec ${H264_ENC} ${HWACCEL}
-python -m iw3.cli -y -i ${TEST_DIR} -o ${OUTPUT_DIR} --depth-model Any_S --metadata --resume --video-codec ${H265_ENC} ${HWACCEL}
+python -m iw3.cli -y -i ${TEST_DIR} -o ${OUTPUT_DIR} --depth-model Any_S --metadata --video-codec ${H265_ENC} ${HWACCEL}
+
 
 # EMA
 python -m iw3.cli -y -i ${TEST_VIDEO} -o ${OUTPUT_DIR} --depth-model Any_S --metadata --ema-normalize --ema-buffer 10 --video-codec ${H264_ENC} ${HWACCEL}

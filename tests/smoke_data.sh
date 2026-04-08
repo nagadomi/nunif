@@ -54,6 +54,15 @@ if [ ! -f ${BASE_DIR}/sd.mkv ]; then
    generate_video h264 sd yuv420p bt709 bt709 bt709 tv "gradients=size=640x360:rate=30:n=8:seed=1"
 fi
 
+for pix_fmt in "yuv444p" "yuv422p" "gbrp"; do
+    if [ ! -f ${BASE_DIR}/h264_${pix_fmt}.mkv ]; then
+        generate_video h264 h264_${pix_fmt} ${pix_fmt} bt709 bt709 bt709 tv "gradients=size=640x360:rate=30:n=8:seed=1"
+    fi
+    if [ ! -f ${BASE_DIR}/hevc_${pix_fmt}.mkv ]; then
+        generate_video hevc hevc_${pix_fmt} ${pix_fmt} bt709 bt709 bt709 tv "gradients=size=640x360:rate=30:n=8:seed=1"
+    fi
+done
+
 # tests/data/hdr.mkv
 if [ ! -f ${BASE_DIR}/hdr.mkv ]; then
    generate_video hevc hdr yuv420p10le bt2020nc bt2020 smpte2084 tv "gradients=size=1280x720:rate=30:n=8:seed=1"

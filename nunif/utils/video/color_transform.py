@@ -87,6 +87,15 @@ def _list_hw_format() -> Set[str]:
 HW_PIX_FORMATS: Set[str] = _list_hw_format()
 
 
+def get_rgb_pix_fmt(use_16bit: bool) -> str:
+    # TODO: refactor along with frame_callbck_pool.py
+    if use_16bit:
+        # NOTE: I want to use `rgb48le`, but there is a bug in av==17.0.0
+        return "gbrp16le"
+    else:
+        return "rgb24"
+
+
 class SoftwareVideoFormat:
     format: av.VideoFormat  # pix_fmt
     colorspace: Union[Colorspace, int]
@@ -123,9 +132,11 @@ class SoftwareVideoFormat:
                 return "p010le"
             elif self.format.name == "yuv420p16le":
                 return "p016le"
+            if self.format.name in {"gbrp"}:
+                return "bgr0"
             else:
-                if stream_pix_fmt in {"yuv444p", "yuv422p"}:
-                    return stream_pix_fmt
+                if self.format.name in {"yuv444p", "yuv422p"}:
+                    return self.format.name
                 raise NotImplementedError(
                     f"Unsupported format conversion: format={self.format.name}, hw format={stream_pix_fmt}"
                 )
@@ -869,11 +880,7 @@ class InputTransform:
         self.use_16bit = use_16bit
         self.device = device
         self.dtype = dtype
-        if use_16bit:
-            # NOTE: I want to use `rgb48le`, but there is a bug in av==17.0.0
-            self.rgb_format = "gbrp16le"
-        else:
-            self.rgb_format = "rgb24"
+        self.rgb_format = get_rgb_pix_fmt(use_16bit)
 
     def to_tensor_hw(self, frame: av.VideoFrame) -> TensorFrame:
         rgb = ColorTransform.to_tensor(
@@ -1179,11 +1186,14 @@ def configure_colorspace(
     # Define reformatter lambda for post-processing conversion
     # Source: (Processing Colorspace, Full Range) -> Destination: (Output Colorspace, Output Range)
     cuda_context = None
-    if config.video_codec in {"h264_nvenc", "hevc_nvenc"} and config.pix_fmt in {
-        "nv12",
-        "p010le",
-    }:
-        device_id = config.device.index if config.device is not None else 0
+    if (
+        config.device is not None
+        and config.device.type == "cuda"
+        and config.video_codec in {"h264_nvenc", "hevc_nvenc"}
+        and config.pix_fmt in {"nv12", "p010le"}
+    ):
+        device_id = config.device.index if config.device is not None else None
+        device_id = device_id if device_id is not None else 0
         cuda_context = CudaContext(device_id=device_id, primary_ctx=True)
 
     config.state["reformatter"] = OutputTransform(

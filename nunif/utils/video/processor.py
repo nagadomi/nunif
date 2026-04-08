@@ -30,7 +30,7 @@ from .color_transform import (
     configure_video_codec,
     COLORSPACE_BT2020,
 )
-from .hwaccel import get_supported_hwdevices, create_hwaccel
+from .hwaccel import get_supported_hwdevices, create_hwaccel, should_use_tensor_frame
 from .video_preprocessor import VideoPreprocessor
 from ..color_lut import load_lut, apply_lut, get_hdr2sdr_lut_path  # noqa
 from types import GeneratorType
@@ -418,7 +418,7 @@ def test_audio_copy(input_path, output_path):
         return True
 
 
-def safe_decode(packet):
+def safe_decode(packet, strict=False):
     try:
         frames = packet.decode()
     except av.error.InvalidDataError:  # corrupted frame
@@ -490,7 +490,6 @@ def _process_video(
                                    disable_software_fallback=disable_software_fallback)
     output_path_tmp = make_temporary_file_path(output_path)
     input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
-    use_tensor_frame = sw_format.format.name in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda"
 
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
@@ -546,7 +545,8 @@ def _process_video(
     video_output_stream.options = config.options
     rgb24_options = config.state["rgb24_options"]
     reformatter = config.state["reformatter"]
-    if use_tensor_frame:
+
+    if should_use_tensor_frame(sw_format.format.name, hwaccel, device):
         input_reformatter = lambda frame: frame
         input_transform = InputTransform(
             src_pix_fmt=sw_format.format.name,
@@ -564,7 +564,11 @@ def _process_video(
         fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf,
                                        input_transform=input_transform)
     else:
+        dst_pix_fmt: Optional[str] = sw_format.guess_pix_fmt(video_input_stream.pix_fmt)
+        if dst_pix_fmt == video_input_stream.pix_fmt:
+            dst_pix_fmt = None
         input_reformatter = lambda frame: frame.reformat(
+            format=dst_pix_fmt,
             src_colorspace=rgb24_options["src_colorspace"],
             src_color_range=rgb24_options["src_color_range"],
             dst_colorspace=rgb24_options["dst_colorspace"],
@@ -878,8 +882,6 @@ def hook_frame(
     sw_format = SoftwareVideoFormat(input_path)
     input_hwaccel = create_hwaccel(device=hwaccel, device_id=device.index,
                                    disable_software_fallback=disable_software_fallback)
-    use_tensor_frame = sw_format.format.name in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda"
-
     input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
     if input_container.duration:
         container_duration = float(input_container.duration / av.time_base)
@@ -899,7 +901,7 @@ def hook_frame(
     config.fps = convert_fps_fraction(config.fps)
     configure_colorspace(None, sw_format, config)
     rgb24_options = config.state["rgb24_options"]
-    if use_tensor_frame:
+    if should_use_tensor_frame(sw_format.format.name, hwaccel, device):
         input_reformatter = lambda frame: frame
         input_transform = InputTransform(
             src_pix_fmt=sw_format.format.name,

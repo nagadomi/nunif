@@ -1,3 +1,4 @@
+import torch
 from av.codec.hwaccel import HWAccel, hwdevices_available
 from typing import List, Set, Optional
 
@@ -62,3 +63,7 @@ def create_hwaccel(
             options={"primary_ctx": "1"},
             allow_software_fallback=allow_software_fallback,
         )
+
+
+def should_use_tensor_frame(sw_pix_fmt: str, hwaccel: Optional[str], device: torch.device):
+    return sw_pix_fmt in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda" and device.type == "cuda"

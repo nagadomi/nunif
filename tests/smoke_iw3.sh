@@ -13,7 +13,7 @@ set -x
 # base
 python -m iw3.cli -y -i ${TEST_IMAGE} -o ${OUTPUT_DIR} --depth-model Any_S --metadata
 python -m iw3.cli -y -i ${TEST_VIDEO} -o ${OUTPUT_DIR} --depth-model Any_S --metadata
-python -m iw3.cli -y -i ${TEST_DIR} -o ${OUTPUT_DIR} --depth-model Any_S --metadata --resume
+python -m iw3.cli -y -i ${TEST_DIR} -o ${OUTPUT_DIR} --depth-model Any_S --metadata
 
 # EMA
 python -m iw3.cli -y -i ${TEST_VIDEO} -o ${OUTPUT_DIR} --depth-model Any_S --metadata --ema-normalize --ema-buffer 10
