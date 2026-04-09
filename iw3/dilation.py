@@ -3,7 +3,7 @@ import torch
 
 
 def edge_dilation_parse(edge_dilation):
-    if isinstance(edge_dilation, list):
+    if isinstance(edge_dilation, (list, tuple)):
         if len(edge_dilation) == 0:
             x = y = 0
         elif len(edge_dilation) == 1:
@@ -13,8 +13,11 @@ def edge_dilation_parse(edge_dilation):
             y = edge_dilation[1]
     elif isinstance(edge_dilation, int):
         x = y = edge_dilation
-    else:
+    elif edge_dilation is None:
         x = y = 0
+    else:
+        raise ValueError(f"Unsupported edge_dilation type {type(edge_dilation)}. "
+                         "Supported types: int, list, tuple.")
 
     return x, y
 

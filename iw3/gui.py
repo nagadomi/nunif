@@ -492,6 +492,7 @@ class MainFrame(wx.Frame):
         self.cbo_max_output_size = wx.ComboBox(self.grp_video_filter,
                                                choices=["",
                                                         "7680x2160",
+                                                        "3840x1080",
                                                         "1920x1080", "1280x720", "640x360",
                                                         "1080x1920", "720x1280", "360x640"],
                                                name="cbo_max_output_size")

@@ -59,10 +59,9 @@ Delete the entire folder.
 
 ## Enable long paths
 
-This is not required, but it can cause problems.
-
 Windows has a 260-character limit on file paths.
-If you place nunif-windows in a deeply nested path, some files may exceed this limit and result in errors.
+If you place nunif-windows in a deeply nested path, some files may exceed this limit and result in errors.  
+In that case, a common error is `No module named '...'`. This happens because files in excessively long paths cannot be loaded.
 
 You can remove this limit by downloading and running the following `.reg` file and reboot.
 This requires administrator privileges on the computer.
