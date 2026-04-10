@@ -113,7 +113,7 @@ exit /b 0
     echo Uninstalling old Python...
     rmdir /s /q "%PYTHON_DIR%"
     if exist "%PYTHON_DIR%" (
-      echo Failed to delete %PYTHON_DIR%
+      echo Failed to delete "%PYTHON_DIR%"
       exit /b 1
     )
   )
