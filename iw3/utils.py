@@ -721,7 +721,6 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device):
-        src_depth_pairs = []
         # Reorder threads
         with dequeue_ticket_lock(dequeue_ticket_id):
             with depth_lock:
@@ -745,10 +744,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     x_srcs = torch.stack(x_srcs)
                 else:
                     x_srcs, pts = src_queue.pop(0)
-                src_depth_pairs.append((x_srcs, depths, pts))
 
-            results = []
-            for x_srcs, depths, pts in src_depth_pairs:
                 reset_pts = [t in segment_pts for t in pts]
                 if frame_cpu_offload:
                     x_srcs = hwc_to_chw_float(x_srcs, device=device)
@@ -764,11 +760,8 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         else:
                             left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
 
-                frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
-                          for i in range(left_eyes.shape[0])]
-                results += frames
-
-        return results
+                for i in range(left_eyes.shape[0]):
+                    yield postprocess_image(left_eyes[i], right_eyes[i], args)
 
     def _batch_infer(x, pts, flush, enqueue_ticket_id):
         # Reorder threads
@@ -804,6 +797,14 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             reset_ema = None
             depth_batch, dequeue_ticket_id = _batch_infer(
                 None, None, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
+            # Return a generator directly to avoid out-of-memory errors during flush.
+            # Processing is performed on the main thread.
+            return _postprocess(
+                depth_batch, reset_ema,
+                dequeue_ticket_id=dequeue_ticket_id,
+                flush=flush,
+                device=device
+            )
         else:
             device = x.device
             reset_ema = [t in segment_pts for t in pts]
@@ -821,12 +822,14 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 depth_batch, dequeue_ticket_id = _batch_infer(
                     x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
 
-        return _postprocess(
-            depth_batch, reset_ema,
-            dequeue_ticket_id=dequeue_ticket_id,
-            flush=flush,
-            device=device
-        )
+            results = _postprocess(
+                depth_batch, reset_ema,
+                dequeue_ticket_id=dequeue_ticket_id,
+                flush=flush,
+                device=device
+            )
+            # Run the generator in the worker thread and return the result.
+            return [frame for frame in results]
 
     def _preprocess(x, pts, flush):
         enqueue_ticket_id = enqueue_ticket_lock.new_ticket()

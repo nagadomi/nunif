@@ -816,6 +816,12 @@ def generate_video(output_path,
             try_replace(output_path_tmp, output_path)
 
 
+def consume_generator(callback_result):
+    if isinstance(callback_result, GeneratorType):
+        for _ in callback_result:
+            pass
+
+
 def process_video_keyframes(input_path, frame_callback,
                             min_interval_sec=4., vf="",
                             title=None, stop_event=None, suspend_event=None, tqdm_fn=None):
@@ -845,7 +851,7 @@ def process_video_keyframes(input_path, frame_callback,
             current_sec = math.ceil(frame.pts * video_input_stream.time_base)
             if current_sec - prev_sec >= min_interval_sec:
                 for frame in video_filter.update(frame):
-                    frame_callback(frame)
+                    consume_generator(frame_callback(frame))
                 pbar.update(current_sec - prev_sec)
                 prev_sec = current_sec
         if suspend_event is not None:
@@ -854,7 +860,7 @@ def process_video_keyframes(input_path, frame_callback,
             break
 
     for frame in video_filter.flush():
-        frame_callback(frame)
+        consume_generator(frame_callback(frame))
         pbar.update(1)
 
     pbar.close()
@@ -949,7 +955,7 @@ def hook_frame(
         for frame in safe_decode(packet, strict=disable_software_fallback):
             for out_frame in fps_filter.update(frame):
                 ref_frame = input_reformatter(out_frame)
-                frame_callback(ref_frame)
+                consume_generator(frame_callback(ref_frame))
                 pbar.update(1)
         if i % 100 == 0:
             gc.collect()
@@ -960,10 +966,10 @@ def hook_frame(
 
     for frame in fps_filter.flush():
         ref_frame = input_reformatter(frame)
-        frame_callback(ref_frame)
+        consume_generator(frame_callback(ref_frame))
         pbar.update(1)
 
-    frame_callback(None)
+    consume_generator(frame_callback(None))
     input_container.close()
     pbar.close()
 
@@ -1048,7 +1054,7 @@ def sample_frames(
                 current_sec = float(frame.pts * packet.time_base)
                 if current_sec - prev_sec >= step_sec:
                     for frame in video_filter.update(frame):
-                        frame_callback(frame)
+                        consume_generator(frame_callback(frame))
                         pbar.update(1)
                         sample_count += 1
                     prev_sec = current_sec
@@ -1087,7 +1093,7 @@ def sample_frames(
                         continue
 
                     for frame in video_filter.update(frame):
-                        frame_callback(frame)
+                        consume_generator(frame_callback(frame))
                     pbar.update(1)
                     prev_sec = current_sec
                     return 1
@@ -1104,7 +1110,7 @@ def sample_frames(
                 break
 
     for frame in video_filter.flush():
-        frame_callback(frame)
+        consume_generator(frame_callback(frame))
         pbar.update(1)
         sample_count += 1
 

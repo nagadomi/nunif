@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .color_transform import TensorFrame
 import numpy as np
 import av
+from types import GeneratorType
 
 
 RGB_8BIT = "rgb24"
@@ -174,7 +175,14 @@ class FrameCallbackPool:
         frames = future.result()
         if self.postprocess_callback is not None:
             frames = self.postprocess_callback(frames)
-        return [frame for frame in frames] if frames is not None else []
+
+        if frames is None:
+            return
+        elif isinstance(frames, GeneratorType):
+            yield from frames
+        else:
+            for frame in frames:
+                yield frame
 
     def submit(self, *args):
         if self.preprocess_callback is not None:
@@ -201,9 +209,10 @@ class FrameCallbackPool:
                 "futures",
                 len(self.futures),
             )
-
         if frame is None:
+            # This branch returns the generator directly.
             return self.finish()
+
         if frame.pts <= self.skip_pts:
             return None
 
@@ -228,12 +237,11 @@ class FrameCallbackPool:
                 self.futures.append(future)
             if len(self.batch_queue) >= self.max_batch_queue and self.futures:
                 future = self.futures.pop(0)
-                return self.get_results(future)
+                return [frame for frame in self.get_results(future)]
         if self.futures:
             if self.futures[0].done():
                 future = self.futures.pop(0)
-                return self.get_results(future)
-
+                return [frame for frame in self.get_results(future)]
         return None
 
     def finish(self):
@@ -244,7 +252,6 @@ class FrameCallbackPool:
             self.pts_batch_queue.append(list(self.pts_queue))
             self.pts_queue.clear()
 
-        frame_remains = []
         while len(self.batch_queue) > 0:
             if len(self.futures) < self.max_workers or self.max_workers <= 0:
                 batch = self.batch_queue.pop(0)
@@ -253,16 +260,14 @@ class FrameCallbackPool:
                 self.futures.append(future)
             else:
                 future = self.futures.pop(0)
-                frame_remains += self.get_results(future)
+                yield from self.get_results(future)
         while len(self.futures) > 0:
             future = self.futures.pop(0)
-            frame_remains += self.get_results(future)
+            yield from self.get_results(future)
 
         if self.require_flush:
             future = self.submit(*self.make_args(None, None, True))
-            frame_remains += self.get_results(future)
-
-        return frame_remains
+            yield from self.get_results(future)
 
     def shutdown(self):
         pool = self.thread_pool
