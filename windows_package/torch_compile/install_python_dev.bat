@@ -29,10 +29,10 @@ exit /b 0
   ) else if "%PYVER%" == "3.10.11" (
     set PYTHON_DEV_URL=%PYTHON_310_11_DEV_URL%
   ) else (
-    echo Unsupported python version: %PYVER%
+    echo Unsupported python version: "%PYVER%"
     goto on_error
   )
-  echo Installing %PYTHON_DEV_URL%
+  echo Installing "%PYTHON_DEV_URL%"
 
   set ZIP_FILE=%TMP_DIR%\python-%PYVER%-dev.zip
   if not exist "%TMP_DIR%" mkdir "%TMP_DIR%"
