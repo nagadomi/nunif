@@ -145,6 +145,10 @@ def _hevc_deadlock_test():
 
 def _test():
     import argparse
+    from nunif.utils.video import pyav_init_cuda_primary_context
+
+
+    pyav_init_cuda_primary_context()
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True,
