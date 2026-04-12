@@ -1,5 +1,6 @@
 import torch
 from ...color_lut import load_lut, apply_lut
+from ..color_transform import TensorFrame
 
 
 class LUT3DFilter:
@@ -20,19 +21,22 @@ class LUT3DFilter:
         self.lut_path = options.strip()
         self.lut = load_lut(self.lut_path)
 
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, frame: TensorFrame) -> TensorFrame:
         # F.grid_sample requires float32/64.
         # lut is already float32.
         # Move lut to the same device as input x
+        x = frame.planes
         if self.lut.device != x.device:
             self.lut = self.lut.to(x.device)
 
         # Apply LUT
-        return apply_lut(x, self.lut)
+        frame.planes = apply_lut(x, self.lut)
+        return frame
 
 
 def _test() -> None:
     import os
+    from ..color_transform import Colorspace, ColorRange
 
     print("--- Start LUT3DFilter tests ---")
     lut_path = "color_lut/pq2bt709.cube"
@@ -42,7 +46,20 @@ def _test() -> None:
 
     filter = LUT3DFilter(lut_path)
     x = torch.zeros((1, 3, 100, 100))
-    output = filter(x)
+    frame = TensorFrame(
+        planes=x,
+        pts=0,
+        dts=0,
+        time_base=None,
+        colorspace=Colorspace.ITU709,
+        color_primaries=1,
+        color_trc=1,
+        color_range=ColorRange.MPEG,
+        side_data=None,
+        use_16bit=False,
+    )
+    output_frame = filter(frame)
+    output = output_frame.planes
     print(f"Input: {x.shape}, Output: {output.shape}")
     print("--- End LUT3DFilter tests ---")
 

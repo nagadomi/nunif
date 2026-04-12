@@ -4,6 +4,7 @@ from .crop import CropFilter
 from .bob import BobFilter
 from .transpose import TransposeFilter
 from .lut3d import LUT3DFilter
+from .setparams import SetParamsFilter
 from ..color_transform import TensorFrame
 from typing import Any, Dict, List, Optional, Tuple, Type
 import torch
@@ -16,6 +17,7 @@ class TensorFilterGraph:
         "bob": BobFilter,
         "transpose": TransposeFilter,
         "lut3d": LUT3DFilter,
+        "setparams": SetParamsFilter,
     }
     filters: List[Any]
 
@@ -41,12 +43,9 @@ class TensorFilterGraph:
         if frame is None:
             return None
 
-        x = frame.planes
-
         # Execute filter chain
         for f in self.filters:
-            x = f(x)
-        frame.planes = x
+            frame = f(frame)
         return frame
 
     def flush(self) -> List[torch.Tensor]:
@@ -80,16 +79,16 @@ class TensorFilterGraph:
 def _test() -> None:
     import os
     import torch
-    from ..color_transform import Colorspace, ColorRange
+    from ..color_transform import ColorRange
 
     print("--- Start TensorFilterGraph tests ---")
     # Test complex filter chain
     if os.path.exists("color_lut/pq2bt709.cube"):
-        cube_file = "color_lut/pq2bt709.cube" 
+        cube_file = "color_lut/pq2bt709.cube"
     else:
         cube_file = "nunif/utils/color_lut/pq2bt709.cube"
 
-    vf = f"scale=1280:720,crop=256:256,transpose=1,lut3d={cube_file}"
+    vf = f"scale=1280:720,crop=256:256,transpose=1,lut3d={cube_file},setparams=colorspace=bt709:color_trc=bt709"
     graph = TensorFilterGraph(vf)
 
     x = torch.zeros((1, 3, 1080, 1920))
@@ -98,13 +97,14 @@ def _test() -> None:
         pts=0,
         dts=0,
         time_base=None,
-        colorspace=Colorspace.ITU709,
+        colorspace=9,
         color_primaries=1,
-        color_trc=1,
+        color_trc=9,
         color_range=ColorRange.MPEG,
         side_data=None,
         use_16bit=False,
     )
+    print(f"Before: CS={int(frame.colorspace)}, TRC={int(frame.color_trc)}")
     output_frame = graph.update(frame)
 
     print(f"Filter chain: {vf}")
@@ -112,6 +112,9 @@ def _test() -> None:
         output = output_frame.planes
         print(f"Input: {x.shape[-1]}x{x.shape[-2]}")
         print(f"Output: {output.shape[-1]}x{output.shape[-2]}")
+        print(
+            f"After:  CS={int(output_frame.colorspace)}, TRC={int(output_frame.color_trc)}"
+        )
 
     # Test unsupported filter
     try:

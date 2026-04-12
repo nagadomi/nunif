@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from .utils import get_evaluator
+from ..color_transform import TensorFrame
 from typing import Any, Dict
 
 
@@ -49,7 +50,8 @@ class ScaleFilter:
 
         self.evaluator = get_evaluator()
 
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, frame: TensorFrame) -> TensorFrame:
+        x = frame.planes
         # Input width and height from tensor (..., H, W)
         ih, iw = x.shape[-2:]
 
@@ -90,7 +92,7 @@ class ScaleFilter:
 
         # Skip if size is same
         if ow == iw and oh == ih:
-            return x
+            return frame
 
         # F.interpolate expects 4D input (B, C, H, W)
         input_4d = x.unsqueeze(0) if x.dim() == 3 else x
@@ -103,17 +105,31 @@ class ScaleFilter:
 
         output = F.interpolate(input_4d, **kwargs)
 
-        return output.squeeze(0) if x.dim() == 3 else output
+        frame.planes = output.squeeze(0) if x.dim() == 3 else output
+        return frame
 
 
 def _test() -> None:
-    import torch
+    from ..color_transform import Colorspace, ColorRange
 
     def test_scale(expr: str, w: int, h: int) -> None:
         print(f"Testing '{expr}' with input {w}x{h}...")
         tensor = torch.zeros((1, 3, h, w))
+        frame = TensorFrame(
+            planes=tensor,
+            pts=0,
+            dts=0,
+            time_base=None,
+            colorspace=Colorspace.ITU709,
+            color_primaries=1,
+            color_trc=1,
+            color_range=ColorRange.MPEG,
+            side_data=None,
+            use_16bit=False,
+        )
         s = ScaleFilter(expr)
-        output = s(tensor)
+        output_frame = s(frame)
+        output = output_frame.planes
         print(
             f"Result: {output.shape[-1]}x{output.shape[-2]}, mode={s.mode}, antialias={s.antialias}"
         )

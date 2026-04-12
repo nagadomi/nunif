@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from ..color_transform import TensorFrame
 
 
 class BobFilter:
@@ -20,7 +21,8 @@ class BobFilter:
                     # Positional argument
                     self.type = part
 
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, frame: TensorFrame) -> TensorFrame:
+        x = frame.planes
         # Input width and height from tensor (..., H, W)
         ih, iw = x.shape[-2:]
 
@@ -45,17 +47,32 @@ class BobFilter:
             align_corners=False,
         )
 
-        return output.squeeze(0) if x.dim() == 3 else output
+        frame.planes = output.squeeze(0) if x.dim() == 3 else output
+        return frame
 
 
 def _test() -> None:
     import torch
+    from ..color_transform import Colorspace, ColorRange
 
     def test_bob(options: str, w: int, h: int) -> None:
         print(f"Testing Bob '{options}' with input {w}x{h}...")
         tensor = torch.zeros((3, h, w))
+        frame = TensorFrame(
+            planes=tensor,
+            pts=0,
+            dts=0,
+            time_base=None,
+            colorspace=Colorspace.ITU709,
+            color_primaries=1,
+            color_trc=1,
+            color_range=ColorRange.MPEG,
+            side_data=None,
+            use_16bit=False,
+        )
         b = BobFilter(options)
-        output = b(tensor)
+        output_frame = b(frame)
+        output = output_frame.planes
         print(f"Result: {output.shape[-1]}x{output.shape[-2]}")
 
     print("--- Start BobFilter tests ---")

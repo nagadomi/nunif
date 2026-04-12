@@ -1,4 +1,5 @@
 import torch
+from ..color_transform import TensorFrame
 
 
 class TransposeFilter:
@@ -38,15 +39,16 @@ class TransposeFilter:
         except ValueError:
             return 0
 
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, frame: TensorFrame) -> TensorFrame:
+        x = frame.planes
         # x shape is (..., H, W)
         h, w = x.shape[-2:]
 
         # Passthrough logic
         if self.passthrough == "portrait" and h >= w:
-            return x
+            return frame
         if self.passthrough == "landscape" and w >= h:
-            return x
+            return frame
 
         # torch.rot90: k is count of 90-degree COUNTER-CLOCKWISE rotations.
         if self.dir == 0:  # cclock_flip: 90 CCW then Vertical Flip
@@ -60,17 +62,32 @@ class TransposeFilter:
             x = torch.rot90(x, k=-1, dims=(-2, -1))
             x = torch.flip(x, dims=(-2,))
 
-        return x
+        frame.planes = x
+        return frame
 
 
 def _test() -> None:
     import torch
+    from ..color_transform import Colorspace, ColorRange
 
     def test_transpose(options: str, w: int, h: int) -> None:
         print(f"Testing Transpose '{options}' with input {w}x{h}...")
         x = torch.arange(w * h).reshape(1, h, w).float()
+        frame = TensorFrame(
+            planes=x,
+            pts=0,
+            dts=0,
+            time_base=None,
+            colorspace=Colorspace.ITU709,
+            color_primaries=1,
+            color_trc=1,
+            color_range=ColorRange.MPEG,
+            side_data=None,
+            use_16bit=False,
+        )
         t = TransposeFilter(options)
-        output = t(x)
+        output_frame = t(frame)
+        output = output_frame.planes
         print(f"Result: {output.shape[-1]}x{output.shape[-2]}")
 
     print("--- Start TransposeFilter tests ---")

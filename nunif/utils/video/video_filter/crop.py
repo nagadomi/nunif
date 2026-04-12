@@ -1,5 +1,6 @@
 import torch
 from .utils import get_evaluator
+from ..color_transform import TensorFrame
 from typing import Any
 
 
@@ -44,7 +45,8 @@ class CropFilter:
 
         self.evaluator = get_evaluator()
 
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, frame: TensorFrame) -> TensorFrame:
+        x = frame.planes
         # Input width and height from tensor (..., H, W)
         ih, iw = x.shape[-2:]
 
@@ -87,17 +89,31 @@ class CropFilter:
         oy = max(0, min(oy, ih - oh))
 
         # Perform crop on the tensor
-        return x[..., oy : oy + oh, ox : ox + ow]
+        frame.planes = x[..., oy : oy + oh, ox : ox + ow]
+        return frame
 
 
 def _test() -> None:
-    import torch
+    from ..color_transform import Colorspace, ColorRange
 
     def test_crop(expr: str, w: int, h: int) -> None:
         print(f"Testing '{expr}' with input {w}x{h}...")
         tensor = torch.zeros((3, h, w))
+        frame = TensorFrame(
+            planes=tensor,
+            pts=0,
+            dts=0,
+            time_base=None,
+            colorspace=Colorspace.ITU709,
+            color_primaries=1,
+            color_trc=1,
+            color_range=ColorRange.MPEG,
+            side_data=None,
+            use_16bit=False,
+        )
         c = CropFilter(expr)
-        output = c(tensor)
+        output_frame = c(frame)
+        output = output_frame.planes
         print(f"Result: {output.shape[-1]}x{output.shape[-2]}")
 
     print("--- Start CropFilter tests ---")
