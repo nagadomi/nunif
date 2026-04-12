@@ -436,6 +436,23 @@ def safe_decode(packet, strict=False):
     return frames
 
 
+def fix_frame_color_av17(frame: av.VideoFrame, sw_format: SoftwareVideoFormat) -> av.VideoFrame:
+    # In av17, VideoFrame color properties are lost when HWAccel(is_hw_owned=False),
+    # so restore them from the source properties.
+    if (
+            frame.colorspace == 2
+            and frame.color_primaries == 2
+            and frame.color_trc == 2
+            and frame.color_range == 0
+    ):
+        frame.colorspace = sw_format.colorspace
+        frame.color_primaries = sw_format.color_primaries
+        frame.color_trc = sw_format.color_trc
+        frame.color_range = sw_format.color_range
+
+    return frame
+
+
 def process_video(
         input_path, output_path,
         frame_callback,
@@ -628,6 +645,7 @@ def _process_video(
                     break
             if packet.stream.type == "video":
                 for frame in safe_decode(packet, strict=disable_software_fallback):
+                    frame = fix_frame_color_av17(frame, sw_format)
                     for out_frame in fps_filter.update(frame):
                         ref_frame = input_reformatter(out_frame)
                         for new_frame in get_new_frames(frame_callback(ref_frame)):
@@ -848,6 +866,7 @@ def process_video_keyframes(input_path, frame_callback,
     prev_sec = 0
     for packet in input_container.demux([video_input_stream]):
         for frame in safe_decode(packet):
+            frame = fix_frame_color_av17(frame, sw_format)
             current_sec = math.ceil(frame.pts * video_input_stream.time_base)
             if current_sec - prev_sec >= min_interval_sec:
                 for frame in video_filter.update(frame):
@@ -953,6 +972,7 @@ def hook_frame(
             if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                 break
         for frame in safe_decode(packet, strict=disable_software_fallback):
+            frame = fix_frame_color_av17(frame, sw_format)
             for out_frame in fps_filter.update(frame):
                 ref_frame = input_reformatter(out_frame)
                 consume_generator(frame_callback(ref_frame))
@@ -1049,6 +1069,7 @@ def sample_frames(
 
         for packet in input_container.demux([video_input_stream]):
             for frame in safe_decode(packet):
+                frame = fix_frame_color_av17(frame, sw_format)
                 if frame.pts is None:
                     continue
                 current_sec = float(frame.pts * packet.time_base)
@@ -1083,6 +1104,7 @@ def sample_frames(
                 if stop_event is not None and stop_event.is_set():
                     break
                 for frame in safe_decode(packet):
+                    frame = fix_frame_color_av17(frame, sw_format)
                     if frame.pts is None:
                         continue
                     current_sec = float(frame.pts * packet.time_base)
