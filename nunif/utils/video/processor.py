@@ -1,5 +1,5 @@
 import av
-from av.video.reformatter import Colorspace, ColorTrc, ColorRange
+from av.video.reformatter import ColorTrc, ColorRange
 from av.codec.hwaccel import HWAccel
 import os
 import gc
@@ -34,7 +34,7 @@ from .hwaccel import get_supported_hwdevices, create_hwaccel, should_use_tensor_
 from .video_preprocessor import VideoPreprocessor
 from ..color_lut import load_lut, apply_lut, get_hdr2sdr_lut_path  # noqa
 from types import GeneratorType
-from typing import Optional, Union, Dict, cast
+from typing import Any, Optional, Union, Dict, cast
 
 
 VIDEO_EXTENSIONS = [
@@ -214,70 +214,37 @@ def _print_len(stream):
     print("guessed_rate", float(stream.guessed_rate))
 
 
-def hdr2sdr(
-        lut,
-        av_frame, color_trc, output_colorspace,
-):
-    output_colorspace = output_colorspace.split("-")[0]
-    assert output_colorspace in {"bt709", "bt601"}
-    assert av_frame.colorspace == COLORSPACE_BT2020
-    assert color_trc in {ColorTrc.SMPTE2084, ColorTrc.ARIB_STD_B67}
-
-    x = av_frame.to_ndarray(format=RGB_16BIT,
-                            src_color_range=av_frame.color_range,
-                            dst_color_range=ColorRange.JPEG)
-    x = torch.from_numpy(x).to(lut.device, dtype=lut.dtype).permute(2, 0, 1) / 65535.0
-
-    x = apply_lut(x, lut)
-    x = (x.clamp(0, 1) * 65535).to(torch.uint16)
-    x = x.permute(1, 2, 0).contiguous().cpu().numpy()
-
-    output_frame = av.video.frame.VideoFrame.from_ndarray(x, format=RGB_16BIT)
-    if output_colorspace == "bt709":
-        output_frame.colorspace = Colorspace.ITU709
-    else:
-        output_frame.colorspace = Colorspace.ITU601
-    output_frame.color_range = ColorRange.JPEG
-    output_frame.pts = av_frame.pts
-    output_frame.dts = av_frame.dts
-    output_frame.time_base = av_frame.time_base
-    output_frame.opaque = av_frame.opaque
-    # output_frame.side_data = av_frame.side_data
-
-    return output_frame
-
-
 def update_hdr2sdr_video_filter(vf, colorspace, color_trc, output_colorspace):
     lut_path = get_lut_path(colorspace=colorspace,
                             color_trc=color_trc,
                             output_colorspace=output_colorspace)
-    if lut_path is not None:
-        if "bt709" in output_colorspace:
-            colorspace_filter = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"
-        else:
-            colorspace_filter = "setparams=colorspace=bt470bg:color_primaries=bt470bg:color_trc=smpte170m"
-
-        lut_filter = f"lut3d={lut_path},{colorspace_filter}"
-        vf = f"{vf},{lut_filter}" if vf else lut_filter
-        return vf
+    if "bt709" in output_colorspace:
+        colorspace_filter = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"
     else:
-        return vf
+        colorspace_filter = "setparams=colorspace=smpte170m:color_primaries=bt470bg:color_trc=smpte170m"
+
+    lut_filter = f"lut3d={lut_path},{colorspace_filter}"
+    vf = f"{vf},{lut_filter}" if vf else lut_filter
+    return vf
+
+
+def is_hdr2sdr_enabled(colorspace, color_trc, output_colorspace):
+    return (
+        colorspace == COLORSPACE_BT2020
+        and color_trc in {ColorTrc.SMPTE2084, ColorTrc.ARIB_STD_B67}
+        and output_colorspace in {"bt709", "bt709-tv", "bt709-pc",
+                                  "bt601", "bt601-tv", "bt601-pc"}
+    )
 
 
 def get_lut_path(colorspace, color_trc, output_colorspace):
-    use_hdr2sdr = (colorspace == COLORSPACE_BT2020 and
-                   color_trc in {ColorTrc.SMPTE2084, ColorTrc.ARIB_STD_B67} and
-                   output_colorspace in {"bt709", "bt709-tv", "bt709-pc",
-                                         "bt601", "bt601-tv", "bt601-pc"})
-    if use_hdr2sdr:
-        return get_hdr2sdr_lut_path({
-            (ColorTrc.SMPTE2084, "bt709"): "pq2bt709",
-            (ColorTrc.SMPTE2084, "bt601"): "pq2bt601",
-            (ColorTrc.ARIB_STD_B67, "bt709"): "hlg2bt709",
-            (ColorTrc.ARIB_STD_B67, "bt601"): "hlg2bt601",
-        }[(color_trc, output_colorspace.split("-")[0])])
-    else:
-        return None
+    assert is_hdr2sdr_enabled(colorspace, color_trc, output_colorspace)
+    return get_hdr2sdr_lut_path({
+        (ColorTrc.SMPTE2084, "bt709"): "pq2bt709",
+        (ColorTrc.SMPTE2084, "bt601"): "pq2bt601",
+        (ColorTrc.ARIB_STD_B67, "bt709"): "hlg2bt709",
+        (ColorTrc.ARIB_STD_B67, "bt601"): "hlg2bt601",
+    }[(color_trc, output_colorspace.split("-")[0])])
 
 
 def get_default_video_codec(container_format):
@@ -453,6 +420,83 @@ def fix_frame_color_av17(frame: av.VideoFrame, sw_format: SoftwareVideoFormat) -
     return frame
 
 
+def configure_pipeline(
+        video_input_stream: av.video.stream.VideoStream,
+        sw_format: SoftwareVideoFormat,
+        hwaccel: Optional[str],
+        config: Any,
+        vf: str,
+        rgb24_options: Dict[str, Any],
+        device: torch.device,
+):
+    use_hdr2sdr = is_hdr2sdr_enabled(
+        colorspace=video_input_stream.codec_context.colorspace,
+        color_trc=video_input_stream.codec_context.color_trc,
+        output_colorspace=config.colorspace
+    )
+    use_tensor_frame = should_use_tensor_frame(sw_format.format.name, hwaccel, device)
+
+    if use_hdr2sdr:
+        # Add lut3d filter
+        vf = update_hdr2sdr_video_filter(
+            vf,
+            colorspace=video_input_stream.codec_context.colorspace,
+            color_trc=video_input_stream.codec_context.color_trc,
+            output_colorspace=config.colorspace
+        )
+        if use_tensor_frame:
+            # Use colorspace_mode=auto (preserve source colorspace)
+            # fps filter -> input_transform(bt2020) -> video filters(lut3d, bt709 or bt601) -> identity
+            (
+                pix_fmt,
+                colorspace,
+                color_primaries,
+                color_trc,
+                color_range,
+            ) = sw_format.get_target_colorspace(colorspace_mode="auto", pix_fmt=sw_format.format.name)
+            rgb24_options = sw_format.get_reformat_options(
+                colorspace, color_primaries, color_trc
+            )
+
+    if use_tensor_frame:
+        # fps filter -> input_transform -> video filters -> identity
+        input_reformatter = lambda frame: frame
+        input_transform = InputTransform(
+            src_pix_fmt=sw_format.format.name,
+            src_colorspace=rgb24_options["src_colorspace"],
+            src_color_primaries=rgb24_options["src_color_primaries"],
+            src_color_trc=rgb24_options["src_color_trc"],
+            src_color_range=rgb24_options["src_color_range"],
+            dst_colorspace=rgb24_options["dst_colorspace"],
+            dst_color_primaries=rgb24_options["dst_color_primaries"],
+            dst_color_trc=rgb24_options["dst_color_trc"],
+            dst_color_range=rgb24_options["dst_color_range"],
+            use_16bit=sw_format.use_16bit,
+            device=device,
+        )
+        video_preprocessor = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf,
+                                               input_transform=input_transform)
+    else:
+        # fps filter -> video filters -> input_reformatter
+        dst_pix_fmt: Optional[str] = None
+        if video_input_stream.pix_fmt is not None:
+            dst_pix_fmt = sw_format.guess_pix_fmt(video_input_stream.pix_fmt)
+        if dst_pix_fmt == video_input_stream.pix_fmt:
+            dst_pix_fmt = None
+        input_reformatter = lambda frame: frame.reformat(
+            format=dst_pix_fmt,
+            src_colorspace=rgb24_options["src_colorspace"],
+            src_color_range=rgb24_options["src_color_range"],
+            dst_colorspace=rgb24_options["dst_colorspace"],
+            dst_color_primaries=rgb24_options["dst_color_primaries"],
+            dst_color_trc=rgb24_options["dst_color_trc"],
+            dst_color_range=rgb24_options["dst_color_range"],
+        )
+        video_preprocessor = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
+
+    return input_reformatter, video_preprocessor
+
+
 def process_video(
         input_path, output_path,
         frame_callback,
@@ -536,7 +580,6 @@ def _process_video(
 
     if not config.container_format:
         config.container_format = path.splitext(output_path)[-1].lower()[1:]
-
     if not config.video_codec:
         config.video_codec = get_default_video_codec(config.container_format)
     configure_video_codec(config)
@@ -551,52 +594,23 @@ def _process_video(
         output_hwaccel = HWAccel(device_type="cuda", device=device_id, options={"primary_ctx": "1"})
     output_container = av.open(output_path_tmp, mode="w", options=config.container_options, hwaccel=output_hwaccel)
 
-    vf = update_hdr2sdr_video_filter(
-        vf,
-        colorspace=video_input_stream.codec_context.colorspace,
-        color_trc=video_input_stream.codec_context.color_trc,
-        output_colorspace=config.colorspace
-    )
     output_fps = config.output_fps or config.fps
     video_output_stream = output_container.add_stream(config.video_codec, output_fps)
     configure_colorspace(video_output_stream, sw_format, config)
+
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
     video_output_stream.options = config.options
-    rgb24_options = config.state["rgb24_options"]
     reformatter = config.state["reformatter"]
-
-    if should_use_tensor_frame(sw_format.format.name, hwaccel, device):
-        input_reformatter = lambda frame: frame
-        input_transform = InputTransform(
-            src_pix_fmt=sw_format.format.name,
-            src_colorspace=rgb24_options["src_colorspace"],
-            src_color_primaries=rgb24_options["src_color_primaries"],
-            src_color_trc=rgb24_options["src_color_trc"],
-            src_color_range=rgb24_options["src_color_range"],
-            dst_colorspace=rgb24_options["dst_colorspace"],
-            dst_color_primaries=rgb24_options["dst_color_primaries"],
-            dst_color_trc=rgb24_options["dst_color_trc"],
-            dst_color_range=rgb24_options["dst_color_range"],
-            use_16bit=sw_format.use_16bit,
-            device=device,
-        )
-        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf,
-                                       input_transform=input_transform)
-    else:
-        dst_pix_fmt: Optional[str] = sw_format.guess_pix_fmt(video_input_stream.pix_fmt)
-        if dst_pix_fmt == video_input_stream.pix_fmt:
-            dst_pix_fmt = None
-        input_reformatter = lambda frame: frame.reformat(
-            format=dst_pix_fmt,
-            src_colorspace=rgb24_options["src_colorspace"],
-            src_color_range=rgb24_options["src_color_range"],
-            dst_colorspace=rgb24_options["dst_colorspace"],
-            dst_color_primaries=rgb24_options["dst_color_primaries"],
-            dst_color_trc=rgb24_options["dst_color_trc"],
-            dst_color_range=rgb24_options["dst_color_range"],
-        )
-        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
+    input_reformatter, fps_filter = configure_pipeline(
+        video_input_stream=video_input_stream,
+        sw_format=sw_format,
+        hwaccel=hwaccel,
+        config=config,
+        vf=vf,
+        rgb24_options=config.state["rgb24_options"],
+        device=device,
+    )
 
     if config.output_width is not None and config.output_height is not None:
         output_size = config.output_width, config.output_height
@@ -929,33 +943,15 @@ def hook_frame(
     config.fps = convert_fps_fraction(config.fps)
     configure_colorspace(None, sw_format, config)
     rgb24_options = config.state["rgb24_options"]
-    if should_use_tensor_frame(sw_format.format.name, hwaccel, device):
-        input_reformatter = lambda frame: frame
-        input_transform = InputTransform(
-            src_pix_fmt=sw_format.format.name,
-            src_colorspace=rgb24_options["src_colorspace"],
-            src_color_primaries=rgb24_options["src_color_primaries"],
-            src_color_trc=rgb24_options["src_color_trc"],
-            src_color_range=rgb24_options["src_color_range"],
-            dst_colorspace=rgb24_options["dst_colorspace"],
-            dst_color_primaries=rgb24_options["dst_color_primaries"],
-            dst_color_trc=rgb24_options["dst_color_trc"],
-            dst_color_range=rgb24_options["dst_color_range"],
-            use_16bit=sw_format.use_16bit,
-            device=device,
-        )
-        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf,
-                                       input_transform=input_transform)
-    else:
-        input_reformatter = lambda frame: frame.reformat(
-            src_colorspace=rgb24_options["src_colorspace"],
-            src_color_range=rgb24_options["src_color_range"],
-            dst_colorspace=rgb24_options["dst_colorspace"],
-            dst_color_primaries=rgb24_options["dst_color_primaries"],
-            dst_color_trc=rgb24_options["dst_color_trc"],
-            dst_color_range=rgb24_options["dst_color_range"],
-        )
-        fps_filter = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
+    input_reformatter, fps_filter = configure_pipeline(
+        video_input_stream=video_input_stream,
+        sw_format=sw_format,
+        hwaccel=hwaccel,
+        config=config,
+        vf=vf,
+        rgb24_options=config.state["rgb24_options"],
+        device=device,
+    )
 
     desc = (title if title else input_path)
     ncols = len(desc) + 60
