@@ -42,7 +42,7 @@ class VideoOutputConfig:
         if colorspace is not None:
             self.colorspace = colorspace
         else:
-            self.colorspace = "unspecified"
+            self.colorspace = "auto"
         self.container_format = container_format
         self.video_codec = video_codec
         self.device = device
