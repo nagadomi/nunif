@@ -942,7 +942,6 @@ def hook_frame(
     config = config_callback(video_input_stream)
     config.fps = convert_fps_fraction(config.fps)
     configure_colorspace(None, sw_format, config)
-    rgb24_options = config.state["rgb24_options"]
     input_reformatter, fps_filter = configure_pipeline(
         video_input_stream=video_input_stream,
         sw_format=sw_format,
@@ -1056,6 +1055,8 @@ def sample_frames(
     pbar = tqdm_fn(desc=desc, total=max_progress, ncols=ncols)
     prev_sec = 0
     sample_count = 0
+    packet_count = 0
+    frame_count = 0
 
     if num_samples * 4 > num_frames or duration < num_samples:
         # Full decoding
@@ -1064,7 +1065,9 @@ def sample_frames(
             video_input_stream.codec_context.skip_frame = "NONKEY"
 
         for packet in input_container.demux([video_input_stream]):
-            for frame in safe_decode(packet):
+            packet_count += 1
+            for frame in safe_decode(packet, strict=disable_software_fallback):
+                frame_count += 1
                 frame = fix_frame_color_av17(frame, sw_format)
                 if frame.pts is None:
                     continue
@@ -1093,13 +1096,15 @@ def sample_frames(
             keyframe_only = False
 
         def sample_one():
-            nonlocal prev_sec
+            nonlocal prev_sec, packet_count, frame_count
             for packet in input_container.demux([video_input_stream]):
+                packet_count += 1
                 if suspend_event is not None:
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
                     break
-                for frame in safe_decode(packet):
+                for frame in safe_decode(packet, strict=disable_software_fallback):
+                    frame_count += 1
                     frame = fix_frame_color_av17(frame, sw_format)
                     if frame.pts is None:
                         continue
@@ -1128,12 +1133,17 @@ def sample_frames(
                 break
 
     for frame in video_filter.flush():
+        frame_count += 1
         consume_generator(frame_callback(frame))
         pbar.update(1)
         sample_count += 1
 
     pbar.close()
     input_container.close()
+
+    if frame_count == 0 and packet_count > 2:
+        raise RuntimeError("Unable to sample frames. Likely an HWAccel error. \n"
+                           f"frame_count=0, packet_count={packet_count}")
 
     return sample_count
 
