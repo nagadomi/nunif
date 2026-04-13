@@ -1032,23 +1032,17 @@ def sample_frames(
         print(f"sample_frames: No duration available: {input_path}", file=sys.stderr)
         return -1
 
-    max_progress = num_samples
-    input_transform = InputTransform(
-        src_pix_fmt=sw_format.format.name,
-        src_colorspace=sw_format.colorspace,
-        src_color_primaries=sw_format.color_primaries,
-        src_color_trc=sw_format.color_trc,
-        src_color_range=sw_format.color_range,
-        dst_colorspace=sw_format.colorspace,
-        dst_color_primaries=sw_format.color_primaries,
-        dst_color_trc=sw_format.color_trc,
-        dst_color_range=ColorRange.JPEG,
-        use_16bit=sw_format.use_16bit,
+    input_reformatter, video_filter = configure_pipeline(
+        video_input_stream=video_input_stream,
+        sw_format=sw_format,
+        hwaccel=hwaccel,
+        config=VideoOutputConfig(fps=None, colorspace="auto"),
+        vf=vf,
+        rgb24_options=sw_format.get_auto_reformat_options(),
         device=device,
     )
-    video_filter = VideoPreprocessor(video_input_stream, sw_format, fps=None, vf=vf,
-                                     input_transform=input_transform)
 
+    max_progress = num_samples
     desc = (title if title else input_path)
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
@@ -1074,6 +1068,7 @@ def sample_frames(
                 current_sec = float(frame.pts * packet.time_base)
                 if current_sec - prev_sec >= step_sec:
                     for frame in video_filter.update(frame):
+                        frame = input_reformatter(frame)
                         consume_generator(frame_callback(frame))
                         pbar.update(1)
                         sample_count += 1
@@ -1116,6 +1111,7 @@ def sample_frames(
                         continue
 
                     for frame in video_filter.update(frame):
+                        frame = input_reformatter(frame)
                         consume_generator(frame_callback(frame))
                     pbar.update(1)
                     prev_sec = current_sec
@@ -1134,6 +1130,7 @@ def sample_frames(
 
     for frame in video_filter.flush():
         frame_count += 1
+        frame = input_reformatter(frame)
         consume_generator(frame_callback(frame))
         pbar.update(1)
         sample_count += 1

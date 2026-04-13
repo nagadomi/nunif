@@ -294,6 +294,18 @@ class SoftwareVideoFormat:
             "dst_color_range": ColorRange.JPEG,
         }
 
+    def get_auto_reformat_options(self) -> Dict[str, Any]:
+        (
+            _,
+            colorspace,
+            color_primaries,
+            color_trc,
+            _,
+        ) = self.get_target_colorspace("auto", self.format.name)
+        return self.get_reformat_options(
+            colorspace, color_primaries, color_trc
+        )
+
 
 class ColorTransform:
     # Normalized coefficients (Kr, Kb)
