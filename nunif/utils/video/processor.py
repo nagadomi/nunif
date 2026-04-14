@@ -1277,6 +1277,7 @@ def _test_export_audio():
 
 def _test_reencode():
     import argparse
+    from nunif.device import create_device
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True,
@@ -1307,7 +1308,7 @@ def _test_reencode():
                         help="hwaccel for decode")
 
     args = parser.parse_args()
-    device = "cpu" if args.gpu < 0 else f"cuda:{args.gpu}"
+    device = create_device(args.gpu)
     preset = "fast" if args.video_codec in {"h264_nvenc", "hevc_nvenc"} else "ultrafast"
 
     def make_config(stream):
@@ -1350,6 +1351,8 @@ def _test_reencode():
 
 def _test_sample_frames():
     import argparse
+    import torchvision.transforms.functional as TF
+    from nunif.device import create_device
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
@@ -1357,8 +1360,12 @@ def _test_sample_frames():
     parser.add_argument("--num-samples", "-n", type=int, required=True, help="number of samples")
     parser.add_argument("--vf", type=str, default="", help="video filter")
     parser.add_argument("--offset", type=float, default=0.05, help="skip offset")
+    parser.add_argument("--hwaccel", type=str, default=None, choices=get_supported_hwdevices(),
+                        help="hwaccel for decode")
+    parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")
 
     args = parser.parse_args()
+    device = create_device(args.gpu)
     if args.output is not None:
         os.makedirs(args.output, exist_ok=True)
     processed_count = 0
@@ -1367,14 +1374,24 @@ def _test_sample_frames():
         nonlocal processed_count
         processed_count += 1
         if args.output is not None:
-            frame.to_image().save(path.join(args.output, f"{processed_count}.png"))
+            TF.to_pil_image(to_tensor(frame)).save(path.join(args.output, f"{processed_count}.png"))
         return
 
-    sample_count = sample_frames(args.input, frame_callback=callback, num_samples=args.num_samples, vf=args.vf, offset=args.offset)
+    sample_count = sample_frames(
+        args.input,
+        frame_callback=callback,
+        num_samples=args.num_samples,
+        vf=args.vf, offset=args.offset,
+        hwaccel=args.hwaccel,
+        device=device,
+        disable_software_fallback=True,
+    )
     print("sample_count", sample_count, "processed_count", processed_count)
 
 
 if __name__ == "__main__":
+    from . import pyav_init_cuda_primary_context
+    pyav_init_cuda_primary_context()
     # _test_process_video()
     # _test_export_audio()
     # _test_sample_frames()

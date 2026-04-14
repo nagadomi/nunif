@@ -168,6 +168,28 @@ class SoftwareVideoFormat:
         return self.guess_colorspace_static(self.height, self.colorspace)
 
     @staticmethod
+    def guess_color_trc_static(colorspace: Union[Colorspace, int]) -> ColorTrc:
+        if colorspace == Colorspace.ITU709:
+            return ColorTrc.BT709
+        elif colorspace == Colorspace.ITU601:
+            return ColorTrc.SMPTE170M
+        elif colorspace == COLORSPACE_BT2020:
+            return ColorTrc.SMPTE2084
+        else:
+            return ColorTrc.UNSPECIFIED
+
+    @staticmethod
+    def guess_color_primaries_static(colorspace: Union[Colorspace, int]) -> ColorPrimaries:
+        if colorspace == Colorspace.ITU709:
+            return ColorPrimaries.BT709
+        elif colorspace == Colorspace.ITU601:
+            return ColorPrimaries.SMPTE170M
+        elif colorspace == COLORSPACE_BT2020:
+            return ColorPrimaries.BT2020
+        else:
+            return ColorPrimaries.UNSPECIFIED
+
+    @staticmethod
     def get_target_colorspace_static(
         colorspace_mode: str,
         pix_fmt: str,
@@ -226,9 +248,9 @@ class SoftwareVideoFormat:
                         src_height, src_colorspace
                     )
                 if color_primaries == ColorPrimaries.UNSPECIFIED:
-                    color_primaries = colorspace
+                    color_primaries = SoftwareVideoFormat.guess_color_primaries_static(colorspace)
                 if color_trc == ColorTrc.UNSPECIFIED:
-                    color_trc = colorspace
+                    color_trc = SoftwareVideoFormat.guess_color_trc_static(colorspace)
                 if color_range == ColorRange.UNSPECIFIED:
                     color_range = SoftwareVideoFormat.guess_color_range_static(
                         src_format_name, src_color_range
@@ -1123,6 +1145,8 @@ class OutputTransform:
         return self.transform(x)
 
 
+
+
 def configure_colorspace(
     output_stream: Optional[av.video.stream.VideoStream],
     sw_format: Optional[SoftwareVideoFormat],
@@ -1131,13 +1155,6 @@ def configure_colorspace(
     """Configure output stream and store state based on user config."""
     config.state["rgb24_options"] = {}
     config.state["reformatter"] = lambda frame: frame
-
-    exported_output_colorspace: int = config.state.get(
-        "output_colorspace", COLORSPACE_UNSPECIFIED
-    )
-    exported_source_color_range: int = config.state.get(
-        "source_color_range", int(ColorRange.UNSPECIFIED)
-    )
 
     pix_fmt: str
     colorspace: Union[Colorspace, int]
@@ -1161,6 +1178,16 @@ def configure_colorspace(
         source_color_range = sw_format.guess_color_range()
     else:
         # Fallback logic for image import, using SoftwareVideoFormat's static logic
+        def _get(d: Dict[str, Any], key: str, default: int) -> int:
+            value = d.get(key, default)
+            if value is None:
+                value = default
+            return int(value)
+
+        exported_output_colorspace: int = _get(config.state, "output_colorspace", COLORSPACE_UNSPECIFIED)
+        exported_output_color_primaries: int = _get(config.state, "output_color_primaries", int(ColorPrimaries.UNSPECIFIED))
+        exported_output_color_trc: int = _get(config.state, "output_color_trc", int(ColorTrc.UNSPECIFIED))
+        exported_source_color_range: int = _get(config.state, "source_color_range", int(ColorRange.UNSPECIFIED))
         (
             pix_fmt,
             colorspace,
@@ -1171,6 +1198,8 @@ def configure_colorspace(
             colorspace_mode=config.colorspace,
             pix_fmt=config.pix_fmt,
             src_colorspace=exported_output_colorspace,
+            src_color_primaries=exported_output_color_primaries,
+            src_color_trc=exported_output_color_trc,
             src_color_range=exported_source_color_range,
         )
         rgb24_options = {
@@ -1219,6 +1248,8 @@ def configure_colorspace(
 
     config.state["rgb24_options"] = rgb24_options
     config.state["output_colorspace"] = int(colorspace)
+    config.state["output_color_primaries"] = int(color_primaries)
+    config.state["output_color_trc"] = int(color_trc)
     config.state["source_color_range"] = int(source_color_range)
 
     if config.state_updated is not None:

@@ -1,6 +1,8 @@
+from av.video.reformatter import Colorspace, ColorTrc, ColorPrimaries, ColorRange
 import torch
 from fractions import Fraction
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
+
 
 
 class VideoOutputConfig:
@@ -31,6 +33,10 @@ class VideoOutputConfig:
         video_codec: Optional[str] = None,
         output_fps: Optional[str] = None,
         device: Optional[torch.device] = None,
+        output_colorspace: Optional[Union[Colorspace, int]] = None,
+        output_color_primaries: Optional[Union[ColorPrimaries, int]] = None,
+        output_color_trc: Optional[Union[ColorTrc, int]] = None,
+        source_color_range: Optional[Union[ColorRange, int]] = None,
     ):
         self.pix_fmt = pix_fmt
         self.fps = fps
@@ -51,8 +57,10 @@ class VideoOutputConfig:
         self.state = dict(
             rgb24_options={},
             reformatter=lambda frame: frame,
-            source_color_range=None,
-            output_colorspace=None,
+            source_color_range=source_color_range,
+            output_colorspace=output_colorspace,
+            output_color_primaries=output_color_primaries,
+            output_color_trc=output_color_trc,
         )
 
     def __repr__(self):

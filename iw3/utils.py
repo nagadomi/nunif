@@ -1635,8 +1635,10 @@ def export_video(input_filename, output_dir, args, title=None):
         config.fps = fps  # update fps
 
         def state_update_callback(c):
-            config.source_color_range = c.state["source_color_range"]
             config.output_colorspace = c.state["output_colorspace"]
+            config.output_color_primaries = c.state["output_color_primaries"]
+            config.output_color_trc = c.state["output_color_trc"]
+            config.source_color_range = c.state["source_color_range"]
 
         video_output_config = VU.VideoOutputConfig(fps=fps, pix_fmt=args.pix_fmt, colorspace=args.colorspace)
         video_output_config.state_updated = state_update_callback
@@ -1815,8 +1817,10 @@ def process_config_video(config, args, side_model):
         output_width=output_width,
         output_height=output_height
     )
-    video_config.state["source_color_range"] = config.source_color_range
     video_config.state["output_colorspace"] = config.output_colorspace
+    video_config.state["output_color_trc"] = config.output_color_trc
+    video_config.state["output_color_primaries"] = config.output_color_primaries
+    video_config.state["source_color_range"] = config.source_color_range
 
     original_mapper = args.mapper
     try:
