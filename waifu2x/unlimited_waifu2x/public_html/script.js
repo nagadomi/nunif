@@ -87,7 +87,7 @@ const CONFIG = {
     arch: gen_arch_config(),
     get_config: function(arch, style, method) {
         if ((arch in this.arch) && (style in this.arch[arch]) && (method in this.arch[arch][style])) {
-            config = this.arch[arch][style][method];
+            let config = this.arch[arch][style][method];
             config["path"] = `models/${arch}/${style}/${method}.onnx`;
             return config;
         } else {
