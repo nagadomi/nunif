@@ -1277,7 +1277,6 @@ def _test_export_audio():
 
 def _test_reencode():
     import argparse
-    from nunif.device import create_device
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True,
@@ -1308,7 +1307,7 @@ def _test_reencode():
                         help="hwaccel for decode")
 
     args = parser.parse_args()
-    device = create_device(args.gpu)
+    device = torch.device("cpu" if args.gpu < 0 else f"cuda:{args.gpu}")
     preset = "fast" if args.video_codec in {"h264_nvenc", "hevc_nvenc"} else "ultrafast"
 
     def make_config(stream):
@@ -1352,7 +1351,6 @@ def _test_reencode():
 def _test_sample_frames():
     import argparse
     import torchvision.transforms.functional as TF
-    from nunif.device import create_device
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
@@ -1365,7 +1363,7 @@ def _test_sample_frames():
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")
 
     args = parser.parse_args()
-    device = create_device(args.gpu)
+    device = torch.device("cpu" if args.gpu < 0 else f"cuda:{args.gpu}")
     if args.output is not None:
         os.makedirs(args.output, exist_ok=True)
     processed_count = 0

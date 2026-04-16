@@ -38,7 +38,7 @@ def pyav_init_cuda_primary_context(max_devices=16):
     """
     import numpy as np
     import torch
-    from nunif.utils.video.hwaccel import create_hwaccel, HW_DEVICES
+    from .hwaccel import create_hwaccel, HW_DEVICES
 
     if "cuda" not in HW_DEVICES:
         return
