@@ -1,13 +1,15 @@
 import re
-from .scale import ScaleFilter
-from .crop import CropFilter
-from .bob import BobFilter
-from .transpose import TransposeFilter
-from .lut3d import LUT3DFilter
-from .setparams import SetParamsFilter
-from ..color_transform import TensorFrame
 from typing import Any, Dict, List, Optional, Tuple, Type
+
 import torch
+
+from ..color_transform import TensorFrame
+from .bob import BobFilter
+from .crop import CropFilter
+from .lut3d import LUT3DFilter
+from .scale import ScaleFilter
+from .setparams import SetParamsFilter
+from .transpose import TransposeFilter
 
 
 class TensorFilterGraph:
@@ -78,7 +80,9 @@ class TensorFilterGraph:
 
 def _test() -> None:
     import os
+
     import torch
+
     from ..color_transform import ColorRange
 
     print("--- Start TensorFilterGraph tests ---")
@@ -112,9 +116,7 @@ def _test() -> None:
         output = output_frame.planes
         print(f"Input: {x.shape[-1]}x{x.shape[-2]}")
         print(f"Output: {output.shape[-1]}x{output.shape[-2]}")
-        print(
-            f"After:  CS={int(output_frame.colorspace)}, TRC={int(output_frame.color_trc)}"
-        )
+        print(f"After:  CS={int(output_frame.colorspace)}, TRC={int(output_frame.color_trc)}")
 
     # Test unsupported filter
     try:

@@ -1,7 +1,9 @@
-import torch
-from .utils import get_evaluator
-from ..color_transform import TensorFrame
 from typing import Any
+
+import torch
+
+from ..color_transform import TensorFrame
+from .utils import get_evaluator
 
 
 class CropFilter:
@@ -67,9 +69,7 @@ class CropFilter:
             ow = int(self.evaluator.eval(self.w_expr))
             oh = int(self.evaluator.eval(self.h_expr))
         except Exception as e:
-            raise ValueError(
-                f"Failed to evaluate crop w:h expressions '{self.w_expr}:{self.h_expr}': {e}"
-            ) from e
+            raise ValueError(f"Failed to evaluate crop w:h expressions '{self.w_expr}:{self.h_expr}': {e}") from e
 
         # Update context for evaluating y and x (FFmpeg evaluates y before x)
         self.evaluator.names.update({"ow": ow, "out_w": ow, "oh": oh, "out_h": oh})
@@ -80,9 +80,7 @@ class CropFilter:
             self.evaluator.names.update({"y": oy})
             ox = int(self.evaluator.eval(self.x_expr))
         except Exception as e:
-            raise ValueError(
-                f"Failed to evaluate crop x:y expressions '{self.x_expr}:{self.y_expr}': {e}"
-            ) from e
+            raise ValueError(f"Failed to evaluate crop x:y expressions '{self.x_expr}:{self.y_expr}': {e}") from e
 
         # Clamp results to image boundary
         ox = max(0, min(ox, iw - ow))
@@ -94,7 +92,7 @@ class CropFilter:
 
 
 def _test() -> None:
-    from ..color_transform import Colorspace, ColorRange
+    from ..color_transform import ColorRange, Colorspace
 
     def test_crop(expr: str, w: int, h: int) -> None:
         print(f"Testing '{expr}' with input {w}x{h}...")

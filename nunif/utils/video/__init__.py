@@ -1,8 +1,8 @@
+import io
 import mimetypes
 import os
-import av
-import io
 
+import av
 
 # NOTE: This appears to be required to avoid a deadlock with HWAccel and thread_type="AUTO".
 av.logging.set_level(None)
@@ -38,7 +38,8 @@ def pyav_init_cuda_primary_context(max_devices=16):
     """
     import numpy as np
     import torch
-    from .hwaccel import create_hwaccel, HW_DEVICES
+
+    from .hwaccel import HW_DEVICES, create_hwaccel
 
     if "cuda" not in HW_DEVICES:
         return
@@ -51,9 +52,7 @@ def pyav_init_cuda_primary_context(max_devices=16):
             stream.height = 64
             stream.pix_fmt = "yuv420p"
 
-            frame = av.VideoFrame.from_ndarray(
-                np.zeros((64, 64, 3), dtype=np.uint8), format="rgb24"
-            )
+            frame = av.VideoFrame.from_ndarray(np.zeros((64, 64, 3), dtype=np.uint8), format="rgb24")
             for packet in stream.encode(frame):
                 container.mux(packet)
             for packet in stream.encode():

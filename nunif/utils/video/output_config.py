@@ -1,8 +1,8 @@
-from av.video.reformatter import Colorspace, ColorTrc, ColorPrimaries, ColorRange
-import torch
 from fractions import Fraction
 from typing import Any, Callable, Dict, Optional, Union
 
+import torch
+from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
 
 class VideoOutputConfig:

@@ -1,6 +1,7 @@
+from typing import List, Optional, Set
+
 import torch
 from av.codec.hwaccel import HWAccel, hwdevices_available
-from typing import List, Set, Optional
 
 
 def get_supported_hwdevices() -> List[str]:

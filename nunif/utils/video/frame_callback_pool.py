@@ -1,10 +1,11 @@
-import torch
 from concurrent.futures import ThreadPoolExecutor
-from .color_transform import TensorFrame
-import numpy as np
-import av
 from types import GeneratorType
 
+import av
+import numpy as np
+import torch
+
+from .color_transform import TensorFrame
 
 RGB_8BIT = "rgb24"
 RGB_16BIT = "gbrp16le"
@@ -36,14 +37,7 @@ def from_tensor(x, use_16bit=False):
         dtype = torch.uint8
         value_scale = 255.0
 
-    x = (
-        (x.permute(1, 2, 0).contiguous() * value_scale)
-        .round_()
-        .to(dtype)
-        .detach()
-        .cpu()
-        .numpy()
-    )
+    x = (x.permute(1, 2, 0).contiguous() * value_scale).round_().to(dtype).detach().cpu().numpy()
     return from_ndarray(x)
 
 

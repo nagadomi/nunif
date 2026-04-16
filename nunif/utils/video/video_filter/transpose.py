@@ -1,4 +1,5 @@
 import torch
+
 from ..color_transform import TensorFrame
 
 
@@ -68,7 +69,8 @@ class TransposeFilter:
 
 def _test() -> None:
     import torch
-    from ..color_transform import Colorspace, ColorRange
+
+    from ..color_transform import ColorRange, Colorspace
 
     def test_transpose(options: str, w: int, h: int) -> None:
         print(f"Testing Transpose '{options}' with input {w}x{h}...")

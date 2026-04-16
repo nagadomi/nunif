@@ -1,5 +1,6 @@
 from fractions import Fraction
 from typing import List, Optional
+
 import av
 
 
@@ -47,9 +48,7 @@ class FPSFilter:
         if self.last_frame is not None:
             nb_frames = expected_total_out - self.frames_out
             for _ in range(nb_frames):
-                out_frames.append(
-                    self._create_out_frame(self.last_frame, self.frames_out)
-                )
+                out_frames.append(self._create_out_frame(self.last_frame, self.frames_out))
                 self.frames_out += 1
 
         self.last_frame = frame
@@ -60,11 +59,7 @@ class FPSFilter:
             return []
 
         assert self.last_frame.pts is not None
-        duration = (
-            self.last_frame.duration
-            if self.last_frame.duration
-            else self.default_duration
-        )
+        duration = self.last_frame.duration if self.last_frame.duration else self.default_duration
         time_seconds = (self.last_frame.pts + duration) * self.input_time_base
         expected_total_out = int(time_seconds * self.target_fps + Fraction(1, 2))
 
@@ -72,9 +67,7 @@ class FPSFilter:
         if self.frames_out is not None:
             nb_frames = expected_total_out - self.frames_out
             for _ in range(nb_frames):
-                out_frames.append(
-                    self._create_out_frame(self.last_frame, self.frames_out)
-                )
+                out_frames.append(self._create_out_frame(self.last_frame, self.frames_out))
                 self.frames_out += 1
 
         self.last_frame = None  # Free the reference to the last frame

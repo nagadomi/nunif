@@ -1,10 +1,12 @@
-import av
 from fractions import Fraction
-from .video_filter.fps import FPSFilter
+from typing import List, Optional, Union
+
+import av
+
+from .color_transform import InputTransform, SoftwareVideoFormat
 from .video_filter.av_filter_graph import AVFilterGraph
+from .video_filter.fps import FPSFilter
 from .video_filter.tensor_filter_graph import TensorFilterGraph
-from .color_transform import SoftwareVideoFormat, InputTransform
-from typing import Optional, List, Union
 
 
 class VideoPreprocessor:
@@ -28,16 +30,12 @@ class VideoPreprocessor:
         if fps is not None:
             if video_stream.guessed_rate is None or video_stream.time_base is None:
                 raise RuntimeError("guessed_rate/time_base is None")
-            self.fps_filter = FPSFilter(
-                fps, video_stream.time_base, video_stream.guessed_rate
-            )
+            self.fps_filter = FPSFilter(fps, video_stream.time_base, video_stream.guessed_rate)
         if vf:
             if self.input_transform is not None:
                 self.video_filter = TensorFilterGraph(vf, deny_filters=deny_filters)
             else:
-                self.video_filter = AVFilterGraph(
-                    video_stream, sw_format, vf, deny_filters
-                )
+                self.video_filter = AVFilterGraph(video_stream, sw_format, vf, deny_filters)
 
     def update(self, frame):
         if self.fps_filter is not None:

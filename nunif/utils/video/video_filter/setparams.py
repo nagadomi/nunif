@@ -1,5 +1,6 @@
-from ..color_transform import TensorFrame
 from typing import Dict, Optional
+
+from ..color_transform import TensorFrame
 
 
 class SetParamsFilter:
@@ -128,11 +129,13 @@ def _test() -> None:
     )
 
     print(
-        f"Before: CS={int(frame.colorspace)}, PRI={int(frame.color_primaries)}, TRC={int(frame.color_trc)}, RNG={int(frame.color_range)}"
+        f"Before: CS={int(frame.colorspace)}, PRI={int(frame.color_primaries)}, "
+        f"TRC={int(frame.color_trc)}, RNG={int(frame.color_range)}"
     )
     frame = f(frame)
     print(
-        f"After:  CS={int(frame.colorspace)}, PRI={int(frame.color_primaries)}, TRC={int(frame.color_trc)}, RNG={int(frame.color_range)}"
+        f"After:  CS={int(frame.colorspace)}, PRI={int(frame.color_primaries)}, "
+        f"TRC={int(frame.color_trc)}, RNG={int(frame.color_range)}"
     )
 
     assert int(frame.colorspace) == 1

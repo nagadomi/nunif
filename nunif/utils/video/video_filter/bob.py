@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+
 from ..color_transform import TensorFrame
 
 
@@ -53,7 +54,8 @@ class BobFilter:
 
 def _test() -> None:
     import torch
-    from ..color_transform import Colorspace, ColorRange
+
+    from ..color_transform import ColorRange, Colorspace
 
     def test_bob(options: str, w: int, h: int) -> None:
         print(f"Testing Bob '{options}' with input {w}x{h}...")

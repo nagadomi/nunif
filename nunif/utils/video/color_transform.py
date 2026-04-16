@@ -1,14 +1,14 @@
 from fractions import Fraction
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+import av
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.dlpack
-import numpy as np
-import av
-from av.video.reformatter import Colorspace, ColorTrc, ColorPrimaries, ColorRange
-from av.video.frame import CudaContext
 from av.codec.hwaccel import HWDeviceType
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
-
+from av.video.frame import CudaContext
+from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
 # Colorspace constants (missing in PyAV Colorspace Enum)
 COLORSPACE_UNSPECIFIED: int = 2
@@ -144,9 +144,7 @@ class SoftwareVideoFormat:
             return stream_pix_fmt
 
     @staticmethod
-    def guess_color_range_static(
-        format_name: str, color_range: Union[ColorRange, int]
-    ) -> ColorRange:
+    def guess_color_range_static(format_name: str, color_range: Union[ColorRange, int]) -> ColorRange:
         if color_range in {ColorRange.MPEG, ColorRange.JPEG}:
             return ColorRange(color_range)
         if any(s in format_name for s in ("yuvj", "rgb", "gbr")):
@@ -157,9 +155,7 @@ class SoftwareVideoFormat:
         return self.guess_color_range_static(self.format.name, self.color_range)
 
     @staticmethod
-    def guess_colorspace_static(
-        height: int, colorspace: Union[Colorspace, int]
-    ) -> Union[Colorspace, int]:
+    def guess_colorspace_static(height: int, colorspace: Union[Colorspace, int]) -> Union[Colorspace, int]:
         if colorspace != COLORSPACE_UNSPECIFIED:
             return colorspace
         return Colorspace.ITU709 if height >= 720 else Colorspace.ITU601
@@ -225,9 +221,7 @@ class SoftwareVideoFormat:
                 color_range,
             ) = COLOR_CONFIG_MAP[colorspace_mode]
         elif colorspace_mode in {"bt709", "bt601", "bt2020"}:
-            rng = SoftwareVideoFormat.guess_color_range_static(
-                src_format_name, src_color_range
-            )
+            rng = SoftwareVideoFormat.guess_color_range_static(src_format_name, src_color_range)
             suffix = "pc" if rng == ColorRange.JPEG else "tv"
             (
                 colorspace,
@@ -244,17 +238,13 @@ class SoftwareVideoFormat:
             # Only guess if the user requested 'auto' (which became 'copy' here)
             if original_mode == "auto":
                 if colorspace == COLORSPACE_UNSPECIFIED:
-                    colorspace = SoftwareVideoFormat.guess_colorspace_static(
-                        src_height, src_colorspace
-                    )
+                    colorspace = SoftwareVideoFormat.guess_colorspace_static(src_height, src_colorspace)
                 if color_primaries == ColorPrimaries.UNSPECIFIED:
                     color_primaries = SoftwareVideoFormat.guess_color_primaries_static(colorspace)
                 if color_trc == ColorTrc.UNSPECIFIED:
                     color_trc = SoftwareVideoFormat.guess_color_trc_static(colorspace)
                 if color_range == ColorRange.UNSPECIFIED:
-                    color_range = SoftwareVideoFormat.guess_color_range_static(
-                        src_format_name, src_color_range
-                    )
+                    color_range = SoftwareVideoFormat.guess_color_range_static(src_format_name, src_color_range)
         elif colorspace_mode == "unspecified":
             colorspace = COLORSPACE_UNSPECIFIED
             color_primaries = ColorPrimaries.UNSPECIFIED
@@ -324,9 +314,7 @@ class SoftwareVideoFormat:
             color_trc,
             _,
         ) = self.get_target_colorspace("auto", self.format.name)
-        return self.get_reformat_options(
-            colorspace, color_primaries, color_trc
-        )
+        return self.get_reformat_options(colorspace, color_primaries, color_trc)
 
 
 class ColorTransform:
@@ -338,9 +326,7 @@ class ColorTransform:
     }
 
     # Matrix cache
-    _MATRIX_CACHE: Dict[
-        Tuple[Any, ...], Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]
-    ] = {}
+    _MATRIX_CACHE: Dict[Tuple[Any, ...], Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]] = {}
 
     # Format classification
     YUV_PLANAR: Set[str] = {
@@ -429,15 +415,11 @@ class ColorTransform:
         src_fmt: str = frame.format.name
         fmt: str = src_fmt
         planes_f: List[torch.Tensor] = []
-        bpp: int = (
-            ColorTransform.RGB_PACKED[fmt][0] if fmt in ColorTransform.RGB_PACKED else 1
-        )
+        bpp: int = ColorTransform.RGB_PACKED[fmt][0] if fmt in ColorTransform.RGB_PACKED else 1
 
         for i, plane in enumerate(frame.planes):
             t: Optional[torch.Tensor] = None
-            if src_fmt in ColorTransform.DLPACK_SUPPORTED_FORMATS and hasattr(
-                plane, "__dlpack__"
-            ):
+            if src_fmt in ColorTransform.DLPACK_SUPPORTED_FORMATS and hasattr(plane, "__dlpack__"):
                 if i == 0:
                     # Ensure hardware decoder has finished writing to the planes.
                     if torch.cuda.default_stream() != torch.cuda.current_stream():
@@ -463,13 +445,11 @@ class ColorTransform:
                 itemsize: int = np.dtype(np_dtype).itemsize
                 try:
                     actual_width: int = (
-                        frame.width * bpp
-                        if i == 0 and fmt in ColorTransform.RGB_PACKED
-                        else plane.width
+                        frame.width * bpp if i == 0 and fmt in ColorTransform.RGB_PACKED else plane.width
                     )
-                    arr = np.frombuffer(plane, dtype=np_dtype).reshape(
-                        -1, stride // itemsize
-                    )[: plane.height, :actual_width]
+                    arr = np.frombuffer(plane, dtype=np_dtype).reshape(-1, stride // itemsize)[
+                        : plane.height, :actual_width
+                    ]
                     t = torch.from_numpy(arr.copy())
                 except ValueError as e:
                     if "hardware frame" in str(e) or "CUDA" in str(e):
@@ -545,9 +525,7 @@ class ColorTransform:
             p0 = planes_f[0]
             if p0.dim() == 2:
                 p0 = p0.reshape(frame.height, frame.width, bpp)
-            channels = [
-                p0[:, :, idx].unsqueeze(0).unsqueeze(0).div_(div) for idx in order
-            ]
+            channels = [p0[:, :, idx].unsqueeze(0).unsqueeze(0).div_(div) for idx in order]
             rgb = torch.cat(channels, dim=1)
         else:
             raise ValueError(f"Unsupported format for to_tensor: {fmt}")
@@ -556,10 +534,7 @@ class ColorTransform:
             # Skip the roundtrip if the destination exactly matches the source.
             if dst_colorspace == src_colorspace and dst_color_range == src_color_range:
                 pass
-            elif (
-                fmt in ColorTransform.YUV_PLANAR
-                or fmt in ColorTransform.YUV_SEMI_PLANAR
-            ):
+            elif fmt in ColorTransform.YUV_PLANAR or fmt in ColorTransform.YUV_SEMI_PLANAR:
                 # Roundtrip for YUV sources is a no-op without chroma subsampling.
                 pass
             else:
@@ -630,9 +605,7 @@ class ColorTransform:
             offsets: torch.Tensor
             gains: torch.Tensor
             if color_range == ColorRange.JPEG:
-                offsets = torch.tensor(
-                    [0.0, 128.0 / 255.0, 128.0 / 255.0], device=device, dtype=dtype
-                )
+                offsets = torch.tensor([0.0, 128.0 / 255.0, 128.0 / 255.0], device=device, dtype=dtype)
                 gains = torch.tensor([1.0, 1.0, 1.0], device=device, dtype=dtype)
             else:
                 offsets = torch.tensor(
@@ -674,9 +647,7 @@ class ColorTransform:
         div: float = 255.0,
         mode: str = "bilinear",
     ) -> torch.Tensor:
-        res = ColorTransform._get_matrix(
-            colorspace, y.device, y.dtype, "yuv2rgb", color_range, div
-        )
+        res = ColorTransform._get_matrix(colorspace, y.device, y.dtype, "yuv2rgb", color_range, div)
         assert isinstance(res, tuple)
         weight, bias = res
 
@@ -719,9 +690,7 @@ class ColorTransform:
         out_format: Optional[str] = "yuv444p",
         mode: str = "bilinear",
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        weight = ColorTransform._get_matrix(
-            colorspace, rgb.device, rgb.dtype, "rgb2yuv"
-        )
+        weight = ColorTransform._get_matrix(colorspace, rgb.device, rgb.dtype, "rgb2yuv")
         assert isinstance(weight, torch.Tensor)
         yuv_n = F.conv2d(rgb, weight)
 
@@ -744,23 +713,15 @@ class ColorTransform:
                     u = F.interpolate(u, size=(h // 2, w // 2), mode="nearest")
                     v = F.interpolate(v, size=(h // 2, w // 2), mode="nearest")
                 else:
-                    u = F.interpolate(
-                        u, size=(h // 2, w // 2), mode="bilinear", align_corners=False
-                    )
-                    v = F.interpolate(
-                        v, size=(h // 2, w // 2), mode="bilinear", align_corners=False
-                    )
+                    u = F.interpolate(u, size=(h // 2, w // 2), mode="bilinear", align_corners=False)
+                    v = F.interpolate(v, size=(h // 2, w // 2), mode="bilinear", align_corners=False)
             elif out_format in {"yuv422p", "yuvj422p", "yuv422p10le"}:
                 if mode == "nearest":
                     u = F.interpolate(u, size=(h, w // 2), mode="nearest")
                     v = F.interpolate(v, size=(h, w // 2), mode="nearest")
                 else:
-                    u = F.interpolate(
-                        u, size=(h, w // 2), mode="bilinear", align_corners=False
-                    )
-                    v = F.interpolate(
-                        v, size=(h, w // 2), mode="bilinear", align_corners=False
-                    )
+                    u = F.interpolate(u, size=(h, w // 2), mode="bilinear", align_corners=False)
+                    v = F.interpolate(v, size=(h, w // 2), mode="bilinear", align_corners=False)
 
         return y, u, v
 
@@ -976,14 +937,8 @@ class InputTransform:
 
     def transform(self, frame: av.VideoFrame) -> TensorFrame:
         # Check source metadata
-        assert (
-            frame.colorspace == self.src_colorspace
-            or frame.colorspace == COLORSPACE_UNSPECIFIED
-        )
-        assert (
-            frame.color_range == self.src_color_range
-            or frame.color_range == ColorRange.UNSPECIFIED
-        )
+        assert frame.colorspace == self.src_colorspace or frame.colorspace == COLORSPACE_UNSPECIFIED
+        assert frame.color_range == self.src_color_range or frame.color_range == ColorRange.UNSPECIFIED
 
         if frame.format.name == "cuda" and self.src_pix_fmt in {
             "yuv420p",
@@ -995,9 +950,7 @@ class InputTransform:
         if frame.format.name in InputTransform.HW_DEVICE_TYPES:
             # hw download
             frame = frame.reformat()
-        assert len(frame.format.components) > 0, (
-            f"Unexpected (hw) format {frame.format}"
-        )
+        assert len(frame.format.components) > 0, f"Unexpected (hw) format {frame.format}"
 
         return self.to_tensor_av(frame)
 
@@ -1065,14 +1018,7 @@ class OutputTransform:
         else:
             dtype = torch.uint8
             value_scale = 255.0
-        x_nd = (
-            (x.permute(1, 2, 0).contiguous() * value_scale)
-            .round()
-            .to(dtype)
-            .detach()
-            .cpu()
-            .numpy()
-        )
+        x_nd = (x.permute(1, 2, 0).contiguous() * value_scale).round().to(dtype).detach().cpu().numpy()
         return self.from_ndarray(x_nd)
 
     def is_dlpack_supported(self, x: torch.Tensor) -> bool:
@@ -1119,9 +1065,7 @@ class OutputTransform:
         frame.color_range = self.dst_color_range
         return frame
 
-    def transform(
-        self, x: Union[av.VideoFrame, torch.Tensor, np.ndarray, TensorFrame]
-    ) -> av.VideoFrame:
+    def transform(self, x: Union[av.VideoFrame, torch.Tensor, np.ndarray, TensorFrame]) -> av.VideoFrame:
         if isinstance(x, TensorFrame):
             # For simplicity, extract planes. PTS/DTS handling can be added later if needed.
             x = x.planes
@@ -1139,12 +1083,8 @@ class OutputTransform:
 
         return self.from_tensor(x)
 
-    def __call__(
-        self, x: Union[av.VideoFrame, torch.Tensor, np.ndarray, TensorFrame]
-    ) -> av.VideoFrame:
+    def __call__(self, x: Union[av.VideoFrame, torch.Tensor, np.ndarray, TensorFrame]) -> av.VideoFrame:
         return self.transform(x)
-
-
 
 
 def configure_colorspace(
@@ -1172,9 +1112,7 @@ def configure_colorspace(
             color_trc,
             color_range,
         ) = sw_format.get_target_colorspace(config.colorspace, config.pix_fmt)
-        rgb24_options = sw_format.get_reformat_options(
-            colorspace, color_primaries, color_trc
-        )
+        rgb24_options = sw_format.get_reformat_options(colorspace, color_primaries, color_trc)
         source_color_range = sw_format.guess_color_range()
     else:
         # Fallback logic for image import, using SoftwareVideoFormat's static logic
@@ -1185,7 +1123,9 @@ def configure_colorspace(
             return int(value)
 
         exported_output_colorspace: int = _get(config.state, "output_colorspace", COLORSPACE_UNSPECIFIED)
-        exported_output_color_primaries: int = _get(config.state, "output_color_primaries", int(ColorPrimaries.UNSPECIFIED))
+        exported_output_color_primaries: int = _get(
+            config.state, "output_color_primaries", int(ColorPrimaries.UNSPECIFIED)
+        )
         exported_output_color_trc: int = _get(config.state, "output_color_trc", int(ColorTrc.UNSPECIFIED))
         exported_source_color_range: int = _get(config.state, "source_color_range", int(ColorRange.UNSPECIFIED))
         (

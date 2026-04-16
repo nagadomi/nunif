@@ -1,8 +1,10 @@
+from typing import Any, Dict
+
 import torch
 import torch.nn.functional as F
-from .utils import get_evaluator
+
 from ..color_transform import TensorFrame
-from typing import Any, Dict
+from .utils import get_evaluator
 
 
 class ScaleFilter:
@@ -75,9 +77,7 @@ class ScaleFilter:
             ow = int(self.evaluator.eval(self.w_expr))
             oh = int(self.evaluator.eval(self.h_expr))
         except Exception as e:
-            raise ValueError(
-                f"Failed to evaluate scale expressions '{self.w_expr}:{self.h_expr}': {e}"
-            ) from e
+            raise ValueError(f"Failed to evaluate scale expressions '{self.w_expr}:{self.h_expr}': {e}") from e
 
         # Handle aspect ratio preservation (-1, -n)
         aspect = iw / ih
@@ -110,7 +110,7 @@ class ScaleFilter:
 
 
 def _test() -> None:
-    from ..color_transform import Colorspace, ColorRange
+    from ..color_transform import ColorRange, Colorspace
 
     def test_scale(expr: str, w: int, h: int) -> None:
         print(f"Testing '{expr}' with input {w}x{h}...")
@@ -130,9 +130,7 @@ def _test() -> None:
         s = ScaleFilter(expr)
         output_frame = s(frame)
         output = output_frame.planes
-        print(
-            f"Result: {output.shape[-1]}x{output.shape[-2]}, mode={s.mode}, antialias={s.antialias}"
-        )
+        print(f"Result: {output.shape[-1]}x{output.shape[-2]}, mode={s.mode}, antialias={s.antialias}")
 
     print("--- Start ScaleFilter tests ---")
     # Case 1: Default (bilinear, no AA)

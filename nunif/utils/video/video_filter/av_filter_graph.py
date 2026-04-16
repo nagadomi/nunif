@@ -1,8 +1,10 @@
-import av
 import re
 from fractions import Fraction
 from typing import List, Optional, Tuple
-from ..color_transform import SoftwareVideoFormat, HW_PIX_FORMATS
+
+import av
+
+from ..color_transform import HW_PIX_FORMATS, SoftwareVideoFormat
 
 
 class AVFilterGraph:
@@ -21,9 +23,7 @@ class AVFilterGraph:
         self.graph = av.filter.Graph()
         deny_filters = deny_filters or []
         video_filters = self.parse_vf_option(vf)
-        video_filters = [
-            (name, option) for name, option in video_filters if name not in deny_filters
-        ]
+        video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
         self.build_graph(
             self.graph,
             pix_fmt=self.pix_fmt,
@@ -116,9 +116,7 @@ class AVFilterGraph:
         )
         prev_filter = buffer
         for filter_name, filter_option in video_filters:
-            new_filter = graph.add(
-                filter_name, filter_option if filter_option else None
-            )
+            new_filter = graph.add(filter_name, filter_option if filter_option else None)
             prev_filter.link_to(new_filter)
             prev_filter = new_filter
         buffersink = graph.add("buffersink")

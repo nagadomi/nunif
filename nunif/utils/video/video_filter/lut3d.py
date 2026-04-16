@@ -1,5 +1,6 @@
 import torch
-from ...color_lut import load_lut, apply_lut
+
+from ...color_lut import apply_lut, load_lut
 from ..color_transform import TensorFrame
 
 
@@ -36,7 +37,8 @@ class LUT3DFilter:
 
 def _test() -> None:
     import os
-    from ..color_transform import Colorspace, ColorRange
+
+    from ..color_transform import ColorRange, Colorspace
 
     print("--- Start LUT3DFilter tests ---")
     lut_path = "color_lut/pq2bt709.cube"
