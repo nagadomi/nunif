@@ -172,8 +172,8 @@ def main(args):
 
     video_file = args.dataset_dir
 
-    def config_callback(stream):
-        fps = VU.get_fps(stream)
+    def config_callback(metadata):
+        fps = metadata.get_fps()
         if float(fps) > args.max_fps:
             fps = args.max_fps
         return VU.VideoOutputConfig(fps=fps)

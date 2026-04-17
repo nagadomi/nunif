@@ -132,8 +132,8 @@ def make_video_codec_option(args):
 
 
 def video_config_callback(args, fps_hook=None):
-    def callback(stream):
-        fps = VU.get_fps(stream)
+    def callback(metadata):
+        fps = metadata.get_fps()
         if float(fps) > args.max_fps:
             fps = args.max_fps
         if fps_hook is not None:

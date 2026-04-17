@@ -10,311 +10,11 @@ from av.codec.hwaccel import HWDeviceType
 from av.video.frame import CudaContext
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
-# Colorspace constants (missing in PyAV Colorspace Enum)
-COLORSPACE_UNSPECIFIED: int = 2
-COLORSPACE_BT2020: int = 9
-
-# Mapping from friendly names to standard values
-# Order: (colorspace, color_primaries, color_trc, color_range)
-COLOR_CONFIG_MAP: Dict[
-    str,
-    Tuple[
-        Union[Colorspace, int],
-        Union[ColorPrimaries, int],
-        Union[ColorTrc, int],
-        Union[ColorRange, int],
-    ],
-] = {
-    "bt709-tv": (
-        Colorspace.ITU709,
-        ColorPrimaries.BT709,
-        ColorTrc.BT709,
-        ColorRange.MPEG,
-    ),
-    "bt709-pc": (
-        Colorspace.ITU709,
-        ColorPrimaries.BT709,
-        ColorTrc.BT709,
-        ColorRange.JPEG,
-    ),
-    "bt601-tv": (
-        Colorspace.ITU601,
-        ColorPrimaries.SMPTE170M,
-        ColorTrc.SMPTE170M,
-        ColorRange.MPEG,
-    ),
-    "bt601-pc": (
-        Colorspace.ITU601,
-        ColorPrimaries.SMPTE170M,
-        ColorTrc.SMPTE170M,
-        ColorRange.JPEG,
-    ),
-    "bt2020-tv": (
-        COLORSPACE_BT2020,
-        ColorPrimaries.BT2020,
-        ColorTrc.ARIB_STD_B67,
-        ColorRange.MPEG,
-    ),
-    "bt2020-pc": (
-        COLORSPACE_BT2020,
-        ColorPrimaries.BT2020,
-        ColorTrc.ARIB_STD_B67,
-        ColorRange.JPEG,
-    ),
-    "bt2020-pq-tv": (
-        COLORSPACE_BT2020,
-        ColorPrimaries.BT2020,
-        ColorTrc.SMPTE2084,
-        ColorRange.MPEG,
-    ),
-}
-
-
-def _list_hw_format() -> Set[str]:
-    formats: Set[str] = set()
-    for name in av.codec.codecs_available:
-        try:
-            codec = av.codec.Codec(name, mode="r")
-        except ValueError:
-            continue
-        configs = codec.hardware_configs  # type: ignore
-        if configs:
-            for config in configs:
-                formats.add(config.format.name)
-    return formats
-
-
-HW_PIX_FORMATS: Set[str] = _list_hw_format()
-
-
-def get_rgb_pix_fmt(use_16bit: bool) -> str:
-    # TODO: refactor along with frame_callbck_pool.py
-    if use_16bit:
-        # NOTE: I want to use `rgb48le`, but there is a bug in av==17.0.0
-        return "gbrp16le"
-    else:
-        return "rgb24"
-
-
-class SoftwareVideoFormat:
-    format: av.VideoFormat  # pix_fmt
-    colorspace: Union[Colorspace, int]
-    color_primaries: Union[ColorPrimaries, int]
-    color_trc: Union[ColorTrc, int]
-    color_range: Union[ColorRange, int]
-    width: int
-    height: int
-    time_base: Optional[Fraction]
-    use_16bit: bool
-
-    def __init__(self, video_path: str) -> None:
-        with av.open(video_path, mode="r", metadata_errors="ignore") as container:
-            if not len(container.streams.video) > 0:
-                raise ValueError("No video stream")
-
-            stream = container.streams.video[0]
-            self.format = stream.format
-            self.colorspace = stream.colorspace
-            self.color_primaries = stream.color_primaries
-            self.color_trc = stream.color_trc
-            self.color_range = stream.color_range
-            self.width = stream.width
-            self.height = stream.height
-            self.time_base = stream.time_base
-            self.use_16bit = stream.format.components[0].bits > 8
-
-    def guess_pix_fmt(self, stream_pix_fmt: str) -> str:
-        if stream_pix_fmt in HW_PIX_FORMATS:
-            # TODO: Need investigation
-            if self.format.name in {"yuv420p", "yuvj420p"}:
-                return "nv12"
-            elif self.format.name == "yuv420p10le":
-                return "p010le"
-            elif self.format.name == "yuv420p16le":
-                return "p016le"
-            if self.format.name in {"gbrp"}:
-                return "bgr0"
-            else:
-                if self.format.name in {"yuv444p", "yuv422p"}:
-                    return self.format.name
-                raise NotImplementedError(
-                    f"Unsupported format conversion: format={self.format.name}, hw format={stream_pix_fmt}"
-                )
-        else:
-            return stream_pix_fmt
-
-    @staticmethod
-    def guess_color_range_static(format_name: str, color_range: Union[ColorRange, int]) -> ColorRange:
-        if color_range in {ColorRange.MPEG, ColorRange.JPEG}:
-            return ColorRange(color_range)
-        if any(s in format_name for s in ("yuvj", "rgb", "gbr")):
-            return ColorRange.JPEG
-        return ColorRange.MPEG
-
-    def guess_color_range(self) -> ColorRange:
-        return self.guess_color_range_static(self.format.name, self.color_range)
-
-    @staticmethod
-    def guess_colorspace_static(height: int, colorspace: Union[Colorspace, int]) -> Union[Colorspace, int]:
-        if colorspace != COLORSPACE_UNSPECIFIED:
-            return colorspace
-        return Colorspace.ITU709 if height >= 720 else Colorspace.ITU601
-
-    def guess_colorspace(self) -> Union[Colorspace, int]:
-        return self.guess_colorspace_static(self.height, self.colorspace)
-
-    @staticmethod
-    def guess_color_trc_static(colorspace: Union[Colorspace, int]) -> ColorTrc:
-        if colorspace == Colorspace.ITU709:
-            return ColorTrc.BT709
-        elif colorspace == Colorspace.ITU601:
-            return ColorTrc.SMPTE170M
-        elif colorspace == COLORSPACE_BT2020:
-            return ColorTrc.SMPTE2084
-        else:
-            return ColorTrc.UNSPECIFIED
-
-    @staticmethod
-    def guess_color_primaries_static(colorspace: Union[Colorspace, int]) -> ColorPrimaries:
-        if colorspace == Colorspace.ITU709:
-            return ColorPrimaries.BT709
-        elif colorspace == Colorspace.ITU601:
-            return ColorPrimaries.SMPTE170M
-        elif colorspace == COLORSPACE_BT2020:
-            return ColorPrimaries.BT2020
-        else:
-            return ColorPrimaries.UNSPECIFIED
-
-    @staticmethod
-    def get_target_colorspace_static(
-        colorspace_mode: str,
-        pix_fmt: str,
-        src_colorspace: Union[Colorspace, int] = COLORSPACE_UNSPECIFIED,
-        src_color_primaries: Union[ColorPrimaries, int] = ColorPrimaries.UNSPECIFIED,
-        src_color_trc: Union[ColorTrc, int] = ColorTrc.UNSPECIFIED,
-        src_color_range: Union[ColorRange, int] = ColorRange.UNSPECIFIED,
-        src_height: int = 1080,
-        src_format_name: str = "yuv420p",
-    ) -> Tuple[
-        str,
-        Union[Colorspace, int],
-        Union[ColorPrimaries, int],
-        Union[ColorTrc, int],
-        Union[ColorRange, int],
-    ]:
-        original_mode = colorspace_mode
-        # Resolve logical 'auto' or 'copy'
-        if colorspace_mode == "auto":
-            colorspace_mode = "copy"
-
-        colorspace: Union[Colorspace, int]
-        color_primaries: Union[ColorPrimaries, int]
-        color_trc: Union[ColorTrc, int]
-        color_range: Union[ColorRange, int]
-
-        # Determine base settings
-        if colorspace_mode in COLOR_CONFIG_MAP:
-            (
-                colorspace,
-                color_primaries,
-                color_trc,
-                color_range,
-            ) = COLOR_CONFIG_MAP[colorspace_mode]
-        elif colorspace_mode in {"bt709", "bt601", "bt2020"}:
-            rng = SoftwareVideoFormat.guess_color_range_static(src_format_name, src_color_range)
-            suffix = "pc" if rng == ColorRange.JPEG else "tv"
-            (
-                colorspace,
-                color_primaries,
-                color_trc,
-                color_range,
-            ) = COLOR_CONFIG_MAP[f"{colorspace_mode}-{suffix}"]
-        elif colorspace_mode == "copy":
-            colorspace = src_colorspace
-            color_primaries = src_color_primaries
-            color_trc = src_color_trc
-            color_range = src_color_range
-
-            # Only guess if the user requested 'auto' (which became 'copy' here)
-            if original_mode == "auto":
-                if colorspace == COLORSPACE_UNSPECIFIED:
-                    colorspace = SoftwareVideoFormat.guess_colorspace_static(src_height, src_colorspace)
-                if color_primaries == ColorPrimaries.UNSPECIFIED:
-                    color_primaries = SoftwareVideoFormat.guess_color_primaries_static(colorspace)
-                if color_trc == ColorTrc.UNSPECIFIED:
-                    color_trc = SoftwareVideoFormat.guess_color_trc_static(colorspace)
-                if color_range == ColorRange.UNSPECIFIED:
-                    color_range = SoftwareVideoFormat.guess_color_range_static(src_format_name, src_color_range)
-        elif colorspace_mode == "unspecified":
-            colorspace = COLORSPACE_UNSPECIFIED
-            color_primaries = ColorPrimaries.UNSPECIFIED
-            color_trc = ColorTrc.UNSPECIFIED
-            color_range = ColorRange.UNSPECIFIED
-        else:
-            # Final fallback
-            (
-                colorspace,
-                color_primaries,
-                color_trc,
-                color_range,
-            ) = COLOR_CONFIG_MAP["bt709-tv"]
-
-        # Final pixel format adjustments for Full Range YUV
-        if color_range == ColorRange.JPEG:
-            if pix_fmt == "yuv420p":
-                pix_fmt = "yuvj420p"
-            elif pix_fmt == "yuv444p":
-                pix_fmt = "yuvj444p"
-
-        return pix_fmt, colorspace, color_primaries, color_trc, color_range
-
-    def get_target_colorspace(
-        self, colorspace_mode: str, pix_fmt: str
-    ) -> Tuple[
-        str,
-        Union[Colorspace, int],
-        Union[ColorPrimaries, int],
-        Union[ColorTrc, int],
-        Union[ColorRange, int],
-    ]:
-        return self.get_target_colorspace_static(
-            colorspace_mode,
-            pix_fmt,
-            src_colorspace=self.colorspace,
-            src_color_primaries=self.color_primaries,
-            src_color_trc=self.color_trc,
-            src_color_range=self.color_range,
-            src_height=self.height,
-            src_format_name=self.format.name,
-        )
-
-    def get_reformat_options(
-        self,
-        target_colorspace: Union[Colorspace, int],
-        target_color_primaries: Union[ColorPrimaries, int],
-        target_color_trc: Union[ColorTrc, int],
-    ) -> Dict[str, Any]:
-        """Generate options for ColorTransform.to_tensor or Transform."""
-        return {
-            "src_colorspace": self.colorspace,
-            "src_color_primaries": self.color_primaries,
-            "src_color_trc": self.color_trc,
-            "src_color_range": self.color_range,
-            "dst_colorspace": target_colorspace,
-            "dst_color_primaries": target_color_primaries,
-            "dst_color_trc": target_color_trc,
-            "dst_color_range": ColorRange.JPEG,
-        }
-
-    def get_auto_reformat_options(self) -> Dict[str, Any]:
-        (
-            _,
-            colorspace,
-            color_primaries,
-            color_trc,
-            _,
-        ) = self.get_target_colorspace("auto", self.format.name)
-        return self.get_reformat_options(colorspace, color_primaries, color_trc)
+from .metadata import (
+    COLORSPACE_UNSPECIFIED,
+    VideoMetadata,
+    get_rgb_pix_fmt,
+)
 
 
 class ColorTransform:
@@ -831,7 +531,7 @@ def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
 
 class InputTransform:
     # Convert av.VideoFrame to RGB Full Range tensor/ndarray
-    # For src_*, use SoftwareVideoFormat class
+    # For src_*, use VideoMetadata class
 
     HW_DEVICE_TYPES: Set[str] = set([t.name for t in HWDeviceType if t.name != "none"])
     src_pix_fmt: str
@@ -1089,7 +789,7 @@ class OutputTransform:
 
 def configure_colorspace(
     output_stream: Optional[av.video.stream.VideoStream],
-    sw_format: Optional[SoftwareVideoFormat],
+    sw_format: Optional[VideoMetadata],
     config: Any,
 ) -> None:
     """Configure output stream and store state based on user config."""
@@ -1115,7 +815,7 @@ def configure_colorspace(
         rgb24_options = sw_format.get_reformat_options(colorspace, color_primaries, color_trc)
         source_color_range = sw_format.guess_color_range()
     else:
-        # Fallback logic for image import, using SoftwareVideoFormat's static logic
+        # Fallback logic for image import, using VideoMetadata's static logic
         def _get(d: Dict[str, Any], key: str, default: int) -> int:
             value = d.get(key, default)
             if value is None:
@@ -1134,7 +834,7 @@ def configure_colorspace(
             color_primaries,
             color_trc,
             color_range,
-        ) = SoftwareVideoFormat.get_target_colorspace_static(
+        ) = VideoMetadata.get_target_colorspace_static(
             colorspace_mode=config.colorspace,
             pix_fmt=config.pix_fmt,
             src_colorspace=exported_output_colorspace,
@@ -1266,7 +966,7 @@ def _test_configure() -> None:
             self.state_updated = lambda c: print("Config updated callback triggered")
             self.device = None
 
-    class MockSWFormat(SoftwareVideoFormat):
+    class MockSWFormat(VideoMetadata):
         def __init__(
             self,
             colorspace: int = 2,

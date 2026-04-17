@@ -106,8 +106,8 @@ def process_video(ctx, input_filename, output_path, args):
     if args.compile:
         ctx.compile()
 
-    def config_callback(stream):
-        fps = VU.get_fps(stream)
+    def config_callback(metadata):
+        fps = metadata.get_fps()
         if float(fps) > args.max_fps:
             fps = args.max_fps
 

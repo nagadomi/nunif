@@ -4,7 +4,6 @@ import math
 import os
 import sys
 import time
-from fractions import Fraction
 from os import path
 from types import GeneratorType
 from typing import Any, Dict, Optional, Union, cast
@@ -16,11 +15,10 @@ from av.video.reformatter import ColorRange, ColorTrc
 from PIL import Image
 from tqdm import tqdm
 
-from ..color_lut import apply_lut, get_hdr2sdr_lut_path, load_lut  # noqa
+from ..color_lut import get_hdr2sdr_lut_path
+
 from .color_transform import (
-    COLORSPACE_BT2020,
     InputTransform,
-    SoftwareVideoFormat,
     configure_colorspace,
     configure_video_codec,
 )
@@ -35,32 +33,16 @@ from .frame_callback_pool import (  # noqa
     to_tensor,
 )
 from .hwaccel import create_hwaccel, get_supported_hwdevices, should_use_tensor_frame
+from .metadata import (
+    AV_READ_OPTIONS,
+    COLORSPACE_BT2020,
+    VIDEO_EXTENSIONS,
+    VideoMetadata,
+    convert_fps_fraction,
+    parse_time,
+)
 from .output_config import VideoOutputConfig
 from .video_preprocessor import VideoPreprocessor
-
-VIDEO_EXTENSIONS = [
-    ".mp4",
-    ".m4v",
-    ".mkv",
-    ".mpeg",
-    ".mpg",
-    ".avi",
-    ".wmv",
-    ".mov",
-    ".flv",
-    ".webm",
-    ".asf",
-    ".vob",
-    ".divx",
-    ".3gp",
-    ".ogv",
-    ".3g2",
-    ".m2ts",
-    ".ts",
-    ".rm",
-]
-
-AV_READ_OPTIONS: Dict[str, str] = dict(mode="r", metadata_errors="ignore")
 
 
 def list_videos(directory, extensions=VIDEO_EXTENSIONS):
@@ -89,123 +71,6 @@ def has_qsv():
     return "h264_qsv" in av.codec.codecs_available and "hevc_qsv" in av.codec.codecs_available
 
 
-def get_fps(stream):
-    return stream.guessed_rate
-
-
-def guess_frames(
-    stream, fps=None, start_time=None, end_time=None, container_duration=None, input_path=None, return_duration=False
-):
-    fps = fps or get_fps(stream)
-    duration = guess_duration(stream, container_duration=container_duration, input_path=input_path, to_int=False)
-
-    if duration < 0:
-        # N/A
-        if return_duration:
-            return -1, -1
-        return -1
-
-    if start_time is not None and end_time is not None:
-        duration = min(end_time, duration) - start_time
-    elif start_time is not None:
-        duration = max(duration - start_time, 0)
-    elif end_time is not None:
-        duration = min(end_time, duration)
-    else:
-        pass
-
-    if return_duration:
-        return math.ceil(duration * fps), duration
-
-    return math.ceil(duration * fps)
-
-
-def get_duration(stream, container_duration=None, to_int=True):
-    if stream.duration:
-        duration = float(stream.duration * stream.time_base)
-    else:
-        duration = container_duration
-
-    if duration is None:
-        # N/A
-        return -1
-
-    if to_int:
-        return math.ceil(duration)
-    else:
-        return duration
-
-
-def guess_duration_by_last_packet(input_path):
-    with av.open(input_path, **AV_READ_OPTIONS) as container:
-        if len(container.streams.video) > 0:
-            stream = container.streams.video[0]
-        elif len(container.streams.audio) > 0:
-            stream = container.streams.audio[0]
-        else:
-            return None
-
-        # Seek to the last keyframe
-        large_pts = 10 * 24 * 3600 * av.time_base
-        container.seek(large_pts, backward=True, any_frame=False)
-        last_time = None
-        # Find the last packet time
-        for packet in container.demux([stream]):
-            if packet.pts is not None:
-                last_time = float(packet.pts * packet.time_base)
-        if last_time is not None:
-            return last_time
-        else:
-            return None
-
-
-def guess_duration(stream, container_duration=None, input_path=None, to_int=True):
-    if stream.duration:
-        duration = float(stream.duration * stream.time_base)
-    else:
-        duration = container_duration
-
-    if duration is None and input_path is not None:
-        duration = guess_duration_by_last_packet(input_path)
-
-    if duration is None:
-        return -1
-
-    if to_int:
-        return math.ceil(duration)
-    else:
-        return duration
-
-
-def get_frames(stream, container_duration=None, input_path=None):
-    if container_duration is None:
-        if stream.container and stream.container.duration:
-            container_duration = float(stream.container.duration / av.time_base)
-    if stream.frames > 0:
-        return stream.frames
-    else:
-        # frames is unknown
-        return guess_frames(stream, container_duration=container_duration, input_path=input_path)
-
-
-def convert_fps_fraction(fps):
-    if isinstance(fps, (float, int)):
-        fps = float(fps)
-        if fps == 29.97:
-            return Fraction(30000, 1001)
-        elif fps == 23.976:
-            return Fraction(24000, 1001)
-        elif fps == 59.94:
-            return Fraction(60000, 1001)
-        else:
-            fps_frac = Fraction(fps)
-            fps_frac = fps_frac.limit_denominator(0x7FFFFFFF)
-            if fps_frac.denominator > 0x7FFFFFFF or fps_frac.numerator > 0x7FFFFFFF:
-                raise ValueError(f"FPS={fps} could not be converted to Fraction={fps_frac}")
-            return fps_frac
-    return fps
-
-
 def pix_fmt_requires_16bit(pix_fmt):
     return pix_fmt in {
         "yuv420p10le",
@@ -224,12 +89,20 @@ def pix_fmt_requires_16bit(pix_fmt):
 
 
 def _print_len(stream):
-    print("frames", stream.frames)
-    print("guessed_frames", guess_frames(stream))
-    print("duration", get_duration(stream))
+    sw_format = VideoMetadata(stream.container.name)
+    print("frames", sw_format.stream_frames)
+    print("guessed_frames", sw_format.guess_frames())
+    print("duration", sw_format.get_duration())
     print("base_rate", float(stream.base_rate))
     print("average_rate", float(stream.average_rate))
     print("guessed_rate", float(stream.guessed_rate))
+
+
+def default_config_callback(metadata):
+    fps = metadata.get_fps()
+    if float(fps) > 30:
+        fps = 30
+    return VideoOutputConfig(fps=fps, options={"preset": "ultrafast", "crf": "20"})
 
 
 def update_hdr2sdr_video_filter(vf, colorspace, color_trc, output_colorspace):
@@ -271,13 +144,6 @@ def get_default_video_codec(container_format):
         return "utvideo"
     else:
         raise ValueError(f"Unsupported container format: {container_format}")
-
-
-def default_config_callback(stream):
-    fps = get_fps(stream)
-    if float(fps) > 30:
-        fps = 30
-    return VideoOutputConfig(fps=fps, options={"preset": "ultrafast", "crf": "20"})
 
 
 SIZE_SAFE_FILTERS = [
@@ -345,26 +211,6 @@ def get_new_frames(frames):
         return [frames]
 
 
-def parse_time(s):
-    try:
-        cols = s.split(":")
-        if len(cols) == 1:
-            return max(int(cols[0], 10), 0)
-        elif len(cols) == 2:
-            m = int(cols[0], 10)
-            s = int(cols[1], 10)
-            return max(m * 60 + s, 0)
-        elif len(cols) == 3:
-            h = int(cols[0], 10)
-            m = int(cols[1], 10)
-            s = int(cols[2], 10)
-            return max(h * 3600 + m * 60 + s, 0)
-        else:
-            raise ValueError("time must be hh:mm:ss, mm:ss or sec format")
-    except ValueError:
-        raise ValueError("time must be hh:mm:ss, mm:ss or sec format")
-
-
 def make_temporary_file_path(output_path):
     return path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
 
@@ -429,7 +275,7 @@ def safe_decode(packet, strict=False):
     return frames
 
 
-def fix_frame_color_av17(frame: av.VideoFrame, sw_format: SoftwareVideoFormat) -> av.VideoFrame:
+def fix_frame_color_av17(frame: av.VideoFrame, sw_format: VideoMetadata) -> av.VideoFrame:
     # In av17, VideoFrame color properties are lost when HWAccel(is_hw_owned=False),
     # so restore them from the source properties.
     if frame.colorspace == 2 and frame.color_primaries == 2 and frame.color_trc == 2 and frame.color_range == 0:
@@ -443,7 +289,7 @@ def fix_frame_color_av17(frame: av.VideoFrame, sw_format: SoftwareVideoFormat) -
 
 def configure_pipeline(
     video_input_stream: av.video.stream.VideoStream,
-    sw_format: SoftwareVideoFormat,
+    sw_format: VideoMetadata,
     hwaccel: Optional[str],
     config: Any,
     vf: str,
@@ -586,17 +432,12 @@ def _process_video(
     if isinstance(device, str):
         device = torch.device(device)
 
-    sw_format = SoftwareVideoFormat(input_path)
+    sw_format = VideoMetadata(input_path)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
     output_path_tmp = make_temporary_file_path(output_path)
     input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
-
-    if input_container.duration:
-        container_duration = float(input_container.duration / av.time_base)
-    else:
-        container_duration = None
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -612,7 +453,7 @@ def _process_video(
         # has audio stream
         audio_input_stream = input_container.streams.audio[0]
 
-    config = config_callback(video_input_stream)
+    config = config_callback(sw_format)
     config.fps = convert_fps_fraction(config.fps)
     config.output_fps = convert_fps_fraction(config.output_fps)
 
@@ -682,13 +523,10 @@ def _process_video(
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     # TODO: `total` may be less when start_time is specified
-    total = guess_frames(
-        video_input_stream,
+    total = sw_format.guess_frames(
         fps=output_fps,
         start_time=start_time,
         end_time=end_time,
-        container_duration=container_duration,
-        input_path=input_path,
     )
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
@@ -807,10 +645,6 @@ def generate_video(
 
     if audio_file is not None:
         input_container = av.open(audio_file, **AV_READ_OPTIONS)
-        if input_container.duration:
-            container_duration = float(input_container.duration * av.time_base)
-        else:
-            container_duration = None
         if len(input_container.streams.audio) > 0:
             # has audio stream
             audio_input_stream = input_container.streams.audio[0]
@@ -828,7 +662,8 @@ def generate_video(
             tqdm_fn = tqdm_fn or tqdm
             desc = title + " Audio" if title else "Audio"
             ncols = len(desc) + 60
-            total = get_duration(audio_input_stream, container_duration=container_duration)
+            sw_audio = VideoMetadata(audio_file)
+            total = sw_audio.get_duration()
             pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
             last_sec = 0
 
@@ -910,14 +745,10 @@ def process_video_keyframes(
     suspend_event=None,
     tqdm_fn=None,
 ):
-    sw_format = SoftwareVideoFormat(input_path)
+    sw_format = VideoMetadata(input_path)
     input_container = av.open(input_path, **AV_READ_OPTIONS)
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
-    if input_container.duration:
-        container_duration = float(input_container.duration / av.time_base)
-    else:
-        container_duration = None
 
     video_input_stream = input_container.streams.video[0]
     # video_input_stream.thread_type = "AUTO"  # slow
@@ -925,7 +756,7 @@ def process_video_keyframes(
 
     video_filter = VideoPreprocessor(video_input_stream, sw_format, vf=vf)
 
-    max_progress = guess_duration(video_input_stream, container_duration=container_duration, input_path=input_path)
+    max_progress = sw_format.guess_duration()
     desc = title if title else input_path
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
@@ -977,15 +808,11 @@ def hook_frame(
     if isinstance(device, str):
         device = torch.device(device)
 
-    sw_format = SoftwareVideoFormat(input_path)
+    sw_format = VideoMetadata(input_path)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
     input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
-    if input_container.duration:
-        container_duration = float(input_container.duration / av.time_base)
-    else:
-        container_duration = None
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -996,7 +823,7 @@ def hook_frame(
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
 
-    config = config_callback(video_input_stream)
+    config = config_callback(sw_format)
     config.fps = convert_fps_fraction(config.fps)
     configure_colorspace(None, sw_format, config)
     input_reformatter, fps_filter = configure_pipeline(
@@ -1012,13 +839,10 @@ def hook_frame(
     desc = title if title else input_path
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
-    total = guess_frames(
-        video_input_stream,
+    total = sw_format.guess_frames(
         fps=config.fps,
         start_time=start_time,
         end_time=end_time,
-        container_duration=container_duration,
-        input_path=input_path,
     )
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
 
@@ -1068,7 +892,7 @@ def sample_frames(
     if isinstance(device, str):
         device = torch.device(device)
 
-    sw_format = SoftwareVideoFormat(input_path)
+    sw_format = VideoMetadata(input_path)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
@@ -1078,14 +902,8 @@ def sample_frames(
         raise ValueError("No video stream")
 
     video_input_stream = input_container.streams.video[0]
-    if input_container.duration:
-        container_duration = float(input_container.duration / av.time_base)
-    else:
-        container_duration = None
 
-    num_frames, duration = guess_frames(
-        video_input_stream, container_duration=container_duration, input_path=input_path, return_duration=True
-    )
+    num_frames, duration = sw_format.guess_frames(return_duration=True)
     if duration <= 0 or num_frames <= 0:
         print(f"sample_frames: No duration available: {input_path}", file=sys.stderr)
         return -1
@@ -1233,11 +1051,6 @@ def export_audio(
     audio_input_stream = input_container.streams.audio[0]
     output_container = av.open(output_path, "w")  # expect .m4a
 
-    if input_container.duration:
-        container_duration = float(input_container.duration * av.time_base)
-    else:
-        container_duration = None
-
     if audio_input_stream.rate < 16000:
         audio_output_stream = output_container.add_stream("aac", 16000)
         audio_copy = False
@@ -1255,7 +1068,8 @@ def export_audio(
     tqdm_fn = tqdm_fn or tqdm
     desc = title if title else input_path
     ncols = len(desc) + 60
-    total = get_duration(audio_input_stream, container_duration=container_duration)
+    sw_format = VideoMetadata(input_path)
+    total = sw_format.get_duration()
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     last_sec = 0
     for packet in input_container.demux([audio_input_stream]):
@@ -1305,8 +1119,8 @@ def _test_process_video():
     parser.add_argument("--output", "-o", type=str, required=True, help="output video file")
     args = parser.parse_args()
 
-    def make_config(stream):
-        fps = get_fps(stream)
+    def make_config(metadata):
+        fps = metadata.get_fps()
         if fps > 30:
             fps = 30
         return VideoOutputConfig(fps=fps, options={"preset": "ultrafast", "crf": "20"})
@@ -1399,8 +1213,8 @@ def _test_reencode():
     device = torch.device("cpu" if args.gpu < 0 else f"cuda:{args.gpu}")
     preset = "fast" if args.video_codec in {"h264_nvenc", "hevc_nvenc"} else "ultrafast"
 
-    def make_config(stream):
-        fps = get_fps(stream)
+    def make_config(metadata):
+        fps = metadata.get_fps()
         if fps > 30:
             fps = 30
         return VideoOutputConfig(

@@ -4,12 +4,12 @@ import torch
 
 
 def _fps_config(max_fps):
-    def callback(stream):
+    def callback(metadata):
         if max_fps is None:
             # keep original frame rate, use raw pts
             return VU.VideoOutputConfig(fps=None)
         else:
-            fps = VU.get_fps(stream)
+            fps = metadata.get_fps()
             if float(fps) > max_fps:
                 fps = max_fps
             return VU.VideoOutputConfig(fps=fps)

@@ -36,9 +36,9 @@ def main():
     futures = []
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        def config_callback(stream):
+        def config_callback(metadata):
             nonlocal interval
-            frames = int(VU.get_frames(stream))
+            frames = int(metadata.get_frames())
             if frames <= 0:
                 raise "cannot get frames count"
 

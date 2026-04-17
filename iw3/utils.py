@@ -1061,8 +1061,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     else:
         video_filter = args.vf
 
-    def config_callback(stream):
-        fps = VU.get_fps(stream)
+    def config_callback(metadata):
+        fps = metadata.get_fps()
         if float(fps) > args.max_fps:
             fps = args.max_fps
 
@@ -1628,8 +1628,8 @@ def export_video(input_filename, output_dir, args, title=None):
     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
         return
 
-    def config_callback(stream):
-        fps = VU.get_fps(stream)
+    def config_callback(metadata):
+        fps = metadata.get_fps()
         if float(fps) > args.max_fps:
             fps = args.max_fps
         config.fps = fps  # update fps

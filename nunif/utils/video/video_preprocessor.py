@@ -3,7 +3,8 @@ from typing import List, Optional, Union
 
 import av
 
-from .color_transform import InputTransform, SoftwareVideoFormat
+from .color_transform import InputTransform
+from .metadata import VideoMetadata
 from .video_filter.av_filter_graph import AVFilterGraph
 from .video_filter.fps import FPSFilter
 from .video_filter.tensor_filter_graph import TensorFilterGraph
@@ -17,7 +18,7 @@ class VideoPreprocessor:
     def __init__(
         self,
         video_stream: av.VideoStream,
-        sw_format: SoftwareVideoFormat,
+        sw_format: VideoMetadata,
         fps: Optional[Fraction] = None,
         vf: str = "",
         deny_filters: List[str] = [],

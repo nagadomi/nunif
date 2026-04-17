@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 
 import av
 
-from ..color_transform import HW_PIX_FORMATS, SoftwareVideoFormat
+from ..metadata import HW_PIX_FORMATS, VideoMetadata
 
 
 class AVFilterGraph:
@@ -13,7 +13,7 @@ class AVFilterGraph:
     def __init__(
         self,
         video_stream: av.VideoStream,
-        sw_format: SoftwareVideoFormat,
+        sw_format: VideoMetadata,
         vf: str,
         deny_filters: Optional[List[str]] = None,
     ):
