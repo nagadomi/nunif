@@ -15,7 +15,7 @@ from av.video.reformatter import ColorRange, ColorTrc
 from PIL import Image
 from tqdm import tqdm
 
-from ..color_lut import get_hdr2sdr_lut_path
+from ..color_lut import apply_lut, get_hdr2sdr_lut_path, load_lut  # noqa
 
 from .color_transform import (
     InputTransform,
@@ -34,58 +34,18 @@ from .frame_callback_pool import (  # noqa
 )
 from .hwaccel import create_hwaccel, get_supported_hwdevices, should_use_tensor_frame
 from .metadata import (
-    AV_READ_OPTIONS,
     COLORSPACE_BT2020,
-    VIDEO_EXTENSIONS,
     VideoMetadata,
     convert_fps_fraction,
     parse_time,
 )
 from .output_config import VideoOutputConfig
+from .utils import (
+    LIBH264,
+    get_default_video_codec,
+    pix_fmt_requires_16bit,
+)
 from .video_preprocessor import VideoPreprocessor
-
-
-def list_videos(directory, extensions=VIDEO_EXTENSIONS):
-    return sorted(
-        os.path.join(directory, f) for f in os.listdir(directory) if os.path.splitext(f)[-1].lower() in extensions
-    )
-
-
-RGB_8BIT = "rgb24"
-RGB_16BIT = "gbrp16le"
-
-
-if "libx264" in av.codecs_available:
-    LIBH264 = "libx264"
-elif "libopenh264" in av.codecs_available:
-    LIBH264 = "libopenh264"
-else:
-    LIBH264 = ""
-
-
-def has_nvenc():
-    return "h264_nvenc" in av.codec.codecs_available and "hevc_nvenc" in av.codec.codecs_available
-
-
-def has_qsv():
-    return "h264_qsv" in av.codec.codecs_available and "hevc_qsv" in av.codec.codecs_available
-
-
-def pix_fmt_requires_16bit(pix_fmt):
-    return pix_fmt in {
-        "yuv420p10le",
-        "p010le",
-        "yuv422p10le",
-        "yuv444p10le",
-        "yuv420p12le",
-        "yuv422p12le",
-        "yuv444p12le",
-        "yuv444p16le",
-        RGB_16BIT,
-        "gbrp12le",
-        "gbrp10le",
-        "rgb48le",
-    }
 
 
 def _print_len(stream):
@@ -135,15 +95,6 @@ def get_lut_path(colorspace, color_trc, output_colorspace):
             (ColorTrc.ARIB_STD_B67, "bt601"): "hlg2bt601",
         }[(color_trc, output_colorspace.split("-")[0])]
     )
-
-
-def get_default_video_codec(container_format):
-    if container_format in {"mp4", "mkv"}:
-        return LIBH264
-    elif container_format == "avi":
-        return "utvideo"
-    else:
-        raise ValueError(f"Unsupported container format: {container_format}")
 
 
 SIZE_SAFE_FILTERS = [
@@ -237,7 +188,7 @@ def test_audio_copy(input_path, output_path):
     buff.name = path.basename(output_path)
     try:
         with (
-            av.open(input_path, **AV_READ_OPTIONS) as input_container,
+            av.open(input_path, mode="r", metadata_errors="ignore") as input_container,
             av.open(buff, mode="w") as output_container,
         ):
             if len(input_container.streams.audio) > 0:
@@ -437,7 +388,7 @@ def _process_video(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
     output_path_tmp = make_temporary_file_path(output_path)
-    input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
+    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)  # type: ignore
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -644,7 +595,7 @@ def generate_video(
     reformatter = config.state["reformatter"]
 
     if audio_file is not None:
-        input_container = av.open(audio_file, **AV_READ_OPTIONS)
+        input_container = av.open(audio_file, mode="r", metadata_errors="ignore")
         if len(input_container.streams.audio) > 0:
             # has audio stream
             audio_input_stream = input_container.streams.audio[0]
@@ -746,7 +697,7 @@ def process_video_keyframes(
     tqdm_fn=None,
 ):
     sw_format = VideoMetadata(input_path)
-    input_container = av.open(input_path, **AV_READ_OPTIONS)
+    input_container = av.open(input_path, mode="r", metadata_errors="ignore")
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
 
@@ -812,7 +763,7 @@ def hook_frame(
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
-    input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # type: ignore
+    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)  # type: ignore
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -896,7 +847,7 @@ def sample_frames(
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
-    input_container = av.open(input_path, **AV_READ_OPTIONS, hwaccel=input_hwaccel)  # types: ignore
+    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)  # types: ignore
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -1032,7 +983,6 @@ def export_audio(
     suspend_event=None,
     tqdm_fn=None,
 ):
-
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
     if isinstance(end_time, str):
@@ -1040,7 +990,7 @@ def export_audio(
         if start_time is not None and not (start_time < end_time):
             raise ValueError("end_time must be greater than start_time")
 
-    input_container = av.open(input_path, **AV_READ_OPTIONS)
+    input_container = av.open(input_path, mode="r", metadata_errors="ignore")
     if len(input_container.streams.audio) == 0:
         input_container.close()
         return False

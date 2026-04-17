@@ -2177,7 +2177,7 @@ def create_parser(required_true=True):
                         help="output image format")
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
     parser.add_argument("--hwaccel", type=str, default=None,
-                        choices=VU.get_supported_hwdevices(),
+                        choices=VU.HW_DEVICES,
                         help="hardware accelerator for the video decoder")
     parser.add_argument("--disable-software-fallback", action="store_true",
                         help="disable software fallback for hardware hwaccel")

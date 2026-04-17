@@ -63,30 +63,6 @@ COLOR_CONFIG_MAP: Dict[
     ),
 }
 
-VIDEO_EXTENSIONS = [
-    ".mp4",
-    ".m4v",
-    ".mkv",
-    ".mpeg",
-    ".mpg",
-    ".avi",
-    ".wmv",
-    ".mov",
-    ".flv",
-    ".webm",
-    ".asf",
-    ".vob",
-    ".divx",
-    ".3gp",
-    ".ogv",
-    ".3g2",
-    ".m2ts",
-    ".ts",
-    ".rm",
-]
-
-AV_READ_OPTIONS: Dict[str, str] = dict(mode="r", metadata_errors="ignore")
-
 
 def _list_hw_format() -> Set[str]:
     formats: Set[str] = set()
@@ -95,7 +71,7 @@ def _list_hw_format() -> Set[str]:
             codec = av.codec.Codec(name, mode="r")
         except ValueError:
             continue
-        configs = codec.hardware_configs
+        configs = codec.hardware_configs  # type: ignore
         if configs:
             for config in configs:
                 formats.add(config.format.name)
@@ -153,9 +129,24 @@ def parse_time(s: Union[str, int, float]) -> float:
 
 
 class VideoMetadata:
+    video_path: str
+    format: av.VideoFormat
+    colorspace: Union[Colorspace, int]
+    color_primaries: Union[ColorPrimaries, int]
+    color_trc: Union[ColorTrc, int]
+    color_range: Union[ColorRange, int]
+    width: int
+    height: int
+    time_base: Optional[Fraction]
+    use_16bit: bool
+    stream_frames: int
+    stream_duration: Optional[int]
+    guessed_rate: Optional[Fraction]
+    container_duration: Optional[float]
+
     def __init__(self, video_path: str) -> None:
         self.video_path = video_path
-        with av.open(video_path, **AV_READ_OPTIONS) as container:
+        with av.open(video_path, mode="r", metadata_errors="ignore") as container:
             if not len(container.streams.video) > 0:
                 raise ValueError("No video stream")
 
@@ -178,11 +169,12 @@ class VideoMetadata:
             else:
                 self.container_duration = None
 
-    def get_fps(self) -> Fraction:
+    def get_fps(self) -> Optional[Fraction]:
         return self.guessed_rate
 
     def get_duration(self, to_int: bool = True) -> float:
-        if self.stream_duration:
+        duration: float | None
+        if (self.stream_duration is not None and self.time_base is not None):
             duration = float(self.stream_duration * self.time_base)
         else:
             duration = self.container_duration
@@ -193,7 +185,8 @@ class VideoMetadata:
         return math.ceil(duration) if to_int else duration
 
     def guess_duration_by_last_packet(self) -> Optional[float]:
-        with av.open(self.video_path, **AV_READ_OPTIONS) as container:
+        with av.open(self.video_path, mode="r", metadata_errors="ignore") as container:
+            stream: av.VideoStream | av.AudioStream
             if len(container.streams.video) > 0:
                 stream = container.streams.video[0]
             elif len(container.streams.audio) > 0:
@@ -210,8 +203,8 @@ class VideoMetadata:
             return last_time
 
     def guess_duration(self, to_int: bool = True) -> float:
-        duration = self.get_duration(to_int=False)
-        if duration < 0:
+        duration: float | None = self.get_duration(to_int=False)
+        if duration is not None and duration < 0:
             duration = self.guess_duration_by_last_packet()
 
         if duration is None:
@@ -229,7 +222,7 @@ class VideoMetadata:
         fps = fps or self.get_fps()
         duration = self.guess_duration(to_int=False)
 
-        if duration < 0:
+        if duration < 0 or fps is None:
             return (-1, -1) if return_duration else -1
 
         if start_time is not None and end_time is not None:
@@ -246,7 +239,9 @@ class VideoMetadata:
         if self.stream_frames > 0:
             return self.stream_frames
         else:
-            return self.guess_frames()
+            frames = self.guess_frames()
+            assert isinstance(frames, int)
+            return frames
 
     def guess_pix_fmt(self, stream_pix_fmt: str) -> str:
         if stream_pix_fmt in HW_PIX_FORMATS:

@@ -145,7 +145,7 @@ def get_hdr_metadata(input_path):
 
                 if i >= MAX_FRAMES:
                     break
-        except av.error.FFMpegError:
+        except av.error.FFmpegError:
             return HDRMetadata(None, None, True)
 
     return HDRMetadata(master_display, max_cll, True)

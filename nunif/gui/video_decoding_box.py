@@ -1,5 +1,5 @@
 import wx
-from nunif.utils.video.hwaccel import get_supported_hwdevices
+from nunif.utils.video import HW_DEVICES
 
 
 def empty_translate_function(s):
@@ -19,7 +19,7 @@ class VideoDecodingBox():
         self.grp_video_dec = wx.StaticBox(parent, label=T("Video Decoding"), **kwargs)
 
         self.lbl_hwaccel = wx.StaticText(self.grp_video_dec, label=T("HWAccel"))
-        self.cbo_hwaccel = wx.ComboBox(self.grp_video_dec, choices=[""] + get_supported_hwdevices(),
+        self.cbo_hwaccel = wx.ComboBox(self.grp_video_dec, choices=[""] + HW_DEVICES,
                                        name=f"{prefix}cbo_hwaccel")
         self.cbo_hwaccel.SetEditable(False)
         self.cbo_hwaccel.SetSelection(0)
