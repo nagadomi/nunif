@@ -1,5 +1,5 @@
 from fractions import Fraction
-from typing import List, Optional
+from typing import List
 
 import av
 
@@ -14,8 +14,8 @@ class FPSFilter:
     input_time_base: Fraction
     output_time_base: Fraction
     default_duration: int
-    frames_out: Optional[int]
-    last_frame: Optional[av.VideoFrame]
+    frames_out: int | None
+    last_frame: av.VideoFrame | None
 
     def __init__(self, fps: Fraction, stream_time_base: Fraction, stream_fps: Fraction):
         assert isinstance(fps, Fraction)

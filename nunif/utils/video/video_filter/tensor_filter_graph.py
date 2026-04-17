@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type
 
 import torch
 
@@ -23,7 +23,7 @@ class TensorFilterGraph:
     }
     filters: List[Any]
 
-    def __init__(self, vf: str, deny_filters: Optional[List[str]] = None):
+    def __init__(self, vf: str, deny_filters: List[str] | None = None):
         self.filters = []
         deny_filters = deny_filters or []
         video_filters = self.parse_vf_option(vf)
@@ -41,7 +41,7 @@ class TensorFilterGraph:
                     "If you need more filters, please request implementation."
                 )
 
-    def update(self, frame: Optional[TensorFrame]) -> Optional[TensorFrame]:
+    def update(self, frame: TensorFrame | None) -> TensorFrame | None:
         if frame is None:
             return None
 

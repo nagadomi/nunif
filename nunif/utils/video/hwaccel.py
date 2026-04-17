@@ -1,4 +1,4 @@
-from typing import List, Optional, Set
+from typing import List, Set
 
 import torch
 from av.codec.hwaccel import HWAccel, hwdevices_available
@@ -24,10 +24,10 @@ HW_DEVICES = get_supported_hwdevices()
 
 
 def create_hwaccel(
-    device: Optional[str],
-    device_id: Optional[int] = 0,
+    device: str | None,
+    device_id: int | None = 0,
     disable_software_fallback: bool = False,
-) -> Optional[HWAccel]:
+) -> HWAccel | None:
     if device is None:
         return None
 
@@ -66,5 +66,5 @@ def create_hwaccel(
         )
 
 
-def should_use_tensor_frame(sw_pix_fmt: str, hwaccel: Optional[str], device: torch.device):
+def should_use_tensor_frame(sw_pix_fmt: str, hwaccel: str | None, device: torch.device):
     return sw_pix_fmt in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda" and device.type == "cuda"

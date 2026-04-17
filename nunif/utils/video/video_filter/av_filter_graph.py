@@ -1,6 +1,6 @@
 import re
 from fractions import Fraction
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import av
 
@@ -15,7 +15,7 @@ class AVFilterGraph:
         video_stream: av.VideoStream,
         sw_format: VideoMetadata,
         vf: str,
-        deny_filters: Optional[List[str]] = None,
+        deny_filters: List[str] | None = None,
     ):
         assert video_stream.pix_fmt is not None
         self.pix_fmt = sw_format.guess_pix_fmt(video_stream.pix_fmt)
@@ -33,7 +33,7 @@ class AVFilterGraph:
             video_filters=video_filters,
         )
 
-    def update(self, frame: av.VideoFrame) -> Optional[av.VideoFrame]:
+    def update(self, frame: av.VideoFrame) -> av.VideoFrame | None:
         if frame.format.name in HW_PIX_FORMATS:
             # hwdownload
             frame = frame.reformat(

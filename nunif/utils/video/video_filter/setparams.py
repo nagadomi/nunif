@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict
 
 from ..color_transform import TensorFrame
 
@@ -67,10 +67,10 @@ class SetParamsFilter:
     }
 
     def __init__(self, options: str):
-        self.colorspace: Optional[int] = None
-        self.color_primaries: Optional[int] = None
-        self.color_trc: Optional[int] = None
-        self.color_range: Optional[int] = None
+        self.colorspace: int | None = None
+        self.color_primaries: int | None = None
+        self.color_trc: int | None = None
+        self.color_range: int | None = None
 
         if options:
             parts = options.split(":")

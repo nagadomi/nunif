@@ -1,5 +1,5 @@
 from fractions import Fraction
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict
 
 import torch
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
@@ -8,17 +8,17 @@ from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTr
 class VideoOutputConfig:
     pix_fmt: str
     fps: int | float | Fraction
-    output_fps: Optional[str]
+    output_fps: str | None
     options: Dict[str, str]
     container_options: Dict[str, str]
-    output_width: Optional[int]
-    output_height: Optional[int]
-    colorspace: Optional[str]
-    container_format: Optional[str]
-    video_codec: Optional[str]
-    state_updated: Optional[Callable[["VideoOutputConfig"], None]]
+    output_width: int | None
+    output_height: int | None
+    colorspace: str | None
+    container_format: str | None
+    video_codec: str | None
+    state_updated: Callable[["VideoOutputConfig"], None] | None
     state: Dict[str, Any]
-    device: Optional[torch.device]
+    device: torch.device | None
 
     def __init__(
         self,
@@ -26,17 +26,17 @@ class VideoOutputConfig:
         fps: int | float | Fraction = 30,
         options: Dict[str, str] = {},
         container_options: Dict[str, str] = {},
-        output_width: Optional[int] = None,
-        output_height: Optional[int] = None,
-        colorspace: Optional[str] = None,
-        container_format: Optional[str] = None,
-        video_codec: Optional[str] = None,
-        output_fps: Optional[str] = None,
-        device: Optional[torch.device] = None,
-        output_colorspace: Optional[Union[Colorspace, int]] = None,
-        output_color_primaries: Optional[Union[ColorPrimaries, int]] = None,
-        output_color_trc: Optional[Union[ColorTrc, int]] = None,
-        source_color_range: Optional[Union[ColorRange, int]] = None,
+        output_width: int | None = None,
+        output_height: int | None = None,
+        colorspace: str | None = None,
+        container_format: str | None = None,
+        video_codec: str | None = None,
+        output_fps: str | None = None,
+        device: torch.device | None = None,
+        output_colorspace: Colorspace | int | None = None,
+        output_color_primaries: ColorPrimaries | int | None = None,
+        output_color_trc: ColorTrc | int | None = None,
+        source_color_range: ColorRange | int | None = None,
     ):
         self.pix_fmt = pix_fmt
         self.fps = fps

@@ -6,7 +6,7 @@ import sys
 import time
 from os import path
 from types import GeneratorType
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, cast
 
 import av
 import torch
@@ -16,7 +16,6 @@ from PIL import Image
 from tqdm import tqdm
 
 from ..color_lut import apply_lut, get_hdr2sdr_lut_path, load_lut  # noqa
-
 from .color_transform import (
     InputTransform,
     configure_colorspace,
@@ -241,7 +240,7 @@ def fix_frame_color_av17(frame: av.VideoFrame, sw_format: VideoMetadata) -> av.V
 def configure_pipeline(
     video_input_stream: av.video.stream.VideoStream,
     sw_format: VideoMetadata,
-    hwaccel: Optional[str],
+    hwaccel: str | None,
     config: Any,
     vf: str,
     rgb24_options: Dict[str, Any],
@@ -297,7 +296,7 @@ def configure_pipeline(
         )
     else:
         # fps filter -> video filters -> input_reformatter
-        dst_pix_fmt: Optional[str] = None
+        dst_pix_fmt: str | None = None
         if video_input_stream.pix_fmt is not None:
             dst_pix_fmt = sw_format.guess_pix_fmt(video_input_stream.pix_fmt)
         if dst_pix_fmt == video_input_stream.pix_fmt:
@@ -332,9 +331,9 @@ def process_video(
     start_time=None,
     end_time=None,
     test_callback=None,
-    device: Union[str, torch.device] = "cpu",
+    device: str | torch.device = "cpu",
     inference_mode: bool = True,
-    hwaccel: Optional[str] = None,
+    hwaccel: str | None = None,
     disable_software_fallback: bool = False,
 ):
     with torch.inference_mode(inference_mode):
@@ -370,8 +369,8 @@ def _process_video(
     start_time,
     end_time,
     test_callback,
-    device: Union[str, torch.device],
-    hwaccel: Optional[str],
+    device: str | torch.device,
+    hwaccel: str | None,
     disable_software_fallback: bool,
 ):
     if isinstance(start_time, str):

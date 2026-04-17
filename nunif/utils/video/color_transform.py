@@ -1,5 +1,5 @@
 from fractions import Fraction
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Set, Tuple
 
 import av
 import numpy as np
@@ -26,7 +26,7 @@ class ColorTransform:
     }
 
     # Matrix cache
-    _MATRIX_CACHE: Dict[Tuple[Any, ...], Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]] = {}
+    _MATRIX_CACHE: Dict[Tuple[Any, ...], torch.Tensor | Tuple[torch.Tensor, torch.Tensor]] = {}
 
     # Format classification
     YUV_PLANAR: Set[str] = {
@@ -105,9 +105,9 @@ class ColorTransform:
     @torch.no_grad()
     def to_tensor(
         frame: av.VideoFrame,
-        dst_colorspace: Optional[Union[Colorspace, int]] = None,
-        dst_color_range: Optional[Union[ColorRange, int]] = None,
-        device: Union[torch.device, str] = "cpu",
+        dst_colorspace: Colorspace | int | None = None,
+        dst_color_range: ColorRange | int | None = None,
+        device: torch.device | str = "cpu",
         dtype: torch.dtype = torch.float32,
         upsample_mode: str = "bilinear",
     ) -> torch.Tensor:
@@ -118,7 +118,7 @@ class ColorTransform:
         bpp: int = ColorTransform.RGB_PACKED[fmt][0] if fmt in ColorTransform.RGB_PACKED else 1
 
         for i, plane in enumerate(frame.planes):
-            t: Optional[torch.Tensor] = None
+            t: torch.Tensor | None = None
             if src_fmt in ColorTransform.DLPACK_SUPPORTED_FORMATS and hasattr(plane, "__dlpack__"):
                 if i == 0:
                     # Ensure hardware decoder has finished writing to the planes.
@@ -167,8 +167,8 @@ class ColorTransform:
             planes_f.append(t.to(dtype))
             del t
 
-        src_colorspace: Union[Colorspace, int] = frame.colorspace
-        src_color_range: Union[ColorRange, int] = frame.color_range
+        src_colorspace: Colorspace | int = frame.colorspace
+        src_color_range: ColorRange | int = frame.color_range
         if fmt in ColorTransform.FULL_RANGE_FORMATS:
             src_color_range = ColorRange.JPEG
 
@@ -257,7 +257,7 @@ class ColorTransform:
         return rgb
 
     @staticmethod
-    def get_coeffs(colorspace: Union[Colorspace, int]) -> Tuple[float, float]:
+    def get_coeffs(colorspace: Colorspace | int) -> Tuple[float, float]:
         """Return Kr, Kb coefficients based on colorspace numeric value."""
         value: int = int(colorspace)
         if value == 1:
@@ -270,13 +270,13 @@ class ColorTransform:
 
     @staticmethod
     def _get_matrix(
-        colorspace: Union[Colorspace, int],
+        colorspace: Colorspace | int,
         device: torch.device,
         dtype: torch.dtype,
         direction: str = "yuv2rgb",
-        color_range: Optional[Union[ColorRange, int]] = None,
+        color_range: ColorRange | int | None = None,
         div: float = 255.0,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         key = (
             direction,
             int(colorspace),
@@ -342,8 +342,8 @@ class ColorTransform:
         y: torch.Tensor,
         u: torch.Tensor,
         v: torch.Tensor,
-        colorspace: Union[Colorspace, int] = Colorspace.ITU709,
-        color_range: Union[ColorRange, int] = ColorRange.MPEG,
+        colorspace: Colorspace | int = Colorspace.ITU709,
+        color_range: ColorRange | int = ColorRange.MPEG,
         div: float = 255.0,
         mode: str = "bilinear",
     ) -> torch.Tensor:
@@ -385,9 +385,9 @@ class ColorTransform:
     @torch.no_grad()
     def rgb_to_yuv(
         rgb: torch.Tensor,
-        colorspace: Union[Colorspace, int] = Colorspace.ITU709,
-        color_range: Union[ColorRange, int] = ColorRange.MPEG,
-        out_format: Optional[str] = "yuv444p",
+        colorspace: Colorspace | int = Colorspace.ITU709,
+        color_range: ColorRange | int = ColorRange.MPEG,
+        out_format: str | None = "yuv444p",
         mode: str = "bilinear",
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         weight = ColorTransform._get_matrix(colorspace, rgb.device, rgb.dtype, "rgb2yuv")
@@ -451,26 +451,26 @@ class ColorTransform:
 
 class TensorFrame:
     planes: torch.Tensor
-    pts: Optional[int]
-    dts: Optional[int]
-    time_base: Optional[Fraction]
-    colorspace: Union[Colorspace, int]
-    color_primaries: Union[ColorPrimaries, int]
-    color_trc: Union[ColorTrc, int]
-    color_range: Union[ColorRange, int]
+    pts: int | None
+    dts: int | None
+    time_base: Fraction | None
+    colorspace: Colorspace | int
+    color_primaries: ColorPrimaries | int
+    color_trc: ColorTrc | int
+    color_range: ColorRange | int
     side_data: Any
     use_16bit: bool
 
     def __init__(
         self,
         planes: torch.Tensor,
-        pts: Optional[int],
-        dts: Optional[int],
-        time_base: Optional[Fraction],
-        colorspace: Union[Colorspace, int],
-        color_primaries: Union[ColorPrimaries, int],
-        color_trc: Union[ColorTrc, int],
-        color_range: Union[ColorRange, int],
+        pts: int | None,
+        dts: int | None,
+        time_base: Fraction | None,
+        colorspace: Colorspace | int,
+        color_primaries: ColorPrimaries | int,
+        color_trc: ColorTrc | int,
+        color_range: ColorRange | int,
         side_data: Any,
         use_16bit: bool,
     ) -> None:
@@ -535,14 +535,14 @@ class InputTransform:
 
     HW_DEVICE_TYPES: Set[str] = set([t.name for t in HWDeviceType if t.name != "none"])
     src_pix_fmt: str
-    src_colorspace: Union[Colorspace, int]
-    src_color_primaries: Union[ColorPrimaries, int]
-    src_color_trc: Union[ColorTrc, int]
-    src_color_range: Union[ColorRange, int]
-    dst_colorspace: Union[Colorspace, int]
-    dst_color_primaries: Union[ColorPrimaries, int]
-    dst_color_trc: Union[ColorTrc, int]
-    dst_color_range: Union[ColorRange, int]
+    src_colorspace: Colorspace | int
+    src_color_primaries: ColorPrimaries | int
+    src_color_trc: ColorTrc | int
+    src_color_range: ColorRange | int
+    dst_colorspace: Colorspace | int
+    dst_color_primaries: ColorPrimaries | int
+    dst_color_trc: ColorTrc | int
+    dst_color_range: ColorRange | int
     use_16bit: bool
     device: torch.device
     dtype: torch.dtype
@@ -551,14 +551,14 @@ class InputTransform:
     def __init__(
         self,
         src_pix_fmt: str,
-        src_colorspace: Union[Colorspace, int],
-        src_color_primaries: Union[ColorPrimaries, int],
-        src_color_trc: Union[ColorTrc, int],
-        src_color_range: Union[ColorRange, int],
-        dst_colorspace: Union[Colorspace, int],
-        dst_color_primaries: Union[ColorPrimaries, int],
-        dst_color_trc: Union[ColorTrc, int],
-        dst_color_range: Union[ColorRange, int],
+        src_colorspace: Colorspace | int,
+        src_color_primaries: ColorPrimaries | int,
+        src_color_trc: ColorTrc | int,
+        src_color_range: ColorRange | int,
+        dst_colorspace: Colorspace | int,
+        dst_color_primaries: ColorPrimaries | int,
+        dst_color_trc: ColorTrc | int,
+        dst_color_range: ColorRange | int,
         use_16bit: bool,
         device: torch.device,
         dtype: torch.dtype = torch.float32,
@@ -660,22 +660,22 @@ class InputTransform:
 
 class OutputTransform:
     dst_pix_fmt: str
-    dst_colorspace: Union[Colorspace, int]
-    dst_color_primaries: Union[ColorPrimaries, int]
-    dst_color_trc: Union[ColorTrc, int]
-    dst_color_range: Union[ColorRange, int]
+    dst_colorspace: Colorspace | int
+    dst_color_primaries: ColorPrimaries | int
+    dst_color_trc: ColorTrc | int
+    dst_color_range: ColorRange | int
     use_16bit: bool
-    cuda_context: Optional[CudaContext]
+    cuda_context: CudaContext | None
 
     # Convert tensor/ndarray to av.VideoFrame
     def __init__(
         self,
         dst_pix_fmt: str,
-        dst_colorspace: Union[Colorspace, int],
-        dst_color_primaries: Union[ColorPrimaries, int],
-        dst_color_trc: Union[ColorTrc, int],
-        dst_color_range: Union[ColorRange, int],
-        cuda_context: Optional[CudaContext] = None,
+        dst_colorspace: Colorspace | int,
+        dst_color_primaries: ColorPrimaries | int,
+        dst_color_trc: ColorTrc | int,
+        dst_color_range: ColorRange | int,
+        cuda_context: CudaContext | None = None,
     ) -> None:
         self.dst_pix_fmt = dst_pix_fmt
         self.dst_colorspace = dst_colorspace
@@ -765,7 +765,7 @@ class OutputTransform:
         frame.color_range = self.dst_color_range
         return frame
 
-    def transform(self, x: Union[av.VideoFrame, torch.Tensor, np.ndarray, TensorFrame]) -> av.VideoFrame:
+    def transform(self, x: av.VideoFrame | torch.Tensor | np.ndarray | TensorFrame) -> av.VideoFrame:
         if isinstance(x, TensorFrame):
             # For simplicity, extract planes. PTS/DTS handling can be added later if needed.
             x = x.planes
@@ -783,13 +783,13 @@ class OutputTransform:
 
         return self.from_tensor(x)
 
-    def __call__(self, x: Union[av.VideoFrame, torch.Tensor, np.ndarray, TensorFrame]) -> av.VideoFrame:
+    def __call__(self, x: av.VideoFrame | torch.Tensor | np.ndarray | TensorFrame) -> av.VideoFrame:
         return self.transform(x)
 
 
 def configure_colorspace(
-    output_stream: Optional[av.video.stream.VideoStream],
-    sw_format: Optional[VideoMetadata],
+    output_stream: av.video.stream.VideoStream | None,
+    sw_format: VideoMetadata | None,
     config: Any,
 ) -> None:
     """Configure output stream and store state based on user config."""
@@ -797,12 +797,12 @@ def configure_colorspace(
     config.state["reformatter"] = lambda frame: frame
 
     pix_fmt: str
-    colorspace: Union[Colorspace, int]
-    color_primaries: Union[ColorPrimaries, int]
-    color_trc: Union[ColorTrc, int]
-    color_range: Union[ColorRange, int]
+    colorspace: Colorspace | int
+    color_primaries: ColorPrimaries | int
+    color_trc: ColorTrc | int
+    color_range: ColorRange | int
     rgb24_options: Dict[str, Any]
-    source_color_range: Union[ColorRange, int]
+    source_color_range: ColorRange | int
 
     if sw_format:
         (

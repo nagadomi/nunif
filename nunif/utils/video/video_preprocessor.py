@@ -1,5 +1,5 @@
 from fractions import Fraction
-from typing import List, Optional, Union
+from typing import List
 
 import av
 
@@ -11,18 +11,18 @@ from .video_filter.tensor_filter_graph import TensorFilterGraph
 
 
 class VideoPreprocessor:
-    fps_filter: Optional[FPSFilter]
-    input_transform: Optional[InputTransform]
-    video_filter: Optional[Union[TensorFilterGraph, AVFilterGraph]]
+    fps_filter: FPSFilter | None
+    input_transform: InputTransform | None
+    video_filter: TensorFilterGraph | AVFilterGraph | None
 
     def __init__(
         self,
         video_stream: av.VideoStream,
         sw_format: VideoMetadata,
-        fps: Optional[Fraction] = None,
+        fps: Fraction | None = None,
         vf: str = "",
         deny_filters: List[str] = [],
-        input_transform: Optional[InputTransform] = None,
+        input_transform: InputTransform | None = None,
     ):
         self.fps_filter = None
         self.video_filter = None

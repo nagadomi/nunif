@@ -1,6 +1,6 @@
 import math
 from fractions import Fraction
-from typing import Any, Dict, Optional, Set, Tuple, Union
+from typing import Any, Dict, Set, Tuple
 
 import av
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
@@ -13,10 +13,10 @@ COLORSPACE_BT2020: int = 9
 COLOR_CONFIG_MAP: Dict[
     str,
     Tuple[
-        Union[Colorspace, int],
-        Union[ColorPrimaries, int],
-        Union[ColorTrc, int],
-        Union[ColorRange, int],
+        Colorspace | int,
+        ColorPrimaries | int,
+        ColorTrc | int,
+        ColorRange | int,
     ],
 ] = {
     "bt709-tv": (
@@ -86,7 +86,7 @@ def get_rgb_pix_fmt(use_16bit: bool) -> str:
     return "gbrp16le" if use_16bit else "rgb24"
 
 
-def convert_fps_fraction(fps: Union[Fraction, float, int, None]) -> Optional[Fraction]:
+def convert_fps_fraction(fps: Fraction | float | int | None) -> Fraction | None:
     if fps is None:
         return None
     if isinstance(fps, (float, int)):
@@ -106,7 +106,7 @@ def convert_fps_fraction(fps: Union[Fraction, float, int, None]) -> Optional[Fra
     return fps
 
 
-def parse_time(s: Union[str, int, float]) -> float:
+def parse_time(s: str | int | float) -> float:
     if isinstance(s, (int, float)):
         return float(s)
     try:
@@ -131,18 +131,18 @@ def parse_time(s: Union[str, int, float]) -> float:
 class VideoMetadata:
     video_path: str
     format: av.VideoFormat
-    colorspace: Union[Colorspace, int]
-    color_primaries: Union[ColorPrimaries, int]
-    color_trc: Union[ColorTrc, int]
-    color_range: Union[ColorRange, int]
+    colorspace: Colorspace | int
+    color_primaries: ColorPrimaries | int
+    color_trc: ColorTrc | int
+    color_range: ColorRange | int
     width: int
     height: int
-    time_base: Optional[Fraction]
+    time_base: Fraction | None
     use_16bit: bool
     stream_frames: int
-    stream_duration: Optional[int]
-    guessed_rate: Optional[Fraction]
-    container_duration: Optional[float]
+    stream_duration: int | None
+    guessed_rate: Fraction | None
+    container_duration: float | None
 
     def __init__(self, video_path: str) -> None:
         self.video_path = video_path
@@ -169,12 +169,12 @@ class VideoMetadata:
             else:
                 self.container_duration = None
 
-    def get_fps(self) -> Optional[Fraction]:
+    def get_fps(self) -> Fraction | None:
         return self.guessed_rate
 
     def get_duration(self, to_int: bool = True) -> float:
         duration: float | None
-        if (self.stream_duration is not None and self.time_base is not None):
+        if self.stream_duration is not None and self.time_base is not None:
             duration = float(self.stream_duration * self.time_base)
         else:
             duration = self.container_duration
@@ -184,7 +184,7 @@ class VideoMetadata:
 
         return math.ceil(duration) if to_int else duration
 
-    def guess_duration_by_last_packet(self) -> Optional[float]:
+    def guess_duration_by_last_packet(self) -> float | None:
         with av.open(self.video_path, mode="r", metadata_errors="ignore") as container:
             stream: av.VideoStream | av.AudioStream
             if len(container.streams.video) > 0:
@@ -214,11 +214,11 @@ class VideoMetadata:
 
     def guess_frames(
         self,
-        fps: Optional[Fraction] = None,
-        start_time: Optional[float] = None,
-        end_time: Optional[float] = None,
+        fps: Fraction | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
         return_duration: bool = False,
-    ) -> Union[int, Tuple[int, float]]:
+    ) -> int | Tuple[int, float]:
         fps = fps or self.get_fps()
         duration = self.guess_duration(to_int=False)
 
@@ -263,7 +263,7 @@ class VideoMetadata:
             return stream_pix_fmt
 
     @staticmethod
-    def guess_color_range_static(format_name: str, color_range: Union[ColorRange, int]) -> ColorRange:
+    def guess_color_range_static(format_name: str, color_range: ColorRange | int) -> ColorRange:
         if color_range in {ColorRange.MPEG, ColorRange.JPEG}:
             return ColorRange(color_range)
         if any(s in format_name for s in ("yuvj", "rgb", "gbr")):
@@ -274,16 +274,16 @@ class VideoMetadata:
         return self.guess_color_range_static(self.format.name, self.color_range)
 
     @staticmethod
-    def guess_colorspace_static(height: int, colorspace: Union[Colorspace, int]) -> Union[Colorspace, int]:
+    def guess_colorspace_static(height: int, colorspace: Colorspace | int) -> Colorspace | int:
         if colorspace != COLORSPACE_UNSPECIFIED:
             return colorspace
         return Colorspace.ITU709 if height >= 720 else Colorspace.ITU601
 
-    def guess_colorspace(self) -> Union[Colorspace, int]:
+    def guess_colorspace(self) -> Colorspace | int:
         return self.guess_colorspace_static(self.height, self.colorspace)
 
     @staticmethod
-    def guess_color_trc_static(colorspace: Union[Colorspace, int]) -> ColorTrc:
+    def guess_color_trc_static(colorspace: Colorspace | int) -> ColorTrc:
         if colorspace == Colorspace.ITU709:
             return ColorTrc.BT709
         elif colorspace == Colorspace.ITU601:
@@ -294,7 +294,7 @@ class VideoMetadata:
             return ColorTrc.UNSPECIFIED
 
     @staticmethod
-    def guess_color_primaries_static(colorspace: Union[Colorspace, int]) -> ColorPrimaries:
+    def guess_color_primaries_static(colorspace: Colorspace | int) -> ColorPrimaries:
         if colorspace == Colorspace.ITU709:
             return ColorPrimaries.BT709
         elif colorspace == Colorspace.ITU601:
@@ -308,13 +308,13 @@ class VideoMetadata:
     def get_target_colorspace_static(
         colorspace_mode: str,
         pix_fmt: str,
-        src_colorspace: Union[Colorspace, int] = COLORSPACE_UNSPECIFIED,
-        src_color_primaries: Union[ColorPrimaries, int] = ColorPrimaries.UNSPECIFIED,
-        src_color_trc: Union[ColorTrc, int] = ColorTrc.UNSPECIFIED,
-        src_color_range: Union[ColorRange, int] = ColorRange.UNSPECIFIED,
+        src_colorspace: Colorspace | int = COLORSPACE_UNSPECIFIED,
+        src_color_primaries: ColorPrimaries | int = ColorPrimaries.UNSPECIFIED,
+        src_color_trc: ColorTrc | int = ColorTrc.UNSPECIFIED,
+        src_color_range: ColorRange | int = ColorRange.UNSPECIFIED,
         src_height: int = 1080,
         src_format_name: str = "yuv420p",
-    ) -> Tuple[str, Union[Colorspace, int], Union[ColorPrimaries, int], Union[ColorTrc, int], Union[ColorRange, int]]:
+    ) -> Tuple[str, Colorspace | int, ColorPrimaries | int, ColorTrc | int, ColorRange | int]:
         original_mode = colorspace_mode
         if colorspace_mode == "auto":
             colorspace_mode = "copy"
@@ -360,10 +360,10 @@ class VideoMetadata:
         self, colorspace_mode: str, pix_fmt: str
     ) -> Tuple[
         str,
-        Union[Colorspace, int],
-        Union[ColorPrimaries, int],
-        Union[ColorTrc, int],
-        Union[ColorRange, int],
+        Colorspace | int,
+        ColorPrimaries | int,
+        ColorTrc | int,
+        ColorRange | int,
     ]:
         return self.get_target_colorspace_static(
             colorspace_mode,
@@ -378,9 +378,9 @@ class VideoMetadata:
 
     def get_reformat_options(
         self,
-        target_colorspace: Union[Colorspace, int],
-        target_color_primaries: Union[ColorPrimaries, int],
-        target_color_trc: Union[ColorTrc, int],
+        target_colorspace: Colorspace | int,
+        target_color_primaries: ColorPrimaries | int,
+        target_color_trc: ColorTrc | int,
     ) -> Dict[str, Any]:
         return {
             "src_colorspace": self.colorspace,
