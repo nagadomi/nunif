@@ -6,20 +6,19 @@ import sys
 import time
 from os import path
 from types import GeneratorType
-from typing import Any, Dict, cast
+from typing import cast
 
 import av
 import torch
 from av.codec.hwaccel import HWAccel
-from av.video.reformatter import ColorRange, ColorTrc
+from av.video.reformatter import ColorRange
 from PIL import Image
 from tqdm import tqdm
 
-from ..color_lut import apply_lut, get_hdr2sdr_lut_path, load_lut  # noqa
 from .color_transform import (
-    InputTransform,
-    configure_colorspace,
+    OutputTransform,
     configure_video_codec,
+    get_color_config,
 )
 from .frame_callback_pool import (  # noqa
     FrameCallbackPool,
@@ -31,9 +30,8 @@ from .frame_callback_pool import (  # noqa
     to_ndarray,
     to_tensor,
 )
-from .hwaccel import create_hwaccel, get_supported_hwdevices, should_use_tensor_frame
+from .hwaccel import create_hwaccel, HW_DEVICES
 from .metadata import (
-    COLORSPACE_BT2020,
     VideoMetadata,
     convert_fps_fraction,
     parse_time,
@@ -48,7 +46,7 @@ from .video_preprocessor import VideoPreprocessor
 
 
 def _print_len(stream):
-    sw_format = VideoMetadata(stream.container.name)
+    sw_format = VideoMetadata.from_file(stream.container.name)
     print("frames", sw_format.stream_frames)
     print("guessed_frames", sw_format.guess_frames())
     print("duration", sw_format.get_duration())
@@ -62,38 +60,6 @@ def default_config_callback(metadata):
     if float(fps) > 30:
         fps = 30
     return VideoOutputConfig(fps=fps, options={"preset": "ultrafast", "crf": "20"})
-
-
-def update_hdr2sdr_video_filter(vf, colorspace, color_trc, output_colorspace):
-    lut_path = get_lut_path(colorspace=colorspace, color_trc=color_trc, output_colorspace=output_colorspace)
-    if "bt709" in output_colorspace:
-        colorspace_filter = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"
-    else:
-        colorspace_filter = "setparams=colorspace=smpte170m:color_primaries=bt470bg:color_trc=smpte170m"
-
-    lut_filter = f"lut3d={lut_path},{colorspace_filter}"
-    vf = f"{vf},{lut_filter}" if vf else lut_filter
-    return vf
-
-
-def is_hdr2sdr_enabled(colorspace, color_trc, output_colorspace):
-    return (
-        colorspace == COLORSPACE_BT2020
-        and color_trc in {ColorTrc.SMPTE2084, ColorTrc.ARIB_STD_B67}
-        and output_colorspace in {"bt709", "bt709-tv", "bt709-pc", "bt601", "bt601-tv", "bt601-pc"}
-    )
-
-
-def get_lut_path(colorspace, color_trc, output_colorspace):
-    assert is_hdr2sdr_enabled(colorspace, color_trc, output_colorspace)
-    return get_hdr2sdr_lut_path(
-        {
-            (ColorTrc.SMPTE2084, "bt709"): "pq2bt709",
-            (ColorTrc.SMPTE2084, "bt601"): "pq2bt601",
-            (ColorTrc.ARIB_STD_B67, "bt709"): "hlg2bt709",
-            (ColorTrc.ARIB_STD_B67, "bt601"): "hlg2bt601",
-        }[(color_trc, output_colorspace.split("-")[0])]
-    )
 
 
 SIZE_SAFE_FILTERS = [
@@ -110,7 +76,13 @@ SIZE_SAFE_FILTERS = [
 
 def test_output_size(test_callback, video_stream, sw_format, vf):
     video_filter = VideoPreprocessor(
-        video_stream, sw_format, fps=convert_fps_fraction(59.94), vf=vf, deny_filters=SIZE_SAFE_FILTERS
+        video_stream.pix_fmt,
+        sw_format,
+        output_colorspace_mode="auto",
+        fps=convert_fps_fraction(59.94),
+        vf=vf,
+        deny_filters=SIZE_SAFE_FILTERS,
+        input_reformat_options=sw_format.get_auto_input_reformat_options(),
     )
     empty_image = Image.new("RGB", (sw_format.width, sw_format.height), (128, 128, 128))
     test_frame = av.VideoFrame.from_image(empty_image).reformat(
@@ -237,85 +209,13 @@ def fix_frame_color_av17(frame: av.VideoFrame, sw_format: VideoMetadata) -> av.V
     return frame
 
 
-def configure_pipeline(
-    video_input_stream: av.video.stream.VideoStream,
-    sw_format: VideoMetadata,
-    hwaccel: str | None,
-    config: Any,
-    vf: str,
-    rgb24_options: Dict[str, Any],
-    device: torch.device,
-):
-    use_hdr2sdr = is_hdr2sdr_enabled(
-        colorspace=video_input_stream.codec_context.colorspace,
-        color_trc=video_input_stream.codec_context.color_trc,
-        output_colorspace=config.colorspace,
-    )
-    use_tensor_frame = should_use_tensor_frame(sw_format.format.name, hwaccel, device)
-
-    if use_hdr2sdr:
-        # Add lut3d filter
-        vf = update_hdr2sdr_video_filter(
-            vf,
-            colorspace=video_input_stream.codec_context.colorspace,
-            color_trc=video_input_stream.codec_context.color_trc,
-            output_colorspace=config.colorspace,
-        )
-        if use_tensor_frame:
-            # Use colorspace_mode=auto (preserve source colorspace)
-            # fps filter -> input_transform(bt2020) -> video filters(lut3d, bt709 or bt601) -> identity
-            (
-                pix_fmt,
-                colorspace,
-                color_primaries,
-                color_trc,
-                color_range,
-            ) = sw_format.get_target_colorspace(colorspace_mode="auto", pix_fmt=sw_format.format.name)
-            rgb24_options = sw_format.get_reformat_options(colorspace, color_primaries, color_trc)
-
-    if use_tensor_frame:
-        # fps filter -> input_transform -> video filters -> identity
-        def input_reformatter(frame: av.VideoFrame) -> av.VideoFrame:
-            return frame
-
-        input_transform = InputTransform(
-            src_pix_fmt=sw_format.format.name,
-            src_colorspace=rgb24_options["src_colorspace"],
-            src_color_primaries=rgb24_options["src_color_primaries"],
-            src_color_trc=rgb24_options["src_color_trc"],
-            src_color_range=rgb24_options["src_color_range"],
-            dst_colorspace=rgb24_options["dst_colorspace"],
-            dst_color_primaries=rgb24_options["dst_color_primaries"],
-            dst_color_trc=rgb24_options["dst_color_trc"],
-            dst_color_range=rgb24_options["dst_color_range"],
-            use_16bit=sw_format.use_16bit,
-            device=device,
-        )
-        video_preprocessor = VideoPreprocessor(
-            video_input_stream, sw_format, fps=config.fps, vf=vf, input_transform=input_transform
-        )
-    else:
-        # fps filter -> video filters -> input_reformatter
-        dst_pix_fmt: str | None = None
-        if video_input_stream.pix_fmt is not None:
-            dst_pix_fmt = sw_format.guess_pix_fmt(video_input_stream.pix_fmt)
-        if dst_pix_fmt == video_input_stream.pix_fmt:
-            dst_pix_fmt = None
-
-        def input_reformatter(frame: av.VideoFrame) -> av.VideoFrame:
-            return frame.reformat(
-                format=dst_pix_fmt,
-                src_colorspace=rgb24_options["src_colorspace"],
-                src_color_range=rgb24_options["src_color_range"],
-                dst_colorspace=rgb24_options["dst_colorspace"],
-                dst_color_primaries=rgb24_options["dst_color_primaries"],
-                dst_color_trc=rgb24_options["dst_color_trc"],
-                dst_color_range=rgb24_options["dst_color_range"],
-            )
-
-        video_preprocessor = VideoPreprocessor(video_input_stream, sw_format, fps=config.fps, vf=vf)
-
-    return input_reformatter, video_preprocessor
+def apply_color_settings(output_stream: av.video.stream.VideoStream, output_reformatter: OutputTransform) -> None:
+    ctx = output_stream.codec_context
+    ctx.pix_fmt = output_reformatter.dst_pix_fmt
+    ctx.colorspace = output_reformatter.dst_colorspace
+    ctx.color_primaries = output_reformatter.dst_color_primaries
+    ctx.color_trc = output_reformatter.dst_color_trc
+    ctx.color_range = output_reformatter.dst_color_range
 
 
 def process_video(
@@ -382,7 +282,7 @@ def _process_video(
     if isinstance(device, str):
         device = torch.device(device)
 
-    sw_format = VideoMetadata(input_path)
+    sw_format = VideoMetadata.from_file(input_path)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
@@ -424,21 +324,31 @@ def _process_video(
     output_container = av.open(output_path_tmp, mode="w", options=config.container_options, hwaccel=output_hwaccel)
 
     output_fps = config.output_fps or config.fps
+    input_reformat_options, output_reformatter = get_color_config(sw_format, config)
+    config.pix_fmt = output_reformatter.dst_pix_fmt
+    config.output_colorspace = int(output_reformatter.dst_colorspace)
+    config.output_color_primaries = int(output_reformatter.dst_color_primaries)
+    config.output_color_trc = int(output_reformatter.dst_color_trc)
+    config.source_color_range = int(input_reformat_options["src_color_range"])
+
+    if config.state_updated is not None:
+        config.state_updated(config)
+
     video_output_stream = output_container.add_stream(config.video_codec, output_fps)
-    configure_colorspace(video_output_stream, sw_format, config)
+    apply_color_settings(video_output_stream, output_reformatter)
 
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
     video_output_stream.options = config.options
-    reformatter = config.state["reformatter"]
-    input_reformatter, fps_filter = configure_pipeline(
-        video_input_stream=video_input_stream,
+    video_preprocessor = VideoPreprocessor(
+        stream_pix_fmt=video_input_stream.pix_fmt,
         sw_format=sw_format,
-        hwaccel=hwaccel,
-        config=config,
+        output_colorspace_mode=config.colorspace,
+        fps=config.fps,
         vf=vf,
-        rgb24_options=config.state["rgb24_options"],
+        hwaccel=hwaccel,
         device=device,
+        input_reformat_options=input_reformat_options,
     )
 
     if config.output_width is not None and config.output_height is not None:
@@ -489,10 +399,9 @@ def _process_video(
             if packet.stream.type == "video":
                 for frame in safe_decode(packet, strict=disable_software_fallback):
                     frame = fix_frame_color_av17(frame, sw_format)
-                    for out_frame in fps_filter.update(frame):
-                        ref_frame = input_reformatter(out_frame)
-                        for new_frame in get_new_frames(frame_callback(ref_frame)):
-                            reformatted_frame = reformatter(new_frame)
+                    for out_frame in video_preprocessor.update(frame):
+                        for new_frame in get_new_frames(frame_callback(out_frame)):
+                            reformatted_frame = output_reformatter(new_frame)
                             # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
                             enc_packet = video_output_stream.encode(reformatted_frame)
                             if enc_packet:
@@ -518,17 +427,16 @@ def _process_video(
             if i % 100 == 0:
                 gc.collect()
 
-        for frame in fps_filter.flush():
-            frame = input_reformatter(frame)
-            for new_frame in get_new_frames(frame_callback(frame)):
-                ref_frame = reformatter(new_frame)
+        for out_frame in video_preprocessor.flush():
+            for new_frame in get_new_frames(frame_callback(out_frame)):
+                ref_frame = output_reformatter(new_frame)
                 enc_packet = video_output_stream.encode(ref_frame)
                 if enc_packet:
                     output_container.mux(enc_packet)
                 pbar.update(1)
 
         for new_frame in get_new_frames(frame_callback(None)):
-            ref_frame = reformatter(new_frame)
+            ref_frame = output_reformatter(new_frame)
             enc_packet = video_output_stream.encode(ref_frame)
             if enc_packet:
                 output_container.mux(enc_packet)
@@ -584,14 +492,24 @@ def generate_video(
         config.video_codec = get_default_video_codec(config.container_format)
     configure_video_codec(config)
 
+    input_reformat_options, output_reformatter = get_color_config(None, config)
+    config.pix_fmt = output_reformatter.dst_pix_fmt
+    config.output_colorspace = int(output_reformatter.dst_colorspace)
+    config.output_color_primaries = int(output_reformatter.dst_color_primaries)
+    config.output_color_trc = int(output_reformatter.dst_color_trc)
+    config.source_color_range = int(input_reformat_options["src_color_range"])
+
+    if config.state_updated is not None:
+        config.state_updated(config)
+
     video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps))
-    configure_colorspace(video_output_stream, None, config)
+    apply_color_settings(video_output_stream, output_reformatter)
+
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
     video_output_stream.width = output_size[0]
     video_output_stream.height = output_size[1]
     video_output_stream.options = config.options
-    reformatter = config.state["reformatter"]
 
     if audio_file is not None:
         input_container = av.open(audio_file, mode="r", metadata_errors="ignore")
@@ -612,7 +530,7 @@ def generate_video(
             tqdm_fn = tqdm_fn or tqdm
             desc = title + " Audio" if title else "Audio"
             ncols = len(desc) + 60
-            sw_audio = VideoMetadata(audio_file)
+            sw_audio = VideoMetadata.from_file(audio_file)
             total = sw_audio.get_duration()
             pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
             last_sec = 0
@@ -657,7 +575,7 @@ def generate_video(
         if frame is None:
             break
         for new_frame in get_new_frames(frame):
-            new_frame = reformatter(new_frame)
+            new_frame = output_reformatter(new_frame)
             enc_packet = video_output_stream.encode(new_frame)
             if enc_packet:
                 output_container.mux(enc_packet)
@@ -695,7 +613,7 @@ def process_video_keyframes(
     suspend_event=None,
     tqdm_fn=None,
 ):
-    sw_format = VideoMetadata(input_path)
+    sw_format = VideoMetadata.from_file(input_path)
     input_container = av.open(input_path, mode="r", metadata_errors="ignore")
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -704,7 +622,9 @@ def process_video_keyframes(
     # video_input_stream.thread_type = "AUTO"  # slow
     video_input_stream.codec_context.skip_frame = "NONKEY"
 
-    video_filter = VideoPreprocessor(video_input_stream, sw_format, vf=vf)
+    video_filter = VideoPreprocessor(
+        video_input_stream.pix_fmt, sw_format, output_colorspace_mode="auto", fps=None, vf=vf
+    )
 
     max_progress = sw_format.guess_duration()
     desc = title if title else input_path
@@ -758,7 +678,7 @@ def hook_frame(
     if isinstance(device, str):
         device = torch.device(device)
 
-    sw_format = VideoMetadata(input_path)
+    sw_format = VideoMetadata.from_file(input_path)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
@@ -775,15 +695,25 @@ def hook_frame(
 
     config = config_callback(sw_format)
     config.fps = convert_fps_fraction(config.fps)
-    configure_colorspace(None, sw_format, config)
-    input_reformatter, fps_filter = configure_pipeline(
-        video_input_stream=video_input_stream,
+    input_reformat_options, output_reformatter = get_color_config(sw_format, config)
+    config.pix_fmt = output_reformatter.dst_pix_fmt
+    config.output_colorspace = int(output_reformatter.dst_colorspace)
+    config.output_color_primaries = int(output_reformatter.dst_color_primaries)
+    config.output_color_trc = int(output_reformatter.dst_color_trc)
+    config.source_color_range = int(input_reformat_options["src_color_range"])
+
+    if config.state_updated is not None:
+        config.state_updated(config)
+
+    video_preprocessor = VideoPreprocessor(
+        stream_pix_fmt=video_input_stream.pix_fmt,
         sw_format=sw_format,
-        hwaccel=hwaccel,
-        config=config,
+        output_colorspace_mode=config.colorspace,
+        fps=config.fps,
         vf=vf,
-        rgb24_options=config.state["rgb24_options"],
+        hwaccel=hwaccel,
         device=device,
+        input_reformat_options=input_reformat_options,
     )
 
     desc = title if title else input_path
@@ -802,9 +732,8 @@ def hook_frame(
                 break
         for frame in safe_decode(packet, strict=disable_software_fallback):
             frame = fix_frame_color_av17(frame, sw_format)
-            for out_frame in fps_filter.update(frame):
-                ref_frame = input_reformatter(out_frame)
-                consume_generator(frame_callback(ref_frame))
+            for out_frame in video_preprocessor.update(frame):
+                consume_generator(frame_callback(out_frame))
                 pbar.update(1)
         if i % 100 == 0:
             gc.collect()
@@ -813,9 +742,8 @@ def hook_frame(
         if stop_event is not None and stop_event.is_set():
             break
 
-    for frame in fps_filter.flush():
-        ref_frame = input_reformatter(frame)
-        consume_generator(frame_callback(ref_frame))
+    for out_frame in video_preprocessor.flush():
+        consume_generator(frame_callback(out_frame))
         pbar.update(1)
 
     consume_generator(frame_callback(None))
@@ -842,7 +770,7 @@ def sample_frames(
     if isinstance(device, str):
         device = torch.device(device)
 
-    sw_format = VideoMetadata(input_path)
+    sw_format = VideoMetadata.from_file(input_path)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
@@ -858,14 +786,15 @@ def sample_frames(
         print(f"sample_frames: No duration available: {input_path}", file=sys.stderr)
         return -1
 
-    input_reformatter, video_filter = configure_pipeline(
-        video_input_stream=video_input_stream,
+    video_preprocessor = VideoPreprocessor(
+        stream_pix_fmt=video_input_stream.pix_fmt,
         sw_format=sw_format,
-        hwaccel=hwaccel,
-        config=VideoOutputConfig(fps=None, colorspace="auto"),
+        output_colorspace_mode="auto",
+        fps=None,
         vf=vf,
-        rgb24_options=sw_format.get_auto_reformat_options(),
+        hwaccel=hwaccel,
         device=device,
+        input_reformat_options=sw_format.get_auto_input_reformat_options(),
     )
 
     max_progress = num_samples
@@ -893,9 +822,8 @@ def sample_frames(
                     continue
                 current_sec = float(frame.pts * packet.time_base)
                 if current_sec - prev_sec >= step_sec:
-                    for frame in video_filter.update(frame):
-                        frame = input_reformatter(frame)
-                        consume_generator(frame_callback(frame))
+                    for out_frame in video_preprocessor.update(frame):
+                        consume_generator(frame_callback(out_frame))
                         pbar.update(1)
                         sample_count += 1
                     prev_sec = current_sec
@@ -936,9 +864,8 @@ def sample_frames(
                     if not keyframe_only and current_sec - prev_sec < step_sec:
                         continue
 
-                    for frame in video_filter.update(frame):
-                        frame = input_reformatter(frame)
-                        consume_generator(frame_callback(frame))
+                    for out_frame in video_preprocessor.update(frame):
+                        consume_generator(frame_callback(out_frame))
                     pbar.update(1)
                     prev_sec = current_sec
                     return 1
@@ -954,10 +881,9 @@ def sample_frames(
             if stop_event is not None and stop_event.is_set():
                 break
 
-    for frame in video_filter.flush():
+    for out_frame in video_preprocessor.flush():
         frame_count += 1
-        frame = input_reformatter(frame)
-        consume_generator(frame_callback(frame))
+        consume_generator(frame_callback(out_frame))
         pbar.update(1)
         sample_count += 1
 
@@ -1017,7 +943,7 @@ def export_audio(
     tqdm_fn = tqdm_fn or tqdm
     desc = title if title else input_path
     ncols = len(desc) + 60
-    sw_format = VideoMetadata(input_path)
+    sw_format = VideoMetadata.from_file(input_path)
     total = sw_format.get_duration()
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     last_sec = 0
@@ -1155,7 +1081,7 @@ def _test_reencode():
     parser.add_argument("--vf", type=str, default="", help="video filter")
     parser.add_argument("--half-sbs", action="store_true", help="output 1/2 resolution")
     parser.add_argument(
-        "--hwaccel", type=str, default=None, choices=get_supported_hwdevices(), help="hwaccel for decode"
+        "--hwaccel", type=str, default=None, choices=HW_DEVICES, help="hwaccel for decode"
     )
 
     args = parser.parse_args()
@@ -1218,7 +1144,7 @@ def _test_sample_frames():
     parser.add_argument("--vf", type=str, default="", help="video filter")
     parser.add_argument("--offset", type=float, default=0.05, help="skip offset")
     parser.add_argument(
-        "--hwaccel", type=str, default=None, choices=get_supported_hwdevices(), help="hwaccel for decode"
+        "--hwaccel", type=str, default=None, choices=HW_DEVICES, help="hwaccel for decode"
     )
     parser.add_argument("--gpu", type=int, default=0, help="0: gpu, -1: cpu")
 

@@ -12,13 +12,12 @@ class AVFilterGraph:
 
     def __init__(
         self,
-        video_stream: av.VideoStream,
+        stream_pix_fmt: str,
         sw_format: VideoMetadata,
         vf: str,
         deny_filters: List[str] | None = None,
     ):
-        assert video_stream.pix_fmt is not None
-        self.pix_fmt = sw_format.guess_pix_fmt(video_stream.pix_fmt)
+        self.pix_fmt = sw_format.guess_pix_fmt(stream_pix_fmt)
         self.sw_format = sw_format
         self.graph = av.filter.Graph()
         deny_filters = deny_filters or []
@@ -27,9 +26,9 @@ class AVFilterGraph:
         self.build_graph(
             self.graph,
             pix_fmt=self.pix_fmt,
-            width=video_stream.width,
-            height=video_stream.height,
-            time_base=video_stream.time_base,
+            width=sw_format.width,
+            height=sw_format.height,
+            time_base=sw_format.time_base,
             video_filters=video_filters,
         )
 

@@ -787,22 +787,17 @@ class OutputTransform:
         return self.transform(x)
 
 
-def configure_colorspace(
-    output_stream: av.video.stream.VideoStream | None,
+def get_color_config(
     sw_format: VideoMetadata | None,
     config: Any,
-) -> None:
-    """Configure output stream and store state based on user config."""
-    config.state["rgb24_options"] = {}
-    config.state["reformatter"] = lambda frame: frame
-
+) -> Tuple[Dict[str, Any], OutputTransform]:
+    """Calculate color configuration and transform objects based on user config."""
     pix_fmt: str
     colorspace: Colorspace | int
     color_primaries: ColorPrimaries | int
     color_trc: ColorTrc | int
     color_range: ColorRange | int
-    rgb24_options: Dict[str, Any]
-    source_color_range: ColorRange | int
+    input_reformat_options: Dict[str, Any]
 
     if sw_format:
         (
@@ -812,22 +807,22 @@ def configure_colorspace(
             color_trc,
             color_range,
         ) = sw_format.get_target_colorspace(config.colorspace, config.pix_fmt)
-        rgb24_options = sw_format.get_reformat_options(colorspace, color_primaries, color_trc)
-        source_color_range = sw_format.guess_color_range()
+        input_reformat_options = sw_format.get_input_reformat_options(colorspace, color_primaries, color_trc)
     else:
-        # Fallback logic for image import, using VideoMetadata's static logic
-        def _get(d: Dict[str, Any], key: str, default: int) -> int:
-            value = d.get(key, default)
-            if value is None:
-                value = default
-            return int(value)
-
-        exported_output_colorspace: int = _get(config.state, "output_colorspace", COLORSPACE_UNSPECIFIED)
-        exported_output_color_primaries: int = _get(
-            config.state, "output_color_primaries", int(ColorPrimaries.UNSPECIFIED)
+        exported_output_colorspace: int = (
+            config.output_colorspace if config.output_colorspace is not None else COLORSPACE_UNSPECIFIED
         )
-        exported_output_color_trc: int = _get(config.state, "output_color_trc", int(ColorTrc.UNSPECIFIED))
-        exported_source_color_range: int = _get(config.state, "source_color_range", int(ColorRange.UNSPECIFIED))
+        exported_output_color_primaries: int = (
+            config.output_color_primaries
+            if config.output_color_primaries is not None
+            else int(ColorPrimaries.UNSPECIFIED)
+        )
+        exported_output_color_trc: int = (
+            config.output_color_trc if config.output_color_trc is not None else int(ColorTrc.UNSPECIFIED)
+        )
+        exported_source_color_range: int = (
+            config.source_color_range if config.source_color_range is not None else int(ColorRange.UNSPECIFIED)
+        )
         (
             pix_fmt,
             colorspace,
@@ -842,7 +837,7 @@ def configure_colorspace(
             src_color_trc=exported_output_color_trc,
             src_color_range=exported_source_color_range,
         )
-        rgb24_options = {
+        input_reformat_options = {
             "src_colorspace": colorspace,
             "src_color_primaries": color_primaries,
             "src_color_trc": color_trc,
@@ -852,20 +847,7 @@ def configure_colorspace(
             "dst_color_trc": color_trc,
             "dst_color_range": ColorRange.JPEG,
         }
-        source_color_range = color_range
 
-    # Apply settings
-    config.pix_fmt = pix_fmt
-    if output_stream is not None:
-        ctx = output_stream.codec_context
-        ctx.pix_fmt = pix_fmt
-        ctx.colorspace = colorspace
-        ctx.color_primaries = color_primaries
-        ctx.color_trc = color_trc
-        ctx.color_range = color_range
-
-    # Define reformatter lambda for post-processing conversion
-    # Source: (Processing Colorspace, Full Range) -> Destination: (Output Colorspace, Output Range)
     cuda_context = None
     if (
         config.device is not None
@@ -877,7 +859,7 @@ def configure_colorspace(
         device_id = device_id if device_id is not None else 0
         cuda_context = CudaContext(device_id=device_id, primary_ctx=True)
 
-    config.state["reformatter"] = OutputTransform(
+    output_reformatter = OutputTransform(
         dst_pix_fmt=pix_fmt,
         dst_colorspace=colorspace,
         dst_color_primaries=color_primaries,
@@ -886,14 +868,7 @@ def configure_colorspace(
         cuda_context=cuda_context,
     )
 
-    config.state["rgb24_options"] = rgb24_options
-    config.state["output_colorspace"] = int(colorspace)
-    config.state["output_color_primaries"] = int(color_primaries)
-    config.state["output_color_trc"] = int(color_trc)
-    config.state["source_color_range"] = int(source_color_range)
-
-    if config.state_updated is not None:
-        config.state_updated(config)
+    return input_reformat_options, output_reformatter
 
 
 def configure_video_codec(config: Any) -> None:
@@ -959,10 +934,10 @@ def _test_configure() -> None:
             self.colorspace = colorspace
             self.pix_fmt = pix_fmt
             self.video_codec = video_codec
-            self.state: Dict[str, Any] = {
-                "source_color_range": 2,
-                "output_colorspace": 2,
-            }
+            self.output_colorspace = 2
+            self.output_color_primaries = 2
+            self.output_color_trc = 2
+            self.source_color_range = 2
             self.state_updated = lambda c: print("Config updated callback triggered")
             self.device = None
 
@@ -983,31 +958,34 @@ def _test_configure() -> None:
     print("--- Start configure tests ---")
     sw_hd: Any = MockSWFormat(height=1080)
 
-    print("Testing configure_colorspace (Auto HD)...")
+    print("Testing get_color_config (Auto HD)...")
     cfg = MockConfig(colorspace="auto", pix_fmt="yuv420p")
-    configure_colorspace(None, sw_hd, cfg)
-    assert cfg.state["output_colorspace"] == 1
-    assert cfg.pix_fmt == "yuv420p"
-    assert "reformatter" in cfg.state
-    assert cfg.state["rgb24_options"]["dst_color_primaries"] == 1
+    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    cfg.state_updated(cfg)
+    assert int(output_reformatter.dst_colorspace) == 1
+    assert output_reformatter.dst_pix_fmt == "yuv420p"
+    assert input_reformat_options["dst_color_primaries"] == 1
 
-    print("Testing configure_colorspace (bt709-pc)...")
+    print("Testing get_color_config (bt709-pc)...")
     cfg = MockConfig(colorspace="bt709-pc", pix_fmt="yuv420p")
-    configure_colorspace(None, sw_hd, cfg)
-    assert cfg.pix_fmt == "yuvj420p"
-    assert cfg.state["source_color_range"] == 1
-    assert cfg.state["rgb24_options"]["dst_color_trc"] == 1
+    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    cfg.state_updated(cfg)
+    assert output_reformatter.dst_pix_fmt == "yuvj420p"
+    assert input_reformat_options["src_color_range"] == 1
+    assert input_reformat_options["dst_color_trc"] == 1
 
-    print("Testing configure_colorspace (explicit unspecified)...")
+    print("Testing get_color_config (explicit unspecified)...")
     cfg = MockConfig(colorspace="unspecified", pix_fmt="yuv420p")
-    configure_colorspace(None, sw_hd, cfg)
-    assert cfg.state["output_colorspace"] == 2
-    assert cfg.pix_fmt == "yuv420p"
+    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    cfg.state_updated(cfg)
+    assert int(output_reformatter.dst_colorspace) == 2
+    assert output_reformatter.dst_pix_fmt == "yuv420p"
 
-    print("Testing configure_colorspace (RGB output)...")
+    print("Testing get_color_config (RGB output)...")
     cfg = MockConfig(colorspace="auto", pix_fmt="rgb24")
-    configure_colorspace(None, sw_hd, cfg)
-    assert cfg.state["output_colorspace"] == 1
+    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    cfg.state_updated(cfg)
+    assert int(output_reformatter.dst_colorspace) == 1
 
     print("Testing configure_video_codec...")
     cfg_nv = MockConfig(pix_fmt="yuv420p10le", video_codec="h264_nvenc")

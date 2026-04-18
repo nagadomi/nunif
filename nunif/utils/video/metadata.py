@@ -5,6 +5,8 @@ from typing import Any, Dict, Set, Tuple
 import av
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
+from .hwaccel import HW_DEVICES
+
 # Colorspace constants
 COLORSPACE_UNSPECIFIED: int = 2
 COLORSPACE_BT2020: int = 9
@@ -129,7 +131,7 @@ def parse_time(s: str | int | float) -> float:
 
 
 class VideoMetadata:
-    video_path: str
+    video_path: str | None
     format: av.VideoFormat
     colorspace: Colorspace | int
     color_primaries: ColorPrimaries | int
@@ -144,30 +146,110 @@ class VideoMetadata:
     guessed_rate: Fraction | None
     container_duration: float | None
 
-    def __init__(self, video_path: str) -> None:
+    def __init__(
+        self,
+        format: av.VideoFormat,
+        colorspace: Colorspace | int,
+        color_primaries: ColorPrimaries | int,
+        color_trc: ColorTrc | int,
+        color_range: ColorRange | int,
+        width: int,
+        height: int,
+        time_base: Fraction | None,
+        use_16bit: bool,
+        stream_frames: int,
+        stream_duration: int | None,
+        guessed_rate: Fraction | None,
+        container_duration: float | None,
+        video_path: str | None = None,
+    ) -> None:
+        self.format = format
+        self.colorspace = colorspace
+        self.color_primaries = color_primaries
+        self.color_trc = color_trc
+        self.color_range = color_range
+        self.width = width
+        self.height = height
+        self.time_base = time_base
+        self.use_16bit = use_16bit
+        self.stream_frames = stream_frames
+        self.stream_duration = stream_duration
+        self.guessed_rate = guessed_rate
+        self.container_duration = container_duration
         self.video_path = video_path
+
+    @classmethod
+    def from_file(cls, video_path: str) -> "VideoMetadata":
         with av.open(video_path, mode="r", metadata_errors="ignore") as container:
             if not len(container.streams.video) > 0:
                 raise ValueError("No video stream")
 
             stream = container.streams.video[0]
-            self.format = stream.format
-            self.colorspace = stream.colorspace
-            self.color_primaries = stream.color_primaries
-            self.color_trc = stream.color_trc
-            self.color_range = stream.color_range
-            self.width = stream.width
-            self.height = stream.height
-            self.time_base = stream.time_base
-            self.use_16bit = stream.format.components[0].bits > 8
-            self.stream_frames = stream.frames
-            self.stream_duration = stream.duration
-            self.guessed_rate = stream.guessed_rate
-
+            container_duration: float | None = None
             if container.duration:
-                self.container_duration = float(container.duration / av.time_base)
-            else:
-                self.container_duration = None
+                container_duration = float(container.duration / av.time_base)
+
+            return cls.from_stream(stream, video_path=video_path, container_duration=container_duration)
+
+    @classmethod
+    def from_stream(
+        cls,
+        stream: av.video.stream.VideoStream,
+        video_path: str | None = None,
+        container_duration: float | None = None,
+    ) -> "VideoMetadata":
+        if stream.format.name in HW_DEVICES:
+            raise ValueError(
+                f"VideoMetadata.from_stream does not support hardware streams ({stream.format.name}). "
+                "Please use a software stream for accurate metadata."
+            )
+
+        return cls(
+            format=stream.format,
+            colorspace=stream.colorspace,
+            color_primaries=stream.color_primaries,
+            color_trc=stream.color_trc,
+            color_range=stream.color_range,
+            width=stream.width,
+            height=stream.height,
+            time_base=stream.time_base,
+            use_16bit=stream.format.components[0].bits > 8,
+            stream_frames=stream.frames,
+            stream_duration=stream.duration,
+            guessed_rate=stream.guessed_rate,
+            container_duration=container_duration,
+            video_path=video_path,
+        )
+
+    @classmethod
+    def from_config(
+        cls,
+        width: int,
+        height: int,
+        pix_fmt: str = "yuv420p",
+        fps: Fraction | float | int = 30,
+        colorspace: Colorspace | int = Colorspace.ITU709,
+        color_primaries: ColorPrimaries | int = ColorPrimaries.BT709,
+        color_trc: ColorTrc | int = ColorTrc.BT709,
+        color_range: ColorRange | int = ColorRange.MPEG,
+    ) -> "VideoMetadata":
+        fps_frac = convert_fps_fraction(fps)
+        return cls(
+            format=av.VideoFormat(pix_fmt),
+            colorspace=colorspace,
+            color_primaries=color_primaries,
+            color_trc=color_trc,
+            color_range=color_range,
+            width=width,
+            height=height,
+            time_base=1 / fps_frac if fps_frac else None,
+            use_16bit=pix_fmt_requires_16bit(pix_fmt),
+            stream_frames=0,
+            stream_duration=None,
+            guessed_rate=fps_frac,
+            container_duration=None,
+            video_path=None,
+        )
 
     def get_fps(self) -> Fraction | None:
         return self.guessed_rate
@@ -185,6 +267,9 @@ class VideoMetadata:
         return math.ceil(duration) if to_int else duration
 
     def guess_duration_by_last_packet(self) -> float | None:
+        if self.video_path is None:
+            raise RuntimeError("guess_duration_by_last_packet requires video_path")
+
         with av.open(self.video_path, mode="r", metadata_errors="ignore") as container:
             stream: av.VideoStream | av.AudioStream
             if len(container.streams.video) > 0:
@@ -205,9 +290,10 @@ class VideoMetadata:
     def guess_duration(self, to_int: bool = True) -> float:
         duration: float | None = self.get_duration(to_int=False)
         if duration is not None and duration < 0:
-            duration = self.guess_duration_by_last_packet()
+            if self.video_path is not None:
+                duration = self.guess_duration_by_last_packet()
 
-        if duration is None:
+        if duration is None or duration < 0:
             return -1
 
         return math.ceil(duration) if to_int else duration
@@ -376,23 +462,40 @@ class VideoMetadata:
             src_format_name=self.format.name,
         )
 
-    def get_reformat_options(
+    def get_input_reformat_options(
         self,
         target_colorspace: Colorspace | int,
         target_color_primaries: ColorPrimaries | int,
         target_color_trc: ColorTrc | int,
     ) -> Dict[str, Any]:
         return {
-            "src_colorspace": self.colorspace,
+            "src_colorspace": self.guess_colorspace(),
             "src_color_primaries": self.color_primaries,
             "src_color_trc": self.color_trc,
-            "src_color_range": self.color_range,
+            "src_color_range": self.guess_color_range(),
             "dst_colorspace": target_colorspace,
             "dst_color_primaries": target_color_primaries,
             "dst_color_trc": target_color_trc,
             "dst_color_range": ColorRange.JPEG,
         }
 
-    def get_auto_reformat_options(self) -> Dict[str, Any]:
+    def get_auto_input_reformat_options(self) -> Dict[str, Any]:
         _, colorspace, color_primaries, color_trc, _ = self.get_target_colorspace("auto", self.format.name)
-        return self.get_reformat_options(colorspace, color_primaries, color_trc)
+        return self.get_input_reformat_options(colorspace, color_primaries, color_trc)
+
+
+def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
+    return pix_fmt in {
+        "yuv420p10le",
+        "p010le",
+        "yuv422p10le",
+        "yuv444p10le",
+        "yuv420p12le",
+        "yuv422p12le",
+        "yuv444p12le",
+        "yuv444p16le",
+        "gbrp16le",
+        "gbrp12le",
+        "gbrp10le",
+        "rgb48le",
+    }
