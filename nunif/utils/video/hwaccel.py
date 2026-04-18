@@ -3,6 +3,8 @@ from typing import List, Set
 import torch
 from av.codec.hwaccel import HWAccel, hwdevices_available
 
+from .utils import is_nvidia_gpu
+
 
 def get_supported_hwdevices() -> List[str]:
     supported_options: List[str] = []
@@ -67,4 +69,4 @@ def create_hwaccel(
 
 
 def should_use_tensor_frame(sw_pix_fmt: str, hwaccel: str | None, device: torch.device):
-    return sw_pix_fmt in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda" and device.type == "cuda"
+    return sw_pix_fmt in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda" and is_nvidia_gpu(device)

@@ -15,6 +15,7 @@ from .metadata import (
     VideoMetadata,
     get_rgb_pix_fmt,
 )
+from .utils import is_nvidia_gpu
 
 
 class ColorTransform:
@@ -724,7 +725,7 @@ class OutputTransform:
     def is_dlpack_supported(self, x: torch.Tensor) -> bool:
         return (
             self.cuda_context is not None
-            and x.device.type == "cuda"
+            and is_nvidia_gpu(x.device)
             and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuv420p10le"}
         )
 
@@ -850,8 +851,7 @@ def get_color_config(
 
     cuda_context = None
     if (
-        config.device is not None
-        and config.device.type == "cuda"
+        is_nvidia_gpu(config.device)
         and config.video_codec in {"h264_nvenc", "hevc_nvenc"}
         and config.pix_fmt in {"nv12", "p010le"}
     ):
