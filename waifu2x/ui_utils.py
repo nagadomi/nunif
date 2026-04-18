@@ -30,11 +30,10 @@ SMB_INVALID_CHARS = '\\/:*?"<>|'
 
 
 def make_output_filename(input_filename, args, video=False):
-    basename = path.splitext(path.basename(input_filename))[0]
+    basename = path.basename(input_filename)
     basename = basename.translate({ord(c): ord("_") for c in SMB_INVALID_CHARS})
-
     if video:
-        return basename + args.video_extension
+        return path.splitext(basename)[0] + args.video_extension
     else:
         return set_image_ext(basename, args.format)
 
