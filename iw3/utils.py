@@ -277,6 +277,31 @@ def preprocess_image(x, args):
     return x
 
 
+def add_preprocess_vf(vf_org, args) -> str:
+    vf = []
+
+    # Rotation
+    if getattr(args, "rotate_left", False):
+        vf.append("transpose=2")
+    elif getattr(args, "rotate_right", False):
+        vf.append("transpose=1")
+
+    # Max height scaling and even-dimension fix
+    max_h = getattr(args, "max_output_height", None)
+    if max_h is not None:
+        target_h = (max_h // 2) * 2
+        vf.append(f"scale=if(gt(ih\\,{max_h})\\,-2\\,iw):if(gt(ih\\,{max_h})\\,{target_h}\\,ih):flags=bicubic")
+
+    if vf:
+        if vf_org:
+            vf_added = vf_org + "," + ",".join(vf)
+        else:
+            vf_added = ",".join(vf)
+        return vf_added
+    else:
+        return vf_org
+
+
 def hwc_to_chw_float(x, device):
     src_dtype = x.dtype
     x = x.to(device)
@@ -686,7 +711,6 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
         x = VU.to_tensor(frame, device=args.state["device"])
 
         # TODO: optimize cpu_offload
-        x = preprocess_image(x, args)
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation,
@@ -769,7 +793,6 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
         with enqueue_ticket_lock(enqueue_ticket_id):
             dequeue_ticket_id = dequeue_ticket_lock.new_ticket()
             if not flush:
-                x = preprocess_image(x, args)
                 if frame_cpu_offload:
                     if use_16bit:
                         x_cpu = (x.permute(0, 2, 3, 1) * 65535.0).round().clamp(0, 65535).to(torch.uint16).cpu()
@@ -876,13 +899,9 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
 
     def _batch_infer():
         x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2)
-        pix_dtype, pix_max = x.dtype, torch.iinfo(x.dtype).max
+        pix_max = torch.iinfo(x.dtype).max
         x = x / pix_max
-        if args.max_output_height is not None or args.rotate_right or args.rotate_left:
-            x = preprocess_image(x, args)
-            x_srcs = (x.permute(0, 2, 3, 1) * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
-        else:
-            x_srcs = batch_queue
+        x_srcs = batch_queue
 
         for i, x_src in enumerate(x_srcs):
             src_queue.append((x_src, pts_queue[i]))
@@ -1061,6 +1080,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             video_filter = args.vf
     else:
         video_filter = args.vf
+
+    # Integrate preprocess_image() logic into vf
+    video_filter = add_preprocess_vf(video_filter, args)
 
     def config_callback(metadata):
         fps = metadata.get_fps()
@@ -1407,7 +1429,6 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
         frame_hwc8 = torch.from_numpy(frame_np)
         src_queue.append((frame_np, frame.pts))
         x = frame_hwc8.to(args.state["device"]).permute(2, 0, 1) / 255.0
-        x = preprocess_image(x, args)
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=edge_dilation,
@@ -1463,11 +1484,7 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
 
     def _batch_infer():
         x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
-        if args.max_output_height is not None or args.rotate_right or args.rotate_left:
-            x = preprocess_image(x, args)
-            x_srcs = (x.permute(0, 2, 3, 1) * 255.0).round().clamp(0, 255).to(torch.uint8).cpu()
-        else:
-            x_srcs = batch_queue
+        x_srcs = batch_queue
 
         for i, x_src in enumerate(x_srcs):
             src_queue.append((x_src, pts_queue[i]))
@@ -1585,6 +1602,8 @@ def export_video(input_filename, output_dir, args, title=None):
     if args.scene_detect_only:
         return
 
+    # TODO: AutoCrop
+
     config.user_data["scene_boundary"] = ",".join([str(pts).zfill(8) for pts in sorted(list(segment_pts))])
 
     if args.resume:
@@ -1608,6 +1627,9 @@ def export_video(input_filename, output_dir, args, title=None):
 
     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
         return
+
+    # Integrate preprocess_image() logic into vf
+    video_filter = add_preprocess_vf(args.vf, args)
 
     def config_callback(metadata):
         fps = metadata.get_fps()
@@ -1661,7 +1683,7 @@ def export_video(input_filename, output_dir, args, title=None):
             input_filename,
             config_callback=config_callback,
             frame_callback=frame_callback,
-            vf=args.vf,
+            vf=video_filter,
             stop_event=args.state["stop_event"],
             suspend_event=args.state["suspend_event"],
             tqdm_fn=args.state["tqdm_fn"],
