@@ -866,6 +866,9 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     batch_queue = []
     pts_queue = []
+    pix_dtype = None
+    pix_max = None
+
     depth_model.reset()
 
     def _postprocess(depth_list, flush=False):
@@ -882,7 +885,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                 x_pts = [src_queue.pop(0) for _ in range(len(depths))]
                 reset_pts = [pts in segment_pts for _, pts in x_pts]
                 x_srcs = [x for x, _ in x_pts]
-                x_srcs = hwc_to_chw_float(torch.stack(x_srcs), device=args.state["device"])
+                x_srcs = to_chw_float(torch.stack(x_srcs), device=args.state["device"])
                 if args.rgbd or args.half_rgbd:
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
@@ -898,27 +901,27 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                     yield postprocess_image(left_eye, right_eye, args)
 
     def _batch_infer():
-        x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2)
-        pix_max = torch.iinfo(x.dtype).max
-        x = x / pix_max
-        x_srcs = batch_queue
-
-        for i, x_src in enumerate(x_srcs):
-            src_queue.append((x_src, pts_queue[i]))
-
+        x = torch.stack(batch_queue)
         depth_list = depth_model.infer_with_normalize(
             x, pts_queue, segment_pts,
             enable_amp=not args.disable_amp,
             edge_dilation=args.edge_dilation,
             depth_aa=args.depth_aa)
 
+        assert pix_max is not None and pix_dtype is not None
+        frame_bchw = (x * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
+        for i in range(frame_bchw.shape[0]):
+            src_queue.append((frame_bchw[i], pts_queue[i]))
+
         pts_queue.clear()
         batch_queue.clear()
 
-        return _postprocess(depth_list)
+        yield from _postprocess(depth_list)
 
     @torch.inference_mode()
     def frame_callback(frame):
+        nonlocal pix_dtype, pix_max
+
         if frame is None:
             # flush
             if batch_queue:
@@ -930,8 +933,12 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
             yield from _postprocess(depth_list, flush=True)
             return
 
-        frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
-        batch_queue.append(frame_hwc)
+        if pix_dtype is None:
+            pix_dtype = VU.get_source_dtype(frame)
+            pix_max = torch.iinfo(pix_dtype).max
+
+        x = VU.to_tensor(frame, device=args.state["device"])
+        batch_queue.append(x)
         pts_queue.append(frame.pts)
 
         if len(batch_queue) == args.batch_size:
@@ -1101,11 +1108,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         )
 
     if is_video_depth_anything:
-        hwaccel = args.hwaccel
-        if hwaccel == "cuda":
-            print("--hwaccel cuda is not supported for VDA. Use --hwaccel cuda_hwdownload instead.",
-                  file=sys.stderr)
-            hwaccel = "cuda_hwdownload"
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
             VU.process_video(
                 input_filename, output_filename,
@@ -1124,7 +1126,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 start_time=args.start_time,
                 end_time=args.end_time,
                 device=args.state["device"],
-                hwaccel=hwaccel,
+                hwaccel=args.hwaccel,
                 disable_software_fallback=args.disable_software_fallback,
             )
 
