@@ -30,6 +30,7 @@ from .frame_callback_pool import (  # noqa
 )
 from .hwaccel import HW_DEVICES, create_hwaccel
 from .metadata import (
+    AudioMetadata,
     VideoMetadata,
     convert_fps_fraction,
     parse_time,
@@ -491,7 +492,7 @@ def generate_video(
             tqdm_fn = tqdm_fn or tqdm
             desc = title + " Audio" if title else "Audio"
             ncols = len(desc) + 60
-            sw_audio = VideoMetadata.from_file(audio_file)
+            sw_audio = AudioMetadata.from_file(audio_file)
             total = sw_audio.get_duration()
             pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
             last_sec = 0

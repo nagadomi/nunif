@@ -130,8 +130,62 @@ def parse_time(s: str | int | float) -> float:
         raise ValueError(f"time must be hh:mm:ss, mm:ss or sec format: {s}")
 
 
-class VideoMetadata:
-    video_path: str | None
+class MediaMetadata:
+    path: str | None
+    time_base: Fraction | None
+    stream_frames: int
+    stream_duration: int | None
+    container_duration: float | None
+
+    def __init__(
+        self,
+        path: str | None,
+        time_base: Fraction | None,
+        stream_frames: int,
+        stream_duration: int | None,
+        container_duration: float | None,
+    ) -> None:
+        self.path = path
+        self.time_base = time_base
+        self.stream_frames = stream_frames
+        self.stream_duration = stream_duration
+        self.container_duration = container_duration
+
+    def get_duration(self, to_int: bool = True) -> float:
+        duration: float | None
+        if self.stream_duration is not None and self.time_base is not None:
+            duration = float(self.stream_duration * self.time_base)
+        else:
+            duration = self.container_duration
+
+        if duration is None:
+            return 0.0
+
+        return math.ceil(duration) if to_int else duration
+
+
+class AudioMetadata(MediaMetadata):
+    @classmethod
+    def from_file(cls, audio_path: str) -> "AudioMetadata":
+        with av.open(audio_path, mode="r", metadata_errors="ignore") as container:
+            if not len(container.streams.audio) > 0:
+                raise ValueError("No audio stream")
+
+            stream = container.streams.audio[0]
+            container_duration: float | None = None
+            if container.duration:
+                container_duration = float(container.duration / av.time_base)
+
+            return cls(
+                path=audio_path,
+                time_base=stream.time_base,
+                stream_frames=stream.frames,
+                stream_duration=stream.duration,
+                container_duration=container_duration,
+            )
+
+
+class VideoMetadata(MediaMetadata):
     format: av.VideoFormat
     colorspace: Colorspace | int
     color_primaries: ColorPrimaries | int
@@ -139,12 +193,8 @@ class VideoMetadata:
     color_range: ColorRange | int
     width: int
     height: int
-    time_base: Fraction | None
     use_16bit: bool
-    stream_frames: int
-    stream_duration: int | None
     guessed_rate: Fraction | None
-    container_duration: float | None
 
     def __init__(
         self,
@@ -163,6 +213,13 @@ class VideoMetadata:
         container_duration: float | None,
         video_path: str | None = None,
     ) -> None:
+        super().__init__(
+            path=video_path,
+            time_base=time_base,
+            stream_frames=stream_frames,
+            stream_duration=stream_duration,
+            container_duration=container_duration,
+        )
         self.format = format
         self.colorspace = colorspace
         self.color_primaries = color_primaries
@@ -170,13 +227,16 @@ class VideoMetadata:
         self.color_range = color_range
         self.width = width
         self.height = height
-        self.time_base = time_base
         self.use_16bit = use_16bit
-        self.stream_frames = stream_frames
-        self.stream_duration = stream_duration
         self.guessed_rate = guessed_rate
-        self.container_duration = container_duration
-        self.video_path = video_path
+
+    @property
+    def video_path(self) -> str | None:
+        return self.path
+
+    @video_path.setter
+    def video_path(self, value: str | None) -> None:
+        self.path = value
 
     @classmethod
     def from_file(cls, video_path: str) -> "VideoMetadata":
@@ -253,18 +313,6 @@ class VideoMetadata:
 
     def get_fps(self) -> Fraction | None:
         return self.guessed_rate
-
-    def get_duration(self, to_int: bool = True) -> float:
-        duration: float | None
-        if self.stream_duration is not None and self.time_base is not None:
-            duration = float(self.stream_duration * self.time_base)
-        else:
-            duration = self.container_duration
-
-        if duration is None:
-            return -1
-
-        return math.ceil(duration) if to_int else duration
 
     def guess_duration_by_last_packet(self) -> float | None:
         if self.video_path is None:
