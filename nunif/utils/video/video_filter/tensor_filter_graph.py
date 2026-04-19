@@ -109,14 +109,47 @@ def _test() -> None:
         use_16bit=False,
     )
     print(f"Before: CS={int(frame.colorspace)}, TRC={int(frame.color_trc)}")
-    output_frame = graph.update(frame)
-
+    # Test complex filter chain
     print(f"Filter chain: {vf}")
+    output_frame = graph.update(frame)
     if output_frame is not None:
         output = output_frame.planes
         print(f"Input: {x.shape[-1]}x{x.shape[-2]}")
         print(f"Output: {output.shape[-1]}x{output.shape[-2]}")
         print(f"After:  CS={int(output_frame.colorspace)}, TRC={int(output_frame.color_trc)}")
+        assert output.shape[-1] == 256
+        assert output.shape[-2] == 256
+        assert int(output_frame.colorspace) == 1
+        assert int(output_frame.color_trc) == 1
+
+    # Test conditional scale with escaped commas
+    max_h = 1080
+    target_h = 1080
+    vf_scale = f"scale=if(gt(ih\\,{max_h})\\,-2\\,iw):if(gt(ih\\,{max_h})\\,{target_h}\\,ih):flags=bicubic"
+    print(f"\nTesting conditional scale: {vf_scale}")
+    graph_scale = TensorFilterGraph(vf_scale)
+    # Reset frame for fresh test
+    frame.planes = torch.zeros((1, 3, 2160, 3840)) # 4K input
+    output_frame_scale = graph_scale.update(frame)
+    if output_frame_scale is not None:
+        print(f"Input size: {frame.planes.shape[-1]}x{frame.planes.shape[-2]}")
+        print(f"Output size: {output_frame_scale.planes.shape[-1]}x{output_frame_scale.planes.shape[-2]}")
+        # 2160 > 1080, so it should scale to 1080 height
+        assert output_frame_scale.planes.shape[-2] == 1080
+        assert output_frame_scale.planes.shape[-1] == 1920 # Aspect ratio preserved
+
+    # Test conditional scale skip
+    vf_scale_skip = f"scale=if(gt(ih\\,3000)\\,1280\\,iw):ih"
+    print(f"\nTesting conditional scale skip: {vf_scale_skip}")
+    graph_skip = TensorFilterGraph(vf_scale_skip)
+    frame.planes = torch.zeros((1, 3, 1080, 1920))
+    output_skip = graph_skip.update(frame)
+    if output_skip is not None:
+        print(f"Input size: {frame.planes.shape[-1]}x{frame.planes.shape[-2]}")
+        print(f"Output size: {output_skip.planes.shape[-1]}x{output_skip.planes.shape[-2]}")
+        # 1080 < 3000, so it should skip (remain 1920x1080)
+        assert output_skip.planes.shape[-1] == 1920
+        assert output_skip.planes.shape[-2] == 1080
 
     # Test unsupported filter
     try:
