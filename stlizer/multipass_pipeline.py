@@ -382,24 +382,6 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
     else:
         outpaint_model = None
 
-    def test_callback(frame):
-        if frame is None:
-            return None
-        x = VU.to_tensor(frame, device=device)
-
-        if args.border in {"expand", "expand_outpaint"}:
-            padding = int(max(x.shape[1], x.shape[2]) * args.padding)
-            x = F.pad(x, (padding,) * 4, mode="constant", value=0)
-        elif args.border == "crop":
-            padding = int(max(x.shape[1], x.shape[2]) * args.padding)
-            x = F.pad(x, (-padding,) * 4)
-
-        if args.debug:
-            z = torch.cat([x, x], dim=2)
-            return VU.to_frame(z, use_16bit=use_16bit)
-        else:
-            return VU.to_frame(x, use_16bit=use_16bit)
-
     index = [0]
     buffer = [None]
 
@@ -497,7 +479,6 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
     VU.process_video(args.input, output_path,
                      stabilizer_callback_pool,
                      config_callback=video_config_callback(args),
-                     test_callback=test_callback,
                      vf=args.vf,
                      stop_event=args.state["stop_event"],
                      suspend_event=args.state["suspend_event"],

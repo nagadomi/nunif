@@ -43,7 +43,7 @@ generate_video() {
     [ "$range" != "undefined" ] && out_args+=("-color_range" "$range")
 
     echo "Generating [$codec]: $name"
-    ffmpeg -y -f lavfi -i "${filter_chain}" -t "${DURATION}" -pix_fmt "${pix_fmt}" "${out_args[@]}" "$BASE_DIR/${name}.mkv"
+    ffmpeg -y -f lavfi -i "${filter_chain}" -f lavfi -i "sine=frequency=1000:duration=${DURATION}:sample_rate=44100" -t "${DURATION}" -pix_fmt "${pix_fmt}" "${out_args[@]}" -acodec aac "$BASE_DIR/${name}.mkv"
 }
 
 

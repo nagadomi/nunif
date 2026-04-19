@@ -164,6 +164,8 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
     def infer(self, x, enable_amp=True, edge_dilation=0, **kwargs):
         # NOTE: DONT USE THIS
+        assert 0, "No longer reaching this block"
+
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).unsqueeze(0).to(self.device)
 

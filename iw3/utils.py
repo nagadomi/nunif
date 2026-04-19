@@ -546,7 +546,8 @@ def process_image(x, args, depth_model, side_model, skip_autocrop=None, autocrop
                     break
             if left_eye.ndim == 4:
                 # NOTE: side_model is video inpaint model.
-                #       This may be called from test_callback.
+                #       This may be called from test_callbac
+                assert 0, "No longer reaching this block"
                 left_eye = autocrop.uncrop(left_eye[0])
                 right_eye = autocrop.uncrop(right_eye[0])
                 sbs = postprocess_image(left_eye, right_eye, args)
@@ -1077,23 +1078,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             device=args.state["device"],
         )
 
-    @torch.inference_mode()
-    def test_callback(frame):
-        decay, buffer_size = depth_model.get_ema_state()
-        depth_model.disable_ema()
-        x = VU.to_tensor(frame, device=args.state["device"])
-        x = process_image(x, args, depth_model, side_model, skip_autocrop=True)
-        if ema_normalize:
-            # reset ema to avoid affecting test frames
-            depth_model.enable_ema(decay=decay, buffer_size=buffer_size)
-        depth_model.reset()
-        if side_model is not None and hasattr(side_model, "reset"):
-            side_model.reset()
-        if args.state["convergence_model"] is not None:
-            args.state["convergence_model"].reset()
-
-        return VU.to_frame(x, use_16bit=use_16bit)
-
     if is_video_depth_anything:
         hwaccel = args.hwaccel
         if hwaccel == "cuda":
@@ -1110,7 +1094,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     segment_pts=segment_pts,
                     args=args
                 ),
-                test_callback=test_callback,
                 vf=video_filter,
                 stop_event=args.state["stop_event"],
                 suspend_event=args.state["suspend_event"],
@@ -1134,7 +1117,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     segment_pts=segment_pts,
                     args=args,
                 ),
-                test_callback=test_callback,
                 vf=video_filter,
                 stop_event=args.state["stop_event"],
                 suspend_event=args.state["suspend_event"],
@@ -1173,7 +1155,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     input_filename, output_filename,
                     config_callback=config_callback,
                     frame_callback=frame_callback,
-                    test_callback=test_callback,
                     vf=video_filter,
                     stop_event=args.state["stop_event"],
                     suspend_event=args.state["suspend_event"],
