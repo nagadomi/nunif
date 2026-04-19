@@ -151,17 +151,14 @@ class MediaMetadata:
         self.stream_duration = stream_duration
         self.container_duration = container_duration
 
-    def get_duration(self, to_int: bool = True) -> float:
+    def get_duration(self) -> float:
         duration: float | None
         if self.stream_duration is not None and self.time_base is not None:
             duration = float(self.stream_duration * self.time_base)
         else:
             duration = self.container_duration
 
-        if duration is None:
-            return 0.0
-
-        return math.ceil(duration) if to_int else duration
+        return duration if duration is not None else 0.0
 
 
 class AudioMetadata(MediaMetadata):
@@ -336,12 +333,12 @@ class VideoMetadata(MediaMetadata):
             return last_time
 
     def guess_duration(self, to_int: bool = True) -> float:
-        duration: float | None = self.get_duration(to_int=False)
-        if duration is not None and duration < 0:
+        duration: float = self.get_duration()
+        if duration <= 0:
             if self.video_path is not None:
-                duration = self.guess_duration_by_last_packet()
+                duration = self.guess_duration_by_last_packet() or 0.0
 
-        if duration is None or duration < 0:
+        if duration <= 0:
             return -1
 
         return math.ceil(duration) if to_int else duration

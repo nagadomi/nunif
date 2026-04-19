@@ -906,7 +906,7 @@ def export_audio(
     desc = title if title else input_path
     ncols = len(desc) + 60
     sw_format = VideoMetadata.from_file(input_path)
-    total = sw_format.get_duration()
+    total = math.ceil(sw_format.get_duration())
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     last_sec = 0
     for packet in input_container.demux([audio_input_stream]):
