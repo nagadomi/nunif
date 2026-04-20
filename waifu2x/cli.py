@@ -1,8 +1,9 @@
+import torch
 from .ui_utils import create_parser, set_state_args, waifu2x_main
 from . import models # noqa
 from nunif.logger import logger
 from nunif.device import device_is_cuda
-import torch
+from nunif.utils.video import pyav_init_cuda_primary_context
 
 
 def main():
@@ -17,4 +18,5 @@ def main():
 
 
 if __name__ == "__main__":
+    pyav_init_cuda_primary_context()
     main()

@@ -13,4 +13,4 @@ set -x
 python -m waifu2x.download_models
 python -m waifu2x.cli -y -i ${TEST_IMAGE} -o ${OUTPUT_DIR} --noise-level 0 -m noise_scale --model-dir ${MODEL_DIR}
 python -m waifu2x.cli -y -i ${TEST_VIDEO} -o ${OUTPUT_DIR} --noise-level 1 -m noise --model-dir ${MODEL_DIR}
-python -m waifu2x.cli -y -i ${TEST_DIR} -o ${OUTPUT_DIR} -m scale --model-dir ${MODEL_DIR} --resume
+python -m waifu2x.cli -y -i ${TEST_DIR} -o ${OUTPUT_DIR} -m scale --model-dir ${MODEL_DIR}

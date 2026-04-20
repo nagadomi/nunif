@@ -102,7 +102,6 @@ def process_images(ctx, files, output_dir, args, title=None):
 
 
 def process_video(ctx, input_filename, output_path, args):
-    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     if args.compile:
         ctx.compile()
 
@@ -153,6 +152,7 @@ def process_video(ctx, input_filename, output_path, args):
             colorspace=args.colorspace,
             options=options,
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
+            device=args.state["device"],
         )
 
     @torch.inference_mode()
@@ -181,7 +181,7 @@ def process_video(ctx, input_filename, output_path, args):
                 args.state["noise_buffer"].add_(noise.mul_(args.grain_speed))
             output = apply_rgb_noise(output, args.state["noise_buffer"], strength=args.grain_strength)
 
-        return VU.to_frame(output, use_16bit=use_16bit)
+        return output
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -209,7 +209,9 @@ def process_video(ctx, input_filename, output_path, args):
                      title=path.basename(input_filename),
                      start_time=args.start_time,
                      end_time=args.end_time,
-                     device=args.state["device"])
+                     device=args.state["device"],
+                     hwaccel=args.hwaccel,
+                     disable_software_fallback=args.disable_software_fallback)
 
 
 def load_files(txt):
@@ -267,6 +269,11 @@ def create_parser(required_true=True):
     parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
                         help="video container format")
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
+    parser.add_argument("--hwaccel", type=str, default=None,
+                        choices=VU.HW_DEVICES,
+                        help="hardware accelerator for the video decoder")
+    parser.add_argument("--disable-software-fallback", action="store_true",
+                        help="disable software fallback for hardware hwaccel")
     parser.add_argument("--max-fps", type=float, default=128,
                         help="max framerate. output fps = min(fps, --max-fps) (video only)")
     parser.add_argument("--profile-level", type=str, help="h264 profile level")
