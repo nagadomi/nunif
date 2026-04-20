@@ -302,35 +302,6 @@ def add_preprocess_vf(vf_org, args) -> str:
         return vf_org
 
 
-def hwc_to_chw_float(x, device):
-    src_dtype = x.dtype
-    x = x.to(device)
-
-    if x.ndim == 3:
-        x = x.permute(2, 0, 1).contiguous()
-    elif x.ndim == 4:
-        x = x.permute(0, 3, 1, 2).contiguous()
-    else:
-        raise ValueError(f"Unsupported ndim={x.ndim}")
-
-    if not torch.is_floating_point(x):
-        x = x.to(torch.float32)
-        x = x / float(torch.iinfo(src_dtype).max)
-
-    return x
-
-
-def to_chw_float(x, device):
-    src_dtype = x.dtype
-    x = x.to(device)
-
-    if not torch.is_floating_point(x):
-        x = x.to(torch.float32)
-        x = x / float(torch.iinfo(src_dtype).max)
-
-    return x
-
-
 def apply_divergence(depth, im, args, side_model, reset_pts=None):
     batch = True
     if depth.ndim != 4:
@@ -661,8 +632,8 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
         for depth in depths:
             x, pts = src_queue.pop(0)
             reset_pts = [pts in segment_pts]
-            if frame_cpu_offload:
-                x = to_chw_float(x, device=args.state["device"])
+            if isinstance(x, VU.OffloadFrame):
+                x = x.load(device=args.state["device"])
             if args.debug_depth:
                 out = debug_depth_image(depth, args)
             elif args.rgbd or args.half_rgbd:
@@ -707,10 +678,14 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             return
 
         pix_dtype = VU.get_source_dtype(frame)
-        pix_max = torch.iinfo(pix_dtype).max
         x = VU.to_tensor(frame, device=args.state["device"])
+        if frame_cpu_offload:
+            # cpu buffer
+            src_queue.append((VU.OffloadFrame(x, dtype=pix_dtype), frame.pts))
+        else:
+            # gpu buffer
+            src_queue.append((x, frame.pts))
 
-        # TODO: optimize cpu_offload
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=args.edge_dilation,
@@ -721,14 +696,6 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
         if flush:
             depths += depth_model.flush_minmax_normalize()
             depth_model.reset_state()
-
-        if frame_cpu_offload:
-            # cpu buffer
-            frame_chw = (x * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
-            src_queue.append((frame_chw, frame.pts))
-        else:
-            # gpu buffer
-            src_queue.append((x, frame.pts))
 
         yield from _postprocess(depths, flush=flush)
 
@@ -764,15 +731,12 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     pts = []
                     for _ in range(len(depths)):
                         x_src, t = src_queue.pop(0)
-                        x_srcs.append(x_src)
+                        x_srcs.append(x_src.load(device=device))
                         pts.append(t)
                     x_srcs = torch.stack(x_srcs)
                 else:
                     x_srcs, pts = src_queue.pop(0)
-
                 reset_pts = [t in segment_pts for t in pts]
-                if frame_cpu_offload:
-                    x_srcs = hwc_to_chw_float(x_srcs, device=device)
 
                 with sbs_lock:  # TODO: unclear whether this is actually needed
                     if args.rgbd or args.half_rgbd:
@@ -794,12 +758,9 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             dequeue_ticket_id = dequeue_ticket_lock.new_ticket()
             if not flush:
                 if frame_cpu_offload:
-                    if use_16bit:
-                        x_cpu = (x.permute(0, 2, 3, 1) * 65535.0).round().clamp(0, 65535).to(torch.uint16).cpu()
-                    else:
-                        x_cpu = (x.permute(0, 2, 3, 1) * 255.0).round().clamp(0, 255).to(torch.uint8).cpu()
-                    for x_, pts_ in zip(x_cpu, pts):
-                        src_queue.append((x_, pts_))
+                    pix_dtype = torch.uint16 if use_16bit else torch.uint8
+                    for i in range(len(pts)):
+                        src_queue.append((VU.OffloadFrame(x[i], dtype=pix_dtype), pts[i]))
                 else:
                     src_queue.append((x, pts))
 
@@ -884,8 +845,7 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                 depths = torch.stack(depths)
                 x_pts = [src_queue.pop(0) for _ in range(len(depths))]
                 reset_pts = [pts in segment_pts for _, pts in x_pts]
-                x_srcs = [x for x, _ in x_pts]
-                x_srcs = to_chw_float(torch.stack(x_srcs), device=args.state["device"])
+                x_srcs = torch.stack([x.load(device=args.state["device"]) for x, _ in x_pts])
                 if args.rgbd or args.half_rgbd:
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
@@ -901,17 +861,16 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
                     yield postprocess_image(left_eye, right_eye, args)
 
     def _batch_infer():
+        assert pix_max is not None and pix_dtype is not None
+        for i in range(len(batch_queue)):
+            src_queue.append((VU.OffloadFrame(batch_queue[i], dtype=pix_dtype), pts_queue[i]))
+
         x = torch.stack(batch_queue)
         depth_list = depth_model.infer_with_normalize(
             x, pts_queue, segment_pts,
             enable_amp=not args.disable_amp,
             edge_dilation=args.edge_dilation,
             depth_aa=args.depth_aa)
-
-        assert pix_max is not None and pix_dtype is not None
-        frame_bchw = (x * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
-        for i in range(frame_bchw.shape[0]):
-            src_queue.append((frame_bchw[i], pts_queue[i]))
 
         pts_queue.clear()
         batch_queue.clear()
