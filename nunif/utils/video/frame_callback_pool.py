@@ -6,10 +6,7 @@ import numpy as np
 import torch
 
 from .color_transform import TensorFrame
-
-RGB_8BIT = "rgb24"
-RGB_16BIT = "gbrp16le"
-
+from .utils import RGB_8BIT, RGB_16BIT
 
 # TODO: from* to* utilities will be deleted later
 
@@ -52,7 +49,7 @@ def to_tensor(frame, device=None):
         if device is not None:
             x = x.to(device)
         # CHW float32
-        return x.permute(2, 0, 1).contiguous() / torch.iinfo(x.dtype).max
+        return x.permute(2, 0, 1).contiguous().float() / float(torch.iinfo(x.dtype).max)
     else:
         raise ValueError(f"{type(frame)} not supported")
 
