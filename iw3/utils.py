@@ -1779,7 +1779,8 @@ def process_config_video(config, args, side_model):
         options=make_video_codec_option(args),
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
-        output_height=output_height
+        output_height=output_height,
+        device=args.state["device"],
     )
     video_config.output_colorspace = config.output_colorspace
     video_config.output_color_trc = config.output_color_trc
