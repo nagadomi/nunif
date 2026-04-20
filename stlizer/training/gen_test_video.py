@@ -74,7 +74,7 @@ if __name__ == "__main__":
                 # when the camera is held in the right hand
                 # center=[frame.shape[2] - 1, frame.shape[1] // 2]
             )
-            yield VU.to_frame(new_frame)
+            yield new_frame
 
     VU.generate_video(
         args.output,

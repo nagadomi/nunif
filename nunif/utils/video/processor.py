@@ -18,16 +18,6 @@ from .color_transform import (
     configure_video_codec,
     get_color_config,
 )
-from .frame_callback_pool import (  # noqa
-    FrameCallbackPool,
-    from_image,
-    from_ndarray,
-    from_tensor,
-    get_source_dtype,
-    to_frame,
-    to_ndarray,
-    to_tensor,
-)
 from .hwaccel import HW_DEVICES, create_hwaccel
 from .metadata import (
     AudioMetadata,
@@ -992,6 +982,8 @@ def _test_export_audio():
 def _test_reencode():
     import argparse
 
+    from .frame_callback_pool import FrameCallbackPool
+
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
     parser.add_argument("--output", "-o", type=str, required=True, help="output video file")
@@ -1096,6 +1088,8 @@ def _test_sample_frames():
     import argparse
 
     import torchvision.transforms.functional as TF
+
+    from .frame_callback_pool import to_tensor
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input video file")

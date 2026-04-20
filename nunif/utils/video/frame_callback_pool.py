@@ -2,40 +2,10 @@ from concurrent.futures import ThreadPoolExecutor
 from types import GeneratorType
 
 import av
-import numpy as np
 import torch
 
 from .color_transform import TensorFrame
 from .utils import RGB_8BIT, RGB_16BIT
-
-# TODO: from* to* utilities will be deleted later
-
-
-def from_ndarray(x):
-    if x.dtype == np.uint8:
-        format = RGB_8BIT
-    elif x.dtype == np.uint16:
-        format = RGB_16BIT
-    else:
-        raise ValueError(f"unsupported dtype {x.dtype}")
-
-    return av.video.frame.VideoFrame.from_ndarray(x, format=format)
-
-
-def from_image(im):
-    return av.video.frame.VideoFrame.from_image(im)
-
-
-def from_tensor(x, use_16bit=False):
-    if use_16bit:
-        dtype = torch.uint16
-        value_scale = 65535.0
-    else:
-        dtype = torch.uint8
-        value_scale = 255.0
-
-    x = (x.permute(1, 2, 0).contiguous() * value_scale).round_().to(dtype).detach().cpu().numpy()
-    return from_ndarray(x)
 
 
 def to_tensor(frame, device=None):
@@ -52,19 +22,6 @@ def to_tensor(frame, device=None):
         return x.permute(2, 0, 1).contiguous().float() / float(torch.iinfo(x.dtype).max)
     else:
         raise ValueError(f"{type(frame)} not supported")
-
-
-def to_frame(x, use_16bit=False):
-    if torch.is_tensor(x):
-        # float CHW
-        return from_tensor(x, use_16bit=use_16bit)
-    elif isinstance(x, np.ndarray):
-        # uint8/uint16 HWC
-        return from_ndarray(x)
-    elif isinstance(x, av.VideoFrame):
-        return x
-    else:
-        return from_image(x)
 
 
 def to_ndarray(frame):
