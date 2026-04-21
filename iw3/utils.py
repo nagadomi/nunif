@@ -327,17 +327,11 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             im, depth,
             args.divergence, convergence=convergence,
             synthetic_view=args.synthetic_view)
-        if not batch:
-            left_eye = left_eye.squeeze(0)
-            right_eye = right_eye.squeeze(0)
     elif args.method in {"forward", "forward_fill"}:
         left_eye, right_eye = apply_divergence_forward_warp(
             im, depth,
             args.divergence, convergence=convergence,
             method=args.method, synthetic_view=args.synthetic_view, width_base=False)
-        if not batch:
-            left_eye = left_eye.squeeze(0)
-            right_eye = right_eye.squeeze(0)
     elif args.method in {"forward_inpaint", "mlbw_l2_inpaint"}:
         left_eyes = []
         right_eyes = []
@@ -392,8 +386,11 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             preserve_screen_border=args.preserve_screen_border,
             enable_amp=not args.disable_amp,
         )
-        if not batch:
+
+    if not batch:
+        if left_eye is not None:
             left_eye = left_eye.squeeze(0)
+        if right_eye is not None:
             right_eye = right_eye.squeeze(0)
 
     return left_eye, right_eye
@@ -542,7 +539,7 @@ def process_image(x, args, depth_model, side_model, skip_autocrop=None, autocrop
                     break
             if left_eye.ndim == 4:
                 # NOTE: side_model is video inpaint model.
-                #       This may be called from test_callbac
+                #       This may be called from test_callback
                 assert 0, "No longer reaching this block"
                 left_eye = autocrop.uncrop(left_eye[0])
                 right_eye = autocrop.uncrop(right_eye[0])
@@ -1153,6 +1150,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
+    assert depth_model.get_name() not in {"VideoDepthAnything", "VideoDepthAnythingStreaming"}
+
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
@@ -1171,19 +1170,38 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         futures = []
 
         def frame_callback(frame):
-            im = TF.to_tensor(frame.to_image()).to(args.state["device"])
-            output = process_image(im, args, depth_model, side_model)
+            if frame is None:
+                return
+
+            x = VU.to_tensor(frame, device=args.state["device"])
+            output = process_image(x, args, depth_model, side_model)
             output = to_pil_image(output)
             output_filename = path.join(
                 output_dir,
                 path.basename(output_dir) + "_" + str(frame.pts).zfill(8) + FULL_SBS_SUFFIX + get_image_ext(args.format))
             f = pool.submit(save_image, output, output_filename, format=args.format)
             futures.append(f)
-        VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
-                                   min_interval_sec=args.keyframe_interval,
-                                   stop_event=args.state["stop_event"],
-                                   suspend_event=args.state["suspend_event"],
-                                   title=path.basename(input_filename))
+            if len(futures) > IMAGE_IO_QUEUE_MAX:
+                for f in futures:
+                    f.result()
+                futures.clear()
+
+        VU.hook_frame(
+            input_filename,
+            frame_callback=frame_callback,
+            keyframe_only=True,
+            min_interval_sec=args.keyframe_interval,
+            vf=args.vf,
+            stop_event=args.state["stop_event"],
+            suspend_event=args.state["suspend_event"],
+            tqdm_fn=args.state["tqdm_fn"],
+            title=path.basename(input_filename),
+            start_time=args.start_time,
+            end_time=args.end_time,
+            device=args.state["device"],
+            hwaccel=args.hwaccel,
+            disable_software_fallback=args.disable_software_fallback,
+        )
         for f in futures:
             f.result()
 
@@ -1193,15 +1211,21 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
     depth_model.reset()
     depth_model.disable_ema()
 
-    if side_model is not None and hasattr(side_model, "set_mode"):
-        side_model.set_mode("video")
-        side_model.reset()
-    if args.state["convergence_model"] is not None:
-        args.state["convergence_model"].reset(enable_ema=True)
-
     if args.keyframe:
+        if side_model is not None and hasattr(side_model, "set_mode"):
+            side_model.set_mode("image")
+            side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset(enable_ema=False)
+
         process_video_keyframes(input_filename, output_path, args, depth_model, side_model)
     else:
+        if side_model is not None and hasattr(side_model, "set_mode"):
+            side_model.set_mode("video")
+            side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset(enable_ema=True)
+
         process_video_full(input_filename, output_path, args, depth_model, side_model)
 
 

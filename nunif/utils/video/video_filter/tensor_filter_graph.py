@@ -139,7 +139,7 @@ def _test() -> None:
         assert output_frame_scale.planes.shape[-1] == 1920 # Aspect ratio preserved
 
     # Test conditional scale skip
-    vf_scale_skip = f"scale=if(gt(ih\\,3000)\\,1280\\,iw):ih"
+    vf_scale_skip = "scale=if(gt(ih\\,3000)\\,1280\\,iw):ih"
     print(f"\nTesting conditional scale skip: {vf_scale_skip}")
     graph_skip = TensorFilterGraph(vf_scale_skip)
     frame.planes = torch.zeros((1, 3, 1080, 1920))

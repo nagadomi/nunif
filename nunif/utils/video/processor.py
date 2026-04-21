@@ -10,7 +10,6 @@ from typing import List
 
 import av
 import torch
-from av.codec.hwaccel import HWAccel
 from tqdm import tqdm
 
 from .color_transform import (
@@ -29,7 +28,6 @@ from .output_config import VideoOutputConfig
 from .utils import (
     LIBH264,
     get_default_video_codec,
-    is_nvidia_gpu,
     pix_fmt_requires_16bit,
 )
 from .video_preprocessor import VideoPreprocessor
@@ -248,16 +246,7 @@ def _process_video(
         config.video_codec = get_default_video_codec(config.container_format)
     configure_video_codec(config)
 
-    output_hwaccel = None
-    if config.video_codec in {"h264_nvenc", "hevc_nvenc"}:
-        # It seems this isn't actually necessary.
-        if is_nvidia_gpu(device):
-            device_id = device.index if device.index is not None else 0
-        else:
-            device_id = None
-        output_hwaccel = HWAccel(device_type="cuda", device=device_id, options={"primary_ctx": "1"})
-    output_container = av.open(output_path_tmp, mode="w", options=config.container_options, hwaccel=output_hwaccel)
-
+    output_container = av.open(output_path_tmp, mode="w", options=config.container_options)
     output_fps = config.output_fps or config.fps
     input_reformat_options, output_reformatter = setup_color_transform(sw_format, config, device=device)
     config.pix_fmt = output_reformatter.dst_pix_fmt
@@ -559,57 +548,6 @@ def consume_generator(callback_result):
             pass
 
 
-def process_video_keyframes(
-    input_path,
-    frame_callback,
-    min_interval_sec=4.0,
-    vf="",
-    title=None,
-    stop_event=None,
-    suspend_event=None,
-    tqdm_fn=None,
-):
-    sw_format = VideoMetadata.from_file(input_path)
-    input_container = av.open(input_path, mode="r", metadata_errors="ignore")
-    if len(input_container.streams.video) == 0:
-        raise ValueError("No video stream")
-
-    video_input_stream = input_container.streams.video[0]
-    # video_input_stream.thread_type = "AUTO"  # slow
-    video_input_stream.codec_context.skip_frame = "NONKEY"
-
-    video_filter = VideoPreprocessor(
-        video_input_stream.pix_fmt, sw_format, output_colorspace_mode="auto", fps=None, vf=vf
-    )
-
-    max_progress = sw_format.guess_duration()
-    desc = title if title else input_path
-    ncols = len(desc) + 60
-    tqdm_fn = tqdm_fn or tqdm
-    pbar = tqdm_fn(desc=desc, total=max_progress, ncols=ncols)
-    prev_sec = 0
-    for packet in input_container.demux([video_input_stream]):
-        for frame in safe_decode(packet):
-            frame = fix_frame_color_av17(frame, sw_format)
-            current_sec = math.ceil(frame.pts * video_input_stream.time_base)
-            if current_sec - prev_sec >= min_interval_sec:
-                for frame in video_filter.update(frame):
-                    consume_generator(frame_callback(frame))
-                pbar.update(current_sec - prev_sec)
-                prev_sec = current_sec
-        if suspend_event is not None:
-            suspend_event.wait()
-        if stop_event is not None and stop_event.is_set():
-            break
-
-    for frame in video_filter.flush():
-        consume_generator(frame_callback(frame))
-        pbar.update(1)
-
-    pbar.close()
-    input_container.close()
-
-
 def hook_frame(
     input_path,
     frame_callback,
@@ -624,6 +562,8 @@ def hook_frame(
     hwaccel=None,
     disable_software_fallback=False,
     device="cpu",
+    keyframe_only: bool = False,
+    min_interval_sec: float = 0.0,
 ):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -648,9 +588,14 @@ def hook_frame(
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+    if keyframe_only:
+        video_input_stream.codec_context.skip_frame = "NONKEY"
 
     config = config_callback(sw_format)
-    config.fps = convert_fps_fraction(config.fps)
+    if keyframe_only:
+        config.fps = None
+    else:
+        config.fps = convert_fps_fraction(config.fps)
     input_reformat_options, output_reformatter = setup_color_transform(sw_format, config, device=device)
     config.pix_fmt = output_reformatter.dst_pix_fmt
     config.output_colorspace = int(output_reformatter.dst_colorspace)
@@ -675,36 +620,63 @@ def hook_frame(
     desc = title if title else input_path
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
-    total = sw_format.guess_frames(
-        fps=config.fps,
-        start_time=start_time,
-        end_time=end_time,
-    )
+    if keyframe_only:
+        duration = sw_format.get_duration()
+        if end_time is not None:
+            duration = min(duration, end_time)
+        if start_time is not None:
+            duration -= start_time
+        total = math.ceil(max(duration, 0))
+    else:
+        frames_val = sw_format.guess_frames(
+            fps=config.fps,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        total = frames_val if isinstance(frames_val, int) else frames_val[0]
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
 
-    for i, packet in enumerate(input_container.demux([video_input_stream])):
-        if packet.pts is not None:
-            if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+    prev_sec = start_time if start_time is not None else 0.0
+    try:
+        for i, packet in enumerate(input_container.demux([video_input_stream])):
+            if packet.pts is not None:
+                if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
+                    break
+            for frame in safe_decode(packet, strict=disable_software_fallback):
+                frame = fix_frame_color_av17(frame, sw_format)
+                if keyframe_only:
+                    current_sec = float(frame.pts * video_input_stream.time_base)
+                    if current_sec - prev_sec < min_interval_sec:
+                        continue
+
+                    for out_frame in video_preprocessor.update(frame):
+                        consume_generator(frame_callback(out_frame))
+
+                    progress = current_sec - prev_sec
+                    if progress > 1.0:
+                        pbar.update(math.floor(progress))
+                        prev_sec = current_sec
+                else:
+                    for out_frame in video_preprocessor.update(frame):
+                        consume_generator(frame_callback(out_frame))
+                        pbar.update(1)
+
+            if i % 100 == 0:
+                gc.collect()
+            if suspend_event is not None:
+                suspend_event.wait()
+            if stop_event is not None and stop_event.is_set():
                 break
-        for frame in safe_decode(packet, strict=disable_software_fallback):
-            frame = fix_frame_color_av17(frame, sw_format)
-            for out_frame in video_preprocessor.update(frame):
-                consume_generator(frame_callback(out_frame))
+
+        for out_frame in video_preprocessor.flush():
+            consume_generator(frame_callback(out_frame))
+            if not keyframe_only:
                 pbar.update(1)
-        if i % 100 == 0:
-            gc.collect()
-        if suspend_event is not None:
-            suspend_event.wait()
-        if stop_event is not None and stop_event.is_set():
-            break
 
-    for out_frame in video_preprocessor.flush():
-        consume_generator(frame_callback(out_frame))
-        pbar.update(1)
-
-    consume_generator(frame_callback(None))
-    input_container.close()
-    pbar.close()
+        consume_generator(frame_callback(None))
+    finally:
+        input_container.close()
+        pbar.close()
 
 
 def sample_frames(
@@ -730,7 +702,7 @@ def sample_frames(
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
-    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)  # types: ignore
+    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")

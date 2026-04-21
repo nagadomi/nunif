@@ -58,3 +58,6 @@ python -m iw3.cli -y -i ${TEST_YAML} -o ${OUTPUT_DIR} --video-codec ${H264_ENC}
 
 # vf
 python -m iw3.cli -y -i ${TEST_VIDEO} -o ${OUTPUT_DIR} --depth-model Any_S --vf "scale=-2:320,crop=256:256" ${HWACCEL}
+
+# keyframe
+python -m iw3.cli -y -i ${TEST_VIDEO} -o ${OUTPUT_DIR} --depth-model Any_S --keyframe ${HWACCEL}

@@ -18,7 +18,6 @@ from .processor import (
     hook_frame,
     make_error_file_path,
     process_video,
-    process_video_keyframes,
     sample_frames,
 )
 from .utils import (
@@ -52,7 +51,6 @@ __all__ = [
     "hook_frame",
     "make_error_file_path",
     "process_video",
-    "process_video_keyframes",
     "sample_frames",
     "LIBH264",
     "RGB_8BIT",
