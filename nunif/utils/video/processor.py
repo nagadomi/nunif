@@ -439,6 +439,7 @@ def generate_video(
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     output_container = av.open(output_path_tmp, "w", options=config.container_options)
+    assert config.output_width is not None and config.output_height is not None
     output_size = config.output_width, config.output_height
 
     if not config.container_format:
@@ -486,7 +487,7 @@ def generate_video(
             desc = title + " Audio" if title else "Audio"
             ncols = len(desc) + 60
             sw_audio = AudioMetadata.from_file(audio_file)
-            total = sw_audio.get_duration()
+            total = math.ceil(sw_audio.get_duration())
             pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
             last_sec = 0
 
