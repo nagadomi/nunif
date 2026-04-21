@@ -152,7 +152,6 @@ def process_video(ctx, input_filename, output_path, args):
             colorspace=args.colorspace,
             options=options,
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
-            device=args.state["device"],
         )
 
     @torch.inference_mode()

@@ -53,7 +53,6 @@ class VideoOutputConfig:
         self.colorspace = colorspace if colorspace is not None else "auto"
         self.container_format = container_format
         self.video_codec = video_codec
-        self.device = device
 
         self.state_updated = lambda config: None
 

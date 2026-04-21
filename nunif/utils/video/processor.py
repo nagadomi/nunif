@@ -259,7 +259,7 @@ def _process_video(
     output_container = av.open(output_path_tmp, mode="w", options=config.container_options, hwaccel=output_hwaccel)
 
     output_fps = config.output_fps or config.fps
-    input_reformat_options, output_reformatter = setup_color_transform(sw_format, config)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_format, config, device=device)
     config.pix_fmt = output_reformatter.dst_pix_fmt
     config.output_colorspace = int(output_reformatter.dst_colorspace)
     config.output_color_primaries = int(output_reformatter.dst_color_primaries)
@@ -432,7 +432,10 @@ def generate_video(
     stop_event=None,
     suspend_event=None,
     tqdm_fn=None,
+    device="cpu",
 ):
+    if isinstance(device, str):
+        device = torch.device(device)
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     output_container = av.open(output_path_tmp, "w", options=config.container_options)
@@ -444,7 +447,7 @@ def generate_video(
         config.video_codec = get_default_video_codec(config.container_format)
     configure_video_codec(config)
 
-    input_reformat_options, output_reformatter = setup_color_transform(None, config)
+    input_reformat_options, output_reformatter = setup_color_transform(None, config, device=device)
     config.pix_fmt = output_reformatter.dst_pix_fmt
     config.output_colorspace = int(output_reformatter.dst_colorspace)
     config.output_color_primaries = int(output_reformatter.dst_color_primaries)
@@ -647,7 +650,7 @@ def hook_frame(
 
     config = config_callback(sw_format)
     config.fps = convert_fps_fraction(config.fps)
-    input_reformat_options, output_reformatter = setup_color_transform(sw_format, config)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_format, config, device=device)
     config.pix_fmt = output_reformatter.dst_pix_fmt
     config.output_colorspace = int(output_reformatter.dst_colorspace)
     config.output_color_primaries = int(output_reformatter.dst_color_primaries)

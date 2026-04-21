@@ -791,6 +791,7 @@ class OutputTransform:
 def setup_color_transform(
     sw_format: VideoMetadata | None,
     config: Any,
+    device: torch.device | None = None,
 ) -> Tuple[Dict[str, Any], OutputTransform]:
     """Calculate color configuration and transform objects based on user config."""
     pix_fmt: str
@@ -851,12 +852,13 @@ def setup_color_transform(
 
     cuda_context = None
     if (
-        is_nvidia_gpu(config.device)
+        is_nvidia_gpu(device)
         and config.video_codec in {"h264_nvenc", "hevc_nvenc"}
         and config.pix_fmt in {"nv12", "p010le"}
     ):
-        device_id = config.device.index if config.device is not None else None
-        device_id = device_id if device_id is not None else 0
+        device_id = 0
+        if device is not None and isinstance(device.index, int):
+            device_id = device.index
         cuda_context = CudaContext(device_id=device_id, primary_ctx=True)
 
     output_reformatter = OutputTransform(
@@ -939,7 +941,6 @@ def _test_configure() -> None:
             self.output_color_trc = 2
             self.source_color_range = 2
             self.state_updated = lambda c: print("Config updated callback triggered")
-            self.device = None
 
     class MockSWFormat(VideoMetadata):
         def __init__(
@@ -960,7 +961,7 @@ def _test_configure() -> None:
 
     print("Testing setup_color_transform (Auto HD)...")
     cfg = MockConfig(colorspace="auto", pix_fmt="yuv420p")
-    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg, device=None)
     cfg.state_updated(cfg)
     assert int(output_reformatter.dst_colorspace) == 1
     assert output_reformatter.dst_pix_fmt == "yuv420p"
@@ -968,7 +969,7 @@ def _test_configure() -> None:
 
     print("Testing setup_color_transform (bt709-pc)...")
     cfg = MockConfig(colorspace="bt709-pc", pix_fmt="yuv420p")
-    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg, device=None)
     cfg.state_updated(cfg)
     assert output_reformatter.dst_pix_fmt == "yuvj420p"
     assert input_reformat_options["src_color_range"] == 1
@@ -976,14 +977,14 @@ def _test_configure() -> None:
 
     print("Testing setup_color_transform (explicit unspecified)...")
     cfg = MockConfig(colorspace="unspecified", pix_fmt="yuv420p")
-    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg, device=None)
     cfg.state_updated(cfg)
     assert int(output_reformatter.dst_colorspace) == 2
     assert output_reformatter.dst_pix_fmt == "yuv420p"
 
     print("Testing setup_color_transform (RGB output)...")
     cfg = MockConfig(colorspace="auto", pix_fmt="rgb24")
-    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg, device=None)
     cfg.state_updated(cfg)
     assert int(output_reformatter.dst_colorspace) == 1
 

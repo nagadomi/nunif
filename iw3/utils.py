@@ -1063,7 +1063,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             colorspace=args.colorspace,
             options=make_video_codec_option(args, input_filename),
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
-            device=args.state["device"],
         )
 
     if is_video_depth_anything:
@@ -1780,7 +1779,6 @@ def process_config_video(config, args, side_model):
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
         output_height=output_height,
-        device=args.state["device"],
     )
     video_config.output_colorspace = config.output_colorspace
     video_config.output_color_trc = config.output_color_trc
@@ -1811,6 +1809,7 @@ def process_config_video(config, args, side_model):
             stop_event=args.state["stop_event"],
             suspend_event=args.state["suspend_event"],
             tqdm_fn=args.state["tqdm_fn"],
+            device=args.state["device"],
         )
     finally:
         args.mapper = original_mapper
