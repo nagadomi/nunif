@@ -788,7 +788,7 @@ class OutputTransform:
         return self.transform(x)
 
 
-def get_color_config(
+def setup_color_transform(
     sw_format: VideoMetadata | None,
     config: Any,
 ) -> Tuple[Dict[str, Any], OutputTransform]:
@@ -958,32 +958,32 @@ def _test_configure() -> None:
     print("--- Start configure tests ---")
     sw_hd: Any = MockSWFormat(height=1080)
 
-    print("Testing get_color_config (Auto HD)...")
+    print("Testing setup_color_transform (Auto HD)...")
     cfg = MockConfig(colorspace="auto", pix_fmt="yuv420p")
-    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
     cfg.state_updated(cfg)
     assert int(output_reformatter.dst_colorspace) == 1
     assert output_reformatter.dst_pix_fmt == "yuv420p"
     assert input_reformat_options["dst_color_primaries"] == 1
 
-    print("Testing get_color_config (bt709-pc)...")
+    print("Testing setup_color_transform (bt709-pc)...")
     cfg = MockConfig(colorspace="bt709-pc", pix_fmt="yuv420p")
-    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
     cfg.state_updated(cfg)
     assert output_reformatter.dst_pix_fmt == "yuvj420p"
     assert input_reformat_options["src_color_range"] == 1
     assert input_reformat_options["dst_color_trc"] == 1
 
-    print("Testing get_color_config (explicit unspecified)...")
+    print("Testing setup_color_transform (explicit unspecified)...")
     cfg = MockConfig(colorspace="unspecified", pix_fmt="yuv420p")
-    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
     cfg.state_updated(cfg)
     assert int(output_reformatter.dst_colorspace) == 2
     assert output_reformatter.dst_pix_fmt == "yuv420p"
 
-    print("Testing get_color_config (RGB output)...")
+    print("Testing setup_color_transform (RGB output)...")
     cfg = MockConfig(colorspace="auto", pix_fmt="rgb24")
-    input_reformat_options, output_reformatter = get_color_config(sw_hd, cfg)
+    input_reformat_options, output_reformatter = setup_color_transform(sw_hd, cfg)
     cfg.state_updated(cfg)
     assert int(output_reformatter.dst_colorspace) == 1
 
