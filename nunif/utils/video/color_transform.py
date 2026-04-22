@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.utils.dlpack
 from av.codec.hwaccel import HWDeviceType
 from av.video.frame import CudaContext
-from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
+from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc, VideoReformatter
 
 from .metadata import (
     COLORSPACE_UNSPECIFIED,
@@ -685,9 +685,11 @@ class OutputTransform:
         self.dst_color_range = dst_color_range
         self.use_16bit = pix_fmt_requires_16bit(dst_pix_fmt)
         self.cuda_context = cuda_context
+        self.reformatter = VideoReformatter()
 
     def from_video_frame(self, frame: av.VideoFrame) -> av.VideoFrame:
-        frame = frame.reformat(
+        frame = self.reformatter.reformat(
+            frame,
             format=self.dst_pix_fmt,
             src_colorspace=self.dst_colorspace,
             src_color_range=ColorRange.JPEG,
@@ -713,27 +715,39 @@ class OutputTransform:
     def from_tensor(self, x: torch.Tensor) -> av.VideoFrame:
         dtype: Any
         value_scale: float
+        # NOTE: When using uint8, calling contiguous() is faster,
+        #       while with uint16, not calling contiguous() is faster.
+        #       This is not a placebo level difference,
+        #       but a very large one, 16 FPS vs 30 FPS.
         if self.use_16bit:
             dtype = torch.uint16
             value_scale = 65535.0
+            x_nd = (x.permute(1, 2, 0) * value_scale).round().to(dtype).detach().cpu().numpy()
         else:
             dtype = torch.uint8
             value_scale = 255.0
-        x_nd = (x.permute(1, 2, 0).contiguous() * value_scale).round().to(dtype).detach().cpu().numpy()
+            x_nd = (x.permute(1, 2, 0).contiguous() * value_scale).round().to(dtype).detach().cpu().numpy()
+
         return self.from_ndarray(x_nd)
 
     def is_dlpack_supported(self, x: torch.Tensor) -> bool:
         return (
-            self.cuda_context is not None
+            is_nvidia_gpu(x.device)  # TODO: Remove this condition for xpu/mps
+            and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuvj420p", "yuv420p10le"}
+        )
+
+    def is_cuda_dlpack_supported(self, x: torch.Tensor) -> bool:
+        return (
+            self.cuda_context is not None  # for NVENC
             and is_nvidia_gpu(x.device)
-            and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuv420p10le"}
+            and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuvj420p", "yuv420p10le"}
         )
 
     def from_cuda_tensor(self, x: torch.Tensor) -> av.VideoFrame:
         assert self.is_dlpack_supported(x)
 
         internal_pix_fmt: str
-        if self.dst_pix_fmt == "yuv420p":
+        if self.dst_pix_fmt in {"yuv420p", "yuvj420p"}:
             internal_pix_fmt = "nv12"
         elif self.dst_pix_fmt == "yuv420p10le":
             internal_pix_fmt = "p010le"
@@ -748,16 +762,27 @@ class OutputTransform:
         )
         y_p, uv_p = ColorTransform.to_yuv_planes(y, u, v, out_format=internal_pix_fmt)
 
-        # Ensure PyTorch has finished writing to y_p and uv_p
-        if torch.cuda.default_stream() != torch.cuda.current_stream():
-            torch.cuda.current_stream().synchronize()
+        if self.is_cuda_dlpack_supported(x):
+            # For NVENC
+            # Ensure PyTorch has finished writing to y_p and uv_p
+            if torch.cuda.default_stream() != torch.cuda.current_stream():
+                torch.cuda.current_stream().synchronize()
 
-        frame = av.VideoFrame.from_dlpack(
-            (y_p, uv_p),
-            format=internal_pix_fmt,
-            primary_ctx=True,
-            cuda_context=self.cuda_context,
-        )
+            frame = av.VideoFrame.from_dlpack(
+                (y_p, uv_p),
+                format=internal_pix_fmt,
+                primary_ctx=True,
+                cuda_context=self.cuda_context,
+            )
+        else:
+            # For software encoders
+            y_p = y_p.contiguous().cpu()
+            uv_p = uv_p.contiguous().cpu()
+            frame = av.VideoFrame.from_dlpack(
+                (y_p, uv_p),
+                format=internal_pix_fmt,
+            )
+
         frame.pts = None
         frame.dts = None
         frame.colorspace = self.dst_colorspace

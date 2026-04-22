@@ -5,7 +5,6 @@ import av
 import torch
 
 from ..color_lut import get_hdr2sdr_lut_path
-
 from .color_transform import InputTransform, TensorFrame
 from .hwaccel import should_use_tensor_frame
 from .metadata import COLORSPACE_BT2020, ColorTrc, VideoMetadata
@@ -67,6 +66,7 @@ class VideoPreprocessor:
         self.video_filter = None
         self.input_transform = None
         self.reformatter = None
+        self.shared_reformatter = av.video.reformatter.VideoReformatter()
 
         if device is None:
             device = torch.device("cpu")
@@ -126,7 +126,8 @@ class VideoPreprocessor:
                     dst_pix_fmt = None
 
                 def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
-                    return frame.reformat(
+                    return self.shared_reformatter.reformat(
+                        frame,
                         format=dst_pix_fmt,
                         src_colorspace=input_reformat_options["src_colorspace"],
                         src_color_range=input_reformat_options["src_color_range"],
