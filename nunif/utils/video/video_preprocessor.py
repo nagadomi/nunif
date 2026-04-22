@@ -121,21 +121,30 @@ class VideoPreprocessor:
             if vf:
                 self.video_filter = AVFilterGraph(stream_pix_fmt, sw_format, vf, deny_filters)
             if input_reformat_options is not None:
-                dst_pix_fmt: str | None = sw_format.guess_pix_fmt(stream_pix_fmt)
-                if dst_pix_fmt == stream_pix_fmt:
-                    dst_pix_fmt = None
+                dst_pix_fmt: str = sw_format.guess_rgb_pix_fmt()
 
                 def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
-                    return self.shared_reformatter.reformat(
+                    dst_color_trc = (
+                        None
+                        if input_reformat_options["dst_color_trc"] == frame.color_trc
+                        else input_reformat_options["dst_color_trc"]
+                    )
+                    dst_color_primaries = (
+                        None
+                        if input_reformat_options["dst_color_primaries"] == frame.color_primaries
+                        else input_reformat_options["dst_color_primaries"]
+                    )
+                    new_frame = self.shared_reformatter.reformat(
                         frame,
                         format=dst_pix_fmt,
                         src_colorspace=input_reformat_options["src_colorspace"],
                         src_color_range=input_reformat_options["src_color_range"],
                         dst_colorspace=input_reformat_options["dst_colorspace"],
-                        dst_color_primaries=input_reformat_options["dst_color_primaries"],
-                        dst_color_trc=input_reformat_options["dst_color_trc"],
+                        dst_color_primaries=dst_color_primaries,
+                        dst_color_trc=dst_color_trc,
                         dst_color_range=input_reformat_options["dst_color_range"],
                     )
+                    return new_frame
 
                 self.reformatter = _reformatter
 

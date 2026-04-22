@@ -6,6 +6,7 @@ import av
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
 from .hwaccel import HW_DEVICES
+from .utils import RGB_8BIT, RGB_16BIT
 
 # Colorspace constants
 COLORSPACE_UNSPECIFIED: int = 2
@@ -392,6 +393,12 @@ class VideoMetadata(MediaMetadata):
                 )
         else:
             return stream_pix_fmt
+
+    def guess_rgb_pix_fmt(self) -> str:
+        if self.use_16bit:
+            return RGB_16BIT
+        else:
+            return RGB_8BIT
 
     @staticmethod
     def guess_color_range_static(format_name: str, color_range: ColorRange | int) -> ColorRange:
