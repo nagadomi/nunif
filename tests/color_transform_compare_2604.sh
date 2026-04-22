@@ -51,8 +51,11 @@ do
     do
         for pix_fmt in yuv420p yuv420p10le
         do
-            for colorspace in auto bt709-tv bt601-tv
+            for colorspace in auto bt709-tv bt709-pc bt601-tv
             do
+                if [ "$encoder" = "hevc_nvenc" ] && [ "$colorspace" = "bt709-pc" ]; then
+                    continue
+                fi
                 output_file="${output_dir}/${encoder}_${pix_fmt}_${colorspace}.mkv"
                 echo "--------------------------------------------------"
                 echo "Processing: ${output_file}"
@@ -61,6 +64,16 @@ do
                     --pix-fmt "${pix_fmt}" \
                     --colorspace "${colorspace}" \
                     -o "${output_file}"
+                if [ "${repo_path}" == ${REPO2_PATH} ]; then
+                    output_file="${output_dir}/${encoder}_${pix_fmt}_${colorspace}_cuda.mkv"
+                    echo "Processing: ${output_file}"
+                    python -m iw3.cli "${IW3_OPTIONS[@]}" \
+                           --video-codec "${encoder}" \
+                           --pix-fmt "${pix_fmt}" \
+                           --colorspace "${colorspace}" \
+                           --hwaccel cuda \
+                           -o "${output_file}"
+                fi
             done
         done
     done
@@ -72,10 +85,11 @@ for encoder in libx265 hevc_nvenc
 do
     for pix_fmt in yuv420p yuv420p10le
     do
-        for colorspace in auto bt709-tv bt601-tv
+        for colorspace in auto bt709-tv bt709-pc bt601-tv
         do
             output1="${OUTPUTS[0]}/${encoder}_${pix_fmt}_${colorspace}.mkv"
             output2="${OUTPUTS[1]}/${encoder}_${pix_fmt}_${colorspace}.mkv"
+            output3="${OUTPUTS[1]}/${encoder}_${pix_fmt}_${colorspace}_cuda.mkv"
 
             if [ ! -f "$output1" ] || [ ! -f "$output2" ]; then
                 echo "Skip: File not found ($encoder $pix_fmt $colorspace)"
@@ -87,6 +101,7 @@ do
 
             meta1=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_space,color_transfer,color_primaries,color_range -of csv=p=0 "$output1")
             meta2=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_space,color_transfer,color_primaries,color_range -of csv=p=0 "$output2")
+            meta3=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_space,color_transfer,color_primaries,color_range -of csv=p=0 "$output3")
 
             if [ "$meta1" = "$meta2" ]; then
                 echo "  [OK] Metadata Match: $meta1"
@@ -94,6 +109,13 @@ do
                 echo "  [NG] Metadata Mismatch!"
                 echo "       File1: $meta1"
                 echo "       File2: $meta2"
+            fi
+            if [ "$meta1" = "$meta3" ]; then
+                echo "  [OK] Metadata Match (CUDA): $meta1"
+            else
+                echo "  [NG] Metadata Mismatch! (CUDA)"
+                echo "       File1: $meta1"
+                echo "       File2: $meta3"
             fi
 
             stats=$(ffmpeg -i "$output1" -i "$output2" -lavfi psnr -f null - 2>&1 | grep "PSNR y:")
@@ -105,6 +127,17 @@ do
                 echo "  [OK] Quality Pass: PSNR $avg_psnr"
             else
                 echo "  [FAIL] Quality Low: PSNR $avg_psnr"
+            fi
+
+            stats=$(ffmpeg -i "$output1" -i "$output3" -lavfi psnr -f null - 2>&1 | grep "PSNR y:")
+            avg_psnr=$(echo "$stats" | sed -E 's/.*average:([0-9.]+).*/\1/')
+
+            if [ -z "$avg_psnr" ]; then
+                echo "  [!!] Error: Could not calculate PSNR"
+            elif (( $(echo "$avg_psnr >= 38" | bc -l) )); then
+                echo "  [OK] Quality Pass (CUDA): PSNR $avg_psnr"
+            else
+                echo "  [FAIL] Quality Low (CUDA): PSNR $avg_psnr"
             fi
         done
     done
