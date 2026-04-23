@@ -8,6 +8,7 @@ from ..color_lut import get_hdr2sdr_lut_path
 from .color_transform import InputTransform, TensorFrame
 from .hwaccel import should_use_tensor_frame
 from .metadata import COLORSPACE_BT2020, ColorTrc, VideoMetadata
+from .utils import is_discrete_device
 from .video_filter.av_filter_graph import AVFilterGraph
 from .video_filter.fps import FPSFilter
 from .video_filter.tensor_filter_graph import TensorFilterGraph
@@ -123,7 +124,7 @@ class VideoPreprocessor:
             if input_reformat_options is not None:
                 # Optimized transfer for software decoders when device is GPU
                 dlpack_pix_fmt = sw_format.guess_sw_dlpack_pix_fmt()
-                if device.type == "cuda" and dlpack_pix_fmt is not None:
+                if dlpack_pix_fmt is not None and is_discrete_device(device):
                     dst_pix_fmt: str = dlpack_pix_fmt
                 else:
                     dst_pix_fmt = sw_format.guess_rgb_pix_fmt()

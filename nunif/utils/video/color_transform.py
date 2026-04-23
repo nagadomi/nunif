@@ -15,7 +15,7 @@ from .metadata import (
     VideoMetadata,
     get_rgb_pix_fmt,
 )
-from .utils import is_nvidia_gpu
+from .utils import is_discrete_device, is_nvidia_gpu
 
 
 class ColorTransform:
@@ -136,7 +136,6 @@ class ColorTransform:
                 elif t.dtype == torch.uint16:
                     fmt = "p010le"
             else:
-
                 stride: int = plane.line_size
                 is_16bit: bool = (
                     fmt in ColorTransform.BIT10_FORMATS
@@ -845,7 +844,7 @@ def to_tensor(frame: av.VideoFrame | TensorFrame, device: torch.device | str | N
         if device is not None:
             if isinstance(device, str):
                 device = torch.device(device)
-            if device.type != "cpu" and frame.format.name in {"nv12", "p010le"}:
+            if frame.format.name in {"nv12", "p010le"} and is_discrete_device(device):
                 # Optimized path: Upload YUV to GPU via DLPack and convert to RGB on GPU
                 return ColorTransform.to_tensor(frame, device=device).squeeze(0)
 

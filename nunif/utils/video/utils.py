@@ -7,12 +7,18 @@ import torch
 IS_ROCM = getattr(torch.version, "hip", None) is not None
 
 
-def is_nvidia_gpu(device: torch.device | str | None) -> bool:
+def is_nvidia_gpu(device: torch.device | None) -> bool:
     if device is None:
         return False
-    if isinstance(device, str):
-        return "cuda" in device and not IS_ROCM
     return device.type == "cuda" and not IS_ROCM
+
+
+def is_discrete_device(device: torch.device | None) -> bool:
+    if device is None:
+        return False  # assume cpu
+
+    # mps assumes unified memory model
+    return device.type in {"cuda", "xpu"}
 
 
 VIDEO_EXTENSIONS = [
