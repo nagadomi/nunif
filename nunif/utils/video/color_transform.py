@@ -97,7 +97,7 @@ class ColorTransform:
     }
 
     # Formats supported by PyAV VideoPlane.__dlpack__
-    DLPACK_SUPPORTED_FORMATS: Set[str] = {"cuda"}
+    DLPACK_SUPPORTED_FORMATS: Set[str] = {"cuda", "nv12", "p010le"}
 
     # Formats verified by testing
     VERIFIED_FORMATS: Set[str] = {"yuv420p", "yuv444p", "yuv420p10le"}
@@ -121,20 +121,22 @@ class ColorTransform:
         for i, plane in enumerate(frame.planes):
             t: torch.Tensor | None = None
             if src_fmt in ColorTransform.DLPACK_SUPPORTED_FORMATS and hasattr(plane, "__dlpack__"):
-                if i == 0:
+                if i == 0 and src_fmt == "cuda":
                     # Ensure hardware decoder has finished writing to the planes.
                     if torch.cuda.default_stream() != torch.cuda.current_stream():
                         # hwcontext_cuda uses default stream(0x0)
                         torch.cuda.default_stream().synchronize()
 
                 t = torch.from_dlpack(plane.__dlpack__())
-
+                if src_fmt != "cuda":
+                    t = t.to(device)
                 # TODO: Use sw_formt
                 if t.dtype == torch.uint8:
                     fmt = "nv12"
                 elif t.dtype == torch.uint16:
                     fmt = "p010le"
             else:
+
                 stride: int = plane.line_size
                 is_16bit: bool = (
                     fmt in ColorTransform.BIT10_FORMATS
@@ -719,18 +721,19 @@ class OutputTransform:
         #       while with uint16, not calling contiguous() is faster.
         #       This is not a placebo level difference,
         #       but a very large one, 16 FPS vs 30 FPS.
+        x = x.clamp(0.0, 1.0)
         if self.use_16bit:
             dtype = torch.uint16
             value_scale = 65535.0
-            x_nd = (x.permute(1, 2, 0) * value_scale).round().to(dtype).detach().cpu().numpy()
+            x_nd = (x.permute(1, 2, 0) * value_scale + 0.5).to(dtype).detach().cpu().numpy()
         else:
             dtype = torch.uint8
             value_scale = 255.0
-            x_nd = (x.permute(1, 2, 0).contiguous() * value_scale).round().to(dtype).detach().cpu().numpy()
+            x_nd = (x.permute(1, 2, 0).contiguous() * value_scale + 0.5).to(dtype).detach().cpu().numpy()
 
         return self.from_ndarray(x_nd)
 
-    def is_dlpack_supported(self, x: torch.Tensor) -> bool:
+    def is_dlpack_supported(self, x) -> bool:
         return (
             is_nvidia_gpu(x.device)  # TODO: Remove this condition for xpu/mps
             and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuvj420p", "yuv420p10le"}
@@ -811,6 +814,48 @@ class OutputTransform:
 
     def __call__(self, x: av.VideoFrame | torch.Tensor | np.ndarray | TensorFrame) -> av.VideoFrame:
         return self.transform(x)
+
+
+def get_source_dtype(frame: av.VideoFrame | TensorFrame) -> torch.dtype:
+    if isinstance(frame, TensorFrame):
+        use_16bit = frame.use_16bit
+    elif isinstance(frame, av.VideoFrame):
+        use_16bit = frame.format.components[0].bits > 8
+    else:
+        raise ValueError(f"{type(frame)} not supported")
+
+    return torch.uint16 if use_16bit else torch.uint8
+
+
+def to_ndarray(frame: av.VideoFrame) -> np.ndarray:
+    from .utils import RGB_8BIT, RGB_16BIT
+
+    use_16bit = frame.format.components[0].bits > 8
+    format = RGB_16BIT if use_16bit else RGB_8BIT
+    return frame.to_ndarray(format=format)
+
+
+def to_tensor(frame: av.VideoFrame | TensorFrame, device: torch.device | str | None = None) -> torch.Tensor:
+    if isinstance(frame, TensorFrame):
+        x = frame.to_chw()
+        if device is not None:
+            x = x.to(device)
+        return x
+    elif isinstance(frame, av.VideoFrame):
+        if device is not None:
+            if isinstance(device, str):
+                device = torch.device(device)
+            if device.type != "cpu" and frame.format.name in {"nv12", "p010le"}:
+                # Optimized path: Upload YUV to GPU via DLPack and convert to RGB on GPU
+                return ColorTransform.to_tensor(frame, device=device).squeeze(0)
+
+        x = torch.from_numpy(to_ndarray(frame))
+        if device is not None:
+            x = x.to(device)
+        # CHW float32
+        return x.permute(2, 0, 1).contiguous().float() / float(torch.iinfo(x.dtype).max)
+    else:
+        raise ValueError(f"{type(frame)} not supported")
 
 
 def setup_color_transform(

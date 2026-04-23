@@ -121,7 +121,12 @@ class VideoPreprocessor:
             if vf:
                 self.video_filter = AVFilterGraph(stream_pix_fmt, sw_format, vf, deny_filters)
             if input_reformat_options is not None:
-                dst_pix_fmt: str = sw_format.guess_rgb_pix_fmt()
+                # Optimized transfer for software decoders when device is GPU
+                dlpack_pix_fmt = sw_format.guess_sw_dlpack_pix_fmt()
+                if device.type == "cuda" and dlpack_pix_fmt is not None:
+                    dst_pix_fmt: str = dlpack_pix_fmt
+                else:
+                    dst_pix_fmt = sw_format.guess_rgb_pix_fmt()
 
                 def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
                     dst_color_trc = (

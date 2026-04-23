@@ -1,48 +1,12 @@
 from concurrent.futures import ThreadPoolExecutor
 from types import GeneratorType
 
-import av
 import torch
 
-from .color_transform import TensorFrame
-from .utils import RGB_8BIT, RGB_16BIT
+from .color_transform import to_tensor
 
-
-def to_tensor(frame, device=None):
-    if isinstance(frame, TensorFrame):
-        x = frame.to_chw()
-        if device is not None:
-            x = x.to(device)
-        return x
-    elif isinstance(frame, av.VideoFrame):
-        x = torch.from_numpy(to_ndarray(frame))
-        if device is not None:
-            x = x.to(device)
-        # CHW float32
-        return x.permute(2, 0, 1).contiguous().float() / float(torch.iinfo(x.dtype).max)
-    else:
-        raise ValueError(f"{type(frame)} not supported")
-
-
-def to_ndarray(frame):
-    use_16bit = frame.format.components[0].bits > 8
-    if use_16bit:
-        format = RGB_16BIT
-    else:
-        format = RGB_8BIT
-    return frame.to_ndarray(format=format)
-
-
-def get_source_dtype(frame):
-    if isinstance(frame, TensorFrame):
-        use_16bit = frame.use_16bit
-    elif isinstance(frame, av.VideoFrame):
-        use_16bit = frame.format.components[0].bits > 8
-
-    if use_16bit:
-        return torch.uint16
-    else:
-        return torch.uint8
+# These functions are moved to color_transform.py to avoid circular imports
+# and centralized conversion logic.
 
 
 class _DummyFuture:

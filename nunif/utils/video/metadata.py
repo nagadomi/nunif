@@ -394,6 +394,13 @@ class VideoMetadata(MediaMetadata):
         else:
             return stream_pix_fmt
 
+    def guess_sw_dlpack_pix_fmt(self) -> str | None:
+        if self.format.name in {"yuv420p", "yuvj420p"}:
+            return "nv12"
+        elif self.format.name == "yuv420p10le":
+            return "p010le"
+        return None
+
     def guess_rgb_pix_fmt(self) -> str:
         if self.use_16bit:
             return RGB_16BIT

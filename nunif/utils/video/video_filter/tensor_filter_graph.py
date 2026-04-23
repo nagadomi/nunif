@@ -129,14 +129,14 @@ def _test() -> None:
     print(f"\nTesting conditional scale: {vf_scale}")
     graph_scale = TensorFilterGraph(vf_scale)
     # Reset frame for fresh test
-    frame.planes = torch.zeros((1, 3, 2160, 3840)) # 4K input
+    frame.planes = torch.zeros((1, 3, 2160, 3840))  # 4K input
     output_frame_scale = graph_scale.update(frame)
     if output_frame_scale is not None:
         print(f"Input size: {frame.planes.shape[-1]}x{frame.planes.shape[-2]}")
         print(f"Output size: {output_frame_scale.planes.shape[-1]}x{output_frame_scale.planes.shape[-2]}")
         # 2160 > 1080, so it should scale to 1080 height
         assert output_frame_scale.planes.shape[-2] == 1080
-        assert output_frame_scale.planes.shape[-1] == 1920 # Aspect ratio preserved
+        assert output_frame_scale.planes.shape[-1] == 1920  # Aspect ratio preserved
 
     # Test conditional scale skip
     vf_scale_skip = "scale=if(gt(ih\\,3000)\\,1280\\,iw):ih"
