@@ -50,6 +50,7 @@ class VideoPreprocessor:
     input_transform: InputTransform | None
     video_filter: TensorFilterGraph | AVFilterGraph | None
     reformatter: Any | None
+    use_tensor_frame: bool
 
     def __init__(
         self,
@@ -77,7 +78,7 @@ class VideoPreprocessor:
             color_trc=sw_format.color_trc,
             output_colorspace=output_colorspace_mode,
         )
-        use_tensor_frame = should_use_tensor_frame(sw_format.format.name, hwaccel, device)
+        self.use_tensor_frame = should_use_tensor_frame(sw_format.format.name, hwaccel, device)
 
         if use_hdr2sdr:
             vf = _update_hdr2sdr_video_filter(
@@ -86,7 +87,7 @@ class VideoPreprocessor:
                 color_trc=sw_format.color_trc,
                 output_colorspace=output_colorspace_mode,
             )
-            if use_tensor_frame:
+            if self.use_tensor_frame:
                 (
                     _,
                     colorspace,
@@ -101,7 +102,7 @@ class VideoPreprocessor:
                 raise RuntimeError("guessed_rate/time_base is None")
             self.fps_filter = FPSFilter(fps, sw_format.time_base, sw_format.guessed_rate)
 
-        if use_tensor_frame:
+        if self.use_tensor_frame:
             assert input_reformat_options is not None
             self.input_transform = InputTransform(
                 src_pix_fmt=sw_format.format.name,
@@ -119,49 +120,43 @@ class VideoPreprocessor:
             if vf:
                 self.video_filter = TensorFilterGraph(vf, deny_filters=deny_filters)
         else:
+            if input_reformat_options is None:
+                raise ValueError("input_reformat_options is required when not using tensor frames")
+
             if vf:
                 self.video_filter = AVFilterGraph(stream_pix_fmt, sw_format, vf, deny_filters)
-            if input_reformat_options is not None:
-                # Optimized transfer for software decoders when device is GPU
-                dlpack_pix_fmt = sw_format.guess_sw_dlpack_pix_fmt()
-                if dlpack_pix_fmt is not None and is_discrete_device(device):
-                    dst_pix_fmt: str = dlpack_pix_fmt
-                else:
-                    dst_pix_fmt = sw_format.guess_rgb_pix_fmt()
 
-                def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
-                    dst_color_trc = (
-                        None
-                        if input_reformat_options["dst_color_trc"] == frame.color_trc
-                        else input_reformat_options["dst_color_trc"]
-                    )
-                    dst_color_primaries = (
-                        None
-                        if input_reformat_options["dst_color_primaries"] == frame.color_primaries
-                        else input_reformat_options["dst_color_primaries"]
-                    )
-                    new_frame = self.shared_reformatter.reformat(
-                        frame,
-                        format=dst_pix_fmt,
-                        src_colorspace=input_reformat_options["src_colorspace"],
-                        src_color_range=input_reformat_options["src_color_range"],
-                        dst_colorspace=input_reformat_options["dst_colorspace"],
-                        dst_color_primaries=dst_color_primaries,
-                        dst_color_trc=dst_color_trc,
-                        dst_color_range=input_reformat_options["dst_color_range"],
-                    )
-                    return new_frame
+            # Optimized transfer for software decoders when device is GPU
+            dlpack_pix_fmt = sw_format.guess_sw_dlpack_pix_fmt()
+            if dlpack_pix_fmt is not None and is_discrete_device(device):
+                dst_pix_fmt: str = dlpack_pix_fmt
+            else:
+                dst_pix_fmt = sw_format.guess_rgb_pix_fmt()
 
-                self.reformatter = _reformatter
+            def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
+                dst_color_trc = (
+                    None
+                    if input_reformat_options["dst_color_trc"] == frame.color_trc
+                    else input_reformat_options["dst_color_trc"]
+                )
+                dst_color_primaries = (
+                    None
+                    if input_reformat_options["dst_color_primaries"] == frame.color_primaries
+                    else input_reformat_options["dst_color_primaries"]
+                )
+                new_frame = self.shared_reformatter.reformat(
+                    frame,
+                    format=dst_pix_fmt,
+                    src_colorspace=input_reformat_options["src_colorspace"],
+                    src_color_range=input_reformat_options["src_color_range"],
+                    dst_colorspace=input_reformat_options["dst_colorspace"],
+                    dst_color_primaries=dst_color_primaries,
+                    dst_color_trc=dst_color_trc,
+                    dst_color_range=input_reformat_options["dst_color_range"],
+                )
+                return new_frame
 
-    def _apply_reformat(self, frame: av.VideoFrame) -> av.VideoFrame | TensorFrame:
-        if self.input_transform is not None:
-            # frame is av.VideoFrame -> TensorFrame
-            return self.input_transform(frame)
-        if self.reformatter is not None:
-            # frame is av.VideoFrame -> av.VideoFrame (reformatted)
-            return self.reformatter(frame)
-        return frame
+            self.reformatter = _reformatter
 
     def update(self, frame: av.VideoFrame) -> List[av.VideoFrame | TensorFrame]:
         if self.fps_filter is not None:
@@ -171,21 +166,27 @@ class VideoPreprocessor:
 
         out_frames: List[av.VideoFrame | TensorFrame] = []
         for frame in frames:
-            if self.video_filter is not None:
-                if self.input_transform is not None:
-                    t_frame: TensorFrame = self.input_transform(frame)
+            if self.use_tensor_frame:
+                # Tensor path: InputTransform (reformat) -> TensorFilterGraph
+                assert self.input_transform is not None
+                t_frame = self.input_transform(frame)
+                if self.video_filter is not None:
                     assert isinstance(self.video_filter, TensorFilterGraph)
                     res_t = self.video_filter.update(t_frame)
                     if res_t is not None:
                         out_frames.append(res_t)
                 else:
+                    out_frames.append(t_frame)
+            else:
+                # AV path: AVFilterGraph -> Reformatter
+                assert self.reformatter is not None
+                if self.video_filter is not None:
                     assert isinstance(self.video_filter, AVFilterGraph)
                     res_v = self.video_filter.update(frame)
                     if res_v is not None:
-                        out_frames.append(res_v)
-            else:
-                # No video filters, just apply reformat (tensor or software)
-                out_frames.append(self._apply_reformat(frame))
+                        out_frames.append(self.reformatter(res_v))
+                else:
+                    out_frames.append(self.reformatter(frame))
 
         return out_frames
 
@@ -197,25 +198,36 @@ class VideoPreprocessor:
 
         out_frames: List[av.VideoFrame | TensorFrame] = []
         for frame in frames:
-            if self.video_filter is not None:
-                if self.input_transform is not None:
-                    t_frame: TensorFrame = self.input_transform(frame)
+            if self.use_tensor_frame:
+                # Tensor path
+                assert self.input_transform is not None
+                t_frame = self.input_transform(frame)
+                if self.video_filter is not None:
                     assert isinstance(self.video_filter, TensorFilterGraph)
                     res_t = self.video_filter.update(t_frame)
                     if res_t is not None:
                         out_frames.append(res_t)
                 else:
+                    out_frames.append(t_frame)
+            else:
+                # AV path
+                assert self.reformatter is not None
+                if self.video_filter is not None:
                     assert isinstance(self.video_filter, AVFilterGraph)
                     res_v = self.video_filter.update(frame)
                     if res_v is not None:
-                        out_frames.append(res_v)
-            else:
-                out_frames.append(self._apply_reformat(frame))
+                        out_frames.append(self.reformatter(res_v))
+                else:
+                    out_frames.append(self.reformatter(frame))
 
         if self.video_filter is not None:
             # Final output from filters
             final_frames: List[Any] = self.video_filter.flush()
             for f_final in final_frames:
-                out_frames.append(f_final)
+                if self.use_tensor_frame:
+                    out_frames.append(f_final)
+                else:
+                    assert self.reformatter is not None
+                    out_frames.append(self.reformatter(f_final))
 
         return out_frames
