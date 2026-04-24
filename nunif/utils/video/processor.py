@@ -17,7 +17,7 @@ from .color_transform import (
     configure_video_codec,
     setup_color_transform,
 )
-from .hwaccel import HW_DEVICES, create_hwaccel
+from .hwaccel import HW_DEVICES, create_hwaccel, get_compatible_hwaccel
 from .metadata import (
     AudioMetadata,
     VideoMetadata,
@@ -216,6 +216,7 @@ def _process_video(
         device = torch.device(device)
 
     sw_format = VideoMetadata.from_file(input_path)
+    hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
@@ -583,6 +584,7 @@ def hook_frame(
         device = torch.device(device)
 
     sw_format = VideoMetadata.from_file(input_path)
+    hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
@@ -705,6 +707,7 @@ def sample_frames(
         device = torch.device(device)
 
     sw_format = VideoMetadata.from_file(input_path)
+    hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )

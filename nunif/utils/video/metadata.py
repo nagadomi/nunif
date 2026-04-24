@@ -379,18 +379,18 @@ class VideoMetadata(MediaMetadata):
         if stream_pix_fmt in HW_PIX_FORMATS:
             if self.format.name in {"yuv420p", "yuvj420p"}:
                 return "nv12"
+            elif self.format.name in {"yuv422p", "yuvj422p"}:
+                return "nv16"
             elif self.format.name == "yuv420p10le":
                 return "p010le"
+            elif self.format.name == "yuv420p12le":
+                return "p012le"
             elif self.format.name == "yuv420p16le":
                 return "p016le"
             if self.format.name in {"gbrp"}:
                 return "bgr0"
             else:
-                if self.format.name in {"yuv444p", "yuv422p"}:
-                    return self.format.name
-                raise NotImplementedError(
-                    f"Unsupported format conversion: format={self.format.name}, hw format={stream_pix_fmt}"
-                )
+                return self.format.name
         else:
             return stream_pix_fmt
 

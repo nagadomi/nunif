@@ -68,5 +68,16 @@ def create_hwaccel(
         )
 
 
-def should_use_tensor_frame(sw_pix_fmt: str, hwaccel: str | None, device: torch.device):
-    return sw_pix_fmt in {"yuv420p", "yuv420p10le"} and hwaccel == "cuda" and is_nvidia_gpu(device)
+def should_use_tensor_frame(hwaccel: str | None, sw_pix_fmt: str, stream_pix_fmt: str | None, device: torch.device):
+    return (
+        hwaccel == "cuda"
+        and sw_pix_fmt in {"yuv420p", "yuvj420p", "yuv420p10le"}
+        and stream_pix_fmt == "cuda"
+        and is_nvidia_gpu(device)
+    )
+
+
+def get_compatible_hwaccel(hwaccel: str | None, sw_pix_fmt: str, device: torch.device) -> str | None:
+    if hwaccel == "cuda" and not (sw_pix_fmt in {"yuv420p", "yuvj420p", "yuv420p10le"} and is_nvidia_gpu(device)):
+        return "cuda_hwdownload"
+    return hwaccel

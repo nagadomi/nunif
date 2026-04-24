@@ -78,8 +78,9 @@ class VideoPreprocessor:
             color_trc=sw_format.color_trc,
             output_colorspace=output_colorspace_mode,
         )
-        self.use_tensor_frame = should_use_tensor_frame(sw_format.format.name, hwaccel, device)
-
+        self.use_tensor_frame = should_use_tensor_frame(
+            hwaccel, sw_pix_fmt=sw_format.format.name, stream_pix_fmt=stream_pix_fmt, device=device
+        )
         if use_hdr2sdr:
             vf = _update_hdr2sdr_video_filter(
                 vf,
