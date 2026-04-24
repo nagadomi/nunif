@@ -19,10 +19,11 @@ class AVFilterGraph:
     ):
         self.pix_fmt = sw_format.guess_pix_fmt(stream_pix_fmt)
         self.sw_format = sw_format
-        self.graph = av.filter.Graph()
         deny_filters = deny_filters or []
         video_filters = self.parse_vf_option(vf)
         video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
+        self.graph = av.filter.Graph()
+        self.graph.threads = 1
         self.build_graph(
             self.graph,
             pix_fmt=self.pix_fmt,
