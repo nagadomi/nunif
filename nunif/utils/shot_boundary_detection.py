@@ -86,7 +86,7 @@ def detect_boundary(
         video_file, callback_pool,
         config_callback=_fps_config(max_fps),
         title=tqdm_title or "Shot Boundary Detection",
-        vf="scale=48:27:flags=bilinear",  # input size for TransNetV2
+        vf="scale=48:27:flags=area",  # input size for TransNetV2
         start_time=start_time, end_time=end_time,
         stop_event=stop_event,
         suspend_event=suspend_event,
