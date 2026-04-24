@@ -661,8 +661,6 @@ def hook_frame(
                         consume_generator(frame_callback(out_frame))
                         pbar.update(1)
 
-            if i % 100 == 0:
-                gc.collect()
             if suspend_event is not None:
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
