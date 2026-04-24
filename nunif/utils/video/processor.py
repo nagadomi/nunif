@@ -313,8 +313,11 @@ def _process_video(
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
 
+    enable_gc_collect = hwaccel in {"cuda"}
+    frame_count = 0
+    GC_INTERVAL = 32
     try:
-        for i, packet in enumerate(input_container.demux(streams)):
+        for packet in input_container.demux(streams):
             if packet.pts is not None:
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
@@ -322,6 +325,8 @@ def _process_video(
                 for frame in safe_decode(packet, strict=disable_software_fallback):
                     frame = fix_frame_color_av17(frame, sw_format)
                     for out_frame in video_preprocessor.update(frame):
+                        if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
+                            gc.collect()
                         for new_frame in get_new_frames(frame_callback(out_frame)):
                             reformatted_frame = output_reformatter(new_frame)
                             if uninitialized:
@@ -358,11 +363,11 @@ def _process_video(
             if stop_event is not None and stop_event.is_set():
                 break
 
-            if i % 100 == 0:
-                gc.collect()
-
         for out_frame in video_preprocessor.flush():
             for new_frame in get_new_frames(frame_callback(out_frame)):
+                if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
+                    gc.collect()
+
                 ref_frame = output_reformatter(new_frame)
                 if uninitialized:
                     set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
@@ -374,6 +379,9 @@ def _process_video(
                 pbar.update(1)
 
         for new_frame in get_new_frames(frame_callback(None)):
+            if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
+                gc.collect()
+
             ref_frame = output_reformatter(new_frame)
             if uninitialized:
                 set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
