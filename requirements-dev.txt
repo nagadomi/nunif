@@ -15,6 +15,7 @@ torch-fidelity
 
 flake8
 mypy
+ruff
 
 # typing
 scipy-stubs
