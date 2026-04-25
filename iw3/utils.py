@@ -1379,19 +1379,20 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
 
     def _postprocess(depths):
         for depth in depths:
-            x, pts = src_queue.pop(0)
+            x, x_shape, pts = src_queue.pop(0)
 
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
             if args.export_depth_fit:
-                depth = TF.resize(depth, size=(x.shape[0], x.shape[1]),
+                depth = TF.resize(depth, size=(x_shape[-2], x_shape[-1]),
                                   interpolation=InterpolationMode.BILINEAR, antialias=True)
             seq = str(pts).zfill(8)
             futures.append(
                 pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png"))
             )
             if not args.export_depth_only:
-                im = Image.fromarray(x)
+                assert x is not None
+                im = Image.fromarray(x.cpu_buffer().permute(1, 2, 0).numpy())
                 futures.append(
                     pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png"))
                 )
@@ -1408,11 +1409,13 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
         if frame is None:
             # flush
             return _postprocess(depth_model.flush_minmax_normalize())
+        if args.export_depth_only:
+            x = VU.to_tensor(frame, device=args.state["device"])
+            src_queue.append((None, x.shape, frame.pts))
+        else:
+            x = VU.to_tensor(frame, device=args.state["device"])
+            src_queue.append((VU.OffloadFrame(x, torch.uint8), x.shape, frame.pts))
 
-        frame_np = frame.to_ndarray(format="rgb24")
-        frame_hwc8 = torch.from_numpy(frame_np)
-        src_queue.append((frame_np, frame.pts))
-        x = frame_hwc8.to(args.state["device"]).permute(2, 0, 1) / 255.0
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
                                   enable_amp=not args.disable_amp,
                                   edge_dilation=edge_dilation,
@@ -1442,19 +1445,20 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
 
     def _postprocess(depth_list):
         for depth in depth_list:
-            x, pts = src_queue.pop(0)
+            x, x_shape, pts = src_queue.pop(0)
 
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
             if args.export_depth_fit:
-                depth = TF.resize(depth, size=(x.shape[0], x.shape[1]),
+                depth = TF.resize(depth, size=(x_shape[-2], x_shape[-1]),
                                   interpolation=InterpolationMode.BILINEAR, antialias=True)
             seq = str(pts).zfill(8)
             futures.append(
                 pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png"))
             )
             if not args.export_depth_only:
-                im = Image.fromarray(x.numpy())
+                assert x is not None
+                im = Image.fromarray(x.cpu_buffer().permute(1, 2, 0).numpy())
                 futures.append(
                     pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png"))
                 )
@@ -1467,11 +1471,7 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
         return None
 
     def _batch_infer():
-        x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
-        x_srcs = batch_queue
-
-        for i, x_src in enumerate(x_srcs):
-            src_queue.append((x_src, pts_queue[i]))
+        x = torch.stack(batch_queue)
 
         depth_list = depth_model.infer_with_normalize(
             x, pts_queue, segment_pts,
@@ -1496,9 +1496,13 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
                 depth_aa=args.depth_aa)
             _postprocess(depth_list)
         else:
-            frame_hwc8 = torch.from_numpy(frame.to_ndarray(format="rgb24"))
-            batch_queue.append(frame_hwc8)
+            x = VU.to_tensor(frame, device=args.state["device"])
+            batch_queue.append(x)
             pts_queue.append(frame.pts)
+            if args.export_depth_only:
+                src_queue.append((None, x.shape, frame.pts))
+            else:
+                src_queue.append((VU.OffloadFrame(x, dtype=torch.uint8), x.shape, frame.pts))
 
             if len(batch_queue) == args.batch_size:
                 _batch_infer()
@@ -1640,9 +1644,6 @@ def export_video(input_filename, output_dir, args, title=None):
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
 
     max_workers = max(args.max_workers, 8)
-    hwaccel = args.hwaccel
-    if hwaccel == "cuda":
-        hwaccel = "cuda_hwdownload"
     with depth_model.compile_context(enabled=args.compile), PoolExecutor(max_workers=max_workers) as pool:
         if args.state["depth_model"].get_name() == "VideoDepthAnything":
             frame_callback = bind_export_vda_frame_callback(
@@ -1675,7 +1676,7 @@ def export_video(input_filename, output_dir, args, title=None):
             start_time=args.start_time,
             end_time=args.end_time,
             device=args.state["device"],
-            hwaccel=hwaccel,
+            hwaccel=args.hwaccel,
             disable_software_fallback=args.disable_software_fallback
         )
     config.save(config_file)
