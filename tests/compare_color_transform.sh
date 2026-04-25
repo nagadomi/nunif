@@ -8,7 +8,7 @@
 
 if [ "$#" != 3 ]; then
     echo "usage: $0 <repo1_path> <repo2_path> <test_video_path>"
-    echo "example: ./tests/color_transform_compare_2604.sh ../nunif-old ./ ./tmp/test_videos/4k_hlg_5sec.mkv"
+    echo "example: ./tests/compare_color_transform.sh ../nunif-old ./ ./tmp/test_videos/4k_hlg_5sec.mkv"
     exit 1
 fi
 
@@ -17,8 +17,8 @@ REPO1_PATH=$(realpath "$1")
 REPO2_PATH=$(realpath "$2")
 VIDEO_PATH=$(realpath "$3")
 
-OUTPUT1_DIR="${SCRIPT_DIR}/data/color_transform_compare/repo1"
-OUTPUT2_DIR="${SCRIPT_DIR}/data/color_transform_compare/repo2"
+OUTPUT1_DIR="${SCRIPT_DIR}/data/compare_color_transform/repo1"
+OUTPUT2_DIR="${SCRIPT_DIR}/data/compare_color_transform/repo2"
 
 CURRENT_AV_VERSION=$(pip show av | grep Version | awk '{print $2}')
 REPO1_AV="av==15.1.0"
