@@ -1370,8 +1370,12 @@ def get_resume_seq(depth_dir, rgb_dir):
 
 
 def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
+    batch_queue = []
+    pts_queue = []
     src_queue = []
     futures = []
+    batch_size = 1 if args.low_vram else args.batch_size
+
     if args.export_disparity:
         edge_dilation = args.edge_dilation
     else:
@@ -1404,29 +1408,41 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
 
         return None
 
+    def _batch_infer():
+        x = torch.stack(batch_queue)
+        reset_ema = [t in segment_pts for t in pts_queue]
+        depth_batch = depth_model.infer(
+            x,
+            tta=args.tta,
+            low_vram=args.low_vram,
+            enable_amp=not args.disable_amp,
+            edge_dilation=edge_dilation,
+            depth_aa=args.depth_aa)
+        depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+
+        pts_queue.clear()
+        batch_queue.clear()
+
+        return _postprocess(depth_list)
+
     @torch.inference_mode()
     def _frame_callback(frame):
         if frame is None:
             # flush
+            if batch_queue:
+                _batch_infer()
             return _postprocess(depth_model.flush_minmax_normalize())
+
+        x = VU.to_tensor(frame, device=args.state["device"])
+        batch_queue.append(x)
+        pts_queue.append(frame.pts)
         if args.export_depth_only:
-            x = VU.to_tensor(frame, device=args.state["device"])
             src_queue.append((None, x.shape, frame.pts))
         else:
-            x = VU.to_tensor(frame, device=args.state["device"])
-            src_queue.append((VU.OffloadFrame(x, torch.uint8), x.shape, frame.pts))
+            src_queue.append((VU.OffloadFrame(x, dtype=torch.uint8), x.shape, frame.pts))
 
-        depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
-                                  enable_amp=not args.disable_amp,
-                                  edge_dilation=edge_dilation,
-                                  depth_aa=args.depth_aa)
-        depth = depth_model.minmax_normalize_chw(depth)
-        depths = [depth] if depth is not None else []
-        if frame.pts in segment_pts:
-            depths += depth_model.flush_minmax_normalize()
-            depth_model.reset_state()
-
-        return _postprocess(depths)
+        if len(batch_queue) == batch_size:
+            _batch_infer()
 
     return _frame_callback
 
