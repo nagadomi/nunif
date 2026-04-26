@@ -158,7 +158,7 @@ HWAccel (`--hwaccel`) specifies which hardware decoder to use.
 |:-------:|:----------------|
 | _None_  | Uses the software decoder.
 | `cuda`  | Uses NVDEC for NVIDIA devices. Supports only `yuv420p` and `yuv420p10le`. With this option, standard ffmpeg video filters(`--vf` option) cannot be used and are limited to the following: `scale`, `crop`, `transpose`, `lut3d`, `bob` (super simple deinterlace).
-| `cuda_hwdonwload`  | Uses NVDEC for NVIDIA devices, but frames are downloaded to CPU memory. Standard ffmpeg video filters can be used. This may be slower than the software decoder, but CPU usage will be lower.
+| `cuda_hwdownload`  | Uses NVDEC for NVIDIA devices, but frames are downloaded to CPU memory. Standard ffmpeg video filters can be used. This may be slower than the software decoder, but CPU usage will be lower.
 | _Others_ | Basically the same as `cuda_hwdownload`. Frames are hardware-decoded and then downloaded to CPU memory.
 
 When `Software Fallback` is enabled (when `--disable-software-fallback` is not specified), unsupported formats will fall back to the software decoder.
