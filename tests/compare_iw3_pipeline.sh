@@ -30,6 +30,7 @@ REPOS=("${REPO1_PATH}" "${REPO2_PATH}")
 OUTPUTS=("${OUTPUT1_DIR}" "${OUTPUT2_DIR}")
 AVS=("${REPO1_AV}" "${REPO2_AV}")
 
+
 for i in "${!REPOS[@]}"
 do
     repo_path="${REPOS[$i]}"
@@ -70,6 +71,18 @@ do
     output_file="${output_dir}/inpaint_vda.mkv"
     python -m iw3.cli -y -i ${VIDEO_PATH} -o ${output_file} --depth-model VDA_S  --method mlbw_l2_inpaint --ema-normalize  --ema-buffer 30 --batch-size 2 --scene-detect --scene-cache-dir ${CACHE_DIR} ${COMMON_OPTIONS} ${extra_args}
 
+    # export
+
+    output_file="${output_dir}/export"
+    python -m iw3.cli -y -i ${VIDEO_PATH} -o ${output_file} --export --depth-model Any_V2_S  --ema-normalize  --ema-buffer 30 --batch-size 2 --scene-detect --scene-cache-dir ${CACHE_DIR} ${COMMON_OPTIONS} ${extra_args}
+    output_file="${output_dir}/export_depth_only"
+    python -m iw3.cli -y -i ${VIDEO_PATH} -o ${output_file} --export-disparity --export-depth-only --depth-model Any_V2_S  --ema-normalize  --ema-buffer 30 --batch-size 2 --scene-detect --scene-cache-dir ${CACHE_DIR} ${COMMON_OPTIONS} ${extra_args}
+
+    output_file="${output_dir}/export_vda"
+    python -m iw3.cli -y -i ${VIDEO_PATH} -o ${output_file} --export --depth-model VDA_S  --ema-normalize  --ema-buffer 30 --batch-size 2 --scene-detect --scene-cache-dir ${CACHE_DIR} ${COMMON_OPTIONS} ${extra_args}
+    output_file="${output_dir}/export_vda_depth_only"
+    python -m iw3.cli -y -i ${VIDEO_PATH} -o ${output_file} --export-disparity --export-depth-only --depth-model VDA_S  --ema-normalize  --ema-buffer 30 --batch-size 2 --scene-detect --scene-cache-dir ${CACHE_DIR} ${COMMON_OPTIONS} ${extra_args}
+
     set +x
 done
 
@@ -108,5 +121,23 @@ do
     fi
 done
 
+output_dirs=(
+    export
+    export_depth_only
+    export_vda
+    export_vda_depth_only
+)
+set -x
+for dir in "${output_dirs[@]}"
+do
+    video_name="${VIDEO_PATH##*/}"
+    video_name="${video_name%.*}"
+
+    dir1="${OUTPUT1_DIR}/${dir}/${video_name}/depth"
+    dir2="${OUTPUT2_DIR}/${dir}/${video_name}/depth"
+
+    python -m nunif.cli.diff_image -i "${dir1}" "${dir2}"
+done
+set +x
 
 pip3 install "av==${CURRENT_AV_VERSION}"
