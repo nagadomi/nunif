@@ -12,3 +12,23 @@ dctorch
 schedulefree
 # https://github.com/toshas/torch-fidelity
 torch-fidelity
+
+flake8
+mypy
+ruff
+
+# typing
+scipy-stubs
+types-PyYAML
+types-Pygments
+types-colorama
+types-defusedxml
+types-networkx
+types-protobuf
+types-psutil
+types-python-xlib
+types-requests
+types-tabulate
+types-tqdm
+types-ujson
+types-PySocks

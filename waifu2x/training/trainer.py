@@ -92,7 +92,7 @@ LOSS_FUNCTIONS = {
     "aux_lbp": lambda: AuxiliaryLoss((YLBP(), YLBP()), weight=(1.0, 0.5)),
     "aux_alex11": lambda: AuxiliaryLoss((
         ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1))),
-        ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))), weights=(1.0, 0.5)),
+        ClampLoss(LuminanceWeightedLoss(Alex11Loss(in_channels=1)))), weight=(1.0, 0.5)),
     "aux_charbonnier": lambda: AuxiliaryLoss((ClampLoss(CharbonnierLoss()), ClampLoss(CharbonnierLoss())), weight=(1.0, 0.5)),
     "aux_y_charbonnier": lambda: AuxiliaryLoss((
         ClampLoss(LuminanceWeightedLoss(CharbonnierLoss())),

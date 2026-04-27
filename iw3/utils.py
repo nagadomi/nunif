@@ -20,7 +20,7 @@ from nunif.utils.pil_io import load_image_simple
 import nunif.utils.shot_boundary_detection as SBD
 from nunif.models import compile_model
 import nunif.utils.video as VU
-import nunif.utils.pyav_extra as pyav_extra
+from nunif.utils.video.hdr_metadata import get_hdr_metadata
 from nunif.utils.ui import is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir, TorchHubDir
 from nunif.utils.ticket_lock import TicketLock
 from nunif.utils.autocrop import AutoCrop, AutoCropDummy
@@ -185,7 +185,7 @@ def make_video_codec_option(args, input_path=None):
                 x265_params.append(f"level-idc={int(float(args.profile_level) * 10)}")
 
             if (input_path is not None and args.colorspace in {"auto", "bt2020-tv", "bt2020-pq-tv"}):
-                hdr_metadata = pyav_extra.get_hdr_metadata(input_path)
+                hdr_metadata = get_hdr_metadata(input_path)
                 x265_params += hdr_metadata.to_x265_params()
 
             options["x265-params"] = ":".join(x265_params)
@@ -201,6 +201,12 @@ def make_video_codec_option(args, input_path=None):
             options["qp"] = str(args.crf)
             if torch.cuda.is_available() and args.gpu[0] >= 0:
                 options["gpu"] = str(args.gpu[0])
+    elif args.video_codec in {"h264_qsv", "hevc_qsv"}:
+        options = {
+            "preset": args.preset,
+            "crf": str(args.crf),
+            "global_quality": str(args.crf)
+        }
     elif args.video_codec == "libopenh264":
         # NOTE: It seems libopenh264 does not support most options.
         options = {"b": args.video_bitrate}
@@ -271,22 +277,29 @@ def preprocess_image(x, args):
     return x
 
 
-def hwc_to_chw_float(x, device):
-    src_dtype = x.dtype
-    x = x.to(device)
+def add_preprocess_vf(vf_org, args) -> str:
+    vf = []
 
-    if x.ndim == 3:
-        x = x.permute(2, 0, 1).contiguous()
-    elif x.ndim == 4:
-        x = x.permute(0, 3, 1, 2).contiguous()
+    # Rotation
+    if getattr(args, "rotate_left", False):
+        vf.append("transpose=2")
+    elif getattr(args, "rotate_right", False):
+        vf.append("transpose=1")
+
+    # Max height scaling and even-dimension fix
+    max_h = getattr(args, "max_output_height", None)
+    if max_h is not None:
+        target_h = (max_h // 2) * 2
+        vf.append(f"scale=if(gt(ih\\,{max_h})\\,-2\\,iw):if(gt(ih\\,{max_h})\\,{target_h}\\,ih):flags=bicubic")
+
+    if vf:
+        if vf_org:
+            vf_added = vf_org + "," + ",".join(vf)
+        else:
+            vf_added = ",".join(vf)
+        return vf_added
     else:
-        raise ValueError(f"Unsupported ndim={x.ndim}")
-
-    if not torch.is_floating_point(x):
-        x = x.to(torch.float32)
-        x = x / float(torch.iinfo(src_dtype).max)
-
-    return x
+        return vf_org
 
 
 def apply_divergence(depth, im, args, side_model, reset_pts=None):
@@ -319,17 +332,11 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             im, depth,
             args.divergence, convergence=convergence,
             synthetic_view=args.synthetic_view)
-        if not batch:
-            left_eye = left_eye.squeeze(0)
-            right_eye = right_eye.squeeze(0)
     elif args.method in {"forward", "forward_fill"}:
         left_eye, right_eye = apply_divergence_forward_warp(
             im, depth,
             args.divergence, convergence=convergence,
             method=args.method, synthetic_view=args.synthetic_view, width_base=False)
-        if not batch:
-            left_eye = left_eye.squeeze(0)
-            right_eye = right_eye.squeeze(0)
     elif args.method in {"forward_inpaint", "mlbw_l2_inpaint"}:
         left_eyes = []
         right_eyes = []
@@ -384,8 +391,11 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             preserve_screen_border=args.preserve_screen_border,
             enable_amp=not args.disable_amp,
         )
-        if not batch:
+
+    if not batch:
+        if left_eye is not None:
             left_eye = left_eye.squeeze(0)
+        if right_eye is not None:
             right_eye = right_eye.squeeze(0)
 
     return left_eye, right_eye
@@ -534,7 +544,8 @@ def process_image(x, args, depth_model, side_model, skip_autocrop=None, autocrop
                     break
             if left_eye.ndim == 4:
                 # NOTE: side_model is video inpaint model.
-                #       This may be called from test_callback.
+                #       This may be called from test_callback
+                assert 0, "No longer reaching this block"
                 left_eye = autocrop.uncrop(left_eye[0])
                 right_eye = autocrop.uncrop(right_eye[0])
                 sbs = postprocess_image(left_eye, right_eye, args)
@@ -618,15 +629,13 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     frame_cpu_offload = depth_model.get_ema_buffer_size() > 1
-    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depths, flush):
-        frames = []
         for depth in depths:
             x, pts = src_queue.pop(0)
             reset_pts = [pts in segment_pts]
-            if frame_cpu_offload:
-                x = hwc_to_chw_float(x, device=args.state["device"])
+            if isinstance(x, VU.OffloadFrame):
+                x = x.load(device=args.state["device"])
             if args.debug_depth:
                 out = debug_depth_image(depth, args)
             elif args.rgbd or args.half_rgbd:
@@ -654,40 +663,29 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                     o[0, 0:8, :] = 1.0
 
             for o in out:
-                frames.append(VU.to_frame(o, use_16bit=use_16bit))
+                yield o
 
         if flush and hasattr(side_model, "flush"):
             left_eye, right_eye = side_model.flush(enable_amp=not args.disable_amp)
             if left_eye is not None:
                 for left, right in zip(left_eye, right_eye):
                     out = postprocess_image(left, right, args)
-                    frames.append(VU.to_frame(out, use_16bit=use_16bit))
-
-        return frames
+                    yield out
 
     @torch.inference_mode()
     def _frame_callback(frame):
         if frame is None:
             # flush
-            return _postprocess(depth_model.flush_minmax_normalize(), flush=True)
+            yield from _postprocess(depth_model.flush_minmax_normalize(), flush=True)
+            return
 
-        frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
-        pix_dtype, pix_max = frame_hwc.dtype, torch.iinfo(frame_hwc.dtype).max
-
+        pix_dtype = VU.get_source_dtype(frame)
+        x = VU.to_tensor(frame, device=args.state["device"])
         if frame_cpu_offload:
             # cpu buffer
-            if args.max_output_height is not None or args.rotate_right or args.rotate_left:
-                x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
-                x = preprocess_image(x, args)
-                frame_hwc = (x.permute(1, 2, 0) * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
-                src_queue.append((frame_hwc, frame.pts))
-            else:
-                src_queue.append((frame_hwc, frame.pts))
-                x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
+            src_queue.append((VU.OffloadFrame(x, dtype=pix_dtype), frame.pts))
         else:
             # gpu buffer
-            x = frame_hwc.to(args.state["device"]).permute(2, 0, 1) / pix_max
-            x = preprocess_image(x, args)
             src_queue.append((x, frame.pts))
 
         depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
@@ -701,7 +699,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             depths += depth_model.flush_minmax_normalize()
             depth_model.reset_state()
 
-        return _postprocess(depths, flush=flush)
+        yield from _postprocess(depths, flush=flush)
 
     return _frame_callback
 
@@ -717,7 +715,6 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device):
-        src_depth_pairs = []
         # Reorder threads
         with dequeue_ticket_lock(dequeue_ticket_id):
             with depth_lock:
@@ -736,18 +733,12 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     pts = []
                     for _ in range(len(depths)):
                         x_src, t = src_queue.pop(0)
-                        x_srcs.append(x_src)
+                        x_srcs.append(x_src.load(device=device))
                         pts.append(t)
                     x_srcs = torch.stack(x_srcs)
                 else:
                     x_srcs, pts = src_queue.pop(0)
-                src_depth_pairs.append((x_srcs, depths, pts))
-
-            results = []
-            for x_srcs, depths, pts in src_depth_pairs:
                 reset_pts = [t in segment_pts for t in pts]
-                if frame_cpu_offload:
-                    x_srcs = hwc_to_chw_float(x_srcs, device=device)
 
                 with sbs_lock:  # TODO: unclear whether this is actually needed
                     if args.rgbd or args.half_rgbd:
@@ -760,25 +751,18 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         else:
                             left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
 
-                frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
-                          for i in range(left_eyes.shape[0])]
-                results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
-
-        return results
+                for i in range(left_eyes.shape[0]):
+                    yield postprocess_image(left_eyes[i], right_eyes[i], args)
 
     def _batch_infer(x, pts, flush, enqueue_ticket_id):
         # Reorder threads
         with enqueue_ticket_lock(enqueue_ticket_id):
             dequeue_ticket_id = dequeue_ticket_lock.new_ticket()
             if not flush:
-                x = preprocess_image(x, args)
                 if frame_cpu_offload:
-                    if use_16bit:
-                        x_cpu = (x.permute(0, 2, 3, 1) * 65535.0).round().clamp(0, 65535).to(torch.uint16).cpu()
-                    else:
-                        x_cpu = (x.permute(0, 2, 3, 1) * 255.0).round().clamp(0, 255).to(torch.uint8).cpu()
-                    for x_, pts_ in zip(x_cpu, pts):
-                        src_queue.append((x_, pts_))
+                    pix_dtype = torch.uint16 if use_16bit else torch.uint8
+                    for i in range(len(pts)):
+                        src_queue.append((VU.OffloadFrame(x[i], dtype=pix_dtype), pts[i]))
                 else:
                     src_queue.append((x, pts))
 
@@ -800,6 +784,14 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             reset_ema = None
             depth_batch, dequeue_ticket_id = _batch_infer(
                 None, None, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
+            # Return a generator directly to avoid out-of-memory errors during flush.
+            # Processing is performed on the main thread.
+            return _postprocess(
+                depth_batch, reset_ema,
+                dequeue_ticket_id=dequeue_ticket_id,
+                flush=flush,
+                device=device
+            )
         else:
             device = x.device
             reset_ema = [t in segment_pts for t in pts]
@@ -817,12 +809,14 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 depth_batch, dequeue_ticket_id = _batch_infer(
                     x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
 
-        return _postprocess(
-            depth_batch, reset_ema,
-            dequeue_ticket_id=dequeue_ticket_id,
-            flush=flush,
-            device=device
-        )
+            results = _postprocess(
+                depth_batch, reset_ema,
+                dequeue_ticket_id=dequeue_ticket_id,
+                flush=flush,
+                device=device
+            )
+            # Run the generator in the worker thread and return the result.
+            return [frame for frame in results]
 
     def _preprocess(x, pts, flush):
         enqueue_ticket_id = enqueue_ticket_lock.new_ticket()
@@ -835,56 +829,45 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     batch_queue = []
     pts_queue = []
+    pix_dtype = None
+    pix_max = None
+
     depth_model.reset()
-    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
     def _postprocess(depth_list, flush=False):
-        results = []
         if args.debug_depth:
             for depth in depth_list:
                 out = debug_depth_image(depth, args)
                 _, pts = src_queue.pop(0)
                 if pts in segment_pts:
                     out[0, 0:8, :] = 1.0
-                results.append(VU.to_frame(out, use_16bit=use_16bit))
+                yield out
         else:
             for depths in chunks(depth_list, args.batch_size):
                 depths = torch.stack(depths)
                 x_pts = [src_queue.pop(0) for _ in range(len(depths))]
                 reset_pts = [pts in segment_pts for _, pts in x_pts]
-                x_srcs = [x for x, _ in x_pts]
-                x_srcs = hwc_to_chw_float(torch.stack(x_srcs), device=args.state["device"])
+                x_srcs = torch.stack([x.load(device=args.state["device"]) for x, _ in x_pts])
                 if args.rgbd or args.half_rgbd:
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                 else:
                     left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
                 if left_eyes is not None:
-                    frames = [postprocess_image(left_eyes[i], right_eyes[i], args)
-                              for i in range(left_eyes.shape[0])]
-                    results += [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
+                    for i in range(left_eyes.shape[0]):
+                        yield postprocess_image(left_eyes[i], right_eyes[i], args)
 
         if flush and hasattr(side_model, "flush"):
             left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
             if left_eyes is not None:
                 for left_eye, right_eye in zip(left_eyes, right_eyes):
-                    out = postprocess_image(left_eye, right_eye, args)
-                    results.append(VU.to_frame(out, use_16bit=use_16bit))
-
-        return results
+                    yield postprocess_image(left_eye, right_eye, args)
 
     def _batch_infer():
-        x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2)
-        pix_dtype, pix_max = x.dtype, torch.iinfo(x.dtype).max
-        x = x / pix_max
-        if args.max_output_height is not None or args.rotate_right or args.rotate_left:
-            x = preprocess_image(x, args)
-            x_srcs = (x.permute(0, 2, 3, 1) * pix_max).round().clamp(0, pix_max).to(pix_dtype).cpu()
-        else:
-            x_srcs = batch_queue
+        assert pix_max is not None and pix_dtype is not None
+        for i in range(len(batch_queue)):
+            src_queue.append((VU.OffloadFrame(batch_queue[i], dtype=pix_dtype), pts_queue[i]))
 
-        for i, x_src in enumerate(x_srcs):
-            src_queue.append((x_src, pts_queue[i]))
-
+        x = torch.stack(batch_queue)
         depth_list = depth_model.infer_with_normalize(
             x, pts_queue, segment_pts,
             enable_amp=not args.disable_amp,
@@ -894,31 +877,33 @@ def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
         pts_queue.clear()
         batch_queue.clear()
 
-        return _postprocess(depth_list)
+        yield from _postprocess(depth_list)
 
     @torch.inference_mode()
     def frame_callback(frame):
+        nonlocal pix_dtype, pix_max
+
         if frame is None:
             # flush
-            results = []
             if batch_queue:
-                results += _batch_infer()
+                yield from _batch_infer()
             depth_list = depth_model.flush_with_normalize(
                 enable_amp=not args.disable_amp,
                 edge_dilation=args.edge_dilation,
                 depth_aa=args.depth_aa)
-            results += _postprocess(depth_list, flush=True)
-            return [VU.to_frame(new_frame, use_16bit=use_16bit) for new_frame in results]
+            yield from _postprocess(depth_list, flush=True)
+            return
 
-        frame_hwc = torch.from_numpy(VU.to_ndarray(frame))
-        batch_queue.append(frame_hwc)
+        if pix_dtype is None:
+            pix_dtype = VU.get_source_dtype(frame)
+            pix_max = torch.iinfo(pix_dtype).max
+
+        x = VU.to_tensor(frame, device=args.state["device"])
+        batch_queue.append(x)
         pts_queue.append(frame.pts)
 
         if len(batch_queue) == args.batch_size:
-            results = _batch_infer()
-            return [VU.to_frame(new_frame, use_16bit=use_16bit) for new_frame in results]
-        else:
-            return None
+            yield from _batch_infer()
 
     return frame_callback
 
@@ -1023,6 +1008,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     input_filename,
                     max_fps=args.max_fps,
                     device=args.state["device"],
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
                     start_time=args.start_time,
                     end_time=args.end_time,
                     stop_event=args.state["stop_event"],
@@ -1045,6 +1032,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             mode=args.autocrop,
             uncrop_enabled=False,
             vf=args.vf,
+            hwaccel=args.hwaccel,
+            disable_software_fallback=args.disable_software_fallback,
             device=args.state["device"],
             batch_size=args.batch_size,
             stop_event=args.state["stop_event"],
@@ -1060,8 +1049,11 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     else:
         video_filter = args.vf
 
-    def config_callback(stream):
-        fps = VU.get_fps(stream)
+    # Integrate preprocess_image() logic into vf
+    video_filter = add_preprocess_vf(video_filter, args)
+
+    def config_callback(metadata):
+        fps = metadata.get_fps()
         if float(fps) > args.max_fps:
             fps = args.max_fps
 
@@ -1075,62 +1067,51 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
-    @torch.inference_mode()
-    def test_callback(frame):
-        decay, buffer_size = depth_model.get_ema_state()
-        depth_model.disable_ema()
-        x = VU.to_tensor(frame, device=args.state["device"])
-        x = process_image(x, args, depth_model, side_model, skip_autocrop=True)
-        if ema_normalize:
-            # reset ema to avoid affecting test frames
-            depth_model.enable_ema(decay=decay, buffer_size=buffer_size)
-        depth_model.reset()
-        if side_model is not None and hasattr(side_model, "reset"):
-            side_model.reset()
-        if args.state["convergence_model"] is not None:
-            args.state["convergence_model"].reset()
-
-        return VU.to_frame(x, use_16bit=use_16bit)
-
     if is_video_depth_anything:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
-            VU.process_video(input_filename, output_filename,
-                             config_callback=config_callback,
-                             frame_callback=bind_vda_frame_callback(
-                                 depth_model=depth_model,
-                                 side_model=side_model,
-                                 segment_pts=segment_pts,
-                                 args=args
-                             ),
-                             test_callback=test_callback,
-                             vf=video_filter,
-                             stop_event=args.state["stop_event"],
-                             suspend_event=args.state["suspend_event"],
-                             tqdm_fn=args.state["tqdm_fn"],
-                             title=path.basename(input_filename),
-                             start_time=args.start_time,
-                             end_time=args.end_time,
-                             device=args.state["device"])
+            VU.process_video(
+                input_filename, output_filename,
+                config_callback=config_callback,
+                frame_callback=bind_vda_frame_callback(
+                    depth_model=depth_model,
+                    side_model=side_model,
+                    segment_pts=segment_pts,
+                    args=args
+                ),
+                vf=video_filter,
+                stop_event=args.state["stop_event"],
+                suspend_event=args.state["suspend_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+                title=path.basename(input_filename),
+                start_time=args.start_time,
+                end_time=args.end_time,
+                device=args.state["device"],
+                hwaccel=args.hwaccel,
+                disable_software_fallback=args.disable_software_fallback,
+            )
 
     elif args.low_vram or args.debug_depth or is_video_depth_anything_streaming or is_inpaint_model:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
-            VU.process_video(input_filename, output_filename,
-                             config_callback=config_callback,
-                             frame_callback=bind_single_frame_callback(
-                                 depth_model=depth_model,
-                                 side_model=side_model,
-                                 segment_pts=segment_pts,
-                                 args=args,
-                             ),
-                             test_callback=test_callback,
-                             vf=video_filter,
-                             stop_event=args.state["stop_event"],
-                             suspend_event=args.state["suspend_event"],
-                             tqdm_fn=args.state["tqdm_fn"],
-                             title=path.basename(input_filename),
-                             start_time=args.start_time,
-                             end_time=args.end_time,
-                             device=args.state["device"])
+            VU.process_video(
+                input_filename, output_filename,
+                config_callback=config_callback,
+                frame_callback=bind_single_frame_callback(
+                    depth_model=depth_model,
+                    side_model=side_model,
+                    segment_pts=segment_pts,
+                    args=args,
+                ),
+                vf=video_filter,
+                stop_event=args.state["stop_event"],
+                suspend_event=args.state["suspend_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+                title=path.basename(input_filename),
+                start_time=args.start_time,
+                end_time=args.end_time,
+                device=args.state["device"],
+                hwaccel=args.hwaccel,
+                disable_software_fallback=args.disable_software_fallback,
+            )
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -1154,23 +1135,28 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         )
         try:
             with depth_model.compile_context(enabled=args.compile):
-                VU.process_video(input_filename, output_filename,
-                                 config_callback=config_callback,
-                                 frame_callback=frame_callback,
-                                 test_callback=test_callback,
-                                 vf=video_filter,
-                                 stop_event=args.state["stop_event"],
-                                 suspend_event=args.state["suspend_event"],
-                                 tqdm_fn=args.state["tqdm_fn"],
-                                 title=path.basename(input_filename),
-                                 start_time=args.start_time,
-                                 end_time=args.end_time,
-                                 device=args.state["device"])
+                VU.process_video(
+                    input_filename, output_filename,
+                    config_callback=config_callback,
+                    frame_callback=frame_callback,
+                    vf=video_filter,
+                    stop_event=args.state["stop_event"],
+                    suspend_event=args.state["suspend_event"],
+                    tqdm_fn=args.state["tqdm_fn"],
+                    title=path.basename(input_filename),
+                    start_time=args.start_time,
+                    end_time=args.end_time,
+                    device=args.state["device"],
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
+                )
         finally:
             frame_callback.shutdown()
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
+    assert depth_model.get_name() not in {"VideoDepthAnything", "VideoDepthAnythingStreaming"}
+
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
         output_filename = path.join(
@@ -1189,19 +1175,38 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         futures = []
 
         def frame_callback(frame):
-            im = TF.to_tensor(frame.to_image()).to(args.state["device"])
-            output = process_image(im, args, depth_model, side_model)
+            if frame is None:
+                return
+
+            x = VU.to_tensor(frame, device=args.state["device"])
+            output = process_image(x, args, depth_model, side_model)
             output = to_pil_image(output)
             output_filename = path.join(
                 output_dir,
                 path.basename(output_dir) + "_" + str(frame.pts).zfill(8) + FULL_SBS_SUFFIX + get_image_ext(args.format))
             f = pool.submit(save_image, output, output_filename, format=args.format)
             futures.append(f)
-        VU.process_video_keyframes(input_filename, frame_callback=frame_callback,
-                                   min_interval_sec=args.keyframe_interval,
-                                   stop_event=args.state["stop_event"],
-                                   suspend_event=args.state["suspend_event"],
-                                   title=path.basename(input_filename))
+            if len(futures) > IMAGE_IO_QUEUE_MAX:
+                for f in futures:
+                    f.result()
+                futures.clear()
+
+        VU.hook_frame(
+            input_filename,
+            frame_callback=frame_callback,
+            keyframe_only=True,
+            min_interval_sec=args.keyframe_interval,
+            vf=args.vf,
+            stop_event=args.state["stop_event"],
+            suspend_event=args.state["suspend_event"],
+            tqdm_fn=args.state["tqdm_fn"],
+            title=path.basename(input_filename),
+            start_time=args.start_time,
+            end_time=args.end_time,
+            device=args.state["device"],
+            hwaccel=args.hwaccel,
+            disable_software_fallback=args.disable_software_fallback,
+        )
         for f in futures:
             f.result()
 
@@ -1211,15 +1216,21 @@ def process_video(input_filename, output_path, args, depth_model, side_model):
     depth_model.reset()
     depth_model.disable_ema()
 
-    if side_model is not None and hasattr(side_model, "set_mode"):
-        side_model.set_mode("video")
-        side_model.reset()
-    if args.state["convergence_model"] is not None:
-        args.state["convergence_model"].reset(enable_ema=True)
-
     if args.keyframe:
+        if side_model is not None and hasattr(side_model, "set_mode"):
+            side_model.set_mode("image")
+            side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset(enable_ema=False)
+
         process_video_keyframes(input_filename, output_path, args, depth_model, side_model)
     else:
+        if side_model is not None and hasattr(side_model, "set_mode"):
+            side_model.set_mode("video")
+            side_model.reset()
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset(enable_ema=True)
+
         process_video_full(input_filename, output_path, args, depth_model, side_model)
 
 
@@ -1364,8 +1375,12 @@ def get_resume_seq(depth_dir, rgb_dir):
 
 
 def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
+    batch_queue = []
+    pts_queue = []
     src_queue = []
     futures = []
+    batch_size = 1 if args.low_vram else args.batch_size
+
     if args.export_disparity:
         edge_dilation = args.edge_dilation
     else:
@@ -1373,19 +1388,20 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
 
     def _postprocess(depths):
         for depth in depths:
-            x, pts = src_queue.pop(0)
+            x, x_shape, pts = src_queue.pop(0)
 
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
             if args.export_depth_fit:
-                depth = TF.resize(depth, size=(x.shape[0], x.shape[1]),
+                depth = TF.resize(depth, size=(x_shape[-2], x_shape[-1]),
                                   interpolation=InterpolationMode.BILINEAR, antialias=True)
             seq = str(pts).zfill(8)
             futures.append(
                 pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png"))
             )
             if not args.export_depth_only:
-                im = Image.fromarray(x)
+                assert x is not None
+                im = Image.fromarray(x.cpu_buffer().permute(1, 2, 0).numpy())
                 futures.append(
                     pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png"))
                 )
@@ -1397,28 +1413,41 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
 
         return None
 
+    def _batch_infer():
+        x = torch.stack(batch_queue)
+        reset_ema = [t in segment_pts for t in pts_queue]
+        depth_batch = depth_model.infer(
+            x,
+            tta=args.tta,
+            low_vram=args.low_vram,
+            enable_amp=not args.disable_amp,
+            edge_dilation=edge_dilation,
+            depth_aa=args.depth_aa)
+        depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+
+        pts_queue.clear()
+        batch_queue.clear()
+
+        return _postprocess(depth_list)
+
     @torch.inference_mode()
     def _frame_callback(frame):
         if frame is None:
             # flush
+            if batch_queue:
+                _batch_infer()
             return _postprocess(depth_model.flush_minmax_normalize())
 
-        frame_np = frame.to_ndarray(format="rgb24")
-        frame_hwc8 = torch.from_numpy(frame_np)
-        src_queue.append((frame_np, frame.pts))
-        x = frame_hwc8.to(args.state["device"]).permute(2, 0, 1) / 255.0
-        x = preprocess_image(x, args)
-        depth = depth_model.infer(x, tta=args.tta, low_vram=args.low_vram,
-                                  enable_amp=not args.disable_amp,
-                                  edge_dilation=edge_dilation,
-                                  depth_aa=args.depth_aa)
-        depth = depth_model.minmax_normalize_chw(depth)
-        depths = [depth] if depth is not None else []
-        if frame.pts in segment_pts:
-            depths += depth_model.flush_minmax_normalize()
-            depth_model.reset_state()
+        x = VU.to_tensor(frame, device=args.state["device"])
+        batch_queue.append(x)
+        pts_queue.append(frame.pts)
+        if args.export_depth_only:
+            src_queue.append((None, x.shape, frame.pts))
+        else:
+            src_queue.append((VU.OffloadFrame(x, dtype=torch.uint8), x.shape, frame.pts))
 
-        return _postprocess(depths)
+        if len(batch_queue) == batch_size:
+            _batch_infer()
 
     return _frame_callback
 
@@ -1437,19 +1466,20 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
 
     def _postprocess(depth_list):
         for depth in depth_list:
-            x, pts = src_queue.pop(0)
+            x, x_shape, pts = src_queue.pop(0)
 
             if args.export_disparity:
                 depth = get_mapper(args.mapper)(depth)
             if args.export_depth_fit:
-                depth = TF.resize(depth, size=(x.shape[0], x.shape[1]),
+                depth = TF.resize(depth, size=(x_shape[-2], x_shape[-1]),
                                   interpolation=InterpolationMode.BILINEAR, antialias=True)
             seq = str(pts).zfill(8)
             futures.append(
                 pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png"))
             )
             if not args.export_depth_only:
-                im = Image.fromarray(x.numpy())
+                assert x is not None
+                im = Image.fromarray(x.cpu_buffer().permute(1, 2, 0).numpy())
                 futures.append(
                     pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png"))
                 )
@@ -1462,15 +1492,7 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
         return None
 
     def _batch_infer():
-        x = torch.stack(batch_queue).to(args.state["device"]).permute(0, 3, 1, 2) / 255.0
-        if args.max_output_height is not None or args.rotate_right or args.rotate_left:
-            x = preprocess_image(x, args)
-            x_srcs = (x.permute(0, 2, 3, 1) * 255.0).round().clamp(0, 255).to(torch.uint8).cpu()
-        else:
-            x_srcs = batch_queue
-
-        for i, x_src in enumerate(x_srcs):
-            src_queue.append((x_src, pts_queue[i]))
+        x = torch.stack(batch_queue)
 
         depth_list = depth_model.infer_with_normalize(
             x, pts_queue, segment_pts,
@@ -1495,9 +1517,13 @@ def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir,
                 depth_aa=args.depth_aa)
             _postprocess(depth_list)
         else:
-            frame_hwc8 = torch.from_numpy(frame.to_ndarray(format="rgb24"))
-            batch_queue.append(frame_hwc8)
+            x = VU.to_tensor(frame, device=args.state["device"])
+            batch_queue.append(x)
             pts_queue.append(frame.pts)
+            if args.export_depth_only:
+                src_queue.append((None, x.shape, frame.pts))
+            else:
+                src_queue.append((VU.OffloadFrame(x, dtype=torch.uint8), x.shape, frame.pts))
 
             if len(batch_queue) == args.batch_size:
                 _batch_infer()
@@ -1567,6 +1593,8 @@ def export_video(input_filename, output_dir, args, title=None):
                     input_filename,
                     max_fps=args.max_fps,
                     device=args.state["device"],
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
                     start_time=args.start_time,
                     end_time=args.end_time,
                     stop_event=args.state["stop_event"],
@@ -1582,6 +1610,8 @@ def export_video(input_filename, output_dir, args, title=None):
         segment_pts = set()
     if args.scene_detect_only:
         return
+
+    # TODO: AutoCrop
 
     config.user_data["scene_boundary"] = ",".join([str(pts).zfill(8) for pts in sorted(list(segment_pts))])
 
@@ -1607,15 +1637,20 @@ def export_video(input_filename, output_dir, args, title=None):
     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
         return
 
-    def config_callback(stream):
-        fps = VU.get_fps(stream)
+    # Integrate preprocess_image() logic into vf
+    video_filter = add_preprocess_vf(args.vf, args)
+
+    def config_callback(metadata):
+        fps = metadata.get_fps()
         if float(fps) > args.max_fps:
             fps = args.max_fps
         config.fps = fps  # update fps
 
         def state_update_callback(c):
-            config.source_color_range = c.state["source_color_range"]
-            config.output_colorspace = c.state["output_colorspace"]
+            config.output_colorspace = c.output_colorspace
+            config.output_color_primaries = c.output_color_primaries
+            config.output_color_trc = c.output_color_trc
+            config.source_color_range = c.source_color_range
 
         video_output_config = VU.VideoOutputConfig(fps=fps, pix_fmt=args.pix_fmt, colorspace=args.colorspace)
         video_output_config.state_updated = state_update_callback
@@ -1629,44 +1664,46 @@ def export_video(input_filename, output_dir, args, title=None):
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
 
-    with depth_model.compile_context(enabled=args.compile):
-        max_workers = max(args.max_workers, 8)
+    max_workers = max(args.max_workers, 8)
+    with depth_model.compile_context(enabled=args.compile), PoolExecutor(max_workers=max_workers) as pool:
+        if args.state["depth_model"].get_name() == "VideoDepthAnything":
+            frame_callback = bind_export_vda_frame_callback(
+                depth_model=depth_model,
+                segment_pts=segment_pts,
+                rgb_dir=rgb_dir,
+                depth_dir=depth_dir,
+                pool=pool,
+                args=args,
+            )
+        else:
+            frame_callback = bind_export_single_frame_callback(
+                depth_model=depth_model,
+                segment_pts=segment_pts,
+                rgb_dir=rgb_dir,
+                depth_dir=depth_dir,
+                pool=pool,
+                args=args,
+            )
 
-        with PoolExecutor(max_workers=max_workers) as pool:
-            if args.state["depth_model"].get_name() == "VideoDepthAnything":
-                frame_callback = bind_export_vda_frame_callback(
-                    depth_model=depth_model,
-                    segment_pts=segment_pts,
-                    rgb_dir=rgb_dir,
-                    depth_dir=depth_dir,
-                    pool=pool,
-                    args=args,
-                )
-            else:
-                frame_callback = bind_export_single_frame_callback(
-                    depth_model=depth_model,
-                    segment_pts=segment_pts,
-                    rgb_dir=rgb_dir,
-                    depth_dir=depth_dir,
-                    pool=pool,
-                    args=args,
-                )
-
-            VU.hook_frame(input_filename,
-                          config_callback=config_callback,
-                          frame_callback=frame_callback,
-                          vf=args.vf,
-                          stop_event=args.state["stop_event"],
-                          suspend_event=args.state["suspend_event"],
-                          tqdm_fn=args.state["tqdm_fn"],
-                          title=title,
-                          start_time=args.start_time,
-                          end_time=args.end_time)
-        config.save(config_file)
+        VU.hook_frame(
+            input_filename,
+            config_callback=config_callback,
+            frame_callback=frame_callback,
+            vf=video_filter,
+            stop_event=args.state["stop_event"],
+            suspend_event=args.state["suspend_event"],
+            tqdm_fn=args.state["tqdm_fn"],
+            title=title,
+            start_time=args.start_time,
+            end_time=args.end_time,
+            device=args.state["device"],
+            hwaccel=args.hwaccel,
+            disable_software_fallback=args.disable_software_fallback
+        )
+    config.save(config_file)
 
 
 def process_config_video(config, args, side_model):
-    use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     base_dir = path.dirname(args.input)
     rgb_dir, depth_dir, audio_file = config.resolve_paths(base_dir)
     if side_model is not None and hasattr(side_model, "set_mode"):
@@ -1731,23 +1768,20 @@ def process_config_video(config, args, side_model):
                 left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
 
         if left_eyes is not None:
-            return torch.stack([
-                postprocess_image(left_eyes[i], right_eyes[i], args)
-                for i in range(left_eyes.shape[0])])
-        else:
-            return []
+            for i in range(left_eyes.shape[0]):
+                yield postprocess_image(left_eyes[i], right_eyes[i], args)
 
     def test_output_size(rgb_file, depth_file):
         rgb = load_image_simple(rgb_file, color="rgb")[0]
         depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
         rgb = TF.to_tensor(rgb).to(args.state["device"])
-        frame = batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), [False], test=True)
+        frame = next(batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), [False], test=True))
         if side_model is not None and hasattr(side_model, "reset"):
             side_model.reset()
         if args.state["convergence_model"] is not None:
             args.state["convergence_model"].reset()
 
-        return frame.shape[2:]
+        return frame.shape[-2:]
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
 
@@ -1762,24 +1796,20 @@ def process_config_video(config, args, side_model):
             depth_basename = path.splitext(path.basename(depth[1]["filename"]))[0]
             reset_pts_batch.append(depth_basename in segment_pts)
             if len(rgb_batch) == minibatch_size:
-                frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                        torch.stack(depth_batch).to(args.state["device"]),
-                                        reset_pts_batch)
+                yield from batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
+                                          torch.stack(depth_batch).to(args.state["device"]),
+                                          reset_pts_batch)
                 rgb_batch.clear()
                 depth_batch.clear()
                 reset_pts_batch.clear()
 
-                yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
-
         if rgb_batch:
-            frames = batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
-                                    torch.stack(depth_batch).to(args.state["device"]),
-                                    reset_pts_batch)
+            yield from batch_callback(torch.stack(rgb_batch).to(args.state["device"]),
+                                      torch.stack(depth_batch).to(args.state["device"]),
+                                      reset_pts_batch)
             rgb_batch.clear()
             depth_batch.clear()
             reset_pts_batch.clear()
-
-            yield [VU.to_frame(frame, use_16bit=use_16bit) for frame in frames]
 
     output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
     if side_model is not None and hasattr(side_model, "reset"):
@@ -1794,10 +1824,12 @@ def process_config_video(config, args, side_model):
         options=make_video_codec_option(args),
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         output_width=output_width,
-        output_height=output_height
+        output_height=output_height,
     )
-    video_config.state["source_color_range"] = config.source_color_range
-    video_config.state["output_colorspace"] = config.output_colorspace
+    video_config.output_colorspace = config.output_colorspace
+    video_config.output_color_trc = config.output_color_trc
+    video_config.output_color_primaries = config.output_color_primaries
+    video_config.source_color_range = config.source_color_range
 
     original_mapper = args.mapper
     try:
@@ -1823,6 +1855,7 @@ def process_config_video(config, args, side_model):
             stop_event=args.state["stop_event"],
             suspend_event=args.state["suspend_event"],
             tqdm_fn=args.state["tqdm_fn"],
+            device=args.state["device"],
         )
     finally:
         args.mapper = original_mapper
@@ -2154,6 +2187,11 @@ def create_parser(required_true=True):
     parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"],
                         help="output image format")
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
+    parser.add_argument("--hwaccel", type=str, default=None,
+                        choices=VU.HW_DEVICES,
+                        help="hardware accelerator for the video decoder")
+    parser.add_argument("--disable-software-fallback", action="store_true",
+                        help="disable software fallback for hardware hwaccel")
 
     parser.add_argument("--metadata", type=str, nargs="?", default=None, const="filename", choices=["filename"],
                         help="Add metadata")

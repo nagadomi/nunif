@@ -140,13 +140,28 @@ If `Limit to source resolution`(`--limit-resolution`) is enabled and the source 
 
 `avi` is provided to output lossless video for your own encoding.
 
-## Video Codec
+## Video Codec (Encoder)
 
-`libx264` is for H.264 which is a highly compatible format. However, at higher resolutions like 4K, the file size will be larger, which may cause playback lag/artifact.
+- `libx264` is for H.264 which is a highly compatible format. However, at higher resolutions like 4K, the file size will be larger, which may cause playback lag/artifact.
+- `libx265` is for H.265.
 
-`libx265` is for H.265.
+- `utvideo` is for lossless video. You may need [Ut Video Codec Suite](https://github.com/umezawatakeshi/utvideo/releases) for playback.
+- `ffv1` is for lossless video.
+- `h264_nvenc` and `hevc_nvenc` are hardware encoders for H.264 and H.265 on NVIDIA GPUs.
+- `h264_qsv` and `hevc_qsv` are hardware encoders for H.264 and H.265 on Intel GPUs (including iGPUs).
 
-`utvideo` is for lossless video. You may need [Ut Video Codec Suite](https://github.com/umezawatakeshi/utvideo/releases) for playback.
+## HWAccel (Decoder)
+
+HWAccel (`--hwaccel`) specifies which hardware decoder to use.
+
+| HWAccel |                 |
+|:-------:|:----------------|
+| _None_  | Uses the software decoder.
+| `cuda`  | Uses NVDEC for NVIDIA devices. Supports only `yuv420p` and `yuv420p10le`. With this option, standard ffmpeg video filters(`--vf` option) cannot be used and are limited to the following: `scale`, `crop`, `transpose`, `lut3d`, `bob` (super simple deinterlace).
+| `cuda_hwdownload`  | Uses NVDEC for NVIDIA devices, but frames are downloaded to CPU memory. Standard ffmpeg video filters can be used. This may be slower than the software decoder, but CPU usage will be lower.
+| _Others_ | Basically the same as `cuda_hwdownload`. Frames are hardware-decoded and then downloaded to CPU memory.
+
+When `Software Fallback` is enabled (when `--disable-software-fallback` is not specified), unsupported formats will fall back to the software decoder.
 
 #### Level option for H.265
 
@@ -343,7 +358,7 @@ Please post to the issue about the format of the video.
 ### Large video file size
 
 You can reduce the file size with `--preset medium` option.
-`--video-codec libx265` also helps reduce the file size.
+`--video-codec libx265 --preset ultrafast` also helps reduce the file size.
 
 ### 60fps video drops to 30fps
 

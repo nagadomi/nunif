@@ -74,6 +74,10 @@
 "Loading ": "正在加载"
 "Downloading ": "正在下载"
 
+"Video Decoding": "视频解码"
+"Software Fallback": "软件回退"
+"Use software decoder if hardware acceleration fails or is unsupported": "硬件加速失敗或不支持時，使用軟件解碼"
+
 "Video Encoding": "视频编码"
 
 "Max FPS": "最大帧率"

@@ -1,0 +1,191 @@
+from concurrent.futures import ThreadPoolExecutor
+from types import GeneratorType
+
+import torch
+
+from .color_transform import to_tensor
+
+# These functions are moved to color_transform.py to avoid circular imports
+# and centralized conversion logic.
+
+
+class _DummyFuture:
+    def __init__(self, result):
+        self._result = result
+
+    def result(self):
+        return self._result
+
+    def done(self):
+        return True
+
+
+class _DummyThreadPool:
+    def __init__(self):
+        pass
+
+    def submit(self, func, *args, **kwargs):
+        result = func(*args, **kwargs)
+        return _DummyFuture(result)
+
+    def shutdown(self):
+        pass
+
+
+class FrameCallbackPool:
+    """
+    thread pool callback wrapper
+    """
+
+    def __init__(
+        self,
+        frame_callback,
+        batch_size,
+        device,
+        max_workers=1,
+        max_batch_queue=2,
+        require_pts=False,
+        skip_pts=-1,
+        require_flush=False,
+        preprocess_callback=None,
+        postprocess_callback=None,
+        use_16bit=False,
+    ):
+        if max_workers > 0:
+            self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+        else:
+            self.thread_pool = _DummyThreadPool()
+        self.require_pts = require_pts
+        self.require_flush = require_flush
+        self.skip_pts = skip_pts
+        self.use_16bit = use_16bit
+        self.frame_callback = frame_callback
+        self.preprocess_callback = preprocess_callback
+        self.postprocess_callback = postprocess_callback
+        self.batch_size = batch_size
+        self.max_workers = max_workers
+        self.max_batch_queue = max_batch_queue
+        self.devices = device if isinstance(device, (tuple, list)) else [device]
+        self.round_robin_index = 0
+        self.frame_queue = []
+        self.pts_queue = []
+        self.batch_queue = []
+        self.pts_batch_queue = []
+        self.futures = []
+
+    def make_args(self, batch, pts_batch, flush):
+        if self.require_pts and self.require_flush:
+            return (batch, pts_batch, flush)
+        elif self.require_pts:
+            return (batch, pts_batch)
+        elif self.require_flush:
+            return (batch, flush)
+        else:
+            return (batch,)
+
+    def get_results(self, future):
+        frames = future.result()
+        if self.postprocess_callback is not None:
+            frames = self.postprocess_callback(frames)
+
+        if frames is None:
+            return
+        elif isinstance(frames, GeneratorType):
+            yield from frames
+        else:
+            for frame in frames:
+                yield frame
+
+    def submit(self, *args):
+        if self.preprocess_callback is not None:
+            args = self.preprocess_callback(*args)
+            future = self.thread_pool.submit(self.frame_callback, args)
+        else:
+            future = self.thread_pool.submit(self.frame_callback, *args)
+
+        return future
+
+    def __call__(self, frame):
+        if False:
+            # for debug
+            print(
+                "\n__call__",
+                "frame_queue",
+                len(self.frame_queue),
+                "batch_queue",
+                len(self.batch_queue),
+                "pts_queue",
+                len(self.pts_queue),
+                "pts_batch_queue",
+                len(self.pts_batch_queue),
+                "futures",
+                len(self.futures),
+            )
+        if frame is None:
+            # This branch returns the generator directly.
+            return self.finish()
+
+        if frame.pts <= self.skip_pts:
+            return None
+
+        self.pts_queue.append(frame.pts)
+        device = self.devices[self.round_robin_index % len(self.devices)]
+        frame = to_tensor(frame, device=device)
+
+        self.frame_queue.append(frame)
+        if len(self.frame_queue) == self.batch_size:
+            batch = torch.stack(self.frame_queue)
+            self.batch_queue.append(batch)
+            self.frame_queue.clear()
+            self.pts_batch_queue.append(list(self.pts_queue))
+            self.pts_queue.clear()
+            self.round_robin_index += 1
+
+        if self.batch_queue:
+            if len(self.futures) < self.max_workers or self.max_workers <= 0:
+                batch = self.batch_queue.pop(0)
+                pts_batch = self.pts_batch_queue.pop(0)
+                future = self.submit(*self.make_args(batch, pts_batch, False))
+                self.futures.append(future)
+            if len(self.batch_queue) >= self.max_batch_queue and self.futures:
+                future = self.futures.pop(0)
+                return [frame for frame in self.get_results(future)]
+        if self.futures:
+            if self.futures[0].done():
+                future = self.futures.pop(0)
+                return [frame for frame in self.get_results(future)]
+        return None
+
+    def finish(self):
+        if self.frame_queue:
+            batch = torch.stack(self.frame_queue)
+            self.batch_queue.append(batch)
+            self.frame_queue.clear()
+            self.pts_batch_queue.append(list(self.pts_queue))
+            self.pts_queue.clear()
+
+        while len(self.batch_queue) > 0:
+            if len(self.futures) < self.max_workers or self.max_workers <= 0:
+                batch = self.batch_queue.pop(0)
+                pts_batch = self.pts_batch_queue.pop(0)
+                future = self.submit(*self.make_args(batch, pts_batch, False))
+                self.futures.append(future)
+            else:
+                future = self.futures.pop(0)
+                yield from self.get_results(future)
+        while len(self.futures) > 0:
+            future = self.futures.pop(0)
+            yield from self.get_results(future)
+
+        if self.require_flush:
+            future = self.submit(*self.make_args(None, None, True))
+            yield from self.get_results(future)
+
+    def shutdown(self):
+        pool = self.thread_pool
+        self.thread_pool = None
+        if pool is not None:
+            pool.shutdown()
+
+    def __del__(self):
+        self.shutdown()

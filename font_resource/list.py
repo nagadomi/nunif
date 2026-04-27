@@ -1,4 +1,4 @@
-from nunif.utils.font import FontInfo, FONT_NAME_ID
+from .metadata import FontInfo, FONT_NAME_ID
 from glob import glob
 from os import path
 from pprint import pprint

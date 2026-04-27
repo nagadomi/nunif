@@ -4,12 +4,12 @@ import torch
 
 
 def _fps_config(max_fps):
-    def callback(stream):
+    def callback(metadata):
         if max_fps is None:
             # keep original frame rate, use raw pts
             return VU.VideoOutputConfig(fps=None)
         else:
-            fps = VU.get_fps(stream)
+            fps = metadata.get_fps()
             if float(fps) > max_fps:
                 fps = max_fps
             return VU.VideoOutputConfig(fps=fps)
@@ -28,6 +28,8 @@ def detect_boundary(
         suspend_event=None,
         tqdm_fn=None,
         tqdm_title=None,
+        hwaccel=None,
+        disable_software_fallback=False,
 ):
     assert (window_size % padding_size == 0 and
             window_size // padding_size >= 3)  # pad1 + frames + pad2
@@ -80,15 +82,19 @@ def detect_boundary(
         device=device,
         max_workers=0,  # must be sequential
     )
+    interpolation = "area" if hwaccel == "cuda" else "bilinear"
     VU.hook_frame(
         video_file, callback_pool,
         config_callback=_fps_config(max_fps),
         title=tqdm_title or "Shot Boundary Detection",
-        vf="scale=48:27:flags=bilinear",  # input size for TransNetV2
+        vf=f"scale=48:27:flags={interpolation}",  # input size for TransNetV2
         start_time=start_time, end_time=end_time,
         stop_event=stop_event,
         suspend_event=suspend_event,
-        tqdm_fn=tqdm_fn
+        tqdm_fn=tqdm_fn,
+        hwaccel=hwaccel,
+        disable_software_fallback=disable_software_fallback,
+        device=device,
     )
     if stop_event is not None and stop_event.is_set():
         return set()
@@ -117,6 +123,7 @@ def _hevc_deadlock_test():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True,
                         help="hevc input video file")
+    parser.add_argument("--hwaccel", type=str, help="hwaccel")
     args = parser.parse_args()
 
     for i in range(1, 60):
@@ -132,10 +139,33 @@ def _hevc_deadlock_test():
                 suspend_event=None,
                 tqdm_fn=None,
                 tqdm_title=None,
+                hwaccel=args.hwaccel,
             )
             print(i, j, pts)
 
 
+def _test():
+    import argparse
+    from nunif.utils.video import pyav_init_cuda_primary_context
+
+
+    pyav_init_cuda_primary_context()
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--input", "-i", type=str, required=True,
+                        help="input video file")
+    parser.add_argument("--hwaccel", type=str, help="hwaccel")
+    args = parser.parse_args()
+    device = torch.device("cuda")
+    pts = detect_boundary(
+        args.input,
+        device=device,
+        hwaccel=args.hwaccel,
+    )
+    print(pts)
+
+
 if __name__ == "__main__":
+    _test()
     # _hevc_deadlock_test()
     pass

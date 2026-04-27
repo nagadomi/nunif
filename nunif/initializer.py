@@ -39,6 +39,9 @@ def set_seed(seed):
 
 
 def gc_collect():
+    # TODO: Calling `gc.collect()` without first calling `gc.set_debug(gc.DEBUG_LEAK)` will cause a deadlock.
+    #       Most likely a problem with pyav.
+    # gc.set_debug(gc.DEBUG_LEAK)
     gc.collect()
 
     if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):

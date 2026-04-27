@@ -1,6 +1,7 @@
+import ctypes
+
 import av
 from av.sidedata.sidedata import Type as SideDataType
-import ctypes
 
 
 class AVRational(ctypes.Structure):
@@ -58,13 +59,7 @@ class AVMasteringDisplayMetadata(ctypes.Structure):
         def lum(v):
             return int(round(v * 10000))
 
-        s = (
-            f"master-display="
-            f"G({xy(Gx)},{xy(Gy)})"
-            f"B({xy(Bx)},{xy(By)})"
-            f"R({xy(Rx)},{xy(Ry)})"
-            f"WP({xy(Wx)},{xy(Wy)})"
-        )
+        s = f"master-display=G({xy(Gx)},{xy(Gy)})B({xy(Bx)},{xy(By)})R({xy(Rx)},{xy(Ry)})WP({xy(Wx)},{xy(Wy)})"
 
         if self.has_luminance:
             maxLum = self.max_luminance.float()
@@ -96,6 +91,12 @@ class HDRMetadata:
 
         self.is_hdr = is_hdr
 
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}"
+            f"(is_hdr={self.is_hdr}, master_display={self.master_display}, max_cll={self.max_cll})"
+        )
+
     def has_data(self):
         return self.master_display is not None or self.max_cll is not None
 
@@ -110,8 +111,7 @@ class HDRMetadata:
 
 def is_hdr(stream):
     # print(stream.codec_context.color_primaries, stream.codec_context.color_trc)
-    return (stream.codec_context.color_primaries == 9 and
-            stream.format.components[0].bits > 8)
+    return stream.codec_context.color_primaries == 9 and stream.format.components[0].bits > 8
 
 
 def get_hdr_metadata(input_path):
@@ -127,29 +127,25 @@ def get_hdr_metadata(input_path):
             for i, frame in enumerate(container.decode(video=0)):
                 for sd in frame.side_data:
                     if (
-                        master_display is None and
-                        sd.type == SideDataType.MASTERING_DISPLAY_METADATA and
-                        sd.buffer_size == ctypes.sizeof(AVMasteringDisplayMetadata)
+                        master_display is None
+                        and sd.type == SideDataType.MASTERING_DISPLAY_METADATA
+                        and sd.buffer_size == ctypes.sizeof(AVMasteringDisplayMetadata)
                     ):
-                        master_display = ctypes.cast(
-                            sd.buffer_ptr, ctypes.POINTER(AVMasteringDisplayMetadata)
-                        ).contents
+                        master_display = ctypes.cast(sd.buffer_ptr, ctypes.POINTER(AVMasteringDisplayMetadata)).contents
 
                     elif (
-                        max_cll is None and
-                        sd.type == SideDataType.CONTENT_LIGHT_LEVEL and
-                        sd.buffer_size == ctypes.sizeof(AVContentLightMetadata)
+                        max_cll is None
+                        and sd.type == SideDataType.CONTENT_LIGHT_LEVEL
+                        and sd.buffer_size == ctypes.sizeof(AVContentLightMetadata)
                     ):
-                        max_cll = ctypes.cast(
-                            sd.buffer_ptr, ctypes.POINTER(AVContentLightMetadata)
-                        ).contents
+                        max_cll = ctypes.cast(sd.buffer_ptr, ctypes.POINTER(AVContentLightMetadata)).contents
 
                 if master_display is not None and max_cll is not None:
                     break
 
                 if i >= MAX_FRAMES:
                     break
-        except av.error.FFMpegError:
+        except av.error.FFmpegError:
             return HDRMetadata(None, None, True)
 
     return HDRMetadata(master_display, max_cll, True)

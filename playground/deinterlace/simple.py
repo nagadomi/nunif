@@ -56,11 +56,6 @@ def main():
             fps=fps, output_fps=output_fps,
         )
 
-    def test_callback(frame):
-        if frame is None:
-            return None
-        return frame
-
     deinterlace_callback_pool = VU.FrameCallbackPool(
         deinterlace,
         batch_size=4,
@@ -70,7 +65,6 @@ def main():
     VU.process_video(args.input, args.output,
                      deinterlace_callback_pool,
                      config_callback=config_callback,
-                     test_callback=test_callback,
                      title="SuperSimpleDeinterlace")
 
 

@@ -74,6 +74,10 @@
 "Loading ": "טוען "
 "Downloading ": "מוריד "
 
+"Video Decoding": "פענוח וידאו"
+"Software Fallback": "נסיגה לתוכנה"
+"Use software decoder if hardware acceleration fails or is unsupported": "השתמש במפענח תוכנה אם האצת חומרה נכשלת או אינה נתמכת."
+
 "Video Encoding": "קידוד וידאו"
 
 "Max FPS": "FPS מקסימלי"

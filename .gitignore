@@ -56,6 +56,9 @@ tmp
 /stlizer/pretrained_models/hub
 /cliqa/pretrained_models
 
+/nunif/utils/color_lut
+/tests/data
+
 # ----- Python.gitignore
 
 .ruff_cache

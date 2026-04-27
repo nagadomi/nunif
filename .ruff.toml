@@ -1,0 +1,48 @@
+line-length = 120
+target-version = "py312"
+
+exclude = [
+    ".env*",
+    ".venv*",
+    "env*",
+    "venv*",
+    "ENV*",
+    "tmp",
+    "data",
+    "models",
+    "font_resource/fonts",
+    "font_resource/font_map.py",
+    "iw3/pretrained_models",
+    "text_resource/aozora/data",
+]
+
+[lint]
+select = ["E", "F", "I"]
+ignore = []
+
+
+[lint.isort]
+known-first-party = [
+    "nunif",
+    "iw3",
+    "waifu2x",
+    "stlizer",
+    "cliqa",
+    "dino",
+    "imagenet",
+    "font_resource",
+    "text_resource",
+#    "imagenet",
+]
+
+[lint.per-file-ignores]
+"iw3/__init__.py" = ["E402"]
+"waifu2x/__init__.py" = ["E402"]
+"video/__init__.py" = ["E402", "F403"]
+"video/processor.py" = ["F403", "F405"]
+
+[format]
+indent-style = "space"
+quote-style = "double"
+line-ending = "auto"
+skip-magic-trailing-comma = false

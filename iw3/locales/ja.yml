@@ -68,7 +68,12 @@
 "Resize to fit": "サイズを合わせる"
 "Resize depth images to the same size as rgb images.\nNote that the process may become very slow due to the output file becoming large.": "深度画像をRGB画像と同じサイズにリサイズ\n出力ファイルが大きくなることで処理が非常に遅くなることに注意"
 
-"Video Encoding": "動画圧縮"
+"Video Decoding": "動画デコード"
+"Software Fallback": "フォールバック"
+"Use software decoder if hardware acceleration fails or is unsupported": "ハードウェアアクセラレーターが失敗、または非対応の場合にソフトウェアデコーダを使用する"
+
+"Video Encoding": "動画エンコード"
+
 
 "Max FPS": "最大フレームレート"
 "Video Format": "動画形式"

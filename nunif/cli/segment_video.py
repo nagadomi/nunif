@@ -41,14 +41,10 @@ def open_output_video(output_path, ext, no, video_input_stream, audio_input_stre
 
 
 def close_output_video(output_container, video_filter):
-    while True:
-        frame = video_filter.update(None)
-        if frame is not None:
-            enc_packet = output_container.streams.video[0].encode(frame)
-            if enc_packet:
-                output_container.mux(enc_packet)
-        else:
-            break
+    for frame in video_filter.flush():
+        enc_packet = output_container.streams.video[0].encode(frame)
+        if enc_packet:
+            output_container.mux(enc_packet)
 
     enc_packet = output_container.streams.video[0].encode(None)
     if enc_packet:
@@ -59,9 +55,9 @@ def close_output_video(output_container, video_filter):
 
 def create_video_filter(video_input_stream, args):
     if args.max_height is None or args.max_height >= video_input_stream.height:
-        return VU.VideoFilter(video_input_stream, vf="")  # dummy
+        return VU.VideoPreprocessor(video_input_stream, vf="")  # dummy
     else:
-        return VU.VideoFilter(video_input_stream, vf=f"scale=-2:{args.max_height}:flags=bilinear")
+        return VU.VideoPreprocessor(video_input_stream, vf=f"scale=-2:{args.max_height}:flags=bilinear")
 
 
 def segment_video(pts, args):
@@ -93,29 +89,27 @@ def segment_video(pts, args):
     for packet in input_container.demux(streams):
         if packet.stream.type == "video":
             for frame in packet.decode():
-                frame = video_filter.update(frame)
-                if frame is None:
-                    continue
-                if prev_pts in pts:
-                    # next video
-                    close_output_video(output_container, video_filter)
-                    video_no += 1
-                    output_container = open_output_video(args.output, ext, video_no, video_input_stream, audio_input_stream,
-                                                         args=args)
-                    audio_base_pts = video_base_pts = None
-                    video_filter = create_video_filter(video_input_stream, args)
+                for frame in video_filter.update(frame):
+                    if prev_pts in pts:
+                        # next video
+                        close_output_video(output_container, video_filter)
+                        video_no += 1
+                        output_container = open_output_video(args.output, ext, video_no, video_input_stream, audio_input_stream,
+                                                             args=args)
+                        audio_base_pts = video_base_pts = None
+                        video_filter = create_video_filter(video_input_stream, args)
 
-                prev_pts = frame.pts
-                if video_base_pts is None:
-                    video_base_pts = frame.pts
-                if args.reset_timestamp:
-                    frame.pts = frame.pts - video_base_pts
-                    frame.dts = None
+                    prev_pts = frame.pts
+                    if video_base_pts is None:
+                        video_base_pts = frame.pts
+                    if args.reset_timestamp:
+                        frame.pts = frame.pts - video_base_pts
+                        frame.dts = None
 
-                enc_packet = output_container.streams.video[0].encode(frame)
-                if enc_packet:
-                    output_container.mux(enc_packet)
-                pbar.update(1)
+                    enc_packet = output_container.streams.video[0].encode(frame)
+                    if enc_packet:
+                        output_container.mux(enc_packet)
+                    pbar.update(1)
         elif packet.stream.type == "audio":
             if packet.dts is None:
                 continue

@@ -20,7 +20,12 @@ from nunif.initializer import gc_collect
 from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.models.utils import check_compile_support
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
-from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
+from nunif.utils.video import (
+    VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS,
+    has_nvenc,
+    has_qsv,
+    pyav_init_cuda_primary_context,
+)
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.git import get_current_branch
 from nunif.utils.home_dir import ensure_home_dir
@@ -33,7 +38,7 @@ from nunif.gui import (
     persistent_manager_restore_all, persistent_manager_register,
     extension_list_to_wildcard, validate_number,
     set_icon_ex, apply_dark_mode, is_dark_mode,
-    VideoEncodingBox, IOPathPanel,
+    VideoEncodingBox, VideoDecodingBox, IOPathPanel,
     get_default_locale,
     init_win32_dpi,
 )
@@ -443,10 +448,15 @@ class MainFrame(wx.Frame):
         sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
         sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
+        # video decoding
+        # hwaccel
+        self.grp_video_dec = VideoDecodingBox(self.pnl_options, translate_function=T)
+
         # video encoding
         # sbs/vr180, padding
         # max-fps, crf, preset, tune
-        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T, has_nvenc=has_nvenc())
+        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T,
+                                          has_nvenc=has_nvenc(), has_qsv=has_qsv())
 
         # input video filter
         # deinterlace, rotate, vf
@@ -608,11 +618,15 @@ class MainFrame(wx.Frame):
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
+        sizer_video = wx.BoxSizer(wx.VERTICAL)
+        sizer_video.Add(self.grp_video_dec.sizer, 0, wx.ALL | wx.EXPAND, border=4)
+        sizer_video.Add(self.grp_video.sizer, 1, wx.ALL | wx.EXPAND, border=4)
+
         layout = wx.GridBagSizer(wx.HORIZONTAL)
-        layout.Add(sizer_stereo, (0, 0), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(self.grp_video.sizer, (0, 1), (2, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_video_filter, (0, 2), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(sizer_processor, (1, 2), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(sizer_stereo, pos=(0, 0), span=(2, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(sizer_video, pos=(0, 1), span=(2, 1), flag=wx.ALL | wx.EXPAND, border=0)
+        layout.Add(sizer_video_filter, pos=(0, 2), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(sizer_processor, pos=(1, 2), flag=wx.ALL | wx.EXPAND, border=4)
         self.pnl_options.SetSizer(layout)
 
         # preset panel
@@ -828,6 +842,7 @@ class MainFrame(wx.Frame):
             self.cbo_ema_decay,
             self.cbo_ema_buffer,
             *self.grp_video.get_editable_comboboxes(),
+            *self.grp_video_dec.get_editable_comboboxes(),
             self.cbo_foreground_scale,
             self.cbo_pad,
             self.cbo_app_preset,
@@ -1284,6 +1299,8 @@ class MainFrame(wx.Frame):
             profile_level=self.grp_video.profile_level,
             preset=self.grp_video.preset,
             tune=self.grp_video.tune,
+            hwaccel=self.grp_video_dec.hwaccel,
+            disable_software_fallback=not self.grp_video_dec.software_fallback,
 
             pad_mode=pad_mode,
             pad=pad,
@@ -1696,6 +1713,8 @@ class MainFrame(wx.Frame):
                     mode=args.autocrop,
                     uncrop_enabled=False,
                     vf=args.vf,
+                    hwaccel=args.hwaccel,
+                    disable_software_fallback=args.disable_software_fallback,
                     device=device,
                     batch_size=args.batch_size,
                     stop_event=self.stop_event,
@@ -1800,5 +1819,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pyav_init_cuda_primary_context()
     init_win32_dpi()
     main()

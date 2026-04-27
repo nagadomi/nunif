@@ -10,7 +10,6 @@ scipy
 waitress
 bottle==0.12.25
 diskcache
-flake8
 psutil
 pyyaml
 platformdirs
@@ -20,7 +19,8 @@ filelock
 
 # iw3
 timm
-av==15.0.0
+av==17.0.1
+simpleeval
 
 # iw3-player
 fastapi

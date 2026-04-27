@@ -246,4 +246,4 @@ class ZoeDepthModel(BaseDepthModel):
 
 
 if __name__ == "__main__":
-    ZoeDepthModel()
+    ZoeDepthModel("ZoeD_N")

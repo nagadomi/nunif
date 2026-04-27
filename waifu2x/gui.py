@@ -19,7 +19,12 @@ from .ui_utils import (
     DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
 from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
-from nunif.utils.video import VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS, has_nvenc
+from nunif.utils.video import (
+    VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS,
+    has_nvenc,
+    has_qsv,
+    pyav_init_cuda_primary_context,
+)
 from nunif.utils.git import get_current_branch
 from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
@@ -29,7 +34,7 @@ from nunif.gui import (
     extension_list_to_wildcard,
     validate_number,
     set_icon_ex,
-    VideoEncodingBox, IOPathPanel,
+    VideoEncodingBox, VideoDecodingBox, IOPathPanel,
     get_default_locale,
     init_win32_dpi
 )
@@ -171,9 +176,14 @@ class MainFrame(wx.Frame):
         sizer_sr = wx.StaticBoxSizer(self.grp_sr, wx.VERTICAL)
         sizer_sr.Add(layout, 1, wx.ALL | wx.EXPAND, 8)
 
+        # video decoding
+        # hwaccel
+        self.grp_video_dec = VideoDecodingBox(self.pnl_options, translate_function=T)
+
         # video encoding
         # max-fps, crf, preset, tune
-        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T, has_nvenc=has_nvenc())
+        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T,
+                                          has_nvenc=has_nvenc(), has_qsv=has_qsv())
 
         # input video filter
         # deinterlace, rotate, vf
@@ -282,10 +292,14 @@ class MainFrame(wx.Frame):
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
+        sizer_video = wx.BoxSizer(wx.VERTICAL)
+        sizer_video.Add(self.grp_video_dec.sizer, 0, wx.ALL | wx.EXPAND, border=4)
+        sizer_video.Add(self.grp_video.sizer, 1, wx.ALL | wx.EXPAND, border=4)
+
         layout = wx.GridBagSizer(wx.HORIZONTAL)
         layout.Add(sizer_sr, (0, 0), (0, 4), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_processor, (1, 0), flag=wx.ALL | wx.EXPAND, border=4)
-        layout.Add(self.grp_video.sizer, (1, 1), flag=wx.ALL | wx.EXPAND, border=4)
+        layout.Add(sizer_video, (1, 1), flag=wx.ALL | wx.EXPAND, border=0)
         layout.Add(sizer_video_filter, (1, 2), flag=wx.ALL | wx.EXPAND, border=4)
         self.pnl_options.SetSizer(layout)
 
@@ -328,6 +342,7 @@ class MainFrame(wx.Frame):
 
         editable_comboboxes = [
             *self.grp_video.get_editable_comboboxes(),
+            *self.grp_video_dec.get_editable_comboboxes(),
             self.cbo_grain_noise,
         ]
 
@@ -526,6 +541,8 @@ class MainFrame(wx.Frame):
             profile_level=self.grp_video.profile_level,
             preset=self.grp_video.preset,
             tune=self.grp_video.tune,
+            hwaccel=self.grp_video_dec.hwaccel,
+            disable_software_fallback=not self.grp_video_dec.software_fallback,
 
             rotate_right=rotate_right,
             rotate_left=rotate_left,
@@ -652,5 +669,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pyav_init_cuda_primary_context()
     init_win32_dpi()
     main()

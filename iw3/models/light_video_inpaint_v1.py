@@ -89,8 +89,8 @@ SEQ_LEN = 12
 
 @register_model
 class LightVideoInpaintV1(I2IBaseModel):
-    name = "inpaint.light_video_inpaint_v1"
-    name_alias = ("inpaint.light_video_inpaint_v1_small",)
+    name: str = "inpaint.light_video_inpaint_v1"
+    name_alias: tuple[str, ...] = ("inpaint.light_video_inpaint_v1_small",)
 
     def __init__(self, base_dim=96, lv2_mlp_ratio=1):
         super(LightVideoInpaintV1, self).__init__(locals(), scale=1, offset=16, in_channels=3, blend_size=8)
