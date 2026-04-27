@@ -72,6 +72,7 @@ CONVERGENCE_INC_DEFAULT = 0.1
 CONVERGENCE_INC_FINE = 0.005
 FOREGROUNDSCALE_INC_DEFAULT = 0.2
 FOREGROUNDSCALE_INC_FINE = 0.005
+ADD_DEBUG_METHOD = bool(os.getenv("DEBUG", False))
 
 
 class FPSEvent(wx.PyCommandEvent):
@@ -199,7 +200,7 @@ class MainFrame(wx.Frame):
         self.cbo_method = wx.ComboBox(self.grp_stereo,
                                       choices=["mlbw_l2", "mlbw_l4", "mlbw_l2s",
                                                "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
-                                               "forward_fill"],
+                                               "forward_fill"] + (["NULL"] if ADD_DEBUG_METHOD else []),
                                       name="cbo_method")
         self.cbo_method.SetEditable(False)
         self.cbo_method.SetSelection(4)
@@ -714,7 +715,7 @@ class MainFrame(wx.Frame):
 
     def get_depth_models(self, small_only):
         if small_only:
-            return ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S", "VDA_Stream_Metric_S"]
+            depth_models = ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S", "VDA_Stream_Metric_S"]
         else:
             depth_models = [
                 "ZoeD_N", "ZoeD_K", "ZoeD_NK",
@@ -754,7 +755,10 @@ class MainFrame(wx.Frame):
             if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_L"):
                 depth_models.append("VDA_Stream_Metric_L")
 
-            return depth_models
+        if ADD_DEBUG_METHOD:
+            depth_models += ["NULL"]
+
+        return depth_models
 
     def get_editable_comboboxes(self):
         editable_comboboxes = [
