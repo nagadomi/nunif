@@ -26,6 +26,7 @@ class VideoDecodingBox():
         self.chk_software_fallback = wx.CheckBox(self.grp_video_dec, label=T("Software Fallback"),
                                                  name=f"{prefix}chk_software_fallback")
         self.chk_software_fallback.SetValue(True)
+        self.chk_software_fallback.SetToolTip(T("Use software decoder if hardware acceleration fails or is unsupported"))
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.SetEmptyCellSize((0, 0))

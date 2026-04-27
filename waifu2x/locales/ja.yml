@@ -31,6 +31,10 @@
 "Old version, Art model, veryfast": "旧バージョン, イラストモデル, とても速い"
 "Old version, Photo model, veryfast": "旧バージョン, 写真モデル, とても速い"
 
+"Video Decoding": "動画デコード"
+"Software Fallback": "フォールバック"
+"Use software decoder if hardware acceleration fails or is unsupported": "ハードウェアアクセラレーターが失敗、または非対応の場合にソフトウェアデコーダを使用する"
+
 "Video Encoding": "動画圧縮"
 
 "Max FPS": "最大フレームレート"
