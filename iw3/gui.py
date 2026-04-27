@@ -648,6 +648,8 @@ class MainFrame(wx.Frame):
         self.sep_language = wx.StaticLine(self.pnl_preset, size=self.FromDIP((2, 20)), style=wx.LI_VERTICAL)
         self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
         self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
+        self.cbo_language.SetEditable(False)
+
         lang_selection = 0
         for i, lang in enumerate(LOCAL_LIST):
             t = LOCALES.get(lang)
