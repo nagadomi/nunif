@@ -120,8 +120,10 @@ def check_compile_support(device):
     return _COMPILER_SUPPORTED_DEVICES[device_name]
 
 
-def compile_model(model, **kwargs):
-    if not is_compiled_model(model) and check_compile_support(get_model_device(model)):
+def compile_model(model, device=None, **kwargs):
+    device = device or get_model_device(model)
+
+    if not is_compiled_model(model) and check_compile_support(device):
         logger.debug(f"compile {model.__class__.__name__}, kwargs={kwargs}")
         model = torch.compile(model, **kwargs)
     return model

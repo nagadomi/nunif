@@ -1,8 +1,9 @@
 import torch
+import torch.nn.functional as F
+from nunif.device import autocast, device_is_mps
+from nunif.modules.replication_pad2d import replication_pad2d_naive
 from .mapper import get_mapper
 from .dilation import closing, dilate_inner, dilate_outer
-from nunif.device import autocast, device_is_mps
-import torch.nn.functional as F
 
 
 def make_divergence_feature_value(divergence, convergence, image_width):
@@ -32,16 +33,14 @@ def make_input_tensor(c, depth, divergence, convergence,
         # Note that this does not work with tiled rendering (training code)
         border_pix = round(divergence * 0.75 * 0.01 * image_width * (depth.shape[-1] / image_width))
         if border_pix > 0:
-            border_weight_l = torch.linspace(0.0, 1.0, border_pix, device=depth.device)
-            border_weight_r = torch.linspace(1.0, 0.0, border_pix, device=depth.device)
-            divergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(divergence_feat[:, :border_pix]) *
-                                               divergence_feat[:, :border_pix])
-            divergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(divergence_feat[:, -border_pix:]) *
-                                                divergence_feat[:, -border_pix:])
-            convergence_feat[:, :border_pix] = (border_weight_l[None, :].expand_as(convergence_feat[:, :border_pix]) *
-                                                convergence_feat[:, :border_pix])
-            convergence_feat[:, -border_pix:] = (border_weight_r[None, :].expand_as(convergence_feat[:, -border_pix:]) *
-                                                 convergence_feat[:, -border_pix:])
+            view_shape = [1] * (depth.ndim - 1) + [-1]
+            border_weight_l = torch.linspace(0.0, 1.0, border_pix, dtype=depth.dtype, device=depth.device).view(view_shape)
+            border_weight_r = torch.linspace(1.0, 0.0, border_pix, dtype=depth.dtype, device=depth.device).view(view_shape)
+
+            divergence_feat[..., :border_pix] *= border_weight_l
+            divergence_feat[..., -border_pix:] *= border_weight_r
+            convergence_feat[..., :border_pix] *= border_weight_l
+            convergence_feat[..., -border_pix:] *= border_weight_r
 
     if c is not None:
         w, h = c.shape[2], c.shape[1]
@@ -116,6 +115,33 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_vi
         right_eye = backward_warp(c, grid, delta, delta_scale)
     elif synthetic_view == "left":
         left_eye = backward_warp(c, grid, -delta, delta_scale)
+        right_eye = c
+
+    return left_eye, right_eye
+
+
+def apply_divergence_monobw(
+        model: torch.nn.Module,
+        c: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str = "both",
+        preserve_screen_border: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    assert synthetic_view in {"both", "right", "left"}
+    if synthetic_view == "both":
+        left_eye = model(c, depth, divergence=divergence, convergence=convergence,
+                         preserve_screen_border=preserve_screen_border)
+        right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence, convergence=convergence,
+                          preserve_screen_border=preserve_screen_border).flip(dims=[-1])
+    elif synthetic_view == "right":
+        left_eye = c
+        right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence * 2, convergence=convergence,
+                          preserve_screen_border=preserve_screen_border).flip(dims=[-1])
+    elif synthetic_view == "left":
+        left_eye = model(c, depth, divergence=divergence * 2, convergence=convergence,
+                         preserve_screen_border=preserve_screen_border)
         right_eye = c
 
     return left_eye, right_eye

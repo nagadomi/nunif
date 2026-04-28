@@ -37,6 +37,7 @@ from .hub_dir import HUB_MODEL_DIR
 from .equirectangular import equirectangular_projection
 from .backward_warp import (
     apply_divergence_grid_sample,
+    apply_divergence_monobw,
     apply_divergence_nn_LR,
 )
 from .stereo_model_factory import create_stereo_model
@@ -332,6 +333,16 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             im, depth,
             args.divergence, convergence=convergence,
             synthetic_view=args.synthetic_view)
+    elif args.method == "monobw":
+        left_eye, right_eye = apply_divergence_monobw(
+            side_model,
+            im,
+            depth,
+            divergence=args.divergence,
+            convergence=convergence,
+            synthetic_view=args.synthetic_view,
+            preserve_screen_border=args.preserve_screen_border,
+        )
     elif args.method in {"forward", "forward_fill"}:
         left_eye, right_eye = apply_divergence_forward_warp(
             im, depth,
@@ -971,7 +982,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             not isinstance(side_model, DeviceSwitchInference) and
             not hasattr(side_model, "compile_context")
     ):
-        side_model = compile_model(side_model)
+        side_model = compile_model(side_model, device=args.state["device"])
 
     output_parent_dir = path.basename(output_path)
     input_parent_dir = path.basename(path.dirname(input_filename))
@@ -1991,7 +2002,7 @@ def create_parser(required_true=True):
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--method", type=str, default="row_flow",
-                        choices=["grid_sample", "backward",
+                        choices=["grid_sample", "backward", "monobw",
                                  "forward", "forward_fill", "forward_inpaint",
                                  "mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s",
                                  "mask_mlbw_l2", "mlbw_l2_inpaint",

@@ -6,6 +6,7 @@ from .depth_aa import DepthAA
 from .mlbw import MLBW
 from .da3mono_disparity import DA3MonoDisparity
 from .sod_v1 import SODV1
+from .monobw import MonoBW
 
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "LightInpaintV1", "LightVideoInpaintV1",
     "DA3MonoDisparity",
     "SODV1",
+    "MonoBW",
 ]

@@ -1,4 +1,4 @@
-from nunif.models import load_model
+from nunif.models import load_model, create_model
 from nunif.utils.ui import TorchHubDir
 from .hub_dir import HUB_MODEL_DIR
 from .forward_inpaint import ForwardInpaint
@@ -130,9 +130,11 @@ def create_stereo_model(
                 device_id=device_id,
                 use_weak_convergence_model=use_weak_convergence_model,
             )
-        elif method in {"forward", "forward_fill", "backward", "NULL"}:
+        elif method in {"forward", "forward_fill", "backward", "grid_sample", "NULL"}:
             return None
         elif method in {"forward_inpaint"}:
             return ForwardInpaint(name=inpaint_model, device_id=device_id)
+        elif method == "monobw":
+            return create_model("sbs.monobw", device_ids=[device_id]).eval()
         else:
             raise ValueError(method)
