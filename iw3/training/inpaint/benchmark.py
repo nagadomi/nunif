@@ -1,8 +1,10 @@
 import argparse
+import os
 from os import path
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
+import torchvision.transforms.functional as TF
 import iw3.models  # noqa
 from nunif.models import load_model
 from nunif.modules.lpips import LPIPSMetric
@@ -39,8 +41,22 @@ def main():
                         help="device ids; if -1 is specified, use CPU")
     parser.add_argument("--lpips-net", type=str, default="alex", choices=["alex", "vgg"],
                         help="LPIPS base model")
+    parser.add_argument("--reference-frames", type=int, nargs="+", default=[0],
+                        help="reference frames <pre> <post> for video inpain")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="output directory")
 
     args = parser.parse_args()
+    if len(args.reference_frames) == 1:
+        reference_frames = (args.reference_frames[0], args.reference_frames[0])
+    elif len(args.reference_frames) == 2:
+        reference_frames = (args.reference_frames[0], args.reference_frames[1])
+    else:
+        raise ValueError("--inpaint-reference-frames requires 1 or 2 values")
+
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
+
     device = create_device(args.gpu)
     model = load_model(args.checkpoint_file)[0].eval().to(device)
     if args.video:
@@ -62,7 +78,7 @@ def main():
     processed_frames = 0
     skipped_frames = 0
 
-    for x, mask, y, *_ in tqdm(dataset, ncols=80):
+    for x, mask, y, data_index in tqdm(dataset, ncols=80):
         target_frames += mask.shape[0]
         mask_y = F.pad(mask, (-model_offset,) * 4).float()
         if not mask_y.sum() > 0:
@@ -84,6 +100,28 @@ def main():
         with torch.inference_mode(), autocast(device):
             x, mask = model.preprocess(x, mask)
             z = model(x, mask)
+            if args.video and reference_frames:
+                slice_start = reference_frames[0] if reference_frames[0] else None
+                slice_end = -reference_frames[1] if reference_frames[1] else None
+                s = slice(slice_start, slice_end)
+                x = x[s]
+                mask = mask[s]
+                z = z[s]
+                y = y[s]
+                mask_y = mask_y[s]
+
+            if args.output_dir:
+                if args.video:
+                    data_name = path.basename(dataset.folders[data_index])
+                    output_dir = path.join(args.output_dir, data_name)
+                    os.makedirs(output_dir, exist_ok=True)
+                    for i in range(z.shape[0]):
+                        TF.to_pil_image(z[i]).save(path.join(output_dir, f"{i}_z.png"))
+                        TF.to_pil_image(y[i]).save(path.join(output_dir, f"{i}_y.png"))
+                else:
+                    data_name = path.splitext(path.basename(dataset.files[data_index]))[0]
+                    TF.to_pil_image(z[0]).save(path.join(args.output_dir, f"{data_name}_z.png"))
+                    TF.to_pil_image(y[0]).save(path.join(args.output_dir, f"{data_name}_y.png"))
 
             valid_index = (mask_y.sum(dim=(1, 2, 3)) > 0).nonzero(as_tuple=True)[0]
             z = z[valid_index]
@@ -91,12 +129,12 @@ def main():
             mask_y = mask_y[valid_index]
             num_frames = z.shape[0]
             skipped_frames += x.shape[0] - mask_y.shape[0]
-
-            lpips_sum = lpips_sum + lpips(z, y).item() * num_frames
-            lpips_mask_sum = lpips_mask_sum + lpips(z, y, mask=mask_y).item() * num_frames
-            psnr_sum = psnr_sum + psnr(z, y).item() * num_frames
-            psnr_mask_sum = psnr_mask_sum + psnr(z, y, mask=mask_y).item() * num_frames
-            processed_frames += num_frames
+            if num_frames > 0:
+                lpips_sum = lpips_sum + lpips(z, y).item() * num_frames
+                lpips_mask_sum = lpips_mask_sum + lpips(z, y, mask=mask_y).item() * num_frames
+                psnr_sum = psnr_sum + psnr(z, y).item() * num_frames
+                psnr_mask_sum = psnr_mask_sum + psnr(z, y, mask=mask_y).item() * num_frames
+                processed_frames += num_frames
 
     print("* Image")
     print(f"PSNR↑: {round(psnr_sum / processed_frames, 2)}, LPIPS↓: {round(lpips_sum / processed_frames, 4)}")
