@@ -76,22 +76,6 @@ class MonoBW(I2IBaseModel):
             if convergence.ndim != 4:
                 convergence = convergence.view(B, 1, 1, 1)
 
-        if border_pix > 0:
-            convergence = convergence.expand_as(depth).clone()
-            divergence = torch.tensor(divergence, dtype=dtype, device=device).expand_as(depth).clone()
-            view_shape = [1] * (depth.ndim - 1) + [-1]
-            border_weight_l = torch.linspace(0.0, 1.0, border_pix, dtype=dtype, device=device).view(view_shape)
-            border_weight_r = torch.linspace(1.0, 0.0, border_pix, dtype=dtype, device=device).view(view_shape)
-
-            # Apply sqrt() because convergence * divergence is performed later.
-            border_weight_l = border_weight_l.sqrt()
-            border_weight_r = border_weight_r.sqrt()
-
-            divergence[..., :border_pix] *= border_weight_l
-            divergence[..., -border_pix:] *= border_weight_r
-            convergence[..., :border_pix] *= border_weight_l
-            convergence[..., -border_pix:] *= border_weight_r
-
         # Base indices for low-res grid
         src_index = torch.arange(W, device=device, dtype=dtype).view(1, 1, 1, W).expand(B, 1, H, W)
 
@@ -100,6 +84,13 @@ class MonoBW(I2IBaseModel):
         delta_scale = base_size / W
         shift_size_px = divergence * (0.01 * delta_scale * (W - 1) * 0.5)
         index_shift = (depth - convergence) * shift_size_px
+
+        if border_pix > 0:
+            view_shape = [1] * (index_shift.ndim - 1) + [-1]
+            border_weight_l = torch.linspace(0.0, 1.0, border_pix, dtype=dtype, device=device).view(view_shape)
+            border_weight_r = torch.linspace(1.0, 0.0, border_pix, dtype=dtype, device=device).view(view_shape)
+            index_shift[..., :border_pix] *= border_weight_l
+            index_shift[..., -border_pix:] *= border_weight_r
 
         # Destination mapping and Monotonization
         dest_index = src_index + index_shift
