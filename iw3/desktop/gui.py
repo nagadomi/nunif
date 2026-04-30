@@ -200,7 +200,7 @@ class MainFrame(wx.Frame):
         self.cbo_method = wx.ComboBox(self.grp_stereo,
                                       choices=["mlbw_l2", "mlbw_l4", "mlbw_l2s",
                                                "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
-                                               "forward_fill"] + (["NULL"] if ADD_DEBUG_METHOD else []),
+                                               "forward_fill", "monobw"] + (["NULL"] if ADD_DEBUG_METHOD else []),
                                       name="cbo_method")
         self.cbo_method.SetEditable(False)
         self.cbo_method.SetSelection(4)
