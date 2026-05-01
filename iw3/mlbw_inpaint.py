@@ -155,6 +155,9 @@ class MLBWInpaintVideo(nn.Module):
     # TODO: Refactor with ForwardInpaintVideo
     def __init__(self, name=None, pre_padding=3, post_padding=3, device_id=-1, mask_mlbw=None):
         super().__init__()
+        if pre_padding + post_padding > 12 - 1:
+            raise ValueError(f"pre_padding({pre_padding}) + post_padding({post_padding})  must not exceed 11")
+
         self.model = load_video_inpaint_model(name, device_id=device_id)
         if mask_mlbw is None:
             mask_mlbw = load_mask_mlbw(device_id=device_id)
@@ -294,11 +297,27 @@ class MLBWInpaintVideo(nn.Module):
 
 
 class MLBWInpaint(nn.Module):
-    def __init__(self, name, device_id):
+    def __init__(self, name, device_id, overlap_frames=None):
         super().__init__()
+        if overlap_frames is None:
+            overlap_frames = [3]
+        if len(overlap_frames) == 1:
+            pre_padding = post_padding = overlap_frames[0]
+        elif len(overlap_frames) == 2:
+            pre_padding = overlap_frames[0]
+            post_padding = overlap_frames[1]
+        else:
+            raise ValueError("overlap_frames requires 1 or 2 values")
+
         self.device = create_device(device_id)
-        self.model = nn.ModuleList([MLBWInpaintImage(name, device_id=device_id),
-                                    MLBWInpaintVideo(name, device_id=device_id)])
+        image_model = MLBWInpaintImage(name, device_id=device_id)
+        video_model = MLBWInpaintVideo(
+            name,
+            pre_padding=pre_padding,
+            post_padding=post_padding,
+            device_id=device_id,
+        )
+        self.model = nn.ModuleList([image_model, video_model])
         self.mode = 0
         self.to(self.device)
         self.eval()
@@ -384,10 +403,10 @@ def _test_image():
     TF.to_pil_image(left_eye[0]).show()
 
 
-def _test_video():
+def _test_video(pre_padding=3, post_padding=3):
     import torchvision.io as io
 
-    model = MLBWInpaintVideo().cuda()
+    model = MLBWInpaintVideo(pre_padding=pre_padding, post_padding=post_padding).cuda()
     x = io.read_image("cc0/320/dog.png") / 255.0
     depth = io.read_image("cc0/depth/dog.png") / 65536.0
 
@@ -426,4 +445,5 @@ def _test_video():
 
 if __name__ == "__main__":
     _test_image()
-    _test_video()
+    _test_video(pre_padding=3, post_padding=3)
+    _test_video(pre_padding=3, post_padding=0)
