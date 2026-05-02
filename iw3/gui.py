@@ -1138,7 +1138,7 @@ class MainFrame(wx.Frame):
                 validate_number(self.cbo_overlap_frames_pre.GetValue(), 0, 5, is_int=True, allow_empty=False) and
                 validate_number(self.cbo_overlap_frames_post.GetValue(), 0, 5, is_int=True, allow_empty=False)
         ):
-            self.show_validation_error_message(T("Inpaint Overlap Frames"), 0, 20)
+            self.show_validation_error_message(T("Inpaint Overlap Frames"), 0, 5)
             return None
         if self.lbl_mask_dilation.IsShown() and not (
                 validate_number(self.cbo_mask_inner_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False) and
