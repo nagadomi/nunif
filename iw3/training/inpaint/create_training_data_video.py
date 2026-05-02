@@ -173,10 +173,6 @@ def main(args):
 
     # TODO: support for divergence handles when d2 and d3 models become available in the future
     device = create_device(args.gpu)
-    if device.type == "cuda":
-        hwaccel = "cuda"
-    else:
-        hwaccel = None
     mask_mlbw = create_stereo_model("mask_mlbw_l2", divergence=1, device_id=args.gpu)
 
     video_file = args.dataset_dir
@@ -222,7 +218,7 @@ def main(args):
             skip_counter = args.skip_interval
 
         VU.hook_frame(video_file, frame_callback, config_callback=config_callback,
-                      hwaccel=hwaccel, device=device)
+                      hwaccel=args.hwaccel, device=device)
 
 
 def register(subparsers, default_parser):
@@ -247,6 +243,9 @@ def register(subparsers, default_parser):
     parser.add_argument("--skip-first", type=int, default=0)
     parser.add_argument("--max-workers", type=int, default=max_workers,
                         help="Number of worker threads. Set to 1 to disable.")
+    parser.add_argument("--hwaccel", type=str, default=None,
+                        choices=VU.HW_DEVICES,
+                        help="hardware accelerator for the video decoder")
 
     parser.set_defaults(handler=main)
 
