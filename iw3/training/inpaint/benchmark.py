@@ -41,18 +41,18 @@ def main():
                         help="device ids; if -1 is specified, use CPU")
     parser.add_argument("--lpips-net", type=str, default="alex", choices=["alex", "vgg"],
                         help="LPIPS base model")
-    parser.add_argument("--reference-frames", type=int, nargs="+", default=[0],
-                        help="reference frames <pre> <post> for video inpain")
+    parser.add_argument("--overlap-frames", type=int, nargs="+", default=[0],
+                        help="overlap/reference frames <pre> <post> for video inpain")
     parser.add_argument("--output-dir", type=str, default=None,
                         help="output directory")
 
     args = parser.parse_args()
-    if len(args.reference_frames) == 1:
-        reference_frames = (args.reference_frames[0], args.reference_frames[0])
-    elif len(args.reference_frames) == 2:
-        reference_frames = (args.reference_frames[0], args.reference_frames[1])
+    if len(args.overlap_frames) == 1:
+        overlap_frames = (args.overlap_frames[0], args.overlap_frames[0])
+    elif len(args.overlap_frames) == 2:
+        overlap_frames = (args.overlap_frames[0], args.overlap_frames[1])
     else:
-        raise ValueError("--inpaint-reference-frames requires 1 or 2 values")
+        raise ValueError("--overlap-frames requires 1 or 2 values")
 
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
@@ -100,9 +100,9 @@ def main():
         with torch.inference_mode(), autocast(device):
             x, mask = model.preprocess(x, mask)
             z = model(x, mask)
-            if args.video and reference_frames:
-                slice_start = reference_frames[0] if reference_frames[0] else None
-                slice_end = -reference_frames[1] if reference_frames[1] else None
+            if args.video and overlap_frames:
+                slice_start = overlap_frames[0] if overlap_frames[0] else None
+                slice_end = -overlap_frames[1] if overlap_frames[1] else None
                 s = slice(slice_start, slice_end)
                 x = x[s]
                 mask = mask[s]
