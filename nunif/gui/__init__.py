@@ -16,6 +16,7 @@ from .common import (
     start_file,
     is_dark_mode, apply_dark_mode,
     init_win32_dpi,
+    refresh_layouts,
 )
 from .video_encoding_box import VideoEncodingBox
 from .video_decoding_box import VideoDecodingBox
@@ -46,4 +47,5 @@ __all__ = [
     "is_dark_mode",
     "get_default_locale",
     "init_win32_dpi",
+    "refresh_layouts",
 ]

@@ -2188,6 +2188,8 @@ def create_parser(required_true=True):
                         help="loop count of outer mask dilation")
     parser.add_argument("--inpaint-max-width", type=int, default=None,
                         help="max width of inpaint result")
+    parser.add_argument("--inpaint-overlap-frames", type=int, nargs="+", default=None,
+                        help="overlap/padding frames for video inpaint model. <frames> or <pre frames> <post frames>")
 
     parser.add_argument("--depth-aa", action="store_true",
                         help="apply depth antialiasing. ignored for unsupported models")
@@ -2405,6 +2407,7 @@ def iw3_main(args):
         divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
         device_id=args.gpu[0],
         inpaint_model=args.inpaint_model,
+        overlap_frames=args.inpaint_overlap_frames,
     )
     if side_model is not None and len(args.gpu) > 1 and args.method not in {"forward_inpaint", "mlbw_l2_inpaint"}:
         side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)

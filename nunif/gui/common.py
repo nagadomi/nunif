@@ -264,3 +264,11 @@ def init_win32_dpi():
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except: # noqa
             pass
+
+
+def refresh_layouts(window):
+    window.InvalidateBestSize()
+    for child in window.GetChildren():
+        refresh_layouts(child)
+    window.Layout()
+    window.Fit()

@@ -41,6 +41,7 @@ from nunif.gui import (
     VideoEncodingBox, VideoDecodingBox, IOPathPanel,
     get_default_locale,
     init_win32_dpi,
+    refresh_layouts,
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models # noqa
@@ -87,7 +88,10 @@ class IW3App(wx.App):
                     return False
         set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), main_frame.GetTitle())
         self.SetAppName(main_frame.GetTitle())
+        refresh_layouts(main_frame)
         main_frame.Show()
+        main_frame.Layout()
+        main_frame.Fit()
         self.SetTopWindow(main_frame)
         return True
 
@@ -256,6 +260,38 @@ class MainFrame(wx.Frame):
         self.cbo_inpaint_model.SetEditable(False)
         self.cbo_inpaint_model.SetSelection(0)
 
+        self.lbl_overlap_frames = wx.StaticText(self.grp_stereo, label=T("Inpaint Overlap Frames"))
+        self.cbo_overlap_frames_pre = EditableComboBox(self.grp_stereo,
+                                                       choices=["0", "3"],
+                                                       name="cbo_overlap_frames_pre")
+        self.cbo_overlap_frames_pre.SetSelection(1)
+        self.cbo_overlap_frames_pre.SetToolTip(T("Overlap Pre"))
+
+        self.cbo_overlap_frames_post = EditableComboBox(self.grp_stereo,
+                                                        choices=["0", "3"],
+                                                        name="cbo_overlap_frames_post")
+        self.cbo_overlap_frames_post.SetSelection(1)
+        self.cbo_overlap_frames_post.SetToolTip(T("Overlap Post"))
+
+        self.lbl_mask_dilation = wx.StaticText(self.grp_stereo, label=T("Inpaint Mask Dilation"))
+        self.cbo_mask_inner_dilation = EditableComboBox(self.grp_stereo,
+                                                        choices=["0", "1", "2"],
+                                                        name="cbo_mask_inner_dilation")
+        self.cbo_mask_inner_dilation.SetSelection(0)
+        self.cbo_mask_inner_dilation.SetToolTip(T("Inner"))
+
+        self.cbo_mask_outer_dilation = EditableComboBox(self.grp_stereo,
+                                                        choices=["0", "1", "2"],
+                                                        name="cbo_mask_outer_dilation")
+        self.cbo_mask_outer_dilation.SetSelection(0)
+        self.cbo_mask_outer_dilation.SetToolTip(T("Outer"))
+
+        self.lbl_inpaint_max_width = wx.StaticText(self.grp_stereo, label=T("Inpaint Max Width"))
+        self.cbo_inpaint_max_width = EditableComboBox(self.grp_stereo,
+                                                      choices=["", "1920"],
+                                                      name="cbo_inpaint_max_width")
+        self.cbo_inpaint_max_width.SetSelection(0)
+
         self.lbl_stereo_width = wx.StaticText(self.grp_stereo, label=T("Stereo Processing Width"))
         self.cbo_stereo_width = EditableComboBox(self.grp_stereo,
                                                  choices=["Default", "1920", "1280", "640"],
@@ -302,25 +338,6 @@ class MainFrame(wx.Frame):
         self.lbl_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
         self.cbo_edge_dilation.SetToolTip(T("X or XY"))
         self.cbo_edge_dilation_y.SetToolTip(T("Y"))
-
-        self.lbl_mask_dilation = wx.StaticText(self.grp_stereo, label=T("Mask Dilation"))
-        self.cbo_mask_inner_dilation = EditableComboBox(self.grp_stereo,
-                                                        choices=["0", "1", "2"],
-                                                        name="cbo_mask_inner_dilation")
-        self.cbo_mask_inner_dilation.SetSelection(0)
-        self.cbo_mask_inner_dilation.SetToolTip(T("Inner"))
-
-        self.cbo_mask_outer_dilation = EditableComboBox(self.grp_stereo,
-                                                        choices=["0", "1", "2"],
-                                                        name="cbo_mask_outer_dilation")
-        self.cbo_mask_outer_dilation.SetSelection(0)
-        self.cbo_mask_outer_dilation.SetToolTip(T("Outer"))
-
-        self.lbl_inpaint_max_width = wx.StaticText(self.grp_stereo, label=T("Inpaint Max Width"))
-        self.cbo_inpaint_max_width = EditableComboBox(self.grp_stereo,
-                                                      choices=["", "1920"],
-                                                      name="cbo_inpaint_max_width")
-        self.cbo_inpaint_max_width.SetSelection(0)
 
         self.chk_ema_normalize = wx.CheckBox(self.grp_stereo,
                                              label=T("Flicker Reduction"),
@@ -415,6 +432,9 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_inpaint_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_inpaint_model, (i, 1), (1, 2), flag=wx.EXPAND)
+        layout.Add(self.lbl_overlap_frames, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_overlap_frames_pre, (i, 1), flag=wx.EXPAND)
+        layout.Add(self.cbo_overlap_frames_post, (i, 2), flag=wx.EXPAND)
         layout.Add(self.lbl_mask_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_mask_inner_dilation, (i, 1), flag=wx.EXPAND)
         layout.Add(self.cbo_mask_outer_dilation, (i, 2), flag=wx.EXPAND)
@@ -527,6 +547,7 @@ class MainFrame(wx.Frame):
         self.txt_autocrop_test.SetValue("")
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
+        layout.SetEmptyCellSize((0, 0))
         layout.Add(self.chk_start_time, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.txt_start_time, (0, 1), (0, 2), flag=wx.EXPAND)
         layout.Add(self.chk_end_time, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -605,6 +626,7 @@ class MainFrame(wx.Frame):
         self.chk_compile.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=5, hgap=4)
+        layout.SetEmptyCellSize((0, 0))
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_device, (0, 1), (0, 3), flag=wx.EXPAND)
         layout.Add(self.lbl_batch_size, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -624,7 +646,8 @@ class MainFrame(wx.Frame):
         sizer_video.Add(self.grp_video_dec.sizer, 0, wx.ALL | wx.EXPAND, border=4)
         sizer_video.Add(self.grp_video.sizer, 1, wx.ALL | wx.EXPAND, border=4)
 
-        layout = wx.GridBagSizer(wx.HORIZONTAL)
+        layout = wx.GridBagSizer(vgap=0, hgap=0)
+        layout.SetEmptyCellSize((0, 0))
         layout.Add(sizer_stereo, pos=(0, 0), span=(2, 1), flag=wx.ALL | wx.EXPAND, border=4)
         layout.Add(sizer_video, pos=(0, 1), span=(2, 1), flag=wx.ALL | wx.EXPAND, border=0)
         layout.Add(sizer_video_filter, pos=(0, 2), flag=wx.ALL | wx.EXPAND, border=4)
@@ -697,7 +720,6 @@ class MainFrame(wx.Frame):
         self.pnl_process.SetSizer(layout)
 
         # main layout
-
         layout = wx.BoxSizer(wx.VERTICAL)
         layout.AddSpacer(8)
         layout.Add(self.pnl_preset, 0, wx.ALIGN_RIGHT, 2)
@@ -956,7 +978,8 @@ class MainFrame(wx.Frame):
         else:
             self.chk_depth_aa.Disable()
 
-        self.GetSizer().Layout()
+        self.Layout()
+        self.Fit()
 
     def update_anaglyph_state(self):
         if self.cbo_stereo_format.GetValue() == "Anaglyph":
@@ -965,7 +988,9 @@ class MainFrame(wx.Frame):
         else:
             self.lbl_anaglyph_method.Hide()
             self.cbo_anaglyph_method.Hide()
-        self.GetSizer().Layout()
+
+        self.Layout()
+        self.Fit()
 
     def update_export_option_state(self):
         if self.cbo_stereo_format.GetValue() in {"Export", "Export disparity"}:
@@ -974,7 +999,9 @@ class MainFrame(wx.Frame):
         else:
             self.chk_export_depth_only.Hide()
             self.chk_export_depth_fit.Hide()
-        self.GetSizer().Layout()
+
+        self.Layout()
+        self.Fit()
 
     def on_selected_index_changed_cbo_depth_model(self, event):
         self.update_model_selection()
@@ -1014,6 +1041,9 @@ class MainFrame(wx.Frame):
         if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint"}:
             self.lbl_inpaint_model.Show()
             self.cbo_inpaint_model.Show()
+            self.lbl_overlap_frames.Show()
+            self.cbo_overlap_frames_pre.Show()
+            self.cbo_overlap_frames_post.Show()
             self.lbl_mask_dilation.Show()
             self.cbo_mask_outer_dilation.Show()
             self.cbo_mask_inner_dilation.Show()
@@ -1022,13 +1052,17 @@ class MainFrame(wx.Frame):
         else:
             self.lbl_inpaint_model.Hide()
             self.cbo_inpaint_model.Hide()
+            self.lbl_overlap_frames.Hide()
+            self.cbo_overlap_frames_pre.Hide()
+            self.cbo_overlap_frames_post.Hide()
             self.lbl_mask_dilation.Hide()
             self.cbo_mask_outer_dilation.Hide()
             self.cbo_mask_inner_dilation.Hide()
             self.lbl_inpaint_max_width.Hide()
             self.cbo_inpaint_max_width.Hide()
 
-        self.GetSizer().Layout()
+        self.Layout()
+        self.Fit()
 
     def on_changed_edge_dilation(self, event):
         self.update_edge_dilation()
@@ -1100,11 +1134,17 @@ class MainFrame(wx.Frame):
         if not validate_number(self.cbo_edge_dilation_y.GetValue(), 0, 20, is_int=True, allow_empty=True):
             self.show_validation_error_message(T("Edge Fix"), 0, 20)
             return None
+        if self.lbl_overlap_frames.IsShown() and not (
+                validate_number(self.cbo_overlap_frames_pre.GetValue(), 0, 5, is_int=True, allow_empty=False) and
+                validate_number(self.cbo_overlap_frames_post.GetValue(), 0, 5, is_int=True, allow_empty=False)
+        ):
+            self.show_validation_error_message(T("Inpaint Overlap Frames"), 0, 5)
+            return None
         if self.lbl_mask_dilation.IsShown() and not (
                 validate_number(self.cbo_mask_inner_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False) and
                 validate_number(self.cbo_mask_outer_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False)
         ):
-            self.show_validation_error_message(T("Mask Dilation"), 0, 20)
+            self.show_validation_error_message(T("Inpaint Mask Dilation"), 0, 20)
             return None
         if (
                 self.lbl_inpaint_max_width.IsShown() and
@@ -1230,12 +1270,15 @@ class MainFrame(wx.Frame):
             inpaint_model = self.cbo_inpaint_model.GetValue()
             mask_inner_dilation = int(self.cbo_mask_inner_dilation.GetValue())
             mask_outer_dilation = int(self.cbo_mask_outer_dilation.GetValue())
+            inpaint_overlap_frames = [int(self.cbo_overlap_frames_pre.GetValue()),
+                                      int(self.cbo_overlap_frames_post.GetValue())]
             if self.cbo_inpaint_max_width.GetValue():
                 inpaint_max_width = int(self.cbo_inpaint_max_width.GetValue())
             else:
                 inpaint_max_width = None
         else:
             inpaint_model = None
+            inpaint_overlap_frames = None
             mask_inner_dilation = 0
             mask_outer_dilation = 0
             inpaint_max_width = None
@@ -1270,6 +1313,7 @@ class MainFrame(wx.Frame):
             depth_aa=depth_aa,
             edge_dilation=edge_dilation,
             inpaint_model=inpaint_model,
+            inpaint_overlap_frames=inpaint_overlap_frames,
             mask_inner_dilation=mask_inner_dilation,
             mask_outer_dilation=mask_outer_dilation,
             inpaint_max_width=inpaint_max_width,
@@ -1567,7 +1611,9 @@ class MainFrame(wx.Frame):
 
     def on_click_divergence_warning(self, event):
         self.lbl_divergence_warning.Hide()
-        self.GetSizer().Layout()
+
+        self.Layout()
+        self.Fit()
 
     def update_divergence_warning(self, *args, **kwargs):
         try:
@@ -1610,7 +1656,8 @@ class MainFrame(wx.Frame):
                 self.lbl_divergence_warning.SetToolTip("")
                 self.lbl_divergence_warning.Hide()
 
-            self.GetSizer().Layout()
+            self.Layout()
+            self.Fit()
         except ValueError:
             pass
 

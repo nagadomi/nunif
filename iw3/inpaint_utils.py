@@ -164,15 +164,14 @@ class FrameQueue():
         return pad
 
     def remove(self, n):
-        if n > 0 and n < self.max_index:
-            for i in range(n):
-                self.left_eye[i] = self.left_eye[i + n]
-                self.right_eye[i] = self.right_eye[i + n]
-                if self.right_mask is not None:
-                    self.right_mask[i] = self.right_mask[i + n]
-                if self.left_mask is not None:
-                    self.left_mask[i] = self.left_mask[i + n]
-
+        keep_count = self.index - n
+        for i in range(keep_count):
+            self.left_eye[i] = self.left_eye[i + n]
+            self.right_eye[i] = self.right_eye[i + n]
+            if self.right_mask is not None:
+                self.right_mask[i] = self.right_mask[i + n]
+            if self.left_mask is not None:
+                self.left_mask[i] = self.left_mask[i + n]
         self.index -= n
         assert self.index >= 0
 

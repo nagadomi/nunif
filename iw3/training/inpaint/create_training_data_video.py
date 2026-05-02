@@ -1,5 +1,6 @@
 import os
 import argparse
+import gc
 import torch
 import torch.nn.functional as F
 from os import path
@@ -13,6 +14,7 @@ from torchvision.transforms import (
     InterpolationMode
 )
 import nunif.utils.video as VU
+from nunif.device import create_device
 from iw3.utils import get_mapper
 from iw3.stereo_model_factory import create_stereo_model
 from iw3.dilation import mask_closing
@@ -65,8 +67,8 @@ def gen_data(frames, depth_model, mask_mlbw, args):
     forward_base_view = random.choice(["right", "left"])
     # TODO: Maybe need to adjust this later.
 
-    width, height = frames[0].size
-    frames = torch.stack([TF.to_tensor(frame) for frame in frames])
+    frames = torch.stack([VU.to_tensor(frame) for frame in frames])
+    height, width = frames.shape[-2:]
 
     with torch.inference_mode():
         frames = crop_resize(frames, image_size).to(depth_model.device)
@@ -161,6 +163,8 @@ def main(args):
     if args.model_type.startswith("VDA_"):
         raise ValueError("VDA is not supported")
 
+    VU.pyav_init_cuda_primary_context()
+
     filename_prefix = f"{args.prefix}_{args.model_type}_" if args.prefix else args.model_type + "_"
     filename_prefix = filename_prefix + md5(path.basename(args.dataset_dir)) + "_"
     depth_model = create_depth_model(args.model_type)
@@ -168,6 +172,7 @@ def main(args):
     depth_model.disable_ema()
 
     # TODO: support for divergence handles when d2 and d3 models become available in the future
+    device = create_device(args.gpu)
     mask_mlbw = create_stereo_model("mask_mlbw_l2", divergence=1, device_id=args.gpu)
 
     video_file = args.dataset_dir
@@ -193,7 +198,7 @@ def main(args):
                 skip_counter -= 1
                 return
 
-            frames.append(frame.to_image())
+            frames.append(frame)
             if len(frames) < args.seq:
                 return
 
@@ -207,11 +212,13 @@ def main(args):
             if len(futures) > 10:
                 for f in futures:
                     f.result()
+                gc.collect()
 
             frames.clear()
             skip_counter = args.skip_interval
 
-        VU.hook_frame(video_file, frame_callback, config_callback=config_callback)
+        VU.hook_frame(video_file, frame_callback, config_callback=config_callback,
+                      hwaccel=args.hwaccel, device=device)
 
 
 def register(subparsers, default_parser):
@@ -236,6 +243,9 @@ def register(subparsers, default_parser):
     parser.add_argument("--skip-first", type=int, default=0)
     parser.add_argument("--max-workers", type=int, default=max_workers,
                         help="Number of worker threads. Set to 1 to disable.")
+    parser.add_argument("--hwaccel", type=str, default=None,
+                        choices=VU.HW_DEVICES,
+                        help="hardware accelerator for the video decoder")
 
     parser.set_defaults(handler=main)
 
