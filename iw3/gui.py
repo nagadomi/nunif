@@ -1041,6 +1041,9 @@ class MainFrame(wx.Frame):
         if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint"}:
             self.lbl_inpaint_model.Show()
             self.cbo_inpaint_model.Show()
+            self.lbl_overlap_frames.Show()
+            self.cbo_overlap_frames_pre.Show()
+            self.cbo_overlap_frames_post.Show()
             self.lbl_mask_dilation.Show()
             self.cbo_mask_outer_dilation.Show()
             self.cbo_mask_inner_dilation.Show()
@@ -1049,6 +1052,9 @@ class MainFrame(wx.Frame):
         else:
             self.lbl_inpaint_model.Hide()
             self.cbo_inpaint_model.Hide()
+            self.lbl_overlap_frames.Hide()
+            self.cbo_overlap_frames_pre.Hide()
+            self.cbo_overlap_frames_post.Hide()
             self.lbl_mask_dilation.Hide()
             self.cbo_mask_outer_dilation.Hide()
             self.cbo_mask_inner_dilation.Hide()
