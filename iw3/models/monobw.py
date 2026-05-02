@@ -22,7 +22,9 @@ class MonoBW(I2IBaseModel):
         if smooth_kernel > 0:
             pad = (smooth_kernel - 1) // 2
             self.smooth_filter = GaussianFilter2d(
-                in_channels=1, kernel_size=(1, smooth_kernel), padding=(pad, pad, 0, 0),
+                in_channels=1,
+                kernel_size=(1, smooth_kernel),
+                padding=(pad, pad, 0, 0),
             )
         else:
             self.smooth_filter = None
@@ -112,6 +114,32 @@ class MonoBW(I2IBaseModel):
 
         return grid_bchw
 
+    def compute_stretch_mask(
+        self,
+        grid: torch.Tensor,
+        threshold: float = 0.5,
+    ):
+        W = grid.shape[-1]
+        grid_x = grid[:, 0:1]
+        diff_x = grid_x[..., 1:] - grid_x[..., :-1]
+        threshold = (2.0 / (W - 1)) * threshold
+        is_stretched = diff_x < threshold
+        mask = torch.zeros_like(grid_x, dtype=torch.bool, device=grid.device)
+        mask[..., :-1] |= is_stretched
+        mask[..., 1:] |= is_stretched
+        return mask
+
+    def warp(
+        self,
+        x: torch.Tensor,
+        grid: torch.Tensor,
+    ):
+        if grid.shape[-2] != x.shape[-2:]:
+            grid = F.interpolate(grid, size=x.shape[-2:], mode="bilinear", align_corners=True)
+        grid = grid.permute(0, 2, 3, 1).to(x.dtype)
+        warped_x = F.grid_sample(x, grid, mode="bilinear", padding_mode="border", align_corners=True)
+        return warped_x
+
     def forward(
         self,
         rgb: torch.Tensor,
@@ -119,7 +147,8 @@ class MonoBW(I2IBaseModel):
         divergence: float,
         convergence: float | torch.Tensor,
         preserve_screen_border=False,
-    ) -> torch.Tensor:
+        return_mask=False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         if preserve_screen_border:
             image_width = rgb.shape[-1]
             depth_width = depth.shape[-1]
@@ -131,12 +160,20 @@ class MonoBW(I2IBaseModel):
         with torch.autocast(device_type=depth.device.type, enabled=False):
             # Compute grid at low resolution
             grid_bchw = self.compute_backward_grid(depth, divergence, convergence, border_pix=border_pix)
-
             # Warp at high resolution
             if grid_bchw.shape[-2] != rgb.shape[-2:]:
                 grid_bchw = F.interpolate(grid_bchw, size=rgb.shape[-2:], mode="bilinear", align_corners=True)
-            grid = grid_bchw.permute(0, 2, 3, 1).to(rgb.dtype)
-            warped_rgb = F.grid_sample(rgb, grid, mode="bilinear", padding_mode="border", align_corners=True)
+            warped_rgb = self.warp(rgb, grid_bchw)
+
+            mask: None | torch.Tensor
+            if return_mask:
+                mask = self.compute_stretch_mask(grid_bchw)
+            else:
+                mask = None
+
+        if return_mask:
+            assert mask is not None
+            return warped_rgb, mask
 
         return warped_rgb
 
@@ -172,9 +209,28 @@ def _bench(name, preserve_screen_border=False, do_compile=False):
     print(1 / ((time.time() - t) / (B * N)), "FPS")
 
 
+def _test_mask():
+
+    import torchvision.io as io
+    import torchvision.transforms.functional as TF
+
+    model = MonoBW().cuda()
+    depth = io.read_image("cc0/depth/dog.png") / 65535.0
+    depth = depth.cuda().unsqueeze(0)
+    depth_low_res = F.interpolate(
+        depth, size=(depth.shape[-2] // 2, depth.shape[-1] // 2), mode="bilinear", align_corners=False
+    )
+    warped_depth, mask = model(depth, depth_low_res, divergence=5.0, convergence=0.5, return_mask=True)
+
+    rgb = torch.cat((mask.float() * 0.5, warped_depth, warped_depth), dim=1)
+    TF.to_pil_image(rgb[0]).show()
+
+
 if __name__ == "__main__":
     # at FHD (1920x1080)
     # 1800 FPS on RTX3070Ti
     _bench("sbs.monobw", do_compile=False)
     # 2950 FPS on RTX3070Ti
     _bench("sbs.monobw", do_compile=True)
+
+    # _test_mask()
