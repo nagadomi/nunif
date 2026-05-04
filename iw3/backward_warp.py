@@ -127,24 +127,30 @@ def apply_divergence_monobw(
         convergence: float | torch.Tensor,
         synthetic_view: str = "both",
         preserve_screen_border: bool = False,
+        fix_screen_border_mask: int = 1,
         return_mask=False,
 ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
     assert synthetic_view in {"both", "right", "left"}
+    assert fix_screen_border_mask in {0, 1, 2}
     if synthetic_view == "both":
         left_eye = model(c, depth, divergence=divergence, convergence=convergence,
                          preserve_screen_border=preserve_screen_border,
+                         fix_screen_border_mask=fix_screen_border_mask,
                          return_mask=return_mask)
         right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence, convergence=convergence,
                           preserve_screen_border=preserve_screen_border,
+                          fix_screen_border_mask=fix_screen_border_mask,
                           return_mask=return_mask)
     elif synthetic_view == "right":
         left_eye = c
         right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence * 2, convergence=convergence,
                           preserve_screen_border=preserve_screen_border,
+                          fix_screen_border_mask=fix_screen_border_mask,
                           return_mask=return_mask)
     elif synthetic_view == "left":
         left_eye = model(c, depth, divergence=divergence * 2, convergence=convergence,
                          preserve_screen_border=preserve_screen_border,
+                         fix_screen_border_mask=fix_screen_border_mask,
                          return_mask=return_mask)
         right_eye = c
 

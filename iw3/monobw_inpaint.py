@@ -36,6 +36,7 @@ class MonoBWInpaintImage(BaseImageInpaint):
             convergence=convergence,
             synthetic_view=synthetic_view,
             preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=1,  # Fix the uninpaintable side
             return_mask=True,
         )
         assert len(results) == 4
@@ -113,6 +114,7 @@ class MonoBWInpaintVideo(BaseVideoInpaint):
             convergence=convergence,
             synthetic_view=synthetic_view,
             preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=2,  # Fix the both sides
             return_mask=True,
         )
         assert len(results) == 4

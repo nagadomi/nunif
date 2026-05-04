@@ -154,9 +154,11 @@ class MonoBW(I2IBaseModel):
         depth: torch.Tensor,
         divergence: float,
         convergence: float | torch.Tensor,
-        preserve_screen_border=False,
-        return_mask=False,
+        preserve_screen_border: bool = False,
+        fix_screen_border_mask: int = 1,  # 0: No fix, 1: Fix the uninpaintable side, 2: Fix both sides
+        return_mask: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        assert fix_screen_border_mask in {0, 1, 2}
         if preserve_screen_border:
             image_width = rgb.shape[-1]
             depth_width = depth.shape[-1]
@@ -176,6 +178,14 @@ class MonoBW(I2IBaseModel):
             mask: None | torch.Tensor
             if return_mask:
                 mask = self.compute_stretch_mask(grid_bchw)
+                if not preserve_screen_border and fix_screen_border_mask > 0:
+                    # Force disable the mask caused by screen border stretching.
+                    image_width = rgb.shape[-1]
+                    depth_width = depth.shape[-1]
+                    border_pix = round(divergence * 0.01 * image_width * (depth_width / image_width)) + 1
+                    mask[..., :border_pix] = False
+                    if fix_screen_border_mask == 2:
+                        mask[..., -border_pix:] = False
             else:
                 mask = None
 
@@ -218,6 +228,7 @@ def _bench(name, preserve_screen_border=False, do_compile=False):
 
 
 def _test_mask():
+    import time
 
     import torchvision.io as io
     import torchvision.transforms.functional as TF
@@ -228,8 +239,13 @@ def _test_mask():
     depth_low_res = F.interpolate(
         depth, size=(depth.shape[-2] // 2, depth.shape[-1] // 2), mode="bilinear", align_corners=False
     )
-    warped_depth, mask = model(depth, depth_low_res, divergence=5.0, convergence=0.5, return_mask=True)
+    warped_depth, mask = model(depth, depth_low_res, divergence=5.0, convergence=0.0, return_mask=True)
 
+    rgb = torch.cat((mask.float() * 0.5, warped_depth, warped_depth), dim=1)
+    TF.to_pil_image(rgb[0]).show()
+    time.sleep(1)
+
+    warped_depth, mask = model(depth, depth_low_res, divergence=5.0, convergence=1.0, return_mask=True)
     rgb = torch.cat((mask.float() * 0.5, warped_depth, warped_depth), dim=1)
     TF.to_pil_image(rgb[0]).show()
 
