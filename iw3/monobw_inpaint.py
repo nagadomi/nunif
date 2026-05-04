@@ -3,7 +3,6 @@ import torch.nn.functional as F
 
 from nunif.models.utils import compile_model
 
-from .models import MonoBW
 from .backward_warp import apply_divergence_monobw
 from .base_inpaint import BaseImageInpaint, BaseInpaint, BaseVideoInpaint, FrameQueue
 from .dilation import dilate_inner, dilate_outer, mask_closing
@@ -11,12 +10,13 @@ from .inpaint_utils import (
     load_image_inpaint_model,
     load_video_inpaint_model,
 )
+from .models import MonoBW
 
 
 class MonoBWInpaintImage(BaseImageInpaint):
     def __init__(self, name: str | None = None, device_id: int = -1):
         super().__init__(load_image_inpaint_model(name, device_id=device_id), device_id=device_id)
-        self.monobw = MonoBW().eval()
+        self.monobw = MonoBW().eval().to(self.device)
 
     def apply_warp(
         self,
@@ -61,6 +61,8 @@ class MonoBWInpaintImage(BaseImageInpaint):
 
 
 class MonoBWInpaintVideo(BaseVideoInpaint):
+    _monobw_backup: MonoBW | None
+
     def __init__(
         self,
         name: str | None = None,
@@ -74,17 +76,18 @@ class MonoBWInpaintVideo(BaseVideoInpaint):
             post_padding=post_padding,
             device_id=device_id,
         )
-        self.monobw = MonoBW()
+        self.monobw = MonoBW().eval().to(self.device)
 
     def compile(self) -> None:
-        self.model_backup = (self.model, self.monobw)
-        self.model = compile_model(self.model)
+        super().compile()
+        self._monobw_backup = self.monobw
         self.monobw = compile_model(self.monobw)
 
     def clear_compiled_model(self) -> None:
-        if self.model_backup is not None:
-            self.model, self.monobw = self.model_backup
-        self.model_backup = None
+        super().clear_compiled_model()
+        if self._monobw_backup is not None:
+            self.monobw = self._monobw_backup
+        self._monobw_backup = None
 
     def create_frame_queue(self, x, depth, synthetic_view) -> FrameQueue:
         return FrameQueue(

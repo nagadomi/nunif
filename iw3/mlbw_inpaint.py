@@ -146,14 +146,15 @@ class MLBWInpaintVideo(BaseVideoInpaint):
         self.mask_mlbw = mask_mlbw
 
     def compile(self) -> None:
-        self.model_backup = (self.model, self.mask_mlbw)
-        self.model = compile_model(self.model)
+        super().compile()
+        self._mask_mlbw_backup = self.mask_mlbw
         self.mask_mlbw = compile_model(self.mask_mlbw)
 
     def clear_compiled_model(self) -> None:
-        if self.model_backup is not None:
-            self.model, self.mask_mlbw = self.model_backup
-        self.model_backup = None
+        super().clear_compiled_model()
+        if self._mask_mlbw_backup is not None:
+            self.mask_mlbw = self._mask_mlbw_backup
+        self._mask_mlbw_backup = None
 
     def apply_warp(
         self,

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import torch
 
-from nunif.models.utils import compile_model
-
 from . import models  # noqa
 from .base_inpaint import BaseImageInpaint, BaseInpaint, BaseVideoInpaint, FrameQueue
 from .dilation import dilate_inner, dilate_outer, mask_closing
@@ -63,14 +61,6 @@ class ForwardInpaintVideo(BaseVideoInpaint):
             post_padding=post_padding,
             device_id=device_id,
         )
-
-    def compile(self) -> None:
-        self.model_backup = self.model
-        self.model = compile_model(self.model)
-
-    def clear_compiled_model(self) -> None:
-        self.model = self.model_backup
-        self.model_backup = None
 
     def create_frame_queue(self, x, depth, synthetic_view) -> FrameQueue:
         return FrameQueue(

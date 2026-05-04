@@ -1,12 +1,13 @@
 import contextlib
 from abc import ABC, abstractmethod
-from typing import Any, Self, cast
+from typing import Callable, Self, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from nunif.device import autocast, create_device
+from nunif.models.utils import compile_function
 
 from .inpaint_utils import CompileContext
 from .models import LightInpaintV1, LightVideoInpaintV1
@@ -329,7 +330,7 @@ class BaseImageInpaint(InpaintComponent):
 
 class BaseVideoInpaint(InpaintComponent):
     model: LightVideoInpaintV1 | None
-    model_backup: Any | None
+    _model_infer_backup: Callable | None
     frame_queue: FrameQueue | None
     synthetic_view: str | None
 
@@ -361,6 +362,17 @@ class BaseVideoInpaint(InpaintComponent):
             dtype=x.dtype,
             device=x.device,
         )
+
+    def compile(self) -> None:
+        assert self.model is not None
+        self._model_infer_backup = self.model.infer
+        self.model.infer = compile_function(self.model.infer, device=self.model.get_device())  # type: ignore[assignment]
+
+    def clear_compiled_model(self) -> None:
+        assert self.model is not None
+        if self._model_infer_backup is not None:
+            self.model.infer = self._model_infer_backup  # type: ignore[assignment]
+        self._model_infer_backup = None
 
     @abstractmethod
     def apply_warp(
