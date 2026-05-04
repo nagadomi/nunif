@@ -39,6 +39,14 @@ class MonoBW(I2IBaseModel):
 
         return dest_index_fix
 
+    def get_device(self) -> torch.device:
+        if self.smooth_filter is not None:
+            device = self.smooth_filter.kernel.device
+            assert isinstance(device, torch.device)
+            return device
+
+        raise NotImplementedError()
+
     @staticmethod
     def interpolate_1d(dest_index: torch.Tensor, src_index: torch.Tensor) -> torch.Tensor:
         # 1D interpolation for monotone mapping
