@@ -333,6 +333,7 @@ class BaseVideoInpaint(InpaintComponent):
     _model_infer_backup: Callable | None
     frame_queue: FrameQueue | None
     synthetic_view: str | None
+    base_width: int | None
 
     def __init__(self, model: LightVideoInpaintV1, pre_padding: int = 3, post_padding: int = 3, device_id: int = -1):
         super().__init__()
@@ -342,6 +343,7 @@ class BaseVideoInpaint(InpaintComponent):
         self.post_padding = post_padding
         self.frame_queue = None
         self.synthetic_view = None
+        self.base_width = None
         self.device = create_device(device_id)
         self.eval()
 
@@ -540,6 +542,7 @@ class BaseVideoInpaint(InpaintComponent):
         x = self._resize(x, max_width)
 
         self.synthetic_view = synthetic_view
+        self.base_width = depth.shape[-1]
         if self.frame_queue is None:
             self.frame_queue = self.create_frame_queue(x, depth, synthetic_view=synthetic_view)
         assert self.frame_queue is not None
@@ -570,11 +573,12 @@ class BaseVideoInpaint(InpaintComponent):
                 for _ in range(repeat):
                     self.frame_queue.add(left_eye[i], right_eye[i], left_mask=left_mask[i])
 
-        return self(inner_dilation=inner_dilation, outer_dilation=outer_dilation, base_width=depth.shape[-1])
+        return self(inner_dilation=inner_dilation, outer_dilation=outer_dilation, base_width=self.base_width)
 
     def flush(
         self, inner_dilation: int = 0, outer_dilation: int = 0, enable_amp: bool = True
     ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        assert self.base_width is not None
         if self.frame_queue is None or self.frame_queue.empty():
             return None, None
 
@@ -583,7 +587,7 @@ class BaseVideoInpaint(InpaintComponent):
             flush=True,
             inner_dilation=inner_dilation,
             outer_dilation=outer_dilation,
-            base_width=self.frame_queue.right_mask.shape[-1],
+            base_width=self.base_width,
         )
 
         if pad > 0:
