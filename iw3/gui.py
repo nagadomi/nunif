@@ -247,7 +247,7 @@ class MainFrame(wx.Frame):
                                                "mlbw_l2_inpaint",
                                                "row_flow_v3", "row_flow_v3_sym", "row_flow_v2",
                                                "forward_fill", "forward_inpaint",
-                                               "monobw",
+                                               "monobw", "monobw_inpaint",
                                                ],
                                       name="cbo_method")
         self.cbo_method.SetEditable(False)
@@ -1038,7 +1038,7 @@ class MainFrame(wx.Frame):
             self.cbo_edge_dilation.SetToolTip(T("X, Y"))
 
     def update_inpaint_options(self):
-        if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint"}:
+        if self.cbo_method.GetValue() in {"forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"}:
             self.lbl_inpaint_model.Show()
             self.cbo_inpaint_model.Show()
             self.lbl_overlap_frames.Show()
@@ -1637,7 +1637,7 @@ class MainFrame(wx.Frame):
                     max_divergence = 10.0
                 else:
                     max_divergence = 10.0 * 0.5
-            elif method in {"forward_inpaint", "mlbw_l2_inpaint"}:
+            elif method in {"forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"}:
                 if synthetic_view == "both":
                     max_divergence = 5.0
                 else:

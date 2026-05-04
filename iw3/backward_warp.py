@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as F
 from nunif.device import autocast, device_is_mps
-from nunif.modules.replication_pad2d import replication_pad2d_naive
 from .mapper import get_mapper
 from .dilation import closing, dilate_inner, dilate_outer
 
@@ -128,22 +127,40 @@ def apply_divergence_monobw(
         convergence: float | torch.Tensor,
         synthetic_view: str = "both",
         preserve_screen_border: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor]:
+        return_mask=False,
+) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
     assert synthetic_view in {"both", "right", "left"}
     if synthetic_view == "both":
         left_eye = model(c, depth, divergence=divergence, convergence=convergence,
-                         preserve_screen_border=preserve_screen_border)
+                         preserve_screen_border=preserve_screen_border,
+                         return_mask=return_mask)
         right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence, convergence=convergence,
-                          preserve_screen_border=preserve_screen_border).flip(dims=[-1])
+                          preserve_screen_border=preserve_screen_border,
+                          return_mask=return_mask)
     elif synthetic_view == "right":
         left_eye = c
         right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence * 2, convergence=convergence,
-                          preserve_screen_border=preserve_screen_border).flip(dims=[-1])
+                          preserve_screen_border=preserve_screen_border,
+                          return_mask=return_mask)
     elif synthetic_view == "left":
         left_eye = model(c, depth, divergence=divergence * 2, convergence=convergence,
-                         preserve_screen_border=preserve_screen_border)
+                         preserve_screen_border=preserve_screen_border,
+                         return_mask=return_mask)
         right_eye = c
 
+    if return_mask:
+        left_mask = right_mask = None
+        if isinstance(left_eye, tuple):
+            left_eye, left_mask = left_eye
+        if isinstance(right_eye, tuple):
+            right_eye, right_mask = right_eye
+        if synthetic_view in {"both", "right"}:
+            right_eye = right_eye.flip(dims=[-1])
+            right_mask = right_mask.flip(dims=[-1])
+        return left_eye, right_eye, left_mask, right_mask
+
+    if synthetic_view in {"both", "right"}:
+        right_eye = right_eye.flip(dims=[-1])
     return left_eye, right_eye
 
 

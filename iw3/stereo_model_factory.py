@@ -3,6 +3,7 @@ from nunif.utils.ui import TorchHubDir
 from .hub_dir import HUB_MODEL_DIR
 from .forward_inpaint import ForwardInpaint
 from .mlbw_inpaint import MLBWInpaint
+from .monobw_inpaint import MonoBWInpaint
 
 
 def pth_url(filename):
@@ -145,5 +146,11 @@ def create_stereo_model(
             )
         elif method == "monobw":
             return create_model("sbs.monobw", device_ids=[device_id]).eval()
+        elif method == "monobw_inpaint":
+            return MonoBWInpaint(
+                name=inpaint_model,
+                overlap_frames=overlap_frames,
+                device_id=device_id,
+            )
         else:
             raise ValueError(method)

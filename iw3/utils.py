@@ -348,7 +348,7 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
             im, depth,
             args.divergence, convergence=convergence,
             method=args.method, synthetic_view=args.synthetic_view, width_base=False)
-    elif args.method in {"forward_inpaint", "mlbw_l2_inpaint"}:
+    elif args.method in {"forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"}:
         left_eyes = []
         right_eyes = []
         reset_pts = reset_pts if reset_pts is not None else [False] * depth.shape[0]
@@ -971,7 +971,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
     is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     is_video_depth_anything_streaming = depth_model.get_name() == "VideoDepthAnythingStreaming"
-    is_inpaint_model = args.method in {"forward_inpaint", "mlbw_l2_inpaint"}
+    is_inpaint_model = args.method in {"forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"}
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
@@ -2002,7 +2002,8 @@ def create_parser(required_true=True):
                         help="GPU device id. -1 for CPU")
     parser.add_argument("--compile", action="store_true", help="compile model if possible")
     parser.add_argument("--method", type=str, default="row_flow",
-                        choices=["grid_sample", "backward", "monobw",
+                        choices=["grid_sample", "backward",
+                                 "monobw", "monobw_inpaint",
                                  "forward", "forward_fill", "forward_inpaint",
                                  "mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s",
                                  "mask_mlbw_l2", "mlbw_l2_inpaint",
@@ -2409,7 +2410,11 @@ def iw3_main(args):
         inpaint_model=args.inpaint_model,
         overlap_frames=args.inpaint_overlap_frames,
     )
-    if side_model is not None and len(args.gpu) > 1 and args.method not in {"forward_inpaint", "mlbw_l2_inpaint"}:
+    if (
+            side_model is not None
+            and len(args.gpu) > 1
+            and args.method not in {"forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"}
+    ):
         side_model = DeviceSwitchInference(side_model, device_ids=args.gpu)
 
     if args.find_param:
