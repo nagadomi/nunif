@@ -140,6 +140,8 @@ def create_parser():
     local_address = get_local_address()
     parser = IW3U.create_parser(required_true=False)
     parser.add_argument("--local-viewer", action="store_true", help="Use Local Viewer instead of Web Streaming")
+    parser.add_argument("--local-viewer-fullscreen-display-mode", action="store_true",
+                        help="When Local Viewer enters fullscreen with F11, switch the monitor to a larger display mode and restore it on exit")
     parser.add_argument("--port", type=int, default=1303,
                         help="HTTP listen port")
     parser.add_argument("--bind-addr", type=str, default=local_address,
@@ -340,7 +342,8 @@ def iw3_desktop_main(args, init_wxapp=True):
         IS_ROCM = getattr(torch.version, "hip", None) is not None
         USE_CUDA = torch.cuda.is_available() and not IS_ROCM
         server = LocalViewer(lock=lock, width=output_frame_width, height=output_frame_height,
-                             use_cuda=USE_CUDA, uncap_fps=args.uncap_fps)
+                             use_cuda=USE_CUDA, uncap_fps=args.uncap_fps,
+                             fullscreen_display_mode=args.local_viewer_fullscreen_display_mode)
 
     screenshot_thread = screenshot_factory(
         fps=args.stream_fps,
