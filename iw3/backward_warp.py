@@ -155,6 +155,7 @@ def apply_divergence_monobw(
         if isinstance(right_eye, tuple):
             right_eye, right_mask = right_eye
         if synthetic_view in {"both", "right"}:
+            assert right_eye is not None and right_mask is not None
             right_eye = right_eye.flip(dims=[-1])
             right_mask = right_mask.flip(dims=[-1])
         return left_eye, right_eye, left_mask, right_mask
