@@ -129,6 +129,17 @@ def compile_model(model, device=None, **kwargs):
     return model
 
 
+def compile_function(func, device, **kwargs):
+    if not is_compiled_function(func) and check_compile_support(device):
+        logger.debug(f"compile {func.__name__}, kwargs={kwargs}")
+        func = torch.compile(func, **kwargs)
+    return func
+
+
+def is_compiled_function(func):
+    return hasattr(func, "_torchdynamo_orig_callable")
+
+
 def is_compiled_model(model):
     # TODO: class name of compiled model is unclear
     return hasattr(model, "_orig_mod")
