@@ -123,6 +123,7 @@ class BaseEnv(ABC):
             second_grad_strength = second_grad_strength / adaptive_weight
         else:
             raise NotImplementedError()
+        # TODO: Remove item() when testing is possible.
         grad_ratio = torch.clamp(base_grad_strength / second_grad_strength, min, max).item()
         if False:
             print(
@@ -165,16 +166,19 @@ class BaseEnv(ABC):
         # unknown type
         return input
 
+    @staticmethod
+    def to_scalar(tensor_or_scalar):
+        if torch.is_tensor(tensor_or_scalar):
+            return tensor_or_scalar.item()
+        return tensor_or_scalar
+
     def get_eval_model(self):
         return self.trainer.ema_model if self.trainer.args.ema_model else self.model
 
     @staticmethod
     def check_nan(loss):
         losses = loss if isinstance(loss, (list, tuple)) else [loss]
-        for loss in losses:
-            if torch.is_tensor(loss) and torch.isnan(loss).any().item():
-                return True
-        return False
+        return any(torch.is_tensor(loss) and torch.isnan(loss).any() for loss in losses)
 
     def train(self, loader, optimizers, schedulers, grad_scalers, backward_step=1):
         assert backward_step > 0
@@ -317,12 +321,12 @@ class I2IEnv(BaseEnv):
             z = self.model(x)
             loss = self.criterion(z, y)
         if not torch.isnan(loss):
-            self.sum_loss += loss.item()
+            self.sum_loss += loss.detach()
             self.sum_step += 1
         return loss
 
     def train_end(self):
-        mean_loss = self.sum_loss / self.sum_step
+        mean_loss = self.to_scalar(self.sum_loss / self.sum_step)
         print(f"loss: {mean_loss}")
         return mean_loss
 
@@ -339,10 +343,11 @@ class I2IEnv(BaseEnv):
         with self.autocast():
             z = model(x)
             loss = self.eval_criterion(z, y)
-        self.sum_loss += loss.item()
+        self.sum_loss += loss.detach()
         self.sum_step += 1
 
     def print_eval_result(self, loss, file=sys.stdout):
+        loss = self.to_scalar(loss)
         print(f"loss: {loss}", file=file)
 
     def eval_end(self, file=sys.stdout):
@@ -403,7 +408,7 @@ class UnsupervisedEnv(BaseEnv):
         with self.autocast():
             z = self.model(x)
             loss = self.criterion(z)
-        self.sum_loss += loss.item()
+        self.sum_loss += loss.detach()
         self.sum_step += 1
         return loss
 
@@ -445,13 +450,13 @@ class RegressionEnv(BaseEnv):
         with self.autocast():
             z = self.model(x)
             loss = self.criterion(z, y)
-        self.sum_loss += loss.item()
+        self.sum_loss += loss.detach()
         self.sum_step += 1
 
         return loss
 
     def train_end(self):
-        loss = self.sum_loss / self.sum_step
+        loss = self.to_scalar(self.sum_loss / self.sum_step)
         print(f"loss: {loss}")
         return loss
 
@@ -469,12 +474,12 @@ class RegressionEnv(BaseEnv):
         with self.autocast():
             z = model(x)
             loss = self.criterion(z, y)
-        self.sum_loss += loss.item()
+        self.sum_loss += loss.detach()
         self.sum_step += 1
 
         return loss
 
     def eval_end(self):
-        loss = self.sum_loss / self.sum_step
+        loss = self.to_scalar(self.sum_loss / self.sum_step)
         print(f"loss: {loss}")
         return loss

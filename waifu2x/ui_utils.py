@@ -107,9 +107,6 @@ def process_images(ctx, files, output_dir, args, title=None):
 
 
 def process_video(ctx, input_filename, output_path, args):
-    if args.compile:
-        ctx.compile()
-
     def config_callback(metadata):
         fps = metadata.get_fps()
         if float(fps) > args.max_fps:
@@ -397,6 +394,10 @@ def waifu2x_main(args):
 
     ctx = Waifu2x(model_dir=model_dir, gpus=args.gpu)
     ctx.load_model(args.method, args.noise_level)
+    if args.compile:
+        # Force `batch_size=1` to avoid recompilation.
+        args.batch_size = 1
+        ctx.compile()
 
     if path.isdir(args.input):
         if not is_output_dir(args.output):

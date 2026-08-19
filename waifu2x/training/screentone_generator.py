@@ -1,29 +1,31 @@
 # random screentone image generator
 # python3 -m waifu2x.training.screentone_generator -n 100 -o ./screentone_test
-from PIL import Image, ImageDraw
-import random
-import numpy as np
 import argparse
-from tqdm import tqdm
 import os
+import random
 from os import path
+
+import numpy as np
+import torch
+from PIL import Image, ImageDraw
 from torchvision import transforms as T
 from torchvision.transforms import (
-    functional as TF,
     InterpolationMode,
 )
-import torch
+from torchvision.transforms import (
+    functional as TF,
+)
+from tqdm import tqdm
+
 from nunif.utils.perlin2d import generate_perlin_noise_2d
 
 
 def ellipse_rect(center, size):
-    return (center[0] - size // 2, center[1] - size // 2,
-            center[0] + size // 2, center[1] + size // 2)
+    return (center[0] - size // 2, center[1] - size // 2, center[0] + size // 2, center[1] + size // 2)
 
 
 def ellipse_rect_float(center, size):
-    return (center[0] - size / 2, center[1] - size / 2,
-            center[0] + size / 2, center[1] + size / 2)
+    return (center[0] - size / 2, center[1] - size / 2, center[0] + size / 2, center[1] + size / 2)
 
 
 def random_crop(x, size):
@@ -351,14 +353,12 @@ def gen(disable_color, disable_sand):
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--num-samples", "-n", type=int, default=200,
-                        help="number of images to generate")
+    parser.add_argument("--num-samples", "-n", type=int, default=200, help="number of images to generate")
     parser.add_argument("--seed", type=int, default=71, help="random seed")
     parser.add_argument("--postfix", type=str, help="filename postfix")
     parser.add_argument("--use-color", action="store_true", help="use random RGB color")
     parser.add_argument("--disable-sand", action="store_true", help="No sand texture(perlin noise)")
-    parser.add_argument("--output-dir", "-o", type=str, required=True,
-                        help="output directory")
+    parser.add_argument("--output-dir", "-o", type=str, required=True, help="output directory")
     args = parser.parse_args()
     assert args.num_samples % N_CROP == 0
     random.seed(args.seed)

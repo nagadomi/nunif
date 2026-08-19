@@ -1,9 +1,10 @@
 from nunif.addon import Addon
-from . import models # noqa
+
+from . import models  # noqa
 
 
 def addon_config():
-    return [CLIQAJPEGNoiseAddon(), CLIQAGrainNoiseAddon(), CLIQAResizeAddon()]
+    return [CLIQAJPEGNoiseAddon(), CLIQAGrainNoiseAddon(), CLIQAResizeAddon(), CLIQALPIPSAddon()]
 
 
 class CLIQAJPEGNoiseAddon(Addon):
@@ -12,6 +13,7 @@ class CLIQAJPEGNoiseAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.jpeg_noise_trainer import register
+
         return register(subparsers, default_parser)
 
 
@@ -21,6 +23,7 @@ class CLIQAGrainNoiseAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.grain_noise_trainer import register
+
         return register(subparsers, default_parser)
 
 
@@ -30,4 +33,15 @@ class CLIQAResizeAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.resize_trainer import register
+
+        return register(subparsers, default_parser)
+
+
+class CLIQALPIPSAddon(Addon):
+    def __init__(self):
+        super().__init__("cliqa.lpips")
+
+    def register_train(self, subparsers, default_parser):
+        from .training.lpips_trainer import register
+
         return register(subparsers, default_parser)

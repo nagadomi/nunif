@@ -561,7 +561,7 @@ def _bench(name, compile):
 
 
 if __name__ == "__main__":
-    enable_full_compile = False
+    enable_full_compile = True
     _bench("waifu2x.swin_unet_v2_1x", enable_full_compile)
     _bench("waifu2x.swin_unet_v2_2x", enable_full_compile)
     _bench("waifu2x.swin_unet_v2_4x", enable_full_compile)

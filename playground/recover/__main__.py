@@ -1,17 +1,21 @@
 import argparse
 import os
+import random
 from os import path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.io as io
 import torchvision.transforms.functional as TF
+from dctorch.functional import dct2
+
+from cliqa.models.lpips_repvgg import LPIPSRepVGGLoss
+from cliqa.models.lpips_vgg import LPIPSVGG16Loss
+from dino.models.l4sn import L4SNLoss
 from nunif.modules.dinov2 import DINOv2Loss, DINOv2PoolLoss, DINOv2StyleLoss
 from nunif.modules.lpips import LPIPSWith
-from dino.models.l4sn import L4SNLoss
-from dctorch.functional import dct2
-import random
-
+from nunif.modules.weighted_loss import WeightedLoss
 
 try:
     from nunif.modules.dists import DISTS
@@ -65,7 +69,7 @@ class PatchSlicedWasserstein(nn.Module):
     def __init__(self, window_size=4):
         super().__init__()
         self.window_size = 4
-        self.register_buffer("random_projection", torch.randn((384, 384, 5, 5)) * (384 ** -0.5))
+        self.register_buffer("random_projection", torch.randn((384, 384, 5, 5)) * (384**-0.5))
 
     def forward(self, x, y):
         x = F.conv2d(x, weight=self.random_projection, bias=None)
@@ -82,7 +86,7 @@ class PositionalSlicedWasserstein(nn.Module):
     def __init__(self, window_size=4):
         super().__init__()
         self.window_size = 4
-        self.register_buffer("random_projection", torch.randn((384, 384, 1, 1)) * (384 ** -0.5))
+        self.register_buffer("random_projection", torch.randn((384, 384, 1, 1)) * (384**-0.5))
         self.pos_cache = None
 
     def pos_embed(self, x):
@@ -93,7 +97,7 @@ class PositionalSlicedWasserstein(nn.Module):
                 x = torch.linspace(-1, 1, steps=W, device=x.device)
                 grid_y, grid_x = torch.meshgrid(y, x, indexing="ij")
                 pos = torch.stack([grid_y, grid_x], dim=-1).permute(2, 0, 1).unsqueeze(0)
-                proj = torch.randn((C, 2, 1, 1), dtype=x.dtype, device=x.device) * (C ** -0.5)
+                proj = torch.randn((C, 2, 1, 1), dtype=x.dtype, device=x.device) * (C**-0.5)
                 self.pos_cache = F.conv2d(pos, weight=proj, bias=None)
 
         return x + self.pos_cache
@@ -121,6 +125,13 @@ class DCTLoss(nn.Module):
         return F.l1_loss(x, y)
 
 
+class NormalizedMSELoss(nn.Module):
+    def forward(self, x, y):
+        x = F.normalize(x, dim=1, p=2)
+        y = F.normalize(y, dim=1, p=2)
+        return F.mse_loss(x, y)
+
+
 def shift(x, w, h):
     x = F.pad(x, (w, 0, h, 0), mode="replicate")
     x = F.pad(x, (0, -w, 0, -h), mode="replicate")
@@ -131,21 +142,41 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input image file")
     parser.add_argument("--output", "-o", type=str, required=True, help="output dir")
-    parser.add_argument("--init", type=str, choices=["noise", "jpeg", "shift", "resize"], default="noise", help="initial image")
+    parser.add_argument(
+        "--init", type=str, choices=["noise", "jpeg", "shift", "resize"], default="noise", help="initial image"
+    )
     parser.add_argument("--init-image", type=str, help="initial image")
-    parser.add_argument("--model", type=str,
-                        choices=["dct", "pool", "style", "swd", "patch-swd", "pos-swd", "dists", "lpips", "fdl",
-                                 "l4sn", "l4sn-swd"],
-                        required=True)
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=[
+            "dct",
+            "pool",
+            "style",
+            "swd",
+            "patch-swd",
+            "pos-swd",
+            "dists",
+            "lpips",
+            "fdl",
+            "l4sn",
+            "l4sn-swd",
+            "lpips-repvgg",
+            "lpips-vgg16",
+            "dinov2-l1",
+        ],
+        required=True,
+    )
     parser.add_argument("--iteration", type=int, default=20000, help="iteration")
     parser.add_argument("--fp32", action="store_true", help="use fp32")
     parser.add_argument("--save-interval", type=int, default=100, help="save interval")
     parser.add_argument("--disable-random-shift", action="store_true")
     parser.add_argument("--l4sn-type", type=str, default="photo", help="model_type of L4SNLoss")
+    parser.add_argument("--learning-rate", type=float, default=1e-3, help="learning rate")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
-    y = io.read_image(args.input) / 255.
+    y = io.read_image(args.input) / 255.0
     # y = y[:, :224, :224]
 
     if args.init_image is not None:
@@ -161,10 +192,10 @@ def main():
                 x = shift(y, 3, 3)
             case "resize":
                 x = y.unsqueeze(0)
-                x = F.interpolate(x, size=(x.shape[2] // 4, x.shape[3] // 4),
-                                  mode="bilinear", align_corners=False, antialias=True)
-                x = F.interpolate(x, size=(x.shape[2] * 4, x.shape[3] * 4),
-                                  mode="bilinear", align_corners=False)
+                x = F.interpolate(
+                    x, size=(x.shape[2] // 4, x.shape[3] // 4), mode="bilinear", align_corners=False, antialias=True
+                )
+                x = F.interpolate(x, size=(x.shape[2] * 4, x.shape[3] * 4), mode="bilinear", align_corners=False)
                 x = x.squeeze(0)
 
     x = x.unsqueeze(0).cuda()
@@ -173,6 +204,10 @@ def main():
     y.requires_grad_(False)
 
     match args.model:
+        case "dinov2-l1":
+            model = WeightedLoss(
+                (DINOv2Loss(NormalizedMSELoss(), model_type="vits"), nn.L1Loss()), weights=(500.0, 1.0)
+            ).cuda()
         case "dct":
             model = DINOv2Loss(DCTLoss(), random_projection=64).cuda()
         case "pool":
@@ -197,8 +232,12 @@ def main():
         case "l4sn-swd":
             model = L4SNLoss(model_type=args.l4sn_type, swd_weight=0.5, swd_indexes=[0, 1], swd_window_size=8)
             model = model.eval().cuda()
+        case "lpips-repvgg":
+            model = LPIPSRepVGGLoss.from_pretrained().cuda()
+        case "lpips-vgg16":
+            model = LPIPSVGG16Loss.from_pretrained().cuda()
 
-    optimizer = torch.optim.Adam([x], lr=1e-3, betas=(0.9, 0.99))
+    optimizer = torch.optim.Adam([x], lr=args.learning_rate, betas=(0.9, 0.99))
     grad_scaler = torch.amp.GradScaler("cuda", enabled=not args.fp32)
     for i in range(args.iteration):
         optimizer.zero_grad()

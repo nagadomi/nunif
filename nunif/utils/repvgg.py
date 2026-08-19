@@ -33,6 +33,8 @@ class RepVGG(nn.Module):
         self.stage4 = self._make_stage(int(512 * width_multiplier[3]), num_blocks[3], stride=2)
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.linear = nn.Linear(int(512 * width_multiplier[3]), num_classes)
+        self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1), persistent=False)
+        self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1), persistent=False)
 
     def _make_stage(self, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
@@ -60,31 +62,49 @@ class RepVGG(nn.Module):
         train_nodes, eval_nodes = get_graph_node_names(self)
         return eval_nodes
 
-
-B1_CHECKPOINT_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/RepVGG-B1-deploy.pth"
-B1_FEATURE_NODES = {
-    # 1/2
-    "stage0.nonlinearity": "l2",
-    # 1/4
-    "stage1.3.nonlinearity": "l4",
-    # 1/8
-    "stage2.5.nonlinearity": "l8",
-    # 1/16
-    "stage3.7.nonlinearity": "l16_h",
-    # too close to "stage4.0.nonlinearity"
-    "stage3.15.nonlinearity": "l16",
-    # 1/32
-    "stage4.0.nonlinearity": "l32",
-}
+    def preprocess(self, x):
+        if x.ndim == 4:
+            return (x - self.mean) / self.std
+        else:
+            return (x - self.mean.view(3, 1, 1)) / self.std.view(3, 1, 1)
 
 
-def create_RepVGG_B1(url=B1_CHECKPOINT_URL):
-    model = RepVGG(num_blocks=[4, 6, 16, 1], width_multiplier=[2, 2, 2, 4], num_classes=1000)
-    model.eval()
-    state_dict = torch.hub.load_state_dict_from_url(url, weights_only=True, map_location="cpu")
-    model.load_state_dict(state_dict)
+class RepVGG_B1(RepVGG):
+    def __init__(self):
+        super().__init__(num_blocks=[4, 6, 16, 1], width_multiplier=[2, 2, 2, 4], num_classes=1000)
 
-    return model
+    @classmethod
+    def from_pretrained(cls, map_location="cpu"):
+        url = cls.CHECKPOINT_URL
+        model = cls()
+        model.eval()
+        state_dict = torch.hub.load_state_dict_from_url(url, weights_only=True, map_location=map_location)
+        model.load_state_dict(state_dict)
+        return model
+
+    CHECKPOINT_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/RepVGG-B1-deploy.pth"
+    FEATURE_NODES = {
+        # 1/2
+        "stage0.nonlinearity": "l2",
+        # 1/4
+        "stage1.3.nonlinearity": "l4",
+        # 1/8
+        "stage2.5.nonlinearity": "l8",
+        # 1/16
+        "stage3.7.nonlinearity": "l16_h",
+        # too close to "stage4.0.nonlinearity"
+        "stage3.15.nonlinearity": "l16",
+        # 1/32
+        "stage4.0.nonlinearity": "l32",
+    }
+    FEATURE_CHANNELS = dict(
+        l2=64,
+        l4=128,
+        l8=256,
+        l16_h=512,
+        l16=512,
+        l32=2048,
+    )
 
 
 def _test_model():
@@ -99,13 +119,12 @@ def _test_model():
     parser.add_argument("--input", "-i", type=str, required=True, help="input image")
     args = parser.parse_args()
 
-    model = create_RepVGG_B1()
+    model = RepVGG_B1.from_pretrained()
 
     preprocess = transforms.Compose(
         [
             transforms.Resize(256),
             transforms.CenterCrop(224),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
     x = IO.read_image(args.input) / 255
@@ -116,6 +135,7 @@ def _test_model():
     x = x.cuda()
 
     with torch.no_grad():
+        x = model.preprocess(x)
         output = model(x).squeeze(0)
 
     prob = torch.nn.functional.softmax(output, dim=0)
@@ -130,8 +150,9 @@ def _test_model():
 def _test_features():
     from pprint import pprint
 
-    model = create_RepVGG_B1().cuda()
-    feature_extractor = model.create_feature_extractor(B1_FEATURE_NODES)
+    model = RepVGG_B1.from_pretrained().cuda()
+    print(model)
+    feature_extractor = model.create_feature_extractor(RepVGG_B1.FEATURE_NODES)
     x = torch.rand((4, 3, 224, 224)).cuda()
     features = feature_extractor(x)
     print("** features, len=", len(features))

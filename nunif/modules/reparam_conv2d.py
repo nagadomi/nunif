@@ -287,6 +287,8 @@ class Series(ReparamBranch):
 
 
 class ReparamConv2d(nn.Module):
+    padding: nn.Module
+
     def __init__(
         self,
         in_channels: int,
@@ -324,14 +326,13 @@ class ReparamConv2d(nn.Module):
             pad_w = kernel_size[1] - 1
             self.padding = ReplicationPad2dNaive((pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2))
         else:
-            self.padding = None
+            self.padding = nn.Identity()
 
         self.conv_eval = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, groups=groups, padding=0)
         basic_module_init(self)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.padding is not None:
-            x = self.padding(x)
+        x = self.padding(x)
 
         if not self.training:
             return self.conv_eval(x)

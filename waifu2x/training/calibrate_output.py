@@ -1,8 +1,10 @@
 import argparse
-from tqdm import tqdm
+
 import torch
 import torch.nn as nn
-from nunif.models import load_model, save_model
+from tqdm import tqdm
+
+from nunif.models import load_model
 
 
 def calibrate_output():
@@ -12,7 +14,7 @@ def calibrate_output():
             self.rgb = nn.Parameter(torch.zeros((1, 3, 1, 1), dtype=torch.float32))
 
         def forward(self, x):
-            return torch.clamp(x.detach() + self.rgb, 0., 1.)
+            return torch.clamp(x.detach() + self.rgb, 0.0, 1.0)
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input 4x model")
@@ -46,9 +48,11 @@ def calibrate_output():
             optimizer.zero_grad()
             rgb = (torch.rand((batch_size, 3, 1, 1)) * 255).round() / 255.0
             x = rgb.expand((batch_size, 3, input_size, input_size)).clone().to(device)
-            y = rgb.expand((batch_size, 3,
-                            input_size * scale - offset * 2,
-                            input_size * scale - offset * 2)).clone().to(device)
+            y = (
+                rgb.expand((batch_size, 3, input_size * scale - offset * 2, input_size * scale - offset * 2))
+                .clone()
+                .to(device)
+            )
             with torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=amp):
                 with torch.inference_mode():
                     z = model.unet(x)
@@ -61,7 +65,9 @@ def calibrate_output():
                 grad_scaler.step(optimizer)
                 grad_scaler.update()
         scheduler.step()
-        print(f"epoch {epoch}: loss={sum(losses) / len(losses)}, lr={scheduler.get_lr()}, RGB={cal.rgb.data.flatten().tolist()}")
+        print(
+            f"epoch {epoch}: loss={sum(losses) / len(losses)}, lr={scheduler.get_lr()}, RGB={cal.rgb.data.flatten().tolist()}"
+        )
 
     print(f"RGBCalibration: {cal.rgb.data.flatten().tolist()}")
 

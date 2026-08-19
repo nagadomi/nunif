@@ -34,7 +34,7 @@ from ..model_dir import MODEL_DIR
 from .public_dir import PUBLIC_DIR
 
 
-DEFAULT_ART_MODEL_DIR = path.abspath(path.join(MODEL_DIR, "swin_unet", "art"))
+DEFAULT_ART_MODEL_DIR = path.abspath(path.join(MODEL_DIR, "swin_unet_v3", "art"))
 DEFAULT_ART_SCAN_MODEL_DIR = path.abspath(path.join(MODEL_DIR, "swin_unet", "art_scan"))
 DEFAULT_PHOTO_MODEL_DIR = path.abspath(path.join(MODEL_DIR, "swin_unet", "photo"))
 BUFF_SIZE = 8192  # buffer block size for io access
@@ -155,6 +155,8 @@ def setup():
     photo_ctx.load_model_all(load_4x=False)
 
     if args.compile:
+        # Force `batch_size=1` to avoid recompilation.
+        args.batch_size = 1
         compile_lock = filelock.FileLock(COMPILE_LOCK)
         with compile_lock:
             logger.info("Compiling models...")
@@ -162,9 +164,6 @@ def setup():
             art_scan_ctx.compile()
             photo_ctx.compile()
             if args.warmup:
-                if args.batch_size != 1:
-                    logger.warning(("`--batch-size 1` is recommended."
-                                    "large batch size makes startup very slow."))
                 art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
                                enable_amp=not args.disable_amp)
                 art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,

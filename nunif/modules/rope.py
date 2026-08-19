@@ -8,20 +8,15 @@ def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.T
     half = x.shape[-1] // 2
     i1 = (Ellipsis, slice(None, half))
     i2 = (Ellipsis, slice(half, None))
-    if True:
+    if torch.onnx.is_in_onnx_export():
+        return x * cos + torch.cat((-x[i2], x[i1]), dim=-1) * sin
+    else:
         # This requires Torch 2.13 or later.
         sin = sin[i1]  # sin[i1] == sin[i2]
         # float32
         out = x * cos
         out[i1].addcmul_(x[i2], sin, value=-1)
         out[i2].addcmul_(x[i1], sin, value=1)
-        return out
-    else:
-        out = torch.empty_like(x)
-        sin = sin[i1]  # sin[i1] == sin[i2]
-        cos = cos[i1]
-        out[i1] = x[i1] * cos - x[i2] * sin
-        out[i2] = x[i2] * cos + x[i1] * sin
         return out
 
 

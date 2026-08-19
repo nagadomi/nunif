@@ -7,18 +7,24 @@ import gc
 import functools
 from time import time
 import threading
-from pprint import pprint # noqa
+from pprint import pprint  # noqa
 import torch
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
 from .ui_utils import (
-    create_parser, set_state_args, waifu2x_main,
-    is_video, is_output_dir, is_text, make_output_filename,
-    MODEL_DIR, DEFAULT_ART_MODEL_DIR,
-    DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR)
-from nunif.device import mps_is_available, xpu_is_available
+    create_parser,
+    set_state_args,
+    waifu2x_main,
+    is_video,
+    is_output_dir,
+    is_text,
+    make_output_filename,
+    MODEL_DIR,
+)
+from nunif.device import mps_is_available, xpu_is_available, create_device
 from nunif.utils.image_loader import IMG_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS
+from nunif.models.utils import check_compile_support
 from nunif.utils.video import (
     VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS,
     has_nvenc,
@@ -28,18 +34,26 @@ from nunif.utils.video import (
 from nunif.utils.git import get_current_branch
 from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
-    TQDMGUI, FileDropCallback, EVT_TQDM, TimeCtrl,
-    EditableComboBox, EditableComboBoxPersistentHandler,
-    persistent_manager_register_all, persistent_manager_restore_all, persistent_manager_register,
+    TQDMGUI,
+    FileDropCallback,
+    EVT_TQDM,
+    TimeCtrl,
+    EditableComboBox,
+    EditableComboBoxPersistentHandler,
+    persistent_manager_register_all,
+    persistent_manager_restore_all,
+    persistent_manager_register,
     extension_list_to_wildcard,
     validate_number,
     set_icon_ex,
-    VideoEncodingBox, VideoDecodingBox, IOPathPanel,
+    VideoEncodingBox,
+    VideoDecodingBox,
+    IOPathPanel,
     get_default_locale,
-    init_win32_dpi
+    init_win32_dpi,
 )
 from .locales import LOCALES
-from . import models # noqa
+from . import models  # noqa
 
 
 IMAGE_EXTENSIONS = extension_list_to_wildcard(LOADER_SUPPORTED_EXTENSIONS)
@@ -47,6 +61,52 @@ VIDEO_EXTENSIONS = extension_list_to_wildcard(KNOWN_VIDEO_EXTENSIONS)
 CONFIG_DIR = ensure_home_dir("waifu2x", path.join(path.dirname(__file__), "..", "tmp"))
 CONFIG_PATH = path.join(CONFIG_DIR, "waifu2x-gui.cfg")
 os.makedirs(CONFIG_DIR, exist_ok=True)
+
+
+MODEL_INFO = {
+    "swin_unet_v3/art": {
+        "model_dir": path.join(MODEL_DIR, "swin_unet_v3", "art"),
+        "TTA": True,
+        "4x": False,
+        "comment": "Anime Style Art, Cliparts",
+    },
+    "swin_unet/art": {
+        "model_dir": path.join(MODEL_DIR, "swin_unet", "art"),
+        "TTA": True,
+        "4x": True,
+        "comment": "Anime Style Art, Cliparts",
+    },
+    "swin_unet/art_scan": {
+        "model_dir": path.join(MODEL_DIR, "swin_unet", "art_scan"),
+        "TTA": False,
+        "4x": True,
+        "comment": "Manga, Anime Screencaps, Anime Style Art for more clear results",
+    },
+    "swin_unet/photo": {
+        "model_dir": path.join(MODEL_DIR, "swin_unet", "photo"),
+        "TTA": False,
+        "4x": True,
+        "comment": "Photograph",
+    },
+    "cunet/art": {
+        "model_dir": path.join(MODEL_DIR, "cunet", "art"),
+        "TTA": True,
+        "4x": False,
+        "comment": "Old version, Art model, fast",
+    },
+    "upconv_7/art": {
+        "model_dir": path.join(MODEL_DIR, "upconv_7", "art"),
+        "TTA": True,
+        "4x": False,
+        "comment": "Old version, Art model, veryfast",
+    },
+    "upconv_7/photo": {
+        "model_dir": path.join(MODEL_DIR, "upconv_7", "photo"),
+        "TTA": True,
+        "4x": False,
+        "comment": "Old version, Photo model, veryfast",
+    },
+}
 
 
 LAYOUT_DEBUG = False
@@ -81,7 +141,7 @@ class MainFrame(wx.Frame):
             name="waifu2x-gui",
             title=T("waifu2x-gui") + branch_tag + python_version_tag,
             size=(1000, 740),
-            style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX)
+            style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX),
         )
         self.processing = False
         self.start_time = 0
@@ -95,10 +155,12 @@ class MainFrame(wx.Frame):
 
         # input output panel
 
-        input_wildcard = (f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
-                          f"|Video files|{VIDEO_EXTENSIONS}"
-                          f"|Image files|{IMAGE_EXTENSIONS}"
-                          "|All Files|*.*")
+        input_wildcard = (
+            f"Image and Video files|{IMAGE_EXTENSIONS};{VIDEO_EXTENSIONS}"
+            f"|Video files|{VIDEO_EXTENSIONS}"
+            f"|Image files|{IMAGE_EXTENSIONS}"
+            "|All Files|*.*"
+        )
         self.pnl_file = IOPathPanel(
             self,
             input_wildcard=input_wildcard,
@@ -111,11 +173,11 @@ class MainFrame(wx.Frame):
         self.chk_resume = wx.CheckBox(self.pnl_file_option, label=T("Resume"), name="chk_resume")
         self.chk_resume.SetToolTip(T("Skip processing when the output file already exists"))
         self.chk_resume.SetValue(True)
-        self.chk_recursive = wx.CheckBox(self.pnl_file_option, label=T("Process all subfolders"),
-                                         name="chk_recursive")
+        self.chk_recursive = wx.CheckBox(self.pnl_file_option, label=T("Process all subfolders"), name="chk_recursive")
         self.chk_recursive.SetValue(False)
-        self.chk_exif_transpose = wx.CheckBox(self.pnl_file_option, label=T("EXIF Transpose"),
-                                              name="chk_exif_transpose")
+        self.chk_exif_transpose = wx.CheckBox(
+            self.pnl_file_option, label=T("EXIF Transpose"), name="chk_exif_transpose"
+        )
         self.chk_exif_transpose.SetValue(True)
         self.chk_exif_transpose.SetToolTip(T("Transpose images according to EXIF Orientaion Tag"))
 
@@ -135,44 +197,35 @@ class MainFrame(wx.Frame):
         # Superresolution settings
         # NOTE: term is translated with webgen locale. See WEBGEN_TERMS in ./locales.py
         self.grp_sr = wx.StaticBox(self.pnl_options, label=T("Superresolution"))
-        self.opt_model = wx.RadioBox(
-            self.grp_sr, label=T("Model"),
-            choices=[T("artwork"), T("artwork") + "/" + T("scan"),
-                     T("photo"), "cunet/art", "upconv_7/art", "upconv_7/photo"],
-            majorDimension=3, name="opt_model")
-        self.model_dirs = [
-            DEFAULT_ART_MODEL_DIR, DEFAULT_ART_SCAN_MODEL_DIR, DEFAULT_PHOTO_MODEL_DIR,
-            path.join(MODEL_DIR, "cunet", "art"),
-            path.join(MODEL_DIR, "upconv_7", "art"),
-            path.join(MODEL_DIR, "upconv_7", "photo"),
-        ]
-        self.model_tta_support = [True, False, False, True, True, True]
-        self.model_4x_support = [True, True, True, False, False, False]
-
-        self.opt_model.SetSelection(0)
-        self.opt_model.SetItemToolTip(0, T("Anime Style Art, Cliparts"))
-        self.opt_model.SetItemToolTip(1, T("Manga, Anime Screencaps, Anime Style Art for more clear results"))
-        self.opt_model.SetItemToolTip(2, T("Photograph"))
-        self.opt_model.SetItemToolTip(3, T("Old version, Art model, fast"))
-        self.opt_model.SetItemToolTip(4, T("Old version, Art model, veryfast"))
-        self.opt_model.SetItemToolTip(5, T("Old version, Photo model, veryfast"))
+        self.lbl_model = wx.StaticText(self.grp_sr, label=T("Model"))
+        self.cbo_model = wx.ComboBox(
+            self.grp_sr, choices=list(MODEL_INFO.keys()), size=self.FromDIP((200, -1)), name="cbo_model"
+        )
+        self.cbo_model.SetEditable(False)
+        self.cbo_model.SetSelection(0)
+        self.lbl_model_comment = wx.StaticText(self.grp_sr, label="")
 
         self.opt_noise_level = wx.RadioBox(
-            self.grp_sr, label=T("noise_reduction"),
+            self.grp_sr,
+            label=T("noise_reduction"),
             choices=[T("nr_none"), T("nr_low"), T("nr_medium"), T("nr_high"), T("nr_highest")],
-            name="opt_noise_level")
+            name="opt_noise_level",
+        )
         self.opt_noise_level.SetSelection(1)
 
         self.opt_upscaling = wx.RadioBox(
-            self.grp_sr, label=T("upscaling"),
-            choices=[T("up_none"), "2x", "4x"],
-            name="opt_upscaling")
+            self.grp_sr, label=T("upscaling"), choices=[T("up_none"), "2x", "4x"], name="opt_upscaling"
+        )
         self.opt_upscaling.SetSelection(1)
 
-        layout = wx.BoxSizer(wx.VERTICAL)
-        layout.Add(self.opt_model, 0, wx.ALL | wx.EXPAND, border=4)
-        layout.Add(self.opt_upscaling, 0, wx.ALL | wx.EXPAND, border=4)
-        layout.Add(self.opt_noise_level, 0, wx.ALL | wx.EXPAND, border=4)
+        layout = wx.GridBagSizer(vgap=4, hgap=4)
+        layout.SetEmptyCellSize((0, 0))
+        layout.Add(self.lbl_model, (0, 0), (1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_model, (0, 1), (1, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_model_comment, (0, 2), (1, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.opt_upscaling, (1, 0), (1, 3), flag=wx.ALL | wx.EXPAND)
+        layout.Add(self.opt_noise_level, (2, 0), (1, 3), flag=wx.ALL | wx.EXPAND)
+
         sizer_sr = wx.StaticBoxSizer(self.grp_sr, wx.VERTICAL)
         sizer_sr.Add(layout, 1, wx.ALL | wx.EXPAND, 8)
 
@@ -182,23 +235,22 @@ class MainFrame(wx.Frame):
 
         # video encoding
         # max-fps, crf, preset, tune
-        self.grp_video = VideoEncodingBox(self.pnl_options, translate_function=T,
-                                          has_nvenc=has_nvenc(), has_qsv=has_qsv())
+        self.grp_video = VideoEncodingBox(
+            self.pnl_options, translate_function=T, has_nvenc=has_nvenc(), has_qsv=has_qsv()
+        )
 
         # input video filter
         # deinterlace, rotate, vf
         self.grp_video_filter = wx.StaticBox(self.pnl_options, label=T("Video/Image Filter"))
-        self.chk_start_time = wx.CheckBox(self.grp_video_filter, label=T("Start Time"),
-                                          name="chk_start_time")
-        self.txt_start_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
-                                       name="txt_start_time")
+        self.chk_start_time = wx.CheckBox(self.grp_video_filter, label=T("Start Time"), name="chk_start_time")
+        self.txt_start_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True, name="txt_start_time")
         self.chk_end_time = wx.CheckBox(self.grp_video_filter, label=T("End Time"), name="chk_end_time")
-        self.txt_end_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True,
-                                     name="txt_end_time")
+        self.txt_end_time = TimeCtrl(self.grp_video_filter, value="00:00:00", fmt24hr=True, name="txt_end_time")
 
         self.lbl_deinterlace = wx.StaticText(self.grp_video_filter, label=T("Deinterlace"))
-        self.cbo_deinterlace = wx.ComboBox(self.grp_video_filter, choices=["", "yadif"],
-                                           style=wx.CB_READONLY, name="cbo_deinterlace")
+        self.cbo_deinterlace = wx.ComboBox(
+            self.grp_video_filter, choices=["", "yadif"], style=wx.CB_READONLY, name="cbo_deinterlace"
+        )
         self.cbo_deinterlace.SetSelection(0)
 
         self.lbl_vf = wx.StaticText(self.grp_video_filter, label=T("-vf (src)"))
@@ -206,17 +258,18 @@ class MainFrame(wx.Frame):
 
         # -- image
         self.lbl_rotate = wx.StaticText(self.grp_video_filter, label=T("Rotate"))
-        self.cbo_rotate = wx.ComboBox(self.grp_video_filter, size=self.FromDIP((200, -1)),
-                                      style=wx.CB_READONLY, name="cbo_rotate")
+        self.cbo_rotate = wx.ComboBox(
+            self.grp_video_filter, size=self.FromDIP((200, -1)), style=wx.CB_READONLY, name="cbo_rotate"
+        )
         self.cbo_rotate.Append("", "")
         self.cbo_rotate.Append(T("Left 90 (counterclockwise)"), "left")
         self.cbo_rotate.Append(T("Right 90 (clockwise)"), "right")
         self.cbo_rotate.SetSelection(0)
 
-        self.chk_grain_noise = wx.CheckBox(self.grp_video_filter,
-                                           label=T("Add Noise"), name="chk_grain_noise")
-        self.cbo_grain_noise = EditableComboBox(self.grp_video_filter, choices=["0.5", "0.4", "0.3", "0.2", "0.1"],
-                                                name="cbo_grain_noise")
+        self.chk_grain_noise = wx.CheckBox(self.grp_video_filter, label=T("Add Noise"), name="chk_grain_noise")
+        self.cbo_grain_noise = EditableComboBox(
+            self.grp_video_filter, choices=["0.5", "0.4", "0.3", "0.2", "0.1"], name="cbo_grain_noise"
+        )
         self.chk_grain_noise.SetValue(False)
         self.cbo_grain_noise.SetSelection(3)
         self.chk_grain_noise.SetToolTip(T("For Photo or Generative AI"))
@@ -244,8 +297,9 @@ class MainFrame(wx.Frame):
         # device, batch-size, TTA
         self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
         self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((240, -1)), style=wx.CB_READONLY,
-                                      name="cbo_device")
+        self.cbo_device = wx.ComboBox(
+            self.grp_processor, size=self.FromDIP((240, -1)), style=wx.CB_READONLY, name="cbo_device"
+        )
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
                 device_name = torch.cuda.get_device_properties(i).name
@@ -263,21 +317,29 @@ class MainFrame(wx.Frame):
         self.cbo_device.SetSelection(0)
 
         self.lbl_tile_size = wx.StaticText(self.grp_processor, label=T("Tile Size"))
-        self.cbo_tile_size = wx.ComboBox(self.grp_processor,
-                                         choices=["1024", "640", "400", "256", "64"],
-                                         style=wx.CB_READONLY, name="cbo_tile_size")
+        self.cbo_tile_size = wx.ComboBox(
+            self.grp_processor, choices=["1024", "640", "400", "256", "64"], style=wx.CB_READONLY, name="cbo_tile_size"
+        )
         self.cbo_tile_size.SetSelection(3)
         self.lbl_batch_size = wx.StaticText(self.grp_processor, label=T("Batch Size"))
-        self.cbo_batch_size = wx.ComboBox(self.grp_processor,
-                                          choices=["64", "32", "16", "8", "4", "2", "1"],
-                                          style=wx.CB_READONLY, name="cbo_batch_size")
+        self.cbo_batch_size = wx.ComboBox(
+            self.grp_processor,
+            choices=["64", "32", "16", "8", "4", "2", "1"],
+            style=wx.CB_READONLY,
+            name="cbo_batch_size",
+        )
         self.cbo_batch_size.SetSelection(4)
 
         self.chk_tta = wx.CheckBox(self.grp_processor, label=T("TTA"), name="chk_tta")
-        self.chk_tta.SetToolTip(T("Use flip augmentation to improve quality (veryslow)") + "\n" +
-                                T("Ignored in some models"))
+        self.chk_tta.SetToolTip(
+            T("Use flip augmentation to improve quality (veryslow)") + "\n" + T("Ignored in some models")
+        )
         self.chk_amp = wx.CheckBox(self.grp_processor, label=T("FP16 (fast)"), name="chk_amp")
         self.chk_amp.SetValue(True)
+
+        self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
+        self.chk_compile.SetToolTip(T("Enable model compiling"))
+        self.chk_compile.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)
         layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -288,6 +350,7 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_batch_size, (2, 1), flag=wx.EXPAND)
         layout.Add(self.chk_tta, (3, 0), flag=wx.EXPAND)
         layout.Add(self.chk_amp, (3, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_compile, (4, 0), flag=wx.EXPAND)
 
         sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -331,8 +394,11 @@ class MainFrame(wx.Frame):
         self.pnl_file.bind_input_path_changed(self.on_text_changed_txt_input)
         self.pnl_file.bind_output_path_changed(self.on_text_changed_txt_output)
 
-        self.opt_model.Bind(wx.EVT_RADIOBOX, self.on_selected_index_changed_opt_model)
+        self.cbo_model.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_model)
         self.opt_upscaling.Bind(wx.EVT_RADIOBOX, self.on_selected_index_changed_opt_upscaling)
+
+        self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
+        self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
 
         self.btn_start.Bind(wx.EVT_BUTTON, self.on_click_btn_start)
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
@@ -348,9 +414,14 @@ class MainFrame(wx.Frame):
 
         self.SetDropTarget(FileDropCallback(self.on_drop_files))
         # Disable default drop target
-        for control in (self.pnl_file.input_path_widget, self.pnl_file.output_path_widget, self.txt_vf,
-                        self.txt_start_time, self.txt_end_time,
-                        *editable_comboboxes):
+        for control in (
+            self.pnl_file.input_path_widget,
+            self.pnl_file.output_path_widget,
+            self.txt_vf,
+            self.txt_start_time,
+            self.txt_end_time,
+            *editable_comboboxes,
+        ):
             control.SetDropTarget(FileDropCallback(self.on_drop_files))
 
         # Fix Frame and Panel background colors are different in windows
@@ -366,11 +437,15 @@ class MainFrame(wx.Frame):
         for control in editable_comboboxes:
             persistent_manager_register(self.persistence_manager, control, EditableComboBoxPersistentHandler)
         persistent_manager_restore_all(self.persistence_manager)
+        self.update_controls()
 
+    def update_controls(self):
         self.update_start_button_state()
+        self.update_model_comment()
         self.update_upscaling_state()
         self.update_noise_level_state()
         self.update_input_option_state()
+        self.update_compile()
         self.grp_video.update_controls()
 
     def on_close(self, event):
@@ -383,7 +458,7 @@ class MainFrame(wx.Frame):
         return True
 
     def update_upscaling_state(self):
-        if self.model_4x_support[self.opt_model.GetSelection()]:
+        if MODEL_INFO[self.cbo_model.GetValue()]["4x"]:
             self.opt_upscaling.EnableItem(2, True)
         else:
             if self.opt_upscaling.GetSelection() == 2:
@@ -422,7 +497,12 @@ class MainFrame(wx.Frame):
         self.txt_start_time.SetValue("00:00:00")
         self.txt_end_time.SetValue("00:00:00")
 
-    def on_selected_index_changed_opt_model(self, event):
+    def update_model_comment(self):
+        comment = T(MODEL_INFO[self.cbo_model.GetValue()].get("comment", ""))
+        self.lbl_model_comment.SetLabel(comment)
+
+    def on_selected_index_changed_cbo_model(self, event):
+        self.update_model_comment()
         self.update_upscaling_state()
 
     def on_selected_index_changed_opt_upscaling(self, event):
@@ -432,9 +512,7 @@ class MainFrame(wx.Frame):
         if is_output_dir(output_path):
             args = self.parse_args()
             video = is_video(input_path)
-            output_path = path.join(
-                output_path,
-                make_output_filename(input_path, args, video=video))
+            output_path = path.join(output_path, make_output_filename(input_path, args, video=video))
         return output_path
 
     def on_text_changed_txt_input(self, event):
@@ -444,6 +522,21 @@ class MainFrame(wx.Frame):
 
     def on_text_changed_txt_output(self, event):
         self.update_start_button_state()
+
+    def on_selected_index_changed_cbo_device(self, event):
+        self.update_compile()
+
+    def update_compile(self, *args, **kwargs):
+        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
+        if device_id == -2:
+            # currently "All CUDA" does not support compile
+            self.chk_compile.SetValue(False)
+        else:
+            # check compiler support
+            if self.chk_compile.IsChecked():
+                device = create_device(device_id)
+                if not check_compile_support(device):
+                    self.chk_compile.SetValue(False)
 
     def confirm_overwrite(self, args):
         input_path = self.pnl_file.input_path
@@ -455,19 +548,23 @@ class MainFrame(wx.Frame):
             output_path = output_path
 
         if path.exists(output_path) and is_video(output_path):
-            with wx.MessageDialog(None,
-                                  message=output_path + "\n" + T("already exists. Overwrite?"),
-                                  caption=T("Confirm"), style=wx.YES_NO) as dlg:
+            with wx.MessageDialog(
+                None,
+                message=output_path + "\n" + T("already exists. Overwrite?"),
+                caption=T("Confirm"),
+                style=wx.YES_NO,
+            ) as dlg:
                 return dlg.ShowModal() == wx.ID_YES
         else:
             return True
 
     def show_validation_error_message(self, name, min_value, max_value):
         with wx.MessageDialog(
-                None,
-                message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
-                caption=T("Error"),
-                style=wx.OK) as dlg:
+            None,
+            message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
+            caption=T("Error"),
+            style=wx.OK,
+        ) as dlg:
             dlg.ShowModal()
 
     def parse_args(self):
@@ -521,16 +618,15 @@ class MainFrame(wx.Frame):
         recursive = path.isdir(input_path) and self.chk_recursive.GetValue()
         start_time = self.txt_start_time.GetValue() if self.chk_start_time.GetValue() else None
         end_time = self.txt_end_time.GetValue() if self.chk_end_time.GetValue() else None
-        tta = self.chk_tta.GetValue() and self.model_tta_support[self.opt_model.GetSelection()]
+        tta = self.chk_tta.GetValue() and MODEL_INFO[self.cbo_model.GetValue()]["TTA"]
 
         parser.set_defaults(
             input=input_path,
             output=self.pnl_file.output_path,
-            model_dir=self.model_dirs[self.opt_model.GetSelection()],
+            model_dir=MODEL_INFO[self.cbo_model.GetValue()]["model_dir"],
             noise_level=noise_level,
             method=method,
             yes=True,  # TODO: remove this
-
             max_fps=self.grp_video.max_fps,
             pix_fmt=self.grp_video.pix_fmt,
             colorspace=self.grp_video.colorspace,
@@ -543,30 +639,25 @@ class MainFrame(wx.Frame):
             tune=self.grp_video.tune,
             hwaccel=self.grp_video_dec.hwaccel,
             disable_software_fallback=not self.grp_video_dec.software_fallback,
-
             rotate_right=rotate_right,
             rotate_left=rotate_left,
             disable_exif_transpose=not self.chk_exif_transpose.GetValue(),
             vf=vf,
             grain=(float(self.cbo_grain_noise.GetValue()) > 0.0 and self.chk_grain_noise.GetValue()),
             grain_strength=float(self.cbo_grain_noise.GetValue()),
-
             gpu=gpus,
             batch_size=int(self.cbo_batch_size.GetValue()),
             tile_size=int(self.cbo_tile_size.GetValue()),
             tta=tta,
             disable_amp=not self.chk_amp.GetValue(),
-
+            compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
             resume=resume,
             recursive=recursive,
             start_time=start_time,
             end_time=end_time,
         )
         args = parser.parse_args()
-        set_state_args(
-            args,
-            stop_event=self.stop_event,
-            tqdm_fn=functools.partial(TQDMGUI, self))
+        set_state_args(args, stop_event=self.stop_event, tqdm_fn=functools.partial(TQDMGUI, self))
         return args
 
     def on_click_btn_start(self, event):
@@ -632,7 +723,7 @@ class MainFrame(wx.Frame):
             remaining_time = int((end_pos - pos) / fps)
             h = remaining_time // 3600
             m = (remaining_time - h * 3600) // 60
-            s = (remaining_time - h * 3600 - m * 60)
+            s = remaining_time - h * 3600 - m * 60
             t = f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
             self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ] {desc}")
         elif type == 2:

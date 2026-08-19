@@ -1,36 +1,38 @@
 # random text image generator
 # # DEBUG=1 python3 -m waifu2x.training.text_image_generator -n 100 -o ./text_test --bg-dir /bg/eval --seed 73
-from PIL import Image, ImageDraw
-import random
-import math
 import argparse
-from tqdm import tqdm
+import math
 import os
-from os import path
-from multiprocessing import cpu_count
+import random
 import threading
-import numpy as np
+from multiprocessing import cpu_count
+from os import path
 from types import SimpleNamespace
+
+import numpy as np
 import torch
-from torch.utils.data.dataset import Dataset
 import torchvision.transforms as TT
+from PIL import Image, ImageDraw
+from torch.utils.data.dataset import Dataset
+from tqdm import tqdm
+
 import nunif.transforms as NT
-from nunif.utils.pil_io import load_image_simple
-from nunif.utils.image_loader import list_images
-from nunif.logger import logger
-from nunif.initializer import set_seed
-from text_resource.aozora.db import AozoraDB
-from text_resource.aozora import utils as AU
-from font_resource.metadata import DEFAULT_FONT_NAMES, DEFAULT_FONT_DIR
-from font_resource.utils import load_fonts
 from font_resource.draw import SimpleLineDraw
+from font_resource.metadata import DEFAULT_FONT_DIR, DEFAULT_FONT_NAMES
+from font_resource.utils import load_fonts
+from nunif.initializer import set_seed
+from nunif.logger import logger
+from nunif.utils.image_loader import list_images
+from nunif.utils.pil_io import load_image_simple
+from text_resource.aozora import utils as AU
+from text_resource.aozora.db import AozoraDB
 
 
 def exec_prob(prob):
     return random.uniform(0, 1) < prob
 
 
-class BackgroundImageGenerator():
+class BackgroundImageGenerator:
     def __init__(self, size, bg_dir):
         assert isinstance(size, int)
         self.size = size
@@ -39,13 +41,15 @@ class BackgroundImageGenerator():
         assert len(self.images) > 0
         logger.debug(f"BackgroundImageGenerator: {len(self.images)} images")
 
-        self.transforms = TT.Compose([
-            NT.ReflectionResize(size),
-            TT.RandomApply([TT.ColorJitter(brightness=0.3, hue=0.1)], p=0.25),
-            TT.RandomInvert(p=0.125),
-            TT.RandomAutocontrast(p=0.25),
-            TT.RandomGrayscale(p=0.25),
-        ])
+        self.transforms = TT.Compose(
+            [
+                NT.ReflectionResize(size),
+                TT.RandomApply([TT.ColorJitter(brightness=0.3, hue=0.1)], p=0.25),
+                TT.RandomInvert(p=0.125),
+                TT.RandomAutocontrast(p=0.25),
+                TT.RandomGrayscale(p=0.25),
+            ]
+        )
 
     def generate(self):
         error_count = 0
@@ -61,7 +65,7 @@ class BackgroundImageGenerator():
         return self.transforms(bg)
 
 
-class TextGenerator():
+class TextGenerator:
     AOZORA_AUTHORS = ("夢野 久作", "太宰 治", "芥川 竜之介", "夏目 漱石", "森 鴎外")
 
     def __init__(self):
@@ -104,16 +108,21 @@ class TextImageGenerator(Dataset):
         self.num_samples = args.num_samples
         self.lock = threading.RLock()
         interpolation = random.choice([TT.InterpolationMode.BICUBIC, TT.InterpolationMode.BILINEAR])
-        self.transforms = TT.Compose([
-            TT.RandomChoice([
-                NT.Identity(),
-                TT.RandomRotation((-45, 45), interpolation=interpolation, expand=True),
-                TT.RandomPerspective(distortion_scale=1 - 1 / math.sqrt(2), p=1.0),
-            ], p=[20, 1, 1]),
-            TT.CenterCrop(args.size),
-            # TT.CenterCrop(tmp_size),
-            # TT.Resize(args.size, interpolation=interpolation, antialias=True)
-        ])
+        self.transforms = TT.Compose(
+            [
+                TT.RandomChoice(
+                    [
+                        NT.Identity(),
+                        TT.RandomRotation((-45, 45), interpolation=interpolation, expand=True),
+                        TT.RandomPerspective(distortion_scale=1 - 1 / math.sqrt(2), p=1.0),
+                    ],
+                    p=[20, 1, 1],
+                ),
+                TT.CenterCrop(args.size),
+                # TT.CenterCrop(tmp_size),
+                # TT.Resize(args.size, interpolation=interpolation, antialias=True)
+            ]
+        )
 
     def gen_basecolor(self):
         if random.uniform(0, 1) < 0.2:
@@ -138,7 +147,9 @@ class TextImageGenerator(Dataset):
                 a = [random.randint(0, 10), random.randint(0, 10), random.randint(0, 10)]
                 b = [random.randint(245, 255), random.randint(245, 255), random.randint(245, 255)]
             else:
-                a = [random.randint(0, 10),] * 3
+                a = [
+                    random.randint(0, 10),
+                ] * 3
                 b = [random.randint(245, 255)] * 3
             if random.uniform(0, 1) < 0.8:
                 fg = a
@@ -178,10 +189,17 @@ class TextImageGenerator(Dataset):
         bg, shadow_color = self.gen_bg(bg_color)
         shadow_width = 2 + random.randint(0, font_size // 8)
 
-        return SimpleNamespace(fg_color=fg_color, shadow_color=shadow_color, shadow_width=shadow_width,
-                               bg=bg,
-                               font=font, font_size=font_size, vertical=vertical,
-                               letter_spacing=letter_spacing, line_spacing=line_spacing)
+        return SimpleNamespace(
+            fg_color=fg_color,
+            shadow_color=shadow_color,
+            shadow_width=shadow_width,
+            bg=bg,
+            font=font,
+            font_size=font_size,
+            vertical=vertical,
+            letter_spacing=letter_spacing,
+            line_spacing=line_spacing,
+        )
 
     def gen_text_block_image(self):
         conf = self.gen_config()
@@ -206,8 +224,9 @@ class TextImageGenerator(Dataset):
                 if small_block:
                     max_len = random.randint(2, 8)
                     line = line[:max_len]
-                box = pen.draw(gc, x, y, line, color=conf.fg_color,
-                               shadow_color=conf.shadow_color, shadow_width=conf.shadow_width)
+                box = pen.draw(
+                    gc, x, y, line, color=conf.fg_color, shadow_color=conf.shadow_color, shadow_width=conf.shadow_width
+                )
                 x += box.width + conf.line_spacing
                 total_lines += 1
                 if max_lines <= total_lines:
@@ -218,8 +237,9 @@ class TextImageGenerator(Dataset):
                 if small_block:
                     max_len = random.randint(2, 8)
                     line = line[:max_len]
-                box = pen.draw(gc, x, y, line, color=conf.fg_color,
-                               shadow_color=conf.shadow_color, shadow_width=conf.shadow_width)
+                box = pen.draw(
+                    gc, x, y, line, color=conf.fg_color, shadow_color=conf.shadow_color, shadow_width=conf.shadow_width
+                )
                 y += box.height + conf.line_spacing
                 total_lines += 1
                 if max_lines <= total_lines:
@@ -242,19 +262,13 @@ def main():
     if workers <= 0:
         workers = 1
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--size", "-s", type=int, default=640,
-                        help="output image size")
-    parser.add_argument("--output-dir", "-o", type=str, required=True,
-                        help="output directory")
-    parser.add_argument("--num-samples", "-n", type=int, required=True,
-                        help="number of images to generate")
-    parser.add_argument("--seed", type=int, default=71,
-                        help="random seed")
+    parser.add_argument("--size", "-s", type=int, default=640, help="output image size")
+    parser.add_argument("--output-dir", "-o", type=str, required=True, help="output directory")
+    parser.add_argument("--num-samples", "-n", type=int, required=True, help="number of images to generate")
+    parser.add_argument("--seed", type=int, default=71, help="random seed")
     parser.add_argument("--postfix", type=str, help="filename postfix")
-    parser.add_argument("--font-names", type=str, nargs="+", default=DEFAULT_FONT_NAMES,
-                        help="font names to use")
-    parser.add_argument("--font-dir", type=str, default=DEFAULT_FONT_DIR,
-                        help="font dir")
+    parser.add_argument("--font-names", type=str, nargs="+", default=DEFAULT_FONT_NAMES, help="font names to use")
+    parser.add_argument("--font-dir", type=str, default=DEFAULT_FONT_DIR, help="font dir")
     parser.add_argument("--bg-dir", type=str, help="background image directory")
     parser.add_argument("--num-workers", type=int, default=workers, help="number of worker process")
 
@@ -269,7 +283,9 @@ def main():
         worker_init_fn=lambda worker_id: set_seed(worker_id + args.seed),
         batch_size=1,
         shuffle=False,
-        num_workers=4, drop_last=False)
+        num_workers=4,
+        drop_last=False,
+    )
 
     for i, x in enumerate(tqdm(img_gen, ncols=80)):
         im = x[0]

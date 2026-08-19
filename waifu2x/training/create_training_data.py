@@ -1,15 +1,17 @@
-import os
-import sys
 import argparse
-from os import path
-from tqdm import tqdm
+import os
 import random
+import sys
+from os import path
+
 import torchvision.transforms.functional as TF
-from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
-from nunif.utils.pil_io import load_image_simple
-from nunif.utils.image_loader import list_images
+from torch.utils.data.dataset import Dataset
+from tqdm import tqdm
+
 from nunif.transforms.std import pad
+from nunif.utils.image_loader import list_images
+from nunif.utils.pil_io import load_image_simple
 
 
 def split_image(filepath_prefix, im, size, stride, reject_rate, format):
@@ -27,7 +29,7 @@ def split_image(filepath_prefix, im, size, stride, reject_rate, format):
             rects.append((rect, color_stdv))
 
     n_reject = int(len(rects) * reject_rate)
-    rects = [v[0] for v in sorted(rects, key=lambda v: v[1], reverse=True)][0:len(rects) - n_reject]
+    rects = [v[0] for v in sorted(rects, key=lambda v: v[1], reverse=True)][0 : len(rects) - n_reject]
 
     index = 0
     for rect in rects:
@@ -67,7 +69,10 @@ class CreateTrainingData(Dataset):
 
         split_image(
             path.join(self.output_dir, self.filename_prefix + str(i)),
-            im, self.args.size, stride, self.args.reject_rate,
+            im,
+            self.args.size,
+            stride,
+            self.args.reject_rate,
             self.args.format,
         )
         im.close()
@@ -97,7 +102,7 @@ def main(args):
             shuffle=False,
             num_workers=num_workers,
             prefetch_factor=4,
-            drop_last=False
+            drop_last=False,
         )
         for _ in tqdm(loader, ncols=80):
             pass
@@ -105,24 +110,18 @@ def main(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "waifu2x",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "waifu2x", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
-    parser.add_argument("--size", type=int, default=640,
-                        help="image size")
-    parser.add_argument("--stride", type=float, default=0.25,
-                        help="stride_size = int(size * stride)")
-    parser.add_argument("--reject-rate", type=float, default=0.5,
-                        help="reject rate for hard example mining")
-    parser.add_argument("--prefix", type=str, default="",
-                        help="prefix for output filename")
-    parser.add_argument("--format", type=str, choices=["png", "webp"], default="png",
-                        help="output image format")
-    parser.add_argument("--pad", action="store_true",
-                        help="use padding for small images")
-    parser.add_argument("--pad-mode", choices=["reflect", "edge", "constant"], default="reflect",
-                        help="padding mode for pad")
+    parser.add_argument("--size", type=int, default=640, help="image size")
+    parser.add_argument("--stride", type=float, default=0.25, help="stride_size = int(size * stride)")
+    parser.add_argument("--reject-rate", type=float, default=0.5, help="reject rate for hard example mining")
+    parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
+    parser.add_argument("--format", type=str, choices=["png", "webp"], default="png", help="output image format")
+    parser.add_argument("--pad", action="store_true", help="use padding for small images")
+    parser.add_argument(
+        "--pad-mode", choices=["reflect", "edge", "constant"], default="reflect", help="padding mode for pad"
+    )
     parser.add_argument("--stride-step", type=int, default=None, help="multiple of step size")
     parser.add_argument("--num-workers", type=int, default=4, help="num workers")
 

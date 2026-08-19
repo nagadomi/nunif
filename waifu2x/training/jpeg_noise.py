@@ -1,11 +1,11 @@
 # JPEG Noise level processing porting from original waifu2x
 import random
 from io import BytesIO
-from PIL import Image
-from torchvision.transforms import functional as TF
-import torch
 from os import path
 
+import torch
+from PIL import Image
+from torchvision.transforms import functional as TF
 
 # p of random apply
 NR_RATE = {
@@ -13,14 +13,14 @@ NR_RATE = {
         0: 0.65,
         1: 0.65,
         2: 0.65,
-        3: 0.95,
+        3: 0.999,
     },
     "photo": {
         0: 0.3,
         1: 0.6,
         2: 0.9,
-        3: 0.9,
-    }
+        3: 0.999,
+    },
 }
 JPEG_CHROMA_SUBSAMPLING_RATE = 0.5
 
@@ -37,22 +37,19 @@ EVAL_QUALITY = {
         1: [80],
         2: [60, 90],
         3: [60, 90],
-    }
+    },
 }
 
 
 # Use custom qtables
 QTABLE_FILE = path.join(path.dirname(__file__), "_qtables_1.pth")
-if path.exists(QTABLE_FILE):
-    QTABLES = torch.load(QTABLE_FILE, weights_only=True)
-else:
-    QTABLES = None
+QTABLES = torch.load(QTABLE_FILE, weights_only=True, map_location="cpu")
 
 
 def choose_validation_jpeg_quality(index, style, noise_level):
     mod100 = index % 100
     if mod100 > int(NR_RATE[style][noise_level] * 100):
-        min_level = -1 # if noise_level < 2 else 0
+        min_level = -1  # if noise_level < 2 else 0
         cand = list(range(min_level, noise_level))
         noise_level = cand[index % len(cand)]
         if noise_level == -1:
@@ -183,44 +180,46 @@ def shift_jpeg_block(x, y, x_shift=None):
     return x, y
 
 
-LAPLACIAN_KERNEL = torch.tensor([
-    [0, -1, 0],
-    [-1, 4, -1],
-    [0, -1, 0],
-], dtype=torch.float32).reshape(1, 1, 3, 3)
+LAPLACIAN_KERNEL = torch.tensor(
+    [
+        [0, -1, 0],
+        [-1, 4, -1],
+        [0, -1, 0],
+    ],
+    dtype=torch.float32,
+).reshape(1, 1, 3, 3)
 
 
 def sharpen(x, strength=0.1):
-    grad = torch.nn.functional.conv2d(x.mean(dim=0, keepdim=True).unsqueeze(0),
-                                      weight=LAPLACIAN_KERNEL, stride=1, padding=1).squeeze(0)
+    grad = torch.nn.functional.conv2d(
+        x.mean(dim=0, keepdim=True).unsqueeze(0), weight=LAPLACIAN_KERNEL, stride=1, padding=1
+    ).squeeze(0)
     x = x + grad * strength
-    x = torch.clamp(x, 0., 1.)
+    x = torch.clamp(x, 0.0, 1.0)
     return x
 
 
 def sharpen_noise(original_x, noise_x, strength=0.1):
-    """ shapen (noise added image - original image) diff
-    """
+    """shapen (noise added image - original image) diff"""
     original_x = TF.to_tensor(original_x)
     noise_x = TF.to_tensor(noise_x)
     noise = noise_x - original_x
     noise = sharpen(noise, strength=strength)
-    x = torch.clamp(original_x + noise, 0., 1.)
+    x = torch.clamp(original_x + noise, 0.0, 1.0)
     x = TF.to_pil_image(x)
     return x
 
 
 def sharpen_noise_all(x, strength=0.1):
-    """ just sharpen image
-    """
+    """just sharpen image"""
     x = TF.to_tensor(x)
     x = sharpen(x, strength=strength)
     x = TF.to_pil_image(x)
     return x
 
 
-class RandomJPEGNoiseX():
-    def __init__(self, style, noise_level, random_crop_p=0.):
+class RandomJPEGNoiseX:
+    def __init__(self, style, noise_level, random_crop_p=0.0):
         assert noise_level in {0, 1, 2, 3} and style in {"art", "photo"}
         self.noise_level = noise_level
         self.style = style
@@ -232,7 +231,7 @@ class RandomJPEGNoiseX():
             # use lower noise_level noise
             # this is the fix for a problem in the original waifu2x
             # that lower level noise cannot be denoised with higher level denoise model.
-            min_level = -1 # if self.noise_level < 2 else 0
+            min_level = -1  # if self.noise_level < 2 else 0
             if self.style == "art":
                 noise_level = random.randint(min_level, self.noise_level - 1)
             elif self.style == "photo":
@@ -247,13 +246,12 @@ class RandomJPEGNoiseX():
             # use noise level noise
             noise_level = self.noise_level
 
-        if self.style == "photo" and QTABLES and noise_level in {2, 3} and random.uniform(0, 1) < 0.25:
+        if self.style == "photo" and noise_level in {2, 3} and random.uniform(0, 1) < 0.25:
             x = add_jpeg_noise_qtable(x)
-            strength_factor = 1. if noise_level == 3 else 0.75
+            strength_factor = 1.0 if noise_level == 3 else 0.75
             if random.uniform(0, 1) < 0.5:
                 if random.uniform(0, 1) < 0.25:
-                    x = sharpen_noise(original_x, x,
-                                      strength=random.uniform(0.05, 0.2) * strength_factor)
+                    x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2) * strength_factor)
                 else:
                     # I do not want to use this
                     # because it means applying blur (inverse of sharpening) to the output.
@@ -262,6 +260,9 @@ class RandomJPEGNoiseX():
                     x = sharpen_noise_all(x, strength=random.uniform(0.1, 0.4) * strength_factor)
                     if random.uniform(0, 1) < 0.25:
                         x = add_jpeg_noise(x, quality=random.randint(80, 95), subsampling="4:2:0")
+            return x, y
+        elif self.style == "art" and noise_level in {2, 3} and random.uniform(0, 1) < 0.1:
+            x = add_jpeg_noise_qtable(x)
             return x, y
 
         qualities = choose_jpeg_quality(self.style, noise_level)
@@ -279,7 +280,7 @@ class RandomJPEGNoiseX():
 
         for i, quality in enumerate(qualities):
             x = add_jpeg_noise(x, quality=quality, subsampling=subsampling)
-            if (i == 0 and self.style == "photo" and noise_level in {2, 3} and random.uniform(0, 1) < 0.2):
+            if i == 0 and self.style == "photo" and noise_level in {2, 3} and random.uniform(0, 1) < 0.2:
                 if random.uniform(0, 1) < 0.75:
                     x = sharpen_noise(original_x, x, strength=random.uniform(0.05, 0.2))
                 else:
@@ -304,9 +305,11 @@ def _test_noise_level():
 
 
 def _test_noise_sharpen():
-    from nunif.utils import pil_io
     import argparse
+
     import cv2
+
+    from nunif.utils import pil_io
 
     def show(name, im):
         cv2.imshow(name, pil_io.to_cv2(im))

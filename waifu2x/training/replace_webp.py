@@ -1,13 +1,15 @@
 # A tool to convert .png to .webp.
 # WARNING: Note that the original .png will be deleted.
-from PIL import Image
 import argparse
-from os import path
 import os
-from tqdm import tqdm
 from multiprocessing import cpu_count
-from torch.utils.data.dataset import Dataset
+from os import path
+
+from PIL import Image
 from torch.utils.data import DataLoader
+from torch.utils.data.dataset import Dataset
+from tqdm import tqdm
+
 from nunif.utils.image_loader import list_images
 
 
@@ -42,8 +44,7 @@ class ConvertWebP(Dataset):
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input directory or file")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input directory or file")
     args = parser.parse_args()
     num_workers = cpu_count()
 
@@ -53,7 +54,7 @@ def main():
         shuffle=False,
         num_workers=num_workers,
         prefetch_factor=8,
-        drop_last=False
+        drop_last=False,
     )
     for _ in tqdm(loader, ncols=80):
         pass

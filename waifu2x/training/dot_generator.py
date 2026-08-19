@@ -1,15 +1,15 @@
 # random dot image generator
 # port from waifu2x/image_generator/dot
 
-from PIL import Image, ImageDraw, ImageOps
-import random
-import numpy as np
-import math
 import argparse
-from tqdm import tqdm
+import math
 import os
+import random
 from os import path
 
+import numpy as np
+from PIL import Image, ImageDraw, ImageOps
+from tqdm import tqdm
 
 # File name prefix for specifying the downsampling filter
 # This used in dataset.py
@@ -231,11 +231,13 @@ def gen_dot_grid(block_size, scale, cols, rotate=False):
     blocks = []
     for _ in range(cols * cols):
         if exec_prob(0.2):
-            block = gen_dot_line_block(block_size=block_size, scale=scale, rotate=rotate,
-                                       bg_color=bg_color, bg_color_black=bg_color_black)
+            block = gen_dot_line_block(
+                block_size=block_size, scale=scale, rotate=rotate, bg_color=bg_color, bg_color_black=bg_color_black
+            )
         else:
-            block = gen_dot_block(block_size=block_size, scale=scale, rotate=rotate,
-                                  bg_color=bg_color, bg_color_black=bg_color_black)
+            block = gen_dot_block(
+                block_size=block_size, scale=scale, rotate=rotate, bg_color=bg_color, bg_color_black=bg_color_black
+            )
         blocks.append(block)
     im = image_grid(blocks, block_size * scale, cols, cols)
     return im
@@ -261,10 +263,8 @@ def gen(cols_scale=1, rotate=False, dot_scale=2):
 def _validate():
     for _ in range(100):
         dot = gen()
-        dot_half = dot.resize((dot.size[0] // 2, dot.size[1] // 2),
-                              resample=Image.Resampling.NEAREST)
-        dot2x = dot_half.resize((dot_half.size[0] * 2, dot_half.size[1] * 2),
-                                resample=Image.Resampling.NEAREST)
+        dot_half = dot.resize((dot.size[0] // 2, dot.size[1] // 2), resample=Image.Resampling.NEAREST)
+        dot2x = dot_half.resize((dot_half.size[0] * 2, dot_half.size[1] * 2), resample=Image.Resampling.NEAREST)
         diff = np.array(dot, dtype=np.float32) - np.array(dot2x, dtype=np.float32)
         diff_sum = (diff * diff).sum()
         assert diff_sum < 0.0001
@@ -278,25 +278,18 @@ def _show():
 
 
 def ellipse_rect(center, size):
-    return (center[0] - size // 2, center[1] - size // 2,
-            center[0] + size // 2, center[1] + size // 2)
+    return (center[0] - size // 2, center[1] - size // 2, center[0] + size // 2, center[1] + size // 2)
 
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--size", "-s", type=int, default=640, choices=[320, 640, 1280],
-                        help="image size")
-    parser.add_argument("--dot-scale", type=int, default=2, choices=[2, 4],
-                        help="minimum dot size")
-    parser.add_argument("--num-samples", "-n", type=int, default=200,
-                        help="number of images to generate")
-    parser.add_argument("--rotate", action="store_true",
-                        help="allow rotation")
-    parser.add_argument("--seed", type=int, default=71,
-                        help="random seed")
+    parser.add_argument("--size", "-s", type=int, default=640, choices=[320, 640, 1280], help="image size")
+    parser.add_argument("--dot-scale", type=int, default=2, choices=[2, 4], help="minimum dot size")
+    parser.add_argument("--num-samples", "-n", type=int, default=200, help="number of images to generate")
+    parser.add_argument("--rotate", action="store_true", help="allow rotation")
+    parser.add_argument("--seed", type=int, default=71, help="random seed")
     parser.add_argument("--postfix", type=str, help="filename postfix")
-    parser.add_argument("--output-dir", "-o", type=str, required=True,
-                        help="output directory")
+    parser.add_argument("--output-dir", "-o", type=str, required=True, help="output directory")
     args = parser.parse_args()
     random.seed(args.seed)
     cols_scale = {320: 1, 640: 2, 1280: 4}[args.size]
@@ -318,18 +311,19 @@ def main():
             circle_hole = random.choice([True, False])
             if circle_hole:
                 r = random.randint(int(mask.width * 0.25), int(mask.width * 0.75))
-                center = [random.randint(int(-mask.width * 0.5), int(mask.width + mask.width * 0.5)),
-                          random.randint(int(-mask.height * 0.5), int(mask.height + mask.height * 0.5))]
+                center = [
+                    random.randint(int(-mask.width * 0.5), int(mask.width + mask.width * 0.5)),
+                    random.randint(int(-mask.height * 0.5), int(mask.height + mask.height * 0.5)),
+                ]
                 gc.ellipse(ellipse_rect(center, r), fill=255)
             else:
-                p1 = (random.randint(0, int(mask.width * 0.5)),
-                      random.randint(0, int(mask.height * 0.5)))
-                p2 = (random.randint(int(mask.width * 0.5), mask.width),
-                      random.randint(0, int(mask.height * 0.5)))
-                p3 = (random.randint(int(mask.width * 0.5), mask.width),
-                      random.randint(int(mask.height * 0.5), mask.height))
-                p4 = (random.randint(0, int(mask.width * 0.5)),
-                      random.randint(int(mask.height * 0.5), mask.height))
+                p1 = (random.randint(0, int(mask.width * 0.5)), random.randint(0, int(mask.height * 0.5)))
+                p2 = (random.randint(int(mask.width * 0.5), mask.width), random.randint(0, int(mask.height * 0.5)))
+                p3 = (
+                    random.randint(int(mask.width * 0.5), mask.width),
+                    random.randint(int(mask.height * 0.5), mask.height),
+                )
+                p4 = (random.randint(0, int(mask.width * 0.5)), random.randint(int(mask.height * 0.5), mask.height))
                 gc.polygon((p1, p2, p3, p4), fill=255)
             if hole_scale != 1:
                 mask = mask.resize(dot.size, resample=Image.Resampling.LANCZOS)

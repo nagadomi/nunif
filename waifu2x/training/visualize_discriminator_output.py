@@ -2,19 +2,21 @@
 # python -m waifu2x.training.visualize_discriminator_output -i tmp/sr_output -o ./tmp/discmap --model ./models/noise3_scale4x_discriminator.pth
 import argparse
 import os
-import torch
-from tqdm import tqdm
 from os import path
+
+import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
+from tqdm import tqdm
+
+import waifu2x.models
+import waifu2x.models.discriminator  # noqa
+from nunif.device import autocast
+from nunif.models import load_model
+from nunif.modules.pad import get_pad_size
+from nunif.modules.permute import window_partition2d, window_reverse2d
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple, to_tensor
-from nunif.models import load_model
-from nunif.device import autocast
-from nunif.modules.pad import get_pad_size
-import waifu2x.models
-import waifu2x.models.discriminator # noqa
-from nunif.modules.permute import window_partition2d, window_reverse2d
 
 
 def main():
@@ -49,7 +51,7 @@ def main():
             outputs = []
 
             for i in range(x.shape[0]):
-                xx = x[i:i + 1]
+                xx = x[i : i + 1]
                 # cond should be GT by design, but it has been simplified.
                 cond = xx
                 z = model(xx, cond)

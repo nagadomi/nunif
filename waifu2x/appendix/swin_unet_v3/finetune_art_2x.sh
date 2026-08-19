@@ -1,0 +1,40 @@
+#!/bin/bash -e
+
+OUTPUT_DIR=./models/swin_unet_v3_2x/
+DATA_DIR=./data/waifu2x/
+ADDITIONAL_DATA_DIR=./data/waifu2x/gen_screenmain
+#ADDITIONAL_DATA_DIR=
+# random
+SEED=-1
+
+ARCH="waifu2x.swin_unet_v3_2x"
+
+# NOTE: Use --da-rotate-p 0.2 to sacrifice a small amount of PSNR for sharper results.
+DA_OPTION="--da-grayscale-p 0.01 --deblur 0.025 --resize-blur-p 0.2 --da-rotate-p 0.2"
+OPTIONS="--arch ${ARCH} --optimizer adamw_fused --scheduler cosine_wd --update-criterion loss --seed ${SEED} --data-dir ${DATA_DIR} --model-dir ${OUTPUT_DIR} --drop-last --eval-step 2 --num-workers 8"
+if [ ! -z ${ADDITIONAL_DATA_DIR} ]; then
+    OPTIONS="${OPTIONS} --additional-data-dir ${ADDITIONAL_DATA_DIR} --additional-data-dir-p 0.01 --hard-example none"
+fi
+
+OPTIONS="${OPTIONS} ${DA_OPTION} --ignore-nan "
+OVERRIDE=""
+
+# first train --noise-level 1
+LOSS="--loss dctirm_sharp"
+
+STEP_OPTION="--size 80 --batch-size 16 --num-samples 50000 --max-epoch 60 --optimizer adamw_schedulefree --learning-rate 0.00005 --warmup-epoch 1"
+
+DEBUG=1 python train.py waifu2x --method noise_scale --noise-level 3 ${OPTIONS} ${STEP_OPTION} ${LOSS} --checkpoint-file ${OUTPUT_DIR}/noise3_scale2x.0.pth
+cp ${OUTPUT_DIR}/noise3_scale2x.pth ${OUTPUT_DIR}/noise3_scale2x.1.pth
+
+DEBUG=1 python train.py waifu2x --method noise_scale --noise-level 2 ${OPTIONS} ${STEP_OPTION} ${LOSS} --checkpoint-file ${OUTPUT_DIR}/noise2_scale2x.0.pth
+cp ${OUTPUT_DIR}/noise2_scale2x.pth ${OUTPUT_DIR}/noise2_scale2x.1.pth
+
+DEBUG=1 python train.py waifu2x --method noise_scale --noise-level 1 ${OPTIONS} ${STEP_OPTION} ${LOSS} --checkpoint-file ${OUTPUT_DIR}/noise1_scale2x.0.pth
+cp ${OUTPUT_DIR}/noise1_scale2x.pth ${OUTPUT_DIR}/noise1_scale2x.1.pth
+
+DEBUG=1 python train.py waifu2x --method noise_scale --noise-level 0 ${OPTIONS} ${STEP_OPTION} ${LOSS} --checkpoint-file ${OUTPUT_DIR}/noise0_scale2x.0.pth
+cp ${OUTPUT_DIR}/noise0_scale2x.pth ${OUTPUT_DIR}/noise0_scale2x.1.pth
+
+DEBUG=1 python train.py waifu2x --method scale ${OPTIONS} ${STEP_OPTION} ${LOSS} --checkpoint-file ${OUTPUT_DIR}/scale2x.1.pth
+cp ${OUTPUT_DIR}/scale2x.pth ${OUTPUT_DIR}/scale2x.1.pth

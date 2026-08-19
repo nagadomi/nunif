@@ -266,6 +266,8 @@ class WindowMHA2dV2(nn.Module):
 
         needs_pad = self.pad_h > 0 or self.pad_w > 0
         if needs_pad:
+            # NOTE: Flash Attention does not support non-null attn_mask.
+            #       Efficient Attention does not support GQA.
             x = F.pad(x, (self.pad_w, self.pad_w, self.pad_h, self.pad_h), mode="constant", value=0)
             attn_mask = gen_padded_attention_mask_2d(
                 B,

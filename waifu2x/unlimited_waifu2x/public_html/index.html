@@ -6,10 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, user-scalable=yes">
     <link rel="icon" href="favicon.ico">
     <title>unlimited:waifu2x</title>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.js"></script>
-    <script src="//cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js"></script>
-    <script src="script.js" charset="utf-8"></script>
+    <script src="//cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0-dev.20260812-74c8ca5b3a/dist/ort.min.js"></script>
+    <script type="module" src="js/main.js" charset="utf-8"></script>
     <link href="style.css" rel="stylesheet" type="text/css">
   </head>
   <body>
@@ -27,11 +25,22 @@
             </td>
           </tr>
           <tr>
+            <td>Backend</td>
+            <td>
+              <select name="backend">
+                <option value="auto" selected>Auto</option>
+                <option value="webgpu">WebGPU</option>
+                <option value="wasm">WebAssembly</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
             <td>Model</td>
             <td>
               <select name="model">
-                <option value="swin_unet.art" selected>🎨 swin_unet / art</option>
-                <option value="swin_unet.art_scan" selected>🖨 swin_unet / art scan</option>
+                <option value="swin_unet_v3.art" selected>🎨 swin_unet_v3 / art</option>
+                <option value="swin_unet.art">🎨 swin_unet / art</option>
+                <option value="swin_unet.art_scan">🖨 swin_unet / art scan</option>
                 <option value="swin_unet.photo">📷 swin_unet / photo</option>
                 <option value="cunet.art">🎨 cunet / art (201811)</option>
               </select>
@@ -78,7 +87,7 @@
               <span id="tile-comment" class="comment">256 is recommended</span>
             </td>
           </tr>
-          <tr>
+          <tr id="tta-row">
             <td>TTA</td>
             <td>
               <select name="tta">
@@ -116,7 +125,7 @@
       </div>
     </div>
     <div id="footer">
-      Powered by <a href="https://github.com/nagadomi/nunif">nunif/waifu2x</a>, <a href="https://waifu2x.udp.jp/">waifu2x.udp.jp</a>
+      Powered by <a href="https://github.com/nagadomi/nunif">nunif/waifu2x</a>, <a href="https://waifu2x.net/">waifu2x.net</a>
     </div>
   </body>
 </html>
