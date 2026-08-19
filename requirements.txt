@@ -19,7 +19,7 @@ filelock
 
 # iw3
 timm
-av==17.1.0
+av==18.1.0
 simpleeval
 
 # iw3-player
