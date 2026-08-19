@@ -77,6 +77,8 @@ def _list_hw_format() -> Set[str]:
         configs = codec.hardware_configs  # type: ignore
         if configs:
             for config in configs:
+                if config.format is None:
+                    continue
                 formats.add(config.format.name)
     return formats
 
