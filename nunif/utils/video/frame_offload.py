@@ -71,7 +71,7 @@ class OffloadResourceManager:
 
         for _ in range(preallocate):
             buffer = torch.empty(self.size, dtype=self.dtype, device=self.offload_device, pin_memory=self.pin_memory)
-            event = self._create_event(self.device)
+            event = self._create_event()
             self.free_buffers.append(buffer)
             if event is not None:
                 self.free_events.append(event)
