@@ -131,7 +131,11 @@ class VideoPreprocessor:
             def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
                 # Optimized transfer for software decoders when device is GPU
                 dlpack_pix_fmt = sw_format.guess_sw_dlpack_pix_fmt()
-                has_alpha = getattr(frame.format, 'has_alpha', False) or 'a' in frame.format.name.lower() or len(frame.format.components) == 4
+                has_alpha = (
+                    getattr(frame.format, "has_alpha", False)
+                    or "a" in frame.format.name.lower()
+                    or len(frame.format.components) == 4
+                )
 
                 if dlpack_pix_fmt is not None and is_discrete_device(device) and frame.height >= 320 and not has_alpha:
                     dst_pix_fmt: str = dlpack_pix_fmt
