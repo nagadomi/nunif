@@ -396,13 +396,14 @@ def _process_video(
         enc_packets = video_output_stream.encode(None)
         if enc_packets:
             output_container.mux(enc_packets)
-
     except KeyboardInterrupt:
+        output_reformatter.synchronize()
         pbar.close()
         output_container.close()
         input_container.close()
         raise
     except:  # noqa
+        output_reformatter.synchronize()
         pbar.close()
         output_container.close()
         input_container.close()
@@ -411,6 +412,7 @@ def _process_video(
             try_replace(output_path_tmp, output_path_error)
         raise
 
+    output_reformatter.synchronize()
     pbar.close()
     output_container.close()
     input_container.close()
@@ -544,6 +546,8 @@ def generate_video(
     packet = video_output_stream.encode(None)
     if packet:
         output_container.mux(packet)
+
+    output_reformatter.synchronize()
     pbar.close()
     output_container.close()
 
