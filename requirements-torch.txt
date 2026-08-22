@@ -1,15 +1,15 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
---extra-index-url https://download.pytorch.org/whl/cu130
+--extra-index-url https://download.pytorch.org/whl/cu132
 
 # macOS
 torch; sys_platform == "darwin"
 torchvision; sys_platform == "darwin"
 
 # Linux
-torch==2.12.1+cu130; sys_platform == "linux"
-torchvision==0.27.1+cu130; sys_platform == "linux"
+torch==2.13.0+cu132; sys_platform == "linux"
+torchvision==0.28.0+cu132; sys_platform == "linux"
 
 # Windows
-torch==2.12.1+cu130; sys_platform == "win32"
-torchvision==0.27.1+cu130; sys_platform == "win32"
+torch==2.13.0+cu132; sys_platform == "win32"
+torchvision==0.28.0+cu132; sys_platform == "win32"
 triton-windows~=3.7.1.0; sys_platform == "win32"

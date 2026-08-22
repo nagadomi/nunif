@@ -23,6 +23,12 @@ Processing performance could be improved when WebGPU is available; experimental 
 
 The pretrained models are available at https://github.com/nagadomi/nunif/releases (`waifu2x_onnx_models_*.zip`).
 
+or convert from a PyTorch checkpoint file.
+
+```
+python -m waifu2x.export_onnx -i ./waifu2x/pretrained_models -o waifu2x/unlimited_waifu2x/public_html/models
+```
+
 2. Publish `public_html` with a web server.
 
 For testing purposes, web server can be run with the following command.
@@ -37,6 +43,8 @@ Note that the size of the onnx file is very large.
 It is recommended to use CDN to reduce transfer fees.
 
 # Converting models to fp16
+
+NOTE 2026-08: Using fp16 with WebGPU requires shader-f16, which limits the range of supported environments, so it is not recommended for now.
 
 Converting models to fp16 reduces model file size and data transfer bytes down to half.
 This only converts the parameters to fp16, keeps fp32 for input and output.

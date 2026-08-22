@@ -120,7 +120,7 @@ def pad_shift_mask_token(x, mask_token, window_size, shift=(True, True)):
 
 
 class MHA(nn.Module):
-    def __init__(self, embed_dim, num_heads, qkv_dim=None, qkv_bias=True, num_kv_heads=None):
+    def __init__(self, embed_dim, num_heads, qkv_dim=None, qkv_bias=True, num_kv_heads=None, gate=False):
         super().__init__()
         # require torch >= 2.0 (recommend torch >= 2.1.2)
         # nn.MultiheadAttention also has a bug with float attn_mask, so PyTorch 2.1 is required anyway.
@@ -137,6 +137,7 @@ class MHA(nn.Module):
         self.num_heads = num_heads
         self.num_kv_heads = num_kv_heads
         self.qkv_proj = nn.Linear(embed_dim, qkv_dim * num_heads + qkv_dim * num_kv_heads * 2, bias=qkv_bias)
+        self.gate = nn.Linear(embed_dim, qkv_dim * num_heads, bias=qkv_bias) if gate else None
         self.head_proj = nn.Linear(qkv_dim * num_heads, embed_dim)
         basic_module_init(self)
 
@@ -145,7 +146,7 @@ class MHA(nn.Module):
         q, k, v = self.qkv_proj(x).split(
             (self.qkv_dim * self.num_heads, self.qkv_dim * self.num_kv_heads, self.qkv_dim * self.num_kv_heads), dim=-1
         )
-        x = sliced_sdp(
+        out = sliced_sdp(
             q,
             k,
             v,
@@ -156,8 +157,10 @@ class MHA(nn.Module):
             is_causal=is_causal,
             num_kv_heads=self.num_kv_heads,
         )
-        x = self.head_proj(x)
-        return x
+        if self.gate is not None:
+            out = out * torch.sigmoid(self.gate(x))
+        out = self.head_proj(out)
+        return out
 
 
 class WindowMHA2d(nn.Module):
@@ -239,6 +242,7 @@ class WindowMHA2dV2(nn.Module):
         window_size: int | tuple[int, int],
         shift: bool | tuple[bool, bool] | list[bool] = False,
         num_kv_heads: int | None = None,
+        gate: bool = False,
     ) -> None:
         super().__init__()
         self.window_size = window_size if isinstance(window_size, (tuple, list)) else (window_size, window_size)
@@ -251,7 +255,7 @@ class WindowMHA2dV2(nn.Module):
             assert self.window_size[1] % 2 == 0
             self.pad_w = self.window_size[1] // 2
 
-        self.mha = MHA(in_channels, num_heads, qkv_bias=False, num_kv_heads=num_kv_heads)
+        self.mha = MHA(in_channels, num_heads, qkv_bias=False, num_kv_heads=num_kv_heads, gate=gate)
 
     def forward(
         self,
@@ -313,6 +317,7 @@ class WindowMHA2dCLV2(nn.Module):
         window_size: int | tuple[int, int],
         shift: bool | tuple[bool, bool] | list[bool] = False,
         num_kv_heads: int | None = None,
+        gate: bool = False,
     ) -> None:
         super().__init__()
         self.window_size = window_size if isinstance(window_size, (tuple, list)) else (window_size, window_size)
@@ -325,7 +330,7 @@ class WindowMHA2dCLV2(nn.Module):
             assert self.window_size[1] % 2 == 0
             self.pad_w = self.window_size[1] // 2
 
-        self.mha = MHA(in_channels, num_heads, qkv_bias=False, num_kv_heads=num_kv_heads)
+        self.mha = MHA(in_channels, num_heads, qkv_bias=False, num_kv_heads=num_kv_heads, gate=gate)
 
     def forward(
         self,
@@ -885,19 +890,22 @@ def _test_2d_cl_v2():
     x = torch.rand((4, dim, 32, 32)).cuda()
     x_cl = x.permute(0, 2, 3, 1).contiguous()
 
-    for shift in [False, True, (True, False), (False, True)]:
-        mha = WindowMHA2dV2(dim, num_heads=num_heads, window_size=window_size, shift=shift).cuda().eval()
-        mha_cl = WindowMHA2dCLV2(dim, num_heads=num_heads, window_size=window_size, shift=shift).cuda().eval()
+    for gate in [False, True]:
+        for shift in [False, True, (True, False), (False, True)]:
+            mha = WindowMHA2dV2(dim, num_heads=num_heads, window_size=window_size, shift=shift, gate=gate).cuda().eval()
+            mha_cl = (
+                WindowMHA2dCLV2(dim, num_heads=num_heads, window_size=window_size, shift=shift, gate=gate).cuda().eval()
+            )
 
-        # sync weights
-        mha_cl.mha.load_state_dict(mha.mha.state_dict())
+            # sync weights
+            mha_cl.mha.load_state_dict(mha.mha.state_dict())
 
-        with torch.inference_mode():
-            y = mha(x)
-            y_cl = mha_cl(x_cl)
-            diff = (y - y_cl.permute(0, 3, 1, 2)).abs().max()
-            # print(f"shift={shift} diff={diff}")
-            assert diff < 1e-4
+            with torch.inference_mode():
+                y = mha(x)
+                y_cl = mha_cl(x_cl)
+                diff = (y - y_cl.permute(0, 3, 1, 2)).abs().max()
+                # print(f"shift={shift} diff={diff}")
+                assert diff < 1e-4
 
 
 def _test_overlap_v2():
@@ -1017,8 +1025,8 @@ def _bench_gqa(do_compile=False):
 
 
 if __name__ == "__main__":
-    _bench_gqa(do_compile=False)
-    _bench_gqa(do_compile=True)
+    # _bench_gqa(do_compile=False)
+    # _bench_gqa(do_compile=True)
     # _bench_spatial_reduction()
     # _test_gen_padded_attention_mask_2d()
     _test_gqa()
