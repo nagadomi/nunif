@@ -10,7 +10,7 @@ from .utils import RGB_8BIT, RGB_16BIT
 
 # Colorspace constants
 COLORSPACE_UNSPECIFIED: int = 2
-COLORSPACE_BT2020: int = 9
+
 
 # Mapping from friendly names to standard values
 COLOR_CONFIG_MAP: Dict[
@@ -47,19 +47,19 @@ COLOR_CONFIG_MAP: Dict[
         ColorRange.JPEG,
     ),
     "bt2020-tv": (
-        COLORSPACE_BT2020,
+        Colorspace.BT2020,
         ColorPrimaries.BT2020,
         ColorTrc.ARIB_STD_B67,
         ColorRange.MPEG,
     ),
     "bt2020-pc": (
-        COLORSPACE_BT2020,
+        Colorspace.BT2020,
         ColorPrimaries.BT2020,
         ColorTrc.ARIB_STD_B67,
         ColorRange.JPEG,
     ),
     "bt2020-pq-tv": (
-        COLORSPACE_BT2020,
+        Colorspace.BT2020,
         ColorPrimaries.BT2020,
         ColorTrc.SMPTE2084,
         ColorRange.MPEG,
@@ -77,6 +77,8 @@ def _list_hw_format() -> Set[str]:
         configs = codec.hardware_configs  # type: ignore
         if configs:
             for config in configs:
+                if config.format is None:
+                    continue
                 formats.add(config.format.name)
     return formats
 
@@ -433,7 +435,7 @@ class VideoMetadata(MediaMetadata):
             return ColorTrc.BT709
         elif colorspace == Colorspace.ITU601:
             return ColorTrc.SMPTE170M
-        elif colorspace == COLORSPACE_BT2020:
+        elif colorspace == Colorspace.BT2020:
             return ColorTrc.SMPTE2084
         else:
             return ColorTrc.UNSPECIFIED
@@ -444,7 +446,7 @@ class VideoMetadata(MediaMetadata):
             return ColorPrimaries.BT709
         elif colorspace == Colorspace.ITU601:
             return ColorPrimaries.SMPTE170M
-        elif colorspace == COLORSPACE_BT2020:
+        elif colorspace == Colorspace.BT2020:
             return ColorPrimaries.BT2020
         else:
             return ColorPrimaries.UNSPECIFIED

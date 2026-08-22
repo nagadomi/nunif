@@ -353,34 +353,18 @@ class ColorTransform:
         assert isinstance(res, tuple)
         weight, bias = res
 
-        # Optimization: Process planes sequentially to minimize peak VRAM.
-        # 1. Start with Y plane
-        rgb = F.conv2d(y, weight[:, 0:1])
-
-        # 2. Interpolate and add U plane
         if u.shape[-2:] != y.shape[-2:]:
-            u = F.interpolate(
-                u,
+            uv = torch.cat([u, v], dim=1)
+            uv = F.interpolate(
+                uv,
                 size=y.shape[-2:],
                 mode=mode,
                 align_corners=False if mode == "bilinear" else None,
             )
-        rgb.add_(F.conv2d(u, weight[:, 1:2]))
-        del u
-
-        # 3. Interpolate and add V plane
-        if v.shape[-2:] != y.shape[-2:]:
-            v = F.interpolate(
-                v,
-                size=y.shape[-2:],
-                mode=mode,
-                align_corners=False if mode == "bilinear" else None,
-            )
-        rgb.add_(F.conv2d(v, weight[:, 2:3]))
-        del v
-
-        # 4. Add Bias and Clamp
-        rgb.add_(bias.view(1, 3, 1, 1))
+            u = uv[:, 0:1]
+            v = uv[:, 1:2]
+        yuv = torch.cat([y, u, v], dim=1)
+        rgb = F.conv2d(yuv, weight=weight, bias=bias)
         return rgb.clamp_(0.0, 1.0)
 
     @staticmethod
@@ -674,6 +658,7 @@ class OutputTransform:
     dst_color_range: ColorRange | int
     use_16bit: bool
     cuda_context: CudaContext | None
+    cuda_stream: torch.cuda.Stream | None
 
     # Convert tensor/ndarray to av.VideoFrame
     def __init__(
@@ -684,6 +669,7 @@ class OutputTransform:
         dst_color_trc: ColorTrc | int,
         dst_color_range: ColorRange | int,
         cuda_context: CudaContext | None = None,
+        cuda_stream: torch.cuda.Stream | None = None,
     ) -> None:
         self.dst_pix_fmt = dst_pix_fmt
         self.dst_colorspace = dst_colorspace
@@ -692,6 +678,9 @@ class OutputTransform:
         self.dst_color_range = dst_color_range
         self.use_16bit = pix_fmt_requires_16bit(dst_pix_fmt)
         self.cuda_context = cuda_context
+
+        # Keep the reference to cuda_stream to prevent it from being GC.
+        self.cuda_stream = cuda_stream
         self.reformatter = VideoReformatter()
 
     def from_video_frame(self, frame: av.VideoFrame) -> av.VideoFrame:
@@ -782,13 +771,17 @@ class OutputTransform:
         if self.is_cuda_dlpack_supported(x):
             # For NVENC
             # Ensure PyTorch has finished writing to y_p and uv_p
-            if torch.cuda.default_stream() != torch.cuda.current_stream():
-                torch.cuda.current_stream().synchronize()
-
+            if self.cuda_stream is None:
+                if torch.cuda.default_stream() != torch.cuda.current_stream():
+                    torch.cuda.current_stream().synchronize()
+            else:
+                if torch.cuda.current_stream() != self.cuda_stream:
+                    torch.cuda.current_stream().synchronize()
             frame = av.VideoFrame.from_dlpack(
                 (y_p, uv_p),
                 format=internal_pix_fmt,
-                primary_ctx=True,
+                primary_ctx=False,
+                current_ctx=True,
                 cuda_context=self.cuda_context,
             )
         else:
@@ -828,6 +821,10 @@ class OutputTransform:
 
     def __call__(self, x: av.VideoFrame | torch.Tensor | np.ndarray | TensorFrame) -> av.VideoFrame:
         return self.transform(x)
+
+    def synchronize(self):
+        if self.cuda_stream is not None:
+            self.cuda_stream.synchronize()
 
 
 def get_source_dtype(frame: av.VideoFrame | TensorFrame) -> torch.dtype:
@@ -941,7 +938,7 @@ def setup_color_transform(
             "dst_color_range": ColorRange.JPEG,
         }
 
-    cuda_context = None
+    cuda_context = cuda_stream = None
     if (
         is_nvidia_gpu(device)
         and config.video_codec in {"h264_nvenc", "hevc_nvenc"}
@@ -950,7 +947,15 @@ def setup_color_transform(
         device_id = 0
         if device is not None and isinstance(device.index, int):
             device_id = device.index
-        cuda_context = CudaContext(device_id=device_id, primary_ctx=True)
+        # Either way, stream synchronization is required,
+        # so this does not make it any faster.
+        cuda_stream = None  # torch.cuda.Stream()
+        cuda_context = CudaContext(
+            device_id=device_id,
+            current_ctx=True,
+            primary_ctx=False,
+            cuda_stream=int(cuda_stream.cuda_stream) if cuda_stream is not None else  None,
+        )
 
     output_reformatter = OutputTransform(
         dst_pix_fmt=pix_fmt,
@@ -959,6 +964,7 @@ def setup_color_transform(
         dst_color_trc=color_trc,
         dst_color_range=color_range,
         cuda_context=cuda_context,
+        cuda_stream=cuda_stream,
     )
 
     return input_reformat_options, output_reformatter

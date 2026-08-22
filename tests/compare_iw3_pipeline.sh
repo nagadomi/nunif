@@ -18,7 +18,7 @@ CACHE_DIR="${SCRIPT_DIR}/data/compare_iw3_pipeline/cache"
 
 CURRENT_AV_VERSION=$(pip show av | grep Version | awk '{print $2}')
 REPO1_AV="av==15.1.0"
-REPO2_AV="av==17.1.0"
+REPO2_AV="av==18.1.0"
 COMMON_OPTIONS="--video-codec hevc_nvenc"
 
 

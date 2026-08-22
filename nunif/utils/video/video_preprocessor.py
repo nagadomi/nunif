@@ -2,12 +2,13 @@ from fractions import Fraction
 from typing import Any, Dict, List
 
 import av
+from av.video.reformatter import Colorspace, ColorTrc
 import torch
 
 from ..color_lut import get_hdr2sdr_lut_path
 from .color_transform import InputTransform, TensorFrame
 from .hwaccel import should_use_tensor_frame
-from .metadata import COLORSPACE_BT2020, ColorTrc, VideoMetadata
+from .metadata import VideoMetadata
 from .utils import is_discrete_device
 from .video_filter.av_filter_graph import AVFilterGraph
 from .video_filter.fps import FPSFilter
@@ -27,7 +28,7 @@ def _get_lut_path(colorspace: int, color_trc: int, output_colorspace: str) -> st
 
 def _is_hdr2sdr_enabled(colorspace: int, color_trc: int, output_colorspace: str) -> bool:
     return (
-        colorspace == COLORSPACE_BT2020
+        colorspace == Colorspace.BT2020
         and color_trc in {ColorTrc.SMPTE2084, ColorTrc.ARIB_STD_B67}
         and output_colorspace in {"bt709", "bt709-tv", "bt709-pc", "bt601", "bt601-tv", "bt601-pc"}
     )
@@ -130,7 +131,11 @@ class VideoPreprocessor:
             def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
                 # Optimized transfer for software decoders when device is GPU
                 dlpack_pix_fmt = sw_format.guess_sw_dlpack_pix_fmt()
-                has_alpha = getattr(frame.format, 'has_alpha', False) or 'a' in frame.format.name.lower() or len(frame.format.components) == 4
+                has_alpha = (
+                    getattr(frame.format, "has_alpha", False)
+                    or "a" in frame.format.name.lower()
+                    or len(frame.format.components) == 4
+                )
 
                 if dlpack_pix_fmt is not None and is_discrete_device(device) and frame.height >= 320 and not has_alpha:
                     dst_pix_fmt: str = dlpack_pix_fmt

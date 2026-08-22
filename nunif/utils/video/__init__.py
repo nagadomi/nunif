@@ -13,7 +13,7 @@ from .hwaccel import (
 )
 from .initializer import initialize_library, pyav_init_cuda_primary_context
 from .metadata import VideoMetadata
-from .offload_frame import OffloadFrame
+from .frame_offload import OffloadedFrame, OffloadResourceManager
 from .output_config import VideoOutputConfig
 from .processor import (
     export_audio,

@@ -1,3 +1,4 @@
+import contextlib
 import torch
 
 
@@ -73,3 +74,50 @@ def autocast(device, dtype=None, enabled=True):
         amp_dtype = dtype
 
     return torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=enabled)
+
+
+class DummyStream():
+    def __init__(self, device=None, priority=0, **kwargs):
+        pass
+
+    def synchronize(self):
+        pass
+
+    def wait_stream(self, stream):
+        pass
+
+    def wait_event(self, event):
+        pass
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        pass
+
+
+def create_stream(device):
+    if device_is_cuda(device):
+        return torch.cuda.Stream(device)
+    elif device_is_xpu(device):
+        return torch.xpu.Stream(device)
+    else:
+        return DummyStream()
+
+
+def get_current_stream(device):
+    if torch.cuda.is_available():
+        return torch.cuda.current_stream()
+    elif device_is_xpu(device):
+        return torch.xpu.current_stream()
+    else:
+        return DummyStream()
+
+
+def device_context(device):
+    if device_is_cuda(device):
+        return torch.cuda.device(device)
+    elif device_is_xpu(device):
+        return torch.xpu.device(device)
+    else:
+        return contextlib.nullcontext()
