@@ -162,3 +162,7 @@ python -m iw3.desktop --user admin --password 1234
 Specify the `--local-viewer` option.
 
 Even if specified from the CLI, a GUI window will be displayed, so wxpython and OpenGL are required (installed from `requirements-gui.txt`).
+
+If you also specify `--local-viewer-fullscreen-display-mode`, pressing `F11` to enter fullscreen will switch the monitor hosting the Local Viewer window to a larger display mode, and leaving fullscreen will restore the original mode.
+
+This display mode switching feature uses `PyMonCtl`. On Linux, it requires an X11 session with `xrandr`; it is not available on Wayland.

@@ -3,6 +3,7 @@ pywin32; sys_platform == 'win32'
 windows_capture == 1.4.2; sys_platform == 'win32'
 xlib >= 0.21; sys_platform == 'linux'
 mss >= 10.1.0
+PyMonCtl >= 0.92
 PyOpenGL >= 3.1.9
 # PyOpenGL_accelerate is not required, but it is recommended.
 # If installation fails, you can ignore it.
