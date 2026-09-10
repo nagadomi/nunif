@@ -45,38 +45,47 @@ def is_loopback_address(ip):
 
 
 def generate_self_signed_cert(cert_dir, cert_file, key_file, bind_addr="127.0.0.1"):
-    from OpenSSL import crypto
+    from datetime import datetime, timedelta, timezone
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
 
     if not os.path.exists(cert_dir):
         os.makedirs(cert_dir)
     if not os.path.exists(cert_file) or not os.path.exists(key_file):
-        k = crypto.PKey()
-        k.generate_key(crypto.TYPE_RSA, 2048)
-
-        cert = crypto.X509()
-        cert.set_version(2)  # v3
-        cert.get_subject().ST = "Tokyo"
-        cert.get_subject().L = "Local"
-        cert.get_subject().O = "My App"  # noqa: E741
-        cert.get_subject().CN = bind_addr
-        cert.set_serial_number(int(os.getpid() + os.getppid() + os.urandom(1)[0]))
-        cert.gmtime_adj_notBefore(0)
-        cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)
-        cert.set_issuer(cert.get_subject())
-
-        # Subject Alternative Name (SAN) is required by modern browsers
-        alt_names = [b"DNS:localhost", "IP:127.0.0.1".encode(), f"IP:{bind_addr}".encode()]
-        # Remove duplicates
-        alt_names = list(set(alt_names))
-        san_extension = crypto.X509Extension(b"subjectAltName", False, b", ".join(alt_names))
-        cert.add_extensions([san_extension])
-
-        cert.set_pubkey(k)
-        cert.sign(k, "sha256")
+        k = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name([
+            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Tokyo"),
+            x509.NameAttribute(NameOID.LOCALITY_NAME, "Local"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "My App"),
+            x509.NameAttribute(NameOID.COMMON_NAME, bind_addr),
+        ])
+        now = datetime.now(timezone.utc)
+        # Use typed SAN entries; pyOpenSSL removed its X509Extension API.
+        addresses = dict.fromkeys([ipaddress.ip_address("127.0.0.1"),
+                                   ipaddress.ip_address(bind_addr)])
+        alt_names = [x509.DNSName("localhost")]
+        alt_names.extend(x509.IPAddress(address) for address in addresses)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(subject)
+            .public_key(k.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + timedelta(days=10 * 365))
+            .add_extension(x509.SubjectAlternativeName(alt_names), critical=False)
+            .sign(k, hashes.SHA256())
+        )
         with open(cert_file, "wb") as f:
-            f.write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
         with open(key_file, "wb") as f:
-            f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, k))
+            f.write(k.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.TraditionalOpenSSL,
+                serialization.NoEncryption(),
+            ))
         print(f"Generated new self-signed certificate with SAN: {bind_addr}")
 
 
