@@ -478,7 +478,7 @@ class MainFrame(wx.Frame):
         self.cbo_rotate.SetSelection(0)
 
         self.lbl_pad = wx.StaticText(self.grp_video_filter, label=T("Padding"))
-        self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "top", "16:9"],
+        self.cbo_pad_mode = wx.ComboBox(self.grp_video_filter, choices=["", "tb", "lr", "top", "16:9", "1:1"],
                                         name="cbo_pad_mode")
         self.cbo_pad_mode.SetEditable(False)
         self.cbo_pad_mode.SetSelection(0)
@@ -1608,7 +1608,7 @@ class MainFrame(wx.Frame):
                     self.chk_compile.SetValue(False)
 
     def update_pad_mode(self, *args, **kwargs):
-        if self.cbo_pad_mode.GetValue() == "16:9":
+        if ":" in self.cbo_pad_mode.GetValue():
             self.cbo_pad.SetSelection(0)
             self.cbo_pad.Disable()
         else:
