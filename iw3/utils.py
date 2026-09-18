@@ -2016,7 +2016,7 @@ def create_parser(required_true=True):
     parser.add_argument("--yes", "-y", action="store_true", default=False,
                         help="overwrite output files")
     parser.add_argument("--pad", type=float, help="pad_size = round(width * pad) // 2")
-    parser.add_argument("--pad-mode", type=str, default="tblr", choices=["tblr", "tb", "lr", "16:9", "top"], help="padding mode")
+    parser.add_argument("--pad-mode", type=str, default="tblr", choices=["tblr", "tb", "lr", "16:9", "1:1", "top"], help="padding mode")
     parser.add_argument("--depth-model", type=str, default="ZoeD_Any_N",
                         choices=["ZoeD_N", "ZoeD_K", "ZoeD_NK",
                                  "Any_S", "Any_B", "Any_L",
