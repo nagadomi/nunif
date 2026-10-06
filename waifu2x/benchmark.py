@@ -284,10 +284,10 @@ def main():
                     z = x
                 baseline_time_sum += time.time() - t
                 if args.border > 0:
-                    psnr, mse = psnr256(remove_border(groundtruth, args.border),
-                                        remove_border(z, args.border), args.color, args.flat_only)
+                    psnr, mse, _ = psnr256(remove_border(groundtruth, args.border),
+                                           remove_border(z, args.border), args.color, args.flat_only)
                 else:
-                    psnr, mse = psnr256(groundtruth, z, args.color, args.flat_only)
+                    psnr, mse, _ = psnr256(groundtruth, z, args.color, args.flat_only)
                 baseline_psnr_sum += psnr
                 baseline_mse_sum += mse
 
