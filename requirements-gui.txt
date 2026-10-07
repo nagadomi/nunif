@@ -1,7 +1,7 @@
 wxpython >= 4.0.0
 pywin32; sys_platform == 'win32'
 windows_capture == 1.4.2; sys_platform == 'win32'
-xlib >= 0.21; sys_platform == 'linux'
+python-xlib >= 0.31; sys_platform == 'linux'
 # Wayland (KDE Plasma) screen capture: --screenshot kwcapture
 kwcapture >= 0.5.0; sys_platform == 'linux'
 mss >= 10.1.0
