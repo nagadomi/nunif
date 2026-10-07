@@ -26,7 +26,7 @@ av==15.0.0
 fastapi
 hypercorn
 pysubs2
-pyopenssl
+pyopenssl==25.3.0
 
 # depthpro da3
 pillow_heif
