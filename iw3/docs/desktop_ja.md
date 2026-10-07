@@ -200,3 +200,15 @@ python -m iw3.desktop --user admin --password 1234
 
 CLIから指定した場合でもGUIウィンドウが表示されるため、wxpythonとOpenGLが必要です（`requirements-gui.txt`からインストールされます）。
 
+CUDAを使用する実行では、フレームをGPUメモリから直接ウィンドウへコピーします（CUDA-GL Interop）。
+これはウィンドウの描画とCUDAが同じGPU上で行われる場合のみ利用できます。そのため
+Waylandセッションでコンポジターが内蔵GPUで動作している場合、PRIMEノートパソコンの場合、
+またはドライバがバッファを共有できない場合には、次のようなメッセージが1回表示されます。
+
+```
+Failed to initialize CUDA-GL Interop: cudaGraphicsGLRegisterBuffer failed: invalid OpenGL or DirectX context (219) [Intel ... / CUDA NVIDIA GeForce RTX 3080 Ti]. Falling back to the CPU transfer path.
+```
+
+これは情報表示です。フレームはシステムメモリ経由でコピーされ、速度は低下しますが正しく表示されます。
+Wayland固有の要件ではなく、画面取得自体はCUDAを用いません。
+

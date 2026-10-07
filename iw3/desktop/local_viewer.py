@@ -13,6 +13,30 @@ import ctypes
 POLLING_INTERVAL = 1.0 / 240.0
 
 
+def gl_renderer_string():
+    """OpenGL vendor/renderer of the current context, for diagnostics (never raises)."""
+    try:
+        vendor = GL.glGetString(GL.GL_VENDOR)
+        renderer = GL.glGetString(GL.GL_RENDERER)
+    except Exception: # noqa
+        return "unknown GL"
+
+    def s(v):
+        if isinstance(v, bytes):
+            v = v.decode(errors="replace")
+        return v or "?"
+
+    return f"{s(vendor)} {s(renderer)}"
+
+
+def cuda_device_name(device_id):
+    """Name of the CUDA device, for diagnostics (never raises)."""
+    try:
+        return torch.cuda.get_device_name(device_id)
+    except Exception: # noqa
+        return "unknown device"
+
+
 class _CUDART:
     def __init__(self, device_id=0):
         torch_dir = os.path.dirname(torch.__file__)
@@ -69,40 +93,81 @@ class _CUDART:
         self.lib.cudaMemcpy.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int
         ]
-        self.lib.cudaSetDevice(device_id)
+        self.lib.cudaGetLastError.argtypes = []
+        self.lib.cudaGetLastError.restype = ctypes.c_int
+        self.lib.cudaGetErrorString.argtypes = [ctypes.c_int]
+        self.lib.cudaGetErrorString.restype = ctypes.c_char_p
+
+        res = self.lib.cudaSetDevice(device_id)
+        if res != 0:
+            raise self.error(res, f"cudaSetDevice({device_id}) failed")
+
+    def clear_last_error(self):
+        """cudaGetLastError(): returns *and clears* the CUDA error pending on this thread.
+
+        A CUDA runtime call that fails leaves its error code pending on the calling thread, and
+        the code stays there until somebody calls cudaGetLastError(). torch does exactly that in
+        its kernel launch check, so a failure we have already caught and recovered from gets
+        reported again -- blamed on whatever the next torch CUDA op happens to be. This is not
+        theoretical: when the desktop GL context lives on another GPU (a Wayland compositor on
+        the iGPU, a PRIME laptop, EGL where CUDA expects GLX), cudaGraphicsGLRegisterBuffer fails
+        with 219/cudaErrorInvalidGraphicsContext, init_gl() correctly falls back to the CPU path,
+        and the next torch call then died with
+        `torch.AcceleratorError: CUDA error: invalid OpenGL or DirectX context` at a plain
+        permute()/contiguous(). Clear the error on every CUDA path we give up on.
+        """
+        try:
+            self.lib.cudaGetLastError()
+        except Exception: # noqa
+            pass
+
+    def error(self, res, what):
+        """RuntimeError with the CUDA error text, with the pending error cleared along the way."""
+        try:
+            detail = self.lib.cudaGetErrorString(res).decode()
+        except Exception: # noqa
+            detail = f"error {res}"
+        message = f"{what}: {detail} ({res})"
+        self.clear_last_error()
+        return RuntimeError(message)
 
     def register_buffer(self, pbo_id):
         resource = ctypes.c_void_p()
         # 1 = cudaGraphicsRegisterFlagsNone
         res = self.lib.cudaGraphicsGLRegisterBuffer(ctypes.byref(resource), pbo_id, 1)
         if res != 0:
-            raise RuntimeError(f"cudaGraphicsGLRegisterBuffer failed: {res}")
+            raise self.error(res, "cudaGraphicsGLRegisterBuffer failed")
         return resource
 
     def unregister_resource(self, resource):
-        self.lib.cudaGraphicsUnregisterResource(resource)
+        res = self.lib.cudaGraphicsUnregisterResource(resource)
+        if res != 0:
+            self.clear_last_error()
 
     def memcpy_d2d(self, dst_ptr, src_ptr, size):
         # 3 = cudaMemcpyDeviceToDevice
         res = self.lib.cudaMemcpy(dst_ptr, src_ptr, size, 3)
         if res != 0:
-            raise RuntimeError(f"cudaMemcpy failed: {res}")
+            raise self.error(res, "cudaMemcpy failed")
 
     def map_resource(self, resource):
         res = self.lib.cudaGraphicsMapResources(1, ctypes.byref(resource), None)
         if res != 0:
-            raise RuntimeError(f"cudaGraphicsMapResources failed: {res}")
+            raise self.error(res, "cudaGraphicsMapResources failed")
 
         ptr = ctypes.c_void_p()
         size = ctypes.c_size_t()
         res = self.lib.cudaGraphicsResourceGetMappedPointer(ctypes.byref(ptr), ctypes.byref(size), resource)
         if res != 0:
             self.lib.cudaGraphicsUnmapResources(1, ctypes.byref(resource), None)
-            raise RuntimeError(f"cudaGraphicsResourceGetMappedPointer failed: {res}")
+            raise self.error(res, "cudaGraphicsResourceGetMappedPointer failed")
         return ptr.value
 
     def unmap_resource(self, resource):
-        self.lib.cudaGraphicsUnmapResources(1, ctypes.byref(resource), None)
+        res = self.lib.cudaGraphicsUnmapResources(1, ctypes.byref(resource), None)
+        if res != 0:
+            # Nobody is going to inspect this one, so do not leave it pending for them
+            self.clear_last_error()
 
 
 class GLCanvas(glcanvas.GLCanvas):
@@ -163,8 +228,14 @@ class GLCanvas(glcanvas.GLCanvas):
                 self._cudart = _CUDART(self.device_id)
                 self.cuda_resource = self._cudart.register_buffer(self.pbo)
             except Exception as e:
-                print(f"Failed to initialize CUDA-GL Interop: {e}", file=sys.stderr)
-                self.use_cuda = False
+                # Interop is not available on this display: CUDA can only share buffers with a GL
+                # context on its own device, so anything that renders the desktop somewhere else
+                # (a Wayland compositor on the iGPU, a PRIME laptop, EGL instead of GLX) ends up
+                # here. The CPU transfer path in set_tex() is the supported fallback.
+                print(f"Failed to initialize CUDA-GL Interop: {e}"
+                      f" [{gl_renderer_string()} / CUDA {cuda_device_name(self.device_id)}]."
+                      " Falling back to the CPU transfer path.", file=sys.stderr)
+                self.disable_cuda()
 
         self.initialized = True
 
@@ -209,6 +280,62 @@ class GLCanvas(glcanvas.GLCanvas):
         self.frame = frame
         self.Refresh()
 
+    def disable_cuda(self):
+        """Stop using CUDA-GL Interop, and leave no CUDA error pending for the next caller.
+
+        Losing interop is not fatal: it only costs the zero-copy upload. It must not throw out of
+        EVT_PAINT either, because the exception would then repeat on every repaint.
+        """
+        self.use_cuda = False
+        if self.cuda_resource is not None and self._cudart is not None:
+            try:
+                self._cudart.unregister_resource(self.cuda_resource)
+            except Exception: # noqa
+                pass
+        self.cuda_resource = None
+        if self._cudart is not None:
+            self._cudart.clear_last_error()
+
+    @staticmethod
+    def to_rgb_uint8(frame):
+        # CHW float [0, 1] -> HWC uint8, the layout the PBO and the texture upload want
+        frame = frame.permute(1, 2, 0).contiguous()
+        return (frame.clamp(0, 1) * 255).to(torch.uint8)
+
+    def upload_interop(self, frame):
+        """Copy the frame into the PBO with cudaMemcpy through the interop resource.
+
+        Returns False (and disables interop) only when *interop* is the problem; a torch error
+        here is a real error and keeps propagating, as it did before.
+        """
+        # Ensure the frame is on the same device as the OpenGL PBO
+        if frame.get_device() != self.device_id:
+            frame = frame.to(f"cuda:{self.device_id}")
+        # Convert to uint8 on GPU
+        frame = self.to_rgb_uint8(frame)
+        try:
+            # Map PBO to CUDA and copy
+            ptr = self._cudart.map_resource(self.cuda_resource)
+            try:
+                self._cudart.memcpy_d2d(ptr, frame.data_ptr(), frame.nbytes)
+            finally:
+                self._cudart.unmap_resource(self.cuda_resource)
+        except Exception as e: # noqa
+            print(f"Failed to copy a frame with CUDA-GL Interop: {e}"
+                  " Falling back to the CPU transfer path.", file=sys.stderr)
+            self.disable_cuda()
+            return False
+        return True
+
+    def upload_cpu(self, frame):
+        # Fallback to CPU transfer
+        frame = self.to_rgb_uint8(frame).detach().cpu().numpy()
+        ptr = GL.glMapBuffer(GL.GL_PIXEL_UNPACK_BUFFER, GL.GL_WRITE_ONLY)
+        if not ptr:
+            raise RuntimeError(f"glMapBuffer failed (glGetError={GL.glGetError()})")
+        ctypes.memmove(ptr, frame.ctypes.data, frame.nbytes)
+        GL.glUnmapBuffer(GL.GL_PIXEL_UNPACK_BUFFER)
+
     def set_tex(self):
         if self.frame is None:
             return False
@@ -221,30 +348,12 @@ class GLCanvas(glcanvas.GLCanvas):
         GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
         GL.glBindBuffer(GL.GL_PIXEL_UNPACK_BUFFER, self.pbo)
 
-        if self.use_cuda and frame.is_cuda:
-            # Ensure the frame is on the same device as the OpenGL PBO
-            if frame.get_device() != self.device_id:
-                frame = frame.to(f"cuda:{self.device_id}")
-
+        if self.use_cuda and self.cuda_resource is not None and frame.is_cuda:
             # Zero-copy transfer using CUDA-GL Interop
-            # 1. Convert to uint8 on GPU
-            frame = frame.permute(1, 2, 0).contiguous()
-            frame = (frame.clamp(0, 1) * 255).to(torch.uint8)
-
-            # 2. Map PBO to CUDA and copy
-            ptr = self._cudart.map_resource(self.cuda_resource)
-            try:
-                self._cudart.memcpy_d2d(ptr, frame.data_ptr(), frame.nbytes)
-            finally:
-                self._cudart.unmap_resource(self.cuda_resource)
+            if not self.upload_interop(frame):
+                self.upload_cpu(frame)
         else:
-            # Fallback to CPU transfer
-            frame = frame.permute(1, 2, 0).contiguous()
-            frame = (frame.clamp(0, 1) * 255).to(torch.uint8).detach().cpu().numpy()
-
-            ptr = GL.glMapBuffer(GL.GL_PIXEL_UNPACK_BUFFER, GL.GL_WRITE_ONLY)
-            ctypes.memmove(ptr, frame.ctypes.data, frame.nbytes)
-            GL.glUnmapBuffer(GL.GL_PIXEL_UNPACK_BUFFER)
+            self.upload_cpu(frame)
 
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.tex_id)
         GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, None)

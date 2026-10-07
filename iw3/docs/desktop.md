@@ -203,3 +203,15 @@ python -m iw3.desktop --user admin --password 1234
 Specify the `--local-viewer` option.
 
 Even if specified from the CLI, a GUI window will be displayed, so wxpython and OpenGL are required (installed from `requirements-gui.txt`).
+
+On a CUDA run the viewer tries to copy frames straight from GPU memory into the window
+(CUDA-GL Interop). That only works when the window is drawn by the same GPU CUDA is running
+on, so on a Wayland session whose compositor runs on the integrated GPU, on a PRIME laptop, or
+when the graphics driver cannot share buffers, you will see one line like
+
+```
+Failed to initialize CUDA-GL Interop: cudaGraphicsGLRegisterBuffer failed: invalid OpenGL or DirectX context (219) [Intel ... / CUDA NVIDIA GeForce RTX 3080 Ti]. Falling back to the CPU transfer path.
+```
+
+This is informational: the frames are copied through system memory instead, which is slower but
+correct. It is not a Wayland requirement -- capture itself does not use CUDA.
