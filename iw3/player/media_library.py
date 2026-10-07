@@ -62,7 +62,7 @@ def create_thumbnail_data(fp: io.BytesIO, stereo_fmt: str) -> Optional[bytes]:
 
 def create_video_thumbnail(fp: Any, stereo_fmt: str) -> Optional[bytes]:
     try:
-        with av.open(fp, mode="r", metadata_errors="ignore") as container:
+        with av.open(fp, mode="r") as container:
             stream = container.streams.video[0]
             target_timestamp = int(1.0 / stream.time_base)
             container.seek(target_timestamp, any_frame=False, backward=True, stream=stream)
@@ -93,7 +93,7 @@ def extract_subtitle(fp: Any) -> Optional[List[Dict[str, str]]]:
                 score += 1
             return score
 
-        with av.open(fp, mode="r", metadata_errors="replace") as container:
+        with av.open(fp, mode="r") as container:
             if len(container.streams.subtitles) == 0:
                 return None
 
