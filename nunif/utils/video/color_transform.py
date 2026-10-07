@@ -15,7 +15,7 @@ from .metadata import (
     VideoMetadata,
     get_rgb_pix_fmt,
 )
-from .utils import is_discrete_device, is_nvidia_gpu, av_rational_to_fraction
+from .utils import av_rational_to_fraction, is_discrete_device, is_nvidia_gpu
 
 
 class ColorTransform:
@@ -585,10 +585,16 @@ class InputTransform:
         )
 
     def to_tensor_av(self, frame: av.VideoFrame) -> TensorFrame:
-        has_alpha = getattr(frame.format, 'has_alpha', False) or 'a' in frame.format.name.lower() or len(frame.format.components) == 4
+        has_alpha = (
+            getattr(frame.format, "has_alpha", False)
+            or "a" in frame.format.name.lower()
+            or len(frame.format.components) == 4
+        )
         target_format = self.rgb_format
         if has_alpha:
-            target_format = "rgba64le" if "48" in self.rgb_format or "16" in self.rgb_format or self.use_16bit else "rgba"
+            target_format = (
+                "rgba64le" if "48" in self.rgb_format or "16" in self.rgb_format or self.use_16bit else "rgba"
+            )
 
         frame = frame.reformat(
             format=target_format,
@@ -604,7 +610,7 @@ class InputTransform:
 
         rgb = torch.from_numpy(rgb_np).contiguous()
         rgb = rgb.to(self.device)
-        
+
         if rgb_np.dtype == np.uint8:
             rgb = rgb.permute(2, 0, 1).to(self.dtype) / 255.0
         elif rgb_np.dtype == np.uint16:
@@ -842,7 +848,7 @@ def to_ndarray(frame: av.VideoFrame) -> np.ndarray:
     from .utils import RGB_8BIT, RGB_16BIT
 
     use_16bit = frame.format.components[0].bits > 8
-    has_alpha = getattr(frame.format, 'has_alpha', False) or 'a' in frame.format.name.lower()
+    has_alpha = getattr(frame.format, "has_alpha", False) or "a" in frame.format.name.lower()
 
     if has_alpha:
         format = "rgba64le" if use_16bit else "rgba"
@@ -954,7 +960,7 @@ def setup_color_transform(
             device_id=device_id,
             current_ctx=True,
             primary_ctx=False,
-            cuda_stream=int(cuda_stream.cuda_stream) if cuda_stream is not None else  None,
+            cuda_stream=int(cuda_stream.cuda_stream) if cuda_stream is not None else None,
         )
 
     output_reformatter = OutputTransform(

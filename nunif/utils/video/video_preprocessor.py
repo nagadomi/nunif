@@ -2,8 +2,8 @@ from fractions import Fraction
 from typing import Any, Dict, List
 
 import av
-from av.video.reformatter import Colorspace, ColorTrc
 import torch
+from av.video.reformatter import Colorspace, ColorTrc
 
 from ..color_lut import get_hdr2sdr_lut_path
 from .color_transform import InputTransform, TensorFrame
