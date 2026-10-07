@@ -205,6 +205,9 @@ class ScreenshotThreadKWCapture(threading.Thread):
             self.cuda_stream = torch.cuda.Stream(device=device)
         else:
             self.cuda_stream = None
+        # Host->device copies overlap only from pinned host memory, so pin when the frames are
+        # going to CUDA. Never otherwise (see run()).
+        self.pinned_buffer = self.cuda_stream is not None
 
     def create_capture(self):
         K = get_kwcapture()
@@ -250,8 +253,17 @@ class ScreenshotThreadKWCapture(threading.Thread):
                 shape = (bgra.shape[0], bgra.shape[1], 4)
                 if frame_buffer is None or frame_buffer.shape != shape:
                     frame_buffer = torch.from_numpy(np.ascontiguousarray(bgra))
-                    if torch.cuda.is_available():
-                        frame_buffer = frame_buffer.pin_memory()
+                    if self.pinned_buffer:
+                        # Only worth it when the frames are headed for a CUDA device: pinning
+                        # initializes the CUDA context, which costs a few hundred MB of VRAM and
+                        # fails outright on a card that is already full -- for a run that asked
+                        # for a CPU device and never needed CUDA at all.
+                        try:
+                            frame_buffer = frame_buffer.pin_memory()
+                        except Exception as e: # noqa
+                            self.pinned_buffer = False
+                            print(f"kwcapture: cannot pin the frame buffer ({e}),"
+                                  " using pageable memory instead", file=sys.stderr)
                 else:
                     frame_buffer.copy_(torch.from_numpy(bgra))
 
