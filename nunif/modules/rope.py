@@ -4,11 +4,11 @@ import torch
 import torch.nn as nn
 
 
-def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor, training: bool = False) -> torch.Tensor:
     half = x.shape[-1] // 2
     i1 = (Ellipsis, slice(None, half))
     i2 = (Ellipsis, slice(half, None))
-    if torch.onnx.is_in_onnx_export():
+    if training or torch.onnx.is_in_onnx_export():
         return x * cos + torch.cat((-x[i2], x[i1]), dim=-1) * sin
     else:
         # This requires Torch 2.13 or later.
@@ -86,8 +86,8 @@ class RoPE2d(nn.Module):
         x_h = x[..., : self.dim_chunk].reshape(B, num_heads, self.height, self.width, self.dim_chunk)
         x_w = x[..., self.dim_chunk :].reshape(B, num_heads, self.height, self.width, self.dim_chunk)
 
-        out_h = apply_rope(x_h, self.cos_h.to(x.dtype), self.sin_h.to(x.dtype))
-        out_w = apply_rope(x_w, self.cos_w.to(x.dtype), self.sin_w.to(x.dtype))
+        out_h = apply_rope(x_h, self.cos_h.to(x.dtype), self.sin_h.to(x.dtype), training=self.training)
+        out_w = apply_rope(x_w, self.cos_w.to(x.dtype), self.sin_w.to(x.dtype), training=self.training)
 
         out_h = out_h.reshape(B, num_heads, N, self.dim_chunk)
         out_w = out_w.reshape(B, num_heads, N, self.dim_chunk)
@@ -114,7 +114,7 @@ def _bench(do_compile):
     num_heads = 4
     head_dim = dim // 4
 
-    rope = RoPE2d(head_dim, S, norm_layer=nn.LayerNorm).cuda()
+    rope = RoPE2d(head_dim, S, norm_layer=nn.LayerNorm).eval().cuda()
     x = torch.rand((B, num_heads, S[0] * S[1], head_dim), dtype=torch.float16, device="cuda")
     if do_compile:
         rope = torch.compile(rope)
