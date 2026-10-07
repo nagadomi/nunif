@@ -12,6 +12,12 @@ import numpy as np
 import sys
 import wx
 from typing import Any
+from .screenshot_thread_kwcapture import (  # noqa
+    is_kwcapture_supported,
+    get_monitor_size_list as kwcapture_get_monitor_size_list,
+    enum_window_names as kwcapture_enum_window_names,
+    get_window_rect_by_title as kwcapture_get_window_rect_by_title,
+)
 
 
 _x11_connection_pool: dict[int, Any] = {}
@@ -120,6 +126,12 @@ def draw_cursor(x, pos, size=12, offset=[0, 0]):
 
 
 def get_monitor_size_list():
+    if is_kwcapture_supported():
+        # On Wayland, mss sees the XWayland screen only (or nothing at all). kwcapture asks
+        # KWin, so the sizes are the ones a capture will actually return (device pixels).
+        size_list = kwcapture_get_monitor_size_list()
+        if size_list:
+            return size_list
     if sys.platform == "win32":
         import win32api
         monitors = win32api.EnumDisplayMonitors()
@@ -217,6 +229,9 @@ def enum_window_names():
 
         win32gui.EnumWindows(callback, None)
         return sorted(window_names)
+    elif is_kwcapture_supported():
+        # KWin keeps the window list; X11's _NET_CLIENT_LIST does not exist here
+        return kwcapture_enum_window_names()
     elif is_linux_x11():
         return enum_window_names_x11()
     else:
@@ -303,6 +318,12 @@ def get_window_rect_by_title(title, sct=None):
             return dict(sct.monitors[1])
 
         return ret
+    elif is_kwcapture_supported():
+        # Device pixels, measured from a real frame: KWin's own geometry is in logical
+        # pixels, which under fractional scaling is not what the capture thread returns.
+        # None (window closed) is returned as-is, so the caller reports "not found"
+        # instead of streaming a zero-sized area.
+        return kwcapture_get_window_rect_by_title(title)
     else:
         # TODO: Not implemented
         return {"left": 0, "right": 0, "width": 0, "height": 0}

@@ -44,6 +44,7 @@ from .utils import (
     get_monitor_size_list,
     enum_window_names,
     is_mss_supported,
+    is_kwcapture_supported,
     IW3U, ENABLE_GPU_JPEG,
 )
 
@@ -59,6 +60,9 @@ LAYOUT_DEBUG = False
 HAS_WINDOWS_CAPTURE = bool(importlib.util.find_spec("windows_capture"))
 IS_ROCM = getattr(torch.version, "hip", None) is not None
 HAS_WINDOWS_CAPTURE_CUDA = bool(importlib.util.find_spec("wc_cuda")) and torch.cuda.is_available() and not IS_ROCM
+HAS_KWCAPTURE = is_kwcapture_supported()
+# Backends that can capture one monitor or one window (the others grab the whole screen)
+BACKENDS_WITH_TARGET = {"wc_mp", "wc_cuda", "mss", "kwcapture"}
 
 
 myEVT_FPS = wx.NewEventType()
@@ -444,6 +448,8 @@ class MainFrame(wx.Frame):
             screenshot_backends += ["wc_mp"]
         if HAS_WINDOWS_CAPTURE_CUDA:
             screenshot_backends += ["wc_cuda"]
+        if HAS_KWCAPTURE:
+            screenshot_backends += ["kwcapture"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor,
                                           choices=screenshot_backends,
                                           name="cbo_screenshot")
@@ -454,6 +460,9 @@ class MainFrame(wx.Frame):
                 default_screenshot_index = screenshot_backends.index("wc_cuda")
             elif "wc_mp" in screenshot_backends:
                 default_screenshot_index = screenshot_backends.index("wc_mp")
+        elif HAS_KWCAPTURE and "kwcapture" in screenshot_backends:
+            # On Wayland the other backends see the XWayland screen, not the desktop
+            default_screenshot_index = screenshot_backends.index("kwcapture")
         elif sys.platform == "darwin":
             if "mss" in screenshot_backends:
                 default_screenshot_index = screenshot_backends.index("mss")
@@ -1048,7 +1057,7 @@ class MainFrame(wx.Frame):
 
         monitor_index = int(self.cbo_monitor_index.GetValue())
         window_name = self.cbo_window_name.GetValue()
-        if self.cbo_screenshot.GetValue() not in {"wc_mp", "wc_cuda", "mss"}:
+        if self.cbo_screenshot.GetValue() not in BACKENDS_WITH_TARGET:
             monitor_index = 0
             window_name = None
         if not window_name:
@@ -1308,7 +1317,7 @@ class MainFrame(wx.Frame):
         self.update_window_names()
 
     def update_monitor_index(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() in {"wc_mp", "wc_cuda", "mss"}:
+        if self.cbo_screenshot.GetValue() in BACKENDS_WITH_TARGET:
             self.lbl_monitor_index.Show()
             self.cbo_monitor_index.Show()
         else:
@@ -1318,7 +1327,7 @@ class MainFrame(wx.Frame):
         self.GetSizer().Layout()
 
     def update_window_names(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() in {"wc_mp", "wc_cuda", "mss"}:
+        if self.cbo_screenshot.GetValue() in BACKENDS_WITH_TARGET:
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()
