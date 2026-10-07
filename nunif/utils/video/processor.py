@@ -87,7 +87,7 @@ def test_audio_copy(input_path, output_path):
     buff.name = path.basename(output_path)
     try:
         with (
-            av.open(input_path, mode="r", metadata_errors="ignore") as input_container,
+            av.open(input_path, mode="r") as input_container,
             av.open(buff, mode="w") as output_container,
         ):
             if len(input_container.streams.audio) > 0:
@@ -221,7 +221,7 @@ def _process_video(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
     output_path_tmp = make_temporary_file_path(output_path)
-    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)
+    input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -470,7 +470,7 @@ def generate_video(
     video_output_stream.options = config.options
 
     if audio_file is not None:
-        input_container = av.open(audio_file, mode="r", metadata_errors="ignore")
+        input_container = av.open(audio_file, mode="r")
         if len(input_container.streams.audio) > 0:
             # has audio stream
             audio_input_stream = input_container.streams.audio[0]
@@ -594,7 +594,7 @@ def hook_frame(
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
-    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)
+    input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -717,7 +717,7 @@ def sample_frames(
     input_hwaccel = create_hwaccel(
         device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
     )
-    input_container = av.open(input_path, mode="r", metadata_errors="ignore", hwaccel=input_hwaccel)
+    input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
 
     if len(input_container.streams.video) == 0:
         raise ValueError("No video stream")
@@ -858,7 +858,7 @@ def export_audio(
         if start_time is not None and not (start_time < end_time):
             raise ValueError("end_time must be greater than start_time")
 
-    input_container = av.open(input_path, mode="r", metadata_errors="ignore")
+    input_container = av.open(input_path, mode="r")
     if len(input_container.streams.audio) == 0:
         input_container.close()
         return False

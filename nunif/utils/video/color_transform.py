@@ -15,7 +15,7 @@ from .metadata import (
     VideoMetadata,
     get_rgb_pix_fmt,
 )
-from .utils import is_discrete_device, is_nvidia_gpu
+from .utils import is_discrete_device, is_nvidia_gpu, av_rational_to_fraction
 
 
 class ColorTransform:
@@ -575,7 +575,7 @@ class InputTransform:
             planes=rgb,
             pts=frame.pts,
             dts=frame.dts,
-            time_base=frame.time_base,
+            time_base=av_rational_to_fraction(frame.time_base),
             colorspace=self.dst_colorspace,
             color_primaries=self.dst_color_primaries,
             color_trc=self.dst_color_trc,
@@ -618,7 +618,7 @@ class InputTransform:
             planes=rgb,
             pts=frame.pts,
             dts=frame.dts,
-            time_base=frame.time_base,
+            time_base=av_rational_to_fraction(frame.time_base),
             colorspace=self.dst_colorspace,
             color_primaries=self.dst_color_primaries,
             color_trc=self.dst_color_trc,

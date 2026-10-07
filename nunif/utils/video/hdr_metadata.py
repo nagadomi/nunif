@@ -116,7 +116,7 @@ def is_hdr(stream):
 
 def get_hdr_metadata(input_path):
     MAX_FRAMES = 10
-    with av.open(input_path, mode="r", metadata_errors="ignore") as container:
+    with av.open(input_path, mode="r") as container:
         if len(container.streams.video) == 0 or not is_hdr(container.streams.video[0]):
             return HDRMetadata(None, None, False)
 
@@ -125,7 +125,7 @@ def get_hdr_metadata(input_path):
 
         try:
             for i, frame in enumerate(container.decode(video=0)):
-                for sd in frame.side_data:
+                for sd in frame.side_data.values():
                     if (
                         master_display is None
                         and sd.type == SideDataType.MASTERING_DISPLAY_METADATA
