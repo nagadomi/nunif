@@ -1,4 +1,5 @@
 import contextlib
+import threading
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -59,6 +60,7 @@ class OffloadResourceManager:
     """
 
     def __init__(self, size: torch.Size, device: torch.device, dtype: torch.dtype, preallocate=0):
+        self.lock = threading.RLock()
         self.size = size
         self.dtype = dtype
         self.device = device
@@ -77,40 +79,46 @@ class OffloadResourceManager:
                 self.free_events.append(event)
 
     def alloc_buffer(self):
-        if not self.free_buffers:
-            buffer = torch.empty(self.size, dtype=self.dtype, device=self.offload_device, pin_memory=self.pin_memory)
-        else:
-            buffer = self.free_buffers.pop()
-        self.busy_buffers[id(buffer)] = buffer
-        return buffer
+        with self.lock:
+            if not self.free_buffers:
+                buffer = torch.empty(
+                    self.size, dtype=self.dtype, device=self.offload_device, pin_memory=self.pin_memory
+                )
+            else:
+                buffer = self.free_buffers.pop()
+            self.busy_buffers[id(buffer)] = buffer
+            return buffer
 
     def free_buffer(self, buffer):
-        buffer_id = id(buffer)
-        if buffer_id in self.busy_buffers:
-            del self.busy_buffers[buffer_id]
-            self.free_buffers.append(buffer)
-        else:
-            raise ValueError("buffer is not a manager's resource")
+        with self.lock:
+            buffer_id = id(buffer)
+            if buffer_id in self.busy_buffers:
+                del self.busy_buffers[buffer_id]
+                self.free_buffers.append(buffer)
+            else:
+                raise ValueError("buffer is not a manager's resource")
 
     def alloc_event(self):
-        if not self.free_events:
-            event = self._create_event()
-        else:
-            event = self.free_events.pop()
-        if event is not None:
-            self.busy_events[id(event)] = event
-        return event
+        with self.lock:
+            if not self.free_events:
+                event = self._create_event()
+            else:
+                event = self.free_events.pop()
+            if event is not None:
+                self.busy_events[id(event)] = event
+            return event
 
     def free_event(self, event):
         if event is None:
             return
 
-        event_id = id(event)
-        if event_id in self.busy_events:
-            del self.busy_events[event_id]
-            self.free_events.append(event)
-        else:
-            raise ValueError("event is not a manager's resource")
+        with self.lock:
+            event_id = id(event)
+            if event_id in self.busy_events:
+                del self.busy_events[event_id]
+                self.free_events.append(event)
+            else:
+                raise ValueError("event is not a manager's resource")
 
     def _create_event(self) -> Any:
         if self.device.type == "cuda":
@@ -121,10 +129,11 @@ class OffloadResourceManager:
         return None
 
     def __del__(self):
-        self.free_buffers.clear()
-        self.busy_buffers.clear()
-        self.free_events.clear()
-        self.busy_events.clear()
+        with self.lock:
+            self.free_buffers.clear()
+            self.busy_buffers.clear()
+            self.free_events.clear()
+            self.busy_events.clear()
 
 
 class OffloadedFrame:
