@@ -162,9 +162,7 @@ def create_parser():
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
     parser.add_argument("--screenshot", type=str, default="pil",
                         choices=["pil", "mss", "wc_mp", "wc_cuda", "kwcapture"],
-                        help="Screenshot method. 'kwcapture' is the Wayland (KDE Plasma) "
-                             "backend: it is the only one here that can capture the real "
-                             "composited Wayland desktop")
+                        help="Screenshot method")
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
     parser.add_argument("--window-name", type=str, help=("target window name for wc_mp."
