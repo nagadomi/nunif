@@ -15,7 +15,14 @@ In addition to web streaming, it also supports local viewer window display. This
 ## Known Issues
 
 *   Confirmed to work with Meta Quest and PICO 4, but not with VisionPro.
-*   Performance is significantly degraded in Linux/Wayland environments. For Linux users, X11 environment is recommended.
+*   On Linux, screen capture depends on the display server:
+    *   **Wayland / KDE Plasma**: use `--screenshot kwcapture` (see `Screenshot Method` below).
+        Install it with `pip install kwcapture` first: it is an optional dependency, not part of
+        `requirements-gui.txt`. It is the only method here that can capture a Wayland desktop, and
+        it is fast (~40 fps at 1440p measured), so X11 is no longer required on KDE.
+    *   **Wayland on other compositors** (GNOME, wlroots, ...): no working method yet.
+        Performance is significantly degraded because the capture goes through XWayland.
+    *   **X11**: `mss` works well and is the recommended method.
 
 ## Security Notice
 
@@ -121,6 +128,48 @@ python -m iw3.desktop --stream-quality 80
 ```
 The default is 90. Specifying a lower value reduces network traffic.
 
+### Screenshot Method (Screen Capture)
+
+`--screenshot` selects how the desktop is grabbed. The GUI has the same list in the
+`Screenshot` box, and already picks the right default for your session.
+
+| method | platform | monitor / window selection | notes |
+| --- | --- | --- | --- |
+| `pil` | all | no | `PIL.ImageGrab`. Default for compatibility. On Wayland it captures the **XWayland** screen, which is black for native Wayland windows |
+| `mss` | Windows, X11, macOS | monitor (window: Windows/X11) | refused on Wayland |
+| `wc_mp` | Windows | monitor + window | `windows_capture`, runs in a separate process |
+| `wc_cuda` | Windows + NVIDIA | monitor + window | `wc_cuda`, fastest on Windows |
+| `kwcapture` | Linux **Wayland (KDE Plasma)** | monitor + window | [kwcapture](https://pypi.org/project/kwcapture/) asks KWin (`org.kde.KWin.ScreenShot2`) for the composited frame: device resolution, no portal, no XWayland |
+
+```bash
+pip install kwcapture            # optional dependency: not in requirements-gui.txt
+python -m iw3.desktop --screenshot kwcapture --monitor-index 0
+python -m iw3.desktop --screenshot kwcapture --window-name "Some Game"
+```
+
+`kwcapture` is optional on purpose: it works on one compositor (KWin) only, so it is not
+installed automatically and every user decides whether to have it. Without it, the `kwcapture`
+entry simply does not appear in the GUI `Screenshot` box and `--screenshot kwcapture` answers
+`kwcapture is not installed (pip install kwcapture)`. On a KDE Plasma/Wayland session a warning
+with the install command is printed at startup, because the methods left over see only the
+XWayland screen.
+
+The first run installs a small KDE desktop entry so KWin authorises the capture helper
+(kwcapture does this by itself); if a window you know is open does not appear in the list,
+or the frame comes back black, that authorisation is the first thing to check
+(`python -m kwcapture doctor`).
+
+Notes for Wayland users:
+
+*   Sizes are **device pixels**. On a display scaled to 125 % a desktop that measures
+    2560 logical px is captured as 3200 px, so `--stream-height` behaves as you would
+    expect but the pixel numbers you see are the physical ones.
+*   `--window-name` matches the window title (KWin's caption). Resizing or maximizing the
+    window while streaming is fine: frames simply come back at the new size.
+*   The mouse pointer is drawn by the compositor (`cursor` capture), so the marker that the
+    other backends paint over the image is not needed; `--disable-draw-cursor` turns it off
+    entirely.
+
 ### Stereo Settings
 
 The same options as in GUI/CLI can be specified.
@@ -162,3 +211,15 @@ python -m iw3.desktop --user admin --password 1234
 Specify the `--local-viewer` option.
 
 Even if specified from the CLI, a GUI window will be displayed, so wxpython and OpenGL are required (installed from `requirements-gui.txt`).
+
+On a CUDA run the viewer tries to copy frames straight from GPU memory into the window
+(CUDA-GL Interop). That only works when the window is drawn by the same GPU CUDA is running
+on, so on a Wayland session whose compositor runs on the integrated GPU, on a PRIME laptop, or
+when the graphics driver cannot share buffers, you will see one line like
+
+```
+Failed to initialize CUDA-GL Interop: cudaGraphicsGLRegisterBuffer failed: invalid OpenGL or DirectX context (219) [Intel ... / CUDA NVIDIA GeForce RTX 3080 Ti]. Falling back to the CPU transfer path.
+```
+
+This is informational: the frames are copied through system memory instead, which is slower but
+correct. It is not a Wayland requirement -- capture itself does not use CUDA.

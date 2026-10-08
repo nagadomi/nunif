@@ -158,6 +158,7 @@
 "Swap left image and right image": "交换左右图像"
 "AutoCrop": "自动剪裁"
 "Enable model compiling": "启用模型编译"
+"kwcapture is not installed, so this Wayland (KDE Plasma) desktop cannot be captured. Install it with `pip install kwcapture`. The other screenshot methods use XWayland, which is usually black on Wayland.": "未安装 kwcapture，因此无法捕获 Wayland (KDE Plasma) 桌面。请运行 `pip install kwcapture` 进行安装。其他截屏方式使用 XWayland，在 Wayland 上通常只能得到黑屏。"
 
 # iw3.player
 "Media Directory": "媒体目录"

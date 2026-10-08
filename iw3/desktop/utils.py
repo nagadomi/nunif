@@ -20,6 +20,14 @@ from ..stereo_model_factory import get_mlbw_divergence_level
 from .. import models  # noqa
 from .screenshot_thread_pil import ScreenshotThreadPIL
 from .screenshot_thread_cuda import ScreenshotThreadWCCUDA
+from .screenshot_thread_kwcapture import (  # noqa
+    ScreenshotThreadKWCapture,
+    is_kwcapture_supported,
+    is_kwcapture_install_recommended,
+    kwcapture_unsupported_reason,
+    warn_if_kwcapture_missing,
+    KWCAPTURE_MISSING_MESSAGE,
+)
 from .screenshot_process import ( # noqa
     ScreenshotProcess,
     get_monitor_size_list,
@@ -152,8 +160,11 @@ def create_parser():
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
-    parser.add_argument("--screenshot", type=str, default="pil", choices=["pil", "mss", "wc_mp", "wc_cuda"],
-                        help="Screenshot method")
+    parser.add_argument("--screenshot", type=str, default="pil",
+                        choices=["pil", "mss", "wc_mp", "wc_cuda", "kwcapture"],
+                        help="Screenshot method. 'kwcapture' is the Wayland (KDE Plasma) "
+                             "backend: it is the only one here that can capture the real "
+                             "composited Wayland desktop")
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
     parser.add_argument("--window-name", type=str, help=("target window name for wc_mp."
@@ -261,6 +272,27 @@ def iw3_desktop_main(args, init_wxapp=True):
         screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="windows_capture")
     elif args.screenshot == "wc_cuda":
         screenshot_factory = lambda *args, **kwargs: ScreenshotThreadWCCUDA(*args, **kwargs)
+    elif args.screenshot == "kwcapture":
+        # kwcapture is an optional dependency, so this is the point where a user who asked for
+        # it by name gets the reason it cannot run (missing package vs. not a Wayland session)
+        reason = kwcapture_unsupported_reason()
+        if reason is not None:
+            raise ValueError(f"--screenshot kwcapture: {reason}")
+        screenshot_factory = ScreenshotThreadKWCapture
+
+    # Capture problems are configuration problems, so they are reported before the (slow) depth
+    # model load instead of showing up as a black screen afterwards.
+    if args.screenshot != "kwcapture" and is_kwcapture_install_recommended():
+        # On KDE Plasma/Wayland every other method here sees only the XWayland screen, and the one
+        # that works is an optional package: tell the user it exists and how to get it. Anywhere
+        # kwcapture could not help, this stays silent.
+        warn_if_kwcapture_missing()
+    elif args.screenshot == "pil" and is_kwcapture_supported():
+        # PIL grabs the XWayland root window on Wayland, which is black for native Wayland
+        # windows and has no second monitor. Switching the backend silently would be worse
+        # than telling the user, so this only warns.
+        print("Warning: 'pil' screenshot on Wayland captures the XWayland screen (usually "
+              "black). Use --screenshot kwcapture for the real desktop.", file=sys.stderr)
 
     device = create_device(args.gpu)
 
