@@ -184,7 +184,7 @@ class OffloadedFrame:
         self.manager.free_event(self.offload_event)
         self.buffer = None
         self.load_event = None
-        self.offload_event_ = None
+        self.offload_event = None
         self.loadded_frame = None
         self.disposed = True
 
