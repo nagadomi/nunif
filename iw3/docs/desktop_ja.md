@@ -13,7 +13,14 @@ Webストリーミングに加えて、ローカルビューワーとしての�
 ## 既知の問題
 
 *   Meta QuestおよびPICO 4での動作は確認済みですが、VisionProでは動作しません。
-*   Linux/Wayland環境ではパフォーマンスが著しく低下します。Linuxをご利用の場合はX11環境での使用を推奨します。
+*   Linuxは表示サーバーによって画面取得の方法が変わります。
+    *   **Wayland / KDE Plasma**: `--screenshot kwcapture` を使用してください（下記「画面取得方法」）。
+        まず `pip install kwcapture` でのインストールが必要です（オプション依存であり、
+        `requirements-gui.txt`には含まれません）。Waylandのデスクトップをキャプチャできる唯一の方法で、
+        速度も高速です (1440pで約40 fps実測)。そのためKDEではX11は必須ではありません。
+    *   **その他のコンポジターのWayland** (GNOME, wlroots等): 対応方法はありません。
+        XWayland経由の取得になるためパフォーマンスが著しく低下します。
+    *   **X11**: `mss`が動作しますのでこちらの利用を推奨します。
 
 ## セキュリティに関する注意
 
@@ -119,6 +126,46 @@ python -m iw3.desktop --stream-quality 80
 ```
 デフォルトは90です。低い値を指定すると、ネットワークトラフィックが削減されます。
 
+### 画面取得方法
+
+`--screenshot` で画面取得方法を選択します。GUIでは`Screenshot`ボックスに同じ一覧があり、
+セッションに合ったものが最初から選択されています。
+
+| 方法 | 対応環境 | モニター/ウィンドウ指定 | 説明 |
+| --- | --- | --- | --- |
+| `pil` | 全OS | 不可 | `PIL.ImageGrab`。互換性のための既定値。Waylandでは**XWayland**画面を撮影するため、Waylandネイティブのウィンドウは黒く写ります |
+| `mss` | Windows, X11, macOS | モニター (ウィンドウ: Windows/X11) | Waylandでは使用不可 |
+| `wc_mp` | Windows | モニター + ウィンドウ | `windows_capture`。別プロセスで動作 |
+| `wc_cuda` | Windows + NVIDIA | モニター + ウィンドウ | `wc_cuda`。Windowsでは最速 |
+| `kwcapture` | Linux **Wayland (KDE Plasma)** | モニター + ウィンドウ | [kwcapture](https://pypi.org/project/kwcapture/)がKWin (`org.kde.KWin.ScreenShot2`) に合成後のフレームを要求します。デバイス解像度、ポータル不要、XWayland経由ではない |
+
+```bash
+pip install kwcapture            # オプション依存 (requirements-gui.txt には含まれません)
+python -m iw3.desktop --screenshot kwcapture --monitor-index 0
+python -m iw3.desktop --screenshot kwcapture --window-name "Some Game"
+```
+
+`kwcapture` は意図的にオプションとしています。対応するコンポジター (KWin) が限定的なため、
+依存パッケージとしては自動インストールされず、利用するかどうかをユーザーが判断します。
+未インストールの場合はGUIの`Screenshot`一覧に`kwcapture`が表示されず、
+`--screenshot kwcapture` は `kwcapture is not installed (pip install kwcapture)`
+というエラーになります。KDE Plasma/Waylandでは、残りの方法がXWayland経由になってしまうため、
+起動時にインストールコマンドを示す警告が表示されます。
+
+初回実行時に、KWinがキャプチャヘルパーを許可するためのKDEデスクトップエントリーが
+インストールされます (kwcapture が自動的に行います)。既に表示されているウィンドウが一覧に
+出ない場合や画面が黒く写る場合は、この許可が最初の確認項目です
+(`python -m kwcapture doctor`)。
+
+Wayland利用時の注意:
+
+*   サイズは**デバイスピクセル**です。125 %に拡大表示したディスプレイでは、2560論理pxのデスクトップが
+    3200 pxとして取得されます。
+*   `--window-name` はウィンドウタイトル (KWinのキャプション) で一致させます。ストリーミング中に
+    ウィンドウをリサイズ・最大化しても問題ありません。新しいサイズのフレームがそのまま送られます。
+*   マウスカーソルはコンポジターが描画するため、他方法で画像上に描かれる印は不要です。
+    `--disable-draw-cursor` で完全に無効化できます。
+
 ### ステレオ設定
 
 GUI/CLIと同じオプションを指定できます。
@@ -160,4 +207,16 @@ python -m iw3.desktop --user admin --password 1234
 `--local-viewer`オプションを指定します。
 
 CLIから指定した場合でもGUIウィンドウが表示されるため、wxpythonとOpenGLが必要です（`requirements-gui.txt`からインストールされます）。
+
+CUDAを使用する実行では、フレームをGPUメモリから直接ウィンドウへコピーします（CUDA-GL Interop）。
+これはウィンドウの描画とCUDAが同じGPU上で行われる場合のみ利用できます。そのため
+Waylandセッションでコンポジターが内蔵GPUで動作している場合、PRIMEノートパソコンの場合、
+またはドライバがバッファを共有できない場合には、次のようなメッセージが1回表示されます。
+
+```
+Failed to initialize CUDA-GL Interop: cudaGraphicsGLRegisterBuffer failed: invalid OpenGL or DirectX context (219) [Intel ... / CUDA NVIDIA GeForce RTX 3080 Ti]. Falling back to the CPU transfer path.
+```
+
+これは情報表示です。フレームはシステムメモリ経由でコピーされ、速度は低下しますが正しく表示されます。
+Wayland固有の要件ではなく、画面取得自体はCUDAを用いません。
 
