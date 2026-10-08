@@ -2,8 +2,8 @@ wxpython >= 4.0.0
 pywin32; sys_platform == 'win32'
 windows_capture == 1.4.2; sys_platform == 'win32'
 python-xlib >= 0.31; sys_platform == 'linux'
-# Wayland (KDE Plasma) screen capture: --screenshot kwcapture
-kwcapture >= 0.5.0; sys_platform == 'linux'
+# Optional, deliberately not installed here: kwcapture (pip install kwcapture) adds the
+# Wayland (KDE Plasma) screen capture backend for iw3-desktop. See iw3/docs/desktop.md
 mss >= 10.1.0
 PyOpenGL >= 3.1.9
 # PyOpenGL_accelerate is not required, but it is recommended.

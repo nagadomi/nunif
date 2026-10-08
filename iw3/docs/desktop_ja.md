@@ -15,8 +15,9 @@ Webストリーミングに加えて、ローカルビューワーとしての�
 *   Meta QuestおよびPICO 4での動作は確認済みですが、VisionProでは動作しません。
 *   Linuxは表示サーバーによって画面取得の方法が変わります。
     *   **Wayland / KDE Plasma**: `--screenshot kwcapture` を使用してください（下記「画面取得方法」）。
-        Waylandのデスクトップをキャプチャできる唯一の方法で、速度も高速です
-        (1440pで約40 fps実測)。そのためKDEではX11は必須ではありません。
+        まず `pip install kwcapture` でのインストールが必要です（オプション依存であり、
+        `requirements-gui.txt`には含まれません）。Waylandのデスクトップをキャプチャできる唯一の方法で、
+        速度も高速です (1440pで約40 fps実測)。そのためKDEではX11は必須ではありません。
     *   **その他のコンポジターのWayland** (GNOME, wlroots等): 対応方法はありません。
         XWayland経由の取得になるためパフォーマンスが著しく低下します。
     *   **X11**: `mss`が動作しますのでこちらの利用を推奨します。
@@ -139,10 +140,17 @@ python -m iw3.desktop --stream-quality 80
 | `kwcapture` | Linux **Wayland (KDE Plasma)** | モニター + ウィンドウ | [kwcapture](https://pypi.org/project/kwcapture/)がKWin (`org.kde.KWin.ScreenShot2`) に合成後のフレームを要求します。デバイス解像度、ポータル不要、XWayland経由ではない |
 
 ```bash
-pip install kwcapture            # または pip install -r requirements-gui.txt
+pip install kwcapture            # オプション依存 (requirements-gui.txt には含まれません)
 python -m iw3.desktop --screenshot kwcapture --monitor-index 0
 python -m iw3.desktop --screenshot kwcapture --window-name "Some Game"
 ```
+
+`kwcapture` は意図的にオプションとしています。対応するコンポジター (KWin) が限定的なため、
+依存パッケージとしては自動インストールされず、利用するかどうかをユーザーが判断します。
+未インストールの場合はGUIの`Screenshot`一覧に`kwcapture`が表示されず、
+`--screenshot kwcapture` は `kwcapture is not installed (pip install kwcapture)`
+というエラーになります。KDE Plasma/Waylandでは、残りの方法がXWayland経由になってしまうため、
+起動時にインストールコマンドを示す警告が表示されます。
 
 初回実行時に、KWinがキャプチャヘルパーを許可するためのKDEデスクトップエントリーが
 インストールされます (kwcapture が自動的に行います)。既に表示されているウィンドウが一覧に

@@ -45,6 +45,8 @@ from .utils import (
     enum_window_names,
     is_mss_supported,
     is_kwcapture_supported,
+    is_kwcapture_install_recommended,
+    KWCAPTURE_MISSING_MESSAGE,
     IW3U, ENABLE_GPU_JPEG,
 )
 
@@ -718,9 +720,28 @@ class MainFrame(wx.Frame):
 
         self.grp_adjustment.Hide()
 
+        self.update_kwcapture_warning()
+
         self.btn_start.SetFocus()
         self.Fit()
         wx.CallAfter(self.Fit)
+
+    def update_kwcapture_warning(self):
+        """Tell a KDE Plasma/Wayland user that the optional kwcapture package is missing.
+
+        The console is the only place the CLI can talk, and it may not even exist for this GUI
+        (pythonw), so the message also goes to the status bar and to the Screenshot tooltip.
+        Only ever shown where installing kwcapture would actually enable screen capture.
+        """
+        if HAS_KWCAPTURE or not is_kwcapture_install_recommended():
+            return False
+        print(f"Warning: {KWCAPTURE_MISSING_MESSAGE}", file=sys.stderr)
+        message = T(KWCAPTURE_MISSING_MESSAGE)
+        # The combobox is where the user looks for the missing entry, the status bar is where
+        # they look for "why is the screen black" -- both get it.
+        self.cbo_screenshot.SetToolTip(message)
+        self.SetStatusText(message)
+        return True
 
     def get_depth_models(self, small_only):
         if small_only:

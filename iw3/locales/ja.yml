@@ -154,6 +154,7 @@
 "Swap left image and right image": "左右の画像を入れ替え"
 "AutoCrop": "自動クロップ"
 "Enable model compiling": "モデルのコンパイルを有効化"
+"kwcapture is not installed, so this Wayland (KDE Plasma) desktop cannot be captured. Install it with `pip install kwcapture`. The other screenshot methods use XWayland, which is usually black on Wayland.": "kwcaptureがインストールされていないため、Wayland (KDE Plasma) のデスクトップをキャプチャできません。`pip install kwcapture` でインストールしてください。その他の画面取得方法はXWaylandを使うため、Waylandでは通常画面が黒く表示されます。"
 
 # iw3.player
 "Media Directory": "メディアディレクトリ"

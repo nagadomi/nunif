@@ -66,6 +66,18 @@ sudo apt-get install libgtk-3-dev
 pip3 install -r requirements-gui.txt
 ```
 
+#### iw3-desktop on Wayland (optional)
+
+[iw3-desktop](iw3/docs/desktop.md) needs [kwcapture](https://pypi.org/project/kwcapture/) to
+capture the screen on a **Wayland** session (KDE Plasma); none of the built-in methods can see a
+Wayland desktop. It is an optional dependency, so it is not in `requirements-gui.txt`:
+
+```
+pip3 install kwcapture
+```
+
+It is not needed on X11, and it is not needed for any other program in this repository.
+
 If you want to use training code, install `requirements-dev.txt`.
 
 ```

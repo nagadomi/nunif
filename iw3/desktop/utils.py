@@ -23,6 +23,10 @@ from .screenshot_thread_cuda import ScreenshotThreadWCCUDA
 from .screenshot_thread_kwcapture import (  # noqa
     ScreenshotThreadKWCapture,
     is_kwcapture_supported,
+    is_kwcapture_install_recommended,
+    kwcapture_unsupported_reason,
+    warn_if_kwcapture_missing,
+    KWCAPTURE_MISSING_MESSAGE,
 )
 from .screenshot_process import ( # noqa
     ScreenshotProcess,
@@ -269,10 +273,26 @@ def iw3_desktop_main(args, init_wxapp=True):
     elif args.screenshot == "wc_cuda":
         screenshot_factory = lambda *args, **kwargs: ScreenshotThreadWCCUDA(*args, **kwargs)
     elif args.screenshot == "kwcapture":
-        if not is_kwcapture_supported():
-            raise ValueError("kwcapture requires a Linux Wayland session (KDE Plasma) "
-                             "and `pip install kwcapture`")
+        # kwcapture is an optional dependency, so this is the point where a user who asked for
+        # it by name gets the reason it cannot run (missing package vs. not a Wayland session)
+        reason = kwcapture_unsupported_reason()
+        if reason is not None:
+            raise ValueError(f"--screenshot kwcapture: {reason}")
         screenshot_factory = ScreenshotThreadKWCapture
+
+    # Capture problems are configuration problems, so they are reported before the (slow) depth
+    # model load instead of showing up as a black screen afterwards.
+    if args.screenshot != "kwcapture" and is_kwcapture_install_recommended():
+        # On KDE Plasma/Wayland every other method here sees only the XWayland screen, and the one
+        # that works is an optional package: tell the user it exists and how to get it. Anywhere
+        # kwcapture could not help, this stays silent.
+        warn_if_kwcapture_missing()
+    elif args.screenshot == "pil" and is_kwcapture_supported():
+        # PIL grabs the XWayland root window on Wayland, which is black for native Wayland
+        # windows and has no second monitor. Switching the backend silently would be worse
+        # than telling the user, so this only warns.
+        print("Warning: 'pil' screenshot on Wayland captures the XWayland screen (usually "
+              "black). Use --screenshot kwcapture for the real desktop.", file=sys.stderr)
 
     device = create_device(args.gpu)
 
@@ -298,12 +318,6 @@ def iw3_desktop_main(args, init_wxapp=True):
         raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
     if args.screenshot == "pil" and args.window_name:
         raise RuntimeError(f"{args.screenshot} does not support --window-name option")
-    if args.screenshot == "pil" and is_kwcapture_supported():
-        # PIL grabs the XWayland root window on Wayland, which is black for native Wayland
-        # windows and has no second monitor. Switching the backend silently would be worse
-        # than telling the user, so this only warns.
-        print("Warning: 'pil' screenshot on Wayland captures the XWayland screen (usually "
-              "black). Use --screenshot kwcapture for the real desktop.", file=sys.stderr)
 
     if args.window_name:
         rect = get_window_rect_by_title(args.window_name)

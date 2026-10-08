@@ -17,8 +17,9 @@ In addition to web streaming, it also supports local viewer window display. This
 *   Confirmed to work with Meta Quest and PICO 4, but not with VisionPro.
 *   On Linux, screen capture depends on the display server:
     *   **Wayland / KDE Plasma**: use `--screenshot kwcapture` (see `Screenshot Method` below).
-        It is the only method here that can capture a Wayland desktop, and it is fast
-        (~40 fps at 1440p measured), so X11 is no longer required on KDE.
+        Install it with `pip install kwcapture` first: it is an optional dependency, not part of
+        `requirements-gui.txt`. It is the only method here that can capture a Wayland desktop, and
+        it is fast (~40 fps at 1440p measured), so X11 is no longer required on KDE.
     *   **Wayland on other compositors** (GNOME, wlroots, ...): no working method yet.
         Performance is significantly degraded because the capture goes through XWayland.
     *   **X11**: `mss` works well and is the recommended method.
@@ -141,10 +142,17 @@ The default is 90. Specifying a lower value reduces network traffic.
 | `kwcapture` | Linux **Wayland (KDE Plasma)** | monitor + window | [kwcapture](https://pypi.org/project/kwcapture/) asks KWin (`org.kde.KWin.ScreenShot2`) for the composited frame: device resolution, no portal, no XWayland |
 
 ```bash
-pip install kwcapture            # or: pip install -r requirements-gui.txt
+pip install kwcapture            # optional dependency: not in requirements-gui.txt
 python -m iw3.desktop --screenshot kwcapture --monitor-index 0
 python -m iw3.desktop --screenshot kwcapture --window-name "Some Game"
 ```
+
+`kwcapture` is optional on purpose: it works on one compositor (KWin) only, so it is not
+installed automatically and every user decides whether to have it. Without it, the `kwcapture`
+entry simply does not appear in the GUI `Screenshot` box and `--screenshot kwcapture` answers
+`kwcapture is not installed (pip install kwcapture)`. On a KDE Plasma/Wayland session a warning
+with the install command is printed at startup, because the methods left over see only the
+XWayland screen.
 
 The first run installs a small KDE desktop entry so KWin authorises the capture helper
 (kwcapture does this by itself); if a window you know is open does not appear in the list,
