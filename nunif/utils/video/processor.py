@@ -185,6 +185,8 @@ def process_video(
 def set_output_size_and_flash(container, stream, frame, unmux_packets):
     stream.width = frame.width
     stream.height = frame.height
+    if not stream.codec_context.is_open:
+        stream.codec_context.open(strict=False)
     for enc_packet in unmux_packets:
         container.mux(enc_packet)
     unmux_packets.clear()
