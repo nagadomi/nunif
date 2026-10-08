@@ -106,7 +106,7 @@ def create_stream(device):
 
 
 def get_current_stream(device):
-    if torch.cuda.is_available():
+    if device_is_cuda(device):
         return torch.cuda.current_stream()
     elif device_is_xpu(device):
         return torch.xpu.current_stream()
