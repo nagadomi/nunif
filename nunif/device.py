@@ -1,4 +1,5 @@
 import contextlib
+
 import torch
 
 
@@ -18,11 +19,11 @@ def create_device_name(device_id):
         device_name = "cpu"
     else:
         if torch.cuda.is_available():
-            device_name = 'cuda:%d' % device_id
+            device_name = "cuda:%d" % device_id
         elif mps_is_available():
-            device_name = 'mps:%d' % device_id
+            device_name = "mps:%d" % device_id
         elif xpu_is_available():
-            device_name = 'xpu:%d' % device_id
+            device_name = "xpu:%d" % device_id
         else:
             raise ValueError("No cuda/mps/xpu available. Use `--gpu -1` for CPU.")
 
@@ -76,7 +77,7 @@ def autocast(device, dtype=None, enabled=True):
     return torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=enabled)
 
 
-class DummyStream():
+class DummyStream:
     def __init__(self, device=None, priority=0, **kwargs):
         pass
 
@@ -107,11 +108,20 @@ def create_stream(device):
 
 def get_current_stream(device):
     if device_is_cuda(device):
-        return torch.cuda.current_stream()
+        return torch.cuda.current_stream(device)
     elif device_is_xpu(device):
-        return torch.xpu.current_stream()
+        return torch.xpu.current_stream(device)
     else:
         return DummyStream()
+
+
+def create_event(device):
+    if device_is_cuda(device):
+        return torch.cuda.Event()
+    elif device_is_xpu(device):
+        return torch.xpu.Event()
+    else:
+        return None
 
 
 def device_context(device):

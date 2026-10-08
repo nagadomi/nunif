@@ -6,6 +6,8 @@ from typing import Any
 
 import torch
 
+from nunif.device import create_event, get_current_stream
+
 
 class TensorPacker(ABC):
     @abstractmethod
@@ -121,12 +123,7 @@ class OffloadResourceManager:
                 raise ValueError("event is not a manager's resource")
 
     def _create_event(self) -> Any:
-        if self.device.type == "cuda":
-            return torch.cuda.Event()
-        elif self.device.type == "xpu":
-            return torch.xpu.Event()
-
-        return None
+        return create_event(self.device)
 
     def __del__(self):
         with self.lock:
@@ -147,6 +144,10 @@ class OffloadedFrame:
         self.packer = self._get_packer(dtype)
         self.loadded_frame: torch.Tensor | None = None
         self.disposed: bool = False
+
+        if self.stream is not None:
+            self.stream.wait_stream(get_current_stream(x.device))
+            x.record_stream(self.stream)
 
         with self.stream_context(), torch.no_grad():
             assert manager.size == x.shape
@@ -182,6 +183,10 @@ class OffloadedFrame:
 
         assert self.loadded_frame is not None
         x = self.loadded_frame
+        if self.stream is not None:
+            current_stream = get_current_stream(x.device)
+            current_stream.wait_stream(self.stream)
+            x.record_stream(current_stream)
         self.dispose()
 
         return x
@@ -212,12 +217,7 @@ class OffloadedFrame:
 
     @staticmethod
     def _get_event(device: torch.device) -> Any:
-        if device.type == "cuda":
-            return torch.cuda.Event()
-        elif device.type == "xpu":
-            return torch.xpu.Event()
-
-        return None
+        return create_event(device)
 
     @staticmethod
     def _get_packer(dtype: torch.dtype) -> TensorPacker:
