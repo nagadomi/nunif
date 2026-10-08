@@ -188,6 +188,10 @@ class OffloadedFrame:
         self.loadded_frame = None
         self.disposed = True
 
+    def __del__(self):
+        if not self.disposed:
+            self.dispose()
+
     def cpu_buffer(self) -> torch.Tensor:
         assert not self.disposed
         if self.offload_event is not None:
