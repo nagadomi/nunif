@@ -10,6 +10,8 @@ bash "${SCRIPT_DIR}/race_condition_data.sh"
 
 SD_VIDEO="tests/data/race_condition/sd.mkv"
 HDR_VIDEO="tests/data/race_condition/hdr.mkv"
+SD_NOAUDIO_VIDEO="tests/data/race_condition/sd_noaudio.mkv"
+HDR_NOAUDIO_VIDEO="tests/data/race_condition/hdr_noaudio.mkv"
 
 WORK_DIR="tests/data/race_condition_test"
 rm -rf "${WORK_DIR}"
@@ -79,6 +81,15 @@ run_and_compare "any_s_hdr_nvenc" "${HDR_VIDEO}" "--depth-model Any_S --video-co
 
 # 7. Any_S + sd.mkv + forward_inpaint (Inpaint pipeline async path)
 run_and_compare "any_s_sd_inpaint" "${SD_VIDEO}" "--depth-model Any_S --method forward_inpaint --video-codec libx265" || FAILED=1
+
+# 8. VDA_S + sd_noaudio.mkv + hevc_nvenc (no-audio GPU encode bug test)
+run_and_compare "vda_s_sd_nvenc_noaudio" "${SD_NOAUDIO_VIDEO}" "--depth-model VDA_S --video-codec hevc_nvenc" || FAILED=1
+
+# 9. Any_S + sd_noaudio.mkv + hevc_nvenc (no-audio WorkerPool + GPU encode test)
+run_and_compare "any_s_sd_nvenc_noaudio" "${SD_NOAUDIO_VIDEO}" "--depth-model Any_S --video-codec hevc_nvenc" || FAILED=1
+
+# 10. VDA_S + sd_noaudio.mkv + libx265 (no-audio CPU encode test)
+run_and_compare "vda_s_sd_libx265_noaudio" "${SD_NOAUDIO_VIDEO}" "--depth-model VDA_S --video-codec libx265" || FAILED=1
 
 # Cleanup temp work dir if all passed
 if [ "${FAILED}" -eq 0 ]; then

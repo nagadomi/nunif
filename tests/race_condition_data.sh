@@ -39,3 +39,15 @@ if [ ! -f "${BASE_DIR}/hdr.mkv" ]; then
         -colorspace bt2020nc -color_primaries bt2020 -color_trc smpte2084 -color_range tv \
         -acodec aac "${BASE_DIR}/hdr.mkv"
 fi
+
+# Generate SDR video without audio
+if [ ! -f "${BASE_DIR}/sd_noaudio.mkv" ]; then
+    echo "Generating ${BASE_DIR}/sd_noaudio.mkv..."
+    ffmpeg -y -i "${BASE_DIR}/sd.mkv" -c:v copy -an "${BASE_DIR}/sd_noaudio.mkv"
+fi
+
+# Generate HDR video without audio
+if [ ! -f "${BASE_DIR}/hdr_noaudio.mkv" ]; then
+    echo "Generating ${BASE_DIR}/hdr_noaudio.mkv..."
+    ffmpeg -y -i "${BASE_DIR}/hdr.mkv" -c:v copy -an "${BASE_DIR}/hdr_noaudio.mkv"
+fi
