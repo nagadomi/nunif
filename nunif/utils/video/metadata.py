@@ -6,11 +6,11 @@ import av
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
 from .hwaccel import HW_DEVICES
-from .utils import RGB_8BIT, RGB_16BIT
+from .utils import RGB_8BIT, RGB_16BIT, av_rational_to_fraction
 
 # Colorspace constants
 COLORSPACE_UNSPECIFIED: int = 2
-COLORSPACE_BT2020: int = 9
+
 
 # Mapping from friendly names to standard values
 COLOR_CONFIG_MAP: Dict[
@@ -47,19 +47,19 @@ COLOR_CONFIG_MAP: Dict[
         ColorRange.JPEG,
     ),
     "bt2020-tv": (
-        COLORSPACE_BT2020,
+        Colorspace.BT2020,
         ColorPrimaries.BT2020,
         ColorTrc.ARIB_STD_B67,
         ColorRange.MPEG,
     ),
     "bt2020-pc": (
-        COLORSPACE_BT2020,
+        Colorspace.BT2020,
         ColorPrimaries.BT2020,
         ColorTrc.ARIB_STD_B67,
         ColorRange.JPEG,
     ),
     "bt2020-pq-tv": (
-        COLORSPACE_BT2020,
+        Colorspace.BT2020,
         ColorPrimaries.BT2020,
         ColorTrc.SMPTE2084,
         ColorRange.MPEG,
@@ -77,6 +77,8 @@ def _list_hw_format() -> Set[str]:
         configs = codec.hardware_configs  # type: ignore
         if configs:
             for config in configs:
+                if config.format is None:
+                    continue
                 formats.add(config.format.name)
     return formats
 
@@ -165,7 +167,7 @@ class MediaMetadata:
 class AudioMetadata(MediaMetadata):
     @classmethod
     def from_file(cls, audio_path: str) -> "AudioMetadata":
-        with av.open(audio_path, mode="r", metadata_errors="ignore") as container:
+        with av.open(audio_path, mode="r") as container:
             if not len(container.streams.audio) > 0:
                 raise ValueError("No audio stream")
 
@@ -176,7 +178,7 @@ class AudioMetadata(MediaMetadata):
 
             return cls(
                 path=audio_path,
-                time_base=stream.time_base,
+                time_base=av_rational_to_fraction(stream.time_base),
                 stream_frames=stream.frames,
                 stream_duration=stream.duration,
                 container_duration=container_duration,
@@ -238,7 +240,7 @@ class VideoMetadata(MediaMetadata):
 
     @classmethod
     def from_file(cls, video_path: str) -> "VideoMetadata":
-        with av.open(video_path, mode="r", metadata_errors="ignore") as container:
+        with av.open(video_path, mode="r") as container:
             if not len(container.streams.video) > 0:
                 raise ValueError("No video stream")
 
@@ -270,11 +272,11 @@ class VideoMetadata(MediaMetadata):
             color_range=stream.color_range,
             width=stream.width,
             height=stream.height,
-            time_base=stream.time_base,
+            time_base=av_rational_to_fraction(stream.time_base),
             use_16bit=stream.format.components[0].bits > 8,
             stream_frames=stream.frames,
             stream_duration=stream.duration,
-            guessed_rate=stream.guessed_rate,
+            guessed_rate=av_rational_to_fraction(stream.guessed_rate),
             container_duration=container_duration,
             video_path=video_path,
         )
@@ -316,7 +318,7 @@ class VideoMetadata(MediaMetadata):
         if self.video_path is None:
             raise RuntimeError("guess_duration_by_last_packet requires video_path")
 
-        with av.open(self.video_path, mode="r", metadata_errors="ignore") as container:
+        with av.open(self.video_path, mode="r") as container:
             stream: av.VideoStream | av.AudioStream
             if len(container.streams.video) > 0:
                 stream = container.streams.video[0]
@@ -433,7 +435,7 @@ class VideoMetadata(MediaMetadata):
             return ColorTrc.BT709
         elif colorspace == Colorspace.ITU601:
             return ColorTrc.SMPTE170M
-        elif colorspace == COLORSPACE_BT2020:
+        elif colorspace == Colorspace.BT2020:
             return ColorTrc.SMPTE2084
         else:
             return ColorTrc.UNSPECIFIED
@@ -444,7 +446,7 @@ class VideoMetadata(MediaMetadata):
             return ColorPrimaries.BT709
         elif colorspace == Colorspace.ITU601:
             return ColorPrimaries.SMPTE170M
-        elif colorspace == COLORSPACE_BT2020:
+        elif colorspace == Colorspace.BT2020:
             return ColorPrimaries.BT2020
         else:
             return ColorPrimaries.UNSPECIFIED

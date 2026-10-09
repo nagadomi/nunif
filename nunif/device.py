@@ -1,3 +1,5 @@
+import contextlib
+
 import torch
 
 
@@ -17,11 +19,11 @@ def create_device_name(device_id):
         device_name = "cpu"
     else:
         if torch.cuda.is_available():
-            device_name = 'cuda:%d' % device_id
+            device_name = "cuda:%d" % device_id
         elif mps_is_available():
-            device_name = 'mps:%d' % device_id
+            device_name = "mps:%d" % device_id
         elif xpu_is_available():
-            device_name = 'xpu:%d' % device_id
+            device_name = "xpu:%d" % device_id
         else:
             raise ValueError("No cuda/mps/xpu available. Use `--gpu -1` for CPU.")
 
@@ -73,3 +75,59 @@ def autocast(device, dtype=None, enabled=True):
         amp_dtype = dtype
 
     return torch.autocast(device_type=amp_device_type, dtype=amp_dtype, enabled=enabled)
+
+
+class DummyStream:
+    def __init__(self, device=None, priority=0, **kwargs):
+        pass
+
+    def synchronize(self):
+        pass
+
+    def wait_stream(self, stream):
+        pass
+
+    def wait_event(self, event):
+        pass
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        pass
+
+
+def create_stream(device):
+    if device_is_cuda(device):
+        return torch.cuda.Stream(device)
+    elif device_is_xpu(device):
+        return torch.xpu.Stream(device)
+    else:
+        return DummyStream()
+
+
+def get_current_stream(device):
+    if device_is_cuda(device):
+        return torch.cuda.current_stream(device)
+    elif device_is_xpu(device):
+        return torch.xpu.current_stream(device)
+    else:
+        return DummyStream()
+
+
+def create_event(device):
+    if device_is_cuda(device):
+        return torch.cuda.Event()
+    elif device_is_xpu(device):
+        return torch.xpu.Event()
+    else:
+        return None
+
+
+def device_context(device):
+    if device_is_cuda(device):
+        return torch.cuda.device(device)
+    elif device_is_xpu(device):
+        return torch.xpu.device(device)
+    else:
+        return contextlib.nullcontext()

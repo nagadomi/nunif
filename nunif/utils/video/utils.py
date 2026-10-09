@@ -1,4 +1,5 @@
 import os
+from fractions import Fraction
 from typing import List
 
 import av
@@ -96,3 +97,9 @@ def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
         "gbrp10le",
         "rgb48le",
     }
+
+
+def av_rational_to_fraction(value: av.AVRational | None):
+    if value is None:
+        return None
+    return Fraction(value.num, value.den)
