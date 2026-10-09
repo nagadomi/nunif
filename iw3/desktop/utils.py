@@ -284,11 +284,17 @@ def iw3_desktop_main(args, init_wxapp=True):
     elif args.screenshot == "mss":
         if not is_mss_supported():
             raise ValueError("mss is not supported on Wayland")
-        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="mss")
+
+        def screenshot_factory(*args, **kwargs):
+            return ScreenshotProcess(*args, **kwargs, backend="mss")
     elif args.screenshot == "wc_mp":
-        screenshot_factory = lambda *args, **kwargs: ScreenshotProcess(*args, **kwargs, backend="windows_capture")
+
+        def screenshot_factory(*args, **kwargs):
+            return ScreenshotProcess(*args, **kwargs, backend="windows_capture")
     elif args.screenshot == "wc_cuda":
-        screenshot_factory = lambda *args, **kwargs: ScreenshotThreadWCCUDA(*args, **kwargs)
+
+        def screenshot_factory(*args, **kwargs):
+            return ScreenshotThreadWCCUDA(*args, **kwargs)
     elif args.screenshot == "kwcapture":
         # kwcapture is an optional dependency, so this is the point where a user who asked for
         # it by name gets the reason it cannot run (missing package vs. not a Wayland session)
@@ -367,7 +373,7 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     lock = threading.Lock()
     if init_wxapp:
-        empty_app = wx.App()  # noqa: this is needed to initialize wx.GetMousePosition()
+        empty_app = wx.App()  # noqa: F841 this is needed to initialize wx.GetMousePosition()
 
     if not args.local_viewer:
         # Web Streaming

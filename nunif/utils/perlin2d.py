@@ -30,13 +30,20 @@ def generate_perlin_noise_2d(shape, res, tileable=(False, False), fade=interpola
     if tileable[1]:
         gradients[:, -1] = gradients[:, 0]
 
-    tile_grads = lambda slice1, slice2: (
-        gradients[slice1[0] : slice1[1], slice2[0] : slice2[1]].repeat_interleave(d[0], 0).repeat_interleave(d[1], 1)
-    )
-    dot = lambda grad, shift: (
-        torch.stack((grid[: shape[0], : shape[1], 0] + shift[0], grid[: shape[0], : shape[1], 1] + shift[1]), dim=-1)
-        * grad[: shape[0], : shape[1]]
-    ).sum(dim=-1)
+    def tile_grads(slice1, slice2):
+        return (
+            gradients[slice1[0] : slice1[1], slice2[0] : slice2[1]]
+            .repeat_interleave(d[0], 0)
+            .repeat_interleave(d[1], 1)
+        )
+
+    def dot(grad, shift):
+        return (
+            torch.stack(
+                (grid[: shape[0], : shape[1], 0] + shift[0], grid[: shape[0], : shape[1], 1] + shift[1]), dim=-1
+            )
+            * grad[: shape[0], : shape[1]]
+        ).sum(dim=-1)
 
     n00 = dot(tile_grads([0, -1], [0, -1]), [0, 0])
     n10 = dot(tile_grads([1, None], [0, -1]), [-1, 0])
@@ -111,8 +118,9 @@ def generate_perlin_noise_3d(shape, res, tileable=(False, False, False), fade=in
     g111 = gradients[d[0] :, d[1] :, d[2] :]
 
     # Ramps
-    ramp = lambda shift: grid - torch.tensor(shift, device=device)
-    print(ramp((0, 0, 0)).shape, g000.shape)
+    def ramp(shift):
+        return grid - torch.tensor(shift, device=device)
+
     n000 = (ramp((0, 0, 0)) * g000).sum(dim=3)
     n100 = (ramp((1, 0, 0)) * g100).sum(dim=3)
     n010 = (ramp((0, 1, 0)) * g010).sum(dim=3)

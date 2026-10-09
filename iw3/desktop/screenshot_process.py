@@ -417,7 +417,8 @@ def capture_process(
                 if frame_buffer.shape != source_frame.shape:
                     if window_name is not None:
                         # NOTE: The size may differ due to resizing, Window effects, etc.
-                        # I wanted to use replication padding, but since the edges of the Windows screen are black, it's meaningless
+                        # I wanted to use replication padding,
+                        # but since the edges of the Windows screen are black, it's meaningless
                         min_h = min(frame_buffer.shape[0], source_frame.shape[0])
                         min_w = min(frame_buffer.shape[1], source_frame.shape[1])
                         if frame_count % 30 == 0:

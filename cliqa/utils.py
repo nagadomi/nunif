@@ -29,8 +29,8 @@ def std_score(patches):
 
 
 def tv_score(patches):
-    y_grad = x[:, :, 1:, :] - x[:, :, :-1, :]
-    x_grad = x[:, :, :, 1:] - x[:, :, :, :-1]
+    y_grad = torch.abs(patches[:, :, 1:, :] - patches[:, :, :-1, :])
+    x_grad = torch.abs(patches[:, :, :, 1:] - patches[:, :, :, :-1])
     return (y_grad.mean(dim=[1, 2, 3]) + x_grad.mean(dim=[1, 2, 3])) * 0.5
 
 

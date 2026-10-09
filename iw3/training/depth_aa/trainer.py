@@ -1,5 +1,9 @@
-# python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint
-# python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint --resume --reset-state --learning-rate 3e-5 --ema-model
+"""
+python train.py iw3.depth_aa -i ./data/sr_dataset --model-dir models/depth_aa
+python train.py iw3.depth_aa -i ./data/sr_dataset --model-dir models/depth_aa \
+       --resume --reset-state --learning-rate 3e-5 --ema-model
+"""
+
 import argparse
 from os import path
 

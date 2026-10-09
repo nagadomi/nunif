@@ -1,5 +1,6 @@
 import csv
 import os
+import sys
 from dataclasses import dataclass
 from os import path
 
@@ -27,7 +28,8 @@ class AozoraDB:
         self.load()
 
     def load(self, modern_only=False):
-        # 人物ID,著者名,作品ID,作品名,仮名遣い種別,翻訳者名等,入力者名,校正者名,状態,状態の開始日,底本名,出版社名,入力に使用した版,校正に使用した版
+        # 人物ID,著者名,作品ID,作品名,仮名遣い種別,翻訳者名等,入力者名,校正者名,
+        # 状態,状態の開始日,底本名,出版社名,入力に使用した版,校正に使用した版
 
         self.data = []
         with open(self.csv_file, mode="r", encoding="cp932") as f:
@@ -72,8 +74,8 @@ class AozoraDB:
                 return update_id
 
             tmp = [(f, get_update_id(f)) for f in text_dirs]
-            tmp = sorted(tmp, key=lambda l: l[1], reverse=True)
-            text_dirs = [l[0] for l in tmp]
+            tmp = sorted(tmp, key=lambda line: line[1], reverse=True)
+            text_dirs = [line[0] for line in tmp]
         texts = [path.join(text_dirs[0], text) for text in os.listdir(text_dirs[0])]
         if len(texts) == 0:
             print("warning: no text", text_dirs[0], file=sys.stderr)

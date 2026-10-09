@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 # from  imagenet 1000 class idx to human readable labels
 #       (Fox, E., & Guestrin, C. (n.d.). Coursera Machine Learning Specialization.)
 #       https://gist.github.com/yrevar/942d3a0ac09ec9e5eb3a

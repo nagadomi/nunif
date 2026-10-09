@@ -1,5 +1,9 @@
-# python train.py stlizer.outpaint -i ./data/sr_dataset --model-dir models/light_outpaint
-# python train.py stlizer.outpaint -i ./data/sr_dataset --model-dir models/light_outpaint --resume --reset-state --learning-rate 3e-5 --max-epoch 40 --learning-rate-cycles 1 --ema-model
+"""
+python train.py stlizer.outpaint -i ./data/sr_dataset --model-dir models/light_outpaint
+python train.py stlizer.outpaint -i ./data/sr_dataset --model-dir models/light_outpaint \
+       --resume --reset-state --learning-rate 3e-5 --max-epoch 40 --learning-rate-cycles 1 --ema-model
+"""
+
 import argparse
 import os
 from os import path

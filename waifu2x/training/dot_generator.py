@@ -175,7 +175,6 @@ def draw_random_line(block, fg, size, size_step):
 
 def gen_dot_line_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_color_black=True):
     block = np.zeros((block_size, block_size, 3), dtype=np.float32)
-    margin = random.randint(1, 3)
     if rotate:
         size = random.randint(3, 5)
     else:
@@ -200,10 +199,10 @@ def gen_dot_line_block(block_size=24, scale=1, rotate=False, bg_color=None, bg_c
 
     block[:, :] = bg
     if exec_prob(0.5):
-        p = draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
+        draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
     else:
-        p = draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
-        p = draw_random_line(block, fg2, size, size_step=(rotate or exec_prob(0.5)))
+        draw_random_line(block, fg1, size, size_step=(rotate or exec_prob(0.5)))
+        draw_random_line(block, fg2, size, size_step=(rotate or exec_prob(0.5)))
 
     block = (block * 255).astype(np.uint8)
     im = Image.fromarray(block)
@@ -249,7 +248,6 @@ COLS_MAP = {2: 4, 4: 2, 8: 1}
 def gen(cols_scale=1, rotate=False, dot_scale=2):
     assert isinstance(cols_scale, int)
     assert dot_scale in {2, 4}
-    line_block = exec_prob(0.2)
     if dot_scale == 2:
         scale = random.choices((2, 4, 8), weights=(0.25, 1, 1), k=1)[0]
     elif dot_scale == 4:

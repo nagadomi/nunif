@@ -26,14 +26,14 @@ class ConvertWebP(Dataset):
         try:
             im = Image.open(filename)
             im.load()
-        except:
+        except Exception:
             return -1
         dirname = path.dirname(filename)
         basename = path.splitext(path.basename(filename))[0]
         output_filename = path.join(dirname, basename + ".webp")
         try:
             im.save(output_filename, lossless=True)
-        except:
+        except Exception:
             if path.exists(output_filename):
                 os.unlink(output_filename)
             return -1

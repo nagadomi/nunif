@@ -53,17 +53,17 @@ def test(basename):
     )
 
     c = TF.to_tensor(im_c)
-    l = TF.to_tensor(im_l)
-    r = TF.to_tensor(im_r)
+    src_l = TF.to_tensor(im_l)
+    src_r = TF.to_tensor(im_r)
     depth = TF.to_tensor(im_depth)
     depth = normalize_depth(depth, depth_min, depth_max)
 
-    print("PSNR C x L", psnr(c, l), "PSNR L x R", psnr(l, r))
+    print("PSNR C x L", psnr(c, src_l), "PSNR L x R", psnr(src_l, src_r))
 
     test_l = apply_divergence(c, depth, divergence, original_image_width, shift=-1)
     test_r = apply_divergence(c, depth, divergence, original_image_width, shift=1)
-    print("PSNR testL x L", psnr(test_l, l))
-    print("PSNR testR x R", psnr(test_r, r))
+    print("PSNR testL x L", psnr(test_l, src_l))
+    print("PSNR testR x R", psnr(test_r, src_r))
 
     TF.to_pil_image(test_l).save(f"grid_sample_{basename}_L.png")
     TF.to_pil_image(test_r).save(f"grid_sample_{basename}_R.png")

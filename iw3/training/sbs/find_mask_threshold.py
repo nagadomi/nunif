@@ -1,9 +1,12 @@
-# Find mask threshold
-# python -m iw3.cli -i ./images/ -o ./export_images --yes --depth-model Any_V2_B --export-disparity
-# python -m iw3.training.sbs.find_mask_threshold --rgb-dir ./export_images/rgb --depth-dir ./export_images/depth
-#
-# Visualize
-# python -m iw3.training.sbs.find_mask_threshold --rgb-dir ./export_images/rgb --depth-dir ./export_images/depth -o tmp/mask_vis --threshold 0.15
+"""
+Find mask threshold
+  python -m iw3.cli -i ./images/ -o ./export_images --yes --depth-model Any_V2_B --export-disparity
+  python -m iw3.training.sbs.find_mask_threshold --rgb-dir ./export_images/rgb --depth-dir ./export_images/depth
+
+Visualize
+  python -m iw3.training.sbs.find_mask_threshold --rgb-dir ./export_images/rgb \
+         --depth-dir ./export_images/depth -o tmp/mask_vis --threshold 0.15
+"""
 
 import argparse
 import os

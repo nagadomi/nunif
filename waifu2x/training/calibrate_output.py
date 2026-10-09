@@ -66,7 +66,8 @@ def calibrate_output():
                 grad_scaler.update()
         scheduler.step()
         print(
-            f"epoch {epoch}: loss={sum(losses) / len(losses)}, lr={scheduler.get_lr()}, RGB={cal.rgb.data.flatten().tolist()}"
+            f"epoch {epoch}: loss={sum(losses) / len(losses)}, "
+            f"lr={scheduler.get_lr()}, RGB={cal.rgb.data.flatten().tolist()}"
         )
 
     print(f"RGBCalibration: {cal.rgb.data.flatten().tolist()}")

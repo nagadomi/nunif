@@ -622,7 +622,6 @@ class Waifu2xEnv(LuminancePSNREnv):
         x, y, *_ = data
         x, y = self.to_device(x), self.to_device(y)
         model = self.get_eval_model()
-        scale_factor = self.get_scale_factor()
 
         psnr = 0
         with self.autocast():

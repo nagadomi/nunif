@@ -565,15 +565,9 @@ def postprocess_image(left_eye, right_eye, args):
 
 def debug_depth_image(depth, args):
     depth = depth.float()
-    mean_depth, std_depth = depth.mean().item(), depth.std().item()
     depth2 = get_mapper(args.mapper)(depth)
     out = torch.cat([depth, depth2], dim=2).cpu()
     out = out.repeat((3, 1, 1))
-    # gc = ImageDraw.Draw(out)
-    # gc.text((16, 16), (f"min={round(float(depth_min), 4)}\n"
-    #                    f"max={round(float(depth_max), 4)}\n"
-    #                    f"mean={round(float(mean_depth), 4)}\n"
-    #                    f"std={round(float(std_depth), 4)}"), "gray")
 
     return out
 

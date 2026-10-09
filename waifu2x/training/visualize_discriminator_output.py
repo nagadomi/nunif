@@ -1,5 +1,9 @@
-# visualize discriminator patch output
-# python -m waifu2x.training.visualize_discriminator_output -i tmp/sr_output -o ./tmp/discmap --model ./models/noise3_scale4x_discriminator.pth
+"""
+visualize discriminator patch output
+python -m waifu2x.training.visualize_discriminator_output -i tmp/sr_output \
+       -o ./tmp/discmap --model ./models/noise3_scale4x_discriminator.pth
+"""
+
 import argparse
 import os
 from os import path

@@ -9,6 +9,18 @@ def parameterize_none(conv):
     return conv
 
 
+def default_activation_layer(dim):
+    return nn.ReLU(inplace=True)
+
+
+def default_norm_layer(dim):
+    return nn.BatchNorm2d(dim)
+
+
+def default_attention_layer(dim):
+    return nn.Identity()
+
+
 class ResBlock(nn.Module):
     def __init__(
         self,
@@ -28,11 +40,11 @@ class ResBlock(nn.Module):
         assert stride in {1, 2}
 
         if activation_layer is None:
-            activation_layer = lambda dim: nn.ReLU(inplace=True)
+            activation_layer = default_activation_layer
         if norm_layer is None:
-            norm_layer = lambda dim: nn.BatchNorm2d(dim)
+            norm_layer = default_norm_layer
         if attention_layer is None:
-            attention_layer = lambda dim: nn.Identity()
+            attention_layer = default_attention_layer
         if valid_stride and stride == 2:
             first_kernel_size = 4
             shortcut_kernel_size = 2
@@ -194,9 +206,11 @@ def ResBlockSELReLU(
     in_channels, out_channels, stride=1, bias=True, padding_mode="zeros", valid_stride=True, dilation=1, se=True
 ):
     if se:
-        attention_layer = lambda dim: SEBlock(dim, bias=True)
+
+        def attention_layer(dim):
+            return SEBlock(dim, bias=True)
     else:
-        attention_layer = lambda dim: nn.Identity()
+        attention_layer = default_attention_layer
 
     return ResBlock(
         in_channels,
