@@ -125,13 +125,6 @@ class OffloadResourceManager:
     def _create_event(self) -> Any:
         return create_event(self.device)
 
-    def __del__(self):
-        with self.lock:
-            self.free_buffers.clear()
-            self.busy_buffers.clear()
-            self.free_events.clear()
-            self.busy_events.clear()
-
 
 class OffloadedFrame:
     def __init__(self, x: torch.Tensor, dtype: torch.dtype, manager: OffloadResourceManager, stream=None) -> None:
