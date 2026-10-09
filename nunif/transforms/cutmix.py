@@ -1,9 +1,12 @@
-from PIL import Image, ImageDraw, ImageOps, ImageFilter
 import random
+
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from torchvision import transforms as T
 from torchvision.transforms import (
-    functional as TF,
     InterpolationMode,
+)
+from torchvision.transforms import (
+    functional as TF,
 )
 
 
@@ -67,14 +70,12 @@ def cutmix(a, b=None, mask_min=0.2, mask_max=0.5, rotate_p=0.2, blur_p=0.1):
     if b.width != width or b.height != height:
         b = _random_crop(b, width, height)
     # composite
-    mask = generate_random_mask(width, height,
-                                mask_min=mask_min, mask_max=mask_max,
-                                rotate_p=rotate_p, blur_p=blur_p)
+    mask = generate_random_mask(width, height, mask_min=mask_min, mask_max=mask_max, rotate_p=rotate_p, blur_p=blur_p)
     out = Image.composite(b, a, mask)
     return out
 
 
-class CutMix():
+class CutMix:
     def __init__(self, mask_min=0.2, mask_max=0.5, rotate_p=0.2, blur_p=0.1):
         self.mask_min = mask_min
         self.mask_max = mask_max
@@ -87,6 +88,7 @@ class CutMix():
 
 if __name__ == "__main__":
     import time
+
     a = Image.open("cc0/bottle.jpg")
     b = Image.open("cc0/lighthouse.jpg")
 

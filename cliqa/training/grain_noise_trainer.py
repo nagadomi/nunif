@@ -1,27 +1,29 @@
-from os import path
 import argparse
-import random
 import math
+import random
+from os import path
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-from torch.utils.data.dataset import Dataset
 import torchvision.transforms as T
+from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
     functional as TF,
 )
-from nunif.utils.image_loader import ImageLoader
-from nunif.utils import pil_io
+
 from nunif.modules import ClampLoss
-from nunif.transforms.std import add_jpeg_noise, RandomFlip
 from nunif.training.env import RegressionEnv
 from nunif.training.trainer import Trainer
+from nunif.transforms.std import RandomFlip, add_jpeg_noise
+from nunif.utils import pil_io
+from nunif.utils.image_loader import ImageLoader
 from waifu2x.training.photo_noise import gaussian_noise_variants, grain_noise1, grain_noise2, structured_noise
 
 
 def calc_noise_level(x, x_org):
-    x = (x.mean(dim=0) * 255. + 0.49).long().float()
-    x_org = (x_org.mean(dim=0) * 255. + 0.49).long().float()
+    x = (x.mean(dim=0) * 255.0 + 0.49).long().float()
+    x_org = (x_org.mean(dim=0) * 255.0 + 0.49).long().float()
     mse = (((x - x_org) ** 2).mean()).item()
     # 10 * math.log10((255 * 255) / 0.65025) == 50.0
     mse = max(mse, 0.65025)
@@ -31,11 +33,7 @@ def calc_noise_level(x, x_org):
     return noise_level
 
 
-NOISE_METHODS = [
-    gaussian_noise_variants,
-    grain_noise1,
-    grain_noise2,
-    structured_noise]
+NOISE_METHODS = [gaussian_noise_variants, grain_noise1, grain_noise2, structured_noise]
 
 
 class GrainNoiseDataset(Dataset):
@@ -45,10 +43,12 @@ class GrainNoiseDataset(Dataset):
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
-        self.gt_transform = T.Compose([
-            T.RandomCrop((136, 136)),
-            T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)], p=0.5),
-        ])
+        self.gt_transform = T.Compose(
+            [
+                T.RandomCrop((136, 136)),
+                T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)], p=0.5),
+            ]
+        )
         self.random_crop = T.Compose([T.RandomCrop((128, 128)), RandomFlip()])
         self.random_grayscale = T.RandomGrayscale(p=0.02)
         self.center_crop = T.CenterCrop((128, 128))
@@ -77,17 +77,18 @@ class GrainNoiseDataset(Dataset):
             else:
                 jpeg_quality = 100
                 jpeg_subsampling = None
-            settings.append({"strength": strength,
-                             "noise_method": noise_method,
-                             "jpeg_quality": jpeg_quality,
-                             "jpeg_subsampling": jpeg_subsampling})
+            settings.append(
+                {
+                    "strength": strength,
+                    "noise_method": noise_method,
+                    "jpeg_quality": jpeg_quality,
+                    "jpeg_subsampling": jpeg_subsampling,
+                }
+            )
         return settings
 
     def create_sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def __len__(self):
         return len(self.files)
@@ -155,7 +156,7 @@ class GrainNoiseDataset(Dataset):
 
 class GrainNoiseTrainer(Trainer):
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = GrainNoiseDataset(path.join(self.args.data_dir, "train"), training=True)
             loader = torch.utils.data.DataLoader(
@@ -165,7 +166,8 @@ class GrainNoiseTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = GrainNoiseDataset(path.join(self.args.data_dir, "eval"), training=False)
@@ -175,7 +177,8 @@ class GrainNoiseTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):
@@ -190,13 +193,11 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "cliqa.grain",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "cliqa.grain", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="cliqa.grain_noise_level", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
 
     parser.set_defaults(
         batch_size=64,

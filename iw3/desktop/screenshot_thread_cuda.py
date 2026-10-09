@@ -1,8 +1,9 @@
 import threading
+import time
+from collections import deque
+
 import torch
 import torch.nn.functional as F
-from collections import deque
-import time
 
 
 def resize_frame(frame, size):
@@ -18,9 +19,20 @@ def resize_frame(frame, size):
 
 
 class ScreenshotThreadWCCUDA(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device,
-                 crop_top=0, crop_left=0, crop_right=0, crop_bottom=0,
-                 **_ignore_unsupported_kwargs):
+    def __init__(
+        self,
+        fps,
+        frame_width,
+        frame_height,
+        monitor_index,
+        window_name,
+        device,
+        crop_top=0,
+        crop_left=0,
+        crop_right=0,
+        crop_bottom=0,
+        **_ignore_unsupported_kwargs,
+    ):
         super().__init__(daemon=True)
         self.frame_width = frame_width
         self.frame_height = frame_height
@@ -41,6 +53,7 @@ class ScreenshotThreadWCCUDA(threading.Thread):
 
     def run(self):
         from wc_cuda import WindowsCapture
+
         if self.window_name:
             # ignore
             monitor_index = None
@@ -62,7 +75,9 @@ class ScreenshotThreadWCCUDA(threading.Thread):
             with torch.inference_mode():
                 # BGRA HWC -> RGB CHW
                 source_frame = frame.frame_buffer[..., [2, 1, 0]].permute(2, 0, 1)
-                if self.window_name and (self.crop_top > 0 or self.crop_left > 0 or self.crop_right > 0 or self.crop_bottom > 0):
+                if self.window_name and (
+                    self.crop_top > 0 or self.crop_left > 0 or self.crop_right > 0 or self.crop_bottom > 0
+                ):
                     h, w = source_frame.shape[-2:]
                     top = self.crop_top
                     bottom = h - self.crop_bottom if self.crop_bottom > 0 else h
@@ -74,7 +89,9 @@ class ScreenshotThreadWCCUDA(threading.Thread):
                     if self.window_name is not None:
                         min_h = min(self.frame_height, source_frame.shape[1])
                         min_w = min(self.frame_width, source_frame.shape[2])
-                        dest_frame = torch.zeros((3, self.frame_height, self.frame_width), dtype=torch.float32, device=self.device)
+                        dest_frame = torch.zeros(
+                            (3, self.frame_height, self.frame_width), dtype=torch.float32, device=self.device
+                        )
                         dest_frame[:, 0:min_h, 0:min_w].copy_(source_frame[:, 0:min_h, 0:min_w]).div_(255.0)
                     else:
                         dest_frame = resize_frame(source_frame, size=(self.frame_height, self.frame_width))

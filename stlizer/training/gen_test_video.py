@@ -4,17 +4,19 @@
 # sample: https://github.com/user-attachments/assets/98e13148-5645-4873-865f-c00db077a0ce
 # NOTE: There are no individual movements for each object.
 
-import torch
 import argparse
+
+import torch
 import torch.nn.functional as F
 import torchvision.io as IO
-import nunif.utils.video as VU
+
 import nunif.utils.superpoint as KU
+import nunif.utils.video as VU
 from nunif.modules.gaussian_filter import get_gaussian_kernel1d
 
 
 def load_frame(path):
-    x = (IO.read_image(path) / 255.0)
+    x = IO.read_image(path) / 255.0
     pad_y = x.shape[1] % 8
     pad_x = x.shape[2] % 8
 
@@ -69,14 +71,14 @@ if __name__ == "__main__":
 
             frame = frames[i // BASE_FRAMES]
             new_frame = KU.apply_transform(
-                frame, shift=[x, y], scale=1.0, angle=r,
-                center=[frame.shape[2] // 2, frame.shape[1] // 2]
+                frame,
+                shift=[x, y],
+                scale=1.0,
+                angle=r,
+                center=[frame.shape[2] // 2, frame.shape[1] // 2],
                 # when the camera is held in the right hand
                 # center=[frame.shape[2] - 1, frame.shape[1] // 2]
             )
             yield new_frame
 
-    VU.generate_video(
-        args.output,
-        frame_generator,
-        config)
+    VU.generate_video(args.output, frame_generator, config)

@@ -10,7 +10,6 @@
 import subprocess
 import sys
 
-
 if sys.platform == "win32":
     CREATE_NO_WINDOW = 0x08000000
     _original_popen_init = subprocess.Popen.__init__

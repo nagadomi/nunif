@@ -2,12 +2,14 @@
 # 1. Separate the frame into odd and even scanlines
 # 2. 2x upscale only height (Note that either line is shifted by 1px)
 # 3. Set the frame order or drop one of the frames
-import torch
+import argparse
 import os
 from os import path
-import argparse
-import nunif.utils.video as VU
+
+import torch
 import torch.nn.functional as F
+
+import nunif.utils.video as VU
 
 
 def interleave(a, b):
@@ -53,7 +55,8 @@ def main():
         else:
             output_fps = None
         return VU.VideoOutputConfig(
-            fps=fps, output_fps=output_fps,
+            fps=fps,
+            output_fps=output_fps,
         )
 
     deinterlace_callback_pool = VU.FrameCallbackPool(
@@ -62,10 +65,13 @@ def main():
         device="cpu",
         max_workers=4,
     )
-    VU.process_video(args.input, args.output,
-                     deinterlace_callback_pool,
-                     config_callback=config_callback,
-                     title="SuperSimpleDeinterlace")
+    VU.process_video(
+        args.input,
+        args.output,
+        deinterlace_callback_pool,
+        config_callback=config_callback,
+        title="SuperSimpleDeinterlace",
+    )
 
 
 if __name__ == "__main__":

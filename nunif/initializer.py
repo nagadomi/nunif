@@ -1,9 +1,10 @@
-import os
-import torch
-import random
-import numpy as np
-import secrets
 import gc
+import os
+import random
+import secrets
+
+import numpy as np
+import torch
 
 
 def disable_image_lib_threads():
@@ -12,9 +13,10 @@ def disable_image_lib_threads():
     # os.environ['OMP_THREAD_LIMIT'] = '1'
 
     # Disable ImageMagick's Threading
-    os.environ['MAGICK_THREAD_LIMIT'] = '1'
+    os.environ["MAGICK_THREAD_LIMIT"] = "1"
     try:
         from wand.resource import limits
+
         limits["thread"] = 1
     except ImportError:
         pass
@@ -22,6 +24,7 @@ def disable_image_lib_threads():
     # Disable OpenCV's Threading/OpenCL
     try:
         import cv2
+
         cv2.setNumThreads(0)
         cv2.ocl.setUseOpenCL(False)
     except ImportError:

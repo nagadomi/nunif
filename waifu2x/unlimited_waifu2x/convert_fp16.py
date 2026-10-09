@@ -4,12 +4,13 @@
 # just reduce file size and data transfer size
 #
 # NOTE: The FP16 model does not work with WebGPU without the shader-f16 feature.
-import onnx
-from onnxconverter_common import float16
 import argparse
 import os
-from os import path
 import shutil
+from os import path
+
+import onnx
+from onnxconverter_common import float16
 
 
 def convert(model_in, model_out, keep_io_types=True):
@@ -19,7 +20,7 @@ def convert(model_in, model_out, keep_io_types=True):
         keep_io_types=keep_io_types,
         op_block_list=["ConstantOfShape", "Shape"],
         min_positive_val=1e-7,
-        max_finite_val=6e+4,
+        max_finite_val=6e4,
     )
     onnx.save(model_fp16, model_out)
 
@@ -52,10 +53,7 @@ def main():
     convert_dir(args.input, args.output, path.join("swin_unet", "photo"))
     convert_dir(args.input, args.output, path.join("cunet", "art"))
 
-    shutil.copytree(
-        path.join(args.input, "utils"),
-        path.join(args.output, "utils"),
-        dirs_exist_ok=True)
+    shutil.copytree(path.join(args.input, "utils"), path.join(args.output, "utils"), dirs_exist_ok=True)
 
 
 if __name__ == "__main__":

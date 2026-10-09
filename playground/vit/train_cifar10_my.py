@@ -1,24 +1,26 @@
 # A ViT designed from what I heard
 # 92% accuracy on CIFAR10 using only CIFAR10 training data,
 # python3 -m playground.vit.train_cifar10_my --data-dir ./tmp/vit --model-dir ./tmp/vit
-from torchvision.datasets import CIFAR10
-from torchvision import transforms as T
-from torchvision.transforms import functional as TF
+import math
+
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torchvision import transforms as T
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import functional as TF
+
+import nunif.transforms as NT
 from nunif.models import SoftmaxBaseModel
 from nunif.training.env import SoftmaxEnv
 from nunif.training.trainer import Trainer, create_trainer_default_parser
-import nunif.transforms as NT
-import math
 
 
 def normalize(x):
     return (x - 0.5) * 2
 
 
-class Normalize():
+class Normalize:
     def __call__(self, x):
         return normalize(x)
 
@@ -31,30 +33,31 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         super().__init__()
         self.train = train
         if train:
-            t1 = T.Compose([
-                T.RandomCrop((24, 24)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            t2 = T.Compose([
-                T.RandomCrop((26, 26)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            t3 = T.Compose([
-                T.RandomCrop((28, 28)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            t4 = T.Compose([
-                T.RandomCrop((30, 30)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            transform = T.Compose([
-                T.RandomChoice([NT.Identity(),
-                                T.Compose([
+            t1 = T.Compose([T.RandomCrop((24, 24)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            t2 = T.Compose([T.RandomCrop((26, 26)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            t3 = T.Compose([T.RandomCrop((28, 28)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            t4 = T.Compose([T.RandomCrop((30, 30)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            transform = T.Compose(
+                [
+                    T.RandomChoice(
+                        [
+                            NT.Identity(),
+                            T.Compose(
+                                [
                                     NT.ReflectionResize((38, 38)),
                                     T.RandomPerspective(distortion_scale=0.15, p=1),
-                                    T.CenterCrop((32, 32))])]),
-                T.RandomChoice([t1, t2, t3, t4]),
-                T.RandomHorizontalFlip(),
-                T.RandomGrayscale(p=0.1),
-                T.ToTensor(),
-                Normalize(),
-            ])
+                                    T.CenterCrop((32, 32)),
+                                ]
+                            ),
+                        ]
+                    ),
+                    T.RandomChoice([t1, t2, t3, t4]),
+                    T.RandomHorizontalFlip(),
+                    T.RandomGrayscale(p=0.1),
+                    T.ToTensor(),
+                    Normalize(),
+                ]
+            )
         else:
             # TTA at __getitem__
             transform = None
@@ -64,14 +67,13 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         return len(self.cifar10)
 
     def sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def show(self, im):
-        from nunif.utils.pil_io import to_cv2
         import cv2
+
+        from nunif.utils.pil_io import to_cv2
+
         cv2.imshow("debug", to_cv2(im))
         cv2.waitKey(0)
 
@@ -89,8 +91,7 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
             return x, y
 
 
-CIFAR10_CLASS_NAMES = ('plane', 'car', 'bird', 'cat',
-                       'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+CIFAR10_CLASS_NAMES = ("plane", "car", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck")
 
 
 class DropPath(nn.Module):
@@ -126,16 +127,18 @@ class Transformer(nn.Module):
     def __init__(self, embed_dim, num_heads, num_layers, mask_size, mask_kernel_size, drop_path=0.2):
         super().__init__()
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim, nhead=num_heads, dim_feedforward=embed_dim,
+            d_model=embed_dim,
+            nhead=num_heads,
+            dim_feedforward=embed_dim,
             dropout=0,
             activation=F.gelu,
-            norm_first=True, batch_first=True)
+            norm_first=True,
+            batch_first=True,
+        )
         self.attn = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.mlp = nn.Sequential(
-            nn.LayerNorm(embed_dim),
-            nn.Linear(embed_dim, embed_dim * 4),
-            nn.GELU(),
-            nn.Linear(embed_dim * 4, embed_dim))
+            nn.LayerNorm(embed_dim), nn.Linear(embed_dim, embed_dim * 4), nn.GELU(), nn.Linear(embed_dim * 4, embed_dim)
+        )
         self.drop_path1 = DropPath(drop_path)
         self.drop_path2 = DropPath(drop_path)
         self.register_buffer("mask", self.generate_window_mask(mask_size, mask_kernel_size))
@@ -144,9 +147,7 @@ class Transformer(nn.Module):
     def generate_window_mask(size, kernel_size):
         assert kernel_size % 2 == 1
         pad = kernel_size // 2
-        cols = ([-math.inf for _ in range(pad)] +
-                [i for i in range(size)] +
-                [-math.inf for _ in range(pad)])
+        cols = [-math.inf for _ in range(pad)] + [i for i in range(size)] + [-math.inf for _ in range(pad)]
         pad_cols = [-math.inf for _ in range(len(cols))]
         rows = [pad_cols]
         for i in range(size):
@@ -158,13 +159,11 @@ class Transformer(nn.Module):
         mask_indices = []
         for y in range(size):
             for x in range(size):
-                indices = grid[y:y + kernel_size,
-                               x:x + kernel_size].flatten()
+                indices = grid[y : y + kernel_size, x : x + kernel_size].flatten()
                 valid_indices = [i.item() for i in indices if i >= 0]
                 mask_indices.append(valid_indices)
         #  print("***", size, mask_indices)
-        mask = torch.full((size ** 2, size ** 2), -math.inf,
-                          dtype=torch.float, requires_grad=False)
+        mask = torch.full((size**2, size**2), -math.inf, dtype=torch.float, requires_grad=False)
         for i, indices in enumerate(mask_indices):
             for j in indices:
                 mask[i][j] = 0.0
@@ -199,7 +198,7 @@ class AttentionPooling(nn.Module):
         self.attn = nn.Sequential(
             nn.Linear(in_channels, in_channels // reduction),
             nn.ReLU(inplace=True),
-            nn.Linear(in_channels // reduction, 1)
+            nn.Linear(in_channels // reduction, 1),
         )
 
     def forward(self, x):
@@ -220,8 +219,8 @@ class VIT(SoftmaxBaseModel):
             nn.BatchNorm2d(3),
             nn.Conv2d(3, dim, kernel_size=4, stride=4, padding=0),
         )
-        #self.pos_embed = nn.Parameter(torch.zeros((1, dim, 16, 16)))
-        #nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        # self.pos_embed = nn.Parameter(torch.zeros((1, dim, 16, 16)))
+        # nn.init.trunc_normal_(self.pos_embed, std=0.02)
         self.transformer = nn.Sequential(
             Transformer(dim, 8, num_layers=2, mask_size=16, mask_kernel_size=5),
             PatchMerging(dim, dim * 2),
@@ -229,13 +228,10 @@ class VIT(SoftmaxBaseModel):
             PatchMerging(dim * 2, dim * 4),
             Transformer(dim * 4, 16, num_layers=2, mask_size=4, mask_kernel_size=3),
         )
-        self.fc = nn.Sequential(
-            AttentionPooling(dim * 4, reduction=8),
-            nn.Linear(dim * 4, len(CIFAR10_CLASS_NAMES))
-        )
+        self.fc = nn.Sequential(AttentionPooling(dim * 4, reduction=8), nn.Linear(dim * 4, len(CIFAR10_CLASS_NAMES)))
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, (nn.Linear, nn.Conv1d)):
@@ -249,7 +245,7 @@ class VIT(SoftmaxBaseModel):
     def forward(self, x):
         B = x.shape[0]
         # 24x24
-        x = self.patch(x) # + self.pos_embed
+        x = self.patch(x)  # + self.pos_embed
         # 12x12
         x = x.view(B, x.shape[1], -1).permute(0, 2, 1).contiguous()
         x = self.transformer(x)
@@ -266,7 +262,7 @@ class CIFAR10Trainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = CIFAR10Dataset(self.args.data_dir, train=True)
             loader = torch.utils.data.DataLoader(
@@ -276,7 +272,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = CIFAR10Dataset(self.args.data_dir, train=False)
@@ -286,7 +283,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):
@@ -306,7 +304,7 @@ def main():
         warmup_epoch=2,
         warmup_learning_rate=1e-7,
         max_epoch=200,
-        disable_amp=False
+        disable_amp=False,
     )
     args = parser.parse_args()
     trainer = CIFAR10Trainer(args)

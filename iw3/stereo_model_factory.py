@@ -1,7 +1,8 @@
-from nunif.models import load_model, create_model
+from nunif.models import create_model, load_model
 from nunif.utils.ui import TorchHubDir
-from .hub_dir import HUB_MODEL_DIR
+
 from .forward_inpaint import ForwardInpaint
+from .hub_dir import HUB_MODEL_DIR
 from .mlbw_inpaint import MLBWInpaint
 from .monobw_inpaint import MonoBWInpaint
 
@@ -46,8 +47,10 @@ def get_mlbw_divergence_level(d):
 
 
 def load_mlbw_model(
-        method, divergence, device_id,
-        use_weak_convergence_model=False,
+    method,
+    divergence,
+    device_id,
+    use_weak_convergence_model=False,
 ):
     level = get_mlbw_divergence_level(divergence)
     if method in {"mlbw_l2", "mlbw_l2s"}:
@@ -115,20 +118,18 @@ def load_row_flow_model(method, device_id):
 
 
 def create_stereo_model(
-        method, divergence, device_id,
-        use_weak_convergence_model=False,
-        inpaint_model=None,
-        overlap_frames=None,
+    method,
+    divergence,
+    device_id,
+    use_weak_convergence_model=False,
+    inpaint_model=None,
+    overlap_frames=None,
 ):
     with TorchHubDir(HUB_MODEL_DIR):
         if method.startswith("row_flow"):
             return load_row_flow_model(method, device_id=device_id)
         elif method in {"mlbw_l2_inpaint"}:
-            return MLBWInpaint(
-                name=inpaint_model,
-                overlap_frames=overlap_frames,
-                device_id=device_id
-            )
+            return MLBWInpaint(name=inpaint_model, overlap_frames=overlap_frames, device_id=device_id)
         elif method.startswith("mlbw_") or method.startswith("mask_mlbw_"):
             return load_mlbw_model(
                 method,

@@ -3,7 +3,9 @@ from torchvision import transforms as T
 from torchvision.transforms import (
     functional as TF,
 )
+
 from nunif.utils.image_loader import ImageLoader
+
 from ...base_depth_model import BaseDepthModel
 
 

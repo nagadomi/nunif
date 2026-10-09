@@ -11,16 +11,18 @@
 #    test/mask
 #    test/depth/{model_type}
 
-import os
 import argparse
-from os import path
-from tqdm import tqdm
+import os
 import random
-from nunif.utils.pil_io import load_image_simple
-from nunif.utils.image_loader import ImageLoader, list_images
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
+from os import path
+
+from tqdm import tqdm
+
 from iw3.base_depth_model import BaseDepthModel
+from nunif.utils.image_loader import ImageLoader, list_images
+from nunif.utils.pil_io import load_image_simple
 
 
 def main(args):
@@ -47,9 +49,7 @@ def main(args):
         output_dir = path.join(args.data_dir, "depth", args.model_type)
     os.makedirs(output_dir, exist_ok=True)
 
-    loader = ImageLoader(files=list_images(input_dir),
-                         load_func=load_image_simple,
-                         load_func_kwargs={"color": "rgb"})
+    loader = ImageLoader(files=list_images(input_dir), load_func=load_image_simple, load_func_kwargs={"color": "rgb"})
     with PoolExecutor(max_workers=max_workers) as pool:
         futures = []
         for im, meta in tqdm(loader, ncols=80):
@@ -57,8 +57,7 @@ def main(args):
                 continue
             edge_dilation = random.randint(0, 2)
             depth_aa = random.choice([True, False, False, False])
-            depth = depth_model.infer(im, tta=False, enable_amp=True,
-                                      edge_dilation=edge_dilation, depth_aa=depth_aa)
+            depth = depth_model.infer(im, tta=False, enable_amp=True, edge_dilation=edge_dilation, depth_aa=depth_aa)
             depth = depth_model.minmax_normalize_chw(depth)
 
             output_filename = path.join(output_dir, path.splitext(path.basename(meta["filename"]))[0] + ".png")
@@ -72,9 +71,8 @@ def main(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "sod",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "sod", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")

@@ -1,15 +1,17 @@
 """PyTorch implementation of the SuperPoint model,
-   derived from the TensorFlow re-implementation (2018).
-   Authors: Rémi Pautrat, Paul-Edouard Sarlin
+derived from the TensorFlow re-implementation (2018).
+Authors: Rémi Pautrat, Paul-Edouard Sarlin
 
-   MIT License
-   https://github.com/rpautrat/SuperPoint/
+MIT License
+https://github.com/rpautrat/SuperPoint/
 """
-import torch.nn as nn
-import torch
+
+import math
 from collections import OrderedDict
 from types import SimpleNamespace
-import math
+
+import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 
@@ -21,9 +23,7 @@ def sample_descriptors(keypoints, descriptors, s: int = 8):
     descriptors = torch.nn.functional.grid_sample(
         descriptors, keypoints.view(b, 1, -1, 2), mode="bilinear", align_corners=False
     )
-    descriptors = torch.nn.functional.normalize(
-        descriptors.reshape(b, c, -1), p=2, dim=1
-    )
+    descriptors = torch.nn.functional.normalize(descriptors.reshape(b, c, -1), p=2, dim=1)
     return descriptors
 
 
@@ -31,9 +31,7 @@ def batched_nms(scores, nms_radius: int):
     assert nms_radius >= 0
 
     def max_pool(x):
-        return torch.nn.functional.max_pool2d(
-            x, kernel_size=nms_radius * 2 + 1, stride=1, padding=nms_radius
-        )
+        return torch.nn.functional.max_pool2d(x, kernel_size=nms_radius * 2 + 1, stride=1, padding=nms_radius)
 
     zeros = torch.zeros_like(scores)
     max_mask = scores == max_pool(scores)
@@ -55,9 +53,7 @@ def select_top_k_keypoints(keypoints, scores, k):
 class VGGBlock(nn.Sequential):
     def __init__(self, c_in, c_out, kernel_size, relu=True):
         padding = (kernel_size - 1) // 2
-        conv = nn.Conv2d(
-            c_in, c_out, kernel_size=kernel_size, stride=1, padding=padding
-        )
+        conv = nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=1, padding=padding)
         activation = nn.ReLU(inplace=True) if relu else nn.Identity()
         bn = nn.BatchNorm2d(c_out, eps=0.001)
         super().__init__(
@@ -114,18 +110,14 @@ class SuperPoint(nn.Module):
             image = (image * scale).sum(1, keepdim=True)
 
         features = self.backbone(image)
-        descriptors_dense = torch.nn.functional.normalize(
-            self.descriptor(features), p=2, dim=1
-        )
+        descriptors_dense = torch.nn.functional.normalize(self.descriptor(features), p=2, dim=1)
 
         # Decode the detection scores
         scores = self.detector(features)
         scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
         b, _, h, w = scores.shape
         scores = scores.permute(0, 2, 3, 1).reshape(b, h, w, self.stride, self.stride)
-        scores = scores.permute(0, 1, 3, 2, 4).reshape(
-            b, h * self.stride, w * self.stride
-        )
+        scores = scores.permute(0, 1, 3, 2, 4).reshape(b, h * self.stride, w * self.stride)
         scores = batched_nms(scores, self.conf.nms_radius)
 
         # Discard keypoints near the image borders
@@ -171,12 +163,16 @@ class SuperPoint(nn.Module):
             "descriptors": descriptors,
         }
 
-# The code below here was written by nagadomi
+    # The code below here was written by nagadomi
 
     def load(self, map_location="cpu"):
-        self.load_state_dict(torch.hub.load_state_dict_from_url(
-            "https://github.com/nagadomi/nunif/releases/download/0.0.0/superpoint_v6_from_tf.pth",
-            weights_only=True, map_location=map_location))
+        self.load_state_dict(
+            torch.hub.load_state_dict_from_url(
+                "https://github.com/nagadomi/nunif/releases/download/0.0.0/superpoint_v6_from_tf.pth",
+                weights_only=True,
+                map_location=map_location,
+            )
+        )
         return self
 
     @torch.inference_mode()
@@ -192,11 +188,13 @@ class SuperPoint(nn.Module):
         # convert to batch-first structure
         new_ret = []
         for i in range(x.shape[0]):
-            new_ret.append({
-                "keypoints": ret["keypoints"][i],
-                "descriptors": ret["descriptors"][i],
-                "keypoint_scores": ret["keypoint_scores"][i]
-            })
+            new_ret.append(
+                {
+                    "keypoints": ret["keypoints"][i],
+                    "descriptors": ret["descriptors"][i],
+                    "keypoint_scores": ret["keypoint_scores"][i],
+                }
+            )
         if not batch:
             new_ret = new_ret[0]
 
@@ -230,9 +228,21 @@ def cosine_annealing(min_v, max_v, t, max_t):
         return min_v
 
 
-def find_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1, lr_scale_rotation=0.1,
-                   sigma=None, sigma_min=None, sigma_max=2.0,
-                   disable_shift=False, disable_scale=False, disable_rotate=False):
+def find_transform(
+    xy1,
+    xy2,
+    center,
+    mask=None,
+    iteration=50,
+    lr_translation=0.1,
+    lr_scale_rotation=0.1,
+    sigma=None,
+    sigma_min=None,
+    sigma_max=2.0,
+    disable_shift=False,
+    disable_scale=False,
+    disable_rotate=False,
+):
     if xy1.ndim == 2:
         batch = False
         xy1 = xy1.cpu()  # for non-batch case, cpu is faster
@@ -266,7 +276,8 @@ def find_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1
     ]
     optimizer = torch.optim.Adam(param_groups, betas=(0.5, 0.9))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, T_0=iteration, eta_min=lr_scale_rotation * 1e-3)
+        optimizer, T_0=iteration, eta_min=lr_scale_rotation * 1e-3
+    )
 
     xy1 = xy1 - center
     xy2 = xy2 - center
@@ -281,8 +292,7 @@ def find_transform(xy1, xy2, center, mask=None, iteration=50, lr_translation=0.1
         # rotate
         rcos = rotation.cos()
         rsin = rotation.sin()
-        xy = torch.cat([xy[:, :, :1] * rcos - xy[:, :, 1:] * rsin,
-                        xy[:, :, :1] * rsin + xy[:, :, 1:] * rcos], dim=2)
+        xy = torch.cat([xy[:, :, :1] * rcos - xy[:, :, 1:] * rsin, xy[:, :, :1] * rsin + xy[:, :, 1:] * rcos], dim=2)
 
         # scale
         xy = xy * scale
@@ -352,8 +362,11 @@ def apply_transform(x, shift, scale, angle, center, mode="bilinear", padding_mod
     angle = angle.deg2rad().neg().reshape(B, 1, 1, 1)
 
     # backward warping
-    py, px = torch.meshgrid(torch.linspace(0, height - 1, height, device=x.device, dtype=x.dtype),
-                            torch.linspace(0, width - 1, width, device=x.device, dtype=x.dtype), indexing="ij")
+    py, px = torch.meshgrid(
+        torch.linspace(0, height - 1, height, device=x.device, dtype=x.dtype),
+        torch.linspace(0, width - 1, width, device=x.device, dtype=x.dtype),
+        indexing="ij",
+    )
 
     px = px.reshape(1, height, width, 1).expand(B, height, width, 1)
     py = py.reshape(1, height, width, 1).expand(B, height, width, 1)
@@ -362,8 +375,8 @@ def apply_transform(x, shift, scale, angle, center, mode="bilinear", padding_mod
 
     asin = angle.sin()
     acos = angle.cos()
-    mesh_x = (px * acos - py * asin)
-    mesh_y = (px * asin + py * acos)
+    mesh_x = px * acos - py * asin
+    mesh_y = px * asin + py * acos
 
     grid = torch.cat((mesh_x, mesh_y), dim=3)
     grid = grid * scale
@@ -380,11 +393,12 @@ def apply_transform(x, shift, scale, angle, center, mode="bilinear", padding_mod
 
 def _visualize():
     import time
+
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
     from PIL import ImageDraw
 
-    x1 = (IO.read_image("cc0/dog2.jpg") / 255.0)
+    x1 = IO.read_image("cc0/dog2.jpg") / 255.0
     x1 = x1[:, :250, :250]
     x2 = TF.pad(TF.resize(TF.rotate(x1, 30), (200, 200)), (25,) * 4)
     # x2 = TF.rotate(x1, 180)  # This will not result in {scale = 1, rotate = 180}, but {scale = -1, rotate=0}
@@ -438,13 +452,14 @@ def _visualize():
 
 
 def _benchmark():
-    import torchvision.io as IO
     import time
+
+    import torchvision.io as IO
 
     B = 8
     N = 100
 
-    x = (IO.read_image("cc0/dog2.jpg") / 255.0)
+    x = IO.read_image("cc0/dog2.jpg") / 255.0
     x = x[:, :256, :256].unsqueeze(0).repeat(B, 1, 1, 1).cuda()
     model = SuperPoint().load().cuda()
 

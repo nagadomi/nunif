@@ -1,12 +1,14 @@
 import argparse
 import os
 from os import path
+
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
+
 import iw3.models  # noqa
 from iw3.base_depth_model import BaseDepthModel
 from nunif.models import load_model
-from tqdm import tqdm
 
 
 def load_files(input_dir):

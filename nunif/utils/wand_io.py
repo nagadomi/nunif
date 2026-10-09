@@ -1,11 +1,14 @@
-import torch
 import io
+
+import torch
 from PIL import ImageCms
+
 from ..transforms.functional import quantize256
+
 try:
-    from wand.image import Image, IMAGE_TYPES
     from wand.api import library
     from wand.color import Color
+    from wand.image import IMAGE_TYPES, Image
 
     GRAYSCALE_TYPES = {
         "grayscale",
@@ -19,11 +22,12 @@ try:
     GAMMA_LCD = 45454
 except ImportError:
     import sys
+
     print(
         "Warning: wand or ImageMagick is not installed."
         " If you want to train waifu2x or cliqa models on Windows, "
         " see https://docs.wand-py.org/en/0.6.7/guide/install.html#install-imagemagick-windows.",
-        file=sys.stderr
+        file=sys.stderr,
     )
 
 sRGB_profile = ImageCms.core.profile_tobytes(ImageCms.createProfile("sRGB"))
@@ -74,7 +78,7 @@ def decode_image(blob, filename=None, color=None, keep_alpha=False, **kwargs):
 
 
 def load_image(filename, color=None, keep_alpha=False, **kwargs):
-    assert (color is None or color in {"rgb", "gray"})
+    assert color is None or color in {"rgb", "gray"}
     with open(filename, "rb") as f:
         return decode_image(f.read(), filename, color=color, keep_alpha=keep_alpha)
 
@@ -97,7 +101,7 @@ def to_tensor(im, return_alpha=False, dtype=torch.float32):
     elif im.type in {GRAYSCALE_TYPE, GRAYSCALE_ALPHA_TYPE}:
         channel_map = "R"
     else:
-        assert (im.type in {RGB_TYPE, RGBA_TYPE, GRAYSCALE_TYPE, GRAYSCALE_ALPHA_TYPE})
+        assert im.type in {RGB_TYPE, RGBA_TYPE, GRAYSCALE_TYPE, GRAYSCALE_ALPHA_TYPE}
 
     storage = predict_storage(dtype)
     w, h = im.size
@@ -118,11 +122,11 @@ def to_tensor(im, return_alpha=False, dtype=torch.float32):
 
 
 def to_image(x, alpha=None, depth=8):
-    assert (alpha is None or
-            (x.dtype == alpha.dtype and alpha.shape[0] == 1 and
-             alpha.shape[1] == x.shape[1] and alpha.shape[2] == x.shape[2]))
+    assert alpha is None or (
+        x.dtype == alpha.dtype and alpha.shape[0] == 1 and alpha.shape[1] == x.shape[1] and alpha.shape[2] == x.shape[2]
+    )
     ch, h, w = x.shape
-    assert (ch in {1, 3})
+    assert ch in {1, 3}
     if ch == 1:
         if alpha is not None:
             x = torch.cat((x, alpha), dim=0)
@@ -149,7 +153,7 @@ def restore(im, meta):
     if meta is None:
         return im
 
-    assert (meta["engine"] == "wand")
+    assert meta["engine"] == "wand"
 
     if meta["grayscale"] and im.colorspace != "gray":
         im.transform_colorspace("gray")
@@ -173,7 +177,7 @@ def encode_image(im, format="png", meta=None):
         if format in {"jpg", "jpeg"}:
             out.options["jpeg:sampling-factor"] = "1x1,1x1,1x1"
             out.compression_quality = 95
-            out.background_color = Color('white')
+            out.background_color = Color("white")
             out.alpha_channel = "remove"
 
         elif format == "webp":

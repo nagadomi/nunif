@@ -1,12 +1,12 @@
 import torch
-import torchvision.transforms.functional as TF
 import torch.nn.functional as F
+import torchvision.transforms.functional as TF
 from PIL import Image
 
 
 def psnr(im1, im2):
     mse = ((im1 - im2) ** 2).mean()
-    return 10 * torch.log10(1. / (mse + 1e-6))
+    return 10 * torch.log10(1.0 / (mse + 1e-6))
 
 
 def load_image(filename):
@@ -17,14 +17,14 @@ def load_image(filename):
 
 def normalize_depth(depth, depth_min, depth_max):
     depth = depth.float()
-    depth = 1. - ((depth - depth_min) / (depth_max - depth_min))
+    depth = 1.0 - ((depth - depth_min) / (depth_max - depth_min))
     return depth
 
 
 def apply_divergence(c, depth, divergence, image_width, shift):
     w, h = c.shape[2], c.shape[1]
     depth = depth.squeeze(0)
-    index_shift = (1. - depth ** 2) * (shift * divergence * 0.01 * (image_width / w))
+    index_shift = (1.0 - depth**2) * (shift * divergence * 0.01 * (image_width / w))
 
     mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w), indexing="ij")
     mesh_x = mesh_x - index_shift
@@ -47,11 +47,10 @@ def test(basename):
     original_image_width = int(im_depth.text["sbs_width"])
     divergence = float(im_depth.text["sbs_divergence"])
 
-    print("metadata",
-          {"divergence": divergence,
-           "depth_min": depth_min,
-           "depth_max": depth_max,
-           "width": original_image_width})
+    print(
+        "metadata",
+        {"divergence": divergence, "depth_min": depth_min, "depth_max": depth_max, "width": original_image_width},
+    )
 
     c = TF.to_tensor(im_c)
     l = TF.to_tensor(im_l)

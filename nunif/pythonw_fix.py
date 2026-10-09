@@ -1,6 +1,5 @@
-import sys
 import os
-
+import sys
 
 if sys.executable.endswith("pythonw.exe"):
     """

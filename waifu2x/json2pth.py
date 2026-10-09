@@ -1,10 +1,12 @@
 # convert old format json model files to pytorch model files
 # DEBUG=1 python3 -m waifu2x.json2pth -i ./waifu2x_json_dir -o output_dir
-import os
 import argparse
-from nunif.models import save_model, load_model, create_model
-from .models import load_state_from_waifu2x_json
+import os
+
 from nunif.logger import logger
+from nunif.models import create_model, load_model, save_model
+
+from .models import load_state_from_waifu2x_json
 
 
 def convert_vgg_7(waifu2x_model_dir, output_dir):
@@ -85,6 +87,7 @@ def _test():
         z = model(x)
         z = TF.to_pil_image(z[0])
         z.save(dest)
+
     model = load_model("pretrained_models/waifu2x/upconv_7/art/noise1_scale2x.pth")
     run_model(model, "query/miku_small_noisy.jpg", "out.png")
 

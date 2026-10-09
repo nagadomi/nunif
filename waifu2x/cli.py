@@ -1,9 +1,11 @@
 import torch
-from .ui_utils import create_parser, set_state_args, waifu2x_main
-from . import models # noqa
-from nunif.logger import logger
+
 from nunif.device import device_is_cuda
+from nunif.logger import logger
 from nunif.utils.video import pyav_init_cuda_primary_context
+
+from . import models  # noqa
+from .ui_utils import create_parser, set_state_args, waifu2x_main
 
 
 def main():

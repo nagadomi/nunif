@@ -1,34 +1,40 @@
 # python train.py inpaint -i ./data/dataset --model-dir models/light_inpaint
-import sys
-import os
-from os import path
-import math
-import time
 import argparse
+import math
+import os
+import sys
+import time
+from os import path
+
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from torchvision.utils import make_grid
+
+from nunif.logger import logger
 from nunif.models import create_model
-from nunif.training.env import I2IEnv
-from nunif.training.trainer import Trainer
-from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.clamp_loss import ClampLoss
 from nunif.modules.dct_loss import DCTLoss
-from nunif.modules.lpips import LPIPSWith
 from nunif.modules.dinov2 import DINOv2CosineWith
-from nunif.modules.transforms import DiffPairRandomTranslate, DiffPairRandomRotate
-from nunif.transforms import pair as TP
 from nunif.modules.gan_loss import GANMaskHingeLoss
-from nunif.logger import logger
-from .dataset import InpaintDataset
-from .dataset_video import VideoInpaintDataset, SEQ as VIDEO_SEQ
-from ... import models as _m # noqa
+from nunif.modules.lpips import LPIPSWith
+from nunif.modules.transforms import DiffPairRandomRotate, DiffPairRandomTranslate
+from nunif.modules.weighted_loss import WeightedLoss
+from nunif.training.env import I2IEnv
+from nunif.training.trainer import Trainer
+from nunif.transforms import pair as TP
+
+from ... import models as _m  # noqa
 from ...models.discriminator import (
-    L3ConditionalDiscriminator, L3CEnsembleDiscriminator,
-    FFCDiscriminator, FFCEnsembleDiscriminator,
+    FFCDiscriminator,
+    FFCEnsembleDiscriminator,
+    L3CEnsembleDiscriminator,
     L3CFFCEnsembleDiscriminator,
+    L3ConditionalDiscriminator,
 )
+from .dataset import InpaintDataset
+from .dataset_video import SEQ as VIDEO_SEQ
+from .dataset_video import VideoInpaintDataset
 
 
 class TemporalGradientLoss(torch.nn.Module):
@@ -44,7 +50,7 @@ class TemporalSmoothingPenalty(torch.nn.Module):
         t1 = input[:, 1:-1]
         t2 = input[:, 2:]
         second_order = t2 - 2 * t1 + t0
-        return (second_order ** 2).mean()
+        return (second_order**2).mean()
 
 
 def create_discriminator(discriminator, device_ids, device):
@@ -109,10 +115,14 @@ class InpaintEnv(I2IEnv):
         else:
             self.discriminator_criterion = None
 
-        self.diff_aug = TP.RandomChoice([
-            DiffPairRandomTranslate(size=8, padding_mode="reflection", expand=False, instance_random=False),
-            DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
-            TP.Identity()], p=[0.33, 0.33, 0.33])
+        self.diff_aug = TP.RandomChoice(
+            [
+                DiffPairRandomTranslate(size=8, padding_mode="reflection", expand=False, instance_random=False),
+                DiffPairRandomRotate(angle=15, padding_mode="reflection", expand=False, instance_random=False),
+                TP.Identity(),
+            ],
+            p=[0.33, 0.33, 0.33],
+        )
 
         self.adaptive_weight_ema = None
         self.epoch_iteration = 0
@@ -206,11 +216,14 @@ class InpaintEnv(I2IEnv):
     def calc_weight(self, recon_loss, generator_loss, grad_scaler):
         last_layer = get_last_layer(self.model)
         weight = self.calculate_adaptive_weight(
-            recon_loss, generator_loss, last_layer, grad_scaler,
+            recon_loss,
+            generator_loss,
+            last_layer,
+            grad_scaler,
             min=1e-3,
             max=10.0,
             mode="norm",
-            adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema
+            adaptive_weight=1.0 if self.adaptive_weight_ema is None else self.adaptive_weight_ema,
         )
         weight_is_nan = math.isnan(weight)
         if not weight_is_nan:
@@ -247,7 +260,7 @@ class InpaintEnv(I2IEnv):
             if warmup_weight < 0.1:
                 warmup_weight = 0.0
             if use_disc_loss:
-                g_loss = (recon_loss + generator_loss * weight * self.trainer.args.discriminator_weight * warmup_weight)
+                g_loss = recon_loss + generator_loss * weight * self.trainer.args.discriminator_weight * warmup_weight
             else:
                 g_loss = recon_loss
             self.sum_d_weight += weight
@@ -255,12 +268,14 @@ class InpaintEnv(I2IEnv):
             optimizers.append((g_opt, grad_scalers[0]))
 
             logger.debug(
-                (f"iteration: {self.get_current_iteration()}, "
-                 f"recon: {round(recon_loss.item() * backward_step, 4)}, "
-                 f"gen: {round(generator_loss.item() * backward_step, 4)}, "
-                 f"disc: {round(d_loss.item() * backward_step, 4)}, "
-                 f"weight: {round(weight, 6)}"
-                 ) + (f", warmup weight: {round(warmup_weight, 4)}" if warmup_weight < 1 else "")
+                (
+                    f"iteration: {self.get_current_iteration()}, "
+                    f"recon: {round(recon_loss.item() * backward_step, 4)}, "
+                    f"gen: {round(generator_loss.item() * backward_step, 4)}, "
+                    f"disc: {round(d_loss.item() * backward_step, 4)}, "
+                    f"weight: {round(weight, 6)}"
+                )
+                + (f", warmup weight: {round(warmup_weight, 4)}" if warmup_weight < 1 else "")
             )
             # update discriminator
             self.backward(d_loss, grad_scalers[1])
@@ -289,11 +304,13 @@ class InpaintEnv(I2IEnv):
             mean_d_loss = self.sum_d_loss / self.sum_step
             mean_g_loss = self.sum_g_loss / self.sum_step
             mean_d_weight = self.sum_d_weight / self.sum_step
-            print(f"loss: {round(mean_loss, 6)}, "
-                  f"reconstruction loss: {round(mean_p_loss, 6)}, "
-                  f"generator loss: {round(mean_g_loss, 6)}, "
-                  f"discriminator loss: {round(mean_d_loss, 6)}, "
-                  f"discriminator weight: {round(mean_d_weight, 6)}")
+            print(
+                f"loss: {round(mean_loss, 6)}, "
+                f"reconstruction loss: {round(mean_p_loss, 6)}, "
+                f"generator loss: {round(mean_g_loss, 6)}, "
+                f"discriminator loss: {round(mean_d_loss, 6)}, "
+                f"discriminator weight: {round(mean_d_weight, 6)}"
+            )
             mean_loss = mean_loss + mean_d_loss
         else:
             print(f"loss: {round(mean_loss, 6)}")
@@ -330,7 +347,7 @@ class InpaintEnv(I2IEnv):
     def save_eval(self, x, y, z, i):
         batch_offset = (x.shape[0] - z.shape[0]) // 2
         offset = (x.shape[2] - z.shape[2]) // 2
-        x = F.pad(x, (-offset, ) * 4)
+        x = F.pad(x, (-offset,) * 4)
         if batch_offset > 0:
             x = x[batch_offset:-batch_offset]
         x = torch.cat([x, z, y], dim=3)
@@ -356,7 +373,7 @@ class InpaintTrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         model_offset = self.model.i2i_offset
         if self.args.video:
             dataset_class = VideoInpaintDataset
@@ -370,7 +387,9 @@ class InpaintTrainer(Trainer):
             num_samples = self.args.num_samples
 
         if type == "train":
-            dataset = dataset_class(path.join(self.args.data_dir, "train"), model_offset, training=True, **dataset_kwargs)
+            dataset = dataset_class(
+                path.join(self.args.data_dir, "train"), model_offset, training=True, **dataset_kwargs
+            )
             self.sampler = dataset.create_sampler(num_samples)
             loader = torch.utils.data.DataLoader(
                 dataset,
@@ -379,17 +398,21 @@ class InpaintTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
-            dataset = dataset_class(path.join(self.args.data_dir, "eval"), model_offset, training=False, **dataset_kwargs)
+            dataset = dataset_class(
+                path.join(self.args.data_dir, "eval"), model_offset, training=False, **dataset_kwargs
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
 
     def create_env(self):
@@ -398,7 +421,7 @@ class InpaintTrainer(Trainer):
                 (
                     DCTLoss(window_size=4, clamp=True),
                     DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-                    DCTLoss(clamp=True, random_instance_rotate=True)
+                    DCTLoss(clamp=True, random_instance_rotate=True),
                 ),
                 weights=(0.2, 0.2, 0.6),
             )
@@ -406,27 +429,25 @@ class InpaintTrainer(Trainer):
             criterion = LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4)
         elif self.args.loss == "l1dctlpips":
             base_loss = WeightedLoss(
-                (
-                    DCTLoss(window_size=32, clamp=True, overlap=True),
-                    ClampLoss(torch.nn.L1Loss())
-                ),
-                weights=(0.5, 0.5)
+                (DCTLoss(window_size=32, clamp=True, overlap=True), ClampLoss(torch.nn.L1Loss())), weights=(0.5, 0.5)
             )
             criterion = LPIPSWith(base_loss, weight=0.2)
         elif self.args.loss == "temporal_l1lpips":
-            base_loss = WeightedLoss((
-                ClampLoss(torch.nn.L1Loss()),
-                TemporalGradientLoss(),
-                TemporalSmoothingPenalty()
-            ), weights=(0.8, 0.2, 0.01))
+            base_loss = WeightedLoss(
+                (ClampLoss(torch.nn.L1Loss()), TemporalGradientLoss(), TemporalSmoothingPenalty()),
+                weights=(0.8, 0.2, 0.01),
+            )
             criterion = LPIPSWith(base_loss, weight=0.2)
         elif self.args.loss == "temporal_l1dctlpips":
-            base_loss = WeightedLoss((
-                ClampLoss(torch.nn.L1Loss()),
-                DCTLoss(window_size=32, clamp=True, overlap=True),
-                TemporalGradientLoss(),
-                TemporalSmoothingPenalty()
-            ), weights=(0.4, 0.4, 0.2, 0.01))
+            base_loss = WeightedLoss(
+                (
+                    ClampLoss(torch.nn.L1Loss()),
+                    DCTLoss(window_size=32, clamp=True, overlap=True),
+                    TemporalGradientLoss(),
+                    TemporalSmoothingPenalty(),
+                ),
+                weights=(0.4, 0.4, 0.2, 0.01),
+            )
             criterion = LPIPSWith(base_loss, weight=0.2)
         elif self.args.loss == "l1dinov2":
             criterion = DINOv2CosineWith(ClampLoss(torch.nn.L1Loss()), weight=0.1)
@@ -474,21 +495,25 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "inpaint",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "inpaint", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, choices=["dct", "l1lpips", "l1dinov2", "l1dctlpips",
-                                                     "temporal_l1lpips", "temporal_l1dctlpips"],
-                        help="loss")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
+    parser.add_argument(
+        "--loss",
+        type=str,
+        choices=["dct", "l1lpips", "l1dinov2", "l1dctlpips", "temporal_l1lpips", "temporal_l1dctlpips"],
+        help="loss",
+    )
     parser.add_argument("--discriminator", type=str, help="discriminator")
-    parser.add_argument("--generator-warmup-iteration", type=int, default=500,
-                        help=("warm-up iterations for the discriminator loss affecting the generator."))
-    parser.add_argument("--discriminator-weight", type=float, default=0.2,
-                        help="discriminator loss weight")
+    parser.add_argument(
+        "--generator-warmup-iteration",
+        type=int,
+        default=500,
+        help=("warm-up iterations for the discriminator loss affecting the generator."),
+    )
+    parser.add_argument("--discriminator-weight", type=float, default=0.2, help="discriminator loss weight")
     parser.add_argument("--video", action="store_true", help="Use video dataset")
     parser.add_argument("--save-eval-step", type=int, default=10)
     parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")

@@ -1,30 +1,31 @@
-import os
 import argparse
 import gc
-import torch
-import torch.nn.functional as F
-from os import path
+import hashlib
+import os
 import random
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
-import hashlib
+from os import path
+
+import torch
+import torch.nn.functional as F
 from torchvision import transforms as T
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode
-)
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
+
 import nunif.utils.video as VU
-from nunif.device import create_device
-from iw3.utils import get_mapper
-from iw3.stereo_model_factory import create_stereo_model
-from iw3.dilation import mask_closing
 from iw3.backward_warp import nonwarp_mask as backward_nonwarp_mask
+from iw3.dilation import mask_closing
 from iw3.forward_warp import nonwarp_mask as forward_nonwarp_mask
+from iw3.stereo_model_factory import create_stereo_model
+from iw3.utils import get_mapper
+from nunif.device import create_device
+
 from .create_training_data import (
-    gen_divergence,
     gen_convergence,
-    gen_mapper,
+    gen_divergence,
     gen_edge_dilation,
+    gen_mapper,
 )
 
 
@@ -35,7 +36,7 @@ def md5(s, nbytes=8):
 
 def crop_resize(frames, min_size):
     if random.choice([True, False]):
-        crop_size = int(min(frames[0][0].shape[-2:]) * (1 / 2 ** 0.5))
+        crop_size = int(min(frames[0][0].shape[-2:]) * (1 / 2**0.5))
         angle = random.uniform(-45, 45)
         new_frames = []
         for frame in frames:
@@ -76,7 +77,9 @@ def gen_data(frames, depth_model, mask_mlbw, args):
         depth_aa = random.choice([False, False, False, True])
         depths = []
         for c in frames.split(args.batch_size, dim=0):
-            depths.append(depth_model.infer(c, edge_dilation=edge_dilation, depth_aa=depth_aa, tta=False, enable_amp=True))
+            depths.append(
+                depth_model.infer(c, edge_dilation=edge_dilation, depth_aa=depth_aa, tta=False, enable_amp=True)
+            )
         depths = torch.cat(depths, dim=0)
         depths = torch.stack(depth_model.minmax_normalize(depths))
 
@@ -87,7 +90,8 @@ def gen_data(frames, depth_model, mask_mlbw, args):
         for c, depth in zip(frames.split(args.batch_size, dim=0), depths.split(args.batch_size, dim=0)):
             _, mask = backward_nonwarp_mask(
                 mask_mlbw,
-                c, depth,
+                c,
+                depth,
                 divergence=divergence,
                 convergence=convergence,
                 mapper=mapper,
@@ -99,7 +103,8 @@ def gen_data(frames, depth_model, mask_mlbw, args):
             depth_flip = get_mapper(mapper)(depth_flip)
 
             _, mask_flip = forward_nonwarp_mask(
-                c_flip, depth_flip,
+                c_flip,
+                depth_flip,
                 divergence=divergence,
                 convergence=convergence,
                 view=forward_base_view,
@@ -122,7 +127,7 @@ def random_crop(size, *images):
     i, j, h, w = T.RandomCrop.get_params(images[0][0], (size, size))
     results = []
     for im in images:
-        results.append(im[:, :, i:i + h, j:j + w])
+        results.append(im[:, :, i : i + h, j : j + w])
 
     return tuple(results)
 
@@ -217,19 +222,18 @@ def main(args):
             frames.clear()
             skip_counter = args.skip_interval
 
-        VU.hook_frame(video_file, frame_callback, config_callback=config_callback,
-                      hwaccel=args.hwaccel, device=device)
+        VU.hook_frame(video_file, frame_callback, config_callback=config_callback, hwaccel=args.hwaccel, device=device)
 
 
 def register(subparsers, default_parser):
     max_workers = cpu_count() // 2 or 1
     parser = subparsers.add_parser(
-        "video_inpaint",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "video_inpaint", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
-    parser.add_argument("--divergence-level", type=int, default=1, choices=[1, 2, 3],
-                        help="divergence level. 1=0-5, 2=3-8, 3=6-11")
+    parser.add_argument(
+        "--divergence-level", type=int, default=1, choices=[1, 2, 3], help="divergence level. 1=0-5, 2=3-8, 3=6-11"
+    )
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
     parser.add_argument("--size", type=int, default=512, help="crop size")
@@ -241,11 +245,12 @@ def register(subparsers, default_parser):
     parser.add_argument("--skip-interval", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--skip-first", type=int, default=0)
-    parser.add_argument("--max-workers", type=int, default=max_workers,
-                        help="Number of worker threads. Set to 1 to disable.")
-    parser.add_argument("--hwaccel", type=str, default=None,
-                        choices=VU.HW_DEVICES,
-                        help="hardware accelerator for the video decoder")
+    parser.add_argument(
+        "--max-workers", type=int, default=max_workers, help="Number of worker threads. Set to 1 to disable."
+    )
+    parser.add_argument(
+        "--hwaccel", type=str, default=None, choices=VU.HW_DEVICES, help="hardware accelerator for the video decoder"
+    )
 
     parser.set_defaults(handler=main)
 

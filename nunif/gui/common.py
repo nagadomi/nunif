@@ -1,13 +1,13 @@
-import wx
-from wx.lib.buttons import GenBitmapButton
-from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
-from wx.lib.masked.ipaddrctrl import IpAddrCtrl as _IpAddrCtrl
-import wx.lib.agw.persist as persist
 import os
-from os import path
-import sys
 import subprocess
+import sys
+from os import path
 
+import wx
+import wx.lib.agw.persist as persist
+from wx.lib.buttons import GenBitmapButton
+from wx.lib.masked.ipaddrctrl import IpAddrCtrl as _IpAddrCtrl
+from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
 
 myEVT_TQDM = wx.NewEventType()
 EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
@@ -24,7 +24,7 @@ class TQDMEvent(wx.PyCommandEvent):
         return (self.type, self.value, self.desc)
 
 
-class TQDMGUI():
+class TQDMGUI:
     def __init__(self, parent, **kwargs):
         self.parent = parent
         total = kwargs["total"]
@@ -71,6 +71,7 @@ class EditableComboBox(wx.ComboBox):
     Serializable Editable ComboBox
     wx.ComboBox can not serialize Value
     """
+
     def __init__(self, parent, **kwargs):
         if "style" in kwargs:
             style = kwargs.get("style", 0) | wx.CB_DROPDOWN
@@ -172,15 +173,16 @@ def set_icon_ex(main_frame, icon_path, app_id):
         # Set AppUserModelID to show correct icon on Taskbar
         try:
             from ctypes import windll
-            from win32com.propsys import propsys, pscon
+
             import pythoncom
+            from win32com.propsys import propsys, pscon
+
             windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
             hwnd = main_frame.GetHandle()
             propStore = propsys.SHGetPropertyStoreForWindow(hwnd, propsys.IID_IPropertyStore)
-            propStore.SetValue(pscon.PKEY_AppUserModel_ID,
-                               propsys.PROPVARIANTType(app_id, pythoncom.VT_ILLEGAL))
+            propStore.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(app_id, pythoncom.VT_ILLEGAL))
             propStore.Commit()
-        except: # noqa
+        except:  # noqa
             pass
 
 
@@ -219,10 +221,7 @@ def load_icon(name):
 
 
 def apply_dark_mode(
-        window,
-        fg_color=wx.Colour(*(0xf0,) * 3),
-        bg_color=wx.Colour(*(0x39,) * 3),
-        btn_color=wx.Colour(*(0x4c,) * 3)
+    window, fg_color=wx.Colour(*(0xF0,) * 3), bg_color=wx.Colour(*(0x39,) * 3), btn_color=wx.Colour(*(0x4C,) * 3)
 ):
     if isinstance(window, wx.StaticLine):
         window.SetBackgroundColour(fg_color)
@@ -248,21 +247,23 @@ def is_dark_mode():
     else:
         try:
             import winreg
+
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
                 value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
                 return value == 0
-        except: # noqa
+        except:  # noqa
             return False
 
 
 def init_win32_dpi():
     if sys.platform == "win32":
         import ctypes
+
         try:
             # Fix mouse position when Display Scaling is not 100%
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
-        except: # noqa
+        except:  # noqa
             pass
 
 

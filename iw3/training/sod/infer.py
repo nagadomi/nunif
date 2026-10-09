@@ -1,14 +1,17 @@
 import argparse
 import os
-from tqdm import tqdm
+
 import torch
-from nunif.device import create_device, autocast
 import torchvision.transforms.functional as TF
+from tqdm import tqdm
+
+from nunif.device import autocast, create_device
 from nunif.models import load_model
-from ... import models  # noqa
-from ...depth_model_factory import create_depth_model
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+
+from ... import models  # noqa
+from ...depth_model_factory import create_depth_model
 
 
 def main():

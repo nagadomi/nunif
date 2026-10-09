@@ -1,9 +1,11 @@
-from .server import server_main as backend_main, create_parser, set_state_args
+from .server import create_parser, set_state_args
+from .server import server_main as backend_main
 
 
 def main():
     try:
         from .download_assets import main as download_main
+
         download_main()
     except ImportError:
         pass

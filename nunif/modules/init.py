@@ -1,6 +1,6 @@
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 
 def _basic_module_init(m):
@@ -32,8 +32,8 @@ def icnr_init(m, scale_factor):
     with torch.no_grad():
         assert isinstance(m, nn.Conv2d)
         OUT, IN, H, W = m.weight.data.shape
-        assert OUT % (scale_factor ** 2) == 0
-        weight = torch.zeros((OUT // (scale_factor ** 2), IN, H, W))
+        assert OUT % (scale_factor**2) == 0
+        weight = torch.zeros((OUT // (scale_factor**2), IN, H, W))
         nn.init.kaiming_normal_(weight)
         if scale_factor > 1:
             weight = weight.permute(1, 0, 2, 3)

@@ -1,9 +1,10 @@
 import shutil
 from os import path
-from nunif.utils.downloader import ArchiveDownloader
-from nunif.logger import logger
-from .model_dir import MODEL_DIR
 
+from nunif.logger import logger
+from nunif.utils.downloader import ArchiveDownloader
+
+from .model_dir import MODEL_DIR
 
 VERSION = "20240212"
 VERSION_FILE = path.join(MODEL_DIR, VERSION)

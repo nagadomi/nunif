@@ -3,8 +3,8 @@ import torch.nn as nn
 
 
 class WeightedLoss(nn.Module):
-    """ Wrapper Module for `loss(x, y) * w1 + loss2(x, y) * w2, ...`
-    """
+    """Wrapper Module for `loss(x, y) * w1 + loss2(x, y) * w2, ...`"""
+
     def __init__(self, modules, weights, preprocess=None, preprocess_pair=None):
         super().__init__()
         assert len(modules) == len(weights)

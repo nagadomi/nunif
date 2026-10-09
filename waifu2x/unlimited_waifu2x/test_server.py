@@ -1,17 +1,21 @@
 # python3 -m waifu2x.unlimited_waifu2x.test_server
 # View at http://localhost:8812/
 # Do not use this server in product environments.
-import bottle
 import argparse
 from os import path
 
+import bottle
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("--cors", action="store_true",
-                    help=("Add CORS header for testing wasm multi-threading."
-                          " google-chrome does not work for security reasons (localhost CORS), use firefox"))
-parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
-                    help="0.0.0.0 for global, 127.0.0.1 for local")
+parser.add_argument(
+    "--cors",
+    action="store_true",
+    help=(
+        "Add CORS header for testing wasm multi-threading."
+        " google-chrome does not work for security reasons (localhost CORS), use firefox"
+    ),
+)
+parser.add_argument("--bind-addr", type=str, default="127.0.0.1", help="0.0.0.0 for global, 127.0.0.1 for local")
 args = parser.parse_args()
 ROOT_DIR = path.abspath(path.join(path.dirname(__file__), "public_html"))
 

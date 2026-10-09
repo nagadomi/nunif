@@ -1,21 +1,30 @@
+from os import path
+
 import wx
 from wx.lib.buttons import GenBitmapButton
+
 from .common import (
-    start_file, resolve_default_dir,
     load_icon,
+    resolve_default_dir,
+    start_file,
 )
-from os import path
 
 
 def empty_translate_function(s):
     return s
 
 
-class IOPathPanel():
-    def __init__(self, parent,
-                 default_output_dir_name, resolve_output_path,
-                 input_wildcard="*", name_prefix="", translate_function=empty_translate_function,
-                 **kwargs):
+class IOPathPanel:
+    def __init__(
+        self,
+        parent,
+        default_output_dir_name,
+        resolve_output_path,
+        input_wildcard="*",
+        name_prefix="",
+        translate_function=empty_translate_function,
+        **kwargs,
+    ):
         T = translate_function
         self.translate_function = translate_function
         self.default_output_dir_name = default_output_dir_name
@@ -76,9 +85,13 @@ class IOPathPanel():
     def on_click_btn_input_file(self, event):
         T = self.translate_function
         default_dir = resolve_default_dir(self.txt_input.GetValue())
-        with wx.FileDialog(self.pnl_file, T("Choose a file"),
-                           wildcard=self.input_wildcard, defaultDir=default_dir,
-                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dlg_file:
+        with wx.FileDialog(
+            self.pnl_file,
+            T("Choose a file"),
+            wildcard=self.input_wildcard,
+            defaultDir=default_dir,
+            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+        ) as dlg_file:
             if dlg_file.ShowModal() == wx.ID_CANCEL:
                 return
             selected_path = dlg_file.GetPath()
@@ -89,9 +102,12 @@ class IOPathPanel():
     def on_click_btn_input_dir(self, event):
         T = self.translate_function
         default_dir = resolve_default_dir(self.txt_input.GetValue())
-        with wx.DirDialog(self.pnl_file, T("Choose a directory"),
-                          defaultPath=default_dir,
-                          style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST) as dlg_dir:
+        with wx.DirDialog(
+            self.pnl_file,
+            T("Choose a directory"),
+            defaultPath=default_dir,
+            style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST,
+        ) as dlg_dir:
             if dlg_dir.ShowModal() == wx.ID_CANCEL:
                 return
             selected_path = dlg_dir.GetPath()
@@ -117,9 +133,9 @@ class IOPathPanel():
         default_dir = resolve_default_dir(self.txt_output.GetValue())
         if not path.exists(default_dir):
             default_dir = path.dirname(default_dir)
-        with wx.DirDialog(self.pnl_file, T("Choose a directory"),
-                          defaultPath=default_dir,
-                          style=wx.DD_DEFAULT_STYLE) as dlg_dir:
+        with wx.DirDialog(
+            self.pnl_file, T("Choose a directory"), defaultPath=default_dir, style=wx.DD_DEFAULT_STYLE
+        ) as dlg_dir:
             if dlg_dir.ShowModal() == wx.ID_CANCEL:
                 return
             self.txt_output.SetValue(dlg_dir.GetPath())

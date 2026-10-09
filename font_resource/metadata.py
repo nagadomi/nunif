@@ -1,9 +1,9 @@
-from os import path
-import threading
 import random
+import threading
+from os import path
+
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageFont
-from .font_map import FONT_MAP
 
 # TODO: make this list
 # Use only Hiragana, Katakana, Alphabet and Kanji (No symbol characters due to rendering problem)
@@ -27,21 +27,21 @@ TODO: This list is temporary to be updated.
 2. Included in LVF_FONT_NAMES
 """
 DEFAULT_FONT_NAMES = (
-    'Noto Sans JP',
-    'Noto Sans JP Light',
-    'Noto Sans JP Bold',
-    'Noto Serif JP',
-    'Noto Serif JP Light',
-    'Noto Serif JP Bold',
-    'Shippori Antique B1 Regular',
-    'Shippori Mincho Regular',
-    'Shippori Mincho B1 Bold',
-    'Kiwi Maru Regular',
-    'Kiwi Maru Light',
-    'Kosugi Maru Regular',
-    'Kosugi Regular',
-    'M PLUS 1p Regular',
-    'M PLUS 1p Bold',
+    "Noto Sans JP",
+    "Noto Sans JP Light",
+    "Noto Sans JP Bold",
+    "Noto Serif JP",
+    "Noto Serif JP Light",
+    "Noto Serif JP Bold",
+    "Shippori Antique B1 Regular",
+    "Shippori Mincho Regular",
+    "Shippori Mincho B1 Bold",
+    "Kiwi Maru Regular",
+    "Kiwi Maru Light",
+    "Kosugi Maru Regular",
+    "Kosugi Regular",
+    "M PLUS 1p Regular",
+    "M PLUS 1p Bold",
     "Klee One Regular",
     "Klee One SemiBold",
 )
@@ -56,7 +56,6 @@ INVISIBLE_CODES = {
     # ASCII Control character
     *[c for c in range(0, 0x20 + 1)],
     0x7F,  # DEL
-
     # Unicode
     0x0009,  # CHARACTER TABULATION
     0x0020,  # SPACE
@@ -112,14 +111,18 @@ INVISIBLE_CODES = {
     0x1D178,  # MUSICAL SYMBOL END SLUR
     0x1D179,  # MUSICAL SYMBOL BEGIN PHRASE
     0x1D17A,  # MUSICAL SYMBOL END PHRASE
-
     # Bidirectional Class
-    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
-
+    0x202A,
+    0x202B,
+    0x202C,
+    0x202D,
+    0x202E,
     0x2028,  # LINE SEPARATOR
     0x2029,  # PARAGRAPH SEPARATOR
     # BOM
-    0xfff9, 0xfffa, 0xfffb,
+    0xFFF9,
+    0xFFFA,
+    0xFFFB,
 }
 
 # NOTE: https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids
@@ -140,7 +143,7 @@ FONT_NAME_ID = {
 VALIDATE_FONT_SIZE = 16
 
 
-class FontInfo():
+class FontInfo:
     def __init__(self, ttfont, file_path, name, cmap):
         self.file_path = file_path
         self.ttfont = ttfont
@@ -155,8 +158,7 @@ class FontInfo():
         cmap = set()
         for code in ttfont.getBestCmap():
             cmap.add(code)
-        font = FontInfo(ttfont=ttfont, name=name,
-                        cmap=cmap, file_path=file_path)
+        font = FontInfo(ttfont=ttfont, name=name, cmap=cmap, file_path=file_path)
         if validate_cmap:
             font.validate_cmap(font_size=validate_font_size)
         return font
@@ -173,8 +175,7 @@ class FontInfo():
         It causes mislabeling the generated training data.
         This method tests each code for rendering and removes the character codes that cannot be rendered.
         """
-        font = ImageFont.truetype(self.file_path, size=font_size, index=0,
-                                  layout_engine=ImageFont.Layout.RAQM)
+        font = ImageFont.truetype(self.file_path, size=font_size, index=0, layout_engine=ImageFont.Layout.RAQM)
 
         def render_test(code):
             font_image = Image.Image()._new(font.getmask(chr(code), mode="L"))
@@ -185,8 +186,8 @@ class FontInfo():
                 return False
             font_image.close()
             return True
-        invalid_codes = set(code for code in self.cmap
-                            if code not in INVISIBLE_CODES and not render_test(code))
+
+        invalid_codes = set(code for code in self.cmap if code not in INVISIBLE_CODES and not render_test(code))
         # print([(hex(c), chr(c)) for c in invalid_codes])
         self.cmap -= invalid_codes
         return invalid_codes
@@ -198,7 +199,7 @@ class FontInfo():
         return f"FontInfo(name={self.name}, file_path={self.file_path})"
 
 
-class ImageFonts():
+class ImageFonts:
     def __init__(self):
         self.font_map = {True: {True: {}, False: {}}, False: {True: {}, False: {}}}
 
@@ -210,13 +211,12 @@ class ImageFonts():
             "vertical": vertical,
             "length": length,
             "bold": bold,
-            "prob": prob
+            "prob": prob,
         }
 
     def has_code(self, code, vertical, bold=None):
         if bold is None:
-            return (code in self.font_map[vertical][False] or
-                    code in self.font_map[vertical][True])
+            return code in self.font_map[vertical][False] or code in self.font_map[vertical][True]
         else:
             return code in self.font_map[vertical][bold]
 

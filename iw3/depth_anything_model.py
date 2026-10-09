@@ -1,13 +1,15 @@
 import os
 from os import path
+
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
-from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
-from .dilation import dilate_edge, edge_dilation_is_enabled
-from .base_depth_model import BaseDepthModel, HUB_MODEL_DIR
-from .models import DepthAA
 
+from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
+
+from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from .dilation import dilate_edge, edge_dilation_is_enabled
+from .models import DepthAA
 
 NAME_MAP = {
     "Any_S": "vits",
@@ -16,18 +18,15 @@ NAME_MAP = {
     "Any_V2_S": "v2_vits",
     "Any_V2_B": "v2_vitb",
     "Any_V2_L": "v2_vitl",
-
     "Any_V2_N_S": "hypersim_s",
     "Any_V2_N_B": "hypersim_b",
     "Any_V2_N_L": "hypersim_l",
     "Any_V2_K_S": "vkitti_s",
     "Any_V2_K_B": "vkitti_b",
     "Any_V2_K_L": "vkitti_l",
-
     # for compatibility
     "Any_V2_N": "hypersim_l",
     "Any_V2_K": "vkitti_l",
-
     # Distill Any Depth
     "Distill_Any_S": "distill_any_depth_s",
     "Distill_Any_B": "distill_any_depth_b",
@@ -40,19 +39,15 @@ MODEL_FILES = {
     "Any_V2_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vits.pth"),
     "Any_V2_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitb.pth"),
     "Any_V2_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_vitl.pth"),
-
     "Any_V2_N_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vits.pth"),
     "Any_V2_N_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitb.pth"),
     "Any_V2_N_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitl.pth"),
-
     "Any_V2_K_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vits.pth"),
     "Any_V2_K_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitb.pth"),
     "Any_V2_K_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
-
     # for compatibility
     "Any_V2_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitl.pth"),
     "Any_V2_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
-
     # Distill Any Depth
     "Distill_Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vits.safetensors"),
     "Distill_Any_B": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitb.safetensors"),
@@ -120,10 +115,19 @@ def _forward(model, x, enable_amp):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
-                output_device="cpu", device=None, edge_dilation=2, depth_aa=None,
-                limit_resolution=False,
-                **kwargs):
+def batch_infer(
+    model,
+    im,
+    flip_aug=True,
+    low_vram=False,
+    enable_amp=False,
+    output_device="cpu",
+    device=None,
+    edge_dilation=2,
+    depth_aa=None,
+    limit_resolution=False,
+    **kwargs,
+):
     device = device if device is not None else model.device
     batch = False
     if torch.is_tensor(im):
@@ -197,43 +201,66 @@ class DepthAnythingModel(BaseDepthModel):
         if encoder.startswith("hypersim") or encoder.startswith("vkitti"):
             # Depth-Anything V2 metric depth model
             if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                       "DepthAnythingMetricDepthV2", model_type=encoder,
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "nagadomi/Depth-Anything_iw3:main",
+                    "DepthAnythingMetricDepthV2",
+                    model_type=encoder,
+                    verbose=False,
+                    trust_repo=True,
+                )
             else:
                 assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Depth-Anything_iw3",
-                                       "DepthAnythingMetricDepthV2", model_type=encoder, source="local",
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "../Depth-Anything_iw3",
+                    "DepthAnythingMetricDepthV2",
+                    model_type=encoder,
+                    source="local",
+                    verbose=False,
+                    trust_repo=True,
+                )
         elif encoder.startswith("distill_any_depth"):
             # Distill Any Depth
             encoder = {"l": "v2_vitl", "b": "v2_vitb", "s": "v2_vits"}[encoder[-1]]
             if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                       "DistillAnyDepth", encoder=encoder,
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "nagadomi/Depth-Anything_iw3:main",
+                    "DistillAnyDepth",
+                    encoder=encoder,
+                    verbose=False,
+                    trust_repo=True,
+                )
             else:
                 assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Depth-Anything_iw3",
-                                       "DistillAnyDepth", encoder=encoder, source="local",
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "../Depth-Anything_iw3",
+                    "DistillAnyDepth",
+                    encoder=encoder,
+                    source="local",
+                    verbose=False,
+                    trust_repo=True,
+                )
         else:
             # DepthAnything V1 or V2
             if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                       "DepthAnything", encoder=encoder,
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "nagadomi/Depth-Anything_iw3:main", "DepthAnything", encoder=encoder, verbose=False, trust_repo=True
+                )
             else:
                 assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Depth-Anything_iw3",
-                                       "DepthAnything", encoder=encoder, source="local",
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "../Depth-Anything_iw3",
+                    "DepthAnything",
+                    encoder=encoder,
+                    source="local",
+                    verbose=False,
+                    trust_repo=True,
+                )
 
         model.metric_depth = getattr(model, "metric_depth", False)
         model.prep_lower_bound = resolution or 392
         if model.prep_lower_bound % 14 != 0:
             # From GUI, 512 -> 518
-            model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
+            model.prep_lower_bound += 14 - model.prep_lower_bound % 14
         model.device = device
 
         return model
@@ -242,14 +269,17 @@ class DepthAnythingModel(BaseDepthModel):
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).to(self.device)
         return batch_infer(
-            self.model, x, flip_aug=tta, low_vram=low_vram,
+            self.model,
+            x,
+            flip_aug=tta,
+            low_vram=low_vram,
             enable_amp=enable_amp,
             output_device=x.device,
             device=x.device,
             edge_dilation=edge_dilation,
             depth_aa=self.depth_aa if depth_aa else None,
             resize_depth=False,
-            limit_resolution=self.limit_resolution
+            limit_resolution=self.limit_resolution,
         )
 
     @classmethod
@@ -309,15 +339,14 @@ def _bench():
 
 
 def _test():
-    from PIL import Image
     import cv2
     import numpy as np
+    from PIL import Image
 
     model = DepthAnythingModel("Any_S")
     model.load()
     im = Image.open("waifu2x/docs/images/miku_128.png").convert("RGB")
-    out = model.infer_raw(im, flip_aug=False, int16=True,
-                          enable_amp=True, output_device="cpu", device="cuda")
+    out = model.infer_raw(im, flip_aug=False, int16=True, enable_amp=True, output_device="cpu", device="cuda")
     out = out.squeeze(0).numpy().astype(np.uint16)
     cv2.imwrite("./tmp/depth_anything_out.png", out)
 

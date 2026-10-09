@@ -1,7 +1,8 @@
-from PIL import Image
 import argparse
 import os
 from os import path
+
+from PIL import Image
 
 
 def show(qtables):

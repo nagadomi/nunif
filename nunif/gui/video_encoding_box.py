@@ -1,6 +1,7 @@
-import wx
-from .common import EditableComboBox
 import av
+import wx
+
+from .common import EditableComboBox
 
 LEVEL_LIBX264 = ["3.0", "3.1", "3.2", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2", "6.0", "6.2"]
 LEVEL_LIBX265 = ["3.0", "3.1", "4.0", "4.1", "5.0", "5.1", "5.2", "6.0", "6.1", "6.2", "8.5"]
@@ -11,17 +12,24 @@ TUNE_LIBX265 = ["grain", "animation", "psnr", "fastdecode", "zerolatency"]
 TUNE_NVENC = ["hq", "ll", "ull"]
 TUNE_ALL = [""] + list(dict.fromkeys(TUNE_LIBX264 + TUNE_LIBX265 + TUNE_NVENC))
 
-PRESET_LIBX264 = ["ultrafast", "superfast", "veryfast", "faster", "fast",
-                  "medium", "slow", "slower", "veryslow", "placebo"]
-PRESET_NVENC = ["fast", "medium", "slow",
-                "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
+PRESET_LIBX264 = [
+    "ultrafast",
+    "superfast",
+    "veryfast",
+    "faster",
+    "fast",
+    "medium",
+    "slow",
+    "slower",
+    "veryslow",
+    "placebo",
+]
+PRESET_NVENC = ["fast", "medium", "slow", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
 PRESET_QSV = ["veryfast", "fast", "medium", "slow", "veryslow"]
 PRESET_ALL = list(dict.fromkeys(PRESET_LIBX264 + PRESET_NVENC))
 PRESET_DEFAULT = "medium"
 
-CODEC_ALL = ["libx264", "libopenh264", "libx265", "utvideo", "ffv1",
-             "h264_nvenc", "hevc_nvenc",
-             "h264_qsv", "hevc_qsv"]
+CODEC_ALL = ["libx264", "libopenh264", "libx265", "utvideo", "ffv1", "h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv"]
 
 PIX_FMT_ALL = ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le", "gbrp16le"]
 CODEC_PIX_FMT = {
@@ -49,9 +57,16 @@ def codecs_available(codecs):
     return [codec for codec in codecs if codec in av.codec.codecs_available]
 
 
-class VideoEncodingBox():
-    def __init__(self, parent, name_prefix="", translate_function=empty_translate_function,
-                 has_nvenc=False, has_qsv=False, **kwargs):
+class VideoEncodingBox:
+    def __init__(
+        self,
+        parent,
+        name_prefix="",
+        translate_function=empty_translate_function,
+        has_nvenc=False,
+        has_qsv=False,
+        **kwargs,
+    ):
         T = translate_function
         prefix = name_prefix + "_" if name_prefix else ""
         self.has_nvenc = has_nvenc
@@ -60,47 +75,48 @@ class VideoEncodingBox():
         self.grp_video = wx.StaticBox(parent, label=T("Video Encoding"), **kwargs)
 
         self.lbl_video_format = wx.StaticText(self.grp_video, label=T("Video Format"))
-        self.cbo_video_format = wx.ComboBox(self.grp_video, choices=["mp4", "mkv", "avi"],
-                                            name=f"{prefix}cbo_video_format")
+        self.cbo_video_format = wx.ComboBox(
+            self.grp_video, choices=["mp4", "mkv", "avi"], name=f"{prefix}cbo_video_format"
+        )
         self.cbo_video_format.SetEditable(False)
         self.cbo_video_format.SetSelection(0)
 
         self.lbl_video_codec = wx.StaticText(self.grp_video, label=T("Video Codec"))
-        self.cbo_video_codec = EditableComboBox(
-            self.grp_video, choices=CODEC_ALL,
-            name=f"{prefix}cbo_video_codec")
+        self.cbo_video_codec = EditableComboBox(self.grp_video, choices=CODEC_ALL, name=f"{prefix}cbo_video_codec")
         self.cbo_video_codec.SetSelection(0)
 
         self.lbl_fps = wx.StaticText(self.grp_video, label=T("Max FPS"))
         self.cbo_fps = EditableComboBox(
-            self.grp_video, choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
-            name=f"{prefix}cbo_fps")
+            self.grp_video,
+            choices=["1000", "60", "59.94", "30", "29.97", "24", "23.976", "15", "1", "0.25"],
+            name=f"{prefix}cbo_fps",
+        )
         self.cbo_fps.SetSelection(3)
 
         self.lbl_pix_fmt = wx.StaticText(self.grp_video, label=T("Pixel Format"))
-        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=PIX_FMT_ALL,
-                                       name=f"{prefix}cbo_pix_fmt")
+        self.cbo_pix_fmt = wx.ComboBox(self.grp_video, choices=PIX_FMT_ALL, name=f"{prefix}cbo_pix_fmt")
         self.cbo_pix_fmt.SetEditable(False)
         self.cbo_pix_fmt.SetSelection(0)
 
         self.lbl_colorspace = wx.StaticText(self.grp_video, label=T("Colorspace"))
         self.cbo_colorspace = wx.ComboBox(
             self.grp_video,
-            choices=["auto", "unspecified",
-                     "bt709", "bt709-pc", "bt709-tv",
-                     "bt601", "bt601-pc", "bt601-tv"],
-            name=f"{prefix}cbo_colorspace")
+            choices=["auto", "unspecified", "bt709", "bt709-pc", "bt709-tv", "bt601", "bt601-pc", "bt601-tv"],
+            name=f"{prefix}cbo_colorspace",
+        )
         self.cbo_colorspace.SetEditable(False)
         self.cbo_colorspace.SetSelection(0)
 
         self.lbl_crf = wx.StaticText(self.grp_video, label=T("CRF"))
-        self.cbo_crf = EditableComboBox(self.grp_video, choices=[str(n) for n in range(16, 28)],
-                                        name=f"{prefix}cbo_crf")
+        self.cbo_crf = EditableComboBox(
+            self.grp_video, choices=[str(n) for n in range(16, 28)], name=f"{prefix}cbo_crf"
+        )
         self.cbo_crf.SetSelection(4)
 
         self.lbl_bitrate = wx.StaticText(self.grp_video, label=T("Bitrate"))
-        self.cbo_bitrate = EditableComboBox(self.grp_video, choices=["160M", "50M", "16M", "12M", "8M", "4M"],
-                                            name=f"{prefix}cbo_bitrate")
+        self.cbo_bitrate = EditableComboBox(
+            self.grp_video, choices=["160M", "50M", "16M", "12M", "8M", "4M"], name=f"{prefix}cbo_bitrate"
+        )
         self.cbo_bitrate.SetSelection(4)
 
         self.lbl_profile_level = wx.StaticText(self.grp_video, label=T("Level"))
@@ -108,22 +124,21 @@ class VideoEncodingBox():
         self.cbo_profile_level.SetSelection(0)
 
         self.lbl_preset = wx.StaticText(self.grp_video, label=T("Preset"))
-        self.cbo_preset = wx.ComboBox(
-            self.grp_video, choices=PRESET_ALL,
-            name=f"{prefix}cbo_preset")
+        self.cbo_preset = wx.ComboBox(self.grp_video, choices=PRESET_ALL, name=f"{prefix}cbo_preset")
         self.cbo_preset.SetEditable(False)
         self.cbo_preset.SetSelection(PRESET_ALL.index(PRESET_DEFAULT))
 
         self.lbl_tune = wx.StaticText(self.grp_video, label=T("Tune"))
-        self.cbo_tune = wx.ComboBox(
-            self.grp_video, choices=TUNE_ALL, name=f"{prefix}cbo_tune")
+        self.cbo_tune = wx.ComboBox(self.grp_video, choices=TUNE_ALL, name=f"{prefix}cbo_tune")
         self.cbo_tune.SetEditable(False)
         self.cbo_tune.SetSelection(0)
-        self.chk_tune_fastdecode = wx.CheckBox(self.grp_video, label=T("fastdecode"),
-                                               name=f"{prefix}chk_tune_fastdecode")
+        self.chk_tune_fastdecode = wx.CheckBox(
+            self.grp_video, label=T("fastdecode"), name=f"{prefix}chk_tune_fastdecode"
+        )
         self.chk_tune_fastdecode.SetValue(False)
-        self.chk_tune_zerolatency = wx.CheckBox(self.grp_video, label=T("zerolatency"),
-                                                name=f"{prefix}chk_tune_zerolatency")
+        self.chk_tune_zerolatency = wx.CheckBox(
+            self.grp_video, label=T("zerolatency"), name=f"{prefix}chk_tune_zerolatency"
+        )
         self.chk_tune_zerolatency.SetValue(False)
 
         layout = wx.GridBagSizer(vgap=4, hgap=4)

@@ -1,21 +1,24 @@
-from os import path
 import argparse
 import sys
+from os import path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.ops import sigmoid_focal_loss
+
 from nunif.models import create_model
-from nunif.training.env import I2IEnv
-from nunif.modules.psnr import PSNR
-from nunif.training.trainer import Trainer
 from nunif.modules.auxiliary_loss import AuxiliaryLoss
 from nunif.modules.clamp_loss import ClampLoss, clamp_loss
-from nunif.modules.dct_loss import window_dct_loss, dct_loss
+from nunif.modules.dct_loss import dct_loss, window_dct_loss
 from nunif.modules.gaussian_filter import GaussianFilter2d
-from .dataset import SBSDataset
-from ... import models # noqa
+from nunif.modules.psnr import PSNR
+from nunif.training.env import I2IEnv
+from nunif.training.trainer import Trainer
+
+from ... import models  # noqa
 from ...dilation import mask_closing
-from torchvision.ops import sigmoid_focal_loss
+from .dataset import SBSDataset
 
 
 class DeltaPenalty(nn.Module):
@@ -31,7 +34,7 @@ class DeltaPenalty(nn.Module):
 def delta_eval(grid):
     non_inc_count = int((grid[:, :, :, :-1] > grid[:, :, :, 1:]).sum())
     all_count = grid[:, :, :, 1:].numel()
-    print(f"Non monotonically increasing = {non_inc_count} / {all_count}, ({non_inc_count/all_count})")
+    print(f"Non monotonically increasing = {non_inc_count} / {all_count}, ({non_inc_count / all_count})")
 
 
 def l1_none(input, target):
@@ -56,13 +59,9 @@ class MLBWLoss(nn.Module):
             mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
             z = z * mask
             y = y * mask
-            loss = (window_dct_loss(z, y, window_size=24) +
-                    window_dct_loss(z, y, window_size=4) +
-                    dct_loss(z, y)) * 0.3
+            loss = (window_dct_loss(z, y, window_size=24) + window_dct_loss(z, y, window_size=4) + dct_loss(z, y)) * 0.3
         else:
-            loss = (window_dct_loss(z, y, window_size=24) +
-                    window_dct_loss(z, y, window_size=4) +
-                    dct_loss(z, y)) * 0.3
+            loss = (window_dct_loss(z, y, window_size=24) + window_dct_loss(z, y, window_size=4) + dct_loss(z, y)) * 0.3
 
         return loss + delta_penalty
 
@@ -86,17 +85,19 @@ class CycleMLBWLoss(nn.Module):
             mask = 1.0 - torch.clamp(mask + self.blur(mask), 0, 1) * self.mask_weight
             z1 = z1 * mask
             y = y * mask
-            loss1 = (window_dct_loss(z1, y, window_size=24) +
-                     window_dct_loss(z1, y, window_size=4) +
-                     dct_loss(z1, y)) * 0.3
+            loss1 = (
+                window_dct_loss(z1, y, window_size=24) + window_dct_loss(z1, y, window_size=4) + dct_loss(z1, y)
+            ) * 0.3
         else:
-            loss1 = (window_dct_loss(z1, y, window_size=24) +
-                     window_dct_loss(z1, y, window_size=4) +
-                     dct_loss(z1, y)) * 0.3
+            loss1 = (
+                window_dct_loss(z1, y, window_size=24) + window_dct_loss(z1, y, window_size=4) + dct_loss(z1, y)
+            ) * 0.3
 
-        loss2 = (window_dct_loss(z2, src_rgb, window_size=24) +
-                 window_dct_loss(z2, src_rgb, window_size=4) +
-                 dct_loss(z2, src_rgb)) * 0.3
+        loss2 = (
+            window_dct_loss(z2, src_rgb, window_size=24)
+            + window_dct_loss(z2, src_rgb, window_size=4)
+            + dct_loss(z2, src_rgb)
+        ) * 0.3
 
         loss = loss1 * 0.5 + loss2 * 0.5
 
@@ -121,13 +122,13 @@ class MaskMLBWLoss(nn.Module):
             loss_mask = 1.0 - torch.clamp(mask_all + self.blur(mask_all), 0, 1) * self.mask_weight
             z = z * loss_mask
             y = y * loss_mask
-            warp_loss = (window_dct_loss(z, y, window_size=24) +
-                         window_dct_loss(z, y, window_size=4) +
-                         dct_loss(z, y)) * 0.3
+            warp_loss = (
+                window_dct_loss(z, y, window_size=24) + window_dct_loss(z, y, window_size=4) + dct_loss(z, y)
+            ) * 0.3
         else:
-            warp_loss = (window_dct_loss(z, y, window_size=24) +
-                         window_dct_loss(z, y, window_size=4) +
-                         dct_loss(z, y)) * 0.3
+            warp_loss = (
+                window_dct_loss(z, y, window_size=24) + window_dct_loss(z, y, window_size=4) + dct_loss(z, y)
+            ) * 0.3
 
         mask = (mask > 0.9).float()  # only hole mask
         mask = mask_closing(mask)
@@ -261,13 +262,17 @@ class SBSTrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         model_offset = self.model.i2i_offset
         if type == "train":
-            dataset = SBSDataset(path.join(self.args.data_dir, "train"),
-                                 size=self.args.size, model_offset=model_offset,
-                                 symmetric=self.args.symmetric, training=True,
-                                 weak_convergence=self.args.weak_convergence)
+            dataset = SBSDataset(
+                path.join(self.args.data_dir, "train"),
+                size=self.args.size,
+                model_offset=model_offset,
+                symmetric=self.args.symmetric,
+                training=True,
+                weak_convergence=self.args.weak_convergence,
+            )
             self.sampler = dataset.create_sampler(self.args.num_samples)
             loader = torch.utils.data.DataLoader(
                 dataset,
@@ -276,20 +281,26 @@ class SBSTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
-            dataset = SBSDataset(path.join(self.args.data_dir, "eval"),
-                                 size=self.args.size, model_offset=model_offset,
-                                 symmetric=self.args.symmetric, training=False,
-                                 weak_convergence=self.args.weak_convergence)
+            dataset = SBSDataset(
+                path.join(self.args.data_dir, "eval"),
+                size=self.args.size,
+                model_offset=model_offset,
+                symmetric=self.args.symmetric,
+                training=False,
+                weak_convergence=self.args.weak_convergence,
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
 
     def create_best_model_filename(self):
@@ -314,8 +325,8 @@ class SBSTrainer(Trainer):
             eval_criterion = MaskMLBEval().to(self.device)
         elif self.args.loss == "aux_l1":
             criterion = AuxiliaryLoss(
-                (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()),
-                (1.0, 0.5, 1.0)).to(self.device)
+                (ClampLoss(nn.L1Loss()), ClampLoss(nn.L1Loss()), DeltaPenalty()), (1.0, 0.5, 1.0)
+            ).to(self.device)
         return SBSEnv(self.model, criterion, self.sampler, eval_criterion=eval_criterion)
 
 
@@ -344,18 +355,20 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "sbs",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "sbs", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="sbs.mlbw_l2", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
-    parser.add_argument("--size", type=int, default=256, help="input size. other than 256, it only works with mlbw model")
-    parser.add_argument("--mask-weight", type=float, default=0.75,
-                        help="hole mask weight. 1 means completely excluded from the loss")
-    parser.add_argument("--symmetric", action="store_true",
-                        help="use symmetric warp training. only for `--arch sbs.row_flow_v3`")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
+    parser.add_argument(
+        "--size", type=int, default=256, help="input size. other than 256, it only works with mlbw model"
+    )
+    parser.add_argument(
+        "--mask-weight", type=float, default=0.75, help="hole mask weight. 1 means completely excluded from the loss"
+    )
+    parser.add_argument(
+        "--symmetric", action="store_true", help="use symmetric warp training. only for `--arch sbs.row_flow_v3`"
+    )
     parser.add_argument("--disable-hard-example", action="store_true", help="Disable hard example mining")
     parser.add_argument("--weak-convergence", action="store_true", help="Use 0.3 <= convergence <= 0.7 only ")
 

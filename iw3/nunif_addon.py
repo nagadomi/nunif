@@ -1,5 +1,6 @@
 from nunif.addon import Addon
-from . import models # noqa
+
+from . import models  # noqa
 
 
 def addon_config():
@@ -12,10 +13,12 @@ class SBS3DAddon(Addon):
 
     def register_create_training_data(self, subparsers, default_parser):
         from .training.sbs.create_training_data import register
+
         return register(subparsers, default_parser)
 
     def register_train(self, subparsers, default_parser):
         from .training.sbs.trainer import register
+
         return register(subparsers, default_parser)
 
 
@@ -25,10 +28,12 @@ class InpaintAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.inpaint.trainer import register
+
         return register(subparsers, default_parser)
 
     def register_create_training_data(self, subparsers, default_parser):
         from .training.inpaint.create_training_data import register
+
         return register(subparsers, default_parser)
 
 
@@ -38,6 +43,7 @@ class VideoInpaintAddon(Addon):
 
     def register_create_training_data(self, subparsers, default_parser):
         from .training.inpaint.create_training_data_video import register
+
         return register(subparsers, default_parser)
 
 
@@ -47,6 +53,7 @@ class DepthAAAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.depth_aa.trainer import register
+
         return register(subparsers, default_parser)
 
 
@@ -56,10 +63,12 @@ class DA3MonoAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.da3mono.trainer import register
+
         return register(subparsers, default_parser)
 
     def register_create_training_data(self, subparsers, default_parser):
         from .training.da3mono.create_training_data import register
+
         return register(subparsers, default_parser)
 
 
@@ -69,8 +78,10 @@ class SODAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.sod.trainer import register
+
         return register(subparsers, default_parser)
 
     def register_create_training_data(self, subparsers, default_parser):
         from .training.sod.create_training_data import register
+
         return register(subparsers, default_parser)

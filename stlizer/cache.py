@@ -1,11 +1,12 @@
-import os
-from os import path
-import torch
-from fractions import Fraction
 import hashlib
-from platformdirs import user_cache_dir
-from nunif.utils.home_dir import ensure_home_dir, is_nunif_home_set
+import os
+from fractions import Fraction
+from os import path
 
+import torch
+from platformdirs import user_cache_dir
+
+from nunif.utils.home_dir import ensure_home_dir, is_nunif_home_set
 
 CACHE_VERSION = 1.0
 MD5_SALT = "stlizer"
@@ -49,14 +50,18 @@ def save_cache(input_video_path, transforms, mean_match_scores, fps, args):
     else:
         fps = float(fps)
 
-    torch.save({"transforms": transforms,
-                "mean_match_scores": mean_match_scores,
-                "max_fps": args.max_fps,
-                "fps": fps,
-                "vf": md5(args.vf),
-                "resolution": args.resolution,
-                "version": CACHE_VERSION,
-                }, cache_path)
+    torch.save(
+        {
+            "transforms": transforms,
+            "mean_match_scores": mean_match_scores,
+            "max_fps": args.max_fps,
+            "fps": fps,
+            "vf": md5(args.vf),
+            "resolution": args.resolution,
+            "version": CACHE_VERSION,
+        },
+        cache_path,
+    )
 
 
 def try_load_cache(input_video_path, args):
@@ -91,9 +96,7 @@ def purge_cache(input_video_path):
 
 def list_cache_files():
     cache_dir = get_cache_dir()
-    return (path.join(cache_dir, fn)
-            for fn in os.listdir(cache_dir)
-            if fn.endswith(".stlizer"))
+    return (path.join(cache_dir, fn) for fn in os.listdir(cache_dir) if fn.endswith(".stlizer"))
 
 
 def purge_cache_all():

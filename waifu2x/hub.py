@@ -1,11 +1,13 @@
 from os import path
-import torch
-import PIL
-from nunif.utils import pil_io
-from .model_dir import MODEL_DIR
-from .download_models import main as download_main
-from .utils import Waifu2x
 
+import PIL
+import torch
+
+from nunif.utils import pil_io
+
+from .download_models import main as download_main
+from .model_dir import MODEL_DIR
+from .utils import Waifu2x
 
 MODEL_TYPES = {
     # default models.
@@ -21,16 +23,21 @@ MODEL_TYPES = {
     "upconv_7/photo": path.join(MODEL_DIR, "upconv_7", "photo"),
 }
 NO_4X_MODELS = {"cunet/art", "upconv_7/art", "upconv_7/photo"}
-METHODS = [
-    "noise", "scale", "noise_scale",
-    "scale2x", "noise_scale2x",
-    "scale4x", "noise_scale4x"
-]
+METHODS = ["noise", "scale", "noise_scale", "scale2x", "noise_scale2x", "scale4x", "noise_scale4x"]
 
 
-class Waifu2xImageModel():
-    def __init__(self, model_type, method=None, noise_level=-1,
-                 device_ids=[-1], tile_size=None, batch_size=None, keep_alpha=True, amp=True):
+class Waifu2xImageModel:
+    def __init__(
+        self,
+        model_type,
+        method=None,
+        noise_level=-1,
+        device_ids=[-1],
+        tile_size=None,
+        batch_size=None,
+        keep_alpha=True,
+        amp=True,
+    ):
         self.model_type = model_type
         self.tile_size = tile_size
         self.batch_size = batch_size
@@ -57,8 +64,7 @@ class Waifu2xImageModel():
         method = self.normalize_method(method, noise_level)
         if self.model_type in NO_4X_MODELS and method in {"scale4x", "noise_scale4x"}:
             raise ValueError(f"method: {self.model_type} does not support {method}")
-        if (method in {"noise", "noise_scale4x", "noise_scale", "noise_scale2x"} and
-                noise_level not in {0, 1, 2, 3}):
+        if method in {"noise", "noise_scale4x", "noise_scale", "noise_scale2x"} and noise_level not in {0, 1, 2, 3}:
             raise ValueError("noise_level: choose from (0, 1, 2, 3)")
         self.method = method
         self.noise_level = noise_level
@@ -123,13 +129,20 @@ class Waifu2xImageModel():
         method = kwargs.get("method", self.method)
         noise_level = kwargs.get("noise_level", self.noise_level)
         if method is None:
-            raise ValueError(("method is None. Call `model.set_mode(method, noise_level)`"
-                              " or use method and noise_level kwargs"))
+            raise ValueError(
+                ("method is None. Call `model.set_mode(method, noise_level)` or use method and noise_level kwargs")
+            )
         with torch.inference_mode():
             rgb, alpha = self.ctx.convert(
-                rgb, alpha, method, noise_level,
-                tile_size=self.tile_size, batch_size=self.batch_size,
-                tta=tta, enable_amp=self.amp)
+                rgb,
+                alpha,
+                method,
+                noise_level,
+                tile_size=self.tile_size,
+                batch_size=self.batch_size,
+                tta=tta,
+                enable_amp=self.amp,
+            )
         if output_type == "tensor":
             return (rgb, alpha)
         else:
@@ -163,29 +176,39 @@ class Waifu2xImageModel():
         return method
 
 
-def waifu2x(model_type="art",
-            method=None, noise_level=-1,
-            device_ids=[-1], tile_size=None, batch_size=None, keep_alpha=True, amp=True,
-            **kwargs):
+def waifu2x(
+    model_type="art",
+    method=None,
+    noise_level=-1,
+    device_ids=[-1],
+    tile_size=None,
+    batch_size=None,
+    keep_alpha=True,
+    amp=True,
+    **kwargs,
+):
     download_main()
     return Waifu2xImageModel(
         model_type=model_type,
-        method=method, noise_level=noise_level,
-        device_ids=device_ids, tile_size=tile_size, batch_size=batch_size,
-        keep_alpha=keep_alpha, amp=amp)
+        method=method,
+        noise_level=noise_level,
+        device_ids=device_ids,
+        tile_size=tile_size,
+        batch_size=batch_size,
+        keep_alpha=keep_alpha,
+        amp=amp,
+    )
 
 
 def _test():
-    import os
     import argparse
+    import os
     import threading
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input file")
-    parser.add_argument("--output", "-o", type=str, required=True,
-                        help="output directory")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
+    parser.add_argument("--output", "-o", type=str, required=True, help="output directory")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
@@ -197,9 +220,15 @@ def _test():
                 continue
             # Load a model with fixed method and noise_level
             model = torch.hub.load(
-                ROOT_DIR, "waifu2x", keep_alpha=True,
-                model_type=model_type, method=method, noise_level=3,
-                source="local", trust_repo=True)
+                ROOT_DIR,
+                "waifu2x",
+                keep_alpha=True,
+                model_type=model_type,
+                method=method,
+                noise_level=3,
+                source="local",
+                trust_repo=True,
+            )
             model = model.to("cuda")
             out = model(im)
             out.save(path.join(args.output, f"{model_type.replace('/', '-')}_{method}.png"))
@@ -207,9 +236,8 @@ def _test():
     # Load all method and noise_level models
     lock = threading.RLock()
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", keep_alpha=True,
-        model_type="art_scan",
-        source="local", trust_repo=True).to("cuda")
+        ROOT_DIR, "waifu2x", keep_alpha=True, model_type="art_scan", source="local", trust_repo=True
+    ).to("cuda")
     for noise_level in (0, 1, 2, 3):
         with lock:  # model.set_mode -> model.infer block is not thread-safe, so lock
             # Select method and noise_level
@@ -225,9 +253,7 @@ def _test_device_memory():
     from time import time
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
-    model = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art",
-        source="local", trust_repo=True)
+    model = torch.hub.load(ROOT_DIR, "waifu2x", model_type="art", source="local", trust_repo=True)
 
     # load model to gpu memory
     t = time()
@@ -251,11 +277,11 @@ def _test_device_memory():
 
 def _test_tensor_input():
     import argparse
+
     import torchvision.transforms.functional as TF
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input file")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
     args = parser.parse_args()
 
     im = PIL.Image.open(args.input)
@@ -263,8 +289,8 @@ def _test_tensor_input():
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=True,
-        source="local", trust_repo=True)
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=True, source="local", trust_repo=True
+    )
 
     model = model.cuda()
     gt = model.infer(x.cuda())
@@ -276,8 +302,8 @@ def _test_tensor_input():
             print(model.device, tensor.dtype, tensor.device, mean_diff)
 
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
-        source="local", trust_repo=True)
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False, source="local", trust_repo=True
+    )
     model = model.cuda().half()
     for tensor in (x.cuda(), x.cuda().half()):
         ret = model.infer(tensor.to(model.device).half())
@@ -288,21 +314,21 @@ def _test_tensor_input():
 def _test_amp():
     import argparse
     from time import time
+
     import torchvision.transforms.functional as TF
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
     LOOP_N = 10
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input file")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
     args = parser.parse_args()
     im = PIL.Image.open(args.input)
 
     # AMP=True
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3,
-        source="local", trust_repo=True).cuda()
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, source="local", trust_repo=True
+    ).cuda()
     t = time()
     for i in range(LOOP_N):
         amp_t_im = model(im)
@@ -310,8 +336,8 @@ def _test_amp():
 
     # AMP=False
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
-        source="local", trust_repo=True).cuda()
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False, source="local", trust_repo=True
+    ).cuda()
     t = time()
     for i in range(LOOP_N):
         amp_f_im = model(im)
@@ -336,19 +362,19 @@ def _test_amp():
 
 def _test_half():
     import argparse
+
     import torchvision.transforms.functional as TF
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input file")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
     args = parser.parse_args()
     im = PIL.Image.open(args.input)
 
     model = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
-        source="local", trust_repo=True).cuda()
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False, source="local", trust_repo=True
+    ).cuda()
     ret = model(im)
 
     model = model.half()
@@ -358,23 +384,30 @@ def _test_half():
 
 def _test_alias():
     import argparse
+
     import torchvision.transforms.functional as TF
 
     ROOT_DIR = path.join(path.dirname(__file__), "..")
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input file")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input file")
     args = parser.parse_args()
     im = PIL.Image.open(args.input)
 
     model1 = torch.hub.load(
-        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False,
-        source="local", trust_repo=True).cuda()
+        ROOT_DIR, "waifu2x", model_type="art", method="scale", noise_level=3, amp=False, source="local", trust_repo=True
+    ).cuda()
     ret1 = model1(im)
     model2 = torch.hub.load(
-        ROOT_DIR, "superresolution", model_type="art", method="scale", noise_level=3, amp=False,
-        source="local", trust_repo=True).cuda()
+        ROOT_DIR,
+        "superresolution",
+        model_type="art",
+        method="scale",
+        noise_level=3,
+        amp=False,
+        source="local",
+        trust_repo=True,
+    ).cuda()
     ret2 = model2(im)
     print((TF.to_tensor(ret1) - TF.to_tensor(ret2)).abs().sum())
 

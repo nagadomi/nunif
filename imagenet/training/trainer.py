@@ -1,9 +1,11 @@
 import argparse
+
 import torch
-from torch import nn
+
+from nunif.models import create_model as nunif_create_model
 from nunif.training.env import SoftmaxEnv
 from nunif.training.trainer import Trainer
-from nunif.models import create_model as nunif_create_model
+
 from .dataset import ImageNetDataset
 
 
@@ -17,13 +19,16 @@ class ImageNetTrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = ImageNetDataset(
-                self.args.data_dir, split="train",
-                resize=self.args.resize, size=self.args.size,
+                self.args.data_dir,
+                split="train",
+                resize=self.args.resize,
+                size=self.args.size,
                 norm=self.args.norm,
-                resize_mode=self.args.resize_mode)
+                resize_mode=self.args.resize_mode,
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -33,14 +38,18 @@ class ImageNetTrainer(Trainer):
                 persistent_workers=True,
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = ImageNetDataset(
-                self.args.data_dir, split="val",
-                resize=self.args.resize, size=self.args.size,
+                self.args.data_dir,
+                split="val",
+                resize=self.args.resize,
+                size=self.args.size,
                 norm=self.args.norm,
-                resize_mode=self.args.resize_mode)
+                resize_mode=self.args.resize_mode,
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
@@ -49,7 +58,8 @@ class ImageNetTrainer(Trainer):
                 persistent_workers=True,
                 num_workers=self.args.num_workers,
                 prefetch_factor=self.args.prefetch_factor,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):
@@ -63,28 +73,32 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "imagenet",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "imagenet", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
-    parser.add_argument("--arch", type=str,
-                        required=True,
-                        help="network arch")
-    parser.add_argument("--resize", type=int, default=256,
-                        help="resize size")
-    parser.add_argument("--resize-mode", type=str, choices=["resize", "reflect"], default="reflect",
-                        help=("resize mode. "
-                              "`resize`: just resize, "
-                              "`reflect`: resize with preserving aspect ratio, reflection pad the smaller side"))
-    parser.add_argument("--size", type=int, default=224,
-                        help="input size")
-    parser.add_argument("--num-samples", type=int, default=1_281_167,
-                        help="number of samples for each epoch")
-    parser.add_argument("--norm", type=str, default="imagenet",
-                        choices=["none", "imagenet", "gcn", "center"],
-                        help="input normalization mode")
-    parser.add_argument("--pretrained", action="store_true",
-                        help="load pretrained weights for torchvision models")
+    parser.add_argument("--arch", type=str, required=True, help="network arch")
+    parser.add_argument("--resize", type=int, default=256, help="resize size")
+    parser.add_argument(
+        "--resize-mode",
+        type=str,
+        choices=["resize", "reflect"],
+        default="reflect",
+        help=(
+            "resize mode. "
+            "`resize`: just resize, "
+            "`reflect`: resize with preserving aspect ratio, reflection pad the smaller side"
+        ),
+    )
+    parser.add_argument("--size", type=int, default=224, help="input size")
+    parser.add_argument("--num-samples", type=int, default=1_281_167, help="number of samples for each epoch")
+    parser.add_argument(
+        "--norm",
+        type=str,
+        default="imagenet",
+        choices=["none", "imagenet", "gcn", "center"],
+        help="input normalization mode",
+    )
+    parser.add_argument("--pretrained", action="store_true", help="load pretrained weights for torchvision models")
 
     parser.set_defaults(
         batch_size=128,

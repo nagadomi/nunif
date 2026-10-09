@@ -62,7 +62,11 @@ class IW3PlayerApp(wx.App):
 class MainFrame(wx.Frame):
     def __init__(self):
         super(MainFrame, self).__init__(
-            None, name="iw3-player", title="iw3-player", size=(460, 380), style=wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX
+            None,
+            name="iw3-player",
+            title="iw3-player",
+            size=(460, 380),
+            style=wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX,
         )
         self.stop_event = threading.Event()
         self.processing = False
@@ -242,7 +246,10 @@ class MainFrame(wx.Frame):
 
     def show_validation_error_message(self, name, min_value, max_value):
         with wx.MessageDialog(
-            None, message=T("`{}` must be a number {} - {}").format(name, min_value, max_value), caption=T("Error"), style=wx.OK
+            None,
+            message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
+            caption=T("Error"),
+            style=wx.OK,
         ) as dlg:
             dlg.ShowModal()
 
@@ -269,7 +276,9 @@ class MainFrame(wx.Frame):
             bind_addr = get_local_address()
 
         parser = create_parser()
-        parser.set_defaults(root=root, port=int(self.txt_port.GetValue()), bind_addr=bind_addr, user=user, password=password)
+        parser.set_defaults(
+            root=root, port=int(self.txt_port.GetValue()), bind_addr=bind_addr, user=user, password=password
+        )
         args = parser.parse_args()
 
         self.stop_event.clear()
@@ -342,6 +351,7 @@ def main():
 
     try:
         from .download_assets import main as download_main
+
         download_main()
     except ImportError:
         pass

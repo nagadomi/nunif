@@ -1,20 +1,17 @@
+import argparse
 import json
 import os
 from os import path
+
 import torch
-import argparse
 
-
-DEFAULT_INPUT_DIR = path.relpath(path.join(path.dirname(__file__), "..", "..",
-                                           "tmp", "search_qtable"))
+DEFAULT_INPUT_DIR = path.relpath(path.join(path.dirname(__file__), "..", "..", "tmp", "search_qtable"))
 
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input-dir", "-i", type=str, default=DEFAULT_INPUT_DIR, 
-                        help="input dir")
-    parser.add_argument("--output", "-o", type=str, required=True,
-                        help="output qtables.pth")
+    parser.add_argument("--input-dir", "-i", type=str, default=DEFAULT_INPUT_DIR, help="input dir")
+    parser.add_argument("--output", "-o", type=str, required=True, help="output qtables.pth")
     args = parser.parse_args()
 
     qtables = []
@@ -33,4 +30,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

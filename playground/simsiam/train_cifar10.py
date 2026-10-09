@@ -2,20 +2,19 @@
 # for CIFAR10
 # Current implementation only achieves CIFAR10 80% accuracy with linear classifier
 # python -m playground.simsiam.train_cifar10 --data-dir ./data/cifar10 --model-dir ./models/simsima
-from torchvision.datasets import CIFAR10
-from torchvision import transforms as T
-from torchvision.transforms import functional as TF
 import torch
 from torch import nn
 from torch.nn import functional as F
-from nunif.models import Model, get_model_device
-from nunif.modules.res_block import ResBlockBNLReLU
-from nunif.modules.init import basic_module_init
-from nunif.modules.gaussian_filter import GaussianFilter2d
-from nunif.training.env import BaseEnv
-from nunif.training.confusion_matrix import SoftmaxConfusionMatrix
-from nunif.training.trainer import Trainer, create_trainer_default_parser
+from torchvision import transforms as T
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import functional as TF
 
+from nunif.models import Model, get_model_device
+from nunif.modules.init import basic_module_init
+from nunif.modules.res_block import ResBlockBNLReLU
+from nunif.training.confusion_matrix import SoftmaxConfusionMatrix
+from nunif.training.env import BaseEnv
+from nunif.training.trainer import Trainer, create_trainer_default_parser
 
 IMG_SIZE = 32
 
@@ -24,12 +23,12 @@ def normalize(x):
     return (x - 0.5) * 2
 
 
-class Normalize():
+class Normalize:
     def __call__(self, x):
         return normalize(x)
 
 
-class Identity():
+class Identity:
     def __call__(self, x):
         return x
 
@@ -40,29 +39,30 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         self.train = train
         self.cifar10 = CIFAR10(root, train, transform=None, download=True)
         if train:
-            self.transform = T.Compose([
-                T.RandomResizedCrop(IMG_SIZE, scale=(0.2, 1.)),
-                T.ColorJitter(0.4, 0.4, 0.4, 0.1),
-                T.RandomGrayscale(p=0.1),
-                # T.RandomChoice([Identity(), T.GaussianBlur(3), T.GaussianBlur(5)], p=(0.5, 0.25, 0.25)),
-                T.ToTensor(),
-                Normalize(),
-            ])
+            self.transform = T.Compose(
+                [
+                    T.RandomResizedCrop(IMG_SIZE, scale=(0.2, 1.0)),
+                    T.ColorJitter(0.4, 0.4, 0.4, 0.1),
+                    T.RandomGrayscale(p=0.1),
+                    # T.RandomChoice([Identity(), T.GaussianBlur(3), T.GaussianBlur(5)], p=(0.5, 0.25, 0.25)),
+                    T.ToTensor(),
+                    Normalize(),
+                ]
+            )
         else:
-            self.transform = T.Compose([
-                T.Resize((IMG_SIZE, IMG_SIZE)),
-                T.ToTensor(),
-                Normalize(),
-            ])
+            self.transform = T.Compose(
+                [
+                    T.Resize((IMG_SIZE, IMG_SIZE)),
+                    T.ToTensor(),
+                    Normalize(),
+                ]
+            )
 
     def __len__(self):
         return len(self.cifar10)
 
     def sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def __getitem__(self, i):
         x, y = self.cifar10[i]
@@ -84,9 +84,9 @@ class SimSiam(nn.Module):
             nn.BatchNorm2d(32),
             nn.LeakyReLU(0.1, inplace=True),
             ResBlockBNLReLU(32, 32, bias=False),
-            ResBlockBNLReLU(32, 64, stride=2, bias=False),    # 16x16
+            ResBlockBNLReLU(32, 64, stride=2, bias=False),  # 16x16
             ResBlockBNLReLU(64, 64, bias=False),
-            ResBlockBNLReLU(64, 128, stride=2, bias=False),   # 8x8
+            ResBlockBNLReLU(64, 128, stride=2, bias=False),  # 8x8
             ResBlockBNLReLU(128, 128, bias=False),
             ResBlockBNLReLU(128, 256, stride=2, bias=False),  # 4x4
             ResBlockBNLReLU(256, 256, bias=False),
@@ -204,7 +204,7 @@ class CIFAR10Trainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = CIFAR10Dataset(self.args.data_dir, train=True)
             loader = torch.utils.data.DataLoader(
@@ -214,7 +214,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = CIFAR10Dataset(self.args.data_dir, train=False)
@@ -224,7 +225,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):

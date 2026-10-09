@@ -1,10 +1,11 @@
-""" Dummy depth model for performance benchmark
-"""
+"""Dummy depth model for performance benchmark"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from .base_depth_model import BaseDepthModel
 from .dilation import dilate_edge, edge_dilation_is_enabled
-from . base_depth_model import BaseDepthModel
 
 
 class NullDepth(nn.Module):

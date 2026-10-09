@@ -1,7 +1,8 @@
-from nunif.logger import logger
-from .metadata import FontInfo, VALIDATE_FONT_SIZE, FONT_MAP
 from os import path
 
+from nunif.logger import logger
+
+from .metadata import FONT_MAP, VALIDATE_FONT_SIZE, FontInfo
 
 FONT_DIR = path.join(path.dirname(__file__), "fonts")
 
@@ -17,10 +18,7 @@ def native_path(posix_path):
         return posix_path.replace("/", path.sep)
 
 
-def load_font(
-        font_name,
-        validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE,
-        font_dir=FONT_DIR):
+def load_font(font_name, validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE, font_dir=FONT_DIR):
     font_name = normalize_font_name(font_name)
     if font_name not in FONT_MAP:
         logger.error(f"load_fonts: unable to load `{font_name}`")
@@ -32,16 +30,12 @@ def load_font(
     return font
 
 
-def load_fonts(
-        font_names, 
-        validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE,
-        font_dir=FONT_DIR):
+def load_fonts(font_names, validate_cmap=False, validate_font_size=VALIDATE_FONT_SIZE, font_dir=FONT_DIR):
     fonts = []
     for font_name in font_names:
         font = load_font(
-            font_name,
-            validate_cmap=validate_cmap, validate_font_size=validate_font_size,
-            font_dir=font_dir)
+            font_name, validate_cmap=validate_cmap, validate_font_size=validate_font_size, font_dir=font_dir
+        )
         if font is not None:
             fonts.append(font)
     return fonts

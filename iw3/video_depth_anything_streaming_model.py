@@ -1,13 +1,15 @@
 import os
 from os import path
+
 import torch
 from torchvision.transforms import functional as TF
-from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
-from nunif.models.utils import compile_model
-from .base_depth_model import BaseDepthModel, HUB_MODEL_DIR
-from .video_depth_anything_model import batch_preprocess, postprocess
-from .models import DepthAA
 
+from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
+from nunif.models.utils import compile_model
+
+from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from .models import DepthAA
+from .video_depth_anything_model import batch_preprocess, postprocess
 
 NAME_MAP = {
     "VDA_Stream_S": "vits",
@@ -55,19 +57,32 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         encoder = NAME_MAP[model_type]
         metric_depth = model_type in METRIC_DEPTH_TYPES
         if not os.getenv("IW3_DEBUG"):
-            model = torch.hub.load("nagadomi/Video-Depth-Anything_iw3:main",
-                                   "VideoDepthAnythingStreaming", encoder=encoder, metric_depth=metric_depth, device=device,
-                                   verbose=False, trust_repo=True)
+            model = torch.hub.load(
+                "nagadomi/Video-Depth-Anything_iw3:main",
+                "VideoDepthAnythingStreaming",
+                encoder=encoder,
+                metric_depth=metric_depth,
+                device=device,
+                verbose=False,
+                trust_repo=True,
+            )
         else:
             assert path.exists("../Video-Depth-Anything_iw3/hubconf.py")
-            model = torch.hub.load("../Video-Depth-Anything_iw3",
-                                   "VideoDepthAnythingStreaming", encoder=encoder, metric_depth=metric_depth, device=device,
-                                   source="local", verbose=False, trust_repo=True)
+            model = torch.hub.load(
+                "../Video-Depth-Anything_iw3",
+                "VideoDepthAnythingStreaming",
+                encoder=encoder,
+                metric_depth=metric_depth,
+                device=device,
+                source="local",
+                verbose=False,
+                trust_repo=True,
+            )
 
         model.prep_lower_bound = resolution or 392
         if model.prep_lower_bound % 14 != 0:
             # From GUI, 512 -> 518
-            model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
+            model.prep_lower_bound += 14 - model.prep_lower_bound % 14
 
         return model
 
@@ -86,17 +101,23 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         else:
             batch = True
 
-        x = batch_preprocess(x, self.model.prep_lower_bound,
-                             metric_depth=self.metric_depth,
-                             limit_resolution=self.limit_resolution)
+        x = batch_preprocess(
+            x, self.model.prep_lower_bound, metric_depth=self.metric_depth, limit_resolution=self.limit_resolution
+        )
         outputs = []
         for frame in x:
             outputs.append(self.model.infer_video_depth_one(frame, use_amp=enable_amp).to(torch.float32))
         depth = torch.stack(outputs)
         depth = depth.squeeze(1)  # (B, 1, H, W) -> (B, H, W) for compatibility of VDA
 
-        depth = postprocess(depth, edge_dilation=edge_dilation, depth_aa=depth_aa, metric_depth=self.metric_depth,
-                            force_disparity=self.force_disparity, enable_amp=enable_amp)
+        depth = postprocess(
+            depth,
+            edge_dilation=edge_dilation,
+            depth_aa=depth_aa,
+            metric_depth=self.metric_depth,
+            force_disparity=self.force_disparity,
+            enable_amp=enable_amp,
+        )
         if not batch:
             depth = depth.squeeze(0)
 
@@ -147,8 +168,8 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
 
 
 def _test():
-    from PIL import Image
     import torchvision.transforms.functional as TF
+    from PIL import Image
 
     model = VideoDepthAnythingStreamingModel("VDA_Stream_S")
     model.load(gpu=0)

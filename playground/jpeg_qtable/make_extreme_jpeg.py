@@ -1,19 +1,75 @@
-from PIL import Image
 import os
-from os import path
 import random
+from os import path
 
+from PIL import Image
 
 ZIGZAG_SCAN_INDEX = [
-    0, 1, 8, 16, 9, 2, 3, 10,
-    17, 24, 32, 25, 18, 11, 4,
-    5, 12, 19, 26, 33, 40, 48,
-    41, 34, 27, 20, 13, 6, 7,
-    14, 21, 28, 35, 42, 49, 56,
-    57, 50, 43, 36, 29, 22, 15,
-    23, 30, 37, 44, 51, 58, 59,
-    52, 45, 38, 31, 39, 46, 53,
-    60, 61, 54, 47, 55, 62, 63]
+    0,
+    1,
+    8,
+    16,
+    9,
+    2,
+    3,
+    10,
+    17,
+    24,
+    32,
+    25,
+    18,
+    11,
+    4,
+    5,
+    12,
+    19,
+    26,
+    33,
+    40,
+    48,
+    41,
+    34,
+    27,
+    20,
+    13,
+    6,
+    7,
+    14,
+    21,
+    28,
+    35,
+    42,
+    49,
+    56,
+    57,
+    50,
+    43,
+    36,
+    29,
+    22,
+    15,
+    23,
+    30,
+    37,
+    44,
+    51,
+    58,
+    59,
+    52,
+    45,
+    38,
+    31,
+    39,
+    46,
+    53,
+    60,
+    61,
+    54,
+    47,
+    55,
+    62,
+    63,
+]
 
 
 IMAGE_DIR = path.join(path.dirname(__file__), "images")
@@ -40,8 +96,7 @@ def main():
             qtable_high[ZIGZAG_SCAN_INDEX[i]] = 255
 
         output_path = path.join(OUTPUT_DIR, "donut_extreme_high.jpg")
-        save_jpeg_with_qtable(im, output_path,
-                              qtables={0: qtable_high, 1: qtable_high})
+        save_jpeg_with_qtable(im, output_path, qtables={0: qtable_high, 1: qtable_high})
         show(qtable_high)
         print("save", path.relpath(output_path))
 
@@ -52,8 +107,7 @@ def main():
             qtable_low[ZIGZAG_SCAN_INDEX[i]] = 255
 
         output_path = path.join(OUTPUT_DIR, "donut_extreme_low.jpg")
-        save_jpeg_with_qtable(im, output_path,
-                              qtables={0: qtable_low, 1: qtable_low})
+        save_jpeg_with_qtable(im, output_path, qtables={0: qtable_low, 1: qtable_low})
         show(qtable_low)
         print("save", path.relpath(output_path))
 
@@ -63,8 +117,7 @@ def main():
             for j in range(6):
                 qtable[ZIGZAG_SCAN_INDEX[j]] = 16
             output_path = path.join(OUTPUT_DIR, f"donut_extreme_random_{i}.jpg")
-            save_jpeg_with_qtable(im, output_path,
-                                  qtables={0: qtable, 1: qtable})
+            save_jpeg_with_qtable(im, output_path, qtables={0: qtable, 1: qtable})
             show(qtable)
             print("save", path.relpath(output_path))
 

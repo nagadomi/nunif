@@ -54,8 +54,9 @@ class FlatColorWeightedLoss(nn.Module):
 
 def _test_mask():
     import argparse
-    import torchvision.transforms.functional as TF
+
     import torchvision.io as io
+    import torchvision.transforms.functional as TF
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input file")

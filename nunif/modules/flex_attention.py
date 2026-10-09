@@ -1,10 +1,11 @@
+from typing import Any, Callable
+
 import torch
 import torch.nn as nn
-from .permute import bchw_to_bnc, bnc_to_bchw
-from .init import basic_module_init
 from torch import Tensor
-from typing import Callable, Any
 
+from .init import basic_module_init
+from .permute import bchw_to_bnc, bnc_to_bchw
 
 flex_attention: Callable[..., Any] | None
 try:
@@ -55,12 +56,12 @@ class WindowNeighborhoodMHA2d(nn.Module):
     # TODO: probably better to use block_mask.
     #       but it does not work with torch.compile() at the moment.
     window_h: torch.Tensor
+
     def __init__(self, embed_dim, num_heads, window_size, max_distance=None, relative_bias=False, qkv_dim=None):
         assert max_distance is not None or relative_bias
         super().__init__()
 
-        self.window_size = (window_size if isinstance(window_size, (tuple, list))
-                            else (window_size, window_size))
+        self.window_size = window_size if isinstance(window_size, (tuple, list)) else (window_size, window_size)
         if max_distance is not None:
             self.register_buffer("max_distance", torch.tensor(max_distance, dtype=torch.float32))
         else:
@@ -78,6 +79,7 @@ class WindowNeighborhoodMHA2d(nn.Module):
             x = layer_norm(x)
 
         if self.relative_bias and self.max_distance is not None:
+
             def score_mod(score: Tensor, b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor) -> Tensor:
                 window_h = self.window_h
                 q_h, q_w, k_h, k_w = q_idx // window_h, q_idx % window_h, kv_idx // window_h, kv_idx % window_h
@@ -90,6 +92,7 @@ class WindowNeighborhoodMHA2d(nn.Module):
 
                 return score
         elif self.max_distance is not None:
+
             def score_mod(score: Tensor, b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor) -> Tensor:
                 window_h = self.window_h
                 q_h, q_w, k_h, k_w = q_idx // window_h, q_idx % window_h, kv_idx // window_h, kv_idx % window_h
@@ -97,6 +100,7 @@ class WindowNeighborhoodMHA2d(nn.Module):
                 score = torch.where((distance <= self.max_distance), score, -float("inf"))
                 return score
         elif self.relative_bias:
+
             def score_mod(score: Tensor, b: Tensor, h: Tensor, q_idx: Tensor, kv_idx: Tensor) -> Tensor:
                 window_h = self.window_h
                 q_h, q_w, k_h, k_w = q_idx // window_h, q_idx % window_h, kv_idx // window_h, kv_idx % window_h
@@ -111,6 +115,7 @@ class WindowNeighborhoodMHA2d(nn.Module):
 
 def _test():
     import time
+
     B, C, H, W = 1, 128, 96, 96
     NUM_HEADS = 4
     NUM_LAYERS = 3
@@ -120,9 +125,14 @@ def _test():
     model = nn.Sequential(
         nn.Conv2d(3, C, kernel_size=3, padding=1, bias=True),
         # layers
-        nn.Sequential(*[
-            WindowNeighborhoodMHA2d(C, num_heads=NUM_HEADS, window_size=WINDOW_SIZE[i], max_distance=RADIUS, relative_bias=True)
-            for i in range(NUM_LAYERS)]),
+        nn.Sequential(
+            *[
+                WindowNeighborhoodMHA2d(
+                    C, num_heads=NUM_HEADS, window_size=WINDOW_SIZE[i], max_distance=RADIUS, relative_bias=True
+                )
+                for i in range(NUM_LAYERS)
+            ]
+        ),
     ).cuda()
     model = torch.compile(model)
     x = torch.ones((B, 3, H, W), dtype=torch.float32).cuda()

@@ -1,7 +1,7 @@
-import torch
-import sys
 import os
+import sys
 
+import torch
 
 _DISABLE_COMPILE = sys.platform != "linux" or os.getenv("NUNIF_DISABLE_COMPILE", False)
 
@@ -21,4 +21,5 @@ def conditional_compile(env_name):
             return args[0]
         else:
             return torch.compile(*args, **kwargs)
+
     return decorator

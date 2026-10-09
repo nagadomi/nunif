@@ -1,13 +1,13 @@
-from PIL import ImageGrab, ImageDraw
-import numpy as np
 import threading
-import torch
-from collections import deque
 import time
+from collections import deque
+
+import numpy as np
+import torch
 import wx
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode)
+from PIL import ImageDraw, ImageGrab
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
 
 
 def take_screenshot(mouse_position=None, draw_cursor_enabled=True):
@@ -30,7 +30,17 @@ def to_tensor(pil_image, device, frame_buffer, non_blocking=False):
 
 
 class ScreenshotThreadPIL(threading.Thread):
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device, draw_cursor_enabled=True, **_ignore_unsupported_kwargs):
+    def __init__(
+        self,
+        fps,
+        frame_width,
+        frame_height,
+        monitor_index,
+        window_name,
+        device,
+        draw_cursor_enabled=True,
+        **_ignore_unsupported_kwargs,
+    ):
         super().__init__(daemon=True)
         self.frame_width = frame_width
         self.frame_height = frame_height
@@ -63,16 +73,22 @@ class ScreenshotThreadPIL(threading.Thread):
                 with torch.cuda.stream(self.cuda_stream):
                     frame = to_tensor(frame, self.device, frame_buffer, non_blocking=True)
                     if frame.shape[2] > self.frame_height:
-                        frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
-                                          interpolation=InterpolationMode.BILINEAR,
-                                          antialias=True)
+                        frame = TF.resize(
+                            frame,
+                            size=(self.frame_height, self.frame_width),
+                            interpolation=InterpolationMode.BILINEAR,
+                            antialias=True,
+                        )
                 frame.record_stream(self.cuda_stream)
             else:
                 frame = to_tensor(frame, self.device, frame_buffer)
                 if frame.shape[2] > self.frame_height:
-                    frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
-                                      interpolation=InterpolationMode.BILINEAR,
-                                      antialias=True)
+                    frame = TF.resize(
+                        frame,
+                        size=(self.frame_height, self.frame_width),
+                        interpolation=InterpolationMode.BILINEAR,
+                        antialias=True,
+                    )
 
             with self.frame_lock:
                 self.frame = frame

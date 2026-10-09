@@ -4,19 +4,19 @@
 # GumbelCusteringOnlyBMU(hard): https://github.com/user-attachments/assets/6a6ebe6c-81d4-42a8-b9b3-700fd165c939
 # GumbelCusteringDirect(no guidance): https://github.com/user-attachments/assets/7efa455e-9bf7-489c-9295-968768b124a2
 
-from torchvision.datasets import MNIST
-from torchvision import transforms as T
-from torchvision.transforms import functional as TF
-from torchvision.utils import make_grid
+import math
+import os
+from os import path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import os
-from os import path
-import math
-from tqdm import tqdm
 from PIL import ImageOps
-
+from torchvision import transforms as T
+from torchvision.datasets import MNIST
+from torchvision.transforms import functional as TF
+from torchvision.utils import make_grid
+from tqdm import tqdm
 
 DATA_DIR = path.join(path.dirname(__file__), "..", "..", "tmp", "gumbel_softmax")
 
@@ -37,9 +37,10 @@ class GumbelCustering(nn.Module):
         self.max_t = max_tau
         self.codebook = nn.Parameter(torch.zeros(size=(codebook_size, input_size), dtype=torch.float32))
         self.bmu_net = nn.Sequential(
-            nn.Linear(input_size, int(codebook_size ** 0.5)),
+            nn.Linear(input_size, int(codebook_size**0.5)),
             nn.ReLU(True),
-            nn.Linear(int(codebook_size ** 0.5), codebook_size))
+            nn.Linear(int(codebook_size**0.5), codebook_size),
+        )
 
     def forward(self, x, t):
         B = x.shape[0]
@@ -50,7 +51,7 @@ class GumbelCustering(nn.Module):
 
         codebook = self.codebook.expand(B, *self.codebook.shape)
         feat_diff = codebook - x.view(B, 1, -1)
-        feat_distance = torch.sum((feat_diff ** 2), dim=-1)
+        feat_distance = torch.sum((feat_diff**2), dim=-1)
         bmu_index = torch.argmin(feat_distance.view(B, -1), dim=-1)
         delta = (feat_diff.abs().mean(dim=-1) * z.detach()).mean()
 
@@ -66,9 +67,10 @@ class GumbelCusteringBMUOnly(nn.Module):
         self.max_t = max_tau
         self.codebook_emb = nn.Embedding(codebook_size, input_size)
         self.bmu_net = nn.Sequential(
-            nn.Linear(input_size, int(codebook_size ** 0.5)),
+            nn.Linear(input_size, int(codebook_size**0.5)),
             nn.ReLU(True),
-            nn.Linear(int(codebook_size ** 0.5), codebook_size))
+            nn.Linear(int(codebook_size**0.5), codebook_size),
+        )
 
         torch.nn.init.constant_(self.codebook_emb.weight, 0)
 
@@ -83,8 +85,9 @@ class GumbelCusteringBMUOnly(nn.Module):
         logits = self.bmu_net(x)
         z = F.gumbel_softmax(logits, tau=temperature, dim=-1, hard=True)
 
-        feat_distance = (x.pow(2).sum(1, keepdim=True) - 2 * x @ self.codebook.t() +
-                         self.codebook.pow(2).sum(1, keepdim=True).t())
+        feat_distance = (
+            x.pow(2).sum(1, keepdim=True) - 2 * x @ self.codebook.t() + self.codebook.pow(2).sum(1, keepdim=True).t()
+        )
         bmu_index = torch.argmin(feat_distance.view(B, -1), dim=-1)
         delta = (self.codebook_emb(torch.argmax(z.detach(), dim=-1)) - x).abs().mean()
 
@@ -105,9 +108,10 @@ class GumbelCusteringDirect(nn.Module):
         self.max_t = max_tau
         self.codebook = nn.Parameter(torch.zeros(size=(codebook_size, input_size), dtype=torch.float32))
         self.bmu_net = nn.Sequential(
-            nn.Linear(input_size, int(codebook_size ** 0.5)),
+            nn.Linear(input_size, int(codebook_size**0.5)),
             nn.ReLU(True),
-            nn.Linear(int(codebook_size ** 0.5), codebook_size))
+            nn.Linear(int(codebook_size**0.5), codebook_size),
+        )
 
     def forward(self, x, t):
         B = x.shape[0]
@@ -120,7 +124,7 @@ class GumbelCusteringDirect(nn.Module):
         return recon
 
 
-class MinMaxNormalize():
+class MinMaxNormalize:
     def __call__(self, x):
         min_v, max_v = x.min(), x.max()
         return (x - min_v) / (max_v - min_v)
@@ -150,22 +154,13 @@ def main():
 
     torch.manual_seed(72)
 
-    transform = T.Compose([
-        T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        T.ToTensor(),
-        MinMaxNormalize()
-    ])
+    transform = T.Compose([T.Resize((IMAGE_SIZE, IMAGE_SIZE)), T.ToTensor(), MinMaxNormalize()])
     dataset = MNIST(DATA_DIR, train=True, download=True, transform=transform)
-    model = MODEL_FACTORY(input_size=1 * IMAGE_SIZE * IMAGE_SIZE,
-                          codebook_size=GRID_SIZE ** 2, max_t=MAX_T).to(device)
+    model = MODEL_FACTORY(input_size=1 * IMAGE_SIZE * IMAGE_SIZE, codebook_size=GRID_SIZE**2, max_t=MAX_T).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=4,
-        drop_last=False)
+        dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True, num_workers=4, drop_last=False
+    )
 
     image_list = []
     for t in range(MAX_T):
@@ -195,9 +190,13 @@ def main():
 
     # save animated gif
     image_list[0].save(
-        path.join(DATA_DIR, "gumbel_softmax.gif"), format="gif",
-        append_images=image_list, save_all=True,
-        duration=66, loop=0)
+        path.join(DATA_DIR, "gumbel_softmax.gif"),
+        format="gif",
+        append_images=image_list,
+        save_all=True,
+        duration=66,
+        loop=0,
+    )
     print(f"save images in `{path.abspath(DATA_DIR)}`")
 
 

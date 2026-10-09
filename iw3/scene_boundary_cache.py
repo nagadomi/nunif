@@ -1,8 +1,9 @@
+import hashlib
+import json
 import os
 import sys
 from os import path
-import hashlib
-import json
+
 from nunif.utils.home_dir import ensure_home_dir, is_nunif_home_set
 
 
@@ -52,10 +53,7 @@ def save_cache_with_filename(cache_path, input_video_path, pts, max_fps, start_t
 def save_cache(input_video_path, pts, max_fps, start_time, end_time, cache_dir=None):
     cache_path = get_cache_path(input_video_path, max_fps, cache_dir=cache_dir)
     save_cache_with_filename(
-        cache_path, input_video_path, pts,
-        max_fps=max_fps,
-        start_time=start_time,
-        end_time=end_time
+        cache_path, input_video_path, pts, max_fps=max_fps, start_time=start_time, end_time=end_time
     )
 
 
@@ -99,10 +97,7 @@ def try_load_cache_with_filename(cache_path, input_video_path, max_fps, start_ti
 def try_load_cache(input_video_path, max_fps, start_time, end_time, cache_dir=None):
     cache_path = get_cache_path(input_video_path, max_fps=max_fps, cache_dir=cache_dir)
     return try_load_cache_with_filename(
-        cache_path, input_video_path,
-        max_fps=max_fps,
-        start_time=start_time,
-        end_time=end_time
+        cache_path, input_video_path, max_fps=max_fps, start_time=start_time, end_time=end_time
     )
 
 
@@ -114,9 +109,7 @@ def purge_cache(input_video_path, max_fps):
 
 def list_cache_files():
     cache_dir = get_cache_dir()
-    return (path.join(cache_dir, fn)
-            for fn in os.listdir(cache_dir)
-            if fn.endswith(".json"))
+    return (path.join(cache_dir, fn) for fn in os.listdir(cache_dir) if fn.endswith(".json"))
 
 
 def purge_cache_all():

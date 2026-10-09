@@ -1,18 +1,19 @@
 from os import path
-from packaging import version as packaging_version
+
 import torch
 import torch.nn.functional as F
-from nunif.transforms.tta import tta_merge, tta_split
-from nunif.utils.render import tiled_render
-from nunif.utils.alpha import AlphaBorderPadding
+
+from nunif.device import autocast, create_device
+from nunif.logger import logger
 from nunif.models import (
-    load_model,
-    data_parallel_model,
     compile_model,
+    data_parallel_model,
+    load_model,
 )
 from nunif.models.data_parallel import DataParallelInference
-from nunif.device import create_device, autocast
-from nunif.logger import logger
+from nunif.transforms.tta import tta_merge, tta_split
+from nunif.utils.alpha import AlphaBorderPadding
+from nunif.utils.render import tiled_render
 from nunif.utils.ui import HiddenPrints
 
 
@@ -27,7 +28,7 @@ def can_compile(model):
     return True
 
 
-class Waifu2x():
+class Waifu2x:
     def __init__(self, model_dir, gpus):
         self.scale_model = None
         self.scale4x_model = None
@@ -47,9 +48,17 @@ class Waifu2x():
 
     @torch.inference_mode()
     def warmup(self, tile_size, batch_size, enable_amp):
-        models = [model for model in (self.scale_model, self.scale4x_model,
-                                      *self.noise_models, *self.noise_scale_models,
-                                      *self.noise_scale4x_models) if model is not None]
+        models = [
+            model
+            for model in (
+                self.scale_model,
+                self.scale4x_model,
+                *self.noise_models,
+                *self.noise_scale_models,
+                *self.noise_scale4x_models,
+            )
+            if model is not None
+        ]
         for i, model in enumerate(models):
             if tile_size is None:
                 model_tile_size = model.i2i_default_tile_size
@@ -61,8 +70,11 @@ class Waifu2x():
                 model_batch_size = batch_size
 
             for j, bs in enumerate(reversed(range(1, model_batch_size + 1))):
-                x = torch.zeros((bs, 3, model_tile_size, model_tile_size),
-                                device=self.device, dtype=torch.float16 if self.is_half else torch.float32)
+                x = torch.zeros(
+                    (bs, 3, model_tile_size, model_tile_size),
+                    device=self.device,
+                    dtype=torch.float16 if self.is_half else torch.float32,
+                )
                 logger.debug(f"warmup {i * model_batch_size + j + 1}/{len(models) * model_batch_size}: {x.shape}")
                 with autocast(device=self.device, enabled=enable_amp):
                     model(x)
@@ -106,9 +118,9 @@ class Waifu2x():
 
     def load_model_by_name(self, filename):
         with HiddenPrints():
-            return load_model(path.join(self.model_dir, filename),
-                              map_location=self.device, device_ids=self.gpus,
-                              weights_only=True)[0]
+            return load_model(
+                path.join(self.model_dir, filename), map_location=self.device, device_ids=self.gpus, weights_only=True
+            )[0]
 
     def has_model_file(self, filename):
         return path.exists(path.join(self.model_dir, filename))
@@ -147,8 +159,8 @@ class Waifu2x():
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)
                 self.noise_scale_models[noise_level] = data_parallel_model(
-                    self.noise_scale4x_models[noise_level].to_2x(),
-                    device_ids=self.gpus)
+                    self.noise_scale4x_models[noise_level].to_2x(), device_ids=self.gpus
+                )
         elif method == "noise":
             if self.noise_models[noise_level] is not None:
                 return
@@ -158,14 +170,14 @@ class Waifu2x():
                 if self.noise_scale4x_models[noise_level] is None:
                     self._load_model("noise_scale4x", noise_level)
                 self.noise_models[noise_level] = data_parallel_model(
-                    self.noise_scale4x_models[noise_level].to_1x(),
-                    device_ids=self.gpus)
+                    self.noise_scale4x_models[noise_level].to_1x(), device_ids=self.gpus
+                )
         else:
             raise ValueError(method)
 
     def load_model(self, method, noise_level):
-        assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
-        assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
+        assert method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x")
+        assert method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4
 
         if method in {"scale", "scale4x", "noise"}:
             self._load_model(method, noise_level)
@@ -174,16 +186,18 @@ class Waifu2x():
             try:
                 self._load_model("scale4x", -1)
             except FileNotFoundError:
-                logger.warning("`scale4x_path used for alpha channel does not exist. "
-                               "So use BILINEAR for upscaling alpha channel.")
+                logger.warning(
+                    "`scale4x_path used for alpha channel does not exist. So use BILINEAR for upscaling alpha channel."
+                )
         elif method == "noise_scale":
             self._load_model(method, noise_level)
             # for alpha channel
             try:
                 self._load_model("scale", -1)
             except FileNotFoundError:
-                logger.warning("`scale2x.pth` used for alpha channel does not exist. "
-                               "So use BILINEAR for upscaling alpha channel.")
+                logger.warning(
+                    "`scale2x.pth` used for alpha channel does not exist. So use BILINEAR for upscaling alpha channel."
+                )
         self._setup()
 
     def load_model_all(self, load_4x=True):
@@ -204,28 +218,32 @@ class Waifu2x():
         self._setup()
 
     def render(self, x, method, noise_level, tile_size=None, batch_size=None, enable_amp=False):
-        assert (method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x"))
-        assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
+        assert method in ("scale", "noise_scale", "noise", "scale4x", "noise_scale4x")
+        assert method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4
         if method == "scale":
-            z = tiled_render(x, self.scale_model,
-                             tile_size=tile_size, batch_size=batch_size,
-                             enable_amp=enable_amp)
+            z = tiled_render(x, self.scale_model, tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp)
         elif method == "scale4x":
-            z = tiled_render(x, self.scale4x_model,
-                             tile_size=tile_size, batch_size=batch_size,
-                             enable_amp=enable_amp)
+            z = tiled_render(x, self.scale4x_model, tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp)
         elif method == "noise":
-            z = tiled_render(x, self.noise_models[noise_level],
-                             tile_size=tile_size, batch_size=batch_size,
-                             enable_amp=enable_amp)
+            z = tiled_render(
+                x, self.noise_models[noise_level], tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp
+            )
         elif method == "noise_scale":
-            z = tiled_render(x, self.noise_scale_models[noise_level],
-                             tile_size=tile_size, batch_size=batch_size,
-                             enable_amp=enable_amp)
+            z = tiled_render(
+                x,
+                self.noise_scale_models[noise_level],
+                tile_size=tile_size,
+                batch_size=batch_size,
+                enable_amp=enable_amp,
+            )
         elif method == "noise_scale4x":
-            z = tiled_render(x, self.noise_scale4x_models[noise_level],
-                             tile_size=tile_size, batch_size=batch_size,
-                             enable_amp=enable_amp)
+            z = tiled_render(
+                x,
+                self.noise_scale4x_models[noise_level],
+                tile_size=tile_size,
+                batch_size=batch_size,
+                enable_amp=enable_amp,
+            )
         return z
 
     def _model_offset(self, method, noise_level):
@@ -240,14 +258,23 @@ class Waifu2x():
         elif method == "noise_scale4x":
             return self.noise_scale4x_models[noise_level].i2i_offset
 
-    def convert(self, x, alpha, method, noise_level,
-                tile_size=None, batch_size=None,
-                tta=False, enable_amp=False, output_device="cpu"):
-        assert (not torch.is_grad_enabled())
-        assert (x.shape[0] == 3)
-        assert (alpha is None or alpha.shape[0] == 1 and alpha.shape[1:] == x.shape[1:])
-        assert (method in ("scale", "scale4x", "noise_scale", "noise_scale4x", "noise"))
-        assert (method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4)
+    def convert(
+        self,
+        x,
+        alpha,
+        method,
+        noise_level,
+        tile_size=None,
+        batch_size=None,
+        tta=False,
+        enable_amp=False,
+        output_device="cpu",
+    ):
+        assert not torch.is_grad_enabled()
+        assert x.shape[0] == 3
+        assert alpha is None or alpha.shape[0] == 1 and alpha.shape[1:] == x.shape[1:]
+        assert method in ("scale", "scale4x", "noise_scale", "noise_scale4x", "noise")
+        assert method in {"scale", "scale4x"} or 0 <= noise_level and noise_level < 4
 
         x = x.to(self.device)
 
@@ -258,9 +285,9 @@ class Waifu2x():
             alpha = alpha.to(self.device)
             x = self.alpha_pad(x, alpha, self._model_offset(method, noise_level))
         if tta:
-            rgb = tta_merge([
-                self.render(xx, method, noise_level, tile_size, batch_size, enable_amp)
-                for xx in tta_split(x)])
+            rgb = tta_merge(
+                [self.render(xx, method, noise_level, tile_size, batch_size, enable_amp) for xx in tta_split(x)]
+            )
         else:
             rgb = self.render(x, method, noise_level, tile_size, batch_size, enable_amp)
 
@@ -270,13 +297,12 @@ class Waifu2x():
                 model = self.scale4x_model if method in {"scale4x", "noise_scale4x"} else self.scale_model
                 if model is not None:
                     alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
-                    alpha = tiled_render(alpha, model,
-                                         tile_size=tile_size, batch_size=batch_size,
-                                         enable_amp=enable_amp).mean(0, keepdim=True)
+                    alpha = tiled_render(
+                        alpha, model, tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp
+                    ).mean(0, keepdim=True)
                 else:
                     scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
-                    alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor,
-                                          mode="bilinear").squeeze(0)
+                    alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="bilinear").squeeze(0)
             else:
                 scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
                 alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)

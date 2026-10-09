@@ -1,25 +1,26 @@
-import os
-from os import path
-import warnings
-import torch
-from PIL import Image
 import argparse
 import csv
-from tqdm import tqdm
-from multiprocessing import cpu_count
+import os
+import warnings
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-from nunif.logger import logger
-from nunif.device import create_device, mps_is_available, xpu_is_available
-from nunif.utils.image_loader import ImageLoader
-from nunif.utils.filename import set_image_ext
-from nunif.utils.rgb_noise import rgb_noise_like, apply_rgb_noise
-from nunif.utils import video as VU
-from nunif.utils.ui import (
-    is_image, is_video, is_text, is_output_dir, make_parent_dir, list_subdir)
-from .utils import Waifu2x
-from .model_dir import MODEL_DIR
-from .download_models import main as download_main
+from multiprocessing import cpu_count
+from os import path
 
+import torch
+from PIL import Image
+from tqdm import tqdm
+
+from nunif.device import create_device, mps_is_available, xpu_is_available
+from nunif.logger import logger
+from nunif.utils import video as VU
+from nunif.utils.filename import set_image_ext
+from nunif.utils.image_loader import ImageLoader
+from nunif.utils.rgb_noise import apply_rgb_noise, rgb_noise_like
+from nunif.utils.ui import is_image, is_output_dir, is_text, is_video, list_subdir, make_parent_dir
+
+from .download_models import main as download_main
+from .model_dir import MODEL_DIR
+from .utils import Waifu2x
 
 IMAGE_IO_QUEUE_MAX = 16
 DEFAULT_ART_MODEL_DIR = path.join(MODEL_DIR, "swin_unet", "art")
@@ -51,9 +52,14 @@ def process_image(ctx, im, meta, args):
         rgb = rgb.repeat(3, 1, 1)
 
     rgb, alpha = ctx.convert(
-        rgb, alpha, args.method, args.noise_level,
-        args.tile_size, args.batch_size,
-        args.tta, enable_amp=not args.disable_amp,
+        rgb,
+        alpha,
+        args.method,
+        args.noise_level,
+        args.tile_size,
+        args.batch_size,
+        args.tta,
+        enable_amp=not args.disable_amp,
         output_device=args.state["device"],
     )
     if args.grain:
@@ -74,10 +80,12 @@ def process_image(ctx, im, meta, args):
 
 def process_images(ctx, files, output_dir, args, title=None):
     os.makedirs(output_dir, exist_ok=True)
-    loader = ImageLoader(files=files, max_queue_size=IMAGE_IO_QUEUE_MAX,
-                         load_func=IL.load_image,
-                         load_func_kwargs={"color": "rgb", "keep_alpha": True,
-                                           "exif_transpose": not args.disable_exif_transpose})
+    loader = ImageLoader(
+        files=files,
+        max_queue_size=IMAGE_IO_QUEUE_MAX,
+        load_func=IL.load_image,
+        load_func_kwargs={"color": "rgb", "keep_alpha": True, "exif_transpose": not args.disable_exif_transpose},
+    )
     futures = []
     with PoolExecutor(max_workers=cpu_count() // 2 or 1) as pool:
         tqdm_fn = args.state["tqdm_fn"] or tqdm
@@ -88,16 +96,11 @@ def process_images(ctx, files, output_dir, args, title=None):
                     f = futures.pop(0)
                     f.result()
 
-            output_filename = path.join(
-                output_dir,
-                make_output_filename(meta["filename"], args, video=False))
+            output_filename = path.join(output_dir, make_output_filename(meta["filename"], args, video=False))
             if args.resume and path.exists(output_filename):
                 continue
             output = process_image(ctx, im, meta, args)
-            futures.append(pool.submit(
-                IL.save_image, output,
-                filename=output_filename,
-                meta=meta, format=args.format))
+            futures.append(pool.submit(IL.save_image, output, filename=output_filename, meta=meta, format=args.format))
             pbar.update(1)
             if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                 break
@@ -135,11 +138,7 @@ def process_video(ctx, input_filename, output_path, args):
                 if torch.cuda.is_available() and args.gpu[0] >= 0:
                     options["gpu"] = str(args.gpu[0])
         elif args.video_codec in {"h264_qsv", "hevc_qsv"}:
-            options = {
-                "preset": args.preset,
-                "crf": str(args.crf),
-                "global_quality": str(args.crf)
-            }
+            options = {"preset": args.preset, "crf": str(args.crf), "global_quality": str(args.crf)}
         elif args.video_codec == "libopenh264":
             # NOTE: It seems libopenh264 does not support most options.
             options = {"b": args.video_bitrate}
@@ -168,10 +167,16 @@ def process_video(ctx, input_filename, output_path, args):
             rgb = torch.rot90(rgb, 3, (-2, -1))
 
         output, _ = ctx.convert(
-            rgb, None, args.method, args.noise_level,
-            args.tile_size, args.batch_size,
-            args.tta, enable_amp=not args.disable_amp,
-            output_device=rgb.device)
+            rgb,
+            None,
+            args.method,
+            args.noise_level,
+            args.tile_size,
+            args.batch_size,
+            args.tta,
+            enable_amp=not args.disable_amp,
+            output_device=rgb.device,
+        )
         if args.grain:
             noise = rgb_noise_like(output)
             if noise.shape != args.state["noise_buffer"].shape:
@@ -186,9 +191,7 @@ def process_video(ctx, input_filename, output_path, args):
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
-        output_filename = path.join(
-            output_path,
-            make_output_filename(input_filename, args, video=True))
+        output_filename = path.join(output_path, make_output_filename(input_filename, args, video=True))
     else:
         output_filename = output_path
 
@@ -201,18 +204,21 @@ def process_video(ctx, input_filename, output_path, args):
             return
 
     make_parent_dir(output_filename)
-    VU.process_video(input_filename, output_filename,
-                     config_callback=config_callback,
-                     frame_callback=frame_callback,
-                     vf=args.vf,
-                     stop_event=args.state["stop_event"],
-                     tqdm_fn=args.state["tqdm_fn"],
-                     title=path.basename(input_filename),
-                     start_time=args.start_time,
-                     end_time=args.end_time,
-                     device=args.state["device"],
-                     hwaccel=args.hwaccel,
-                     disable_software_fallback=args.disable_software_fallback)
+    VU.process_video(
+        input_filename,
+        output_filename,
+        config_callback=config_callback,
+        frame_callback=frame_callback,
+        vf=args.vf,
+        stop_event=args.state["stop_event"],
+        tqdm_fn=args.state["tqdm_fn"],
+        title=path.basename(input_filename),
+        start_time=args.start_time,
+        end_time=args.end_time,
+        device=args.state["device"],
+        hwaccel=args.hwaccel,
+        disable_software_fallback=args.disable_software_fallback,
+    )
 
 
 def load_files(txt):
@@ -233,93 +239,132 @@ def create_parser(required_true=True):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model-dir", type=str, help="model dir")
     parser.add_argument("--noise-level", "-n", type=int, default=0, choices=[0, 1, 2, 3], help="noise level")
-    parser.add_argument("--method", "-m", type=str,
-                        choices=["scale4x", "scale2x",
-                                 "noise_scale4x", "noise_scale2x",
-                                 "scale", "noise", "noise_scale"],
-                        default="noise_scale", help="method")
-    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
-                        help="GPU device ids. -1 for CPU")
-    parser.add_argument("--batch-size", type=int, default=None,
-                        help="minibatch_size")
-    parser.add_argument("--tile-size", type=int, default=None,
-                        help="tile size for tiled render")
-    parser.add_argument("--output", "-o", type=str, required=required_true,
-                        help="output file or directory")
-    parser.add_argument("--input", "-i", type=str, required=required_true,
-                        help="input file or directory. (*.txt, *.csv) for image list")
+    parser.add_argument(
+        "--method",
+        "-m",
+        type=str,
+        choices=["scale4x", "scale2x", "noise_scale4x", "noise_scale2x", "scale", "noise", "noise_scale"],
+        default="noise_scale",
+        help="method",
+    )
+    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu], help="GPU device ids. -1 for CPU")
+    parser.add_argument("--batch-size", type=int, default=None, help="minibatch_size")
+    parser.add_argument("--tile-size", type=int, default=None, help="tile size for tiled render")
+    parser.add_argument("--output", "-o", type=str, required=required_true, help="output file or directory")
+    parser.add_argument(
+        "--input", "-i", type=str, required=required_true, help="input file or directory. (*.txt, *.csv) for image list"
+    )
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
     parser.add_argument("--compile", action="store_true", help="compile model if possible")
-    parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
-                        help="image library to encode/decode images")
-    parser.add_argument("--depth", type=int,
-                        help="bit-depth of output image. enabled only with `--image-lib wand`")
-    parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"],
-                        help="output image format")
-    parser.add_argument("--style", type=str, choices=["art", "photo", "scan", "art_scan"],
-                        help=("style for default model (art/scan/photo). "
-                              "Ignored when --model-dir option is specified."))
-    parser.add_argument("--grayscale", action="store_true",
-                        help="Convert to grayscale format")
-    parser.add_argument("--recursive", "-r", action="store_true",
-                        help="process all subdirectories")
-    parser.add_argument("--resume", action="store_true",
-                        help="skip processing when the output file already exists")
+    parser.add_argument(
+        "--image-lib", type=str, choices=["pil", "wand"], default="pil", help="image library to encode/decode images"
+    )
+    parser.add_argument("--depth", type=int, help="bit-depth of output image. enabled only with `--image-lib wand`")
+    parser.add_argument(
+        "--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format"
+    )
+    parser.add_argument(
+        "--style",
+        type=str,
+        choices=["art", "photo", "scan", "art_scan"],
+        help=("style for default model (art/scan/photo). Ignored when --model-dir option is specified."),
+    )
+    parser.add_argument("--grayscale", action="store_true", help="Convert to grayscale format")
+    parser.add_argument("--recursive", "-r", action="store_true", help="process all subdirectories")
+    parser.add_argument("--resume", action="store_true", help="skip processing when the output file already exists")
 
-    parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
-                        help="video container format")
+    parser.add_argument(
+        "--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"], help="video container format"
+    )
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
-    parser.add_argument("--hwaccel", type=str, default=None,
-                        choices=VU.HW_DEVICES,
-                        help="hardware accelerator for the video decoder")
-    parser.add_argument("--disable-software-fallback", action="store_true",
-                        help="disable software fallback for hardware hwaccel")
-    parser.add_argument("--max-fps", type=float, default=128,
-                        help="max framerate. output fps = min(fps, --max-fps) (video only)")
+    parser.add_argument(
+        "--hwaccel", type=str, default=None, choices=VU.HW_DEVICES, help="hardware accelerator for the video decoder"
+    )
+    parser.add_argument(
+        "--disable-software-fallback", action="store_true", help="disable software fallback for hardware hwaccel"
+    )
+    parser.add_argument(
+        "--max-fps", type=float, default=128, help="max framerate. output fps = min(fps, --max-fps) (video only)"
+    )
     parser.add_argument("--profile-level", type=str, help="h264 profile level")
-    parser.add_argument("--crf", type=int, default=20,
-                        help="constant quality value. smaller value is higher quality (video only)")
-    parser.add_argument("--video-bitrate", type=str, default="8M",
-                        help="bitrate option for libopenh264")
-    parser.add_argument("--preset", type=str, default="medium",
-                        choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
-                                 "medium", "slow", "slower", "veryslow", "placebo",
-                                 "p1", "p2", "p3", "p4", "p5", "p6", "p7"],
-                        help="encoder preset option (video only)")
-    parser.add_argument("--tune", type=str, nargs="+", default=[],
-                        choices=["film", "animation", "grain", "stillimage", "psnr",
-                                 "fastdecode", "zerolatency"],
-                        help="encoder tunings option (video only)")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p", choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
-                        help=("pixel format (video only)"))
-    parser.add_argument("--colorspace", type=str, default="auto",
-                        choices=["unspecified", "auto",
-                                 "bt709", "bt709-pc", "bt709-tv",
-                                 "bt601", "bt601-pc", "bt601-tv",
-                                 "bt2020-tv", "bt2020-pq-tv"],
-                        help="video colorspace")
+    parser.add_argument(
+        "--crf", type=int, default=20, help="constant quality value. smaller value is higher quality (video only)"
+    )
+    parser.add_argument("--video-bitrate", type=str, default="8M", help="bitrate option for libopenh264")
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default="medium",
+        choices=[
+            "ultrafast",
+            "superfast",
+            "veryfast",
+            "faster",
+            "fast",
+            "medium",
+            "slow",
+            "slower",
+            "veryslow",
+            "placebo",
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6",
+            "p7",
+        ],
+        help="encoder preset option (video only)",
+    )
+    parser.add_argument(
+        "--tune",
+        type=str,
+        nargs="+",
+        default=[],
+        choices=["film", "animation", "grain", "stillimage", "psnr", "fastdecode", "zerolatency"],
+        help="encoder tunings option (video only)",
+    )
+    parser.add_argument(
+        "--pix-fmt",
+        type=str,
+        default="yuv420p",
+        choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
+        help=("pixel format (video only)"),
+    )
+    parser.add_argument(
+        "--colorspace",
+        type=str,
+        default="auto",
+        choices=[
+            "unspecified",
+            "auto",
+            "bt709",
+            "bt709-pc",
+            "bt709-tv",
+            "bt601",
+            "bt601-pc",
+            "bt601-tv",
+            "bt2020-tv",
+            "bt2020-pq-tv",
+        ],
+        help="video colorspace",
+    )
 
-    parser.add_argument("--yes", "-y", action="store_true", default=False,
-                        help="overwrite output files (video only)")
-    parser.add_argument("--rotate-left", action="store_true",
-                        help="Rotate 90 degrees to the left(counterclockwise) (video only)")
-    parser.add_argument("--rotate-right", action="store_true",
-                        help="Rotate 90 degrees to the right(clockwise) (video only)")
-    parser.add_argument("--disable-exif-transpose", action="store_true",
-                        help="Disable EXIF orientation transpose")
-    parser.add_argument("--vf", type=str, default="",
-                        help="video filter options for ffmpeg. (video only)")
-    parser.add_argument("--grain", action="store_true",
-                        help=("add noise after denosing"))
-    parser.add_argument("--grain-strength", type=float, default=0.2,
-                        help=("noise strength"))
-    parser.add_argument("--grain-speed", type=float, default=0.8,
-                        help=("noise update speed (video only)"))
-    parser.add_argument("--start-time", type=str,
-                        help="set the start time offset for video. hh:mm:ss or mm:ss format")
-    parser.add_argument("--end-time", type=str,
-                        help="set the end time offset for video. hh:mm:ss or mm:ss format")
+    parser.add_argument("--yes", "-y", action="store_true", default=False, help="overwrite output files (video only)")
+    parser.add_argument(
+        "--rotate-left", action="store_true", help="Rotate 90 degrees to the left(counterclockwise) (video only)"
+    )
+    parser.add_argument(
+        "--rotate-right", action="store_true", help="Rotate 90 degrees to the right(clockwise) (video only)"
+    )
+    parser.add_argument("--disable-exif-transpose", action="store_true", help="Disable EXIF orientation transpose")
+    parser.add_argument("--vf", type=str, default="", help="video filter options for ffmpeg. (video only)")
+    parser.add_argument("--grain", action="store_true", help=("add noise after denosing"))
+    parser.add_argument("--grain-strength", type=float, default=0.2, help=("noise strength"))
+    parser.add_argument("--grain-speed", type=float, default=0.8, help=("noise update speed (video only)"))
+    parser.add_argument("--start-time", type=str, help="set the start time offset for video. hh:mm:ss or mm:ss format")
+    parser.add_argument("--end-time", type=str, help="set the end time offset for video. hh:mm:ss or mm:ss format")
 
     # Deprecated
     parser.add_argument("--disable-compile", action="store_true", help="disable torch.compile(). Deprecated")
@@ -416,8 +461,7 @@ def waifu2x_main(args):
                 output_dir = path.normpath(path.join(args.output, path.relpath(input_dir, start=args.input)))
                 image_files = ImageLoader.listdir(input_dir)
                 if image_files:
-                    process_images(ctx, image_files, output_dir, args,
-                                   title=path.relpath(input_dir, args.input))
+                    process_images(ctx, image_files, output_dir, args, title=path.relpath(input_dir, args.input))
                 for video_file in VU.list_videos(input_dir):
                     if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                         return
@@ -438,9 +482,7 @@ def waifu2x_main(args):
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
             fmt = args.format
-            output_filename = path.join(
-                args.output,
-                make_output_filename(args.input, args, video=False))
+            output_filename = path.join(args.output, make_output_filename(args.input, args, video=False))
         else:
             _, ext = path.splitext(args.output)
             fmt = ext.lower()[1:]
@@ -449,7 +491,9 @@ def waifu2x_main(args):
             output_filename = args.output
         if args.resume and path.exists(output_filename):
             return
-        im, meta = IL.load_image(args.input, color="rgb", keep_alpha=True, exif_transpose=not args.disable_exif_transpose)
+        im, meta = IL.load_image(
+            args.input, color="rgb", keep_alpha=True, exif_transpose=not args.disable_exif_transpose
+        )
         output = process_image(ctx, im, meta, args)
         make_parent_dir(output_filename)
         IL.save_image(output, filename=output_filename, meta=meta, format=fmt)

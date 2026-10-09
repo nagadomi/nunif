@@ -1,22 +1,22 @@
+from collections import defaultdict, deque
+from enum import Enum
+
 import torch
 from torch.utils.data.sampler import WeightedRandomSampler
-from collections import deque, defaultdict
-from enum import Enum
+
 from ..logger import logger
 
 
 class MiningMethod(Enum):
     LINEAR = 0  # linear scaling
-    TOP10 = 1   # Top 10% scaling
-    TOP20 = 2   # Top 20% scaling
+    TOP10 = 1  # Top 10% scaling
+    TOP20 = 2  # Top 20% scaling
 
 
 class HardExampleSampler(WeightedRandomSampler):
-    """ Weighted Random Sampler with Hard Example Mining
-    """
-    def __init__(self, weights, num_samples=None,
-                 history_size=6, scale_factor=4.,
-                 method=MiningMethod.TOP10):
+    """Weighted Random Sampler with Hard Example Mining"""
+
+    def __init__(self, weights, num_samples=None, history_size=6, scale_factor=4.0, method=MiningMethod.TOP10):
         num_samples = num_samples or weights.shape[0]
         super().__init__(weights, num_samples=num_samples, replacement=True)
         self.base_weights = weights.clone()
@@ -57,9 +57,11 @@ class HardExampleSampler(WeightedRandomSampler):
             loss_threshold = top_losses[-1]
             scale_factor = torch.full(self.loss_sma.shape, fill_value=1)
             scale_factor[self.loss_sma >= loss_threshold] = self.scale_factor
-            logger.debug(f"HardExampleSampler: mean={valid_losses.mean()}, "
-                         f"top mean={sum(top_losses) / len(top_losses)}, "
-                         f"threshold={loss_threshold}")
+            logger.debug(
+                f"HardExampleSampler: mean={valid_losses.mean()}, "
+                f"top mean={sum(top_losses) / len(top_losses)}, "
+                f"threshold={loss_threshold}"
+            )
         else:
             raise NotImplementedError()
 

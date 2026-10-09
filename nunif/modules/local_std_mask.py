@@ -24,6 +24,7 @@ def local_std_mask(x, y, kernel_size=15, max_std=0.1, min_weight=0.1):
 def _test():
     import torchvision.io as io
     import torchvision.transforms.functional as TF
+
     x = io.read_image("cc0/320/light_house.png") / 255.0
     z = compute_local_std_mask(x.unsqueeze(0)).squeeze(0)
     TF.to_pil_image(z).show()

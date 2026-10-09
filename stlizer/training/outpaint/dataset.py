@@ -1,16 +1,20 @@
+import random
+
 import torch
 import torch.nn.functional as F
+import torchvision.transforms as T
 from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
-    functional as TF,
     InterpolationMode,
 )
-import torchvision.transforms as T
+from torchvision.transforms import (
+    functional as TF,
+)
+
 import nunif.transforms.std as TS
+import nunif.utils.superpoint as KU
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-import nunif.utils.superpoint as KU
-import random
 
 
 def outpaint_mask(x):
@@ -34,10 +38,7 @@ def outpaint_mask(x):
         angle = 0
         center = [H // 2, W // 2]
 
-    mask = KU.apply_transform(
-        mask, shift=shift, scale=1.0, angle=angle,
-        center=center, padding_mode="border"
-    )
+    mask = KU.apply_transform(mask, shift=shift, scale=1.0, angle=angle, center=center, padding_mode="border")
     mask = (mask >= 0.5).to(x.dtype)
 
     return mask
@@ -61,13 +62,13 @@ def inpaint_mask(x):
         mask = TF.resize(mask, (H, W), interpolation=InterpolationMode.NEAREST)
         mask = TF.rotate(mask, angle=random.uniform(-45, 45))
     elif method == 1:
-        mask = torch.zeros((1, int(H * 2 ** 0.5), int(W * 2 ** 0.5)), dtype=x.dtype)
+        mask = torch.zeros((1, int(H * 2**0.5), int(W * 2**0.5)), dtype=x.dtype)
         size = random.randint(2, int(max(H, W) * 0.2))
-        mask[:, (mask.shape[1] // 2 - size // 2):(mask.shape[1] // 2 + size), :] = 1.0
+        mask[:, (mask.shape[1] // 2 - size // 2) : (mask.shape[1] // 2 + size), :] = 1.0
         mask = TF.rotate(mask, angle=random.uniform(-180, 180))
         sh = random.randint(0, mask.shape[1] - H)
         sw = random.randint(0, mask.shape[2] - W)
-        mask = mask[:, sh:sh + H, sw:sw + W]
+        mask = mask[:, sh : sh + H, sw : sw + W]
 
     mask = (mask >= 0.5).to(x.dtype)
 
@@ -97,11 +98,13 @@ class OutpaintDataset(Dataset):
             raise RuntimeError(f"{input_dir} is empty")
 
         if self.training:
-            self.gt_transform = T.Compose([
-                TS.RandomSRHardExampleCrop(self.tile_size),
-                T.RandomApply([TS.RandomGrayscale()], 0.005),
-                T.RandomHorizontalFlip(),
-            ])
+            self.gt_transform = T.Compose(
+                [
+                    TS.RandomSRHardExampleCrop(self.tile_size),
+                    T.RandomApply([TS.RandomGrayscale()], 0.005),
+                    T.RandomHorizontalFlip(),
+                ]
+            )
         else:
             self.gt_transform = T.CenterCrop(self.tile_size)
 
@@ -133,15 +136,22 @@ class OutpaintDataset(Dataset):
             x = x * (1 - mask)
             mask = mask.to(torch.bool)
 
-        y = TF.to_tensor(TF.crop(im, self.model_offset, self.model_offset,
-                                 im.height - self.model_offset * 2,
-                                 im.width - self.model_offset * 2))
+        y = TF.to_tensor(
+            TF.crop(
+                im,
+                self.model_offset,
+                self.model_offset,
+                im.height - self.model_offset * 2,
+                im.width - self.model_offset * 2,
+            )
+        )
         return x, mask, y, index
 
 
 def _test():
-    import torchvision.io as io
     import time
+
+    import torchvision.io as io
 
     src = io.read_image("cc0/320/dog.png") / 255.0
     for _ in range(4):

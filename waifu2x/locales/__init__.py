@@ -1,13 +1,22 @@
 import os
 from os import path
-import yaml
-from .. web.webgen.gen import load_locales as load_webgen_locales
 
+import yaml
+
+from ..web.webgen.gen import load_locales as load_webgen_locales
 
 WEBGEN_TERMS = [
-    "artwork", "scan", "photo",
-    "noise_reduction", "nr_none", "nr_low", "nr_medium", "nr_high", "nr_highest",
-    "upscaling", "up_none",
+    "artwork",
+    "scan",
+    "photo",
+    "noise_reduction",
+    "nr_none",
+    "nr_low",
+    "nr_medium",
+    "nr_high",
+    "nr_highest",
+    "upscaling",
+    "up_none",
 ]
 
 
@@ -41,5 +50,4 @@ def load_locales(locale_dir, webgen_locale_dir):
     return locales
 
 
-LOCALES = load_locales(path.dirname(__file__),
-                       path.join(path.dirname(__file__), "..", "web", "webgen", "locales"))
+LOCALES = load_locales(path.dirname(__file__), path.join(path.dirname(__file__), "..", "web", "webgen", "locales"))

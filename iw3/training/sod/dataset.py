@@ -1,25 +1,33 @@
+import os
+import random
+from os import path
+
 import torch
+import torch.nn.functional as F
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms as T
 from torchvision.transforms import (
-    functional as TF,
     InterpolationMode,
 )
-import os
-from os import path
-import torch.nn.functional as F
+from torchvision.transforms import (
+    functional as TF,
+)
+
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
+
 from ...base_depth_model import BaseDepthModel
-import random
 
 
 def random_resized_crop(size, *images):
     i, j, h, w = T.RandomResizedCrop.get_params(images[0], scale=(0.333, 1.0), ratio=(1.0 / 2.0, 2.0 / 1.0))
     results = []
     for im in images:
-        results.append(TF.resized_crop(im, i, j, h, w, size=(size, size),
-                                       interpolation=InterpolationMode.BILINEAR, antialias=False))
+        results.append(
+            TF.resized_crop(
+                im, i, j, h, w, size=(size, size), interpolation=InterpolationMode.BILINEAR, antialias=False
+            )
+        )
 
     return tuple(results)
 
@@ -55,11 +63,7 @@ def resize(size, *images):
     results = []
     for im in images:
         resized = F.interpolate(
-            im.unsqueeze(0),
-            (size, size),
-            mode="bilinear",
-            antialias=False,
-            align_corners=True
+            im.unsqueeze(0), (size, size), mode="bilinear", antialias=False, align_corners=True
         ).squeeze(0)
         results.append(resized)
 

@@ -1,25 +1,25 @@
 # when unicode error, set LANG=C
-import os
-import sys
 import argparse
-import torch
-from PIL import Image
-from os import path
-from tqdm import tqdm
+import os
 import random
-from torchvision import transforms as T
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode)
-import torch.nn.functional as F
-from nunif.utils.pil_io import load_image_simple
-from PIL.PngImagePlugin import PngInfo
-from nunif.utils.image_loader import ImageLoader, list_images
+import sys
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
-from iw3.utils import get_mapper
-from iw3.forward_warp import apply_divergence_forward_warp
+from os import path
 
+import torch
+import torch.nn.functional as F
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
+from torchvision import transforms as T
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
+from tqdm import tqdm
+
+from iw3.forward_warp import apply_divergence_forward_warp
+from iw3.utils import get_mapper
+from nunif.utils.image_loader import ImageLoader, list_images
+from nunif.utils.pil_io import load_image_simple
 
 OFFSET = 32
 
@@ -48,7 +48,9 @@ def random_hard_example_crop(size, n, *images):
     return results
 
 
-def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, mapper, filename_base, size, num_samples):
+def save_images(
+    im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, mapper, filename_base, size, num_samples
+):
     im_l = TF.crop(im_sbs, 0, 0, im_org.height, im_org.width)
     im_r = TF.crop(im_sbs, 0, im_org.width, im_org.height, im_org.width)
     im_mask_l = TF.crop(im_mask_sbs, 0, 0, im_org.height, im_org.width)
@@ -76,7 +78,11 @@ def save_images(im_org, im_sbs, im_mask_sbs, im_depth, divergence, convergence, 
     im_r = TF.crop(im_r, 0, unpad_size, im_r.height, im_r.width - unpad_size * 2)
     im_mask_l = TF.crop(im_mask_l, 0, unpad_size, im_mask_l.height, im_mask_l.width - unpad_size * 2)
     im_mask_r = TF.crop(im_mask_r, 0, unpad_size, im_mask_r.height, im_mask_r.width - unpad_size * 2)
-    assert im_org.size == im_l.size and im_org.size == im_r.size and im_org.size == im_depth.size == im_mask_r.size == im_mask_r.size
+    assert (
+        im_org.size == im_l.size
+        and im_org.size == im_r.size
+        and im_org.size == im_depth.size == im_mask_r.size == im_mask_r.size
+    )
     if min(im_org.size) < size:
         return
 
@@ -152,9 +158,9 @@ def gen_divergence(width, divergence_level):
         # NOTE: min(32.0 / (width * 0.5) * 100, max_divergence) is correct but use this
         max_divergence = min(OFFSET / (width * 0.5) * 100, 5.0)
         if random.uniform(0, 1) < 0.7:
-            return random.choice([2., 2.5, 3.0])
+            return random.choice([2.0, 2.5, 3.0])
         else:
-            return random.uniform(0., max_divergence)
+            return random.uniform(0.0, max_divergence)
     elif divergence_level == 2:
         # max divergence == 8
         max_divergence = min(OFFSET / (width * 0.5) * 100, 8.0)
@@ -185,7 +191,7 @@ def gen_convergence(weak_random_convergence):
         if random.uniform(0, 1) < 0.7:
             return random.choice([0.0, 0.5, 1.0])
         else:
-            return random.uniform(0., 1.)
+            return random.uniform(0.0, 1.0)
 
 
 def gen_mapper(is_metric):
@@ -248,9 +254,12 @@ def main(args):
         output_dir = path.join(args.data_dir, dataset_type)
         os.makedirs(output_dir, exist_ok=True)
 
-        loader = ImageLoader(files=list_images(input_dir), max_queue_size=128,
-                             load_func=load_image_simple,
-                             load_func_kwargs={"color": "rgb"})
+        loader = ImageLoader(
+            files=list_images(input_dir),
+            max_queue_size=128,
+            load_func=load_image_simple,
+            load_func_kwargs={"color": "rgb"},
+        )
         seq = 1
         with PoolExecutor(max_workers=args.max_workers) as pool:
             futures = []
@@ -273,16 +282,32 @@ def main(args):
                             # resize depth size to image size
                             im_s = random_resize(im, args.min_size, args.max_size)
                             divergence = gen_divergence(im_s.width, args.divergence_level)
-                            depth = model.infer(im_s, tta=flip_aug, enable_amp=enable_amp,
-                                                edge_dilation=edge_dilation, depth_aa=depth_aa)
-                            depth = F.interpolate(depth.unsqueeze(0), (im_s.height, im_s.width),
-                                                  mode="bilinear", align_corners=True, antialias=True).squeeze(0)
+                            depth = model.infer(
+                                im_s,
+                                tta=flip_aug,
+                                enable_amp=enable_amp,
+                                edge_dilation=edge_dilation,
+                                depth_aa=depth_aa,
+                            )
+                            depth = F.interpolate(
+                                depth.unsqueeze(0),
+                                (im_s.height, im_s.width),
+                                mode="bilinear",
+                                align_corners=True,
+                                antialias=True,
+                            ).squeeze(0)
                         else:
                             # resize image size to depth size
-                            depth = model.infer(im, tta=flip_aug, enable_amp=enable_amp,
-                                                edge_dilation=edge_dilation, depth_aa=depth_aa)
-                            im_s = F.interpolate(TF.to_tensor(im).unsqueeze(0), depth.shape[-2:],
-                                                 mode="bilinear", align_corners=False, antialias=True).squeeze(0)
+                            depth = model.infer(
+                                im, tta=flip_aug, enable_amp=enable_amp, edge_dilation=edge_dilation, depth_aa=depth_aa
+                            )
+                            im_s = F.interpolate(
+                                TF.to_tensor(im).unsqueeze(0),
+                                depth.shape[-2:],
+                                mode="bilinear",
+                                align_corners=False,
+                                antialias=True,
+                            ).squeeze(0)
                             im_s = im_s.clamp(0, 1)
                             im_s = TF.to_pil_image(im_s)
                             divergence = gen_divergence(im_s.width, args.divergence_level)
@@ -290,27 +315,40 @@ def main(args):
                         assert im_s.height == depth.shape[-2] and im_s.width == depth.shape[-1]
 
                         depth = model.minmax_normalize_chw(depth)
-                        np_depth16 = (depth * 0xffff).round().to(torch.uint16).squeeze(0).cpu().numpy()
+                        np_depth16 = (depth * 0xFFFF).round().to(torch.uint16).squeeze(0).cpu().numpy()
 
                     c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
                     depth_f = apply_mapper(depth, mapper).unsqueeze(0)
                     left_eye, right_eye, left_mask, right_mask = apply_divergence_forward_warp(
-                        c, depth_f, divergence, convergence,
+                        c,
+                        depth_f,
+                        divergence,
+                        convergence,
                         method="forward_fill",
                         synthetic_view="both",
                         return_mask=True,
                         inconsistent_shift=True,
-                        width_base=True)
+                        width_base=True,
+                    )
 
                     sbs = torch.cat([left_eye, right_eye], dim=3).squeeze(0)
-                    sbs = TF.to_pil_image(torch.clamp(sbs, 0., 1.))
+                    sbs = TF.to_pil_image(torch.clamp(sbs, 0.0, 1.0))
                     mask_sbs = torch.cat([left_mask, right_mask], dim=3).squeeze(0).float()
                     mask_sbs = TF.to_pil_image(mask_sbs)
 
-                    f = pool.submit(save_images, im_s, sbs, mask_sbs, Image.fromarray(np_depth16),
-                                    divergence, convergence,
-                                    mapper,
-                                    output_base, args.size, args.num_samples)
+                    f = pool.submit(
+                        save_images,
+                        im_s,
+                        sbs,
+                        mask_sbs,
+                        Image.fromarray(np_depth16),
+                        divergence,
+                        convergence,
+                        mapper,
+                        output_base,
+                        args.size,
+                        args.num_samples,
+                    )
                     # f.result() # debug
                     futures.append(f)
                     seq += 1
@@ -321,26 +359,27 @@ def main(args):
 def register(subparsers, default_parser):
     max_workers = cpu_count() // 2 or 1
     parser = subparsers.add_parser(
-        "sbs",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "sbs", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--max-size", type=int, default=920, help="max image size")
-    parser.add_argument("--divergence-level", type=int, default=1, choices=[1, 2, 3], help="divergence level. 1=0-5, 2=3-8, 3=6-11")
+    parser.add_argument(
+        "--divergence-level", type=int, default=1, choices=[1, 2, 3], help="divergence level. 1=0-5, 2=3-8, 3=6-11"
+    )
     parser.add_argument("--weak-random-convergence", action="store_true", help="Use weak random convergence. 0.3-0.7")
     parser.add_argument("--min-size", type=int, default=320, help="min image size")
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
     parser.add_argument("--size", type=int, default=256, help="crop size")
-    parser.add_argument("--times", type=int, default=4,
-                        help="number of times an image is used for random scaling")
+    parser.add_argument("--times", type=int, default=4, help="number of times an image is used for random scaling")
     parser.add_argument("--num-samples", type=int, default=2, help="max random crops")
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_N", help="depth model")
     parser.add_argument("--mapper", type=str, default="random", help="depth mapper function")
     parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
-    parser.add_argument("--max-workers", type=int, default=max_workers,
-                        help="Number of worker threads. Set to 1 to disable.")
+    parser.add_argument(
+        "--max-workers", type=int, default=max_workers, help="Number of worker threads. Set to 1 to disable."
+    )
 
     parser.set_defaults(handler=main)
 

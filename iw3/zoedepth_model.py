@@ -1,13 +1,15 @@
 import os
 from os import path
+
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
-from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
-from nunif.modules.reflection_pad2d import reflection_pad2d_loop
-from . dilation import dilate_edge, edge_dilation_is_enabled
-from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
 
+from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
+from nunif.modules.reflection_pad2d import reflection_pad2d_loop
+
+from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from .dilation import dilate_edge, edge_dilation_is_enabled
 
 MODEL_FILES = {
     "ZoeD_N": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_N.pt"),
@@ -22,7 +24,7 @@ DEPTH_ANYTHING_MODELS = {"ZoeD_Any_N": "indoor", "ZoeD_Any_K": "outdoor"}
 
 def _forward(model, x, enable_amp):
     with autocast(device=x.device, enabled=enable_amp):
-        out = model(x)['metric_depth']
+        out = model(x)["metric_depth"]
     out = torch.nan_to_num(out)
     return out
 
@@ -38,9 +40,9 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
         new_h = target_height
         new_w = int(new_h / height * width)
         if new_w % mod != 0:
-            new_w += (mod - new_w % mod)
+            new_w += mod - new_w % mod
         if new_h % mod != 0:
-            new_h += (mod - new_h % mod)
+            new_h += mod - new_h % mod
     else:
         new_h, new_w = height, width
         if new_w % mod != 0:
@@ -61,8 +63,7 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
         frame_w = int(width * (frame_h / height))
         frame_w += frame_w % 2
         pad_w = (new_h - frame_w) // 2
-        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear",
-                          align_corners=False, antialias=antialias)
+        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear", align_corners=False, antialias=antialias)
         x = reflection_pad2d_loop(x, [pad_w, pad_w, pad_h, pad_h])
         # assert x.shape[2] == new_h and x.shape[3] == new_h
     else:
@@ -70,8 +71,7 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
         pad_w = round(new_w * pad_scale_w)
         frame_h = new_h - pad_h * 2
         frame_w = new_w - pad_w * 2
-        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear",
-                          align_corners=False, antialias=antialias)
+        x = F.interpolate(x, size=(frame_h, frame_w), mode="bilinear", align_corners=False, antialias=antialias)
         x = reflection_pad2d_loop(x, [pad_w, pad_w, pad_h, pad_h])
         # assert x.shape[2] == new_h and x.shape[3] == new_w
 
@@ -86,9 +86,17 @@ def batch_preprocess(x, h_height=384, v_height=512, ensure_multiple_of=32):
 
 
 @torch.inference_mode()
-def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
-                output_device="cpu", device=None,
-                edge_dilation=0, **kwargs):
+def batch_infer(
+    model,
+    im,
+    flip_aug=True,
+    low_vram=False,
+    enable_amp=False,
+    output_device="cpu",
+    device=None,
+    edge_dilation=0,
+    **kwargs,
+):
 
     device = device if device is not None else model.device
     batch = False
@@ -104,9 +112,8 @@ def batch_infer(model, im, flip_aug=True, low_vram=False, enable_amp=False,
         x = TF.to_tensor(im).unsqueeze(0).to(device)
 
     x, pad_h, pad_w = batch_preprocess(
-        x,
-        h_height=model.prep_h_height, v_height=model.prep_v_height,
-        ensure_multiple_of=model.prep_mod)
+        x, h_height=model.prep_h_height, v_height=model.prep_v_height, ensure_multiple_of=model.prep_mod
+    )
 
     if not low_vram:
         if flip_aug:
@@ -155,24 +162,46 @@ class ZoeDepthModel(BaseDepthModel):
     def load_model(self, model_type, resolution=None, device=None):
         if not os.getenv("IW3_DEBUG"):
             if model_type not in DEPTH_ANYTHING_MODELS:
-                model = torch.hub.load("nagadomi/ZoeDepth_iw3:main", model_type, config_mode="infer",
-                                       pretrained=True, verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "nagadomi/ZoeDepth_iw3:main",
+                    model_type,
+                    config_mode="infer",
+                    pretrained=True,
+                    verbose=False,
+                    trust_repo=True,
+                )
             else:
-                model = torch.hub.load("nagadomi/Depth-Anything_iw3:main",
-                                       "DepthAnythingMetricDepth",
-                                       model_type=DEPTH_ANYTHING_MODELS[model_type], remove_prep=False,
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "nagadomi/Depth-Anything_iw3:main",
+                    "DepthAnythingMetricDepth",
+                    model_type=DEPTH_ANYTHING_MODELS[model_type],
+                    remove_prep=False,
+                    verbose=False,
+                    trust_repo=True,
+                )
         else:
             if model_type not in DEPTH_ANYTHING_MODELS:
                 assert path.exists("../ZoeDepth_iw3/hubconf.py")
-                model = torch.hub.load("../ZoeDepth_iw3", model_type, source="local", config_mode="infer",
-                                       pretrained=True, verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "../ZoeDepth_iw3",
+                    model_type,
+                    source="local",
+                    config_mode="infer",
+                    pretrained=True,
+                    verbose=False,
+                    trust_repo=True,
+                )
             else:
                 assert path.exists("../Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Depth-Anything_iw3",
-                                       "DepthAnythingMetricDepth",
-                                       model_type=DEPTH_ANYTHING_MODELS[model_type], remove_prep=False,
-                                       source="local", verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "../Depth-Anything_iw3",
+                    "DepthAnythingMetricDepth",
+                    model_type=DEPTH_ANYTHING_MODELS[model_type],
+                    remove_prep=False,
+                    source="local",
+                    verbose=False,
+                    trust_repo=True,
+                )
 
         # remove prep
         model.core.prep = lambda x: x
@@ -181,7 +210,7 @@ class ZoeDepthModel(BaseDepthModel):
             model.prep_mod = 32
             if resolution is not None:
                 if resolution % model.prep_mod != 0:
-                    resolution += (model.prep_mod - resolution % model.prep_mod)
+                    resolution += model.prep_mod - resolution % model.prep_mod
                 model.prep_h_height = resolution
                 model.prep_v_height = resolution
             else:
@@ -191,7 +220,7 @@ class ZoeDepthModel(BaseDepthModel):
             model.prep_mod = 14
             if resolution is not None:
                 if resolution % model.prep_mod != 0:
-                    resolution += (model.prep_mod - resolution % model.prep_mod)
+                    resolution += model.prep_mod - resolution % model.prep_mod
                 model.prep_h_height = resolution
                 model.prep_v_height = resolution
             else:
@@ -206,11 +235,15 @@ class ZoeDepthModel(BaseDepthModel):
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).to(self.device)
         return batch_infer(
-            self.model, x, flip_aug=tta, low_vram=low_vram,
+            self.model,
+            x,
+            flip_aug=tta,
+            low_vram=low_vram,
             enable_amp=enable_amp,
             output_device=x.device,
             device=x.device,
-            edge_dilation=edge_dilation)
+            edge_dilation=edge_dilation,
+        )
 
     @classmethod
     def get_name(cls):

@@ -1,21 +1,24 @@
 # python train.py stlizer.outpaint -i ./data/sr_dataset --model-dir models/light_outpaint
 # python train.py stlizer.outpaint -i ./data/sr_dataset --model-dir models/light_outpaint --resume --reset-state --learning-rate 3e-5 --max-epoch 40 --learning-rate-cycles 1 --ema-model
+import argparse
 import os
 from os import path
-import argparse
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from torchvision.utils import make_grid
+
 from nunif.models import create_model
+from nunif.modules.auxiliary_loss import AuxiliaryLoss
+from nunif.modules.dct_loss import DCTLoss
+from nunif.modules.multiscale_loss import MultiscaleLoss
 from nunif.training.env import RGBPSNREnv
 from nunif.training.trainer import Trainer
-from nunif.modules.dct_loss import DCTLoss
-from nunif.modules.auxiliary_loss import AuxiliaryLoss
-from nunif.modules.multiscale_loss import MultiscaleLoss
+
+from ... import models  # noqa
 from .dataset import OutpaintDataset
-from ... import models # noqa
 
 
 class OutpaintEnv(RGBPSNREnv):
@@ -53,7 +56,7 @@ class OutpaintEnv(RGBPSNREnv):
 
     def save_eval(self, x, y, z, i):
         offset = (x.shape[2] - z.shape[2]) // 2
-        x = F.pad(x, (-offset, ) * 4)
+        x = F.pad(x, (-offset,) * 4)
         x = torch.cat([x, z, y], dim=3)
         eval_output_dir = path.join(self.trainer.args.model_dir, "eval")
         os.makedirs(eval_output_dir, exist_ok=True)
@@ -69,14 +72,15 @@ class OutpaintTrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         model_offset = self.model.i2i_offset
         if type == "train":
             dataset = OutpaintDataset(
                 path.join(self.args.data_dir, "train"),
                 model_offset=model_offset,
                 tile_size=self.args.size,
-                training=True)
+                training=True,
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 sampler=torch.utils.data.RandomSampler(dataset, num_samples=self.args.num_samples),
@@ -84,21 +88,24 @@ class OutpaintTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = OutpaintDataset(
                 path.join(self.args.data_dir, "eval"),
                 tile_size=self.args.size,
                 model_offset=model_offset,
-                training=False)
+                training=False,
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
 
     def create_env(self):
@@ -122,15 +129,12 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "stlizer.outpaint",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "stlizer.outpaint", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="stlizer.light_outpaint_v1", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="dctm",
-                        choices=["dct", "dctm", "l1"], help="loss")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
+    parser.add_argument("--loss", type=str, default="dctm", choices=["dct", "dctm", "l1"], help="loss")
     parser.add_argument("--size", type=int, default=320, help="model input size")
     parser.set_defaults(
         batch_size=4,

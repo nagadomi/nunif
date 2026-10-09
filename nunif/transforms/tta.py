@@ -18,7 +18,7 @@ def _itr_f(x):
 
 
 def tta_split(x):
-    assert (isinstance(x, torch.Tensor) and x.dim() == 3)
+    assert isinstance(x, torch.Tensor) and x.dim() == 3
     x_hflip = _hflip(x)
     x_vflip = _vflip(x)
     x_vflip_hflip = _hflip(x_vflip)
@@ -27,13 +27,11 @@ def tta_split(x):
     x_tr_vflip = _vflip(x_tr)
     x_tr_vflip_hflip = _hflip(x_tr_vflip)
 
-    return (x, x_hflip, x_vflip, x_vflip_hflip,
-            x_tr, x_tr_hflip, x_tr_vflip, x_tr_vflip_hflip)
+    return (x, x_hflip, x_vflip, x_vflip_hflip, x_tr, x_tr_hflip, x_tr_vflip, x_tr_vflip_hflip)
 
 
 def tta_merge(xs):
-    (x, x_hflip, x_vflip, x_vflip_hflip,
-     x_tr, x_tr_hflip, x_tr_vflip, x_tr_vflip_hflip) = xs
+    (x, x_hflip, x_vflip, x_vflip_hflip, x_tr, x_tr_hflip, x_tr_vflip, x_tr_vflip_hflip) = xs
 
     avg = x.clone()
     avg += _hflip(x_hflip)

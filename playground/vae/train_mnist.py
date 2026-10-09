@@ -1,18 +1,19 @@
 # VAE
 # python3 -m playground.vae.train_mnist --data-dir ./tmp/vae --model-dir ./tmp/vae
-from torchvision.datasets import MNIST
+from os import path
+
+import torch
+from PIL import ImageOps
+from torch import nn
 from torchvision import transforms as T
+from torchvision.datasets import MNIST
 from torchvision.transforms import functional as TF
 from torchvision.utils import make_grid
-import torch
-from torch import nn
-from os import path
-from PIL import ImageOps
-from nunif.models import Model, get_model_device
+
 import nunif.modules.vae as VF
+from nunif.models import Model, get_model_device
 from nunif.training.env import UnsupervisedEnv
 from nunif.training.trainer import Trainer, create_trainer_default_parser
-
 
 IMAGE_SCALE = 0.5
 MNIST_SIZE = 28
@@ -26,16 +27,13 @@ class VAE(Model):
         super().__init__(locals())
         self.latent_dim = latent_dim
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, feat_dim),
-            nn.ReLU(inplace=True),
-            nn.Linear(feat_dim, feat_dim),
-            nn.ReLU(inplace=True))
+            nn.Linear(input_dim, feat_dim), nn.ReLU(inplace=True), nn.Linear(feat_dim, feat_dim), nn.ReLU(inplace=True)
+        )
         self.to_mean = nn.Linear(feat_dim, latent_dim)
         self.to_log_var = nn.Linear(feat_dim, latent_dim)
         self.decoder = nn.Sequential(
-            nn.Linear(self.latent_dim, feat_dim),
-            nn.ReLU(inplace=True),
-            nn.Linear(feat_dim, input_dim))
+            nn.Linear(self.latent_dim, feat_dim), nn.ReLU(inplace=True), nn.Linear(feat_dim, input_dim)
+        )
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -87,7 +85,7 @@ class MNISTImageOnly(MNIST):
         return x
 
 
-class MinMaxNormalize():
+class MinMaxNormalize:
     def __call__(self, x):
         min_v, max_v = x.min(), x.max()
         return (x - min_v) / (max_v - min_v)
@@ -138,13 +136,9 @@ class VAETrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
-            transform = T.Compose([
-                T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-                T.ToTensor(),
-                MinMaxNormalize()
-            ])
+            transform = T.Compose([T.Resize((IMAGE_SIZE, IMAGE_SIZE)), T.ToTensor(), MinMaxNormalize()])
             dataset = MNISTImageOnly(self.args.data_dir, train=True, download=True, transform=transform)
             loader = torch.utils.data.DataLoader(
                 dataset,
@@ -152,7 +146,8 @@ class VAETrainer(Trainer):
                 shuffle=True,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
         else:
             return None
@@ -165,12 +160,7 @@ class VAETrainer(Trainer):
 def main():
     parser = create_trainer_default_parser()
     parser.set_defaults(
-        batch_size=32,
-        num_workers=2,
-        max_epoch=100,
-        learning_rate=0.00025,
-        learning_rate_decay=0.98,
-        disable_amp=True
+        batch_size=32, num_workers=2, max_epoch=100, learning_rate=0.00025, learning_rate_decay=0.98, disable_amp=True
     )
     args = parser.parse_args()
     trainer = VAETrainer(args)

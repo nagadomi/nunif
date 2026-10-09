@@ -1,16 +1,18 @@
 import os
 from os import path
+
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
-from nunif.device import create_device, autocast, device_is_mps, device_is_xpu # noqa
+
+from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
 from nunif.models.utils import compile_model
 from nunif.modules.reflection_pad2d import reflection_pad2d_naive
-from .dilation import dilate_edge, edge_dilation_is_enabled
-from . base_depth_model import BaseDepthModel, HUB_MODEL_DIR
-from . depth_anything_model import batch_preprocess as batch_preprocess_da
-from .models import DepthAA
 
+from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from .depth_anything_model import batch_preprocess as batch_preprocess_da
+from .dilation import dilate_edge, edge_dilation_is_enabled
+from .models import DepthAA
 
 NAME_MAP = {
     "VDA_S": "vits",
@@ -58,8 +60,9 @@ def batch_preprocess(x, lower_bound, metric_depth, limit_resolution=False):
     return x
 
 
-def _postprocess(out, edge_dilation,
-                 metric_depth, force_disparity=False, max_dist=None, depth_aa=None, enable_amp=True):
+def _postprocess(
+    out, edge_dilation, metric_depth, force_disparity=False, max_dist=None, depth_aa=None, enable_amp=True
+):
     out = out.unsqueeze(1)
     out = torch.nan_to_num(out)
 
@@ -97,16 +100,21 @@ def _postprocess(out, edge_dilation,
 
 def postprocess(out, edge_dilation, metric_depth, max_dist=None, depth_aa=None, force_disparity=False, enable_amp=True):
     micro_batch_size = 4
-    return torch.cat([
-        _postprocess(
-            batch,
-            edge_dilation=edge_dilation,
-            metric_depth=metric_depth,
-            force_disparity=force_disparity,
-            max_dist=max_dist,
-            depth_aa=depth_aa,
-            enable_amp=enable_amp
-        ) for batch in torch.split(out, micro_batch_size, dim=0)], dim=0)
+    return torch.cat(
+        [
+            _postprocess(
+                batch,
+                edge_dilation=edge_dilation,
+                metric_depth=metric_depth,
+                force_disparity=force_disparity,
+                max_dist=max_dist,
+                depth_aa=depth_aa,
+                enable_amp=enable_amp,
+            )
+            for batch in torch.split(out, micro_batch_size, dim=0)
+        ],
+        dim=0,
+    )
 
 
 class VideoDepthAnythingModel(BaseDepthModel):
@@ -126,30 +134,52 @@ class VideoDepthAnythingModel(BaseDepthModel):
         if self.metric_depth:
             # MetricVideoDepthAnything
             if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/Video-Depth-Anything_iw3:main",
-                                       "MetricVideoDepthAnythingOnline", encoder=encoder, device=device,
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "nagadomi/Video-Depth-Anything_iw3:main",
+                    "MetricVideoDepthAnythingOnline",
+                    encoder=encoder,
+                    device=device,
+                    verbose=False,
+                    trust_repo=True,
+                )
             else:
                 assert path.exists("../Video-Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Video-Depth-Anything_iw3",
-                                       "MetricVideoDepthAnythingOnline", encoder=encoder, device=device,
-                                       source="local", verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "../Video-Depth-Anything_iw3",
+                    "MetricVideoDepthAnythingOnline",
+                    encoder=encoder,
+                    device=device,
+                    source="local",
+                    verbose=False,
+                    trust_repo=True,
+                )
         else:
             # VideoDepthAnything
             if not os.getenv("IW3_DEBUG"):
-                model = torch.hub.load("nagadomi/Video-Depth-Anything_iw3:main",
-                                       "VideoDepthAnythingOnline", encoder=encoder, device=device,
-                                       verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "nagadomi/Video-Depth-Anything_iw3:main",
+                    "VideoDepthAnythingOnline",
+                    encoder=encoder,
+                    device=device,
+                    verbose=False,
+                    trust_repo=True,
+                )
             else:
                 assert path.exists("../Video-Depth-Anything_iw3/hubconf.py")
-                model = torch.hub.load("../Video-Depth-Anything_iw3",
-                                       "VideoDepthAnythingOnline", encoder=encoder, device=device,
-                                       source="local", verbose=False, trust_repo=True)
+                model = torch.hub.load(
+                    "../Video-Depth-Anything_iw3",
+                    "VideoDepthAnythingOnline",
+                    encoder=encoder,
+                    device=device,
+                    source="local",
+                    verbose=False,
+                    trust_repo=True,
+                )
 
         model.prep_lower_bound = resolution or 392
         if model.prep_lower_bound % 14 != 0:
             # From GUI, 512 -> 518
-            model.prep_lower_bound += (14 - model.prep_lower_bound % 14)
+            model.prep_lower_bound += 14 - model.prep_lower_bound % 14
 
         return model
 
@@ -176,16 +206,19 @@ class VideoDepthAnythingModel(BaseDepthModel):
             batch = True
 
         self.reset()
-        x = batch_preprocess(x, self.model.prep_lower_bound,
-                             metric_depth=self.model.metric_depth,
-                             limit_resolution=self.limit_resolution)
+        x = batch_preprocess(
+            x, self.model.prep_lower_bound, metric_depth=self.model.metric_depth, limit_resolution=self.limit_resolution
+        )
         self.model.infer(x[0], use_amp=enable_amp)
         self.input_frame_count = 1
         out = torch.stack(self._flush())
-        out = postprocess(out, edge_dilation=edge_dilation,
-                          metric_depth=self.model.metric_depth,
-                          force_disparity=self.force_disparity,
-                          enable_amp=enable_amp)
+        out = postprocess(
+            out,
+            edge_dilation=edge_dilation,
+            metric_depth=self.model.metric_depth,
+            force_disparity=self.force_disparity,
+            enable_amp=enable_amp,
+        )
         if not batch:
             out = out.squeeze(0)
         self.reset()
@@ -197,9 +230,9 @@ class VideoDepthAnythingModel(BaseDepthModel):
         depth_aa = self.depth_aa if depth_aa else None
 
         B = x.shape[0]
-        x = batch_preprocess(x, self.model.prep_lower_bound,
-                             metric_depth=self.model.metric_depth,
-                             limit_resolution=self.limit_resolution)
+        x = batch_preprocess(
+            x, self.model.prep_lower_bound, metric_depth=self.model.metric_depth, limit_resolution=self.limit_resolution
+        )
         outputs = []
         for i in range(B):
             self.input_frame_count += 1
@@ -207,15 +240,22 @@ class VideoDepthAnythingModel(BaseDepthModel):
             if ret is not None:
                 self.output_frame_count += len(ret)
                 out = torch.stack(ret)
-                out = postprocess(out, edge_dilation=edge_dilation, depth_aa=depth_aa, metric_depth=self.model.metric_depth,
-                                  force_disparity=self.force_disparity,
-                                  enable_amp=enable_amp)
+                out = postprocess(
+                    out,
+                    edge_dilation=edge_dilation,
+                    depth_aa=depth_aa,
+                    metric_depth=self.model.metric_depth,
+                    force_disparity=self.force_disparity,
+                    enable_amp=enable_amp,
+                )
                 for j in range(out.shape[0]):
                     normalized_depth = self.minmax_normalize_chw(out[j])
                     if normalized_depth is not None:
                         outputs.append(normalized_depth)
             if pts[i] in reset_pts:
-                outputs += self.flush_with_normalize(enable_amp=enable_amp, edge_dilation=edge_dilation, depth_aa=depth_aa)
+                outputs += self.flush_with_normalize(
+                    enable_amp=enable_amp, edge_dilation=edge_dilation, depth_aa=depth_aa
+                )
                 self.reset()
         if outputs:
             return outputs
@@ -229,9 +269,14 @@ class VideoDepthAnythingModel(BaseDepthModel):
         ret = self._flush(enable_amp=enable_amp)
         if ret:
             out = torch.stack(ret)
-            out = postprocess(out, edge_dilation=edge_dilation, depth_aa=depth_aa, metric_depth=self.model.metric_depth,
-                              force_disparity=self.force_disparity,
-                              enable_amp=enable_amp)
+            out = postprocess(
+                out,
+                edge_dilation=edge_dilation,
+                depth_aa=depth_aa,
+                metric_depth=self.model.metric_depth,
+                force_disparity=self.force_disparity,
+                enable_amp=enable_amp,
+            )
             for i in range(out.shape[0]):
                 normalized_depth = self.minmax_normalize_chw(out[i])
                 if normalized_depth is not None:
@@ -301,9 +346,10 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
 
 def _test():
-    from PIL import Image
-    import torchvision.transforms.functional as TF
     import random
+
+    import torchvision.transforms.functional as TF
+    from PIL import Image
 
     N = 111
 

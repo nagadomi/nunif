@@ -1,18 +1,19 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .weighted_loss import WeightedLoss
+
+from .charbonnier_loss import CharbonnierLoss
 from .compile_wrapper import conditional_compile
 from .pad import get_crop_size, get_pad_size
 from .reflection_pad2d import reflection_pad2d_naive
-from .charbonnier_loss import CharbonnierLoss
-
+from .weighted_loss import WeightedLoss
 
 try:
     import xformers  # noqa
 except ModuleNotFoundError:
     import os
     import warnings
+
     os.environ["XFORMERS_DISABLED"] = "1"
     warnings.filterwarnings(action="ignore", category=UserWarning, message="xFormers is disabled*")
     warnings.filterwarnings(action="ignore", category=UserWarning, message="xFormers is not available*")
@@ -64,15 +65,14 @@ class DINOv2IntermediateFeatures(nn.Module):
         super().__init__()
         self.model_type = model_type
         if index is None:
-            self.intermediate_layer_index = {
-                "vits": [2, 5, 8, 11],
-                "vitb": [2, 5, 8, 11],
-                "vitl": [4, 11, 17, 23]
-            }[model_type]
+            self.intermediate_layer_index = {"vits": [2, 5, 8, 11], "vitb": [2, 5, 8, 11], "vitl": [4, 11, 17, 23]}[
+                model_type
+            ]
         else:
             self.intermediate_layer_index = index
-        self.model = torch.hub.load('facebookresearch/dinov2', f"dinov2_{model_type}14_reg",
-                                    verbose=False, trust_repo=True).eval()
+        self.model = torch.hub.load(
+            "facebookresearch/dinov2", f"dinov2_{model_type}14_reg", verbose=False, trust_repo=True
+        ).eval()
         self.model.requires_grad_(False)
 
         if random_projection is not None:
@@ -86,7 +86,7 @@ class DINOv2IntermediateFeatures(nn.Module):
         try:
             torch.manual_seed(0)
             adj = 1.0 / 14.0
-            proj = torch.randn((dim, feat_dim, 1, 1)) * (feat_dim ** -0.5) * adj
+            proj = torch.randn((dim, feat_dim, 1, 1)) * (feat_dim**-0.5) * adj
             self.register_buffer("random_projection", proj)
         finally:
             torch.random.set_rng_state(rng_state)
@@ -102,15 +102,13 @@ class DINOv2IntermediateFeatures(nn.Module):
         assert x.shape[2] % DINO_PATCH_SIZE == 0 and x.shape[3] % DINO_PATCH_SIZE == 0
 
         features = self.model.get_intermediate_layers(
-            x, self.intermediate_layer_index,
+            x,
+            self.intermediate_layer_index,
             reshape=True,
             return_class_token=False,
         )
         if self.random_projection is not None:
-            features = [
-                F.conv2d(feat, weight=self.random_projection, bias=None, stride=1)
-                for feat in features
-            ]
+            features = [F.conv2d(feat, weight=self.random_projection, bias=None, stride=1) for feat in features]
 
         return features
 
@@ -150,9 +148,7 @@ class Pool(nn.Module):
 
     def pool(self, x):
         x = x + F.avg_pool2d(
-            x, kernel_size=self.kernel_size, stride=1,
-            padding=(self.kernel_size - 1) // 2,
-            count_include_pad=False
+            x, kernel_size=self.kernel_size, stride=1, padding=(self.kernel_size - 1) // 2, count_include_pad=False
         )
         return x
 
@@ -187,12 +183,7 @@ def DINOv2CharbonnierLoss(model_type="vits", index=None, normalize=True):
 
 
 def DINOv2PoolLoss(model_type="vits", index=None, normalize=True):
-    return DINOv2Loss(
-        Pool(nn.L1Loss()),
-        model_type=model_type, index=index,
-        normalize=normalize,
-        random_projection=64
-    )
+    return DINOv2Loss(Pool(nn.L1Loss()), model_type=model_type, index=index, normalize=normalize, random_projection=64)
 
 
 def DINOv2StyleLoss(model_type="vits", index=None, normalize=True):
@@ -200,24 +191,22 @@ def DINOv2StyleLoss(model_type="vits", index=None, normalize=True):
 
 
 def DINOv2CosineWith(base_loss, weight=1.0, model_type="vits", index=None, normalize=True):
-    return WeightedLoss((
-        base_loss,
-        DINOv2CosineLoss(model_type=model_type, index=index, normalize=normalize)
-    ), weights=(1.0, weight))
+    return WeightedLoss(
+        (base_loss, DINOv2CosineLoss(model_type=model_type, index=index, normalize=normalize)), weights=(1.0, weight)
+    )
 
 
 def DINOv2CharbonnierWith(base_loss, weight=1.0, model_type="vits", index=None, normalize=True):
-    return WeightedLoss((
-        base_loss,
-        DINOv2CharbonnierLoss(model_type=model_type, index=index, normalize=normalize)
-    ), weights=(1.0, weight))
+    return WeightedLoss(
+        (base_loss, DINOv2CharbonnierLoss(model_type=model_type, index=index, normalize=normalize)),
+        weights=(1.0, weight),
+    )
 
 
 def DINOv2PoolWith(base_loss, weight=1.0, model_type="vits", index=None, normalize=True):
-    return WeightedLoss((
-        base_loss,
-        DINOv2PoolLoss(model_type=model_type, index=index, normalize=normalize)
-    ), weights=(1.0, weight))
+    return WeightedLoss(
+        (base_loss, DINOv2PoolLoss(model_type=model_type, index=index, normalize=normalize)), weights=(1.0, weight)
+    )
 
 
 class DINOv2AlignmentLoss(nn.Module):
@@ -225,6 +214,7 @@ class DINOv2AlignmentLoss(nn.Module):
     Semantic Alignment Loss from Qwen-Image-VAE 2.0
     https://arxiv.org/abs/2605.13565
     """
+
     def __init__(self, base_loss, weight=0.01, margin_cos=0.2, margin_dist=0.2, model_type="vitl", index=[11]):
         super().__init__()
         self.base_loss = base_loss
@@ -297,6 +287,7 @@ def _test_feat():
 
 def _test_grad():
     import torchvision.io as io
+
     from .lbp_loss import YRGBLBP
 
     y = io.read_image("cc0/320/dog.png") / 255.0

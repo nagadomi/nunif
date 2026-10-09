@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .lbcnn import generate_lbcnn_filters
+
+from .channel_weighted_loss import AverageWeightedLoss, LuminanceWeightedLoss
 from .charbonnier_loss import CharbonnierLoss
 from .clamp_loss import ClampLoss
-from .channel_weighted_loss import LuminanceWeightedLoss, AverageWeightedLoss
-from .compile_wrapper import conditional_compile
 from .color import rgb_to_yrgb
+from .compile_wrapper import conditional_compile
 from .flat_color_loss import FlatColorWeightedLoss
+from .lbcnn import generate_lbcnn_filters
 
 
 def generate_lbp_kernel(in_channels, out_channels, kernel_size=3, seed=71):
@@ -15,7 +16,7 @@ def generate_lbp_kernel(in_channels, out_channels, kernel_size=3, seed=71):
         kernel = generate_lbcnn_filters((out_channels, in_channels, kernel_size, kernel_size), seed=seed)
         # [0] = identity filter
         kernel[0] = 0
-        kernel[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size ** 2
+        kernel[0, :, kernel_size // 2, kernel_size // 2] = 0.5 * kernel_size**2
         kernel = kernel / kernel_size
         return kernel
 
@@ -25,10 +26,12 @@ class LBPLoss(nn.Module):
         super().__init__()
         self.groups = in_channels
         self.num_kernels = num_kernels
-        kernels = torch.stack([
-            generate_lbp_kernel(in_channels, out_channels - out_channels % in_channels,
-                                kernel_size, seed=seed + i)
-            for i in range(num_kernels)])
+        kernels = torch.stack(
+            [
+                generate_lbp_kernel(in_channels, out_channels - out_channels % in_channels, kernel_size, seed=seed + i)
+                for i in range(num_kernels)
+            ]
+        )
         self.register_buffer("kernels", kernels)
         if loss is None:
             self.loss = CharbonnierLoss()
@@ -51,20 +54,21 @@ class LBPLoss(nn.Module):
 
 
 def YLBP(kernel_size=3, out_channels=64):
-    return ClampLoss(LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size, out_channels=out_channels)),
-                     clamp_l1=True)
+    return ClampLoss(
+        LuminanceWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size, out_channels=out_channels)), clamp_l1=True
+    )
 
 
 def RGBLBP(kernel_size=3):
-    return ClampLoss(AverageWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size),
-                                         in_channels=3), clamp_l1=True)
+    return ClampLoss(AverageWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size), in_channels=3), clamp_l1=True)
 
 
 class YRGBLBP(nn.Module):
     def __init__(self, kernel_size=5):
         super().__init__()
-        self.loss = ClampLoss(AverageWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size), in_channels=4),
-                              clamp_l1=True)
+        self.loss = ClampLoss(
+            AverageWeightedLoss(LBPLoss(in_channels=1, kernel_size=kernel_size), in_channels=4), clamp_l1=True
+        )
 
     @conditional_compile("NUNIF_TRAIN")
     def forward(self, input, target):
@@ -105,8 +109,8 @@ def _check_gradient_norm():
     l1_loss = nn.L1Loss()
     lbp_loss = RGBLBP()
 
-    x1 = torch.ones((1, 3, 32, 32), requires_grad=True) / 2.
-    x2 = torch.ones((1, 3, 32, 32), requires_grad=True) / 2.
+    x1 = torch.ones((1, 3, 32, 32), requires_grad=True) / 2.0
+    x2 = torch.ones((1, 3, 32, 32), requires_grad=True) / 2.0
     x2 = x2 + torch.randn(x2.shape) * 0.01
 
     loss1 = l1_loss(x1, x2)

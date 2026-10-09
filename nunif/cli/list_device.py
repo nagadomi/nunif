@@ -1,6 +1,6 @@
 import torch
-from .. device import mps_is_available, xpu_is_available
 
+from ..device import mps_is_available, xpu_is_available
 
 if torch.cuda.is_available():
     for i in range(torch.cuda.device_count()):

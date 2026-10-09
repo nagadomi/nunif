@@ -1,6 +1,8 @@
+import math
+
 import torch
 import torch.nn.functional as F
-import math
+
 from nunif.device import device_is_mps
 
 
@@ -12,12 +14,12 @@ def equirectangular_projection(c, device="cpu"):
     output_size = max_edge + max_edge // 2
     pad_w = (output_size - w) // 2
     pad_h = (output_size - h) // 2
-    c = F.pad(c, (pad_w, pad_w, pad_h, pad_h),
-              mode="constant")
+    c = F.pad(c, (pad_w, pad_w, pad_h, pad_h), mode="constant")
 
     h, w = c.shape[1:]
-    y, x = torch.meshgrid(torch.linspace(-1, 1, h, device=device),
-                          torch.linspace(-1, 1, w, device=device), indexing="ij")
+    y, x = torch.meshgrid(
+        torch.linspace(-1, 1, h, device=device), torch.linspace(-1, 1, w, device=device), indexing="ij"
+    )
 
     azimuth = x * (math.pi * 0.5)
     elevation = y * (math.pi * 0.5)
@@ -31,10 +33,7 @@ def equirectangular_projection(c, device="cpu"):
     else:
         mode = "bicubic"
 
-    z = F.grid_sample(c.unsqueeze(0),
-                      grid.unsqueeze(0),
-                      mode=mode, padding_mode="zeros",
-                      align_corners=True).squeeze(0)
+    z = F.grid_sample(c.unsqueeze(0), grid.unsqueeze(0), mode=mode, padding_mode="zeros", align_corners=True).squeeze(0)
     z = torch.clamp(z, 0, 1)
 
     return z

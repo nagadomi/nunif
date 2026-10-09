@@ -1,17 +1,18 @@
 import os
-from os import path
-import sys
 import shutil
-from PIL import Image
+import sys
+from os import path
+
 import torch
 import torchvision.transforms.functional as TF
-from torch.utils.data.dataset import Dataset
+from PIL import Image
 from torch.utils.data import DataLoader
-from nunif.models import get_model_device
-from nunif.utils.image_loader import list_images
-from nunif.utils import pil_io
-from nunif.device import autocast
+from torch.utils.data.dataset import Dataset
 
+from nunif.device import autocast
+from nunif.models import get_model_device
+from nunif.utils import pil_io
+from nunif.utils.image_loader import list_images
 
 PATCH_SIZE = 128
 
@@ -45,7 +46,7 @@ def extract_patches(im, num_patches, patch_size=PATCH_SIZE, score_fn=std_score):
         for x in range(0, w, stride):
             if not x + patch_size <= w:
                 break
-            patch = im[:, y:y + patch_size, x:x + patch_size]
+            patch = im[:, y : y + patch_size, x : x + patch_size]
             patches.append(patch)
 
     # BCHW
@@ -78,7 +79,7 @@ def predict_grain_noise_psnr(model, x, num_patches=8, patch_size=PATCH_SIZE):
     with autocast(device):
         noise_level = model(x)
     noise_level = torch.clamp(noise_level.mean(), 0, 50).item()
-    psnr = 50. - noise_level
+    psnr = 50.0 - noise_level
 
     return psnr
 
@@ -124,7 +125,7 @@ def create_patch_loader(input_dir, num_patches=8, num_workers=4):
         shuffle=False,
         num_workers=num_workers,
         prefetch_factor=8,
-        drop_last=False
+        drop_last=False,
     )
     return loader
 

@@ -1,17 +1,19 @@
 # Tool to filter low quality jpeg files
-import os
-from os import path
 import argparse
-from tqdm import tqdm
-from multiprocessing import cpu_count
+import os
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-import torch
-from nunif.models import load_model
-from nunif.logger import logger
-from .utils import predict_jpeg_quality, create_patch_loader, copyfile
-from .models import jpeg_quality  # noqa
-from .model_dir import MODEL_DIR
+from multiprocessing import cpu_count
+from os import path
 
+import torch
+from tqdm import tqdm
+
+from nunif.logger import logger
+from nunif.models import load_model
+
+from .model_dir import MODEL_DIR
+from .models import jpeg_quality  # noqa
+from .utils import copyfile, create_patch_loader, predict_jpeg_quality
 
 DEFAULT_CHECKPOINT_FILE = path.join(MODEL_DIR, "jpeg_quality.pth")
 
@@ -24,11 +26,14 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--num-patches", type=int, default=8, help="number of 128x128 patches used per image")
     parser.add_argument("--quality", type=int, default=90, help="quality threshold")
-    parser.add_argument("--filter-420", action="store_true", default=False,
-                        help="drop all 4:2:0(chroma-subsampled) JPEG images")
-    parser.add_argument("--symlink", action="store_true",
-                        help=("create symbolic links, "
-                              "instead of copying the real files (recommended on linux)"))
+    parser.add_argument(
+        "--filter-420", action="store_true", default=False, help="drop all 4:2:0(chroma-subsampled) JPEG images"
+    )
+    parser.add_argument(
+        "--symlink",
+        action="store_true",
+        help=("create symbolic links, instead of copying the real files (recommended on linux)"),
+    )
     parser.add_argument("--score-prefix", action="store_true", help="add score prefix to the output filename")
 
     args = parser.parse_args()
@@ -43,8 +48,7 @@ def main():
             if not filename:  # load error
                 continue
             quality, subsampling_prob = predict_jpeg_quality(model, x)
-            logger.debug(f"{filename}: quality: {round(quality, 3)},"
-                         f" subsampling: {round(subsampling_prob, 3)}")
+            logger.debug(f"{filename}: quality: {round(quality, 3)}, subsampling: {round(subsampling_prob, 3)}")
             jpeg_420 = subsampling_prob >= 0.5
             if quality >= args.quality and (not jpeg_420 or not args.filter_420):
                 src = path.abspath(filename)

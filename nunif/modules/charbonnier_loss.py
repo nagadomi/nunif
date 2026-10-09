@@ -1,9 +1,9 @@
-from torch import nn
 import torch
+from torch import nn
 
 
 def charbonnier_loss(input, target, reduction="mean", eps=1.0e-3):
-    loss = torch.sqrt(((input - target) ** 2) + eps ** 2)
+    loss = torch.sqrt(((input - target) ** 2) + eps**2)
     if reduction is None or reduction == "none":
         return loss
     elif reduction == "mean":

@@ -1,11 +1,10 @@
-from os import path
 import sys
-
+from os import path
 
 assert sys.version_info > (3, 9)
 
 
-class Char():
+class Char:
     jis1 = None
     hiragana = None
     hiragana_basic = None
@@ -13,24 +12,21 @@ class Char():
     @classmethod
     def JIS1(cls):
         if cls.jis1 is None:
-            with open(path.join(path.dirname(__file__), "jis1.txt"),
-                      mode="r", encoding="utf-8") as f:
+            with open(path.join(path.dirname(__file__), "jis1.txt"), mode="r", encoding="utf-8") as f:
                 cls.jis1 = set(f.read().strip())
         return cls.jis1
 
     @classmethod
     def HIRAGANA(cls):
         if cls.hiragana is None:
-            with open(path.join(path.dirname(__file__), "hiragana.txt"),
-                      mode="r", encoding="utf-8") as f:
+            with open(path.join(path.dirname(__file__), "hiragana.txt"), mode="r", encoding="utf-8") as f:
                 cls.hiragana = set(f.read().strip())
         return cls.hiragana
 
     @classmethod
     def HIRAGANA_BASIC(cls):
         if cls.hiragana_basic is None:
-            with open(path.join(path.dirname(__file__), "hiragana_basic.txt"),
-                      mode="r", encoding="utf-8") as f:
+            with open(path.join(path.dirname(__file__), "hiragana_basic.txt"), mode="r", encoding="utf-8") as f:
                 cls.hiragana_basic = set(f.read().strip())
         return cls.hiragana_basic
 

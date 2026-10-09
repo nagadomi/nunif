@@ -1,23 +1,23 @@
 import random
 from os import path
+
 import torch
-import torch.nn.functional as F
-from torch.utils.data.dataset import Dataset
 import torchvision.transforms as T
+from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
     functional as TF,
 )
+
 import nunif.transforms.pair as TP
+from iw3.dilation import dilate_inner, dilate_outer
+from nunif.training.sampler import HardExampleSampler, MiningMethod
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.training.sampler import HardExampleSampler, MiningMethod
-from iw3.dilation import dilate_outer, dilate_inner
-
 
 SIZE = 256  # % 8 == 0
 
 
-class RightDilate():
+class RightDilate:
     def __init__(self, max_step=20, p=0.5):
         self.max_step = max_step
         self.p = p
@@ -29,7 +29,7 @@ class RightDilate():
         return mask
 
 
-class LeftDilate():
+class LeftDilate:
     def __init__(self, max_step=4, p=0.25):
         self.max_step = max_step
         self.p = p
@@ -44,7 +44,7 @@ class LeftDilate():
 def crop(images, i, j, h, w):
     results = []
     for im in images:
-        results.append(im[:, i:i + h, j:j + w])
+        results.append(im[:, i : i + h, j : j + w])
 
     return tuple(results)
 
@@ -72,10 +72,12 @@ class InpaintDataset(Dataset):
         self.load_files(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
-        self.gt_transform = T.Compose([
-            T.RandomApply([T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.25),
-            T.RandomGrayscale(p=0.05),
-        ])
+        self.gt_transform = T.Compose(
+            [
+                T.RandomApply([T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.25),
+                T.RandomGrayscale(p=0.05),
+            ]
+        )
         self.random_crop = TP.RandomHardExampleCrop(SIZE)
         self.right_dilate = RightDilate()
         self.left_dilate = LeftDilate()
@@ -97,7 +99,7 @@ class InpaintDataset(Dataset):
             num_samples=num_samples,
             method=MiningMethod.LINEAR,
             history_size=4,
-            scale_factor=4.,
+            scale_factor=4.0,
         )
 
     def worker_init(self, worker_id):
@@ -123,9 +125,13 @@ class InpaintDataset(Dataset):
             x, mask = fixed_hard_example_crop(SIZE, x, mask)
 
         y = x.clone()
-        y = TF.crop(y, self.model_offset, self.model_offset,
-                    y.shape[-2] - self.model_offset * 2,
-                    y.shape[-1] - self.model_offset * 2)
+        y = TF.crop(
+            y,
+            self.model_offset,
+            self.model_offset,
+            y.shape[-2] - self.model_offset * 2,
+            y.shape[-1] - self.model_offset * 2,
+        )
 
         mask = mask > 0
 

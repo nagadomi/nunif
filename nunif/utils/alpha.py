@@ -5,10 +5,17 @@ import torch.nn as nn
 class ChannelWiseSum(nn.Module):
     def __init__(self, in_channels, kernel_size):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=kernel_size,
-                              stride=1, padding=1, padding_mode="zeros", groups=in_channels,
-                              bias=False)
-        self.conv.weight.data.fill_(1.)
+        self.conv = nn.Conv2d(
+            in_channels,
+            in_channels,
+            kernel_size=kernel_size,
+            stride=1,
+            padding=1,
+            padding_mode="zeros",
+            groups=in_channels,
+            bias=False,
+        )
+        self.conv.weight.data.fill_(1.0)
         self.conv.weight.requires_grad_(False)
 
     def forward(self, x):
@@ -42,24 +49,25 @@ class AlphaBorderPadding(nn.Module):
         rgb = rgb.clone()
         alpha = alpha.squeeze(0)
         mask = alpha.new_zeros(alpha.shape)
-        mask[alpha > 0] = 1.
-        mask_nega = mask < 1.
-        rgb[:, mask_nega] = 0.
+        mask[alpha > 0] = 1.0
+        mask_nega = mask < 1.0
+        rgb[:, mask_nega] = 0.0
         for i in range(offset):
             mask_weight = self.sum_alpha(mask)
             border = self.sum_rgb(rgb)
             border /= mask_weight + 1e-7
             rgb[:, mask_nega] = border[:, mask_nega]
             mask.zero_()
-            mask[mask_weight > 0] = 1.
-            mask_nega = mask < 1.
+            mask[mask_weight > 0] = 1.0
+            mask_nega = mask < 1.0
 
-        return rgb.clamp_(0., 1.)
+        return rgb.clamp_(0.0, 1.0)
 
 
 if __name__ == "__main__":
-    from nunif.utils import pil_io
     import argparse
+
+    from nunif.utils import pil_io
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input file")

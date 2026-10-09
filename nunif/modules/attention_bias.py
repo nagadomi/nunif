@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+
 from .init import basic_module_init
 
 
@@ -30,9 +31,8 @@ class WindowScoreBias(nn.Module):
             output_dim = num_heads
 
         self.to_bias = nn.Sequential(
-            nn.Linear(2, hidden_dim, bias=True),
-            nn.GELU(),
-            nn.Linear(hidden_dim, output_dim, bias=True))
+            nn.Linear(2, hidden_dim, bias=True), nn.GELU(), nn.Linear(hidden_dim, output_dim, bias=True)
+        )
 
         basic_module_init(self)
 
@@ -56,12 +56,12 @@ def _gen_window_score_bias_input(window_size1, window_size2, reduction):
     N2 = window_size2[0] * window_size2[1]
 
     positions1 = torch.stack(
-        torch.meshgrid(torch.arange(0, window_size1[0]),
-                       torch.arange(0, window_size1[1]), indexing="ij"), dim=2).reshape(N1, 2)
+        torch.meshgrid(torch.arange(0, window_size1[0]), torch.arange(0, window_size1[1]), indexing="ij"), dim=2
+    ).reshape(N1, 2)
 
     positions2 = torch.stack(
-        torch.meshgrid(torch.arange(0, window_size2[0]),
-                       torch.arange(0, window_size2[1]), indexing="ij"), dim=2).reshape(N2, 2)
+        torch.meshgrid(torch.arange(0, window_size2[0]), torch.arange(0, window_size2[1]), indexing="ij"), dim=2
+    ).reshape(N2, 2)
     positions2.mul_(reduction)
 
     delta = torch.zeros((N1, N2, 2), dtype=torch.long)
@@ -118,8 +118,7 @@ class WindowRelativeScoreBias(nn.Module):
 class WindowDistanceScoreBias(nn.Module):
     def __init__(self, window_size, max_distance=None, num_heads=None):
         super().__init__()
-        self.window_size = (window_size if isinstance(window_size, (tuple, list))
-                            else (window_size, window_size))
+        self.window_size = window_size if isinstance(window_size, (tuple, list)) else (window_size, window_size)
 
         mask = None
         if num_heads is not None:
@@ -171,12 +170,13 @@ def window_distance_matrix(window_size):
 
     N = window_size[0] * window_size[1]
     positions = torch.stack(
-        torch.meshgrid(torch.arange(0, window_size[0]),
-                       torch.arange(0, window_size[1]), indexing="ij"), dim=2).reshape(N, 2)
+        torch.meshgrid(torch.arange(0, window_size[0]), torch.arange(0, window_size[1]), indexing="ij"), dim=2
+    ).reshape(N, 2)
 
     positions = positions.to(torch.float32)
-    distance = torch.cat([((positions[i].view(1, 2) - positions) ** 2).sum(dim=1) ** 0.5
-                          for i in range(positions.shape[0])], dim=0)
+    distance = torch.cat(
+        [((positions[i].view(1, 2) - positions) ** 2).sum(dim=1) ** 0.5 for i in range(positions.shape[0])], dim=0
+    )
     distance = distance.view(N, N)
     return distance
 
@@ -188,22 +188,12 @@ def _gen_window_score_bias_input_3d(window_size1, window_size2, reduction):
 
     # positions1: (N1, 3)
     positions1 = torch.stack(
-        torch.meshgrid(
-            torch.arange(0, D1),
-            torch.arange(0, H1),
-            torch.arange(0, W1),
-            indexing="ij"
-        ), dim=3
+        torch.meshgrid(torch.arange(0, D1), torch.arange(0, H1), torch.arange(0, W1), indexing="ij"), dim=3
     ).reshape(-1, 3)
 
     # positions2: (N2, 3)
     positions2 = torch.stack(
-        torch.meshgrid(
-            torch.arange(0, D2),
-            torch.arange(0, H2),
-            torch.arange(0, W2),
-            indexing="ij"
-        ), dim=3
+        torch.meshgrid(torch.arange(0, D2), torch.arange(0, H2), torch.arange(0, W2), indexing="ij"), dim=3
     ).reshape(-1, 3)
     positions2.mul_(reduction)
 
@@ -250,7 +240,7 @@ class WindowScoreBias3d(nn.Module):
         self.register_buffer("delta", unique_delta)
 
         if hidden_dim is None:
-            hidden_dim = int((D * H * W)**0.5) * 2
+            hidden_dim = int((D * H * W) ** 0.5) * 2
             if hidden_dim % 4 != 0:
                 hidden_dim = hidden_dim + (4 - hidden_dim % 4)
         if self.num_heads is None:
@@ -259,9 +249,7 @@ class WindowScoreBias3d(nn.Module):
             output_dim = num_heads
 
         self.to_bias = nn.Sequential(
-            nn.Linear(3, hidden_dim, bias=True),
-            nn.GELU(),
-            nn.Linear(hidden_dim, output_dim, bias=True)
+            nn.Linear(3, hidden_dim, bias=True), nn.GELU(), nn.Linear(hidden_dim, output_dim, bias=True)
         )
 
     def forward(self):

@@ -1,7 +1,8 @@
-from nunif.models import load_model, save_model
-from nunif.addon import load_addons
-import os
 import argparse
+import os
+
+from nunif.addon import load_addons
+from nunif.models import load_model, save_model
 
 
 def main():

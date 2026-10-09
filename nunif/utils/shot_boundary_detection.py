@@ -1,6 +1,7 @@
+import torch
+
 from . import video as VU
 from .transnetv2 import TransNetV2
-import torch
 
 
 def _fps_config(max_fps):
@@ -18,21 +19,22 @@ def _fps_config(max_fps):
 
 
 def detect_boundary(
-        video_file,
-        device="cuda",
-        window_size=100, padding_size=25, threshold=0.5,
-        max_fps=None,
-        start_time=None,
-        end_time=None,
-        stop_event=None,
-        suspend_event=None,
-        tqdm_fn=None,
-        tqdm_title=None,
-        hwaccel=None,
-        disable_software_fallback=False,
+    video_file,
+    device="cuda",
+    window_size=100,
+    padding_size=25,
+    threshold=0.5,
+    max_fps=None,
+    start_time=None,
+    end_time=None,
+    stop_event=None,
+    suspend_event=None,
+    tqdm_fn=None,
+    tqdm_title=None,
+    hwaccel=None,
+    disable_software_fallback=False,
 ):
-    assert (window_size % padding_size == 0 and
-            window_size // padding_size >= 3)  # pad1 + frames + pad2
+    assert window_size % padding_size == 0 and window_size // padding_size >= 3  # pad1 + frames + pad2
 
     model = TransNetV2().load().eval().to(device)
     frames = []
@@ -45,10 +47,7 @@ def detect_boundary(
         with torch.inference_mode():
             single_frame_pred, all_frame_pred = model(x)
             single_frame_pred = torch.sigmoid(single_frame_pred).flatten()
-        results.append((
-            single_frame_pred[padding_size:-padding_size].cpu(),
-            pts[padding_size:-padding_size].cpu()
-        ))
+        results.append((single_frame_pred[padding_size:-padding_size].cpu(), pts[padding_size:-padding_size].cpu()))
         for _ in range((window_size - padding_size * 2) // padding_size):
             frames.pop(0)
 
@@ -74,8 +73,7 @@ def detect_boundary(
             frames.append((x, pts))
 
         if len(frames) == window_size // padding_size:
-            push_predict(torch.cat([x_ for x_, _ in frames], dim=0),
-                         torch.cat([pts_ for _, pts_ in frames], dim=0))
+            push_predict(torch.cat([x_ for x_, _ in frames], dim=0), torch.cat([pts_ for _, pts_ in frames], dim=0))
 
     callback_pool = VU.FrameCallbackPool(
         batch_callback,
@@ -86,11 +84,13 @@ def detect_boundary(
     )
     interpolation = "area" if hwaccel == "cuda" else "bilinear"
     VU.hook_frame(
-        video_file, callback_pool,
+        video_file,
+        callback_pool,
         config_callback=_fps_config(max_fps),
         title=tqdm_title or "Shot Boundary Detection",
         vf=f"scale=48:27:flags={interpolation}",  # input size for TransNetV2
-        start_time=start_time, end_time=end_time,
+        start_time=start_time,
+        end_time=end_time,
         stop_event=stop_event,
         suspend_event=suspend_event,
         tqdm_fn=tqdm_fn,
@@ -105,14 +105,13 @@ def detect_boundary(
     last_pts = frames[-1][1][-1:]
     pad_x = torch.cat((last_x,) * padding_size, dim=0)
     pad_pts = torch.cat((last_pts,) * padding_size, dim=0)
-    while (not results or results[-1][1][-1] != last_pts[0]):
+    while not results or results[-1][1][-1] != last_pts[0]:
         frames.append((pad_x, pad_pts))
         if len(frames) == window_size // padding_size:
-            push_predict(torch.cat([x_ for x_, _ in frames], dim=0),
-                         torch.cat([pts_ for _, pts_ in frames], dim=0))
+            push_predict(torch.cat([x_ for x_, _ in frames], dim=0), torch.cat([pts_ for _, pts_ in frames], dim=0))
 
-    frame_preds = torch.cat([pred for pred, pts in results], dim=0)[:frame_count[0]]
-    frame_pts = torch.cat([pts for pred, pts in results], dim=0)[:frame_count[0]]
+    frame_preds = torch.cat([pred for pred, pts in results], dim=0)[: frame_count[0]]
+    frame_pts = torch.cat([pts for pred, pts in results], dim=0)[: frame_count[0]]
     segment_pts = set(frame_pts[frame_preds > threshold].tolist())
 
     # NOTE: pts is the end point of the segment. It is not the starting point.
@@ -123,8 +122,7 @@ def _hevc_deadlock_test():
     import argparse
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="hevc input video file")
+    parser.add_argument("--input", "-i", type=str, required=True, help="hevc input video file")
     parser.add_argument("--hwaccel", type=str, help="hwaccel")
     args = parser.parse_args()
 
@@ -133,7 +131,9 @@ def _hevc_deadlock_test():
             pts = detect_boundary(
                 args.input,
                 device="cuda",
-                window_size=100, padding_size=25, threshold=0.5,
+                window_size=100,
+                padding_size=25,
+                threshold=0.5,
                 max_fps=30,
                 start_time=str(i),
                 end_time=str(i + j),
@@ -148,14 +148,13 @@ def _hevc_deadlock_test():
 
 def _test():
     import argparse
-    from nunif.utils.video import pyav_init_cuda_primary_context
 
+    from nunif.utils.video import pyav_init_cuda_primary_context
 
     pyav_init_cuda_primary_context()
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input video file")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
     parser.add_argument("--hwaccel", type=str, help="hwaccel")
     args = parser.parse_args()
     device = torch.device("cuda")

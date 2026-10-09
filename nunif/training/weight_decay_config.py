@@ -3,10 +3,10 @@
 #
 # Adding modules used in this repo by nagadomi
 import torch
-from torchvision.models.swin_transformer import ShiftedWindowAttentionV2, ShiftedWindowAttention
-from ..modules.norm import LayerNormNoBias2d, RMSNorm1, RMSNorm2d
-from ..modules.fusion import Lerp, AdaptiveWeight, AdaptiveWeightedAdd
-from ..modules.norm import ReparamBatchNorm2d
+from torchvision.models.swin_transformer import ShiftedWindowAttention, ShiftedWindowAttentionV2
+
+from ..modules.fusion import AdaptiveWeight, AdaptiveWeightedAdd, Lerp
+from ..modules.norm import LayerNormNoBias2d, ReparamBatchNorm2d, RMSNorm1, RMSNorm2d
 
 
 def configure_optim_groups(model, weight_decay=0.01):
@@ -26,7 +26,7 @@ def configure_optim_groups(model, weight_decay=0.01):
         torch.nn.Conv2d,
         torch.nn.Conv1d,
         torch.nn.ConvTranspose2d,
-        RMSNorm1, # 0-centered
+        RMSNorm1,  # 0-centered
         RMSNorm2d,
     )
     blacklist_weight_modules = (
@@ -44,7 +44,7 @@ def configure_optim_groups(model, weight_decay=0.01):
     )
     for mn, m in model.named_modules():
         for pn, p in m.named_parameters():
-            fpn = '%s.%s' % (mn, pn) if mn else pn  # full param name
+            fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
 
             # random note: because named_modules and named_parameters are recursive
             # we will see the same tensors p many many times. but doing it this way
@@ -52,13 +52,13 @@ def configure_optim_groups(model, weight_decay=0.01):
             if not p.requires_grad:
                 # no grad
                 no_decay.add(fpn)
-            elif pn.endswith('bias'):
+            elif pn.endswith("bias"):
                 # all biases will not be decayed
                 no_decay.add(fpn)
-            elif pn.endswith('weight') and isinstance(m, whitelist_weight_modules):
+            elif pn.endswith("weight") and isinstance(m, whitelist_weight_modules):
                 # weights of whitelist modules will be weight decayed
                 decay.add(fpn)
-            elif pn.endswith('weight') and isinstance(m, blacklist_weight_modules):
+            elif pn.endswith("weight") and isinstance(m, blacklist_weight_modules):
                 # weights of blacklist modules will NOT be weight decayed
                 no_decay.add(fpn)
             elif isinstance(m, torch.nn.MultiheadAttention):
@@ -73,8 +73,7 @@ def configure_optim_groups(model, weight_decay=0.01):
             elif isinstance(m, ShiftedWindowAttention):
                 if pn.endswith("relative_position_bias_table"):
                     no_decay.add(fpn)
-            elif m.__class__.__name__ in {"ParametrizedConv2d", "ParametrizedLinear",
-                                          "ParametrizedConvTranspose2d"}:
+            elif m.__class__.__name__ in {"ParametrizedConv2d", "ParametrizedLinear", "ParametrizedConvTranspose2d"}:
                 no_decay.add(fpn)
             elif hasattr(m, "weight_decay_config"):
                 ret = m.weight_decay_config(pn)
@@ -92,9 +91,10 @@ def configure_optim_groups(model, weight_decay=0.01):
     param_dict = {pn: p for pn, p in model.named_parameters()}
     inter_params = decay & no_decay
     union_params = decay | no_decay
-    assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params), )
-    assert len(param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
-        % (str(param_dict.keys() - union_params), )
+    assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
+    assert len(param_dict.keys() - union_params) == 0, (
+        "parameters %s were not separated into either decay/no_decay set!" % (str(param_dict.keys() - union_params),)
+    )
 
     # create the pytorch optimizer object
     optim_groups = [

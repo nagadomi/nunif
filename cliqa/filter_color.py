@@ -1,14 +1,17 @@
 # Tool to filter color/grayscale images
-import os
-from os import path
 import argparse
-from tqdm import tqdm
-from multiprocessing import cpu_count
+import os
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
+from multiprocessing import cpu_count
+from os import path
+
 import torch
-from nunif.logger import logger
-from .utils import create_patch_loader, copyfile
+from tqdm import tqdm
+
 from nunif.device import create_device
+from nunif.logger import logger
+
+from .utils import copyfile, create_patch_loader
 
 
 def main():
@@ -19,9 +22,11 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--threshold", type=int, default=0.04, help="RGB stdv threshold")
     parser.add_argument("--invert", action="store_true", help="extract color images")
-    parser.add_argument("--symlink", action="store_true",
-                        help=("create symbolic links, "
-                              "instead of copying the real files (recommended on linux)"))
+    parser.add_argument(
+        "--symlink",
+        action="store_true",
+        help=("create symbolic links, instead of copying the real files (recommended on linux)"),
+    )
 
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)

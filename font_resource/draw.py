@@ -1,10 +1,12 @@
 from dataclasses import dataclass
-from PIL import Image, ImageFont, ImageDraw, ImageFilter
-from .metadata import ImageFonts, FontInfo
+
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+from .metadata import FontInfo, ImageFonts
 
 
 @dataclass
-class CharBox():
+class CharBox:
     label: str
     x: int
     y: int
@@ -13,16 +15,14 @@ class CharBox():
     has_letter_spacing: bool
 
 
-class CharDraw():
-    def __init__(self, font_info, font_size, vertical, bold=None, image_fonts=None,
-                 lang="ja", test_text="常用漢字"):
+class CharDraw:
+    def __init__(self, font_info, font_size, vertical, bold=None, image_fonts=None, lang="ja", test_text="常用漢字"):
         self.font_info = font_info
         self.font_size = font_size
         self.vertical = vertical
         self.lang = lang
         self.bold = bold
-        self.font = ImageFont.truetype(self.font_info.file_path, size=font_size,
-                                       layout_engine=ImageFont.Layout.RAQM)
+        self.font = ImageFont.truetype(self.font_info.file_path, size=font_size, layout_engine=ImageFont.Layout.RAQM)
         self.image_fonts = image_fonts if image_fonts is not None else ImageFonts()
         if self.vertical:
             self.direction = "ttb"
@@ -35,7 +35,7 @@ class CharDraw():
             self.char_size = max(h, font_size)
 
     def drawable(self, code):
-        return (code in self.font_info.cmap or self.image_fonts.has_code(code, self.vertical))
+        return code in self.font_info.cmap or self.image_fonts.has_code(code, self.vertical)
 
     def draw_image(self, gc, x, y, image, stroke_width=0, color="white"):
         # TODO: test
@@ -46,11 +46,18 @@ class CharDraw():
             gc.bitmap((x, y), bold, fill=color)
 
     def draw_text(self, gc, x, y, text, stroke_width, color):
-        gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
-                direction=self.direction, anchor=None, language=self.lang)
+        gc.text(
+            (x, y),
+            text + "　",
+            font=self.font,
+            fill=color,
+            stroke_width=stroke_width,
+            direction=self.direction,
+            anchor=None,
+            language=self.lang,
+        )
 
-    def draw(self, gc, x, y, code, label=None, stroke_width=0, color="white",
-             shadow_color=None, shadow_width=None):
+    def draw(self, gc, x, y, code, label=None, stroke_width=0, color="white", shadow_color=None, shadow_width=None):
         text = chr(code)
         if label is None:
             label = text
@@ -83,9 +90,7 @@ class CharDraw():
             else:
                 w = w // code_len
             for i in range(code_len):
-                boxes.append(CharBox(label=label,
-                                     x=x, y=y, width=w, height=h,
-                                     has_letter_spacing=(i == code_len - 1)))
+                boxes.append(CharBox(label=label, x=x, y=y, width=w, height=h, has_letter_spacing=(i == code_len - 1)))
         else:
             if self.vertical:
                 w, h = self.font.getbbox(text, direction=self.direction, language=self.lang)[2:]
@@ -94,15 +99,13 @@ class CharDraw():
                 w, h = self.font.getbbox(text, direction=self.direction, language=self.lang)[2:]
                 h = max(h, self.char_size)
             # TODO: allow randomize white space size
-            boxes.append(CharBox(label=label,
-                                 x=x, y=y, width=int(w), height=int(h),
-                                 has_letter_spacing=True))
+            boxes.append(CharBox(label=label, x=x, y=y, width=int(w), height=int(h), has_letter_spacing=True))
 
         return boxes
 
 
 @dataclass
-class LineBox():
+class LineBox:
     label: str
     x: int
     y: int
@@ -116,8 +119,7 @@ class SimpleLineDraw(CharDraw):
         self.font_size = font_size
         self.vertical = vertical
         self.lang = lang
-        self.font = ImageFont.truetype(self.font_info.file_path, size=font_size,
-                                       layout_engine=ImageFont.Layout.RAQM)
+        self.font = ImageFont.truetype(self.font_info.file_path, size=font_size, layout_engine=ImageFont.Layout.RAQM)
         if self.vertical:
             self.direction = "ttb"
         else:
@@ -127,11 +129,18 @@ class SimpleLineDraw(CharDraw):
         return all([ord(c) in self.font_info.cmap for c in text])
 
     def draw_text(self, gc, x, y, text, stroke_width, color):
-        gc.text((x, y), text + "　", font=self.font, fill=color, stroke_width=stroke_width,
-                direction=self.direction, anchor=None, language=self.lang)
+        gc.text(
+            (x, y),
+            text + "　",
+            font=self.font,
+            fill=color,
+            stroke_width=stroke_width,
+            direction=self.direction,
+            anchor=None,
+            language=self.lang,
+        )
 
-    def draw(self, gc, x, y, text, label=None, stroke_width=0, color="white",
-             shadow_color=None, shadow_width=None):
+    def draw(self, gc, x, y, text, label=None, stroke_width=0, color="white", shadow_color=None, shadow_width=None):
         if label is None:
             label = text
         if gc is not None:
@@ -144,8 +153,7 @@ class SimpleLineDraw(CharDraw):
                 if shadow_stroke_width > 4:
                     self.draw_text(gc, x, y, text, stroke_width=shadow_stroke_width // 2, color=shadow_color)
             self.draw_text(gc, x, y, text, stroke_width=stroke_width, color=color)
-        w, h = self.font.getbbox(text, stroke_width=stroke_width,
-                                 direction=self.direction, language=self.lang)[2:]
+        w, h = self.font.getbbox(text, stroke_width=stroke_width, direction=self.direction, language=self.lang)[2:]
         return LineBox(label=label, x=x, y=y, width=w, height=h)
 
 

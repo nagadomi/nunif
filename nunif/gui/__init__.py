@@ -1,31 +1,36 @@
 from .common import (
-    EVT_TQDM, TQDMEvent, TQDMGUI,
-    FileDropCallback,
-    TimeCtrl,
-    IpAddrCtrl,
+    EVT_TQDM,
+    TQDMGUI,
     EditableComboBox,
     EditableComboBoxPersistentHandler,
+    FileDropCallback,
+    IpAddrCtrl,
+    TimeCtrl,
+    TQDMEvent,
+    apply_dark_mode,
+    extension_list_to_wildcard,
+    init_win32_dpi,
+    is_dark_mode,
+    load_icon,
+    persistent_manager_register,
     persistent_manager_register_all,
     persistent_manager_restore_all,
     persistent_manager_unregister_all,
-    persistent_manager_register,
-    validate_number,
-    resolve_default_dir,
-    extension_list_to_wildcard,
-    set_icon_ex, load_icon,
-    start_file,
-    is_dark_mode, apply_dark_mode,
-    init_win32_dpi,
     refresh_layouts,
+    resolve_default_dir,
+    set_icon_ex,
+    start_file,
+    validate_number,
 )
-from .video_encoding_box import VideoEncodingBox
-from .video_decoding_box import VideoDecodingBox
 from .io_path_panel import IOPathPanel
 from .locale import get_default_locale
-
+from .video_decoding_box import VideoDecodingBox
+from .video_encoding_box import VideoEncodingBox
 
 __all__ = [
-    "EVT_TQDM", "TQDMEvent", "TQDMGUI",
+    "EVT_TQDM",
+    "TQDMEvent",
+    "TQDMGUI",
     "FileDropCallback",
     "TimeCtrl",
     "IpAddrCtrl",
@@ -38,7 +43,8 @@ __all__ = [
     "validate_number",
     "resolve_default_dir",
     "extension_list_to_wildcard",
-    "set_icon_ex", "load_icon",
+    "set_icon_ex",
+    "load_icon",
     "start_file",
     "VideoEncodingBox",
     "VideoDecodingBox",

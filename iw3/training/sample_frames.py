@@ -1,11 +1,13 @@
 # tool to extract frame images from video
 import argparse
-import os
-from os import path
-from PIL import Image
-import nunif.utils.video as VU
 import hashlib
+import os
 from concurrent.futures import ThreadPoolExecutor
+from os import path
+
+from PIL import Image
+
+import nunif.utils.video as VU
 
 
 def md5(s):
@@ -22,10 +24,8 @@ def main():
     parser.add_argument("--input", "-i", type=str, required=True, help="input video file")
     parser.add_argument("--output", "-o", type=str, required=True, help="output dir")
     parser.add_argument("--samples", type=float, default=1000, help="rough sample frame count")
-    parser.add_argument("--rotate-left", action="store_true",
-                        help="rotate 90 degrees to the left(counterclockwise)")
-    parser.add_argument("--rotate-right", action="store_true",
-                        help="rotate 90 degrees to the right(clockwise)")
+    parser.add_argument("--rotate-left", action="store_true", help="rotate 90 degrees to the left(counterclockwise)")
+    parser.add_argument("--rotate-right", action="store_true", help="rotate 90 degrees to the right(clockwise)")
 
     args = parser.parse_args()
     output_basename = md5(path.basename(args.input))
@@ -36,6 +36,7 @@ def main():
     futures = []
 
     with ThreadPoolExecutor(max_workers=8) as pool:
+
         def config_callback(metadata):
             nonlocal interval
             frames = int(metadata.get_frames())

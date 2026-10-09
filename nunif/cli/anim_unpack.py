@@ -1,7 +1,8 @@
 # see docs/anim_pack_unpack.md
-import os
 import argparse
+import os
 import sys
+
 import yaml
 from PIL import Image
 

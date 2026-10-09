@@ -12,8 +12,7 @@ def color(left_eye, right_eye):
 
 
 def half_color(left_eye, right_eye):
-    anaglyph = torch.cat((grayscale_bt601(left_eye, num_output_channels=1),
-                          right_eye[1:3, :, :]), dim=0)
+    anaglyph = torch.cat((grayscale_bt601(left_eye, num_output_channels=1), right_eye[1:3, :, :]), dim=0)
     anaglyph = torch.clamp(anaglyph, 0, 1)
     return anaglyph
 
@@ -29,8 +28,7 @@ def gray(left_eye, right_eye):
 def wimmer(left_eye, right_eye):
     # Wimmer's Optimized Anaglyph
     # https://3dtv.at/Knowhow/AnaglyphComparison_en.aspx
-    anaglyph = torch.cat((left_eye[1:2, :, :] * 0.7 + left_eye[2:3, :, :] * 0.3,
-                          right_eye[1:3, :, :]), dim=0)
+    anaglyph = torch.cat((left_eye[1:2, :, :] * 0.7 + left_eye[2:3, :, :] * 0.3, right_eye[1:3, :, :]), dim=0)
     anaglyph = torch.clamp(anaglyph, 0, 1)
     return anaglyph
 
@@ -73,19 +71,24 @@ def dubois(left_eye, right_eye, clip_before=True):
 
     left_eye = to_linear(left_eye.detach().clone())
     right_eye = to_linear(right_eye.detach().clone())
-    l_mat = torch.tensor([[0.437, 0.449, 0.164],
-                          [-0.062, -0.062, -0.024],
-                          [-0.048, -0.050, -0.017]],
-                         device=left_eye.device, dtype=torch.float32).reshape(3, 3, 1, 1)
-    r_mat = torch.tensor([[-0.011, -0.032, -0.007],
-                          [0.377, 0.761, 0.009],
-                          [-0.026, -0.093, 1.234]],
-                         device=right_eye.device, dtype=torch.float32).reshape(3, 3, 1, 1)
-    anaglyph = torch.cat([
-        dot_clip(left_eye, l_mat[0], clip_before) + dot_clip(right_eye, r_mat[0], clip_before),
-        dot_clip(left_eye, l_mat[1], clip_before) + dot_clip(right_eye, r_mat[1], clip_before),
-        dot_clip(left_eye, l_mat[2], clip_before) + dot_clip(right_eye, r_mat[2], clip_before),
-    ], dim=0)
+    l_mat = torch.tensor(
+        [[0.437, 0.449, 0.164], [-0.062, -0.062, -0.024], [-0.048, -0.050, -0.017]],
+        device=left_eye.device,
+        dtype=torch.float32,
+    ).reshape(3, 3, 1, 1)
+    r_mat = torch.tensor(
+        [[-0.011, -0.032, -0.007], [0.377, 0.761, 0.009], [-0.026, -0.093, 1.234]],
+        device=right_eye.device,
+        dtype=torch.float32,
+    ).reshape(3, 3, 1, 1)
+    anaglyph = torch.cat(
+        [
+            dot_clip(left_eye, l_mat[0], clip_before) + dot_clip(right_eye, r_mat[0], clip_before),
+            dot_clip(left_eye, l_mat[1], clip_before) + dot_clip(right_eye, r_mat[1], clip_before),
+            dot_clip(left_eye, l_mat[2], clip_before) + dot_clip(right_eye, r_mat[2], clip_before),
+        ],
+        dim=0,
+    )
     anaglyph = torch.clamp(anaglyph, 0, 1)
     anaglyph = to_nonlinear(anaglyph)
     anaglyph = torch.clamp(anaglyph, 0, 1)

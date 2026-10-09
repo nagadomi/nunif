@@ -2,20 +2,21 @@
 # DEBUG=1 python3 -m waifu2x.export_onnx -i ./waifu2x/pretrained_models -o ./waifu2x/onnx_models
 # NOTE: torchvision 0.14's SwinTransformer has bug in Dropout's training flag. Use 0.15 or later.
 
+import argparse
 import os
 from os import path
-import argparse
+
+from nunif.logger import logger
 from nunif.models import load_model
 from nunif.models.onnx_helper_models import (
+    ONNXAlphaBorderPadding,
+    ONNXCreateSeamBlendingFilter,
     ONNXReflectionPadding,
     ONNXReplicationPadding,
-    ONNXTTASplit,
-    ONNXTTAMerge,
-    ONNXCreateSeamBlendingFilter,
-    ONNXAlphaBorderPadding,
     ONNXScale1x,  # identity with offset,
+    ONNXTTAMerge,
+    ONNXTTASplit,
 )
-from nunif.logger import logger
 
 
 def export_onnx(load_path, save_path, dynamo=False):
@@ -29,9 +30,11 @@ def convert_cunet(model_dir, output_dir):
         out_dir = path.join(output_dir, "cunet", domain)
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
-            export_onnx(path.join(in_dir, f"noise{noise_level}.pth"),
-                        path.join(out_dir, f"noise{noise_level}.onnx"),
-                        dynamo=True)
+            export_onnx(
+                path.join(in_dir, f"noise{noise_level}.pth"),
+                path.join(out_dir, f"noise{noise_level}.onnx"),
+                dynamo=True,
+            )
 
         scale1x = ONNXScale1x(offset=28)
         scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"), dynamo=True)
@@ -43,12 +46,13 @@ def convert_upcunet(model_dir, output_dir):
         out_dir = path.join(output_dir, "cunet", domain)
         os.makedirs(out_dir, exist_ok=True)
         for noise_level in (0, 1, 2, 3):
-            export_onnx(path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
-                        path.join(out_dir, f"noise{noise_level}_scale2x.onnx"),
-                        dynamo=True)
+            export_onnx(
+                path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
+                path.join(out_dir, f"noise{noise_level}_scale2x.onnx"),
+                dynamo=True,
+            )
 
-        export_onnx(path.join(in_dir, "scale2x.pth"),
-                    path.join(out_dir, "scale2x.onnx"), dynamo=True)
+        export_onnx(path.join(in_dir, "scale2x.pth"), path.join(out_dir, "scale2x.onnx"), dynamo=True)
 
 
 def convert_swin_unet_art(model_dir, output_dir):
@@ -57,18 +61,17 @@ def convert_swin_unet_art(model_dir, output_dir):
     out_dir = path.join(output_dir, "swin_unet", domain)
     os.makedirs(out_dir, exist_ok=True)
     for noise_level in (0, 1, 2, 3):
-        export_onnx(path.join(in_dir, f"noise{noise_level}.pth"),
-                    path.join(out_dir, f"noise{noise_level}.onnx"))
-        export_onnx(path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
-                    path.join(out_dir, f"noise{noise_level}_scale2x.onnx"))
-        export_onnx(path.join(in_dir, f"noise{noise_level}_scale4x.pth"),
-                    path.join(out_dir, f"noise{noise_level}_scale4x.onnx"))
+        export_onnx(path.join(in_dir, f"noise{noise_level}.pth"), path.join(out_dir, f"noise{noise_level}.onnx"))
+        export_onnx(
+            path.join(in_dir, f"noise{noise_level}_scale2x.pth"), path.join(out_dir, f"noise{noise_level}_scale2x.onnx")
+        )
+        export_onnx(
+            path.join(in_dir, f"noise{noise_level}_scale4x.pth"), path.join(out_dir, f"noise{noise_level}_scale4x.onnx")
+        )
 
-    export_onnx(path.join(in_dir, "scale4x.pth"),
-                path.join(out_dir, "scale4x.onnx"))
+    export_onnx(path.join(in_dir, "scale4x.pth"), path.join(out_dir, "scale4x.onnx"))
 
-    export_onnx(path.join(in_dir, "scale2x.pth"),
-                path.join(out_dir, "scale2x.onnx"))
+    export_onnx(path.join(in_dir, "scale2x.pth"), path.join(out_dir, "scale2x.onnx"))
 
     scale1x = ONNXScale1x(offset=8)
     scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"), dynamo=True)
@@ -117,16 +120,16 @@ def convert_swin_unet_v3_art(model_dir, output_dir):
     out_dir = path.join(output_dir, "swin_unet_v3", domain)
     os.makedirs(out_dir, exist_ok=True)
     for noise_level in (0, 1, 2, 3):
-        export_onnx(path.join(in_dir, f"noise{noise_level}.pth"),
-                    path.join(out_dir, f"noise{noise_level}.onnx"),
-                    dynamo=True)
-        export_onnx(path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
-                    path.join(out_dir, f"noise{noise_level}_scale2x.onnx"),
-                    dynamo=True)
+        export_onnx(
+            path.join(in_dir, f"noise{noise_level}.pth"), path.join(out_dir, f"noise{noise_level}.onnx"), dynamo=True
+        )
+        export_onnx(
+            path.join(in_dir, f"noise{noise_level}_scale2x.pth"),
+            path.join(out_dir, f"noise{noise_level}_scale2x.onnx"),
+            dynamo=True,
+        )
 
-    export_onnx(path.join(in_dir, "scale2x.pth"),
-                path.join(out_dir, "scale2x.onnx"),
-                dynamo=True)
+    export_onnx(path.join(in_dir, "scale2x.pth"), path.join(out_dir, "scale2x.onnx"), dynamo=True)
 
     scale1x = ONNXScale1x(offset=8)
     scale1x.export_onnx(path.join(out_dir, "scale1x.onnx"), dynamo=True)

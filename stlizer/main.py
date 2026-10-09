@@ -1,16 +1,22 @@
-import torch
+import argparse
 import os
 from os import path
-import argparse
-from nunif.device import mps_is_available, xpu_is_available, create_device
-from nunif.utils.ui import is_video
+
+import torch
+
 import nunif.utils.video as VU
+from nunif.device import create_device, mps_is_available, xpu_is_available
+from nunif.utils.ui import is_video
+
+from .cache import save_cache, try_load_cache
 from .multipass_pipeline import (
-    calc_scene_weight,
-    pass1, pass2, pass3, pass4,
     DEFAULT_RESOLUTION,
+    calc_scene_weight,
+    pass1,
+    pass2,
+    pass3,
+    pass4,
 )
-from .cache import try_load_cache, save_cache
 
 
 def create_parser(required_true=True):
@@ -22,56 +28,104 @@ def create_parser(required_true=True):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input video path")
     parser.add_argument("--output", "-o", type=str, required=True, help="output path")
-    parser.add_argument("--gpu", "-g", type=int, default=default_gpu,
-                        help="GPU device id. -1 for CPU")
+    parser.add_argument("--gpu", "-g", type=int, default=default_gpu, help="GPU device id. -1 for CPU")
     parser.add_argument("--batch-size", type=int, default=4, help="base batch size")
     parser.add_argument("--smoothing", type=float, default=2.0, help="seconds to smoothing")
-    parser.add_argument("--filter", type=str, default="grad_opt",
-                        choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter")
+    parser.add_argument(
+        "--filter", type=str, default="grad_opt", choices=["gaussian", "savgol", "grad_opt"], help="smoothing filter"
+    )
 
-    parser.add_argument("--border", type=str, choices=["black", "outpaint", "crop", "expand", "expand_outpaint"],
-                        default="black", help="border padding mode")
-    parser.add_argument("--padding", type=float, default=0.05,
-                        help="pre-padding ratio for --border=expand|expand_outpaint|crop")
-    parser.add_argument("--buffer-decay", type=float, default=0.75,
-                        help="buffer decay factor for outpaint|expand_outpaint")
+    parser.add_argument(
+        "--border",
+        type=str,
+        choices=["black", "outpaint", "crop", "expand", "expand_outpaint"],
+        default="black",
+        help="border padding mode",
+    )
+    parser.add_argument(
+        "--padding", type=float, default=0.05, help="pre-padding ratio for --border=expand|expand_outpaint|crop"
+    )
+    parser.add_argument(
+        "--buffer-decay", type=float, default=0.75, help="buffer decay factor for outpaint|expand_outpaint"
+    )
 
     parser.add_argument("--debug", action="store_true", help="debug output original+stabilized")
     parser.add_argument("--resolution", type=int, default=DEFAULT_RESOLUTION, help="resolution to perform processing")
     parser.add_argument("--iteration", type=int, default=50, help="iteration count of frame transform optimization")
-    parser.add_argument("--disable-cache", action="store_true",
-                        help="disable pass1-2 cache")
+    parser.add_argument("--disable-cache", action="store_true", help="disable pass1-2 cache")
 
     # video encoding
 
-    parser.add_argument("--max-fps", type=float, default=60.0,
-                        help="max framerate for video. output fps = min(fps, --max-fps)")
-    parser.add_argument("--pix-fmt", type=str, default="yuv420p",
-                        choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
-                        help="pixel format")
+    parser.add_argument(
+        "--max-fps", type=float, default=60.0, help="max framerate for video. output fps = min(fps, --max-fps)"
+    )
+    parser.add_argument(
+        "--pix-fmt",
+        type=str,
+        default="yuv420p",
+        choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
+        help="pixel format",
+    )
     parser.add_argument("--profile-level", type=str, help="h264 profile level")
-    parser.add_argument("--crf", type=int, default=20,
-                        help="constant quality value for video. smaller value is higher quality")
-    parser.add_argument("--preset", type=str, default="medium",
-                        choices=["ultrafast", "superfast", "veryfast", "faster", "fast",
-                                 "medium", "slow", "slower", "veryslow", "placebo",
-                                 "p1", "p2", "p3", "p4", "p5", "p6", "p7"],
-                        help="encoder preset option for video")
-    parser.add_argument("--tune", type=str, nargs="+", default=[],
-                        choices=["film", "animation", "grain", "stillimage", "psnr",
-                                 "fastdecode", "zerolatency"],
-                        help="encoder tunings option for video")
-    parser.add_argument("--vf", type=str, default="",
-                        help="video filter options for ffmpeg.")
-    parser.add_argument("--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"],
-                        help="video container format")
+    parser.add_argument(
+        "--crf", type=int, default=20, help="constant quality value for video. smaller value is higher quality"
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default="medium",
+        choices=[
+            "ultrafast",
+            "superfast",
+            "veryfast",
+            "faster",
+            "fast",
+            "medium",
+            "slow",
+            "slower",
+            "veryslow",
+            "placebo",
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6",
+            "p7",
+        ],
+        help="encoder preset option for video",
+    )
+    parser.add_argument(
+        "--tune",
+        type=str,
+        nargs="+",
+        default=[],
+        choices=["film", "animation", "grain", "stillimage", "psnr", "fastdecode", "zerolatency"],
+        help="encoder tunings option for video",
+    )
+    parser.add_argument("--vf", type=str, default="", help="video filter options for ffmpeg.")
+    parser.add_argument(
+        "--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"], help="video container format"
+    )
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
-    parser.add_argument("--colorspace", type=str, default="auto",
-                        choices=["unspecified", "auto",
-                                 "bt709", "bt709-pc", "bt709-tv",
-                                 "bt601", "bt601-pc", "bt601-tv",
-                                 "bt2020-tv", "bt2020-pq-tv"],
-                        help="video colorspace")
+    parser.add_argument(
+        "--colorspace",
+        type=str,
+        default="auto",
+        choices=[
+            "unspecified",
+            "auto",
+            "bt709",
+            "bt709-pc",
+            "bt709-tv",
+            "bt601",
+            "bt601-pc",
+            "bt601-tv",
+            "bt2020-tv",
+            "bt2020-pq-tv",
+        ],
+        help="video colorspace",
+    )
 
     return parser
 
@@ -110,8 +164,7 @@ def make_output_path(args):
         os.makedirs(args.output, exist_ok=True)
         output_dir = args.output
         output_path = path.join(
-            output_dir,
-            path.splitext(path.basename(args.input))[0] + "_stlizer" + args.video_extension
+            output_dir, path.splitext(path.basename(args.input))[0] + "_stlizer" + args.video_extension
         )
     else:
         output_dir = path.dirname(args.output)

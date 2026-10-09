@@ -1,7 +1,9 @@
+from os import path
+
 import torch
 from torch import nn
+
 from .charbonnier_loss import CharbonnierLoss
-from os import path
 
 
 class Alex11Loss(nn.Module):
@@ -21,7 +23,7 @@ class Alex11Loss(nn.Module):
             # NOTE: If not loaded, need to make sure torchvision's alex weights are still the same
             f = torch.load(weight_path, weights_only=True)
         else:
-            from torchvision.models import alexnet, AlexNet_Weights
+            from torchvision.models import AlexNet_Weights, alexnet
 
             net = alexnet(weights=AlexNet_Weights.DEFAULT)
             f = net.features[0].weight.data.detach().clone()
@@ -30,14 +32,15 @@ class Alex11Loss(nn.Module):
             # index 31 is most similar to the identity filter,
             # so override it with the true identity filter
             f[31, :, :, :].zero_()
-            f[31, :, 11 // 2, 11 // 2] = 1.
+            f[31, :, 11 // 2, 11 // 2] = 1.0
             # normalize l2_norm=1
             for i in range(f.shape[0]):
-                f[i] *= 1. / torch.sqrt((f[i] ** 2).sum())
+                f[i] *= 1.0 / torch.sqrt((f[i] ** 2).sum())
             torch.save(f, weight_path)
         # conv2d
-        conv = nn.Conv2d(in_channels, 64 * in_channels, kernel_size=11, stride=1, padding=0,
-                         groups=in_channels, bias=False)
+        conv = nn.Conv2d(
+            in_channels, 64 * in_channels, kernel_size=11, stride=1, padding=0, groups=in_channels, bias=False
+        )
         f = torch.cat([f for _ in range(in_channels)], dim=0)
         conv.weight.data.copy_(f)
         for m in conv.parameters():
@@ -48,8 +51,8 @@ class Alex11Loss(nn.Module):
         super().train(False)
 
     def forward(self, input, target):
-        y = self.conv(input * 2. - 1.)
-        t = self.conv(target * 2. - 1.)
+        y = self.conv(input * 2.0 - 1.0)
+        t = self.conv(target * 2.0 - 1.0)
         loss = self.loss(y, t)
         loss = torch.amax(loss, dim=1, keepdim=True).mean()
 
@@ -57,13 +60,12 @@ class Alex11Loss(nn.Module):
 
 
 def _visualize(loss):
-    from torchvision.utils import make_grid
-    from torchvision.transforms import functional as TF
     from torchvision.transforms import InterpolationMode
+    from torchvision.transforms import functional as TF
+    from torchvision.utils import make_grid
+
     f = torch.clamp(loss.conv.weight.data, -1, 1)
-    c = torch.cat([torch.clamp(f, 0, 1),
-                   -torch.clamp(f, -1, 0),
-                   torch.zeros(f.shape)], dim=1)
+    c = torch.cat([torch.clamp(f, 0, 1), -torch.clamp(f, -1, 0), torch.zeros(f.shape)], dim=1)
     grid = make_grid(c, nrow=8, padding=2)
     grid = TF.to_pil_image(grid)
     im = TF.resize(grid, (grid.size[1] * 4, grid.size[0] * 4), interpolation=InterpolationMode.NEAREST)
@@ -71,10 +73,13 @@ def _visualize(loss):
 
 
 def _visualize_result(loss):
-    from torchvision.utils import make_grid
-    from torchvision.transforms import functional as TF
-    from ..utils import pil_io
     from os import path
+
+    from torchvision.transforms import functional as TF
+    from torchvision.utils import make_grid
+
+    from ..utils import pil_io
+
     im, _ = pil_io.load_image_simple(path.join("waifu2x", "docs", "images", "miku_128.png"))
     im = TF.to_grayscale(im)
     im = TF.to_tensor(im)

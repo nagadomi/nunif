@@ -1,15 +1,13 @@
 import torch
 import torch.nn.functional as F
+
 from . import video as VU
 
 
-class AutoCropDetector():
+class AutoCropDetector:
     def __init__(self, mode="black", mod=2, frame_variation_threshold=0.95):
         mode = mode.lower()
-        mode in {
-            "black_tb", "black_lr", "black"
-            "flat_tb", "flat_lr", "flat"
-        }
+        mode in {"black_tb", "black_lr", "blackflat_tb", "flat_lr", "flat"}
         self.mode = mode
         self.mod = mod
         self.frame_variation_threshold = frame_variation_threshold
@@ -71,10 +69,7 @@ class AutoCropDetector():
     @classmethod
     def detect(cls, frame, mode="black", mod=2):
         mode = mode.lower()
-        mode in {
-            "black_tb", "black_lr", "black"
-            "flat_tb", "flat_lr", "flat"
-        }
+        mode in {"black_tb", "black_lr", "blackflat_tb", "flat_lr", "flat"}
         black_only = mode in {"black_tb", "black_lr", "black"}
 
         if mode in {"black_tb", "black", "flat_tb", "flat"}:
@@ -142,7 +137,7 @@ class AutoCropDetector():
         y = cls.rgb_to_y(x, tv_range=black_only)
         if black_only:
             mean = y.mean(dim=-1, keepdim=True)
-            is_dark = (mean <= 32.0 / 255.0)
+            is_dark = mean <= 32.0 / 255.0
             is_flat = (y - mean).abs().amax(dim=-1, keepdim=True) < 16 / 255.0
             is_bar = is_dark & is_flat
             return is_bar
@@ -158,7 +153,7 @@ class AutoCropDetector():
         y = cls.rgb_to_y(x, tv_range=black_only)
         if black_only:
             mean = y.mean(dim=-2, keepdim=True)
-            is_dark = (mean <= 32.0 / 255.0)
+            is_dark = mean <= 32.0 / 255.0
             is_flat = (y - mean).abs().amax(dim=-2, keepdim=True) < 16 / 255.0
             is_bar = is_dark & is_flat
             return is_bar
@@ -208,19 +203,19 @@ class AutoCropDetector():
 
 
 def autocrop_analyze_video(
-        video_file,
-        mode="black",
-        mod=2,
-        max_frames=40,
-        vf="",
-        device="cuda",
-        batch_size=2,
-        stop_event=None,
-        suspend_event=None,
-        tqdm_fn=None,
-        tqdm_title=None,
-        hwaccel=None,
-        disable_software_fallback=False,
+    video_file,
+    mode="black",
+    mod=2,
+    max_frames=40,
+    vf="",
+    device="cuda",
+    batch_size=2,
+    stop_event=None,
+    suspend_event=None,
+    tqdm_fn=None,
+    tqdm_title=None,
+    hwaccel=None,
+    disable_software_fallback=False,
 ):
     model = AutoCropDetector(mode=mode, mod=mod)
     frame_width = frame_height = 0
@@ -240,11 +235,13 @@ def autocrop_analyze_video(
         max_workers=0,
     )
     VU.sample_frames(
-        video_file, callback_pool,
+        video_file,
+        callback_pool,
         num_samples=max_frames,
         keyframe_only=True,
         vf=vf,
-        stop_event=stop_event, suspend_event=suspend_event,
+        stop_event=stop_event,
+        suspend_event=suspend_event,
         tqdm_fn=tqdm_fn,
         title=tqdm_title or "AutoCrop Analysis",
         hwaccel=hwaccel,
@@ -254,7 +251,7 @@ def autocrop_analyze_video(
     return model.get_crop() + (frame_height, frame_width)
 
 
-class AutoCrop():
+class AutoCrop:
     def __init__(self, slice_h, slice_w, pad, pad_value, crop_range, uncrop_enabled):
         self.slice_h = slice_h
         self.slice_w = slice_w
@@ -308,28 +305,33 @@ class AutoCrop():
         pad = cls.calc_pad(slice_h, slice_w, H, W)
         crop_range = cls.calc_crop(slice_h, slice_w, H, W)
 
-        return cls(slice_h=slice_h, slice_w=slice_w,
-                   pad=pad, pad_value=pad_value,
-                   crop_range=crop_range, uncrop_enabled=uncrop_enabled)
+        return cls(
+            slice_h=slice_h,
+            slice_w=slice_w,
+            pad=pad,
+            pad_value=pad_value,
+            crop_range=crop_range,
+            uncrop_enabled=uncrop_enabled,
+        )
 
     @classmethod
     def from_video_file(
-            cls,
-            video_file,
-            mode="black",
-            mod=2,
-            pad_value=0,
-            uncrop_enabled=True,
-            max_frames=40,
-            vf="",
-            device="cuda",
-            batch_size=2,
-            stop_event=None,
-            suspend_event=None,
-            tqdm_fn=None,
-            tqdm_title=None,
-            hwaccel=None,
-            disable_software_fallback=False
+        cls,
+        video_file,
+        mode="black",
+        mod=2,
+        pad_value=0,
+        uncrop_enabled=True,
+        max_frames=40,
+        vf="",
+        device="cuda",
+        batch_size=2,
+        stop_event=None,
+        suspend_event=None,
+        tqdm_fn=None,
+        tqdm_title=None,
+        hwaccel=None,
+        disable_software_fallback=False,
     ):
         slice_h, slice_w, H, W = autocrop_analyze_video(
             video_file=video_file,
@@ -348,9 +350,14 @@ class AutoCrop():
         )
         pad = cls.calc_pad(slice_h, slice_w, H, W)
         crop_range = cls.calc_crop(slice_h, slice_w, H, W)
-        return cls(slice_h=slice_h, slice_w=slice_w,
-                   pad=pad, pad_value=pad_value,
-                   crop_range=crop_range, uncrop_enabled=uncrop_enabled)
+        return cls(
+            slice_h=slice_h,
+            slice_w=slice_w,
+            pad=pad,
+            pad_value=pad_value,
+            crop_range=crop_range,
+            uncrop_enabled=uncrop_enabled,
+        )
 
     def crop(self, frame):
         if frame.ndim == 3:
@@ -369,7 +376,7 @@ class AutoCrop():
             return frame
 
 
-class AutoCropDummy():
+class AutoCropDummy:
     def __init__(self):
         pass
 
@@ -381,8 +388,8 @@ class AutoCropDummy():
 
 
 def _bench():
-    import time
     import random
+    import time
 
     N = 1000
     # S = (1080, 1920)  # HD 990 FPS
@@ -417,14 +424,19 @@ def _bench():
 
 def _input_test():
     import argparse
-    import torchvision.transforms.functional as TF
+
     import torchvision.io as io
+    import torchvision.transforms.functional as TF
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--input", "-i", type=str, required=True, help="input rgb file")
-    parser.add_argument("--mode", type=str, choices=["black_tb", "black_lr", "black", "flat_tb", "flat_lr", "flat"],
-                        default="black",
-                        help="mode")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["black_tb", "black_lr", "black", "flat_tb", "flat_lr", "flat"],
+        default="black",
+        help="mode",
+    )
     parser.add_argument("--vf", type=str, default="", help="video filter")
     args = parser.parse_args()
 

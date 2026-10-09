@@ -16,7 +16,6 @@ from torchvision.transforms import (
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
 
-
 SUBDIRS = ["cnn", "mix", "traditional"]
 
 

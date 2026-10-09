@@ -4,40 +4,54 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
+
 class TransNetV2(nn.Module):
-    def __init__(self,
-                 F=16, L=3, S=2, D=1024,
-                 use_many_hot_targets=True,
-                 use_frame_similarity=True,
-                 use_color_histograms=True,
-                 use_mean_pooling=False,
-                 dropout_rate=0.5,
-                 use_convex_comb_reg=False,  # not supported
-                 use_resnet_features=False,  # not supported
-                 use_resnet_like_top=False,  # not supported
-                 frame_similarity_on_last_layer=False):  # not supported
+    def __init__(
+        self,
+        F=16,
+        L=3,
+        S=2,
+        D=1024,
+        use_many_hot_targets=True,
+        use_frame_similarity=True,
+        use_color_histograms=True,
+        use_mean_pooling=False,
+        dropout_rate=0.5,
+        use_convex_comb_reg=False,  # not supported
+        use_resnet_features=False,  # not supported
+        use_resnet_like_top=False,  # not supported
+        frame_similarity_on_last_layer=False,
+    ):  # not supported
         super(TransNetV2, self).__init__()
 
         if use_resnet_features or use_resnet_like_top or use_convex_comb_reg or frame_similarity_on_last_layer:
             raise NotImplementedError("Some options not implemented in Pytorch version of Transnet!")
 
         self.SDDCNN = nn.ModuleList(
-            [StackedDDCNNV2(in_filters=3, n_blocks=S, filters=F, stochastic_depth_drop_prob=0.)] +
-            [StackedDDCNNV2(in_filters=(F * 2 ** (i - 1)) * 4, n_blocks=S, filters=F * 2 ** i) for i in range(1, L)]
+            [StackedDDCNNV2(in_filters=3, n_blocks=S, filters=F, stochastic_depth_drop_prob=0.0)]
+            + [StackedDDCNNV2(in_filters=(F * 2 ** (i - 1)) * 4, n_blocks=S, filters=F * 2**i) for i in range(1, L)]
         )
 
-        self.frame_sim_layer = FrameSimilarity(
-            sum([(F * 2 ** i) * 4 for i in range(L)]), lookup_window=101, output_dim=128, similarity_dim=128, use_bias=True
-        ) if use_frame_similarity else None
-        self.color_hist_layer = ColorHistograms(
-            lookup_window=101, output_dim=128
-        ) if use_color_histograms else None
+        self.frame_sim_layer = (
+            FrameSimilarity(
+                sum([(F * 2**i) * 4 for i in range(L)]),
+                lookup_window=101,
+                output_dim=128,
+                similarity_dim=128,
+                use_bias=True,
+            )
+            if use_frame_similarity
+            else None
+        )
+        self.color_hist_layer = ColorHistograms(lookup_window=101, output_dim=128) if use_color_histograms else None
 
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate is not None else None
 
         output_dim = ((F * 2 ** (L - 1)) * 4) * 3 * 6  # 3x6 for spatial dimensions
-        if use_frame_similarity: output_dim += 128
-        if use_color_histograms: output_dim += 128
+        if use_frame_similarity:
+            output_dim += 128
+        if use_color_histograms:
+            output_dim += 128
 
         self.fc1 = nn.Linear(output_dim, D)
         self.cls_layer1 = nn.Linear(D, 1)
@@ -87,21 +101,27 @@ class TransNetV2(nn.Module):
         return one_hot
 
     def load(self, map_location="cpu"):
-        self.load_state_dict(torch.hub.load_state_dict_from_url(
-            "https://github.com/nagadomi/nunif/releases/download/0.0.0/transnetv2-pytorch-weights.pth",
-            weights_only=True, map_location=map_location))
+        self.load_state_dict(
+            torch.hub.load_state_dict_from_url(
+                "https://github.com/nagadomi/nunif/releases/download/0.0.0/transnetv2-pytorch-weights.pth",
+                weights_only=True,
+                map_location=map_location,
+            )
+        )
         return self
 
 
 class StackedDDCNNV2(nn.Module):
-    def __init__(self,
-                 in_filters,
-                 n_blocks,
-                 filters,
-                 shortcut=True,
-                 use_octave_conv=False,  # not supported
-                 pool_type="avg",
-                 stochastic_depth_drop_prob=0.0):
+    def __init__(
+        self,
+        in_filters,
+        n_blocks,
+        filters,
+        shortcut=True,
+        use_octave_conv=False,  # not supported
+        pool_type="avg",
+        stochastic_depth_drop_prob=0.0,
+    ):
         super(StackedDDCNNV2, self).__init__()
 
         if use_octave_conv:
@@ -112,10 +132,17 @@ class StackedDDCNNV2(nn.Module):
             print("WARN: Octave convolution was designed with average pooling, not max pooling.")
 
         self.shortcut = shortcut
-        self.DDCNN = nn.ModuleList([
-            DilatedDCNNV2(in_filters if i == 1 else filters * 4, filters, octave_conv=use_octave_conv,
-                          activation=functional.relu if i != n_blocks else None) for i in range(1, n_blocks + 1)
-        ])
+        self.DDCNN = nn.ModuleList(
+            [
+                DilatedDCNNV2(
+                    in_filters if i == 1 else filters * 4,
+                    filters,
+                    octave_conv=use_octave_conv,
+                    activation=functional.relu if i != n_blocks else None,
+                )
+                for i in range(1, n_blocks + 1)
+            ]
+        )
         self.pool = nn.MaxPool3d(kernel_size=(1, 2, 2)) if pool_type == "max" else nn.AvgPool3d(kernel_size=(1, 2, 2))
         self.stochastic_depth_drop_prob = stochastic_depth_drop_prob
 
@@ -131,7 +158,7 @@ class StackedDDCNNV2(nn.Module):
         x = functional.relu(x)
 
         if self.shortcut is not None:
-            if self.stochastic_depth_drop_prob != 0.:
+            if self.stochastic_depth_drop_prob != 0.0:
                 x = (1 - self.stochastic_depth_drop_prob) * x + shortcut
             else:
                 x += shortcut
@@ -141,12 +168,7 @@ class StackedDDCNNV2(nn.Module):
 
 
 class DilatedDCNNV2(nn.Module):
-    def __init__(self,
-                 in_filters,
-                 filters,
-                 batch_norm=True,
-                 activation=None,
-                 octave_conv=False):  # not supported
+    def __init__(self, in_filters, filters, batch_norm=True, activation=None, octave_conv=False):  # not supported
         super(DilatedDCNNV2, self).__init__()
 
         if octave_conv:
@@ -180,15 +202,16 @@ class DilatedDCNNV2(nn.Module):
 
 
 class Conv3DConfigurable(nn.Module):
-
-    def __init__(self,
-                 in_filters,
-                 filters,
-                 dilation_rate,
-                 separable=True,
-                 octave=False,  # not supported
-                 use_bias=True,
-                 kernel_initializer=None):  # not supported
+    def __init__(
+        self,
+        in_filters,
+        filters,
+        dilation_rate,
+        separable=True,
+        octave=False,  # not supported
+        use_bias=True,
+        kernel_initializer=None,
+    ):  # not supported
         super(Conv3DConfigurable, self).__init__()
 
         if octave:
@@ -200,14 +223,27 @@ class Conv3DConfigurable(nn.Module):
 
         if separable:
             # (2+1)D convolution https://arxiv.org/pdf/1711.11248.pdf
-            conv1 = nn.Conv3d(in_filters, 2 * filters, kernel_size=(1, 3, 3),
-                              dilation=(1, 1, 1), padding=(0, 1, 1), bias=False)
-            conv2 = nn.Conv3d(2 * filters, filters, kernel_size=(3, 1, 1),
-                              dilation=(dilation_rate, 1, 1), padding=(dilation_rate, 0, 0), bias=use_bias)
+            conv1 = nn.Conv3d(
+                in_filters, 2 * filters, kernel_size=(1, 3, 3), dilation=(1, 1, 1), padding=(0, 1, 1), bias=False
+            )
+            conv2 = nn.Conv3d(
+                2 * filters,
+                filters,
+                kernel_size=(3, 1, 1),
+                dilation=(dilation_rate, 1, 1),
+                padding=(dilation_rate, 0, 0),
+                bias=use_bias,
+            )
             self.layers = nn.ModuleList([conv1, conv2])
         else:
-            conv = nn.Conv3d(in_filters, filters, kernel_size=3,
-                             dilation=(dilation_rate, 1, 1), padding=(dilation_rate, 1, 1), bias=use_bias)
+            conv = nn.Conv3d(
+                in_filters,
+                filters,
+                kernel_size=3,
+                dilation=(dilation_rate, 1, 1),
+                padding=(dilation_rate, 1, 1),
+                bias=use_bias,
+            )
             self.layers = nn.ModuleList([conv])
 
     def forward(self, inputs):
@@ -218,14 +254,15 @@ class Conv3DConfigurable(nn.Module):
 
 
 class FrameSimilarity(nn.Module):
-
-    def __init__(self,
-                 in_filters,
-                 similarity_dim=128,
-                 lookup_window=101,
-                 output_dim=128,
-                 stop_gradient=False,  # not supported
-                 use_bias=False):
+    def __init__(
+        self,
+        in_filters,
+        similarity_dim=128,
+        lookup_window=101,
+        output_dim=128,
+        stop_gradient=False,  # not supported
+        use_bias=False,
+    ):
         super(FrameSimilarity, self).__init__()
 
         if stop_gradient:
@@ -246,24 +283,33 @@ class FrameSimilarity(nn.Module):
 
         batch_size, time_window = x.shape[0], x.shape[1]
         similarities = torch.bmm(x, x.transpose(1, 2))  # [batch_size, time_window, time_window]
-        similarities_padded = functional.pad(similarities, [(self.lookup_window - 1) // 2, (self.lookup_window - 1) // 2])
+        similarities_padded = functional.pad(
+            similarities, [(self.lookup_window - 1) // 2, (self.lookup_window - 1) // 2]
+        )
 
-        batch_indices = torch.arange(0, batch_size, device=x.device).view([batch_size, 1, 1]).repeat(
-            [1, time_window, self.lookup_window])
-        time_indices = torch.arange(0, time_window, device=x.device).view([1, time_window, 1]).repeat(
-            [batch_size, 1, self.lookup_window])
-        lookup_indices = torch.arange(0, self.lookup_window, device=x.device).view([1, 1, self.lookup_window]).repeat(
-            [batch_size, time_window, 1]) + time_indices
+        batch_indices = (
+            torch.arange(0, batch_size, device=x.device)
+            .view([batch_size, 1, 1])
+            .repeat([1, time_window, self.lookup_window])
+        )
+        time_indices = (
+            torch.arange(0, time_window, device=x.device)
+            .view([1, time_window, 1])
+            .repeat([batch_size, 1, self.lookup_window])
+        )
+        lookup_indices = (
+            torch.arange(0, self.lookup_window, device=x.device)
+            .view([1, 1, self.lookup_window])
+            .repeat([batch_size, time_window, 1])
+            + time_indices
+        )
 
         similarities = similarities_padded[batch_indices, time_indices, lookup_indices]
         return functional.relu(self.fc(similarities))
 
 
 class ColorHistograms(nn.Module):
-
-    def __init__(self,
-                 lookup_window=101,
-                 output_dim=None):
+    def __init__(self, lookup_window=101, output_dim=None):
         super(ColorHistograms, self).__init__()
 
         self.fc = nn.Linear(lookup_window, output_dim) if output_dim is not None else None
@@ -289,7 +335,9 @@ class ColorHistograms(nn.Module):
         binned_values = (binned_values + frame_bin_prefix).view(-1)
 
         histograms = torch.zeros(batch_size * time_window * 512, dtype=torch.int32, device=frames.device)
-        histograms.scatter_add_(0, binned_values, torch.ones(len(binned_values), dtype=torch.int32, device=frames.device))
+        histograms.scatter_add_(
+            0, binned_values, torch.ones(len(binned_values), dtype=torch.int32, device=frames.device)
+        )
 
         histograms = histograms.view(batch_size, time_window, 512).float()
         histograms_normalized = functional.normalize(histograms, p=2, dim=2)
@@ -300,14 +348,26 @@ class ColorHistograms(nn.Module):
 
         batch_size, time_window = x.shape[0], x.shape[1]
         similarities = torch.bmm(x, x.transpose(1, 2))  # [batch_size, time_window, time_window]
-        similarities_padded = functional.pad(similarities, [(self.lookup_window - 1) // 2, (self.lookup_window - 1) // 2])
+        similarities_padded = functional.pad(
+            similarities, [(self.lookup_window - 1) // 2, (self.lookup_window - 1) // 2]
+        )
 
-        batch_indices = torch.arange(0, batch_size, device=x.device).view([batch_size, 1, 1]).repeat(
-            [1, time_window, self.lookup_window])
-        time_indices = torch.arange(0, time_window, device=x.device).view([1, time_window, 1]).repeat(
-            [batch_size, 1, self.lookup_window])
-        lookup_indices = torch.arange(0, self.lookup_window, device=x.device).view([1, 1, self.lookup_window]).repeat(
-            [batch_size, time_window, 1]) + time_indices
+        batch_indices = (
+            torch.arange(0, batch_size, device=x.device)
+            .view([batch_size, 1, 1])
+            .repeat([1, time_window, self.lookup_window])
+        )
+        time_indices = (
+            torch.arange(0, time_window, device=x.device)
+            .view([1, time_window, 1])
+            .repeat([batch_size, 1, self.lookup_window])
+        )
+        lookup_indices = (
+            torch.arange(0, self.lookup_window, device=x.device)
+            .view([1, 1, self.lookup_window])
+            .repeat([batch_size, time_window, 1])
+            + time_indices
+        )
 
         similarities = similarities_padded[batch_indices, time_indices, lookup_indices]
 

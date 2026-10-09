@@ -1,19 +1,21 @@
 from os import path
+
+import scipy
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from PIL import ImageDraw
-import nunif.utils.video as VU
+from tqdm import tqdm
+
 import nunif.utils.superpoint as KU
+import nunif.utils.video as VU
 from nunif.models import load_model
 from nunif.modules.gaussian_filter import get_gaussian_kernel1d
 from nunif.modules.replication_pad2d import replication_pad1d_naive
-from nunif.utils.ui import TorchHubDir
 from nunif.utils.home_dir import ensure_home_dir
-from . import models  # noqa
-from tqdm import tqdm
-import scipy
+from nunif.utils.ui import TorchHubDir
 
+from . import models  # noqa
 
 DEFAULT_RESOLUTION = 320
 
@@ -32,7 +34,9 @@ ANGLE_MAX_HARD = 90.0
 KEYPOINT_COSINE_THRESHOLD = 0.3
 
 HUB_MODEL_DIR = path.join(ensure_home_dir("stlizer"), "pretrained_models", "hub")
-OUTPAINT_MODEL_URL = "https://github.com/nagadomi/nunif/releases/download/torchhub/stlizer_light_outpaint_v1_20241230.pth"
+OUTPAINT_MODEL_URL = (
+    "https://github.com/nagadomi/nunif/releases/download/torchhub/stlizer_light_outpaint_v1_20241230.pth"
+)
 
 
 def resize(x, size):
@@ -148,11 +152,12 @@ def video_config_callback(args, fps_hook=None):
             options=make_video_codec_option(args),
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
+
     return callback
 
 
 def list_chunk(seq, size):
-    return [seq[pos:pos + size] for pos in range(0, len(seq), size)]
+    return [seq[pos : pos + size] for pos in range(0, len(seq), size)]
 
 
 def pass1(args):
@@ -188,8 +193,8 @@ def pass1(args):
                 continue
 
             index1, index2, match_score = KU.find_match_index(
-                kp1, kp2,
-                threshold=KEYPOINT_COSINE_THRESHOLD, return_score_all=True)
+                kp1, kp2, threshold=KEYPOINT_COSINE_THRESHOLD, return_score_all=True
+            )
             kp1 = kp1["keypoints"][index1]
             kp2 = kp2["keypoints"][index2]
 
@@ -210,13 +215,16 @@ def pass1(args):
         max_workers=0,  # must be sequential
     )
 
-    VU.hook_frame(args.input, keypoint_callback_pool,
-                  config_callback=video_config_callback(args, fps_hook),
-                  vf=args.vf,
-                  stop_event=args.state["stop_event"],
-                  suspend_event=args.state["suspend_event"],
-                  tqdm_fn=args.state["tqdm_fn"],
-                  title="pass 1/4")
+    VU.hook_frame(
+        args.input,
+        keypoint_callback_pool,
+        config_callback=video_config_callback(args, fps_hook),
+        vf=args.vf,
+        stop_event=args.state["stop_event"],
+        suspend_event=args.state["suspend_event"],
+        tqdm_fn=args.state["tqdm_fn"],
+        title="pass 1/4",
+    )
 
     return points1, points2, mean_match_scores, center[0], resize_scale[0], fps_value[0]
 
@@ -232,9 +240,9 @@ def pack_points(batch1, batch2):
         pack2 = torch.zeros((fixed_size, pts1.shape[1]), dtype=pts1.dtype, device=pts1.device)
         mask = torch.zeros((fixed_size, pts1.shape[1]), dtype=torch.bool, device=pts1.device)
 
-        pack1[:pts1.shape[0]] = pts1
-        pack2[:pts2.shape[0]] = pts2
-        mask[:pts1.shape[0]] = True
+        pack1[: pts1.shape[0]] = pts1
+        pack2[: pts2.shape[0]] = pts2
+        mask[: pts1.shape[0]] = True
 
         batch1_fixed.append(pack1)
         batch2_fixed.append(pack2)
@@ -259,9 +267,8 @@ def pass2(points1, points2, center, resize_scale, args):
         kp1, kp2, mask = kp1.to(device), kp2.to(device), mask.to(device)
         center_batch = torch.tensor(center, dtype=torch.float32, device=device).view(1, 2).expand(kp1.shape[0], 1, 2)
         shift, scale, angle, center_batch = KU.find_transform(
-            kp1, kp2, center=center_batch, mask=mask,
-            iteration=args.iteration, sigma=2.0,
-            disable_scale=True)
+            kp1, kp2, center=center_batch, mask=mask, iteration=args.iteration, sigma=2.0, disable_scale=True
+        )
         for i in range(kp1.shape[0]):
             transforms.append((shift[i].tolist(), scale[i].item(), angle[i].item(), center, resize_scale))
             pbar.update(1)
@@ -315,9 +322,11 @@ def grad_opt(tx, ty, ta, scene_weight, resolution, iteration=100, penalty_weight
             fx1 = x[1:] - x[:-1]
             fx2 = fx1[1:] - fx1[:-1]
             fx3 = fx2[1:] - fx2[:-1]
-            grad_loss = (fx1.pow(2).mul(sw[:fx1.shape[0]]).mean() +
-                         fx2.pow(2).mul(sw[:fx2.shape[0]]).mean() +
-                         fx3.pow(2).mul(sw[:fx3.shape[0]]).mean())
+            grad_loss = (
+                fx1.pow(2).mul(sw[: fx1.shape[0]]).mean()
+                + fx2.pow(2).mul(sw[: fx2.shape[0]]).mean()
+                + fx3.pow(2).mul(sw[: fx3.shape[0]]).mean()
+            )
             penalty = (x - t).pow(2).mean()
             loss = loss + grad_loss * grad_weight + penalty * penalty_weight
         # print(i, loss.item())
@@ -329,7 +338,7 @@ def grad_opt(tx, ty, ta, scene_weight, resolution, iteration=100, penalty_weight
 
     px = (px[:-3].detach() - tx[:-3]) / resolution_weight
     py = (py[:-3].detach() - ty[:-3]) / resolution_weight
-    pa = (pa[:-3].detach() - ta[:-3])
+    pa = pa[:-3].detach() - ta[:-3]
 
     return px, py, pa
 
@@ -359,9 +368,16 @@ def pass3(transforms, scene_weight, fps, args):
     angle = angle.clamp(-ANGLE_MAX_HARD, ANGLE_MAX_HARD)
 
     shift_x_fix, shift_y_fix, angle_fix = pass3_smoothing(
-        shift_x, shift_y, angle, scene_weight, resolution=args.resolution,
-        method=args.filter, smoothing_seconds=args.smoothing, fps=fps,
-        device=device)
+        shift_x,
+        shift_y,
+        angle,
+        scene_weight,
+        resolution=args.resolution,
+        method=args.filter,
+        smoothing_seconds=args.smoothing,
+        fps=fps,
+        device=device,
+    )
 
     return shift_x_fix, shift_y_fix, angle_fix
 
@@ -416,12 +432,13 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
         else:
             raise ValueError(f"Unknown --border mode {args.border}")
 
-        shifts = torch.tensor([[shift_x_fix[i + j].item() * resize_scale,
-                                shift_y_fix[i + j].item() * resize_scale] for j in range(B)],
-                              dtype=x.dtype, device=x.device)
+        shifts = torch.tensor(
+            [[shift_x_fix[i + j].item() * resize_scale, shift_y_fix[i + j].item() * resize_scale] for j in range(B)],
+            dtype=x.dtype,
+            device=x.device,
+        )
         centers = torch.tensor([center for _ in range(B)], dtype=x.dtype, device=x.device)
-        angles = torch.tensor([angle_fix[i + j] for j in range(B)],
-                              dtype=x.dtype, device=x.device)
+        angles = torch.tensor([angle_fix[i + j] for j in range(B)], dtype=x.dtype, device=x.device)
         scales = torch.ones((B,), dtype=x.dtype, device=x.device)
 
         z = KU.apply_transform(x_input, shifts, scales, angles, centers, padding_mode=padding_mode)
@@ -476,11 +493,14 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
         max_workers=0,
         use_16bit=use_16bit,
     )
-    VU.process_video(args.input, output_path,
-                     stabilizer_callback_pool,
-                     config_callback=video_config_callback(args),
-                     vf=args.vf,
-                     stop_event=args.state["stop_event"],
-                     suspend_event=args.state["suspend_event"],
-                     tqdm_fn=args.state["tqdm_fn"],
-                     title="pass 4/4")
+    VU.process_video(
+        args.input,
+        output_path,
+        stabilizer_callback_pool,
+        config_callback=video_config_callback(args),
+        vf=args.vf,
+        stop_event=args.state["stop_event"],
+        suspend_event=args.state["suspend_event"],
+        tqdm_fn=args.state["tqdm_fn"],
+        title="pass 4/4",
+    )

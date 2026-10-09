@@ -4,23 +4,22 @@
 # reconstruction result will be stored in ./models/mae/eval
 # MHA var : https://github.com/user-attachments/assets/cde096ca-aee4-4c95-b3b1-b436bae737ef
 # gMLP var: https://github.com/user-attachments/assets/7ecf39e5-e68d-477e-8145-f03e48eb2668
-from os import path
 import os
-from torchvision.datasets import CIFAR10
-from torchvision import transforms as T
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode)
+from os import path
+
 import torch
 from torch import nn
 from torch.nn import functional as F
-from nunif.models import Model
-from nunif.modules.init import basic_module_init
-from nunif.modules.attention import MHA, GMLP
-from nunif.training.env import RGBPSNREnv
-from nunif.training.trainer import Trainer, create_trainer_default_parser
+from torchvision import transforms as T
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import functional as TF
 from torchvision.utils import make_grid
 
+from nunif.models import Model
+from nunif.modules.attention import GMLP, MHA
+from nunif.modules.init import basic_module_init
+from nunif.training.env import RGBPSNREnv
+from nunif.training.trainer import Trainer, create_trainer_default_parser
 
 IMG_SIZE = 64
 EVAL_N = 32
@@ -34,20 +33,19 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         super().__init__()
         self.train = train
         if train:
-            transform = T.Compose([
-                T.RandomResizedCrop(IMG_SIZE, scale=(0.75, 1.)),
-                T.RandomHorizontalFlip(),
-                T.ToTensor(),
-            ])
+            transform = T.Compose(
+                [
+                    T.RandomResizedCrop(IMG_SIZE, scale=(0.75, 1.0)),
+                    T.RandomHorizontalFlip(),
+                    T.ToTensor(),
+                ]
+            )
             self.cifar10 = CIFAR10(root, train=train, transform=transform, download=True)
         else:
             if IMG_SIZE == 32:
                 transform = T.ToTensor()
             else:
-                transform = T.Compose([
-                    T.Resize(IMG_SIZE),
-                    T.ToTensor()
-                ])
+                transform = T.Compose([T.Resize(IMG_SIZE), T.ToTensor()])
             self.cifar10 = CIFAR10(root, train=train, transform=transform, download=True)
             self.eval_index = [int(i * (len(self.cifar10) // EVAL_N)) for i in range(0, EVAL_N)]
 
@@ -58,10 +56,7 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
             return len(self.eval_index)
 
     def sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def __getitem__(self, i):
         if self.train:
@@ -78,9 +73,8 @@ class TransformerBlock(nn.Module):
         num_heads = max(embed_dim // 32, 1)
         self.mha = MHA(embed_dim, num_heads=num_heads)
         self.mlp = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * mlp_ratio),
-            nn.GELU(),
-            nn.Linear(embed_dim * mlp_ratio, embed_dim))
+            nn.Linear(embed_dim, embed_dim * mlp_ratio), nn.GELU(), nn.Linear(embed_dim * mlp_ratio, embed_dim)
+        )
         self.norm_mha = nn.LayerNorm(embed_dim, bias=False)
         self.norm_mlp = nn.LayerNorm(embed_dim, bias=False)
         basic_module_init(self.mlp)
@@ -108,14 +102,17 @@ class Encoder(nn.Module):
 
         self.num_patches = (image_size // patch_size) ** 2
         self.masked_num_patches = self.num_patches - int(self.num_patches * mask_ratio)
-        self.patch = nn.Conv2d(3, embed_dim, kernel_size=patch_size,
-                               stride=patch_size, padding=0, bias=False)
+        self.patch = nn.Conv2d(3, embed_dim, kernel_size=patch_size, stride=patch_size, padding=0, bias=False)
         # NOTE: No cls token
         self.pos_bias = nn.Parameter(torch.randn((1, self.num_patches, embed_dim)) * 0.01)
 
         if USE_GMLP:
-            self.blocks = nn.ModuleList([GMLPBlock(embed_dim=embed_dim, seq_len=self.masked_num_patches, mlp_ratio=4)
-                                         for _ in range(num_blocks)])
+            self.blocks = nn.ModuleList(
+                [
+                    GMLPBlock(embed_dim=embed_dim, seq_len=self.masked_num_patches, mlp_ratio=4)
+                    for _ in range(num_blocks)
+                ]
+            )
         else:
             self.blocks = nn.ModuleList([TransformerBlock(embed_dim=embed_dim) for _ in range(num_blocks)])
 
@@ -138,7 +135,7 @@ class Encoder(nn.Module):
             assert index_shuffle.shape == (B, N, 1)
         index_restore = torch.argsort(index_shuffle, dim=1).reshape(B, N, 1)
         # drop mask
-        x = x.take_along_dim(index_shuffle, dim=1)[:, :self.masked_num_patches, :]
+        x = x.take_along_dim(index_shuffle, dim=1)[:, : self.masked_num_patches, :]
         # encoder
         for block in self.blocks:
             x = block(x)
@@ -149,14 +146,14 @@ class Encoder(nn.Module):
 class ToImage(nn.Module):
     def __init__(self, in_channels, scale_factor, out_channels=3):
         super().__init__()
-        self.proj = nn.Linear(in_channels, out_channels * scale_factor ** 2)
+        self.proj = nn.Linear(in_channels, out_channels * scale_factor**2)
         self.scale_factor = scale_factor
         basic_module_init(self.proj)
 
     def forward(self, x):
         x = self.proj(x)
         B, N, C = x.shape
-        H = W = int(N ** 0.5)  # expect only square
+        H = W = int(N**0.5)  # expect only square
         x = x.permute(0, 2, 1).reshape(B, C, H, W)
         x = F.pixel_shuffle(x, self.scale_factor)
         return x
@@ -169,8 +166,9 @@ class Decoder(nn.Module):
         self.pos_bias = nn.Parameter(torch.randn((1, self.num_patches, embed_dim)) * 0.01)
         self.mask_bias = nn.Parameter(torch.zeros((1, 1, embed_dim)))
         if USE_GMLP:
-            self.blocks = nn.ModuleList([GMLPBlock(embed_dim=embed_dim, seq_len=self.num_patches, mlp_ratio=4)
-                                         for _ in range(num_blocks)])
+            self.blocks = nn.ModuleList(
+                [GMLPBlock(embed_dim=embed_dim, seq_len=self.num_patches, mlp_ratio=4) for _ in range(num_blocks)]
+            )
         else:
             self.blocks = nn.ModuleList([TransformerBlock(embed_dim=embed_dim) for _ in range(num_blocks)])
         self.to_image = ToImage(embed_dim, scale_factor=patch_size)
@@ -194,8 +192,13 @@ class Decoder(nn.Module):
 class MaskedAutoencoder(Model):
     def __init__(self, embed_dim=128, num_blocks=4, image_size=IMG_SIZE, patch_size=PATCH_SIZE, mask_ratio=MASK_RATIO):
         super().__init__({})
-        self.encoder = Encoder(embed_dim=embed_dim, num_blocks=num_blocks, image_size=image_size, patch_size=patch_size,
-                               mask_ratio=mask_ratio)
+        self.encoder = Encoder(
+            embed_dim=embed_dim,
+            num_blocks=num_blocks,
+            image_size=image_size,
+            patch_size=patch_size,
+            mask_ratio=mask_ratio,
+        )
         self.decoder = Decoder(embed_dim=embed_dim, num_blocks=num_blocks, image_size=image_size, patch_size=patch_size)
 
     def forward(self, x, index_shuffle=None):
@@ -250,7 +253,7 @@ class CIFAR10Trainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = CIFAR10Dataset(self.args.data_dir, train=True)
             loader = torch.utils.data.DataLoader(
@@ -260,7 +263,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = CIFAR10Dataset(self.args.data_dir, train=False)
@@ -270,7 +274,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):

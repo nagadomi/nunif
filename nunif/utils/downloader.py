@@ -1,9 +1,11 @@
-import urllib
-import shutil
 import os
-from tqdm import tqdm
-from tempfile import NamedTemporaryFile, mkdtemp
+import shutil
+import urllib
 from abc import ABC, abstractmethod
+from tempfile import NamedTemporaryFile, mkdtemp
+
+from tqdm import tqdm
+
 from ..logger import logger
 
 
@@ -29,8 +31,14 @@ class Downloader(ABC):
                 logger.debug(f"Downloader: {self.name}: url={self.url}, size={total_size}")
 
                 with NamedTemporaryFile(prefix="nunif-", delete=False) as tmp:
-                    progress_bar = tqdm(desc=self.name, total=total_size, unit='iB', unit_scale=True,
-                                        ncols=80, disable=not show_progress)
+                    progress_bar = tqdm(
+                        desc=self.name,
+                        total=total_size,
+                        unit="iB",
+                        unit_scale=True,
+                        ncols=80,
+                        disable=not show_progress,
+                    )
                     while True:
                         chunk = response.read(block_size)
                         if not chunk:

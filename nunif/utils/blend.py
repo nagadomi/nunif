@@ -4,7 +4,7 @@ import torch
 
 
 def blend(a, b, alpha):
-    return a * alpha + b * (1. - alpha)
+    return a * alpha + b * (1.0 - alpha)
 
 
 def multiply(a, b):
@@ -12,14 +12,14 @@ def multiply(a, b):
 
 
 def screen(a, b):
-    return 1. - (2. * (1. - a) * (1. - b))
+    return 1.0 - (2.0 * (1.0 - a) * (1.0 - b))
 
 
 def overlay(a, b):
     out = torch.empty(a.shape, dtype=a.dtype, device=a.device)
     th = a < 0.5
     th_not = torch.logical_not(th)
-    out[th] = 2. * multiply(a[th], b[th])
+    out[th] = 2.0 * multiply(a[th], b[th])
     out[th_not] = screen(a[th_not], b[th_not])
 
     return out
@@ -35,13 +35,13 @@ def softlight(a, b):
 
     th1 = b <= 0.5
     th1_not = torch.logical_not(th1)
-    out[th1] = a[th1] - (1. - 2. * b[th1]) * a[th1] * (1. - a[th1])
+    out[th1] = a[th1] - (1.0 - 2.0 * b[th1]) * a[th1] * (1.0 - a[th1])
 
     th2 = torch.logical_and(th1_not, a <= 0.25)
     th2_not = torch.logical_and(th1_not, torch.logical_not(th2))
 
-    out[th2] = a[th2] + (2. * b[th2] - 1) * ((((16. * a[th2] - 12.) * a[th2] + 4.) * a[th2]) - a[th2])
-    out[th2_not] = a[th2_not] + (2. * b[th2_not] - 1) * (torch.sqrt(a[th2_not]) - a[th2_not])
+    out[th2] = a[th2] + (2.0 * b[th2] - 1) * ((((16.0 * a[th2] - 12.0) * a[th2] + 4.0) * a[th2]) - a[th2])
+    out[th2_not] = a[th2_not] + (2.0 * b[th2_not] - 1) * (torch.sqrt(a[th2_not]) - a[th2_not])
     return out
 
 
@@ -59,9 +59,10 @@ def _test():
     the result of this code is roughly the same as
     the result of the layer composition mode in GIMP
     """
-    from PIL import Image, ImageDraw
-    from . import pil_io
     import cv2
+    from PIL import Image, ImageDraw
+
+    from . import pil_io
 
     def show(name, im):
         cv2.imshow(name, pil_io.to_cv2(im))

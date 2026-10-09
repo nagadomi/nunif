@@ -2,13 +2,11 @@
 # python3 -m text_resource.aozora.download
 
 
-import requests
 import os
-from os import path
-from urllib.parse import quote_plus as url_encode
 import shutil
-from nunif.utils.downloader import ArchiveDownloader
+from os import path
 
+from nunif.utils.downloader import ArchiveDownloader
 
 AOZORA_TEXT_URL = "https://github.com/aozorahack/aozorabunko_text/archive/master.zip"
 AOZORA_CSV_URL = "http://www.aozora.gr.jp/index_pages/list_person_all.zip"
@@ -30,12 +28,10 @@ def main():
     output_dir = path.join(path.dirname(__file__), "data")
     os.makedirs(output_dir, exist_ok=True)
 
-    downloader = AozoraCSVDownloader(AOZORA_CSV_URL, name="list_person_all.csv",
-                                     format="zip", output_dir=output_dir)
+    downloader = AozoraCSVDownloader(AOZORA_CSV_URL, name="list_person_all.csv", format="zip", output_dir=output_dir)
     downloader.run()
 
-    downloader = AozoraTextDownloader(AOZORA_TEXT_URL, name="aozorabunko_text", 
-                                      format="zip", output_dir=output_dir)
+    downloader = AozoraTextDownloader(AOZORA_TEXT_URL, name="aozorabunko_text", format="zip", output_dir=output_dir)
     downloader.run()
 
 

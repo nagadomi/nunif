@@ -1,9 +1,11 @@
 # Utilities to load, apply, and generate 3D LUTs.
 import os
-from os import path
 import shutil
+from os import path
+
 import torch
 import torch.nn.functional as F
+
 from nunif.utils.downloader import ArchiveDownloader
 
 
@@ -88,6 +90,7 @@ def _generate_hdr_lut(source_trc, target_space, output_file, size=33):
     import colour
     import colour_hdri
     import numpy as np
+
     """
     Generate 3D LUT for HDR to SDR conversion using colour-hdri filmic operator.
     """
@@ -111,9 +114,7 @@ def _generate_hdr_lut(source_trc, target_space, output_file, size=33):
     # Tone Mapping (Linear space)
     if source_trc == "PQ":
         # Reinhard2004 operator often looks more "natural" for video.
-        RGB_tonemapped = colour_hdri.tonemapping_operator_Reinhard2004(
-            np.maximum(0, RGB_linear)
-        )
+        RGB_tonemapped = colour_hdri.tonemapping_operator_Reinhard2004(np.maximum(0, RGB_linear))
         # Saturation boost (Optional):
         # Many players apply gamut mapping or saturation boost for HDR->SDR.
         # Simple saturation boost in linear space:
@@ -123,9 +124,7 @@ def _generate_hdr_lut(source_trc, target_space, output_file, size=33):
         RGB_tonemapped = luma + (RGB_tonemapped - luma) * saturation_factor
     else:
         # Keep Filmic for HLG or others for now
-        RGB_tonemapped = colour_hdri.tonemapping_operator_Reinhard2004(
-            np.maximum(0, RGB_linear)
-        )
+        RGB_tonemapped = colour_hdri.tonemapping_operator_Reinhard2004(np.maximum(0, RGB_linear))
 
     # Color Space Conversion: BT.2020 -> Target (Linear)
     if "709" in target_space:
@@ -138,11 +137,7 @@ def _generate_hdr_lut(source_trc, target_space, output_file, size=33):
     target_cs = colour.RGB_COLOURSPACES[target_cs_name]
     source_cs = colour.RGB_COLOURSPACES["ITU-R BT.2020"]
 
-    RGB_target_linear = colour.RGB_to_RGB(
-        RGB_tonemapped,
-        source_cs,
-        target_cs
-    )
+    RGB_target_linear = colour.RGB_to_RGB(RGB_tonemapped, source_cs, target_cs)
 
     # OETF: Encode to SDR
     if "709" in target_space:
@@ -198,8 +193,8 @@ def get_hdr2sdr_lut_path(name):
 
 
 def _test_lut():
-    import torchvision.transforms.functional as TF
     import torchvision.io as IO
+    import torchvision.transforms.functional as TF
 
     x = IO.read_image("cc0/320/dog.png") / 255.0
     lut = load_hdr2sdr_lut("pq2bt709")

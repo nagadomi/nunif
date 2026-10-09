@@ -1,8 +1,10 @@
 import torch
 import torch.nn.functional as F
+
 from nunif.device import autocast, device_is_mps
-from .mapper import get_mapper
+
 from .dilation import closing, dilate_inner, dilate_outer
+from .mapper import get_mapper
 
 
 def make_divergence_feature_value(divergence, convergence, image_width):
@@ -14,8 +16,7 @@ def make_divergence_feature_value(divergence, convergence, image_width):
     return divergence_feature_value, convergence_feature_value
 
 
-def make_input_tensor(c, depth, divergence, convergence,
-                      image_width, mapper=None, preserve_screen_border=False):
+def make_input_tensor(c, depth, divergence, convergence, image_width, mapper=None, preserve_screen_border=False):
     depth = depth.squeeze(0)  # CHW -> HW
     if mapper is not None:
         depth = get_mapper(mapper)(depth)
@@ -33,8 +34,12 @@ def make_input_tensor(c, depth, divergence, convergence,
         border_pix = round(divergence * 0.75 * 0.01 * image_width * (depth.shape[-1] / image_width))
         if border_pix > 0:
             view_shape = [1] * (depth.ndim - 1) + [-1]
-            border_weight_l = torch.linspace(0.0, 1.0, border_pix, dtype=depth.dtype, device=depth.device).view(view_shape)
-            border_weight_r = torch.linspace(1.0, 0.0, border_pix, dtype=depth.dtype, device=depth.device).view(view_shape)
+            border_weight_l = torch.linspace(0.0, 1.0, border_pix, dtype=depth.dtype, device=depth.device).view(
+                view_shape
+            )
+            border_weight_r = torch.linspace(1.0, 0.0, border_pix, dtype=depth.dtype, device=depth.device).view(
+                view_shape
+            )
 
             divergence_feat[..., :border_pix] *= border_weight_l
             divergence_feat[..., -border_pix:] *= border_weight_r
@@ -43,30 +48,36 @@ def make_input_tensor(c, depth, divergence, convergence,
 
     if c is not None:
         w, h = c.shape[2], c.shape[1]
-        mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, h, device=c.device),
-                                        torch.linspace(-1, 1, w, device=c.device), indexing="ij")
+        mesh_y, mesh_x = torch.meshgrid(
+            torch.linspace(-1, 1, h, device=c.device), torch.linspace(-1, 1, w, device=c.device), indexing="ij"
+        )
         grid = torch.stack((mesh_x, mesh_y), 2)
         grid = grid.permute(2, 0, 1)  # CHW
-        return torch.cat([
-            c,
-            depth.unsqueeze(0),
-            divergence_feat.unsqueeze(0),
-            convergence_feat.unsqueeze(0),
-            grid,
-        ], dim=0)
+        return torch.cat(
+            [
+                c,
+                depth.unsqueeze(0),
+                divergence_feat.unsqueeze(0),
+                convergence_feat.unsqueeze(0),
+                grid,
+            ],
+            dim=0,
+        )
     else:
-        return torch.cat([
-            depth.unsqueeze(0),
-            divergence_feat.unsqueeze(0),
-            convergence_feat.unsqueeze(0),
-        ], dim=0)
+        return torch.cat(
+            [
+                depth.unsqueeze(0),
+                divergence_feat.unsqueeze(0),
+                convergence_feat.unsqueeze(0),
+            ],
+            dim=0,
+        )
 
 
 def backward_warp(c, grid, delta, delta_scale):
     grid = grid + delta * delta_scale
     if c.shape[2] != grid.shape[2] or c.shape[3] != grid.shape[3]:
-        grid = F.interpolate(grid, size=c.shape[-2:],
-                             mode="bilinear", align_corners=True, antialias=False)
+        grid = F.interpolate(grid, size=c.shape[-2:], mode="bilinear", align_corners=True, antialias=False)
     grid = grid.permute(0, 2, 3, 1)
     if device_is_mps(c.device):
         # MPS does not support bicubic and border
@@ -83,8 +94,9 @@ def backward_warp(c, grid, delta, delta_scale):
 
 def make_grid(batch, width, height, device):
     # TODO: xpu: torch.meshgrid causes fallback from XPU to CPU, but it is faster to simply do nothing
-    mesh_y, mesh_x = torch.meshgrid(torch.linspace(-1, 1, height, device=device),
-                                    torch.linspace(-1, 1, width, device=device), indexing="ij")
+    mesh_y, mesh_x = torch.meshgrid(
+        torch.linspace(-1, 1, height, device=device), torch.linspace(-1, 1, width, device=device), indexing="ij"
+    )
     mesh_y = mesh_y.reshape(1, 1, height, width).expand(batch, 1, height, width)
     mesh_x = mesh_x.reshape(1, 1, height, width).expand(batch, 1, height, width)
     grid = torch.cat((mesh_x, mesh_y), dim=1)
@@ -120,38 +132,58 @@ def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_vi
 
 
 def apply_divergence_monobw(
-        model: torch.nn.Module,
-        c: torch.Tensor,
-        depth: torch.Tensor,
-        divergence: float,
-        convergence: float | torch.Tensor,
-        synthetic_view: str = "both",
-        preserve_screen_border: bool = False,
-        fix_screen_border_mask: int = 1,
-        return_mask=False,
+    model: torch.nn.Module,
+    c: torch.Tensor,
+    depth: torch.Tensor,
+    divergence: float,
+    convergence: float | torch.Tensor,
+    synthetic_view: str = "both",
+    preserve_screen_border: bool = False,
+    fix_screen_border_mask: int = 1,
+    return_mask=False,
 ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
     assert synthetic_view in {"both", "right", "left"}
     assert fix_screen_border_mask in {0, 1, 2}
     if synthetic_view == "both":
-        left_eye = model(c, depth, divergence=divergence, convergence=convergence,
-                         preserve_screen_border=preserve_screen_border,
-                         fix_screen_border_mask=fix_screen_border_mask,
-                         return_mask=return_mask)
-        right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence, convergence=convergence,
-                          preserve_screen_border=preserve_screen_border,
-                          fix_screen_border_mask=fix_screen_border_mask,
-                          return_mask=return_mask)
+        left_eye = model(
+            c,
+            depth,
+            divergence=divergence,
+            convergence=convergence,
+            preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=fix_screen_border_mask,
+            return_mask=return_mask,
+        )
+        right_eye = model(
+            c.flip(dims=[-1]),
+            depth.flip(dims=[-1]),
+            divergence=divergence,
+            convergence=convergence,
+            preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=fix_screen_border_mask,
+            return_mask=return_mask,
+        )
     elif synthetic_view == "right":
         left_eye = c
-        right_eye = model(c.flip(dims=[-1]), depth.flip(dims=[-1]), divergence=divergence * 2, convergence=convergence,
-                          preserve_screen_border=preserve_screen_border,
-                          fix_screen_border_mask=fix_screen_border_mask,
-                          return_mask=return_mask)
+        right_eye = model(
+            c.flip(dims=[-1]),
+            depth.flip(dims=[-1]),
+            divergence=divergence * 2,
+            convergence=convergence,
+            preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=fix_screen_border_mask,
+            return_mask=return_mask,
+        )
     elif synthetic_view == "left":
-        left_eye = model(c, depth, divergence=divergence * 2, convergence=convergence,
-                         preserve_screen_border=preserve_screen_border,
-                         fix_screen_border_mask=fix_screen_border_mask,
-                         return_mask=return_mask)
+        left_eye = model(
+            c,
+            depth,
+            divergence=divergence * 2,
+            convergence=convergence,
+            preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=fix_screen_border_mask,
+            return_mask=return_mask,
+        )
         right_eye = c
 
     if return_mask:
@@ -172,75 +204,116 @@ def apply_divergence_monobw(
 
 
 def apply_divergence_nn_LR(
-        model, c, depth, divergence, convergence, steps,
-        synthetic_view="both",
-        preserve_screen_border=False,
-        enable_amp=True,
+    model,
+    c,
+    depth,
+    divergence,
+    convergence,
+    steps,
+    synthetic_view="both",
+    preserve_screen_border=False,
+    enable_amp=True,
 ):
     assert synthetic_view in {"both", "right", "left"}
     steps = 1 if steps is None else steps
 
     if getattr(model, "symmetric", False):
         left_eye, right_eye = apply_divergence_nn_symmetric(
-            model, c, depth, divergence, convergence,
-            synthetic_view=synthetic_view, enable_amp=enable_amp)
+            model, c, depth, divergence, convergence, synthetic_view=synthetic_view, enable_amp=enable_amp
+        )
     else:
         if synthetic_view == "both":
-            left_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
-                                           shift=-1,
-                                           preserve_screen_border=preserve_screen_border,
-                                           enable_amp=enable_amp)
-            right_eye = apply_divergence_nn(model, c, depth, divergence, convergence, steps,
-                                            shift=1,
-                                            preserve_screen_border=preserve_screen_border,
-                                            enable_amp=enable_amp)
+            left_eye = apply_divergence_nn(
+                model,
+                c,
+                depth,
+                divergence,
+                convergence,
+                steps,
+                shift=-1,
+                preserve_screen_border=preserve_screen_border,
+                enable_amp=enable_amp,
+            )
+            right_eye = apply_divergence_nn(
+                model,
+                c,
+                depth,
+                divergence,
+                convergence,
+                steps,
+                shift=1,
+                preserve_screen_border=preserve_screen_border,
+                enable_amp=enable_amp,
+            )
         elif synthetic_view == "right":
             left_eye = c
-            right_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
-                                            shift=1,
-                                            preserve_screen_border=preserve_screen_border,
-                                            enable_amp=enable_amp)
+            right_eye = apply_divergence_nn(
+                model,
+                c,
+                depth,
+                divergence * 2,
+                convergence,
+                steps,
+                shift=1,
+                preserve_screen_border=preserve_screen_border,
+                enable_amp=enable_amp,
+            )
         elif synthetic_view == "left":
-            left_eye = apply_divergence_nn(model, c, depth, divergence * 2, convergence, steps,
-                                           shift=-1,
-                                           preserve_screen_border=preserve_screen_border,
-                                           enable_amp=enable_amp)
+            left_eye = apply_divergence_nn(
+                model,
+                c,
+                depth,
+                divergence * 2,
+                convergence,
+                steps,
+                shift=-1,
+                preserve_screen_border=preserve_screen_border,
+                enable_amp=enable_amp,
+            )
             right_eye = c
 
     return left_eye, right_eye
 
 
 def apply_divergence_nn(
-        model, c, depth, divergence, convergence, steps,
-        shift,
-        preserve_screen_border=False,
-        enable_amp=True,
+    model,
+    c,
+    depth,
+    divergence,
+    convergence,
+    steps,
+    shift,
+    preserve_screen_border=False,
+    enable_amp=True,
 ):
     if model.name == "sbs.mlbw":
         return apply_divergence_nn_delta_weight(
-            model, c, depth,
+            model,
+            c,
+            depth,
             divergence=divergence,
             convergence=convergence,
             steps=steps,
             shift=shift,
             preserve_screen_border=preserve_screen_border,
-            enable_amp=enable_amp)
+            enable_amp=enable_amp,
+        )
     else:
         return apply_divergence_nn_delta(
-            model, c, depth,
+            model,
+            c,
+            depth,
             divergence=divergence,
             convergence=convergence,
             steps=steps,
             shift=shift,
             preserve_screen_border=preserve_screen_border,
-            enable_amp=enable_amp)
+            enable_amp=enable_amp,
+        )
 
 
 def apply_divergence_nn_delta(
-        model, c, depth, divergence, convergence, steps,
-        shift,
-        preserve_screen_border=False,
-        enable_amp=True
+    model, c, depth, divergence, convergence, steps, shift, preserve_screen_border=False, enable_amp=True
 ):
     # BCHW
     assert model.delta_output
@@ -262,12 +335,19 @@ def apply_divergence_nn_delta(
         convergence = [convergence] * depth.shape[0]
 
     for j in range(steps):
-        x = torch.stack([make_input_tensor(None, depth_warp[i],
-                                           divergence=divergence_step,
-                                           convergence=convergence[i],
-                                           image_width=base_size,
-                                           preserve_screen_border=preserve_screen_border)
-                         for i in range(depth_warp.shape[0])])
+        x = torch.stack(
+            [
+                make_input_tensor(
+                    None,
+                    depth_warp[i],
+                    divergence=divergence_step,
+                    convergence=convergence[i],
+                    image_width=base_size,
+                    preserve_screen_border=preserve_screen_border,
+                )
+                for i in range(depth_warp.shape[0])
+            ]
+        )
         with autocast(device=depth.device, enabled=enable_amp):
             delta = model(x)
 
@@ -299,7 +379,9 @@ _mlbw_debug_count = 0
 
 def mlbw_debug_output(z):
     import os
+
     import torchvision.transforms.functional as TF
+
     global _mlbw_debug_count
     _mlbw_debug_count += 1
     os.makedirs("tmp/mlbw_debug", exist_ok=True)
@@ -310,11 +392,16 @@ def mlbw_debug_output(z):
 
 
 def apply_divergence_nn_delta_weight(
-        model, c, depth, divergence, convergence, steps,
-        shift,
-        preserve_screen_border=False,
-        enable_amp=True,
-        return_mask=False,
+    model,
+    c,
+    depth,
+    divergence,
+    convergence,
+    steps,
+    shift,
+    preserve_screen_border=False,
+    enable_amp=True,
+    return_mask=False,
 ):
     # BCHW
     assert model.delta_output
@@ -329,12 +416,19 @@ def apply_divergence_nn_delta_weight(
     else:
         convergence = [convergence] * depth.shape[0]
 
-    x = torch.stack([make_input_tensor(None, depth[i],
-                                       divergence=divergence,
-                                       convergence=convergence[i],
-                                       image_width=base_size,
-                                       preserve_screen_border=preserve_screen_border)
-                     for i in range(depth.shape[0])])
+    x = torch.stack(
+        [
+            make_input_tensor(
+                None,
+                depth[i],
+                divergence=divergence,
+                convergence=convergence[i],
+                image_width=base_size,
+                preserve_screen_border=preserve_screen_border,
+            )
+            for i in range(depth.shape[0])
+        ]
+    )
     with autocast(device=depth.device, enabled=enable_amp):
         if model.hole_mask:
             delta, layer_weight, hole_mask_logits = model(x)
@@ -343,8 +437,9 @@ def apply_divergence_nn_delta_weight(
             hole_mask_logits = None
 
     if c.shape[2] != layer_weight.shape[2] or c.shape[3] != layer_weight.shape[3]:
-        layer_weight = F.interpolate(layer_weight, size=c.shape[-2:],
-                                     mode="bilinear", align_corners=True, antialias=True)
+        layer_weight = F.interpolate(
+            layer_weight, size=c.shape[-2:], mode="bilinear", align_corners=True, antialias=True
+        )
 
     delta_scale = torch.tensor(1.0 / (W // 2 - 1), dtype=c.dtype, device=c.device)
     delta = pad_delta_y(delta)
@@ -352,16 +447,17 @@ def apply_divergence_nn_delta_weight(
     z = torch.zeros_like(c)
     debug = []
     for i in range(model.num_layers):
-        d = delta[:, i * 2:i * 2 + 2, :, :]
-        w = layer_weight[:, i:i + 1, :, :]
+        d = delta[:, i * 2 : i * 2 + 2, :, :]
+        w = layer_weight[:, i : i + 1, :, :]
         bw = backward_warp(c, grid, d, delta_scale) * w
         z += bw
         if MLBW_DEBUG_OUTPUT:
             debug.append(bw)
 
     if MLBW_DEBUG_OUTPUT and hole_mask_logits is not None:
-        hole_mask_logits = F.interpolate(hole_mask_logits, size=c.shape[-2:],
-                                         mode="bilinear", align_corners=True, antialias=False)
+        hole_mask_logits = F.interpolate(
+            hole_mask_logits, size=c.shape[-2:], mode="bilinear", align_corners=True, antialias=False
+        )
         hole_mask = torch.sigmoid(hole_mask_logits)
         debug.append(hole_mask.expand_as(c))
 
@@ -391,8 +487,7 @@ def apply_divergence_nn_delta_weight(
         return z
 
 
-def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
-                                  synthetic_view, enable_amp):
+def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence, synthetic_view, enable_amp):
     # BCHW
     assert synthetic_view in {"both", "right", "left"}
     assert model.delta_output
@@ -406,11 +501,12 @@ def apply_divergence_nn_symmetric(model, c, depth, divergence, convergence,
     else:
         convergence = [convergence] * depth.shape[0]
 
-    x = torch.stack([make_input_tensor(None, depth[i],
-                                       divergence=divergence,
-                                       convergence=convergence[i],
-                                       image_width=W)
-                     for i in range(depth.shape[0])])
+    x = torch.stack(
+        [
+            make_input_tensor(None, depth[i], divergence=divergence, convergence=convergence[i], image_width=W)
+            for i in range(depth.shape[0])
+        ]
+    )
     with autocast(device=depth.device, enabled=enable_amp):
         delta = model(x)
     grid = make_grid(B, W, H, c.device)
@@ -433,25 +529,33 @@ def postprocess_hole_mask(mask_logits, target_size, threshold, inner_dilation=0,
     base_width = mask_logits.shape[-1]
     mask_logits = closing(mask_logits, n_iter=1)
     if target_size != mask_logits.shape[-2:]:
-        mask_logits = F.interpolate(mask_logits, size=target_size,
-                                    mode="bilinear", align_corners=True, antialias=False)
+        mask_logits = F.interpolate(mask_logits, size=target_size, mode="bilinear", align_corners=True, antialias=False)
     mask = torch.sigmoid(mask_logits)
-    mask = (mask > threshold)
+    mask = mask > threshold
     mask = dilate_inner(mask, n_iter=inner_dilation, base_width=base_width)
     mask = dilate_outer(mask, n_iter=outer_dilation, base_width=base_width)
 
     return mask
 
 
-def nonwarp_mask(model, c, depth, divergence, convergence, mapper=None, threshold=0.15, inner_dilation=0, outer_dilation=0):
+def nonwarp_mask(
+    model, c, depth, divergence, convergence, mapper=None, threshold=0.15, inner_dilation=0, outer_dilation=0
+):
     if mapper is not None:
         disparity = get_mapper(mapper)(depth)
     else:
         disparity = depth
     # warp depth to the left
     warped_depth, _ = apply_divergence_nn_delta_weight(
-        model, depth, disparity, divergence=divergence, convergence=convergence, steps=1,
-        shift=-1, preserve_screen_border=False, enable_amp=True,
+        model,
+        depth,
+        disparity,
+        divergence=divergence,
+        convergence=convergence,
+        steps=1,
+        shift=-1,
+        preserve_screen_border=False,
+        enable_amp=True,
         return_mask=True,  # prevent hole fill
     )
     # warp warped_depth to the right and back to original position
@@ -462,21 +566,30 @@ def nonwarp_mask(model, c, depth, divergence, convergence, mapper=None, threshol
 
     dummy = torch.zeros_like(c)
     _, mask_logits = apply_divergence_nn_delta_weight(
-        model, dummy, disparity, divergence=divergence, convergence=convergence, steps=1,
-        shift=1, preserve_screen_border=False, enable_amp=True,
+        model,
+        dummy,
+        disparity,
+        divergence=divergence,
+        convergence=convergence,
+        steps=1,
+        shift=1,
+        preserve_screen_border=False,
+        enable_amp=True,
         return_mask=True,
     )
-    mask = postprocess_hole_mask(mask_logits, c.shape[-2:], threshold=threshold,
-                                 inner_dilation=inner_dilation, outer_dilation=outer_dilation)
+    mask = postprocess_hole_mask(
+        mask_logits, c.shape[-2:], threshold=threshold, inner_dilation=inner_dilation, outer_dilation=outer_dilation
+    )
 
     return c, mask
 
 
 def _test_nonwarp_mask():
-    import torchvision.transforms.functional as TF
     import torchvision.io as io
-    from .stereo_model_factory import create_stereo_model
+    import torchvision.transforms.functional as TF
+
     from . import models  # noqa
+    from .stereo_model_factory import create_stereo_model
 
     model = create_stereo_model("mask_mlbw_l2", divergence=10, device_id=0)
 
@@ -493,8 +606,9 @@ def _test_nonwarp_mask():
 
 def _test_aspect():
     import torchvision.io as io
-    from .stereo_model_factory import create_stereo_model
+
     from . import models  # noqa
+    from .stereo_model_factory import create_stereo_model
 
     x = io.read_image("cc0/518/lighthouse.png") / 255.0
     depth = io.read_image("cc0/518/depth/lighthouse.png") / 65536.0
@@ -507,14 +621,12 @@ def _test_aspect():
 
     for method in ["row_flow_v3", "mlbw_l2", "mask_mlbw_l2"]:
         model = create_stereo_model(method, divergence=D, device_id=0)
-        view = apply_divergence_nn(model, x, depth, divergence=D, convergence=1, steps=1,
-                                   shift=-1)
+        view = apply_divergence_nn(model, x, depth, divergence=D, convergence=1, steps=1, shift=-1)
 
         x_v = x[:, :, :, sx:ex]
         depth_v = depth[:, :, :, sx:ex]
 
-        view_v = apply_divergence_nn(model, x_v, depth_v, divergence=D, convergence=1, steps=1,
-                                     shift=-1)
+        view_v = apply_divergence_nn(model, x_v, depth_v, divergence=D, convergence=1, steps=1, shift=-1)
 
         diff = (view[:, :, :, sx:ex] - view_v).abs().mean().item()
         print(method, round(diff * 256, 2))

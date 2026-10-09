@@ -2,13 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 """ ref: Local Binary Convolutional Neural Network
          https://arxiv.org/abs/1608.06049
 """
 
 
-# training not tested 
+# training not tested
 
 
 def generate_lbcnn_filters(size, sparcity=0.9, seed=71):
@@ -34,11 +33,11 @@ class RandomBinaryConvolution(nn.Module):
             self.pad = nn.ReplicationPad2d(padding)
 
         if seed is None:
-            seed = torch.randint(0, 0x7fffffff, (1,)).item()
+            seed = torch.randint(0, 0x7FFFFFFF, (1,)).item()
         self.register_buffer(
             "kernel",
-            generate_lbcnn_filters((out_channels, in_channels, kernel_size, kernel_size),
-                                   sparcity=sparcity, seed=seed))
+            generate_lbcnn_filters((out_channels, in_channels, kernel_size, kernel_size), sparcity=sparcity, seed=seed),
+        )
 
     def forward(self, x):
         return F.conv2d(self.pad(x), weight=self.kernel, bias=None, stride=self.stride, padding=0)
@@ -54,7 +53,8 @@ def _test():
         nn.BatchNorm2d(64),
         nn.ReLU(inplace=True),
         RandomBinaryConvolution(64, 64, kernel_size=3, padding=0),
-        nn.BatchNorm2d(64))
+        nn.BatchNorm2d(64),
+    )
 
     out = net(x)
     print(out.shape, out.min(), out.max(), out.mean())

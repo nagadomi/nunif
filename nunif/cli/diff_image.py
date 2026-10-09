@@ -3,12 +3,14 @@
 # python -m nunif.cli.diff_image -i image1.png image2.png
 # python -m nunif.cli.diff_image -v -i dir1/ dir2/
 import argparse
+import math
+from os import path
+
+import torch
+import torchvision.transforms.functional as TF
+
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple, to_tensor
-import torchvision.transforms.functional as TF
-import torch
-from os import path
-import math
 
 
 def calc_psnr(im1, im2):

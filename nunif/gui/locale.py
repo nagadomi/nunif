@@ -1,5 +1,5 @@
-import sys
 import locale
+import sys
 import warnings
 
 

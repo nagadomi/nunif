@@ -29,8 +29,9 @@ class CosineAnnealingWarmRestartsWithFixedWeightDecay(CosineAnnealingWarmRestart
 
 
 class CosineAnnealingWarmRestartsWithScheduledWeightDecay(CosineAnnealingWarmRestarts):
-    def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, last_epoch=-1,
-                 weight_decay_min=0.001, weight_decay_max=0.05):
+    def __init__(
+        self, optimizer, T_0, T_mult=1, eta_min=0, last_epoch=-1, weight_decay_min=0.001, weight_decay_max=0.05
+    ):
         self.weight_decay_min = weight_decay_min
         self.weight_decay_max = weight_decay_max
         super().__init__(optimizer, T_0, T_mult, eta_min, last_epoch)

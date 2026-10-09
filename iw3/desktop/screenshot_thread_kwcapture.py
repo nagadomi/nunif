@@ -20,6 +20,7 @@ Everything in this module degrades gracefully: importing it never requires kwcap
 ``warn_if_kwcapture_missing()`` tells the user about the optional package only on a session
 where it would actually have helped (KDE Plasma on Wayland).
 """
+
 import os
 import sys
 import threading
@@ -28,10 +29,8 @@ from collections import deque
 
 import numpy as np
 import torch
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode)
-
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
 
 _kwcapture = None
 _kwcapture_checked = False
@@ -39,8 +38,7 @@ _missing_warned = False
 
 
 def is_wayland():
-    return (sys.platform == "linux" and
-            os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland")
+    return sys.platform == "linux" and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
 
 
 def is_kde_desktop():
@@ -52,8 +50,7 @@ def is_kde_desktop():
     """
     if sys.platform != "linux":
         return False
-    session = (os.environ.get("XDG_CURRENT_DESKTOP", "") + ":" +
-               os.environ.get("DESKTOP_SESSION", "")).lower()
+    session = (os.environ.get("XDG_CURRENT_DESKTOP", "") + ":" + os.environ.get("DESKTOP_SESSION", "")).lower()
     return "kde" in session or "plasma" in session
 
 
@@ -64,6 +61,7 @@ def get_kwcapture():
         _kwcapture_checked = True
         try:
             import kwcapture
+
             _kwcapture = kwcapture
         except ImportError:
             _kwcapture = None
@@ -79,8 +77,9 @@ def kwcapture_unsupported_reason():
     if get_kwcapture() is None:
         return "kwcapture is not installed (pip install kwcapture)"
     if not is_wayland():
-        return ("kwcapture needs a Wayland session, but XDG_SESSION_TYPE="
-                f"{os.environ.get('XDG_SESSION_TYPE', 'unset')!r}")
+        return (
+            f"kwcapture needs a Wayland session, but XDG_SESSION_TYPE={os.environ.get('XDG_SESSION_TYPE', 'unset')!r}"
+        )
     return None
 
 
@@ -103,7 +102,8 @@ def is_kwcapture_install_recommended():
 KWCAPTURE_MISSING_MESSAGE = (
     "kwcapture is not installed, so this Wayland (KDE Plasma) desktop cannot be captured. "
     "Install it with `pip install kwcapture`. The other screenshot methods use XWayland, "
-    "which is usually black on Wayland.")
+    "which is usually black on Wayland."
+)
 
 
 def warn_if_kwcapture_missing():
@@ -123,7 +123,7 @@ def get_monitor_list():
         return []
     try:
         return K.list_monitors()
-    except Exception as e: # noqa
+    except Exception as e:  # noqa
         print(f"kwcapture: cannot list monitors: {e}", file=sys.stderr)
         return []
 
@@ -145,7 +145,7 @@ def get_monitor_scale_list():
         return []
     try:
         return [(m.effective_scale, m.area_scale) for m in K.list_monitors(measure_scale=True)]
-    except Exception as e: # noqa
+    except Exception as e:  # noqa
         print(f"kwcapture: cannot measure scales: {e}", file=sys.stderr)
         return []
 
@@ -157,7 +157,7 @@ def enum_window_names():
         return []
     try:
         windows = K.list_windows()
-    except Exception as e: # noqa
+    except Exception as e:  # noqa
         print(f"kwcapture: cannot list windows: {e}", file=sys.stderr)
         return []
     names = set()
@@ -198,14 +198,14 @@ def get_window_rect_by_title(title):
         return None
     try:
         window = resolve_window(title, K)
-    except Exception as e: # noqa
+    except Exception as e:  # noqa
         print(f"kwcapture: window {title} not found: {e}", file=sys.stderr)
         return None
     try:
         with K.Capture(window=window.id, shm=K.unique_shm_path("iw3rect")) as capture:
             capture.grab(copy=True, timeout=10)
             width, height = capture.geometry()
-    except Exception as e: # noqa
+    except Exception as e:  # noqa
         print(f"kwcapture: cannot measure window {title}: {e}", file=sys.stderr)
         return None
     return {"left": window.x, "top": window.y, "width": width, "height": height}
@@ -232,9 +232,21 @@ class ScreenshotThreadKWCapture(threading.Thread):
     so no marker is painted over the image.
     """
 
-    def __init__(self, fps, frame_width, frame_height, monitor_index, window_name, device,
-                 crop_top=0, crop_left=0, crop_right=0, crop_bottom=0,
-                 draw_cursor_enabled=True, **_ignore_unsupported_kwargs):
+    def __init__(
+        self,
+        fps,
+        frame_width,
+        frame_height,
+        monitor_index,
+        window_name,
+        device,
+        crop_top=0,
+        crop_left=0,
+        crop_right=0,
+        crop_bottom=0,
+        draw_cursor_enabled=True,
+        **_ignore_unsupported_kwargs,
+    ):
         super().__init__(daemon=True)
         self.fps = fps
         self.frame_width = frame_width
@@ -281,8 +293,7 @@ class ScreenshotThreadKWCapture(threading.Thread):
             if not monitors:
                 raise RuntimeError("kwcapture found no output on this session")
             if self.monitor_index >= len(monitors):
-                raise RuntimeError(f"monitor_index={self.monitor_index} not found "
-                                   f"(this session has {len(monitors)})")
+                raise RuntimeError(f"monitor_index={self.monitor_index} not found (this session has {len(monitors)})")
             kwargs["monitor"] = monitors[self.monitor_index]
             self.monitor_name = monitors[self.monitor_index].name
         return K.Capture(**kwargs)
@@ -318,10 +329,12 @@ class ScreenshotThreadKWCapture(threading.Thread):
                         # for a CPU device and never needed CUDA at all.
                         try:
                             frame_buffer = frame_buffer.pin_memory()
-                        except Exception as e: # noqa
+                        except Exception as e:  # noqa
                             self.pinned_buffer = False
-                            print(f"kwcapture: cannot pin the frame buffer ({e}),"
-                                  " using pageable memory instead", file=sys.stderr)
+                            print(
+                                f"kwcapture: cannot pin the frame buffer ({e}), using pageable memory instead",
+                                file=sys.stderr,
+                            )
                 else:
                     frame_buffer.copy_(torch.from_numpy(bgra))
 
@@ -346,21 +359,25 @@ class ScreenshotThreadKWCapture(threading.Thread):
                     wait = (1.0 / self.fps) - (time.perf_counter() - tick)
                     if wait > 0:
                         self.stop_event.wait(wait)
-        except Exception as e: # noqa
+        except Exception as e:  # noqa
             self.error = e
         finally:
             if self.capture is not None:
                 try:
                     self.capture.close()
-                except Exception: # noqa
+                except Exception:  # noqa
                     pass
                 self.capture = None
             self.frame_set_event.set()  # let get_frame() report the failure
 
     def resize(self, frame):
         if frame.shape[1:] != (self.frame_height, self.frame_width):
-            frame = TF.resize(frame, size=(self.frame_height, self.frame_width),
-                              interpolation=InterpolationMode.BILINEAR, antialias=True)
+            frame = TF.resize(
+                frame,
+                size=(self.frame_height, self.frame_width),
+                interpolation=InterpolationMode.BILINEAR,
+                antialias=True,
+            )
         return frame
 
     def get_frame(self):

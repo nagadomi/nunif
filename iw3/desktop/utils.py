@@ -1,40 +1,43 @@
-import threading
 import io
-import sys
-import math
-from os import path
-import time
-import socket
 import ipaddress
+import math
+import socket
+import sys
+import threading
+import time
 from collections import deque
+from os import path
+
+import torch
 import wx  # for mouse pointer
 from packaging.version import Version
-import torch
 from torchvision.io import encode_jpeg
+
 from nunif.device import create_device
+from nunif.initializer import gc_collect
 from nunif.models import compile_model
 from nunif.models.data_parallel import DeviceSwitchInference
-from nunif.initializer import gc_collect
+
+from .. import models  # noqa
 from .. import utils as IW3U
 from ..stereo_model_factory import get_mlbw_divergence_level
-from .. import models  # noqa
-from .screenshot_thread_pil import ScreenshotThreadPIL
-from .screenshot_thread_cuda import ScreenshotThreadWCCUDA
-from .screenshot_thread_kwcapture import (  # noqa
-    ScreenshotThreadKWCapture,
-    is_kwcapture_supported,
-    is_kwcapture_install_recommended,
-    kwcapture_unsupported_reason,
-    warn_if_kwcapture_missing,
-    KWCAPTURE_MISSING_MESSAGE,
-)
-from .screenshot_process import ( # noqa
+from .screenshot_process import (  # noqa
     ScreenshotProcess,
+    enum_window_names,
     get_monitor_size_list,
     get_window_rect_by_title,
-    enum_window_names,
     is_mss_supported,
 )
+from .screenshot_thread_cuda import ScreenshotThreadWCCUDA
+from .screenshot_thread_kwcapture import (  # noqa
+    KWCAPTURE_MISSING_MESSAGE,
+    ScreenshotThreadKWCapture,
+    is_kwcapture_install_recommended,
+    is_kwcapture_supported,
+    kwcapture_unsupported_reason,
+    warn_if_kwcapture_missing,
+)
+from .screenshot_thread_pil import ScreenshotThreadPIL
 from .streaming_server import StreamingServer
 
 LocalViewer: object | None
@@ -55,10 +58,11 @@ _jpeg_encode_lock = threading.Lock()
 def init_win32():
     if sys.platform == "win32":
         import ctypes
+
         try:
             # Fix mouse position when Display Scaling is not 100%
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
-        except: # noqa
+        except:  # noqa
             pass
 
         if sys.version_info < (3, 11):
@@ -66,7 +70,7 @@ def init_win32():
                 # Change timer/sleep precision for 3.10
                 # NOTE: python 3.11 or later has high precision sleep.
                 ctypes.windll.winmm.timeBeginPeriod(1)
-            except: # noqa
+            except:  # noqa
                 pass
 
 
@@ -86,7 +90,7 @@ def get_local_address():
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except: # noqa
+    except:  # noqa
         return "127.0.0.1"  # unknown
 
 
@@ -135,6 +139,7 @@ def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
 
 def debug_jpeg_data(frame, jpeg_data):
     from torchvision.io import decode_jpeg
+
     jpeg_data = torch.tensor(list(jpeg_data), dtype=torch.uint8)
     try:
         decodec_frame = decode_jpeg(jpeg_data).cpu() / 255.0
@@ -148,30 +153,40 @@ def create_parser():
     local_address = get_local_address()
     parser = IW3U.create_parser(required_true=False)
     parser.add_argument("--local-viewer", action="store_true", help="Use Local Viewer instead of Web Streaming")
-    parser.add_argument("--port", type=int, default=1303,
-                        help="HTTP listen port")
-    parser.add_argument("--bind-addr", type=str, default=local_address,
-                        help="HTTP listen address")
+    parser.add_argument("--port", type=int, default=1303, help="HTTP listen port")
+    parser.add_argument("--bind-addr", type=str, default=local_address, help="HTTP listen address")
     parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")
     parser.add_argument("--password", type=str, help="HTTP Basic Authentication password")
     parser.add_argument("--stream-fps", type=int, default=30, help="Streaming FPS")
-    parser.add_argument("--uncap-fps", action="store_true",
-                        help="Allows LocalViewer to render at frame rates beyond the display's refresh rate")
+    parser.add_argument(
+        "--uncap-fps",
+        action="store_true",
+        help="Allows LocalViewer to render at frame rates beyond the display's refresh rate",
+    )
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
-    parser.add_argument("--screenshot", type=str, default="pil",
-                        choices=["pil", "mss", "wc_mp", "wc_cuda", "kwcapture"],
-                        help="Screenshot method")
+    parser.add_argument(
+        "--screenshot",
+        type=str,
+        default="pil",
+        choices=["pil", "mss", "wc_mp", "wc_cuda", "kwcapture"],
+        help="Screenshot method",
+    )
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
-    parser.add_argument("--window-name", type=str, help=("target window name for wc_mp."
-                                                         " When this is specified, --monitor-index is ignored"))
+    parser.add_argument(
+        "--window-name",
+        type=str,
+        help=("target window name for wc_mp. When this is specified, --monitor-index is ignored"),
+    )
     parser.add_argument("--crop-top", type=int, default=0, help="Crop pixels from top when using --window-name")
     parser.add_argument("--crop-left", type=int, default=0, help="Crop pixels from left when using --window-name")
     parser.add_argument("--crop-right", type=int, default=0, help="Crop pixels from right when using --window-name")
     parser.add_argument("--crop-bottom", type=int, default=0, help="Crop pixels from bottom when using --window-name")
-    parser.add_argument("--disable-draw-cursor", action="store_true", help="Disables drawing the cursor on the output stream")
+    parser.add_argument(
+        "--disable-draw-cursor", action="store_true", help="Disables drawing the cursor on the output stream"
+    )
 
     parser.set_defaults(
         input="dummy",
@@ -232,8 +247,7 @@ def try_switch_mlbw_model(old_divergence, new_divergence, old_side_model, args):
 def iw3_desktop_main(args, init_wxapp=True):
     init_num_threads(args.gpu[0])
 
-    if not any([args.full_sbs, args.tb, args.half_tb,
-                args.cross_eyed, args.rgbd, args.half_rgbd, args.anaglyph]):
+    if not any([args.full_sbs, args.tb, args.half_tb, args.cross_eyed, args.rgbd, args.half_rgbd, args.anaglyph]):
         args.half_sbs = True
 
     if args.user or args.password:
@@ -247,18 +261,23 @@ def iw3_desktop_main(args, init_wxapp=True):
         if args.bind_addr is None:
             args.bind_addr = get_local_address()
             if not is_private_address(args.bind_addr):
-                raise RuntimeError(f"Detected IP address({args.bind_addr}) is not Local Area Network Address. "
-                                   " Specify --bind-addr option")
+                raise RuntimeError(
+                    f"Detected IP address({args.bind_addr}) is not Local Area Network Address. "
+                    " Specify --bind-addr option"
+                )
 
         if is_loopback_address(args.bind_addr):
             print(
-                (f"Warning: {args.bind_addr} is only accessible from this PC. "
-                 "If this option is not explicitly enabled, the network connection might be unavailable."),
-                file=sys.stderr
+                (
+                    f"Warning: {args.bind_addr} is only accessible from this PC. "
+                    "If this option is not explicitly enabled, the network connection might be unavailable."
+                ),
+                file=sys.stderr,
             )
         if not is_private_address(args.bind_addr) and auth is None:
-            raise RuntimeError(f"({args.bind_addr}) is not Local Area Network Address. "
-                               "Specify --username/--password option.")
+            raise RuntimeError(
+                f"({args.bind_addr}) is not Local Area Network Address. Specify --username/--password option."
+            )
 
     if args.screenshot == "pil":
         screenshot_factory = ScreenshotThreadPIL
@@ -289,8 +308,11 @@ def iw3_desktop_main(args, init_wxapp=True):
         # PIL grabs the XWayland root window on Wayland, which is black for native Wayland
         # windows and has no second monitor. Switching the backend silently would be worse
         # than telling the user, so this only warns.
-        print("Warning: 'pil' screenshot on Wayland captures the XWayland screen (usually "
-              "black). Use --screenshot kwcapture for the real desktop.", file=sys.stderr)
+        print(
+            "Warning: 'pil' screenshot on Wayland captures the XWayland screen (usually "
+            "black). Use --screenshot kwcapture for the real desktop.",
+            file=sys.stderr,
+        )
 
     device = create_device(args.gpu)
 
@@ -303,8 +325,9 @@ def iw3_desktop_main(args, init_wxapp=True):
     if args.state["convergence_model"] is not None:
         args.state["convergence_model"].reset(enable_ema=True, decay=0.98)
 
-    args.mapper = IW3U.resolve_mapper_name(mapper=args.mapper, foreground_scale=args.foreground_scale,
-                                           metric_depth=depth_model.is_metric())
+    args.mapper = IW3U.resolve_mapper_name(
+        mapper=args.mapper, foreground_scale=args.foreground_scale, metric_depth=depth_model.is_metric()
+    )
 
     # TODO: For mlbw, it is better to switch models when the divergence value dynamically changes
     side_model = IW3U.create_stereo_model(
@@ -339,8 +362,7 @@ def iw3_desktop_main(args, init_wxapp=True):
         frame_width = screen_width
 
     output_frame_height, output_frame_width = test_output_size(
-        (frame_height, frame_width),
-        args, depth_model, side_model
+        (frame_height, frame_width), args, depth_model, side_model
     )
 
     lock = threading.Lock()
@@ -349,19 +371,20 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     if not args.local_viewer:
         # Web Streaming
-        with open(path.join(path.dirname(__file__), "views", "index.html.tpl"),
-                  mode="r", encoding="utf-8") as f:
+        with open(path.join(path.dirname(__file__), "views", "index.html.tpl"), mode="r", encoding="utf-8") as f:
             index_template = f.read()
 
         server = StreamingServer(
             host=args.bind_addr,
-            port=args.port, lock=lock,
+            port=args.port,
+            lock=lock,
             frame_width=output_frame_width,
             frame_height=output_frame_height,
             fps=args.stream_fps,
             index_template=index_template,
-            stream_uri="/stream.jpg", stream_content_type="image/jpeg",
-            auth=auth
+            stream_uri="/stream.jpg",
+            stream_content_type="image/jpeg",
+            auth=auth,
         )
     else:
         # Local Viewer
@@ -369,16 +392,23 @@ def iw3_desktop_main(args, init_wxapp=True):
             raise RuntimeError("Local Viewer is not available")
         IS_ROCM = getattr(torch.version, "hip", None) is not None
         USE_CUDA = torch.cuda.is_available() and not IS_ROCM
-        server = LocalViewer(lock=lock, width=output_frame_width, height=output_frame_height,
-                             use_cuda=USE_CUDA, uncap_fps=args.uncap_fps)
+        server = LocalViewer(
+            lock=lock, width=output_frame_width, height=output_frame_height, use_cuda=USE_CUDA, uncap_fps=args.uncap_fps
+        )
 
     screenshot_thread = screenshot_factory(
         fps=args.stream_fps,
-        frame_width=frame_width, frame_height=frame_height,
-        monitor_index=args.monitor_index, window_name=args.window_name,
-        device=device, crop_top=args.crop_top, crop_left=args.crop_left,
-        crop_right=args.crop_right, crop_bottom=args.crop_bottom,
-        draw_cursor_enabled=not args.disable_draw_cursor)
+        frame_width=frame_width,
+        frame_height=frame_height,
+        monitor_index=args.monitor_index,
+        window_name=args.window_name,
+        device=device,
+        crop_top=args.crop_top,
+        crop_left=args.crop_left,
+        crop_right=args.crop_right,
+        crop_bottom=args.crop_bottom,
+        draw_cursor_enabled=not args.disable_draw_cursor,
+    )
 
     try:
         if args.compile:
@@ -414,11 +444,17 @@ def iw3_desktop_main(args, init_wxapp=True):
 
                 if not args.local_viewer:
                     if args.gpu_jpeg:
-                        server.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+                        server.set_frame_data(
+                            to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg)
+                        )
                     else:
                         with torch.no_grad():
                             sbs_gpu_clone = sbs.detach().clone().contiguous()
-                        server.set_frame_data(lambda sbs=sbs_gpu_clone: to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=False))
+                        server.set_frame_data(
+                            lambda sbs=sbs_gpu_clone: to_jpeg_data(
+                                sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=False
+                            )
+                        )
                 else:
                     server.set_frame_data((sbs, tick))
 
@@ -428,13 +464,17 @@ def iw3_desktop_main(args, init_wxapp=True):
                     estimated_fps = 1.0 / mean_processing_time
                     screen_size_tuple = (screen_size, (frame_width, frame_height))
                     if args.state["fps_event"] is not None:
-                        args.state["fps_event"].update(estimated_fps, screenshot_thread.get_fps(),
-                                                       server.get_fps(), screen_size_tuple)
+                        args.state["fps_event"].update(
+                            estimated_fps, screenshot_thread.get_fps(), server.get_fps(), screen_size_tuple
+                        )
                     else:
-                        print(f"\rEstimated FPS = {estimated_fps:.02f}, "
-                              f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                              f"Streaming FPS = {server.get_fps():.02f}, "
-                              f"Screen Size = {screen_size_tuple}", end="")
+                        print(
+                            f"\rEstimated FPS = {estimated_fps:.02f}, "
+                            f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
+                            f"Streaming FPS = {server.get_fps():.02f}, "
+                            f"Screen Size = {screen_size_tuple}",
+                            end="",
+                        )
 
             if args.local_viewer:
                 # Platform-specific behavior for local viewer
@@ -452,7 +492,7 @@ def iw3_desktop_main(args, init_wxapp=True):
                         old_divergence=prev_divergence,
                         new_divergence=args.divergence,
                         old_side_model=side_model,
-                        args=args
+                        args=args,
                     )
                 prev_divergence = args.divergence
 

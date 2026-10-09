@@ -1,14 +1,17 @@
 import argparse
 import os
 from os import path
-from tqdm import tqdm
+
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
+from tqdm import tqdm
+
 import iw3.models  # noqa
+from nunif.device import autocast, create_device
 from nunif.models import load_model
 from nunif.modules.lpips import LPIPSMetric
-from nunif.device import create_device, autocast
+
 from .dataset import InpaintDataset
 from .dataset_video import VideoInpaintDataset
 
@@ -37,14 +40,16 @@ def main():
     parser.add_argument("--data-dir", "-i", type=str, required=True, help="dataset dir. <dataset_dir>/eval is used")
     parser.add_argument("--checkpoint-file", type=str, required=True, help="model file")
     parser.add_argument("--video", action="store_true", help="Use video dataset")
-    parser.add_argument("--gpu", type=int, default=0,
-                        help="device ids; if -1 is specified, use CPU")
-    parser.add_argument("--lpips-net", type=str, default="alex", choices=["alex", "vgg"],
-                        help="LPIPS base model")
-    parser.add_argument("--overlap-frames", type=int, nargs="+", default=[0],
-                        help="overlap/reference frames <pre> <post> for video inpain")
-    parser.add_argument("--output-dir", type=str, default=None,
-                        help="output directory")
+    parser.add_argument("--gpu", type=int, default=0, help="device ids; if -1 is specified, use CPU")
+    parser.add_argument("--lpips-net", type=str, default="alex", choices=["alex", "vgg"], help="LPIPS base model")
+    parser.add_argument(
+        "--overlap-frames",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="overlap/reference frames <pre> <post> for video inpain",
+    )
+    parser.add_argument("--output-dir", type=str, default=None, help="output directory")
 
     args = parser.parse_args()
     if len(args.overlap_frames) == 1:
@@ -67,7 +72,9 @@ def main():
         dataset_kwargs = {}
 
     model_offset = model.i2i_offset
-    dataset = dataset_class(path.join(args.data_dir, "eval"), model_offset=model_offset, training=False, **dataset_kwargs)
+    dataset = dataset_class(
+        path.join(args.data_dir, "eval"), model_offset=model_offset, training=False, **dataset_kwargs
+    )
     lpips = LPIPSMetric(net=args.lpips_net).to(device)
 
     lpips_sum = 0

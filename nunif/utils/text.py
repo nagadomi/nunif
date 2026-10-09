@@ -1,35 +1,35 @@
-import re
 import math
-
+import re
 
 # （）,(),『』,「」,〝〟,“”,"",'',``
 # 512 is the threshold for skipping over a forgotten closing parenthesis
 SPEECH_BLOCK_PATTERNS = (
-    r"（[^（）]{0,512}）", r"\([^\(\)]{0,512}\)",
-    r"『[^『』]{0,512}』", r"「[^「」]{0,512}」",
-    r"〝[^〝〟]{0,512}〟", r"“[^“”]{0,512}”",
-    r'"[^"]{0,512}"', r"'[^']{0,512}'", r"`[^`]{0,512}`"
+    r"（[^（）]{0,512}）",
+    r"\([^\(\)]{0,512}\)",
+    r"『[^『』]{0,512}』",
+    r"「[^「」]{0,512}」",
+    r"〝[^〝〟]{0,512}〟",
+    r"“[^“”]{0,512}”",
+    r'"[^"]{0,512}"',
+    r"'[^']{0,512}'",
+    r"`[^`]{0,512}`",
 )
-SPEECH_BRACKETS = set("（）()『』「」〝〟“”""'`")
+SPEECH_BRACKETS = set("（）()『』「」〝〟“”'`")
 
 
 def separate_speech_lines(text):
     if isinstance(text, (list, tuple)):
         text = "\n".join(text)
-    speech_blocks = sum([[m[0] for m in re.finditer(regex, text, re.M)]
-                         for regex in SPEECH_BLOCK_PATTERNS], [])
+    speech_blocks = sum([[m[0] for m in re.finditer(regex, text, re.M)] for regex in SPEECH_BLOCK_PATTERNS], [])
 
     non_speech_text = text
     for block in sorted(speech_blocks, key=lambda line: len(line), reverse=True):
         non_speech_text = non_speech_text.replace(block, "")
     non_speech_text = re.sub(r"[\r\n]+", "\n", non_speech_text)
-    non_speech_blocks = [block for block in non_speech_text.split("\n")
-                         if all(b not in block for b in SPEECH_BRACKETS)]
+    non_speech_blocks = [block for block in non_speech_text.split("\n") if all(b not in block for b in SPEECH_BRACKETS)]
 
-    speech_lines = sum([split_sentence(block[1:-1].strip(" \r\n\t　"))
-                        for block in speech_blocks], [])
-    non_speech_lines = sum([split_sentence(block.strip(" \t　"))
-                            for block in non_speech_blocks], [])
+    speech_lines = sum([split_sentence(block[1:-1].strip(" \r\n\t　")) for block in speech_blocks], [])
+    non_speech_lines = sum([split_sentence(block.strip(" \t　")) for block in non_speech_blocks], [])
 
     return speech_lines, non_speech_lines
 

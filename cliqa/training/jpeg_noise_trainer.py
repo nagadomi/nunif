@@ -1,21 +1,23 @@
-import sys
-from os import path
 import argparse
 import random
+import sys
+from os import path
+
 import torch
 import torch.nn as nn
-from torch.utils.data.dataset import Dataset
 import torchvision.transforms as T
+from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
     functional as TF,
 )
-from nunif.utils.image_loader import ImageLoader
-from nunif.utils import pil_io
+
 from nunif.models import create_model as nunif_create_model
 from nunif.modules import ClampLoss
-from nunif.transforms.std import add_jpeg_noise, RandomFlip
 from nunif.training.env import BaseEnv
 from nunif.training.trainer import Trainer
+from nunif.transforms.std import RandomFlip, add_jpeg_noise
+from nunif.utils import pil_io
+from nunif.utils.image_loader import ImageLoader
 
 
 class JPEGDataset(Dataset):
@@ -25,19 +27,18 @@ class JPEGDataset(Dataset):
         self.files = ImageLoader.listdir(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
-        self.gt_transform = T.Compose([
-            T.RandomCrop((256, 256)),
-            T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)], p=0.5),
-            T.RandomGrayscale(p=0.02)
-        ])
+        self.gt_transform = T.Compose(
+            [
+                T.RandomCrop((256, 256)),
+                T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)], p=0.5),
+                T.RandomGrayscale(p=0.02),
+            ]
+        )
         self.random_crop = T.Compose([T.RandomCrop((128, 128)), RandomFlip()])
         self.center_crop = T.CenterCrop((128, 128))
 
     def create_sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def __len__(self):
         return len(self.files)
@@ -154,7 +155,7 @@ class JPEGTrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = JPEGDataset(path.join(self.args.data_dir, "train"), training=True)
             loader = torch.utils.data.DataLoader(
@@ -164,7 +165,8 @@ class JPEGTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = JPEGDataset(path.join(self.args.data_dir, "eval"), training=False)
@@ -174,7 +176,8 @@ class JPEGTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):
@@ -190,13 +193,11 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "cliqa.jpeg",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "cliqa.jpeg", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="cliqa.jpeg_quality", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
 
     parser.set_defaults(
         batch_size=64,

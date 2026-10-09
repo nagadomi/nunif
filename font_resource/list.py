@@ -1,10 +1,11 @@
-from .metadata import FontInfo, FONT_NAME_ID
-from glob import glob
-from os import path
-from pprint import pprint
 import argparse
 import html
 import re
+from glob import glob
+from os import path
+from pprint import pprint
+
+from .metadata import FONT_NAME_ID, FontInfo
 
 
 def escape(s):
@@ -49,8 +50,10 @@ def main():
         else:
             pprint(data, sort_dicts=False)
     else:
-        data = {font.name: path.relpath(font.file_path, start=font_dir)
-                for font in sorted(fonts, key=lambda font: font.name)}
+        data = {
+            font.name: path.relpath(font.file_path, start=font_dir)
+            for font in sorted(fonts, key=lambda font: font.name)
+        }
         if args.markdown:
             print("# Font List")
             print("| Font Name | File |")

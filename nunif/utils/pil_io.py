@@ -1,16 +1,19 @@
-from PIL import Image, ImageCms, PngImagePlugin, UnidentifiedImageError, ImageOps
+import base64
 import io
 import struct
-import base64
+
+import numpy as np
 import torch
 import torchvision.transforms.functional as TF
-import numpy as np
-from ..transforms.functional import quantize256
-from ..logger import logger
+from PIL import Image, ImageCms, ImageOps, PngImagePlugin, UnidentifiedImageError
 
+from ..logger import logger
+from ..transforms.functional import quantize256
 
 sRGB_profile = ImageCms.createProfile("sRGB")
-CIE_Gray_profile = ImageCms.ImageCmsProfile(io.BytesIO(base64.b64decode("""
+CIE_Gray_profile = ImageCms.ImageCmsProfile(
+    io.BytesIO(
+        base64.b64decode("""
 AAABqE95cmECMAAAbW50ckdSQVlMYWIgB9oACQABABUADAASYWNzcCpuaXg3FKy3bm9uZW5vbmX+
 /v7/ZG1ubwAAAAAAAPbWAAEAAAAA0y1veXJhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAFY3BydAAAAMAAAABFZGVzYwAAAQgAAABld3RwdAAAAXAAAAAUYmtw
@@ -19,7 +22,9 @@ VXdlIEJlaHJtYW5uIDx3d3cuYmVocm1hbm4ubmFtZT4AAAAAZGVzYwAAAAAAAAALR3JheSBDSUUq
 TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABYWVogAAAAAAAA9tYAAQAAAADTLVhZWiAAAAAAAAAA
 AAAAAAAAAAAAY3VydgAAAAAAAAABAQAAAA==
-""")))  # from debian/icc-profiles-free/Gray-CIE_L.icc
+""")
+    )
+)  # from debian/icc-profiles-free/Gray-CIE_L.icc
 GAMMA_LCD = 45454
 
 
@@ -32,7 +37,7 @@ def remove_alpha(im, bg_color=255):
 
 def convert_i2l(im):
     # https://github.com/python-pillow/Pillow/issues/5991
-    return im.point(lambda i: i / 255).convert('L')
+    return im.point(lambda i: i / 255).convert("L")
 
 
 def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255, exif_transpose=False):
@@ -44,15 +49,15 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255, exif_t
     meta["mode"] = im.mode
 
     if im.mode in {"L", "I", "RGB", "P"}:
-        transparency = im.info.get('transparency')
+        transparency = im.info.get("transparency")
         if isinstance(transparency, bytes) or isinstance(transparency, int):
             if im.mode in {"RGB", "P"}:
                 im = im.convert("RGBA")
             elif im.mode == "L":
                 im = im.convert("LA")
     meta["icc_profile"] = im.info.get("icc_profile")
-    if meta['icc_profile'] is not None:
-        with io.BytesIO(meta['icc_profile']) as io_handle:
+    if meta["icc_profile"] is not None:
+        with io.BytesIO(meta["icc_profile"]) as io_handle:
             # TODO: I'm not sure
             src_profile = ImageCms.ImageCmsProfile(io_handle)
             try:
@@ -129,7 +134,7 @@ def _load_image_simple(filename, color="rgb", bg_color=255, exif_transpose=False
     if exif_transpose:
         ImageOps.exif_transpose(im, in_place=True)
 
-    transparency = im.info.get('transparency')
+    transparency = im.info.get("transparency")
     if isinstance(transparency, bytes) or isinstance(transparency, int):
         if im.mode in {"RGB", "P"}:
             im = im.convert("RGBA")
@@ -152,8 +157,7 @@ def _load_image_simple(filename, color="rgb", bg_color=255, exif_transpose=False
 
 def load_image_simple(filename, color="rgb", bg_color=255, exif_transpose=False, **kwargs):
     try:
-        im, meta = _load_image_simple(filename, color=color, bg_color=bg_color,
-                                      exif_transpose=exif_transpose)
+        im, meta = _load_image_simple(filename, color=color, bg_color=bg_color, exif_transpose=exif_transpose)
         return im, meta
     except UnidentifiedImageError:
         return None, None
@@ -170,12 +174,13 @@ def load_image_simple(filename, color="rgb", bg_color=255, exif_transpose=False,
 
 
 def load_image(filename, color=None, keep_alpha=False, bg_color=255, exif_transpose=False, **kwargs):
-    assert (color is None or color in {"rgb", "gray"})
+    assert color is None or color in {"rgb", "gray"}
     with open(filename, "rb") as f:
         try:
             im = Image.open(f)
-            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color,
-                               exif_transpose=exif_transpose)
+            return _load_image(
+                im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color, exif_transpose=exif_transpose
+            )
         except UnidentifiedImageError:
             return None, None
         except Image.DecompressionBombError:
@@ -194,8 +199,9 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False, bg_color=255
     with io.BytesIO(buff) as data:
         try:
             im = Image.open(data)
-            return _load_image(im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color,
-                               exif_transpose=exif_transpose)
+            return _load_image(
+                im, filename, color=color, keep_alpha=keep_alpha, bg_color=bg_color, exif_transpose=exif_transpose
+            )
         except UnidentifiedImageError:
             return None, None
         except Image.DecompressionBombError:
@@ -208,8 +214,7 @@ def decode_image(buff, filename=None, color=None, keep_alpha=False, bg_color=255
             return None, None
 
 
-def encode_image(im, format="png", meta=None, bg_color=255,
-                 **save_options):
+def encode_image(im, format="png", meta=None, bg_color=255, **save_options):
     with io.BytesIO() as fp:
         save_image(im, fp, meta=meta, bg_color=bg_color, format=format, save_options=save_options)
         return fp.getvalue()
@@ -242,7 +247,7 @@ def to_image(im, alpha=None, depth=None):
         # PIL does not support 16bit RGB so this case is 16bit grayscale
         if im.shape[0] != 1:
             im = im.mean(dim=0, keepdim=True)
-        im = im * 0xffff
+        im = im * 0xFFFF
         im = im.to(torch.int16).numpy().astype(np.uint16)[0]
         im = Image.fromarray(im)
     else:
@@ -253,15 +258,13 @@ def to_image(im, alpha=None, depth=None):
     return im
 
 
-def save_image(im, filename, format="png",
-               meta=None, bg_color=255,
-               **save_options):
+def save_image(im, filename, format="png", meta=None, bg_color=255, **save_options):
     icc_profile = None
     if meta is not None:
-        assert (meta["engine"] == "pil")
+        assert meta["engine"] == "pil"
 
         if meta["icc_profile"] is not None:
-            with io.BytesIO(meta['icc_profile']) as io_handle:
+            with io.BytesIO(meta["icc_profile"]) as io_handle:
                 # TODO: I'm not sure
                 dst_profile = ImageCms.ImageCmsProfile(io_handle)
                 try:
@@ -282,7 +285,9 @@ def save_image(im, filename, format="png",
                         im = ImageCms.profileToProfile(im, sRGB_profile, dst_profile)
                     icc_profile = meta["icc_profile"]
                 except ImageCms.PyCMSError as e:
-                    logger.warning(f"pil_io.save_image: profile error: im.mode={im.mode}, meta[mode]={meta['mode']}, {e}")
+                    logger.warning(
+                        f"pil_io.save_image: profile error: im.mode={im.mode}, meta[mode]={meta['mode']}, {e}"
+                    )
 
         if meta["grayscale"]:
             if im.mode == "RGB":
@@ -301,12 +306,7 @@ def save_image(im, filename, format="png",
         }
     elif format == "webp":
         # TODO: gamma
-        options = {
-            "icc_profile": icc_profile,
-            "quality": 20,
-            "method": 4,
-            "lossless": True
-        }
+        options = {"icc_profile": icc_profile, "quality": 20, "method": 4, "lossless": True}
         if im.mode in {"I", "I;16"}:
             # webp does not support 16bit grayscale
             im = convert_i2l(im)
@@ -352,5 +352,6 @@ try:
         return Image.fromarray(cvim)
 
 except ModuleNotFoundError:
+
     def to_cv2(im):
         raise NotImplementedError("opencv-python is not installed")

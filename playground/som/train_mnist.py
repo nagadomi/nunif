@@ -1,16 +1,16 @@
 # SOM
 # python3 -m playground.som.train_mnist
-from torchvision.datasets import MNIST
+import math
+from os import path
+
+import torch
+from PIL import ImageOps
+from torch import nn
 from torchvision import transforms as T
+from torchvision.datasets import MNIST
 from torchvision.transforms import functional as F
 from torchvision.utils import make_grid
-import torch
-from torch import nn
-from os import path
-import math
 from tqdm import tqdm
-from PIL import ImageOps
-
 
 DATA_DIR = path.join(path.dirname(__file__), "..", "..", "tmp", "som")
 
@@ -48,8 +48,8 @@ class SOM(nn.Module):
         # find BMU(best match unit)
         units = self.units.expand(B, *self.units.shape)
         x = x.view(B, 1, 1, -1).expand(units.shape)
-        feat_diff = (units - x)
-        feat_distance = torch.sum((feat_diff ** 2), dim=3, keepdims=True)
+        feat_diff = units - x
+        feat_distance = torch.sum((feat_diff**2), dim=3, keepdims=True)
         bmu_index = torch.argmin(feat_distance.view(B, -1), dim=1)
 
         # calculate the distance on topological map from BMU to each unit
@@ -59,8 +59,8 @@ class SOM(nn.Module):
 
         # generate a gaussian kernel centered on BMU and shrinking with t
         ksize = self.calc_kernel_size(t)
-        sigma = (0.3 * ((ksize - 1) * 0.5 - 1) + 0.8)
-        gaussian = torch.exp(-pos_distance / (2.0 * sigma ** 2))
+        sigma = 0.3 * ((ksize - 1) * 0.5 - 1) + 0.8
+        gaussian = torch.exp(-pos_distance / (2.0 * sigma**2))
         gaussian[gaussian < 0.001] = 0
 
         # update units with calculated weights
@@ -69,7 +69,7 @@ class SOM(nn.Module):
         self.units -= self.learning_rate * delta
 
 
-class MinMaxNormalize():
+class MinMaxNormalize:
     def __call__(self, x):
         min_v, max_v = x.min(), x.max()
         return (x - min_v) / (max_v - min_v)
@@ -84,20 +84,12 @@ def main():
     INNER_EPOCH = 2
     device = "cuda:0"
 
-    transform = T.Compose([
-        T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        T.ToTensor(),
-        MinMaxNormalize()
-    ])
+    transform = T.Compose([T.Resize((IMAGE_SIZE, IMAGE_SIZE)), T.ToTensor(), MinMaxNormalize()])
     dataset = MNIST(DATA_DIR, train=True, download=True, transform=transform)
     som = SOM(GRID_SIZE, input_size=1 * IMAGE_SIZE * IMAGE_SIZE, max_t=MAX_T).to(device)
     loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=32,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=4,
-        drop_last=False)
+        dataset, batch_size=32, shuffle=True, pin_memory=True, num_workers=4, drop_last=False
+    )
 
     # initialize the topological center of the units with the centroid of the data.
     print("initialize")
@@ -121,9 +113,8 @@ def main():
 
     # save animated gif
     image_list[0].save(
-        path.join(DATA_DIR, "som.gif"), format="gif",
-        append_images=image_list, save_all=True,
-        duration=66, loop=0)
+        path.join(DATA_DIR, "som.gif"), format="gif", append_images=image_list, save_all=True, duration=66, loop=0
+    )
     print(f"save images in `{path.abspath(DATA_DIR)}`")
 
 
@@ -135,10 +126,10 @@ def scheduler_test():
     for t in range(max_t):
         print(f"---- t={t}")
         ksize = max_kernel_size * math.exp(-t * deno)
-        sigma = (0.3 * ((ksize - 1) * 0.5 - 1) + 0.8)
+        sigma = 0.3 * ((ksize - 1) * 0.5 - 1) + 0.8
         print(f"ksize={ksize}, sigma={sigma}")
         for dist in range(32):
-            gaussian = math.exp(-dist**2 / (2 * sigma ** 2))
+            gaussian = math.exp(-(dist**2) / (2 * sigma**2))
             print("gaussian", f"distance={dist}", f"value={gaussian}")
 
 

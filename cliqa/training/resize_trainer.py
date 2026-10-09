@@ -1,19 +1,20 @@
-from os import path
 import argparse
 import random
+from os import path
+
 import torch
 import torch.nn as nn
-from torch.utils.data.dataset import Dataset
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
-from nunif.utils.image_loader import list_images
-from nunif.utils import pil_io
+from torch.utils.data.dataset import Dataset
+
 from nunif.modules import ClampLoss
-from nunif.transforms.std import RandomFlip, RandomSRHardExampleCrop, add_jpeg_noise
 from nunif.training.env import RegressionEnv
 from nunif.training.trainer import Trainer
 from nunif.transforms import image_magick as IM
-
+from nunif.transforms.std import RandomFlip, RandomSRHardExampleCrop, add_jpeg_noise
+from nunif.utils import pil_io
+from nunif.utils.image_loader import list_images
 
 INTERPOLATION_MODES = (
     "sinc",
@@ -42,26 +43,26 @@ def resize(im, scale_factor, filter_type):
     w = int(im.width * scale_factor_w)
     im = IM.resize(TF.to_tensor(im), (h, w), filter_type)
     scale_factor = max(scale_factor_h, scale_factor_w)
-    return im, min(max(scale_factor_w, 1.), 2.)
+    return im, min(max(scale_factor_w, 1.0), 2.0)
 
 
 def random_resize(im):
     method = random.choice(["none", "downscale", "upscale", "upscale"])
     if method == "none":
-        return TF.to_tensor(im), 1.
+        return TF.to_tensor(im), 1.0
     elif method == "upscale":
         max_scale_factor = MAX_SCALE_FACTOR_LARGE if random.uniform(0, 1) < 0.1 else MAX_SCALE_FACTOR
         keep_aspect = random.uniform(0, 1) < 0.8
         if keep_aspect:
-            scale_factor_w = scale_factor_h = random.uniform(1., max_scale_factor)
+            scale_factor_w = scale_factor_h = random.uniform(1.0, max_scale_factor)
         else:
-            scale_factor_w = random.uniform(1., max_scale_factor)
-            scale_factor_h = random.uniform(1., max_scale_factor)
+            scale_factor_w = random.uniform(1.0, max_scale_factor)
+            scale_factor_h = random.uniform(1.0, max_scale_factor)
 
         filter_type = random.choice(INTERPOLATION_MODES)
         return resize(im, [scale_factor_h, scale_factor_w], filter_type)
     elif method == "downscale":
-        scale_factor = random.uniform(MIN_SCALE_FACTOR, 1.)
+        scale_factor = random.uniform(MIN_SCALE_FACTOR, 1.0)
         filter_type = random.choice(INTERPOLATION_MODES)
         return resize(im, scale_factor, filter_type)
 
@@ -73,9 +74,11 @@ class ResizeDataset(Dataset):
         self.files = list_images(input_dir)
         if not self.files:
             raise RuntimeError(f"{input_dir} is empty")
-        self.gt_transform = T.Compose([
-            RandomSRHardExampleCrop(256 + 16),
-        ])
+        self.gt_transform = T.Compose(
+            [
+                RandomSRHardExampleCrop(256 + 16),
+            ]
+        )
         self.random_crop = T.Compose([RandomSRHardExampleCrop(128), RandomFlip()])
         self.random_grayscale = T.RandomGrayscale(p=0.01)
         self.center_crop = T.CenterCrop(128)
@@ -98,7 +101,7 @@ class ResizeDataset(Dataset):
         for i in range(n):
             method = methods[i]
             if method == "none":
-                settings.append({"scale_factor": 1.})
+                settings.append({"scale_factor": 1.0})
             elif method == "downscale":
                 settings.append({"scale_factor": downscale_factors[i % len(downscale_factors)].item()})
             elif method == "upscale":
@@ -107,10 +110,7 @@ class ResizeDataset(Dataset):
         return settings
 
     def create_sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def __len__(self):
         return len(self.files)
@@ -127,7 +127,7 @@ class ResizeDataset(Dataset):
             x = add_jpeg_noise(x, quality=jpeg_quality, subsampling=jpeg_subsampling)
             x = TF.to_tensor(x)
         x = self.random_crop(x)
-        y = torch.tensor((scale_factor, ), dtype=torch.float32)
+        y = torch.tensor((scale_factor,), dtype=torch.float32)
 
         return x, y
 
@@ -136,7 +136,7 @@ class ResizeDataset(Dataset):
         x = self.gt_transform(x)
         x, scale_factor = resize(x, setting["scale_factor"], VALIDATION_INTERPOLATION_MODE)
         x = self.center_crop(x)
-        y = torch.tensor((scale_factor, ), dtype=torch.float32)
+        y = torch.tensor((scale_factor,), dtype=torch.float32)
         return x, y
 
     def __getitem__(self, index):
@@ -149,7 +149,7 @@ class ResizeDataset(Dataset):
 
 class ResizeTrainer(Trainer):
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = ResizeDataset(path.join(self.args.data_dir, "train"), training=True)
             loader = torch.utils.data.DataLoader(
@@ -159,7 +159,8 @@ class ResizeTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = ResizeDataset(path.join(self.args.data_dir, "eval"), training=False)
@@ -169,11 +170,12 @@ class ResizeTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):
-        criterion = ClampLoss(nn.L1Loss(), 1., 2.).to(self.device)
+        criterion = ClampLoss(nn.L1Loss(), 1.0, 2.0).to(self.device)
         return RegressionEnv(self.model, criterion)
 
 
@@ -184,13 +186,11 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "cliqa.resize",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "cliqa.resize", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="cliqa.scale_factor", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
 
     parser.set_defaults(
         batch_size=64,

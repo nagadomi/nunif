@@ -1,6 +1,8 @@
 import os
+
 from diskcache import Cache
-from .dir_config import CACHE_DIR, EXAMPLE_DIR, CERT_DIR
+
+from .dir_config import CACHE_DIR, CERT_DIR, EXAMPLE_DIR
 
 
 class ServerState:

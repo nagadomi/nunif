@@ -1,15 +1,18 @@
-from os import path
 import argparse
 import sys
+from os import path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import create_model
-from nunif.training.env import I2IEnv
 from nunif.modules.psnr import PSNRPerImage
+from nunif.training.env import I2IEnv
 from nunif.training.trainer import Trainer
+
+from ... import models  # noqa
 from .dataset import SODDataset
-from ... import models # noqa
 
 
 def normalize(x):
@@ -48,16 +51,14 @@ class SODTrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             depth_dir = path.join(self.args.data_dir, "train", "depth")
             mask_dir = path.join(self.args.data_dir, "train", "mask")
             rgb_dir = path.join(self.args.data_dir, "train", "image")
-            dataset = SODDataset(depth_dir=depth_dir,
-                                 mask_dir=mask_dir,
-                                 rgb_dir=rgb_dir,
-                                 size=self.args.size,
-                                 training=True)
+            dataset = SODDataset(
+                depth_dir=depth_dir, mask_dir=mask_dir, rgb_dir=rgb_dir, size=self.args.size, training=True
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 sampler=torch.utils.data.RandomSampler(dataset, num_samples=self.args.num_samples),
@@ -65,24 +66,24 @@ class SODTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             depth_dir = path.join(self.args.data_dir, "eval", "depth")
             mask_dir = path.join(self.args.data_dir, "eval", "mask")
             rgb_dir = path.join(self.args.data_dir, "eval", "image")
-            dataset = SODDataset(depth_dir=depth_dir,
-                                 mask_dir=mask_dir,
-                                 rgb_dir=rgb_dir,
-                                 size=self.args.size,
-                                 training=False)
+            dataset = SODDataset(
+                depth_dir=depth_dir, mask_dir=mask_dir, rgb_dir=rgb_dir, size=self.args.size, training=False
+            )
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
 
     def create_env(self):
@@ -98,13 +99,11 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "sod",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "sod", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="iw3.sod_v1", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
     parser.add_argument("--size", type=int, default=192, help="input size")
 
     parser.set_defaults(

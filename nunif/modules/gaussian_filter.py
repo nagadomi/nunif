@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .replication_pad2d import ReplicationPad2dNaive, ReplicationPad1dNaive, replication_pad2d_naive
-from .permute import kernel2d_to_conv2d_weight, kernel1d_to_conv1d_weight
+
+from .permute import kernel1d_to_conv1d_weight, kernel2d_to_conv2d_weight
+from .replication_pad2d import ReplicationPad1dNaive, ReplicationPad2dNaive, replication_pad2d_naive
 
 
 def get_gaussian_kernel1d(kernel_size, dtype=None, device=None, sigma=None):
@@ -38,8 +39,7 @@ def gaussian_blur2d(x, kernel_size, sigma=None):
         x = x.unsqueeze(0)
         batch = False
 
-    padding = [kernel_size[1] // 2, kernel_size[1] // 2,
-               kernel_size[0] // 2, kernel_size[0] // 2]
+    padding = [kernel_size[1] // 2, kernel_size[1] // 2, kernel_size[0] // 2, kernel_size[0] // 2]
 
     kernel = get_gaussian_kernel2d(kernel_size, dtype=x.dtype, device=x.device, sigma=sigma)
     weight = kernel2d_to_conv2d_weight(x.shape[1], kernel)
@@ -138,8 +138,7 @@ def _test_sep():
     z1 = blur1(x)
     z2 = blur2(x)
 
-    print("diff GaussianFilter2d - SeparableGaussianFilter2d",
-          (z1 - z2).abs().mean())
+    print("diff GaussianFilter2d - SeparableGaussianFilter2d", (z1 - z2).abs().mean())
 
 
 def _test_vis():

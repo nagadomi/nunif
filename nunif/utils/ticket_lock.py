@@ -1,7 +1,7 @@
 import threading
 
 
-class TicketLock():
+class TicketLock:
     def __init__(self):
         self.condition = threading.Condition()
         self.tickets = []
@@ -39,7 +39,7 @@ class TicketLock():
         return self.condition.__exit__(*args)
 
 
-class _TicketLockContext():
+class _TicketLockContext:
     def __init__(self, ticket_lock, ticket_id):
         self.ticket_lock = ticket_lock
         self.ticket_id = ticket_id

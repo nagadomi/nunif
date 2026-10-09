@@ -1,8 +1,10 @@
 import torch
-from .main import create_parser, set_state_args, stlizer_main
-from . import models # noqa
-from nunif.logger import logger
+
 from nunif.device import device_is_cuda
+from nunif.logger import logger
+
+from . import models  # noqa
+from .main import create_parser, set_state_args, stlizer_main
 
 
 def main():

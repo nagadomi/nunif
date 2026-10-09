@@ -1,6 +1,7 @@
+import random
+
 import torch.nn as nn
 import torch.nn.functional as F
-import random
 
 
 class Pad(nn.Module):
@@ -10,10 +11,11 @@ class Pad(nn.Module):
     pad=(1, 1) applies padding only to the last dimension(=W).
     Also supports mode="zeros" for compatibility with Conv2d.
     """
-    def __init__(self, pad, mode="zeros", value=0.):
+
+    def __init__(self, pad, mode="zeros", value=0.0):
         super().__init__()
         if mode == "zeros":
-            value = 0.
+            value = 0.0
             mode = "constant"
         self.mode = mode
         self.value = value
@@ -45,11 +47,11 @@ def get_pad_size(x, mod, center=True, random_shift=False):
     if x.shape[-1] % mod == 0:
         pad_w = 0
     else:
-        pad_w = (mod - x.shape[-1] % mod)
+        pad_w = mod - x.shape[-1] % mod
     if x.shape[-2] % mod == 0:
         pad_h = 0
     else:
-        pad_h = (mod - x.shape[-2] % mod)
+        pad_h = mod - x.shape[-2] % mod
 
     if random_shift:
         pad_w1 = random.randint(0, pad_w)
@@ -103,6 +105,7 @@ def get_crop_size(x, mod, center=True, random_shift=False):
 
 def _test():
     import torch
+
     x = torch.zeros((1, 3, 4, 4))
     pad1 = (1, 1, 1, 1)
     pad2 = (0, 1, 0, 1)

@@ -27,6 +27,7 @@ def filename2key(filename, subdir_level=0, sep="."):
     `sep="."` may cause problems with `path.splitext()`.
     But note that using some special symbols for `sep` may not work with Windows file systems.
     """
+
     def basename_without_ext(filename):
         return os.path.splitext(os.path.basename(filename))[0]
 

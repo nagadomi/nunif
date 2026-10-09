@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . weighted_loss import WeightedLoss
-from . clamp_loss import ClampLoss
-from . color import RGBToYRGB
+
+from .clamp_loss import ClampLoss
+from .color import RGBToYRGB
+from .weighted_loss import WeightedLoss
 
 
 def gradient(x, diag=False):
@@ -47,8 +48,9 @@ def L1GradientLoss(weight=1.0, diag=False):
 
 
 def YRGBL1GradientLoss(weight=1.0, diag=False):
-    return WeightedLoss((ClampLoss(nn.L1Loss()), ClampLoss(GradientLoss(diag=diag))),
-                        weights=(1.0, weight), preprocess=RGBToYRGB())
+    return WeightedLoss(
+        (ClampLoss(nn.L1Loss()), ClampLoss(GradientLoss(diag=diag))), weights=(1.0, weight), preprocess=RGBToYRGB()
+    )
 
 
 if __name__ == "__main__":

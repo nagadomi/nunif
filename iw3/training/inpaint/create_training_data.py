@@ -1,26 +1,25 @@
-import os
-import sys
 import argparse
-import torch
-from os import path
-from tqdm import tqdm
-import random
 import hashlib
-from torchvision import transforms as T
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode
-)
-from nunif.utils.pil_io import load_image_simple
-from nunif.utils.image_loader import ImageLoader, list_images
+import os
+import random
+import sys
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from multiprocessing import cpu_count
-from iw3.utils import get_mapper
-from iw3.stereo_model_factory import create_stereo_model
-from iw3.dilation import mask_closing
-from iw3.backward_warp import nonwarp_mask as backward_nonwarp_mask
-from iw3.forward_warp import nonwarp_mask as forward_nonwarp_mask
+from os import path
 
+import torch
+from torchvision import transforms as T
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
+from tqdm import tqdm
+
+from iw3.backward_warp import nonwarp_mask as backward_nonwarp_mask
+from iw3.dilation import mask_closing
+from iw3.forward_warp import nonwarp_mask as forward_nonwarp_mask
+from iw3.stereo_model_factory import create_stereo_model
+from iw3.utils import get_mapper
+from nunif.utils.image_loader import ImageLoader, list_images
+from nunif.utils.pil_io import load_image_simple
 
 OFFSET = 32
 
@@ -36,9 +35,9 @@ def gen_divergence(width, divergence_level):
         # NOTE: min(32.0 / (width * 0.5) * 100, max_divergence) is correct but use this
         max_divergence = min(OFFSET / (width * 0.5) * 100, 5.0)
         if random.uniform(0, 1) < 0.7:
-            return random.choice([2., 2.5, 3.0, 4.0])
+            return random.choice([2.0, 2.5, 3.0, 4.0])
         else:
-            return random.uniform(0., max_divergence)
+            return random.uniform(0.0, max_divergence)
     elif divergence_level == 2:
         # max divergence == 8
         max_divergence = min(OFFSET / (width * 0.5) * 100, 8.0)
@@ -62,7 +61,7 @@ def gen_convergence():
     if random.uniform(0, 1) < 0.7:
         return random.choice([0.0, 0.5, 1.0])
     else:
-        return random.uniform(0., 1.)
+        return random.uniform(0.0, 1.0)
 
 
 def gen_mapper(is_metric):
@@ -87,7 +86,7 @@ def gen_edge_dilation(model_type, depth_resolution):
 
 def crop_resize(im, min_size):
     if random.choice([True, False]):
-        crop_size = int(min(im.size) * (1 / 2 ** 0.5))
+        crop_size = int(min(im.size) * (1 / 2**0.5))
         angle = random.uniform(-45, 45)
         im = TF.rotate(im, angle=angle, interpolation=InterpolationMode.BILINEAR)
         im = TF.center_crop(im, (crop_size, crop_size))
@@ -124,7 +123,8 @@ def gen_data(im, depth_model, mask_mlbw, args):
 
         _, mask = backward_nonwarp_mask(
             mask_mlbw,
-            c, depth,
+            c,
+            depth,
             divergence=divergence,
             convergence=convergence,
             mapper=mapper,
@@ -136,15 +136,11 @@ def gen_data(im, depth_model, mask_mlbw, args):
         depth_flip = get_mapper(mapper)(depth_flip)
 
         _, mask_flip = forward_nonwarp_mask(
-            c_flip, depth_flip,
-            divergence=divergence,
-            convergence=convergence,
-            view=forward_base_view
+            c_flip, depth_flip, divergence=divergence, convergence=convergence, view=forward_base_view
         )
         mask_flip = mask_closing(mask_flip)
 
-        return [(c[0], mask.float()[0]),
-                (c_flip[0], mask_flip.float()[0])]
+        return [(c[0], mask.float()[0]), (c_flip[0], mask_flip.float()[0])]
 
 
 def random_crop(size, *images):
@@ -210,9 +206,12 @@ def main(args):
         output_dir = path.join(args.data_dir, dataset_type)
         os.makedirs(output_dir, exist_ok=True)
 
-        loader = ImageLoader(files=list_images(input_dir), max_queue_size=128,
-                             load_func=load_image_simple,
-                             load_func_kwargs={"color": "rgb"})
+        loader = ImageLoader(
+            files=list_images(input_dir),
+            max_queue_size=128,
+            load_func=load_image_simple,
+            load_func_kwargs={"color": "rgb"},
+        )
         seq = 1
         with PoolExecutor(max_workers=args.max_workers) as pool:
             futures = []
@@ -239,12 +238,12 @@ def main(args):
 def register(subparsers, default_parser):
     max_workers = cpu_count() // 2 or 1
     parser = subparsers.add_parser(
-        "inpaint",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "inpaint", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
-    parser.add_argument("--divergence-level", type=int, default=1, choices=[1, 2, 3],
-                        help="divergence level. 1=0-5, 2=3-8, 3=6-11")
+    parser.add_argument(
+        "--divergence-level", type=int, default=1, choices=[1, 2, 3], help="divergence level. 1=0-5, 2=3-8, 3=6-11"
+    )
     parser.add_argument("--prefix", type=str, default="", help="prefix for output filename")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID. -1 for cpu")
     parser.add_argument("--size", type=int, default=512, help="crop size")
@@ -252,8 +251,9 @@ def register(subparsers, default_parser):
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
     parser.add_argument("--model-type", type=str, default="ZoeD_Any_L", help="depth model")
     parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
-    parser.add_argument("--max-workers", type=int, default=max_workers,
-                        help="Number of worker threads. Set to 1 to disable.")
+    parser.add_argument(
+        "--max-workers", type=int, default=max_workers, help="Number of worker threads. Set to 1 to disable."
+    )
 
     parser.set_defaults(handler=main)
 

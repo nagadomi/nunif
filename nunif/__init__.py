@@ -1,8 +1,4 @@
-from . import models
-from . import modules
-from . import transforms
-from . import training
-from . import initializer
+from . import initializer, models, modules, training, transforms
 
 __version__ = "0.0.1"
 

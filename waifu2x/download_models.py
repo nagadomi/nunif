@@ -1,7 +1,9 @@
 import shutil
 from os import path
-from nunif.utils.downloader import ArchiveDownloader
+
 from nunif.logger import logger
+from nunif.utils.downloader import ArchiveDownloader
+
 from .model_dir import MODEL_DIR
 
 # Base
@@ -35,6 +37,7 @@ def main():
         downloder.run()
         with open(PATCH1_VERSION_FILE, mode="w") as f:
             f.write(VERSION)
+
 
 if __name__ == "__main__":
     main()

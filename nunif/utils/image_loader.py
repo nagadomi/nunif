@@ -1,12 +1,12 @@
+import mimetypes
 import os
 import sys
-from time import sleep
-from threading import Thread, Event
 from queue import Queue
-from .. logger import logger
-from . import pil_io
-import mimetypes
+from threading import Event, Thread
+from time import sleep
 
+from ..logger import logger
+from . import pil_io
 
 # Add missing mimetypes
 mimetypes.add_type("image/webp", ".webp")
@@ -14,7 +14,7 @@ mimetypes.add_type("image/vnd.ms-dds", ".dds")
 
 
 # TODO: there are other extensions that can be used
-IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp', '.dds')
+IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".pgm", ".tif", ".tiff", ".webp", ".dds")
 
 
 def image_load_task(q, stop_flag, files, max_queue_size, load_func):
@@ -39,22 +39,25 @@ def image_load_task(q, stop_flag, files, max_queue_size, load_func):
 
 def list_images(directory, extensions=IMG_EXTENSIONS):
     return sorted(
-        os.path.join(directory, f)
-        for f in os.listdir(directory)
-        if os.path.splitext(f)[-1].lower() in extensions
+        os.path.join(directory, f) for f in os.listdir(directory) if os.path.splitext(f)[-1].lower() in extensions
     )
 
 
-class ImageLoader():
+class ImageLoader:
     @classmethod
     def listdir(cls, directory, extensions=IMG_EXTENSIONS):
         return list_images(directory, extensions=IMG_EXTENSIONS)
 
-    def __init__(self, directory=None, files=None, max_queue_size=256,
-                 load_func=pil_io.load_image,
-                 load_func_kwargs=None,
-                 extensions=IMG_EXTENSIONS):
-        assert (directory is not None or files is not None)
+    def __init__(
+        self,
+        directory=None,
+        files=None,
+        max_queue_size=256,
+        load_func=pil_io.load_image,
+        load_func_kwargs=None,
+        extensions=IMG_EXTENSIONS,
+    ):
+        assert directory is not None or files is not None
         if files is not None:
             self.files = files
         else:
@@ -76,9 +79,10 @@ class ImageLoader():
     def start(self):
         if self.proc is None:
             self.stop_flag.clear()
-            self.proc = Thread(target=image_load_task,
-                               args=(self.queue, self.stop_flag, self.files,
-                                     self.max_queue_size, self.load_func))
+            self.proc = Thread(
+                target=image_load_task,
+                args=(self.queue, self.stop_flag, self.files, self.max_queue_size, self.load_func),
+            )
             self.proc.start()
 
     def __del__(self):

@@ -1,8 +1,10 @@
 import math
+
 import torch
 import torch.nn.functional as F
-from .. models import get_model_device
-from .. device import autocast
+
+from ..device import autocast
+from ..models import get_model_device
 
 
 class SeamBlending(torch.nn.Module):
@@ -33,11 +35,11 @@ class SeamBlending(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, i: int, j: int):
         return SeamBlending.update(
-            x, self.blend_filter, self.output_tile_step, self.blend_size,
-            self.pixels, self.weights, i, j)
+            x, self.blend_filter, self.output_tile_step, self.blend_size, self.pixels, self.weights, i, j
+        )
 
     def get_output(self):
-        return torch.clamp(self.pixels[:, 0:self.y_h, 0:self.y_w], 0., 1.)
+        return torch.clamp(self.pixels[:, 0 : self.y_h, 0 : self.y_w], 0.0, 1.0)
 
     def clear(self):
         if self.weights is not None:
@@ -45,8 +47,16 @@ class SeamBlending(torch.nn.Module):
         self.pixels.zero_()
 
     @staticmethod
-    def tiled_render(x, model, tile_size=None, batch_size=None, enable_amp=True,
-                     config_callback=None, preprocess_callback=None, input_callback=None):
+    def tiled_render(
+        x,
+        model,
+        tile_size=None,
+        batch_size=None,
+        enable_amp=True,
+        config_callback=None,
+        preprocess_callback=None,
+        input_callback=None,
+    ):
         assert not torch.is_grad_enabled()
         if config_callback is None:
             C, H, W = x.shape
@@ -65,9 +75,11 @@ class SeamBlending(torch.nn.Module):
 
         device = get_model_device(model)
 
-        seam_blending = SeamBlending(output_base_shape, scale=scale,
-                                     offset=offset, tile_size=tile_size,
-                                     blend_size=blend_size).to(device).eval()
+        seam_blending = (
+            SeamBlending(output_base_shape, scale=scale, offset=offset, tile_size=tile_size, blend_size=blend_size)
+            .to(device)
+            .eval()
+        )
         if x.dtype == torch.float16:
             seam_blending = seam_blending.half()
 
@@ -79,7 +91,7 @@ class SeamBlending(torch.nn.Module):
             with autocast(device, enabled=enable_amp):
                 x = preprocess_callback(x.to(device), seam_blending.pad)
         else:
-            x = F.pad(x.unsqueeze(0), seam_blending.pad, mode='replicate')[0]
+            x = F.pad(x.unsqueeze(0), seam_blending.pad, mode="replicate")[0]
         for h_i in range(seam_blending.h_blocks):
             for w_i in range(seam_blending.w_blocks):
                 i = h_i * seam_blending.input_tile_step
@@ -87,7 +99,7 @@ class SeamBlending(torch.nn.Module):
                 if input_callback is not None:
                     minibatch[minibatch_index] = input_callback(x, i, i + tile_size, j, j + tile_size)
                 else:
-                    minibatch[minibatch_index] = x[:, i:i + tile_size, j:j + tile_size]
+                    minibatch[minibatch_index] = x[:, i : i + tile_size, j : j + tile_size]
                 output_indexes[minibatch_index] = (h_i, w_i)
                 minibatch_index += 1
                 if minibatch_index == batch_size:
@@ -131,10 +143,7 @@ class SeamBlending(torch.nn.Module):
         p["y_w"] = math.floor(x_w * scale)
         p["h_blocks"] = h_blocks
         p["w_blocks"] = w_blocks
-        p["pad"] = (input_offset,
-                    input_w - (x_w + input_offset),
-                    input_offset,
-                    input_h - (x_h + input_offset))
+        p["pad"] = (input_offset, input_w - (x_w + input_offset), input_offset, input_h - (x_h + input_offset))
         p["y_buffer_h"] = output_h
         p["y_buffer_w"] = output_w
         p["input_tile_step"] = input_tile_step
@@ -155,9 +164,7 @@ class SeamBlending(torch.nn.Module):
     @staticmethod
     def update(output_x, blend_filter, step_size, blend_size, pixels, weights, i, j):
         C, H, W = output_x.shape
-        index = (slice(None, None),
-                 slice(step_size * i, step_size * i + H),
-                 slice(step_size * j, step_size * j + W))
+        index = (slice(None, None), slice(step_size * i, step_size * i + H), slice(step_size * j, step_size * j + W))
         if blend_size > 0:
             assert blend_filter.shape == output_x.shape
             old_weight = weights[index]

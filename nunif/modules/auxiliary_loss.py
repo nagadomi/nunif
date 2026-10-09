@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 def auxiliary_loss(inputs, targets, modules, weights):
-    assert (len(inputs) == len(targets) and len(modules) == len(weights))
+    assert len(inputs) == len(targets) and len(modules) == len(weights)
     return sum([modules[i].forward(inputs[i], targets[i]) * weights[i] for i in range(len(inputs))])
 
 
@@ -15,7 +15,7 @@ class AuxiliaryLoss(nn.Module):
         if isinstance(weight, (tuple, list)):
             weight = torch.tensor(weight, dtype=torch.float)
 
-        assert (len(losses) == len(weight))
+        assert len(losses) == len(weight)
         self.losses = nn.ModuleList(losses)
         self.weight = weight
 

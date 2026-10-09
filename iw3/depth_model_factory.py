@@ -1,10 +1,10 @@
-from .zoedepth_model import ZoeDepthModel
 from .depth_anything_model import DepthAnythingModel
+from .depth_anything_v3_model import DepthAnythingV3MonoModel
 from .depth_pro_model import DepthProModel
+from .null_depth_model import NullDepthModel
 from .video_depth_anything_model import VideoDepthAnythingModel
 from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
-from .depth_anything_v3_model import DepthAnythingV3MonoModel
-from .null_depth_model import NullDepthModel
+from .zoedepth_model import ZoeDepthModel
 
 
 def create_depth_model(model_type):

@@ -1,14 +1,15 @@
 import torch
-from nunif.utils.ui import TorchHubDir
-from nunif.models import load_model
-from nunif.device import create_device, autocast
-from .hub_dir import HUB_MODEL_DIR
 
+from nunif.device import autocast, create_device
+from nunif.models import load_model
+from nunif.utils.ui import TorchHubDir
+
+from .hub_dir import HUB_MODEL_DIR
 
 SOD_URL = "https://github.com/nagadomi/nunif/releases/download/0.0.0/iw3_sod_v1_20260125.pth"
 
 
-class ConvergenceEstimator():
+class ConvergenceEstimator:
     def __init__(self, convergence, device_id, enable_ema=False, decay=0.9, compile=False):
         with TorchHubDir(HUB_MODEL_DIR):
             self.model, _ = load_model(SOD_URL, device_ids=[device_id], weights_only=True)
@@ -46,7 +47,7 @@ class ConvergenceEstimator():
 
             q01 = d.quantile(0.1)
             q09 = d.quantile(0.9)
-            q_range = (q09 - q01)
+            q_range = q09 - q01
             if q_range < 1e-6:
                 q_pos = q01
             else:
@@ -54,7 +55,7 @@ class ConvergenceEstimator():
                 # effectively 3x the usable depth range around the central region.
                 center = (q01 + q09) / 2
                 expanded_range = q_range * 3.0
-                q_pos = (center + (pos - 0.5) * expanded_range)
+                q_pos = center + (pos - 0.5) * expanded_range
             result.append(q_pos)
         return torch.stack(result, dim=0).reshape(B, 1, 1, 1).clamp(0, 1)
 
@@ -74,7 +75,7 @@ class ConvergenceEstimator():
                 if self.convergence_ema is None:
                     self.convergence_ema = p.clone()
                 else:
-                    self.convergence_ema = self.decay * self.convergence_ema + (1. - self.decay) * p
+                    self.convergence_ema = self.decay * self.convergence_ema + (1.0 - self.decay) * p
                 results.append(self.convergence_ema.clone())
                 if reset_pts[i]:
                     self.reset()

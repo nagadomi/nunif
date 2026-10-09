@@ -1,17 +1,19 @@
 # Tool to filter noisy photos
-import os
-from os import path
 import argparse
-from tqdm import tqdm
-from multiprocessing import cpu_count
+import os
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-import torch
-from nunif.models import load_model
-from nunif.logger import logger
-from .utils import predict_grain_noise_psnr, create_patch_loader, copyfile
-from .models import grain_noise_level  # noqa
-from .model_dir import MODEL_DIR
+from multiprocessing import cpu_count
+from os import path
 
+import torch
+from tqdm import tqdm
+
+from nunif.logger import logger
+from nunif.models import load_model
+
+from .model_dir import MODEL_DIR
+from .models import grain_noise_level  # noqa
+from .utils import copyfile, create_patch_loader, predict_grain_noise_psnr
 
 DEFAULT_CHECKPOINT_FILE = path.join(MODEL_DIR, "grain_noise_level.pth")
 
@@ -24,9 +26,11 @@ def main():
     parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[0], help="GPU device ids. -1 for CPU")
     parser.add_argument("--num-patches", type=int, default=8, help="number of 128x128 patches used per image")
     parser.add_argument("--psnr", type=int, default=40, help="quality threshold")
-    parser.add_argument("--symlink", action="store_true",
-                        help=("create symbolic links, "
-                              "instead of copying the real files (recommended on linux)"))
+    parser.add_argument(
+        "--symlink",
+        action="store_true",
+        help=("create symbolic links, instead of copying the real files (recommended on linux)"),
+    )
     parser.add_argument("--score-prefix", action="store_true", help="add score prefix to the output filename")
 
     args = parser.parse_args()

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 def _compute_loss(real, fake, generator_loss, discriminator_loss, loss_weights):
     loss_fn = generator_loss if fake is None else discriminator_loss
     if isinstance(real, (list, tuple)):
-        loss_weights = loss_weights[:len(real)]
+        loss_weights = loss_weights[: len(real)]
         sum_weight = sum(loss_weights)
         loss_weights = [w / sum_weight for w in loss_weights]
         if fake is None:
@@ -22,7 +22,7 @@ def _compute_loss(real, fake, generator_loss, discriminator_loss, loss_weights):
 def _compute_loss_with_mask(real, fake, mask, generator_loss, discriminator_loss, loss_weights):
     loss_fn = generator_loss if fake is None else discriminator_loss
     if isinstance(real, (list, tuple)):
-        loss_weights = loss_weights[:len(real)]
+        loss_weights = loss_weights[: len(real)]
         sum_weight = sum(loss_weights)
         loss_weights = [w / sum_weight for w in loss_weights]
         if fake is None:
@@ -49,15 +49,18 @@ class GANBCELoss(nn.Module):
     def discriminator_loss(real, fake):
         label_real = torch.ones_like(real)
         label_fake = torch.zeros_like(fake)
-        return (F.binary_cross_entropy_with_logits(real, label_real) +
-                F.binary_cross_entropy_with_logits(fake, label_fake)) * 0.5
+        return (
+            F.binary_cross_entropy_with_logits(real, label_real) + F.binary_cross_entropy_with_logits(fake, label_fake)
+        ) * 0.5
 
     def forward(self, real, fake=None):
         return _compute_loss(
-            real, fake,
+            real,
+            fake,
             generator_loss=self.generator_loss,
             discriminator_loss=self.discriminator_loss,
-            loss_weights=self.loss_weights)
+            loss_weights=self.loss_weights,
+        )
 
 
 class GANHingeLoss(nn.Module):
@@ -73,14 +76,16 @@ class GANHingeLoss(nn.Module):
     def discriminator_loss(real, fake):
         # real: min: 1, max: -inf
         # fake: min: -1, max: inf
-        return (F.relu(1. - real).mean() + F.relu(1. + fake).mean()) * 0.5
+        return (F.relu(1.0 - real).mean() + F.relu(1.0 + fake).mean()) * 0.5
 
     def forward(self, real, fake=None):
         return _compute_loss(
-            real, fake,
+            real,
+            fake,
             generator_loss=self.generator_loss,
             discriminator_loss=self.discriminator_loss,
-            loss_weights=self.loss_weights)
+            loss_weights=self.loss_weights,
+        )
 
 
 class GANMaskHingeLoss(nn.Module):
@@ -97,28 +102,31 @@ class GANMaskHingeLoss(nn.Module):
 
     def discriminator_loss(self, real, fake, mask):
         if mask is not None:
-            real_loss = F.relu(1. - real[mask]).sum() / (mask.sum() + 1e-4)
-            fake_loss = F.relu(1. + fake[mask]).sum() / (mask.sum() + 1e-4)
+            real_loss = F.relu(1.0 - real[mask]).sum() / (mask.sum() + 1e-4)
+            fake_loss = F.relu(1.0 + fake[mask]).sum() / (mask.sum() + 1e-4)
         else:
-            real_loss = F.relu(1. - real).mean()
-            fake_loss = F.relu(1. + fake).mean()
+            real_loss = F.relu(1.0 - real).mean()
+            fake_loss = F.relu(1.0 + fake).mean()
 
         return (real_loss + fake_loss) * 0.5
 
     def forward(self, real, fake=None, mask=None):
         if mask is not None:
             return _compute_loss_with_mask(
-                real, fake, mask=mask,
+                real,
+                fake,
+                mask=mask,
                 generator_loss=self.generator_loss,
                 discriminator_loss=self.discriminator_loss,
-                loss_weights=self.loss_weights
+                loss_weights=self.loss_weights,
             )
         else:
             return _compute_loss(
-                real, fake,
+                real,
+                fake,
                 generator_loss=self.generator_loss,
                 discriminator_loss=self.discriminator_loss,
-                loss_weights=self.loss_weights
+                loss_weights=self.loss_weights,
             )
 
 
@@ -126,7 +134,7 @@ class GANHingeClampLoss(GANHingeLoss):
     @staticmethod
     def generator_loss(real, fake):
         # Soft clamp generator loss less than 0
-        return F.leaky_relu(1. - real, 0.01).mean()
+        return F.leaky_relu(1.0 - real, 0.01).mean()
 
 
 class GANSoftplusLoss(nn.Module):
@@ -146,10 +154,12 @@ class GANSoftplusLoss(nn.Module):
 
     def forward(self, real, fake=None):
         return _compute_loss(
-            real, fake,
+            real,
+            fake,
             generator_loss=self.generator_loss,
             discriminator_loss=self.discriminator_loss,
-            loss_weights=self.loss_weights)
+            loss_weights=self.loss_weights,
+        )
 
 
 def r1_regularization(real_image, real_logits, grad_scaler, r1_gamma):

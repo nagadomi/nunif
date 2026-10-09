@@ -1,13 +1,14 @@
 # mapper function to convert model output to disparity
 # see also iw3/training/find_mapper.py
-import torch
 import math
+
+import torch
 
 
 def softplus01_legacy(depth, c=6):
     min_v = math.log(1 + math.exp(0 * 12.0 - c)) / (12 - c)
     max_v = math.log(1 + math.exp(1 * 12.0 - c)) / (12 - c)
-    v = torch.log(1. + torch.exp(depth * 12.0 - c)) / (12 - c)
+    v = torch.log(1.0 + torch.exp(depth * 12.0 - c)) / (12 - c)
     return (v - min_v) / (max_v - min_v)
 
 
@@ -15,7 +16,7 @@ def softplus01(x, bias, scale):
     # x: 0-1 normalized
     min_v = math.log(1 + math.exp((0 - bias) * scale))
     max_v = math.log(1 + math.exp((1 - bias) * scale))
-    v = torch.log(1. + torch.exp((x - bias) * scale))
+    v = torch.log(1.0 + torch.exp((x - bias) * scale))
     return (v - min_v) / (max_v - min_v)
 
 
@@ -64,7 +65,7 @@ def shift_relative_depth(x, min_distance, max_distance=16):
 def resolve_mapper_function(name):
     # https://github.com/nagadomi/nunif/assets/287255/0071a65a-62ff-4928-850c-0ad22bceba41
     if name == "pow2":
-        return lambda x: x ** 2
+        return lambda x: x**2
     elif name == "none":
         return lambda x: x
     elif name == "softplus":
@@ -87,8 +88,8 @@ def resolve_mapper_function(name):
         param = {
             # none 1x
             "inv_mul_1": {"bias": -0.002102, "scale": 7.8788},  # inverse smooth 1.5x
-            "inv_mul_2": {"bias": -0.0003, "scale": 6.2626},    # inverse smooth 2x
-            "inv_mul_3": {"bias": -0.0001, "scale": 3.4343},    # inverse smooth 3x
+            "inv_mul_2": {"bias": -0.0003, "scale": 6.2626},  # inverse smooth 2x
+            "inv_mul_3": {"bias": -0.0001, "scale": 3.4343},  # inverse smooth 3x
         }[name]
         return lambda x: inv_softplus01(x, **param)
     elif name in {"shift_30", "shift_20", "shift_14", "shift_08", "shift_06", "shift_045"}:
@@ -152,23 +153,37 @@ def get_mapper(name):
 
 
 METRIC_DIV_MAPPER = [
-    "none", "div_25", "div_10",
+    "none",
+    "div_25",
+    "div_10",
     "div_6",
-    "div_4", "div_2", "div_1",
+    "div_4",
+    "div_2",
+    "div_1",
 ]
 RELATIVE_MUL_MAPPER = [
-    "inv_mul_3", "inv_mul_2", "inv_mul_1",
+    "inv_mul_3",
+    "inv_mul_2",
+    "inv_mul_1",
     "none",
-    "mul_1", "mul_2", "mul_3",
+    "mul_1",
+    "mul_2",
+    "mul_3",
 ]
 RELATIVE_SHIFT_MAPPER = [
-    "shift_045", "shift_06", "shift_08",
+    "shift_045",
+    "shift_06",
+    "shift_08",
     "none",
-    "shift_14", "shift_20", "shift_30",
+    "shift_14",
+    "shift_20",
+    "shift_30",
 ]
 
 LEGACY_MAPPER = ["pow2", "softplus", "softplus2"]
-MAPPER_ALL = ["auto"] + list(dict.fromkeys(LEGACY_MAPPER + RELATIVE_MUL_MAPPER + METRIC_DIV_MAPPER + RELATIVE_SHIFT_MAPPER))
+MAPPER_ALL = ["auto"] + list(
+    dict.fromkeys(LEGACY_MAPPER + RELATIVE_MUL_MAPPER + METRIC_DIV_MAPPER + RELATIVE_SHIFT_MAPPER)
+)
 
 
 def get_mapper_levels(metric_depth, mapper_type=None):

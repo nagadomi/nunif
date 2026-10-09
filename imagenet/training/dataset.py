@@ -1,13 +1,11 @@
 import torch
-from torchvision.datasets import ImageNet
 from torchvision import transforms as T
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode
-)
+from torchvision.datasets import ImageNet
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
 
 
-class Normalize():
+class Normalize:
     def __init__(self, mode="imagenet"):
         if mode == "none":
             self.f = lambda x: x
@@ -16,7 +14,7 @@ class Normalize():
         elif mode == "gcn":
             self.f = lambda x: (x - x.mean(dim=[1, 2], keepdim=True)) / (x.std(dim=[1, 2], keepdim=True) + 1e-6)
         elif mode == "center":
-            self.f = lambda x: (x - 0.5) * 2.
+            self.f = lambda x: (x - 0.5) * 2.0
         else:
             raise NotImplementedError()
 
@@ -24,7 +22,7 @@ class Normalize():
         return self.f(x)
 
 
-class Resize():
+class Resize:
     def __init__(self, size, mode):
         assert mode in {"resize", "reflect"}
         assert isinstance(size, int)
@@ -50,11 +48,11 @@ class Resize():
             w, h = x.size
             pad_l = pad_t = pad_r = pad_b = 0
             if self.size > w:
-                border = (self.size - w)
+                border = self.size - w
                 pad_l = border // 2
                 pad_r = border // 2 + (border % 2)
             if self.size > h:
-                border = (self.size - h)
+                border = self.size - h
                 pad_t = border // 2
                 pad_b = border // 2 + (border % 2)
             if pad_l + pad_t + pad_r + pad_b != 0:
@@ -68,31 +66,25 @@ class ImageNetDataset(torch.utils.data.dataset.Dataset):
     def __init__(self, root, split, resize=256, size=224, norm="imagenet", resize_mode="reflect"):
         assert resize >= size
         if split == "train":
-            transform = T.Compose([
-                Resize(resize, resize_mode),
-                T.RandomCrop(size),
-                T.RandomHorizontalFlip(),
-                T.RandomGrayscale(p=0.05),
-                T.ToTensor(),
-                Normalize(mode=norm)
-            ])
+            transform = T.Compose(
+                [
+                    Resize(resize, resize_mode),
+                    T.RandomCrop(size),
+                    T.RandomHorizontalFlip(),
+                    T.RandomGrayscale(p=0.05),
+                    T.ToTensor(),
+                    Normalize(mode=norm),
+                ]
+            )
         else:
-            transform = T.Compose([
-                Resize(resize, resize_mode),
-                T.CenterCrop(size),
-                T.ToTensor(),
-                Normalize(mode=norm)
-            ])
+            transform = T.Compose([Resize(resize, resize_mode), T.CenterCrop(size), T.ToTensor(), Normalize(mode=norm)])
         self.imagenet = ImageNet(root=root, split=split, transform=transform)
 
     def __len__(self):
         return len(self.imagenet)
 
     def sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def __getitem__(self, i):
         x, y = self.imagenet[i]

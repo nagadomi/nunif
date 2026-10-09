@@ -3,8 +3,9 @@
 # Vadim Kantorov ported to pytorch: https://gist.github.com/vadimkantorov/ac1b097753f217c5c11bc2ff396e0a57
 # some minor changes by nagdaomi
 
-import torch
 import math
+
+import torch
 
 
 def interpolant(t):
@@ -15,10 +16,13 @@ def generate_perlin_noise_2d(shape, res, tileable=(False, False), fade=interpola
     delta = (res[0] / shape[0], res[1] / shape[1])
     d = (shape[0] // res[0], shape[1] // res[1])
 
-    grid = torch.stack(torch.meshgrid(
-        torch.arange(0, res[0], delta[0]),
-        torch.arange(0, res[1], delta[1]), indexing="ij"), dim=-1) % 1
-    angles = 2. * math.pi * torch.rand(res[0] + 1, res[1] + 1)
+    grid = (
+        torch.stack(
+            torch.meshgrid(torch.arange(0, res[0], delta[0]), torch.arange(0, res[1], delta[1]), indexing="ij"), dim=-1
+        )
+        % 1
+    )
+    angles = 2.0 * math.pi * torch.rand(res[0] + 1, res[1] + 1)
     gradients = torch.stack((torch.cos(angles), torch.sin(angles)), dim=-1)
 
     if tileable[0]:
@@ -26,14 +30,19 @@ def generate_perlin_noise_2d(shape, res, tileable=(False, False), fade=interpola
     if tileable[1]:
         gradients[:, -1] = gradients[:, 0]
 
-    tile_grads = lambda slice1, slice2: gradients[slice1[0]:slice1[1], slice2[0]:slice2[1]].repeat_interleave(d[0], 0).repeat_interleave(d[1], 1)
-    dot = lambda grad, shift: (torch.stack((grid[:shape[0], :shape[1], 0] + shift[0], grid[:shape[0], :shape[1], 1] + shift[1]), dim=-1) * grad[:shape[0], :shape[1]]).sum(dim=-1)
+    tile_grads = lambda slice1, slice2: (
+        gradients[slice1[0] : slice1[1], slice2[0] : slice2[1]].repeat_interleave(d[0], 0).repeat_interleave(d[1], 1)
+    )
+    dot = lambda grad, shift: (
+        torch.stack((grid[: shape[0], : shape[1], 0] + shift[0], grid[: shape[0], : shape[1], 1] + shift[1]), dim=-1)
+        * grad[: shape[0], : shape[1]]
+    ).sum(dim=-1)
 
     n00 = dot(tile_grads([0, -1], [0, -1]), [0, 0])
     n10 = dot(tile_grads([1, None], [0, -1]), [-1, 0])
     n01 = dot(tile_grads([0, -1], [1, None]), [0, -1])
     n11 = dot(tile_grads([1, None], [1, None]), [-1, -1])
-    t = fade(grid[:shape[0], :shape[1]])
+    t = fade(grid[: shape[0], : shape[1]])
 
     return math.sqrt(2) * torch.lerp(torch.lerp(n00, n10, t[..., 0]), torch.lerp(n01, n11, t[..., 0]), t[..., 1])
 
@@ -43,7 +52,9 @@ def generate_perlin_noise_2d_octaves(shape, res, tileable=(False, False), octave
     frequency = 1
     amplitude = 1
     for _ in range(octaves):
-        noise += amplitude * generate_perlin_noise_2d(shape, (frequency * res[0], frequency * res[1]), tileable=tileable)
+        noise += amplitude * generate_perlin_noise_2d(
+            shape, (frequency * res[0], frequency * res[1]), tileable=tileable
+        )
         frequency *= 2
         amplitude *= persistence
     return noise
@@ -56,20 +67,30 @@ def generate_perlin_noise_3d(shape, res, tileable=(False, False, False), fade=in
     delta = (res[0] / shape[0], res[1] / shape[1], res[2] / shape[2])
     d = (shape[0] // res[0], shape[1] // res[1], shape[2] // res[2])
 
-    grid = torch.stack(
-        torch.meshgrid(
-            torch.arange(0, res[0], delta[0], device=device),
-            torch.arange(0, res[1], delta[1], device=device),
-            torch.arange(0, res[2], delta[2], device=device),
-            indexing="ij"
-        ),
-        dim=-1
-    ) % 1
+    grid = (
+        torch.stack(
+            torch.meshgrid(
+                torch.arange(0, res[0], delta[0], device=device),
+                torch.arange(0, res[1], delta[1], device=device),
+                torch.arange(0, res[2], delta[2], device=device),
+                indexing="ij",
+            ),
+            dim=-1,
+        )
+        % 1
+    )
 
     # Gradients
     theta = 2 * torch.pi * torch.rand((res[0] + 1, res[1] + 1, res[2] + 1), device=device)
     phi = 2 * torch.pi * torch.rand((res[0] + 1, res[1] + 1, res[2] + 1), device=device)
-    gradients = torch.stack((torch.sin(phi) * torch.cos(theta), torch.sin(phi) * torch.sin(theta), torch.cos(phi),), dim=3)
+    gradients = torch.stack(
+        (
+            torch.sin(phi) * torch.cos(theta),
+            torch.sin(phi) * torch.sin(theta),
+            torch.cos(phi),
+        ),
+        dim=3,
+    )
 
     if tileable[0]:
         gradients[-1, :, :] = gradients[0, :, :]
@@ -80,17 +101,17 @@ def generate_perlin_noise_3d(shape, res, tileable=(False, False, False), fade=in
 
     gradients = gradients.repeat_interleave(d[0], dim=0).repeat_interleave(d[1], dim=1).repeat_interleave(d[2], dim=2)
 
-    g000 = gradients[:-d[0], :-d[1], :-d[2]]
-    g100 = gradients[d[0]:, :-d[1], :-d[2]]
-    g010 = gradients[:-d[0], d[1]:, :-d[2]]
-    g110 = gradients[d[0]:, d[1]:, :-d[2]]
-    g001 = gradients[:-d[0], :-d[1], d[2]:]
-    g101 = gradients[d[0]:, :-d[1], d[2]:]
-    g011 = gradients[:-d[0], d[1]:, d[2]:]
-    g111 = gradients[d[0]:, d[1]:, d[2]:]
+    g000 = gradients[: -d[0], : -d[1], : -d[2]]
+    g100 = gradients[d[0] :, : -d[1], : -d[2]]
+    g010 = gradients[: -d[0], d[1] :, : -d[2]]
+    g110 = gradients[d[0] :, d[1] :, : -d[2]]
+    g001 = gradients[: -d[0], : -d[1], d[2] :]
+    g101 = gradients[d[0] :, : -d[1], d[2] :]
+    g011 = gradients[: -d[0], d[1] :, d[2] :]
+    g111 = gradients[d[0] :, d[1] :, d[2] :]
 
     # Ramps
-    ramp = lambda shift: (grid - torch.tensor(shift, device=device))
+    ramp = lambda shift: grid - torch.tensor(shift, device=device)
     print(ramp((0, 0, 0)).shape, g000.shape)
     n000 = (ramp((0, 0, 0)) * g000).sum(dim=3)
     n100 = (ramp((1, 0, 0)) * g100).sum(dim=3)
@@ -111,12 +132,13 @@ def generate_perlin_noise_3d(shape, res, tileable=(False, False, False), fade=in
     n0 = (1 - t[:, :, :, 1]) * n00 + t[:, :, :, 1] * n10
     n1 = (1 - t[:, :, :, 1]) * n01 + t[:, :, :, 1] * n11
 
-    return ((1 - t[:, :, :, 2]) * n0 + t[:, :, :, 2] * n1)
+    return (1 - t[:, :, :, 2]) * n0 + t[:, :, :, 2] * n1
 
 
 def _test_tile():
-    import torchvision.transforms.functional as TF
     import time
+
+    import torchvision.transforms.functional as TF
 
     torch.manual_seed(1)
     S = 128
@@ -142,10 +164,10 @@ def _test_tile():
 
 
 def _test_3d():
-    import torchvision.transforms.functional as TF
-    import torchvision.io as IO
     from os import path
-    import time
+
+    import torchvision.io as IO
+    import torchvision.transforms.functional as TF
 
     im = IO.read_image("cc0/320/dog.png") / 255.0
     print(im.shape)
@@ -158,23 +180,30 @@ def _test_3d():
     res = (T // 2, S // RES // 2, S // RES // 2)
 
     def gen_noise(scale):
-        noise = generate_perlin_noise_3d(shape, (res[0] // scale, res[1] * scale, res[2] * scale),
-                                         tileable=(True, False, False), device="cuda").unsqueeze(1).cpu()
+        noise = (
+            generate_perlin_noise_3d(
+                shape, (res[0] // scale, res[1] * scale, res[2] * scale), tileable=(True, False, False), device="cuda"
+            )
+            .unsqueeze(1)
+            .cpu()
+        )
         return noise
 
     noise = gen_noise(2) + gen_noise(2)
     noise = (noise - noise.min()) / (noise.max() - noise.min())
     noise = noise.expand(T, 3, S, S)
 
-    image_list = [
-        TF.to_pil_image(torch.clamp(im + noise[i] * 0.1, 0, 1))
-        for i in range(noise.shape[0])]
+    image_list = [TF.to_pil_image(torch.clamp(im + noise[i] * 0.1, 0, 1)) for i in range(noise.shape[0])]
     image_list[0].save(
-        path.join("tmp", "perlin3d.gif"), format="gif",
-        append_images=image_list, save_all=True,
-        duration=1000/30, loop=1)
+        path.join("tmp", "perlin3d.gif"),
+        format="gif",
+        append_images=image_list,
+        save_all=True,
+        duration=1000 / 30,
+        loop=1,
+    )
 
 
 if __name__ == "__main__":
-    #_test_tile()
+    # _test_tile()
     _test_3d()

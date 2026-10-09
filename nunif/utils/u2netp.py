@@ -37,7 +37,7 @@ class REBNCONV(nn.Module):
 
 # upsample tensor 'src' to have the same spatial size with tensor 'tar'
 def _upsample_like(src, tar):
-    src = F.interpolate(src, size=tar.shape[2:], mode='bilinear', align_corners=False)
+    src = F.interpolate(src, size=tar.shape[2:], mode="bilinear", align_corners=False)
     return src
 
 
@@ -431,14 +431,19 @@ class U2NETP(nn.Module):
 
     def load(self, map_location="cpu"):
         # TODO: This requires preprocessing of the input (LAB and normalize)
-        self.load_state_dict(torch.hub.load_state_dict_from_url(
-            "https://github.com/nagadomi/nunif/releases/download/0.0.0/u2netp.pth",
-            weights_only=True, map_location=map_location))
+        self.load_state_dict(
+            torch.hub.load_state_dict_from_url(
+                "https://github.com/nagadomi/nunif/releases/download/0.0.0/u2netp.pth",
+                weights_only=True,
+                map_location=map_location,
+            )
+        )
         return self
 
 
 def _bench():
     import time
+
     device = "cuda:0"
     N = 100
     B = 1

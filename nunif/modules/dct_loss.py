@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dctorch.functional import dct2
+
+from .charbonnier_loss import charbonnier_loss
 from .color import rgb_to_yrgb
-from . permute import window_partition2d
-from . charbonnier_loss import charbonnier_loss
-from . transforms import diff_rotate, diff_random_rotate_pair
+from .permute import window_partition2d
+from .transforms import diff_random_rotate_pair, diff_rotate
 
 
 def dct_loss(input, target, loss_function=F.l1_loss, clamp=False):
@@ -38,7 +39,7 @@ def overlap_window_dct_loss(input, target, window_size=8, loss_function=F.l1_los
     pad = window_size // 2
     if input.shape[2] % window_size != 0:
         assert input.shape[2] == input.shape[3]
-        rem = (window_size - input.shape[2] % window_size)
+        rem = window_size - input.shape[2] % window_size
         pad1 = rem // 2
         pad2 = rem - pad1
         input2 = F.pad(input, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad))
@@ -56,8 +57,16 @@ def overlap_window_dct_loss(input, target, window_size=8, loss_function=F.l1_los
 
 class DCTLoss(nn.Module):
     # BCHW
-    def __init__(self, window_size=None, overlap=False, loss_function="l1", clamp=False,
-                 diag=False, random_rotate=False, random_instance_rotate=False):
+    def __init__(
+        self,
+        window_size=None,
+        overlap=False,
+        loss_function="l1",
+        clamp=False,
+        diag=False,
+        random_rotate=False,
+        random_instance_rotate=False,
+    ):
         super().__init__()
         self.clamp = clamp
         self.window_size = window_size
@@ -81,38 +90,48 @@ class DCTLoss(nn.Module):
     def forward_loss(self, input, target):
         if self.window_size is not None:
             if self.overlap:
-                return overlap_window_dct_loss(input, target, window_size=self.window_size,
-                                               loss_function=self.loss_function, clamp=self.clamp)
+                return overlap_window_dct_loss(
+                    input, target, window_size=self.window_size, loss_function=self.loss_function, clamp=self.clamp
+                )
             else:
-                return window_dct_loss(input, target, window_size=self.window_size,
-                                       loss_function=self.loss_function, clamp=self.clamp)
+                return window_dct_loss(
+                    input, target, window_size=self.window_size, loss_function=self.loss_function, clamp=self.clamp
+                )
         else:
             return dct_loss(input, target, loss_function=self.loss_function, clamp=self.clamp)
 
     def forward(self, input, target):
-        if input.shape[1] == 3: # RGB
+        if input.shape[1] == 3:  # RGB
             input = rgb_to_yrgb(input, y_clamp=True)
             target = rgb_to_yrgb(target, y_clamp=True)
         loss1 = self.forward_loss(input, target)
 
         if self.random_instance_rotate:
             if self.training:
-                loss2 = self.forward_loss(*diff_random_rotate_pair(input, target, 360, expand=True, padding_mode="zeros"))
+                loss2 = self.forward_loss(
+                    *diff_random_rotate_pair(input, target, 360, expand=True, padding_mode="zeros")
+                )
             else:
-                loss2 = self.forward_loss(diff_rotate(input, 45, expand=True, padding_mode="zeros"),
-                                          diff_rotate(target, 45, expand=True, padding_mode="zeros"))
+                loss2 = self.forward_loss(
+                    diff_rotate(input, 45, expand=True, padding_mode="zeros"),
+                    diff_rotate(target, 45, expand=True, padding_mode="zeros"),
+                )
             return loss1 * 0.5 + loss2
         elif self.random_rotate:
             if self.training:
                 angle = torch.rand(1).item() * 360
             else:
                 angle = 45
-            loss2 = self.forward_loss(diff_rotate(input, angle, expand=True, padding_mode="zeros"),
-                                      diff_rotate(target, angle, expand=True, padding_mode="zeros"))
+            loss2 = self.forward_loss(
+                diff_rotate(input, angle, expand=True, padding_mode="zeros"),
+                diff_rotate(target, angle, expand=True, padding_mode="zeros"),
+            )
             return loss1 * 0.5 + loss2
         elif self.diag:
-            loss2 = self.forward_loss(diff_rotate(input, 45, expand=True, padding_mode="zeros"),
-                                      diff_rotate(target, 45, expand=True, padding_mode="zeros"))
+            loss2 = self.forward_loss(
+                diff_rotate(input, 45, expand=True, padding_mode="zeros"),
+                diff_rotate(target, 45, expand=True, padding_mode="zeros"),
+            )
             # when expand=True, (w * h) / ((w * 2 ** 0.5) * (h * 2 ** 0.5)) == 0.5
             return loss1 * 0.5 + loss2
         else:

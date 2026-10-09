@@ -1,38 +1,44 @@
-import os
-import sys
-import math
-from os import path
-import posixpath
-import torch
 import argparse
-import bottle
-from bottle import request, HTTPResponse
-import threading
-import requests
+import gc
+import hashlib
 import io
 import json
-from time import time
-import hashlib
+import math
+import os
+import posixpath
+import sys
+import threading
+import uuid
 from configparser import ConfigParser
-from diskcache import Cache
-import psutil
-import filelock
-import gc
 from enum import Enum
+from os import path
+from time import time
 from urllib.parse import (
     quote as uri_encode,
+)
+from urllib.parse import (
     unquote_plus as uri_decode,
+)
+from urllib.parse import (
     urlparse,
 )
-import uuid
+
+import bottle
+import filelock
+import psutil
+import requests
+import torch
+from bottle import HTTPResponse, request
+from diskcache import Cache
+
+from nunif.device import mps_is_available, xpu_is_available
 from nunif.logger import logger, set_log_level
 from nunif.utils.filename import set_image_ext
 from nunif.utils.home_dir import ensure_home_dir
-from nunif.device import mps_is_available, xpu_is_available
-from ..utils import Waifu2x
-from ..model_dir import MODEL_DIR
-from .public_dir import PUBLIC_DIR
 
+from ..model_dir import MODEL_DIR
+from ..utils import Waifu2x
+from .public_dir import PUBLIC_DIR
 
 DEFAULT_ART_MODEL_DIR = path.abspath(path.join(MODEL_DIR, "swin_unet_v3", "art"))
 DEFAULT_ART_SCAN_MODEL_DIR = path.abspath(path.join(MODEL_DIR, "swin_unet", "art_scan"))
@@ -71,7 +77,7 @@ class StyleOption(Enum):
     ART_SCAN = "art_scan"
 
 
-class CacheGC():
+class CacheGC:
     def __init__(self, cache, interval=60):
         self.cache = cache
         self.interval = interval
@@ -105,13 +111,12 @@ def setup():
         default_gpu = -1
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--bind-addr", type=str, default="127.0.0.1",
-                        help="0.0.0.0 for global, 127.0.0.1 for local")
+    parser.add_argument("--bind-addr", type=str, default="127.0.0.1", help="0.0.0.0 for global, 127.0.0.1 for local")
     parser.add_argument("--port", type=int, default=8812, help="HTTP port number")
-    parser.add_argument("--root", type=str, default=PUBLIC_DIR,
-                        help="web root directory")
-    parser.add_argument("--backend", type=str, default="waitress",
-                        help="server backend. It may not work except `waitress`.")
+    parser.add_argument("--root", type=str, default=PUBLIC_DIR, help="web root directory")
+    parser.add_argument(
+        "--backend", type=str, default="waitress", help="server backend. It may not work except `waitress`."
+    )
     parser.add_argument("--workers", type=int, default=1, help="The number of worker processes for gunicorn")
     parser.add_argument("--threads", type=int, default=32, help="The number of threads")
     parser.add_argument("--debug", action="store_true", help="Debug print")
@@ -122,24 +127,26 @@ def setup():
     parser.add_argument("--art-model-dir", type=str, default=DEFAULT_ART_MODEL_DIR, help="art model dir")
     parser.add_argument("--art-scan-model-dir", type=str, default=DEFAULT_ART_SCAN_MODEL_DIR, help="art scan model dir")
     parser.add_argument("--photo-model-dir", type=str, default=DEFAULT_PHOTO_MODEL_DIR, help="photo model dir")
-    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu],
-                        help="GPU device ids. -1 for CPU")
+    parser.add_argument("--gpu", "-g", type=int, nargs="+", default=[default_gpu], help="GPU device ids. -1 for CPU")
     parser.add_argument("--tile-size", type=int, default=None, help="tile size for tiled render")
     parser.add_argument("--batch-size", type=int, default=None, help="minibatch size for tiled render")
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
     parser.add_argument("--compile", action="store_true", help="Use torch.compile()")
     parser.add_argument("--warmup", action="store_true", help="warmup at startup")
-    parser.add_argument("--image-lib", type=str, choices=["pil", "wand"], default="pil",
-                        help="image library to encode/decode images")
+    parser.add_argument(
+        "--image-lib", type=str, choices=["pil", "wand"], default="pil", help="image library to encode/decode images"
+    )
     parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join(TMP_DIR, "waifu2x_cache"), help="cache dir")
     parser.add_argument("--enable-recaptcha", action="store_true", help="enable reCAPTCHA. it requires --config option")
-    parser.add_argument("--enable-turnstile", action="store_true",
-                        help="enable CloudFlare Turnstile. it requires --config option")
-    parser.add_argument("--prefer-webp", action="store_true",
-                        help="If browser side PNG conversion is compatible, WebP is returned.")
+    parser.add_argument(
+        "--enable-turnstile", action="store_true", help="enable CloudFlare Turnstile. it requires --config option"
+    )
+    parser.add_argument(
+        "--prefer-webp", action="store_true", help="If browser side PNG conversion is compatible, WebP is returned."
+    )
     parser.add_argument("--config", type=str, help="config file for API tokens")
     parser.add_argument("--no-size-limit", action="store_true", help="No file/image size limits for private server")
     parser.add_argument("--torch-threads", type=int, help="The number of threads used for intraop parallelism on CPU")
@@ -164,12 +171,11 @@ def setup():
             art_scan_ctx.compile()
             photo_ctx.compile()
             if args.warmup:
-                art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                               enable_amp=not args.disable_amp)
-                art_scan_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                                    enable_amp=not args.disable_amp)
-                photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size,
-                                 enable_amp=not args.disable_amp)
+                art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size, enable_amp=not args.disable_amp)
+                art_scan_ctx.warmup(
+                    tile_size=args.tile_size, batch_size=args.batch_size, enable_amp=not args.disable_amp
+                )
+                photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size, enable_amp=not args.disable_amp)
             logger.info("Done")
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
@@ -247,8 +253,7 @@ def fetch_image(request):
         filename = upload_file.raw_filename
         if not filename:
             filename = str(uuid.uuid4())
-        im, meta = IL.decode_image(image_data, filename,
-                                   color="rgb", keep_alpha=True, exif_transpose=True)
+        im, meta = IL.decode_image(image_data, filename, color="rgb", keep_alpha=True, exif_transpose=True)
     else:
         url = request.forms.get("url", "")
         if url.startswith("http://") or url.startswith("https://"):
@@ -261,12 +266,10 @@ def fetch_image(request):
                 filename = uri_decode(filename)
             if image_data is not None:
                 logger.debug(f"fetch_image: load cache: {url}")
-                im, meta = IL.decode_image(image_data, filename,
-                                           color="rgb", keep_alpha=True, exif_transpose=True)
+                im, meta = IL.decode_image(image_data, filename, color="rgb", keep_alpha=True, exif_transpose=True)
             else:
                 image_data = fetch_url_file(url)
-                im, meta = IL.decode_image(image_data, filename,
-                                           color="rgb", keep_alpha=True, exif_transpose=True)
+                im, meta = IL.decode_image(image_data, filename, color="rgb", keep_alpha=True, exif_transpose=True)
                 cache.set(key, image_data, expire=command_args.cache_ttl * 60)
 
     if image_data is not None and meta is not None:
@@ -338,13 +341,13 @@ def verify_recaptcha(request):
     data = {
         "response": request.forms.get("recap", ""),
         "secret": config["recaptcha"]["secret_key"],
-        "remoteip": request.remote_addr
+        "remoteip": request.remote_addr,
     }
     try:
         res = requests.post(RECAPTCHA_VERIFY_URL, data=data, timeout=timeout)
         if res.status_code == 200:
             result = json.loads(res.text)
-            logger.debug("verify_recaptcha: " + ("success" if result['success'] else "failure"))
+            logger.debug("verify_recaptcha: " + ("success" if result["success"] else "failure"))
             return result["success"]
         else:
             logger.error(f"verify_recaptcha: HTTP Error {res.status_code} {res.text}")
@@ -362,13 +365,13 @@ def verify_turnstile(request):
     data = {
         "response": request.forms.get("turnstile", ""),
         "secret": config["turnstile"]["secret_key"],
-        "remoteip": request.remote_addr
+        "remoteip": request.remote_addr,
     }
     try:
         res = requests.post(TURNSTILE_VERIFY_URL, data=data, timeout=timeout)
         if res.status_code == 200:
             result = json.loads(res.text)
-            logger.debug("verify_turnstile: " + ("success" if result['success'] else "failure"))
+            logger.debug("verify_turnstile: " + ("success" if result["success"] else "failure"))
             return result["success"]
         else:
             logger.error(f"verify_turnstile: HTTP Error {res.status_code} {res.text}")
@@ -379,8 +382,7 @@ def verify_turnstile(request):
 
 
 def dump_meta(meta):
-    return {k: v if isinstance(v, (str, int, float, type(None)))
-            else str(type(v)) for k, v in meta.items()}
+    return {k: v if isinstance(v, (str, int, float, type(None))) else str(type(v)) for k, v in meta.items()}
 
 
 def scale_16x(im, meta):
@@ -473,8 +475,9 @@ def api():
     if image_data is None:
         t = time()
         if method == "none":
-            logger.debug(f"api: forward: {style} {scale} {noise} {image_format}"
-                         f"pid={os.getpid()}-{threading.get_ident()}")
+            logger.debug(
+                f"api: forward: {style} {scale} {noise} {image_format}pid={os.getpid()}-{threading.get_ident()}"
+            )
             z = im
         else:
             with torch.inference_mode():
@@ -482,10 +485,14 @@ def api():
                 if rgb.shape[0] == 1:
                     rgb = rgb.repeat(3, 1, 1)
                 ctx_kwargs = {
-                    "x": rgb, "alpha": alpha,
-                    "method": method, "noise_level": noise.value,
-                    "tile_size": command_args.tile_size, "batch_size": command_args.batch_size,
-                    "tta": command_args.tta, "enable_amp": not command_args.disable_amp,
+                    "x": rgb,
+                    "alpha": alpha,
+                    "method": method,
+                    "noise_level": noise.value,
+                    "tile_size": command_args.tile_size,
+                    "batch_size": command_args.batch_size,
+                    "tta": command_args.tta,
+                    "enable_amp": not command_args.disable_amp,
                 }
                 with global_lock:
                     if style == StyleOption.ART:
@@ -496,8 +503,10 @@ def api():
                         rgb, alpha = photo_ctx.convert(**ctx_kwargs)
                 depth = meta["depth"] if "depth" in meta and meta["depth"] is not None else 8
                 z = IL.to_image(rgb, alpha, depth=depth)
-            logger.debug(f"api: forward: {round(time() - t, 2)}s, {style} {scale} {noise} {image_format}, "
-                         f"pid={os.getpid()}-{threading.get_ident()}")
+            logger.debug(
+                f"api: forward: {round(time() - t, 2)}s, {style} {scale} {noise} {image_format}, "
+                f"pid={os.getpid()}-{threading.get_ident()}"
+            )
         t = time()
         image_data = IL.encode_image(z, format=image_format, meta=meta)
         cache.set(key, image_data, expire=command_args.cache_ttl * 60)
@@ -520,9 +529,11 @@ def api():
     res.set_header("Content-Disposition", f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}")
 
     # Store the last request info to cookie for redisplay on GET request
-    res.set_cookie("last_request",
-                   {"key": key, "image_format": image_format, "scale": scale, "output_filename": output_filename},
-                   secret=request.headers.get("User-Agent"))  # scrambling
+    res.set_cookie(
+        "last_request",
+        {"key": key, "image_format": image_format, "scale": scale, "output_filename": output_filename},
+        secret=request.headers.get("User-Agent"),
+    )  # scrambling
 
     return res
 
@@ -574,8 +585,8 @@ def static_file(url):
 
 def main():
     # NOTE: This code expect the server to run with single-process multi-threading.
-    import logging
     import faulthandler
+    import logging
 
     faulthandler.enable()
 
@@ -633,5 +644,10 @@ def main():
             "workers": command_args.workers,
         }
 
-    bottle.run(host=command_args.bind_addr, port=command_args.port, debug=command_args.debug,
-               server=command_args.backend, **backend_kwargs)
+    bottle.run(
+        host=command_args.bind_addr,
+        port=command_args.port,
+        debug=command_args.debug,
+        server=command_args.backend,
+        **backend_kwargs,
+    )

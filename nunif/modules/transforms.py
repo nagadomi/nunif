@@ -1,10 +1,12 @@
+import math
+from functools import lru_cache
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
-from functools import lru_cache
-from . replication_pad2d import replication_pad2d_naive
-from . reflection_pad2d import reflection_pad2d_naive
+
+from .reflection_pad2d import reflection_pad2d_naive
+from .replication_pad2d import replication_pad2d_naive
 
 # differentiable transforms for loss function
 
@@ -12,8 +14,11 @@ from . reflection_pad2d import reflection_pad2d_naive
 def rotate_grid(batch, height, width, angle, device, dtype):
     with torch.no_grad():
         angle = math.radians(angle)
-        py, px = torch.meshgrid(torch.linspace(-1, 1, height, device=device, dtype=dtype),
-                                torch.linspace(-1, 1, width, device=device, dtype=dtype), indexing="ij")
+        py, px = torch.meshgrid(
+            torch.linspace(-1, 1, height, device=device, dtype=dtype),
+            torch.linspace(-1, 1, width, device=device, dtype=dtype),
+            indexing="ij",
+        )
         mesh_x = px * math.cos(angle) - py * math.sin(angle)
         mesh_y = px * math.sin(angle) + py * math.cos(angle)
         grid = torch.stack((mesh_x, mesh_y), 2).unsqueeze(0).repeat(batch, 1, 1, 1).contiguous().detach()
@@ -47,10 +52,9 @@ def diff_rotate(x, angle, mode="bilinear", padding_mode="zeros", align_corners=F
 
     # x: BCHW
     B, _, H, W = x.shape
-    pad_h = (int(2 ** 0.5 * H) - H) // 2 + 1
-    pad_w = (int(2 ** 0.5 * W) - W) // 2 + 1
-    x = _pad(x, (pad_w, pad_w, pad_h, pad_h),
-             mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
+    pad_h = (int(2**0.5 * H) - H) // 2 + 1
+    pad_w = (int(2**0.5 * W) - W) // 2 + 1
+    x = _pad(x, (pad_w, pad_w, pad_h, pad_h), mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
     B, _, H, W = x.shape
 
     if cache:
@@ -68,10 +72,21 @@ def diff_random_rotate(x, angle=45, mode="bilinear", padding_mode="zeros", align
     B, _, H, W = x.shape
     angle = (torch.rand((B,), device=x.device) * 2 - 1) * angle
     # FIXME: remove loop
-    return torch.cat([diff_rotate(x[i:i + 1, :, :, :], angle=angle[i].item(),
-                                  mode=mode, padding_mode=padding_mode,
-                                  align_corners=align_corners, expand=expand, cache=False)
-                      for i in range(B)], dim=0).contiguous()
+    return torch.cat(
+        [
+            diff_rotate(
+                x[i : i + 1, :, :, :],
+                angle=angle[i].item(),
+                mode=mode,
+                padding_mode=padding_mode,
+                align_corners=align_corners,
+                expand=expand,
+                cache=False,
+            )
+            for i in range(B)
+        ],
+        dim=0,
+    ).contiguous()
 
 
 def diff_random_rotate_pair(x, y, angle=45, mode="bilinear", padding_mode="zeros", align_corners=False, expand=False):
@@ -83,29 +98,61 @@ def diff_random_rotate_pair(x, y, angle=45, mode="bilinear", padding_mode="zeros
         xy = torch.stack((x, y), dim=1)
         xys = []
         for i in range(B):
-            xys.append(diff_rotate(
-                xy[i], angle=angle[i].item(),
-                mode=mode, padding_mode=padding_mode,
-                align_corners=align_corners, expand=expand, cache=False))
+            xys.append(
+                diff_rotate(
+                    xy[i],
+                    angle=angle[i].item(),
+                    mode=mode,
+                    padding_mode=padding_mode,
+                    align_corners=align_corners,
+                    expand=expand,
+                    cache=False,
+                )
+            )
         x = torch.stack([xyi[0] for xyi in xys], dim=0)
         y = torch.stack([xyi[1] for xyi in xys], dim=0)
     else:
-        x = torch.cat([diff_rotate(
-            x[i:i + 1, :, :, :], angle=angle[i].item(),
-            mode=mode, padding_mode=padding_mode,
-            align_corners=align_corners, expand=expand, cache=False) for i in range(B)], dim=0)
-        y = torch.cat([diff_rotate(
-            y[i:i + 1, :, :, :], angle=angle[i].item(),
-            mode=mode, padding_mode=padding_mode,
-            align_corners=align_corners, expand=expand, cache=False) for i in range(B)], dim=0)
+        x = torch.cat(
+            [
+                diff_rotate(
+                    x[i : i + 1, :, :, :],
+                    angle=angle[i].item(),
+                    mode=mode,
+                    padding_mode=padding_mode,
+                    align_corners=align_corners,
+                    expand=expand,
+                    cache=False,
+                )
+                for i in range(B)
+            ],
+            dim=0,
+        )
+        y = torch.cat(
+            [
+                diff_rotate(
+                    y[i : i + 1, :, :, :],
+                    angle=angle[i].item(),
+                    mode=mode,
+                    padding_mode=padding_mode,
+                    align_corners=align_corners,
+                    expand=expand,
+                    cache=False,
+                )
+                for i in range(B)
+            ],
+            dim=0,
+        )
 
     return x.contiguous(), y.contiguous()
 
 
 def diff_translate(x, x_shift, y_shift, padding_mode="zeros", expand_x=0, expand_y=0):
-    return _pad(x, (x_shift + expand_x, -x_shift + expand_x,
-                    y_shift + expand_y, -y_shift + expand_y),
-                mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0).contiguous()
+    return _pad(
+        x,
+        (x_shift + expand_x, -x_shift + expand_x, y_shift + expand_y, -y_shift + expand_y),
+        mode=PAD_MODE_NN.get(padding_mode, padding_mode),
+        value=0,
+    ).contiguous()
 
 
 def diff_random_translate(x, ratio=0.15, size=None, padding_mode="zeros", expand=False):
@@ -123,9 +170,20 @@ def diff_random_translate(x, ratio=0.15, size=None, padding_mode="zeros", expand
         expand_x = expand_y = 0
 
     # FIXME: remove loop
-    return torch.cat([diff_translate(x[i:i + 1, :, :, :], x_shift=x_shift[i], y_shift=y_shift[i],
-                                     padding_mode=padding_mode,
-                                     expand_x=expand_x, expand_y=expand_y) for i in range(B)], dim=0).contiguous()
+    return torch.cat(
+        [
+            diff_translate(
+                x[i : i + 1, :, :, :],
+                x_shift=x_shift[i],
+                y_shift=y_shift[i],
+                padding_mode=padding_mode,
+                expand_x=expand_x,
+                expand_y=expand_y,
+            )
+            for i in range(B)
+        ],
+        dim=0,
+    ).contiguous()
 
 
 def diff_random_translate_pair(x, y, ratio=0.15, size=None, padding_mode="zeros", expand=False):
@@ -147,21 +205,47 @@ def diff_random_translate_pair(x, y, ratio=0.15, size=None, padding_mode="zeros"
         xy = torch.stack((x, y), dim=1)
         xys = []
         for i in range(B):
-            xys.append(diff_translate(
-                xy[i], x_shift=x_shift[i], y_shift=y_shift[i],
-                padding_mode=padding_mode,
-                expand_x=expand_x, expand_y=expand_y))
+            xys.append(
+                diff_translate(
+                    xy[i],
+                    x_shift=x_shift[i],
+                    y_shift=y_shift[i],
+                    padding_mode=padding_mode,
+                    expand_x=expand_x,
+                    expand_y=expand_y,
+                )
+            )
         x = torch.stack([xyi[0] for xyi in xys], dim=0)
         y = torch.stack([xyi[1] for xyi in xys], dim=0)
     else:
-        x = torch.cat([diff_translate(
-            x[i:i + 1, :, :, :], x_shift=x_shift[i], y_shift=y_shift[i],
-            padding_mode=padding_mode,
-            expand_x=expand_x, expand_y=expand_y) for i in range(B)], dim=0)
-        y = torch.cat([diff_translate(
-            y[i:i + 1, :, :, :], x_shift=x_shift[i], y_shift=y_shift[i],
-            padding_mode=padding_mode,
-            expand_x=expand_x, expand_y=expand_y) for i in range(B)], dim=0)
+        x = torch.cat(
+            [
+                diff_translate(
+                    x[i : i + 1, :, :, :],
+                    x_shift=x_shift[i],
+                    y_shift=y_shift[i],
+                    padding_mode=padding_mode,
+                    expand_x=expand_x,
+                    expand_y=expand_y,
+                )
+                for i in range(B)
+            ],
+            dim=0,
+        )
+        y = torch.cat(
+            [
+                diff_translate(
+                    y[i : i + 1, :, :, :],
+                    x_shift=x_shift[i],
+                    y_shift=y_shift[i],
+                    padding_mode=padding_mode,
+                    expand_x=expand_x,
+                    expand_y=expand_y,
+                )
+                for i in range(B)
+            ],
+            dim=0,
+        )
 
     return x.contiguous(), y.contiguous()
 
@@ -189,8 +273,9 @@ class DiffPairRandomTranslate(nn.Module):
         assert input.shape[0] == target.shape[0]
         if self.training:
             if self.instance_random:
-                return diff_random_translate_pair(input, target, ratio=self.ratio, size=self.size,
-                                                  padding_mode=self.padding_mode, expand=self.expand)
+                return diff_random_translate_pair(
+                    input, target, ratio=self.ratio, size=self.size, padding_mode=self.padding_mode, expand=self.expand
+                )
             else:
                 # batch random
                 size = self.size if self.size else int(input.shape[2] * self.ratio)
@@ -200,22 +285,34 @@ class DiffPairRandomTranslate(nn.Module):
                     expand_x = expand_y = size
                 else:
                     expand_x = expand_y = 0
-                input = diff_translate(input, x_shift=x_shift, y_shift=y_shift, padding_mode=self.padding_mode,
-                                       expand_x=expand_x, expand_y=expand_y)
-                target = diff_translate(target, x_shift=x_shift, y_shift=y_shift, padding_mode=self.padding_mode,
-                                        expand_x=expand_x, expand_y=expand_y)
+                input = diff_translate(
+                    input,
+                    x_shift=x_shift,
+                    y_shift=y_shift,
+                    padding_mode=self.padding_mode,
+                    expand_x=expand_x,
+                    expand_y=expand_y,
+                )
+                target = diff_translate(
+                    target,
+                    x_shift=x_shift,
+                    y_shift=y_shift,
+                    padding_mode=self.padding_mode,
+                    expand_x=expand_x,
+                    expand_y=expand_y,
+                )
                 return input, target
         else:
             if self.expand:
-                return self.expand_pad(input, target, ratio=self.ratio, size=self.size,
-                                       padding_mode=self.padding_mode)
+                return self.expand_pad(input, target, ratio=self.ratio, size=self.size, padding_mode=self.padding_mode)
             else:
                 return input, target
 
 
 class DiffPairRandomRotate(nn.Module):
-    def __init__(self, angle=45, mode="bilinear", padding_mode="zeros",
-                 align_corners=False, expand=False, instance_random=False):
+    def __init__(
+        self, angle=45, mode="bilinear", padding_mode="zeros", align_corners=False, expand=False, instance_random=False
+    ):
         super().__init__()
         self.angle = angle
         self.mode = mode
@@ -227,28 +324,45 @@ class DiffPairRandomRotate(nn.Module):
     @staticmethod
     def expand_pad(input, target, padding_mode):
         H, W = input.shape[:2]
-        pad_h = (int(2 ** 0.5 * H) - H) // 2 + 1
-        pad_w = (int(2 ** 0.5 * W) - W) // 2 + 1
-        input = _pad(input, (pad_w, pad_w, pad_h, pad_h),
-                     mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
-        target = _pad(input, (pad_w, pad_w, pad_h, pad_h),
-                      mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
+        pad_h = (int(2**0.5 * H) - H) // 2 + 1
+        pad_w = (int(2**0.5 * W) - W) // 2 + 1
+        input = _pad(input, (pad_w, pad_w, pad_h, pad_h), mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
+        target = _pad(input, (pad_w, pad_w, pad_h, pad_h), mode=PAD_MODE_NN.get(padding_mode, padding_mode), value=0)
         return input.contiguous(), target.contiguous()
 
     def forward(self, input, target):
         if self.training:
             if self.instance_random:
                 return diff_random_rotate_pair(
-                    input, target,
-                    angle=self.angle, mode=self.mode, padding_mode=self.padding_mode,
-                    align_corners=self.align_corners, expand=self.expand)
+                    input,
+                    target,
+                    angle=self.angle,
+                    mode=self.mode,
+                    padding_mode=self.padding_mode,
+                    align_corners=self.align_corners,
+                    expand=self.expand,
+                )
             else:
                 # batch random
                 angle = (torch.rand(1).item() * 2 - 1) * self.angle
-                input = diff_rotate(input, angle, mode=self.mode, padding_mode=self.padding_mode,
-                                    align_corners=self.align_corners, expand=self.expand, cache=False)
-                target = diff_rotate(target, angle, mode=self.mode, padding_mode=self.padding_mode,
-                                     align_corners=self.align_corners, expand=self.expand, cache=False)
+                input = diff_rotate(
+                    input,
+                    angle,
+                    mode=self.mode,
+                    padding_mode=self.padding_mode,
+                    align_corners=self.align_corners,
+                    expand=self.expand,
+                    cache=False,
+                )
+                target = diff_rotate(
+                    target,
+                    angle,
+                    mode=self.mode,
+                    padding_mode=self.padding_mode,
+                    align_corners=self.align_corners,
+                    expand=self.expand,
+                    cache=False,
+                )
                 return input, target
         else:
             if self.expand:
@@ -265,7 +379,9 @@ class DiffPairRandomDownsample(nn.Module):
 
     def forward(self, input, target):
         if self.training:
-            scale_factor = (self.scale_factor_max - self.scale_factor_min) * torch.rand(1).item() + self.scale_factor_min
+            scale_factor = (self.scale_factor_max - self.scale_factor_min) * torch.rand(
+                1
+            ).item() + self.scale_factor_min
         else:
             scale_factor = (self.scale_factor_max - self.scale_factor_min) * 0.5 + self.scale_factor_min
 
@@ -275,9 +391,10 @@ class DiffPairRandomDownsample(nn.Module):
 
 
 def _test_rotate():
+    import time
+
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
-    import time
 
     x = IO.read_image("cc0/dog2.jpg") / 255.0
     x = x[:, :256, :256].unsqueeze(0)
@@ -299,9 +416,10 @@ def _test_rotate():
 
 
 def _test_translate():
+    import time
+
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
-    import time
 
     x = IO.read_image("cc0/dog2.jpg") / 255.0
     x = x[:, :256, :256].unsqueeze(0)
@@ -314,9 +432,10 @@ def _test_translate():
 
 
 def _test_translate_random():
+    import time
+
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
-    import time
 
     x = IO.read_image("cc0/dog2.jpg") / 255.0
     x = x[:, :256, :256].unsqueeze(0)
@@ -331,6 +450,7 @@ def _test_translate_random():
 
 def _bench_random_rotate_pair():
     import time
+
     N = 100
     B = 16
     x = torch.randn((B, 3, 512, 512)).cuda()
@@ -345,14 +465,19 @@ def _bench_random_rotate_pair():
 
 def _test_compose():
     import time
+
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
-    from .. transforms import pair as TP
 
-    transform = TP.Compose([
-        TP.RandomChoice([DiffPairRandomRotate(padding_mode="reflection"),
-                        DiffPairRandomTranslate(padding_mode="reflection")])
-    ])
+    from ..transforms import pair as TP
+
+    transform = TP.Compose(
+        [
+            TP.RandomChoice(
+                [DiffPairRandomRotate(padding_mode="reflection"), DiffPairRandomTranslate(padding_mode="reflection")]
+            )
+        ]
+    )
     x = IO.read_image("cc0/dog2.jpg") / 255.0
     x = x[:, :256, :256].unsqueeze(0)
     for _ in range(5):

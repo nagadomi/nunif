@@ -1,5 +1,6 @@
 from nunif.addon import Addon
-from . import models # noqa
+
+from . import models  # noqa
 
 
 def addon_config():
@@ -12,4 +13,5 @@ class OutpaintAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.outpaint.trainer import register
+
         return register(subparsers, default_parser)

@@ -1,17 +1,17 @@
 # AE-SOM
 # python3 -m playground.som.train_aesom_mnist
-from torchvision.datasets import MNIST
-from torchvision import transforms as T
-from torchvision.transforms import functional as TF
-from torchvision.utils import make_grid
+import math
+from os import path
+
 import torch
+from PIL import ImageOps
 from torch import nn
 from torch.nn import functional as F
-from os import path
-import math
+from torchvision import transforms as T
+from torchvision.datasets import MNIST
+from torchvision.transforms import functional as TF
+from torchvision.utils import make_grid
 from tqdm import tqdm
-from PIL import ImageOps
-
 
 DATA_DIR = path.join(path.dirname(__file__), "..", "..", "tmp", "aesom")
 
@@ -56,7 +56,7 @@ class SOMVectorQuantizer(nn.Module):
         # find BMU(best match unit)
         units = self.units.expand(B, *self.units.shape)
         x = x.view(B, 1, 1, -1).expand(units.shape)
-        feat_diff = (units - x)
+        feat_diff = units - x
         feat_distance = torch.sum((feat_diff.detach() ** 2), dim=3, keepdims=True)
         bmu_index = torch.argmin(feat_distance.view(B, -1), dim=1)
 
@@ -67,14 +67,14 @@ class SOMVectorQuantizer(nn.Module):
 
         # generate a gaussian kernel centered on BMU and shrinking with t
         ksize = self.calc_kernel_size(self.t)
-        sigma = (0.3 * ((ksize - 1) * 0.5 - 1) + 0.8)
-        gaussian = torch.exp(-pos_distance / (2.0 * sigma ** 2))
+        sigma = 0.3 * ((ksize - 1) * 0.5 - 1) + 0.8
+        gaussian = torch.exp(-pos_distance / (2.0 * sigma**2))
         gaussian[gaussian < 0.001] = 0
 
         # update units with calculated weights
         temperature = math.exp(-(self.t * 2) / self.max_t)
-        delta = (temperature * gaussian.expand(feat_diff.shape) * feat_diff)
-        loss = (delta ** 2).view(B, self.units.shape[0] ** 2, self.units.shape[2]).mean()
+        delta = temperature * gaussian.expand(feat_diff.shape) * feat_diff
+        loss = (delta**2).view(B, self.units.shape[0] ** 2, self.units.shape[2]).mean()
 
         return bmu_index.view(B, 1), loss
 
@@ -82,13 +82,11 @@ class SOMVectorQuantizer(nn.Module):
 class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride):
         super().__init__()
-        assert (stride in {1, 2})
+        assert stride in {1, 2}
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3,
-                      stride=stride, padding=1, padding_mode="replicate"),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, padding_mode="replicate"),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3,
-                      stride=1, padding=1, padding_mode="replicate")
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
         )
         if stride == 2:
             self.identity = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0)
@@ -117,7 +115,7 @@ def Encoder(feat_dim):
         # fc
         nn.Conv2d(32, feat_dim, kernel_size=3, stride=1, padding=0),
         nn.ReLU(inplace=True),
-        nn.Conv2d(feat_dim, feat_dim, kernel_size=1, stride=1, padding=0)
+        nn.Conv2d(feat_dim, feat_dim, kernel_size=1, stride=1, padding=0),
     )
 
 
@@ -190,7 +188,7 @@ class AESOMLoss(nn.Module):
         return beta * vq_loss + recon_loss
 
 
-class MinMaxNormalize():
+class MinMaxNormalize:
     def __call__(self, x):
         min_v, max_v = x.min(), x.max()
         return (x - min_v) / (max_v - min_v)
@@ -206,19 +204,11 @@ def main():
 
     torch.manual_seed(72)
 
-    transform = T.Compose([
-        T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        T.ToTensor(),
-        MinMaxNormalize()
-    ])
+    transform = T.Compose([T.Resize((IMAGE_SIZE, IMAGE_SIZE)), T.ToTensor(), MinMaxNormalize()])
     dataset = MNIST(DATA_DIR, train=True, download=True, transform=transform)
     loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=4,
-        drop_last=False)
+        dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True, num_workers=4, drop_last=False
+    )
 
     warmup_t = 10
     step_t = 1 / (len(dataset) // BATCH_SIZE)
@@ -243,9 +233,8 @@ def main():
 
     # save animated gif
     image_list[0].save(
-        path.join(DATA_DIR, "aesom.gif"), format="gif",
-        append_images=image_list, save_all=True,
-        duration=100, loop=0)
+        path.join(DATA_DIR, "aesom.gif"), format="gif", append_images=image_list, save_all=True, duration=100, loop=0
+    )
     print(f"save images in `{path.abspath(DATA_DIR)}`")
 
 

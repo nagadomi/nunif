@@ -1,15 +1,18 @@
-from os import path
 import argparse
 import sys
+from os import path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import create_model
-from nunif.training.env import I2IEnv
 from nunif.modules.psnr import PSNR
+from nunif.training.env import I2IEnv
 from nunif.training.trainer import Trainer
+
+from ... import models  # noqa
 from .dataset import DA3MonoDataset
-from ... import models # noqa
 
 
 def normalize(x):
@@ -59,11 +62,9 @@ class DA3MonoTrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
-            dataset = DA3MonoDataset(path.join(self.args.data_dir, "train"),
-                                     size=self.args.size,
-                                     training=True)
+            dataset = DA3MonoDataset(path.join(self.args.data_dir, "train"), size=self.args.size, training=True)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 sampler=torch.utils.data.RandomSampler(dataset, num_samples=self.args.num_samples),
@@ -71,19 +72,19 @@ class DA3MonoTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
-            dataset = DA3MonoDataset(path.join(self.args.data_dir, "eval"),
-                                     size=self.args.size,
-                                     training=False)
+            dataset = DA3MonoDataset(path.join(self.args.data_dir, "eval"), size=self.args.size, training=False)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
 
     def create_env(self):
@@ -99,14 +100,14 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "iw3.da3mono",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "iw3.da3mono", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="iw3.da3mono_disparity", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
-    parser.add_argument("--size", type=int, default=320, help="input size. other than 256, it only works with mlbw model")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
+    parser.add_argument(
+        "--size", type=int, default=320, help="input size. other than 256, it only works with mlbw model"
+    )
 
     parser.set_defaults(
         batch_size=8,

@@ -1,15 +1,14 @@
-from PIL import Image, ImageFilter
-from torchvision import transforms as T
-from torchvision.transforms import (
-    functional as TF,
-    InterpolationMode
-)
-import torch
 import random
 from io import BytesIO
 
+import torch
+from PIL import Image, ImageFilter
+from torchvision import transforms as T
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
 
-class Identity():
+
+class Identity:
     def __init__(self):
         pass
 
@@ -17,7 +16,7 @@ class Identity():
         return x
 
 
-class RandomSRHardExampleCrop():
+class RandomSRHardExampleCrop:
     def __init__(self, size, samples=4):
         self.size = (size, size)
         self.samples = samples
@@ -36,7 +35,7 @@ class RandomSRHardExampleCrop():
         return x
 
 
-class RandomFlip():
+class RandomFlip:
     def __call__(self, x):
         if random.uniform(0, 1) > 0.5:
             x = TF.rotate(x, 90, interpolation=InterpolationMode.NEAREST)
@@ -61,7 +60,7 @@ def add_jpeg_noise(x, quality, subsampling):
     return x
 
 
-class RandomJPEG():
+class RandomJPEG:
     def __init__(self, min_quality=85, max_quality=99, sampling=["4:4:4", "4:2:0"]):
         self.min_quality = min_quality
         self.max_quality = max_quality
@@ -73,13 +72,12 @@ class RandomJPEG():
         return add_jpeg_noise(x, quality, sampling)
 
 
-class RandomDownscale():
+class RandomDownscale:
     def __init__(self, min_size, min_scale=0.5, interpolations=None):
         self.min_size = min_size
         self.min_scale = min_scale
         if interpolations is None:
-            self.interpolations = [TF.InterpolationMode.BICUBIC,
-                                   TF.InterpolationMode.LANCZOS]
+            self.interpolations = [TF.InterpolationMode.BICUBIC, TF.InterpolationMode.LANCZOS]
         else:
             self.interpolations = interpolations
 
@@ -92,13 +90,12 @@ class RandomDownscale():
         if min_scale < self.min_scale:
             min_scale = self.min_scale
         scale = random.uniform(min_scale, 1.0)
-        x = TF.resize(x, (int(h * scale), int(w * scale)),
-                      interpolation=interpolation, antialias=True)
+        x = TF.resize(x, (int(h * scale), int(w * scale)), interpolation=interpolation, antialias=True)
 
         return x
 
 
-class RandomChannelShuffle():
+class RandomChannelShuffle:
     def __init__(self):
         pass
 
@@ -114,11 +111,11 @@ def pad(x, size, mode="reflect", fill=0):
     w, h = x.size
     pad_l = pad_t = pad_r = pad_b = 0
     if size[0] > w:
-        border = (size[0] - w)
+        border = size[0] - w
         pad_l = border // 2
         pad_r = border // 2 + (border % 2)
     if size[1] > h:
-        border = (size[1] - h)
+        border = size[1] - h
         pad_t = border // 2
         pad_b = border // 2 + (border % 2)
     if pad_l + pad_t + pad_r + pad_b != 0:
@@ -126,7 +123,7 @@ def pad(x, size, mode="reflect", fill=0):
     return x
 
 
-class ReflectionResize():
+class ReflectionResize:
     def __init__(self, size):
         if isinstance(size, int):
             self.size = (size, size)
@@ -142,7 +139,7 @@ class ReflectionResize():
         return x
 
 
-class RandomPILFilter():
+class RandomPILFilter:
     def __init__(self, filters):
         self.filters = filters
 
@@ -151,7 +148,7 @@ class RandomPILFilter():
         return x.filter(kernel)
 
 
-class ModCrop():
+class ModCrop:
     def __init__(self, mul=4):
         self.mul = mul
 
@@ -173,7 +170,7 @@ class ModCrop():
         return x
 
 
-class RandomUnsharpMask():
+class RandomUnsharpMask:
     def __init__(self, radius=[0.75, 1.75], percent=[10, 90], threshold=[0, 5]):
         self.radius = radius
         self.percent = percent
@@ -186,7 +183,7 @@ class RandomUnsharpMask():
         return x.filter(ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=threshold))
 
 
-class RandomGrayscale():
+class RandomGrayscale:
     def __init__(self, full_grayscale_p=0.5, noise=[-0.03, 0.03], grayscale_weight=[1.0, 0.95]):
         self.full_grayscale_p = full_grayscale_p
         self.noise = noise
@@ -200,8 +197,9 @@ class RandomGrayscale():
             rgb = TF.to_tensor(x) if isinstance(x, Image.Image) else x
             gray = TF.rgb_to_grayscale(rgb, num_output_channels=3)
             if random.uniform(0, 1) < 0.5:
-                shift_rgb = torch.tensor([random.uniform(*self.noise) for _ in range(3)],
-                                         device=rgb.device).view(3, 1, 1)
+                shift_rgb = torch.tensor([random.uniform(*self.noise) for _ in range(3)], device=rgb.device).view(
+                    3, 1, 1
+                )
                 x = gray + shift_rgb
             else:
                 w = random.uniform(*self.grayscale_weight)
@@ -211,7 +209,7 @@ class RandomGrayscale():
             return TF.to_pil_image(x)
 
 
-class SizeCondition():
+class SizeCondition:
     def __init__(self, threshold_size, lt_transform, gt_transform):
         self.threshold_size = threshold_size
         self.lt_transform = lt_transform

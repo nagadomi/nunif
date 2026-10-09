@@ -1,14 +1,14 @@
-import torch
 import sys
 
+import torch
 
-class SoftmaxConfusionMatrix():
+
+class SoftmaxConfusionMatrix:
     def __init__(self, class_names, max_print_class=None):
         self.class_names = class_names
         self.num_classes = len(class_names)
         self.max_print_class = max_print_class
-        self.confusion_matrix = torch.zeros(
-            (self.num_classes, self.num_classes), dtype=torch.long)
+        self.confusion_matrix = torch.zeros((self.num_classes, self.num_classes), dtype=torch.long)
 
     def update(self, z, y):
         for t, p in zip(y, z):
@@ -30,9 +30,10 @@ class SoftmaxConfusionMatrix():
         self.confusion_matrix.zero_()
 
     def print(self, file=sys.stdout):
-        print(f" global correct:      {self.global_correct()},"
-              f" average_row_correct: {self.average_row_correct()}",
-              file=file)
+        print(
+            f" global correct:      {self.global_correct()}, average_row_correct: {self.average_row_correct()}",
+            file=file,
+        )
         if self.max_print_class is not None and self.max_print_class < 0:
             return
 

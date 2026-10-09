@@ -6,7 +6,7 @@ def minmax_normalize(frame, min_value, max_value):
         min_value = min_value.to(frame.device)
         max_value = max_value.to(frame.device)
 
-    scale = (max_value - min_value)
+    scale = max_value - min_value
     if scale > 0:
         frame = (frame - min_value) / scale
         frame = frame.clamp(0.0, 1.0)
@@ -30,7 +30,7 @@ def max_normalize(frame, min_value, max_value):
     return frame
 
 
-class MinMaxBuffer():
+class MinMaxBuffer:
     def __init__(self, size, dtype, device):
         assert size > 0
         self.count = 0
@@ -61,7 +61,7 @@ class MinMaxBuffer():
         return self.data.amin(), self.data.amax()
 
 
-class EMAMinMaxScaler():
+class EMAMinMaxScaler:
     #   SimpleMinMaxScaler: decay=0, buffer_size=1
     # IncrementalEMAScaler: decay=0.75, buffer_size=1
     #      WindowEMAScaler: decay=0.9, buffer_size=30
@@ -108,8 +108,8 @@ class EMAMinMaxScaler():
             self.min_value = min_value
             self.max_value = max_value
         else:
-            self.min_value = self.decay * self.min_value + (1. - self.decay) * min_value
-            self.max_value = self.decay * self.max_value + (1. - self.decay) * max_value
+            self.min_value = self.decay * self.min_value + (1.0 - self.decay) * min_value
+            self.max_value = self.decay * self.max_value + (1.0 - self.decay) * max_value
 
         frame = self.frame_queue.pop(0)
         frame = self.normalize(frame, self.min_value, self.max_value)
@@ -130,20 +130,18 @@ class EMAMinMaxScaler():
             min_value, max_value = self.min_value, self.max_value
 
         if return_minmax:
-            frames = [(self.normalize(frame, min_value, max_value),
-                       min_value, max_value)
-                      for frame in self.frame_queue]
+            frames = [(self.normalize(frame, min_value, max_value), min_value, max_value) for frame in self.frame_queue]
             self.reset()
             return frames
         else:
-            frames = [self.normalize(frame, min_value, max_value)
-                      for frame in self.frame_queue]
+            frames = [self.normalize(frame, min_value, max_value) for frame in self.frame_queue]
             self.reset()
             return frames
 
 
 def _test():
     import matplotlib.pyplot as plt
+
     x = [float(i) for i in range(100)]
     zeros = [0 for i in range(100)]
 
@@ -165,12 +163,14 @@ def _test():
     min_values = torch.tensor(min_values)
     max_values = torch.tensor(max_values)
 
-    x = torch.stack([
-        x.permute(1, 0)[0],
-        x.permute(1, 0)[1],
-        min_values,
-        max_values,
-    ]).permute(1, 0)
+    x = torch.stack(
+        [
+            x.permute(1, 0)[0],
+            x.permute(1, 0)[1],
+            min_values,
+            max_values,
+        ]
+    ).permute(1, 0)
     plt.plot(x)
     plt.show()
 

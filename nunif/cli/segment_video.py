@@ -1,16 +1,18 @@
 # Split video by Shot Boundary Detection (TransNetV2)
 # python -m nunif.cli.semgent_video -i input.mp4 -o output_dir
-import nunif.utils.video as VU
-import av
-import nunif.utils.shot_boundary_detection as SBD
-import torch
 import argparse
+import math
 import os
 from os import path
+
+import av
+import torch
 from tqdm import tqdm
+
+import nunif.utils.shot_boundary_detection as SBD
+import nunif.utils.video as VU
 from nunif.device import create_device
 from nunif.logger import logger
-import math
 
 
 def open_output_video(output_path, ext, no, video_input_stream, audio_input_stream, args):
@@ -80,8 +82,7 @@ def segment_video(pts, args):
     total = int(VU.get_duration(video_input_stream, container_duration) * video_input_stream.guessed_rate)
     pbar = tqdm(desc="Segmentation", total=total, ncols=80)
     video_no = 0
-    output_container = open_output_video(args.output, ext, video_no, video_input_stream, audio_input_stream,
-                                         args=args)
+    output_container = open_output_video(args.output, ext, video_no, video_input_stream, audio_input_stream, args=args)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
     audio_base_pts = video_base_pts = None
     prev_pts = -1
@@ -94,8 +95,9 @@ def segment_video(pts, args):
                         # next video
                         close_output_video(output_container, video_filter)
                         video_no += 1
-                        output_container = open_output_video(args.output, ext, video_no, video_input_stream, audio_input_stream,
-                                                             args=args)
+                        output_container = open_output_video(
+                            args.output, ext, video_no, video_input_stream, audio_input_stream, args=args
+                        )
                         audio_base_pts = video_base_pts = None
                         video_filter = create_video_filter(video_input_stream, args)
 

@@ -1,5 +1,6 @@
 import random
-from .. utils import wand_io
+
+from ..utils import wand_io
 
 
 def to_wand_image(float_tensor):
@@ -82,7 +83,8 @@ def random_jpeg_noise(x, sampling_factors, quality_min, quality_max):
 
 def _test_unsharp_mask():
     import cv2
-    from .. utils import pil_io
+
+    from ..utils import pil_io
 
     im, _ = wand_io.load_image("./tmp/sr_test/half_0834_half.png")
     t = wand_io.to_tensor(im)

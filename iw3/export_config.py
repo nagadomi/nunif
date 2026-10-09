@@ -1,8 +1,8 @@
-from os import path
-import yaml
 from datetime import datetime
 from fractions import Fraction
+from os import path
 
+import yaml
 
 FILENAME = "iw3_export.yml"
 RGB_DIR = "rgb"
@@ -13,12 +13,24 @@ VIDEO_TYPE = "video"
 
 
 class ExportConfig:
-    def __init__(self, type, basename=None, fps=None,
-                 mapper=None, skip_mapper=None, skip_edge_dilation=None,
-                 rgb_dir=None, depth_dir=None, audio_file=None,
-                 user_data={}, updated_at=None,
-                 output_colorspace=None, source_color_range=None,
-                 output_color_primaries=None, output_color_trc=None):
+    def __init__(
+        self,
+        type,
+        basename=None,
+        fps=None,
+        mapper=None,
+        skip_mapper=None,
+        skip_edge_dilation=None,
+        rgb_dir=None,
+        depth_dir=None,
+        audio_file=None,
+        user_data={},
+        updated_at=None,
+        output_colorspace=None,
+        source_color_range=None,
+        output_color_primaries=None,
+        output_color_trc=None,
+    ):
         assert type in {IMAGE_TYPE, VIDEO_TYPE}
         self.type = type
         self.basename = basename
@@ -43,7 +55,9 @@ class ExportConfig:
                 fps = self.fps.numerator
             else:
                 fps = f"{self.fps.numerator}/{self.fps.denominator}"
-        elif type(self.fps) in {int, }:
+        elif type(self.fps) in {
+            int,
+        }:
             fps = self.fps
         else:
             # NOTE: This can cause "Phyton in too large to convert to C long"
@@ -55,10 +69,7 @@ class ExportConfig:
         if self.basename:
             config.update({"basename": self.basename})
         config.update({"fps": fps})
-        config.update({
-            "rgb_dir": self.rgb_dir,
-            "depth_dir": self.depth_dir
-        })
+        config.update({"rgb_dir": self.rgb_dir, "depth_dir": self.depth_dir})
         if self.audio_file:
             config.update({"audio_file": self.audio_file})
         if self.mapper is not None:
@@ -100,7 +111,9 @@ class ExportConfig:
                     # Fraction str. e.g, "30000/1001"
                     int_parts = [int(v) for v in fps.split("/")]
                     fps = Fraction(int_parts[0], int_parts[1])
-                elif type(fps) in {int, }:
+                elif type(fps) in {
+                    int,
+                }:
                     pass
                 else:
                     fps = float(fps)
@@ -132,15 +145,23 @@ class ExportConfig:
             except (TypeError, ValueError):
                 updated_at = None
 
-        return ExportConfig(export_type, basename=basename, fps=fps,
-                            mapper=mapper, skip_mapper=skip_mapper, skip_edge_dilation=skip_edge_dilation,
-                            rgb_dir=rgb_dir, depth_dir=depth_dir, audio_file=audio_file,
-                            user_data=user_data, updated_at=updated_at,
-                            source_color_range=source_color_range,
-                            output_colorspace=output_colorspace,
-                            output_color_primaries=output_color_primaries,
-                            output_color_trc=output_color_trc,
-                            )
+        return ExportConfig(
+            export_type,
+            basename=basename,
+            fps=fps,
+            mapper=mapper,
+            skip_mapper=skip_mapper,
+            skip_edge_dilation=skip_edge_dilation,
+            rgb_dir=rgb_dir,
+            depth_dir=depth_dir,
+            audio_file=audio_file,
+            user_data=user_data,
+            updated_at=updated_at,
+            source_color_range=source_color_range,
+            output_colorspace=output_colorspace,
+            output_color_primaries=output_color_primaries,
+            output_color_trc=output_color_trc,
+        )
 
     def to_dict(self):
         return dict(

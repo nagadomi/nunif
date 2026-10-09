@@ -2,13 +2,14 @@
 # python3 -m font_resource.download_google_fonts
 
 
-import requests
 import os
+import shutil
 from os import path
 from urllib.parse import quote_plus as url_encode
-import shutil
-from nunif.utils.downloader import ArchiveDownloader
 
+import requests
+
+from nunif.utils.downloader import ArchiveDownloader
 
 # Google fonts
 GOOGLE_FONTS = [
@@ -74,12 +75,11 @@ def name_to_url(name):
 
 
 def name_to_filename(name):
-    return name.replace(' ', '_')
+    return name.replace(" ", "_")
 
 
 def check_google_font_urls():
-    """ validate font name for develop
-    """
+    """validate font name for develop"""
     for name in GOOGLE_FONTS:
         url = name_to_url(name)
         res = requests.head(url, allow_redirects=True)

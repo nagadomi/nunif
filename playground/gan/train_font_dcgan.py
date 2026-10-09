@@ -1,19 +1,20 @@
 # Generate JIS Level-1 Kanji Fonts with DCGAN
 # python -m font_resource.download_google_fonts
 # python -m playground.gan.train_font_dcgan --data-dir ./tmp/dcgan --model-dir ./tmp/dcgan
-from os import path
-from PIL import Image, ImageFont, ImageDraw
 from collections import defaultdict
+from os import path
+
 import torch
+from PIL import Image, ImageDraw, ImageFont
 from torch import nn
 from torchvision.transforms import functional as TF
 from torchvision.utils import make_grid
+
+from font_resource.utils import load_font
 from nunif.models import Model, get_model_device, save_model
 from nunif.training.env import BaseEnv
 from nunif.training.trainer import Trainer, create_trainer_default_parser
-from font_resource.utils import load_font
 from text_resource.char import Char
-
 
 IMAGE_SIZE = 32
 FONT_NAMES = [
@@ -40,16 +41,20 @@ class FontDataset(torch.utils.data.Dataset):
         self.font_images = defaultdict(lambda: {})
 
     def sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def generate_font_image(self, font, char):
         im = Image.new("L", (self.size, self.size), (255,))
         gc = ImageDraw.Draw(im, mode="L")
-        gc.text((self.margin, self.margin), char + "　", font=font, fill="black",
-                direction="ttb", anchor=None, language="ja")
+        gc.text(
+            (self.margin, self.margin),
+            char + "　",
+            font=font,
+            fill="black",
+            direction="ttb",
+            anchor=None,
+            language="ja",
+        )
         return im
 
     def __getitem__(self, i):
@@ -82,40 +87,20 @@ class Generator(Model):
     def __init__(self, seed_dim=64):
         super().__init__(locals())
         self.net = nn.Sequential(
-            nn.ConvTranspose2d(seed_dim, 256,
-                               kernel_size=4, stride=1,
-                               padding=0,
-                               bias=False),
+            nn.ConvTranspose2d(seed_dim, 256, kernel_size=4, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(256, 128,
-                               kernel_size=4, stride=2,
-                               padding=1,
-                               bias=False),
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(128, 64,
-                               kernel_size=4, stride=2,
-                               padding=1,
-                               bias=False),
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(64, 64,
-                               kernel_size=4, stride=2,
-                               padding=1,
-                               bias=False),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1,
-                      padding=1, padding_mode="replicate",
-                      bias=False),
+            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, padding_mode="replicate", bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 1, kernel_size=3, stride=1,
-                      padding=1, padding_mode="replicate",
-                      bias=False),
-
-            nn.Tanh()
+            nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1, padding_mode="replicate", bias=False),
+            nn.Tanh(),
         )
         reset_parameters(self)
 
@@ -160,11 +145,9 @@ class DiscriminatorLowLevel(nn.Module):
             nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1, padding_mode="replicate", bias=False),
             nn.BatchNorm2d(32),
             nn.LeakyReLU(0.2, inplace=True),
-
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.LeakyReLU(0.2, inplace=True),
-
             nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1, bias=False),
             # 32x32
         )
@@ -210,36 +193,35 @@ class GANEnv(BaseEnv):
         real = self.to_device(data)
         with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.amp):
             # generator
-            noise = torch.randn((real.shape[0], self.seed_dim, 1, 1),
-                                dtype=real.dtype,
-                                device=real.device)
+            noise = torch.randn((real.shape[0], self.seed_dim, 1, 1), dtype=real.dtype, device=real.device)
             fake = self.model.generator(noise)
 
             yl_fake = self.model.discriminator_low(fake)
-            tl_fake = torch.zeros(yl_fake.shape, dtype=yl_fake.dtype,
-                                  device=yl_fake.device, requires_grad=False)
-            tl_real = torch.ones(yl_fake.shape, dtype=yl_fake.dtype,
-                                 device=yl_fake.device, requires_grad=False)
+            tl_fake = torch.zeros(yl_fake.shape, dtype=yl_fake.dtype, device=yl_fake.device, requires_grad=False)
+            tl_real = torch.ones(yl_fake.shape, dtype=yl_fake.dtype, device=yl_fake.device, requires_grad=False)
 
             yh_fake = self.model.discriminator_high(fake)
-            th_fake = torch.zeros(yh_fake.shape, dtype=yh_fake.dtype,
-                                  device=yh_fake.device, requires_grad=False)
-            th_real = torch.ones(yh_fake.shape, dtype=yh_fake.dtype,
-                                 device=yh_fake.device, requires_grad=False)
+            th_fake = torch.zeros(yh_fake.shape, dtype=yh_fake.dtype, device=yh_fake.device, requires_grad=False)
+            th_real = torch.ones(yh_fake.shape, dtype=yh_fake.dtype, device=yh_fake.device, requires_grad=False)
 
-            g_loss = sum([self.criterion(yl_fake, tl_real),
-                          self.criterion(yh_fake, th_real)]) * 0.5
+            g_loss = sum([self.criterion(yl_fake, tl_real), self.criterion(yh_fake, th_real)]) * 0.5
 
             # discriminator
             yl_fake = self.model.discriminator_low(fake.detach())
             yl_real = self.model.discriminator_low(real)
             yh_fake = self.model.discriminator_high(fake.detach())
             yh_real = self.model.discriminator_high(real)
-            d_loss = sum([self.criterion(yl_fake, tl_fake),
-                          self.criterion(yl_real, tl_real),
-                          self.criterion(yh_fake, th_fake),
-                          self.criterion(yh_real, th_real),
-                          ]) * 0.25
+            d_loss = (
+                sum(
+                    [
+                        self.criterion(yl_fake, tl_fake),
+                        self.criterion(yl_real, tl_real),
+                        self.criterion(yh_fake, th_fake),
+                        self.criterion(yh_real, th_real),
+                    ]
+                )
+                * 0.25
+            )
 
         self.sum_g_loss += g_loss.item()
         self.sum_d_loss += d_loss.item()
@@ -309,7 +291,7 @@ class GANTrainer(Trainer):
         return g, dl, dh
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             fonts = []
             for font_name in FONT_NAMES:
@@ -325,7 +307,8 @@ class GANTrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
         else:
             return None
@@ -354,11 +337,14 @@ def _test_dataset():
     import random
 
     def show_image(im):
-        from nunif.utils.pil_io import to_cv2
         import cv2
+
+        from nunif.utils.pil_io import to_cv2
+
         cv2.namedWindow("debug", cv2.WINDOW_AUTOSIZE)
         cv2.imshow("debug", to_cv2(im))
         return cv2.waitKey(0)
+
     print("`q` key to exit")
 
     fonts = [load_font(font_name) for font_name in FONT_NAMES]

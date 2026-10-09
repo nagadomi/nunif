@@ -13,14 +13,14 @@ def sampling(x, tau, n, hard=False):
 
 def test():
     N = 10000
-    x = torch.tensor([[1000., 950., 500., 100., 50., 10., 1., 1e-4]])
-    x = (x / x.sum())
+    x = torch.tensor([[1000.0, 950.0, 500.0, 100.0, 50.0, 10.0, 1.0, 1e-4]])
+    x = x / x.sum()
     print("prob", [round(p, 4) for p in x.tolist()[0]])
     x = x.log()
 
     for hard in [False, True]:
         print(f"\nhard={hard}")
-        for tau in [10., 5., 2., 1., 1e-2, 1e-4, 1e-6, 1e-8]:
+        for tau in [10.0, 5.0, 2.0, 1.0, 1e-2, 1e-4, 1e-6, 1e-8]:
             prob = sampling(x, tau, N, hard=hard).tolist()[0]
             prob = [round(p, 4) for p in prob]
             print(tau, prob)

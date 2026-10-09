@@ -1,10 +1,10 @@
-import scipy.fft
 import numpy as np
+import scipy.fft
 import torch
 import torch.nn as nn
-from .permute import window_partition2d
-from .init import basic_module_init
 
+from .init import basic_module_init
+from .permute import window_partition2d
 
 # Exportable Compilable DCT2 module
 # Most codes adapted from dctorch
@@ -61,7 +61,7 @@ class WindowDCT(nn.Module):
         x = window_partition2d(x, self.window_size)
         x = self.dct2(x)
         x = x.permute(0, 2, 3, 4, 1)
-        x = x.reshape(B, C * self.window_size ** 2, H // self.window_size, W // self.window_size)
+        x = x.reshape(B, C * self.window_size**2, H // self.window_size, W // self.window_size)
         return x.contiguous()
 
     def forward(self, x):
@@ -74,11 +74,12 @@ class ChannelIDCT(nn.Module):
         self.out_channels = out_channels
         self.window_size = window_size
         if project:
-            self.proj = nn.Conv2d(in_channels, out_channels * window_size ** 2,
-                                  kernel_size=1, stride=1, padding=0, bias=bias)
+            self.proj = nn.Conv2d(
+                in_channels, out_channels * window_size**2, kernel_size=1, stride=1, padding=0, bias=bias
+            )
         else:
             self.proj = nn.Identity()
-            assert in_channels == out_channels * window_size ** 2
+            assert in_channels == out_channels * window_size**2
 
         if self.window_size > 1:
             self.idct2 = IDCT2(self.window_size)
@@ -105,9 +106,10 @@ class ChannelIDCT(nn.Module):
 
 
 def _test():
-    from dctorch.functional import dct2, idct2
-    import torchvision.io as IO
     import math
+
+    import torchvision.io as IO
+    from dctorch.functional import dct2, idct2
 
     x = (IO.read_image("cc0/320/dog.png") / 256.0).unsqueeze(0)
     my_dct2 = DCT2((x.shape[2], x.shape[3]))
@@ -123,13 +125,14 @@ def _test():
 
 
 def _test_window_dct():
-    import torchvision.io as IO
-    import torchvision.transforms.functional as TF
     import math
 
-    src = (IO.read_image("cc0/320/dog.png") / 256.0)
+    import torchvision.io as IO
+    import torchvision.transforms.functional as TF
+
+    src = IO.read_image("cc0/320/dog.png") / 256.0
     dct = WindowDCT(window_size=8)
-    idct = ChannelIDCT(3 * 8 ** 2, 3, window_size=8, project=False)
+    idct = ChannelIDCT(3 * 8**2, 3, window_size=8, project=False)
 
     x = dct(src.unsqueeze(0))
     x = idct(x).squeeze(0)

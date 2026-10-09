@@ -1,17 +1,20 @@
 # python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint
 # python train.py inpaint -i ./data/sr_dataset --model-dir models/light_inpaint --resume --reset-state --learning-rate 3e-5 --ema-model
-from os import path
 import argparse
+from os import path
+
 import torch
+
 from nunif.models import create_model
-from nunif.training.env import LuminancePSNREnv
-from nunif.training.trainer import Trainer
-from nunif.modules.transforms import DiffPairRandomTranslate
-from nunif.modules.weighted_loss import WeightedLoss
 from nunif.modules.dct_loss import DCTLoss
 from nunif.modules.lbp_loss import LBPLoss
+from nunif.modules.transforms import DiffPairRandomTranslate
+from nunif.modules.weighted_loss import WeightedLoss
+from nunif.training.env import LuminancePSNREnv
+from nunif.training.trainer import Trainer
+
+from ... import models  # noqa
 from .dataset import DepthAADataset
-from ... import models # noqa
 
 
 class DepthAATrainer(Trainer):
@@ -22,11 +25,10 @@ class DepthAATrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         model_offset = self.model.i2i_offset
         if type == "train":
-            dataset = DepthAADataset(path.join(self.args.data_dir, "train"), model_offset,
-                                     training=True)
+            dataset = DepthAADataset(path.join(self.args.data_dir, "train"), model_offset, training=True)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 sampler=torch.utils.data.RandomSampler(dataset, num_samples=self.args.num_samples),
@@ -34,28 +36,34 @@ class DepthAATrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
         else:
-            dataset = DepthAADataset(path.join(self.args.data_dir, "eval"), model_offset,
-                                     training=False)
+            dataset = DepthAADataset(path.join(self.args.data_dir, "eval"), model_offset, training=False)
             loader = torch.utils.data.DataLoader(
                 dataset,
                 batch_size=self.args.batch_size,
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
 
     def create_env(self):
         if self.args.loss == "dct":
             criterion = WeightedLoss(
-                (DCTLoss(window_size=4, clamp=True),
-                 DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
-                 DCTLoss(clamp=True, random_instance_rotate=True)),
+                (
+                    DCTLoss(window_size=4, clamp=True),
+                    DCTLoss(window_size=24, clamp=True, random_instance_rotate=True),
+                    DCTLoss(clamp=True, random_instance_rotate=True),
+                ),
                 weights=(0.2, 0.2, 0.6),
-                preprocess_pair=DiffPairRandomTranslate(size=12, padding_mode="zeros", expand=True, instance_random=True))
+                preprocess_pair=DiffPairRandomTranslate(
+                    size=12, padding_mode="zeros", expand=True, instance_random=True
+                ),
+            )
         elif self.args.loss == "l1":
             criterion = torch.nn.L1Loss()
         elif self.args.loss == "lbp":
@@ -71,15 +79,12 @@ def train(args):
 
 def register(subparsers, default_parser):
     parser = subparsers.add_parser(
-        "iw3.depth_aa",
-        parents=[default_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        "iw3.depth_aa", parents=[default_parser], formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument("--arch", type=str, default="iw3.depth_aa", help="network arch")
-    parser.add_argument("--num-samples", type=int, default=20000,
-                        help="number of samples for each epoch")
-    parser.add_argument("--loss", type=str, default="dct",
-                        choices=["dct", "l1", "lbp"], help="loss")
+    parser.add_argument("--num-samples", type=int, default=20000, help="number of samples for each epoch")
+    parser.add_argument("--loss", type=str, default="dct", choices=["dct", "l1", "lbp"], help="loss")
 
     parser.set_defaults(
         batch_size=16,

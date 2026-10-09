@@ -1,8 +1,9 @@
-import os
-from os import path
-import sys
-import torch
 import mimetypes
+import os
+import sys
+from os import path
+
+import torch
 
 
 class HiddenPrints:
@@ -18,8 +19,8 @@ class HiddenPrints:
             return
         self._original_stdout = sys.stdout
         self._original_stderr = sys.stderr
-        sys.stdout = open(os.devnull, 'w')
-        sys.stderr = open(os.devnull, 'w')
+        sys.stdout = open(os.devnull, "w")
+        sys.stderr = open(os.devnull, "w")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.debug:

@@ -6,7 +6,9 @@ import torch.nn.functional as F
 class ConvAvgPool2d(nn.Module):
     # avg_pool2d using grouped conv2d.
     # faster than avg_pool2d when using torch.compile.
-    def __init__(self, in_channels, kernel_size, stride=None, padding=0, count_include_pad=True, padding_mode="constant"):
+    def __init__(
+        self, in_channels, kernel_size, stride=None, padding=0, count_include_pad=True, padding_mode="constant"
+    ):
         super().__init__()
         self.kernel_size = kernel_size
         self.stride = kernel_size if stride is None else stride
@@ -30,12 +32,16 @@ class ConvAvgPool2d(nn.Module):
         if not self.count_include_pad:
             x = torch.cat([x, torch.ones((B, self.count_pad_size, H, W), dtype=x.dtype, device=x.device)], dim=1)
             padded_x = F.pad(x, (self.padding,) * 4, mode="constant", value=0)
-            x = F.conv2d(padded_x, weight=self.avg_kernel, bias=None, stride=self.stride, groups=self.avg_kernel.shape[0])
-            x, area = x[:, :-self.count_pad_size], x[:, -1:]
+            x = F.conv2d(
+                padded_x, weight=self.avg_kernel, bias=None, stride=self.stride, groups=self.avg_kernel.shape[0]
+            )
+            x, area = x[:, : -self.count_pad_size], x[:, -1:]
             return x / area
         else:
             padded_x = F.pad(x, (self.padding,) * 4, mode=self.padding_mode, value=0)
-            x = F.conv2d(padded_x, weight=self.avg_kernel, bias=None, stride=self.stride, groups=self.avg_kernel.shape[0])
+            x = F.conv2d(
+                padded_x, weight=self.avg_kernel, bias=None, stride=self.stride, groups=self.avg_kernel.shape[0]
+            )
             return x
 
 
@@ -59,6 +65,7 @@ def _test():
 
 def _bench(in_channels, compile, kernel_size=7, count_include_pad=True):
     import time
+
     print(f"** in_channels={in_channels}, compile={compile}")
 
     K = kernel_size
@@ -68,18 +75,27 @@ def _bench(in_channels, compile, kernel_size=7, count_include_pad=True):
     S = (B, C, 184, 184)
     device = "cuda:0"
 
-    model = ConvAvgPool2d(
-        in_channels=S[1],
-        kernel_size=K, stride=1,
-        padding=(K - 1) // 2,
-        count_include_pad=count_include_pad,
-    ).eval().to(device)
-    avg_pool2d = nn.AvgPool2d(
-        kernel_size=K,
-        stride=1,
-        padding=(K - 1) // 2,
-        count_include_pad=count_include_pad,
-    ).eval().to(device)
+    model = (
+        ConvAvgPool2d(
+            in_channels=S[1],
+            kernel_size=K,
+            stride=1,
+            padding=(K - 1) // 2,
+            count_include_pad=count_include_pad,
+        )
+        .eval()
+        .to(device)
+    )
+    avg_pool2d = (
+        nn.AvgPool2d(
+            kernel_size=K,
+            stride=1,
+            padding=(K - 1) // 2,
+            count_include_pad=count_include_pad,
+        )
+        .eval()
+        .to(device)
+    )
     if compile:
         model = torch.compile(model)
         avg_pool2d = torch.compile(avg_pool2d)

@@ -1,9 +1,8 @@
-from .zoedepth_model import ZoeDepthModel
 from .depth_anything_model import DepthAnythingModel
 from .depth_anything_v3_model import DepthAnythingV3MonoModel
 from .depth_pro_model import DepthProModel
 from .video_depth_anything_model import VideoDepthAnythingModel
-
+from .zoedepth_model import ZoeDepthModel
 
 
 def main():

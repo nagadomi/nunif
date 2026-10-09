@@ -1,20 +1,23 @@
-from abc import ABCMeta, abstractmethod
 import contextlib
-from nunif.utils.ui import HiddenPrints, TorchHubDir
-from nunif.models.data_parallel import DeviceSwitchInference
-from nunif.models.utils import compile_model
 import os
 import pickle
+from abc import ABCMeta, abstractmethod
+
 import torch
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision.transforms import functional as TF
+
 from nunif.device import create_device
+from nunif.models.data_parallel import DeviceSwitchInference
+from nunif.models.utils import compile_model
+from nunif.utils.ui import HiddenPrints, TorchHubDir
+
 from .depth_scaler import EMAMinMaxScaler
 from .hub_dir import HUB_MODEL_DIR
 
 
-class _CompileContext():
+class _CompileContext:
     def __init__(self, base_model):
         self.base_model = base_model
 
@@ -126,7 +129,7 @@ class BaseDepthModel(metaclass=ABCMeta):
 
         self.model = self.model.to(self.device).eval()
 
-        if (isinstance(gpu, (list, tuple)) and len(gpu) > 1):
+        if isinstance(gpu, (list, tuple)) and len(gpu) > 1:
             if self.multi_gpu_supported(self.model_type):
                 self.model = DeviceSwitchInference(self.model, device_ids=gpu)
             else:
@@ -201,7 +204,7 @@ class BaseDepthModel(metaclass=ABCMeta):
             png_info.update(iw3_max_depth_value=float(max_depth_value))
 
         depth = torch.clamp(depth, 0, 1)
-        depth_int = (0xffff * depth).to(torch.uint16).squeeze(0).cpu().numpy()
+        depth_int = (0xFFFF * depth).to(torch.uint16).squeeze(0).cpu().numpy()
         metadata = PngInfo()
         for k, v in png_info.items():
             metadata.add_text(k, str(v))
@@ -224,7 +227,7 @@ class BaseDepthModel(metaclass=ABCMeta):
 
             depth = TF.pil_to_tensor(im)
             if depth.dtype != torch.float32:
-                depth = torch.clamp(depth.to(torch.float32) / 0xffff, 0, 1)
+                depth = torch.clamp(depth.to(torch.float32) / 0xFFFF, 0, 1)
             if depth.shape[0] != 1:
                 depth = torch.mean(depth, dim=0, keepdim=True)
 

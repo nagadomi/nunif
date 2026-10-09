@@ -1,24 +1,24 @@
-import random
 import os
+import random
 from os import path
+
 import torch
-import torch.nn.functional as F
-from torch.utils.data.dataset import Dataset
 import torchvision.transforms as T
+from torch.utils.data.dataset import Dataset
 from torchvision.transforms import (
     functional as TF,
 )
+
+from iw3.dilation import dilate_inner, dilate_outer
+from nunif.training.sampler import HardExampleSampler, MiningMethod
 from nunif.utils.image_loader import ImageLoader
 from nunif.utils.pil_io import load_image_simple
-from nunif.training.sampler import HardExampleSampler, MiningMethod
-from iw3.dilation import dilate_outer, dilate_inner
-
 
 SIZE = 256  # % 8 == 0
 SEQ = 12
 
 
-class RightDilate():
+class RightDilate:
     def __init__(self, max_step=20, p=0.5):
         self.max_step = max_step
         self.p = p
@@ -30,7 +30,7 @@ class RightDilate():
         return mask
 
 
-class LeftDilate():
+class LeftDilate:
     def __init__(self, max_step=4, p=0.25):
         self.max_step = max_step
         self.p = p
@@ -42,7 +42,7 @@ class LeftDilate():
         return mask
 
 
-class RandomColorJitter():
+class RandomColorJitter:
     def __call__(self, x):
         if random.uniform(0, 1) < 0.5:
             return x
@@ -67,7 +67,7 @@ class RandomColorJitter():
 def crop(images, i, j, h, w):
     results = []
     for im in images:
-        results.append(im[:, :, i:i + h, j:j + w])
+        results.append(im[:, :, i : i + h, j : j + w])
 
     return tuple(results)
 
@@ -94,7 +94,7 @@ def center_crop(size, *images):
     h, w = images[0].shape[-2:]
     h_i = (h - size) // 2
     w_i = (w - size) // 2
-    return tuple([im[:, :, h_i:h_i + size, w_i: w_i + size] for im in images])
+    return tuple([im[:, :, h_i : h_i + size, w_i : w_i + size] for im in images])
 
 
 def fixed_hard_example_crop(size, *images):
@@ -157,7 +157,7 @@ class VideoInpaintDataset(Dataset):
         else:
             start_i = (len(files) - seq) // 2
 
-        return files[start_i:start_i + seq], masks[start_i:start_i + seq]
+        return files[start_i : start_i + seq], masks[start_i : start_i + seq]
 
     def create_sampler(self, num_samples):
         return HardExampleSampler(
@@ -165,7 +165,7 @@ class VideoInpaintDataset(Dataset):
             num_samples=num_samples,
             method=MiningMethod.LINEAR,
             history_size=4,
-            scale_factor=4.,
+            scale_factor=4.0,
         )
 
     def worker_init(self, worker_id):
@@ -190,11 +190,14 @@ class VideoInpaintDataset(Dataset):
             x, mask = fixed_hard_example_crop(SIZE, x, mask)
 
         y = x.clone()
-        y = y[:, :,
-              self.model_offset: self.model_offset + (y.shape[-2] - self.model_offset * 2),
-              self.model_offset: self.model_offset + (y.shape[-1] - self.model_offset * 2)]
+        y = y[
+            :,
+            :,
+            self.model_offset : self.model_offset + (y.shape[-2] - self.model_offset * 2),
+            self.model_offset : self.model_offset + (y.shape[-1] - self.model_offset * 2),
+        ]
         if self.model_sequence_offset > 0:
-            y = y[self.model_sequence_offset:-self.model_sequence_offset]
+            y = y[self.model_sequence_offset : -self.model_sequence_offset]
 
         mask = mask > 0
 

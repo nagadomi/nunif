@@ -1,9 +1,11 @@
 # Measure the ratio of white pixels and black pixels in a mask image
 # black/white is about 900
 import argparse
-from nunif.utils.image_loader import ImageLoader
-from torchvision.io import read_image
 import random
+
+from torchvision.io import read_image
+
+from nunif.utils.image_loader import ImageLoader
 
 
 def main():
@@ -20,7 +22,7 @@ def main():
     for fn in files:
         x = read_image(fn).float().sum(dim=0)
         fg_count = (x > 0).sum().item()
-        bg_count = (x.numel() - fg_count)
+        bg_count = x.numel() - fg_count
 
         fg_sum += fg_count
         bg_sum += bg_count

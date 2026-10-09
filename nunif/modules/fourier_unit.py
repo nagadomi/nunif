@@ -3,25 +3,31 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm as _spectral_norm
 
-
 # NOTE: This module does not support export to ONNX (at 2023-04, rfftn and irfftn)
 
 
 class FourierUnit(nn.Module):
-    """ From LaMa: Resolution-robust Large Mask Inpainting with Fourier Convolutions
-             https://github.com/advimman/lama
-             Fast Fourier Convolution
-             https://github.com/pkumivision/FFC
+    """From LaMa: Resolution-robust Large Mask Inpainting with Fourier Convolutions
+    https://github.com/advimman/lama
+    Fast Fourier Convolution
+    https://github.com/pkumivision/FFC
     """
-    def __init__(self, in_channels, out_channels,
-                 norm_layer=lambda dim: nn.BatchNorm2d(dim),
-                 activation_layer=lambda dim: nn.ReLU(inplace=True),
-                 spectral_norm=False, bias=False, residual=True, size=None):
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        norm_layer=lambda dim: nn.BatchNorm2d(dim),
+        activation_layer=lambda dim: nn.ReLU(inplace=True),
+        spectral_norm=False,
+        bias=False,
+        residual=True,
+        size=None,
+    ):
         super().__init__()
 
         self.size = size
-        self.conv = torch.nn.Conv2d(in_channels * 2, out_channels * 2,
-                                    kernel_size=1, stride=1, padding=0, bias=bias)
+        self.conv = torch.nn.Conv2d(in_channels * 2, out_channels * 2, kernel_size=1, stride=1, padding=0, bias=bias)
         if spectral_norm:
             self.conv = _spectral_norm(self.conv)
         self.act = activation_layer(out_channels * 2)
@@ -71,10 +77,15 @@ class FourierUnit(nn.Module):
 
 
 def FourierUnitSNLReLU(in_channels, out_channels, residual=True):
-    return FourierUnit(in_channels, out_channels,
-                       norm_layer=lambda dim: nn.Identity(),
-                       activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
-                       spectral_norm=True, bias=True, residual=residual)
+    return FourierUnit(
+        in_channels,
+        out_channels,
+        norm_layer=lambda dim: nn.Identity(),
+        activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
+        spectral_norm=True,
+        bias=True,
+        residual=residual,
+    )
 
 
 if __name__ == "__main__":

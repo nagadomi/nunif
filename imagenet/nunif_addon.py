@@ -11,4 +11,5 @@ class ImageNetAddon(Addon):
 
     def register_train(self, subparsers, default_parser):
         from .training.trainer import register
+
         return register(subparsers, default_parser)

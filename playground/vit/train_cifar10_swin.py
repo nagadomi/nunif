@@ -1,23 +1,24 @@
 # SwinTransformer with torchvision.models
 # 93.7% accuracy on CIFAR10 using only CIFAR10 training data,
 # python3 -m playground.vit.train_cifar10_swin --data-dir ./tmp/vit --model-dir ./tmp/vit
-from torchvision.models import SwinTransformer
-from torchvision.datasets import CIFAR10
-from torchvision import transforms as T
-from torchvision.transforms import functional as TF
 import torch
 from torch.nn import functional as F
+from torchvision import transforms as T
+from torchvision.datasets import CIFAR10
+from torchvision.models import SwinTransformer
+from torchvision.transforms import functional as TF
+
+import nunif.transforms as NT
 from nunif.models import SoftmaxBaseModel
 from nunif.training.env import SoftmaxEnv
 from nunif.training.trainer import Trainer, create_trainer_default_parser
-import nunif.transforms as NT
 
 
 def normalize(x):
     return (x - 0.5) * 2
 
 
-class Normalize():
+class Normalize:
     def __call__(self, x):
         return normalize(x)
 
@@ -30,30 +31,31 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         super().__init__()
         self.train = train
         if train:
-            t1 = T.Compose([
-                T.RandomCrop((24, 24)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            t2 = T.Compose([
-                T.RandomCrop((26, 26)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            t3 = T.Compose([
-                T.RandomCrop((28, 28)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            t4 = T.Compose([
-                T.RandomCrop((30, 30)),
-                T.Resize((IMG_SIZE, IMG_SIZE))])
-            transform = T.Compose([
-                T.RandomChoice([NT.Identity(),
-                                T.Compose([
+            t1 = T.Compose([T.RandomCrop((24, 24)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            t2 = T.Compose([T.RandomCrop((26, 26)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            t3 = T.Compose([T.RandomCrop((28, 28)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            t4 = T.Compose([T.RandomCrop((30, 30)), T.Resize((IMG_SIZE, IMG_SIZE))])
+            transform = T.Compose(
+                [
+                    T.RandomChoice(
+                        [
+                            NT.Identity(),
+                            T.Compose(
+                                [
                                     NT.ReflectionResize((38, 38)),
                                     T.RandomPerspective(distortion_scale=0.15, p=1),
-                                    T.CenterCrop((32, 32))])]),
-                T.RandomChoice([t1, t2, t3, t4]),
-                T.RandomHorizontalFlip(),
-                T.RandomGrayscale(p=0.1),
-                T.ToTensor(),
-                Normalize(),
-            ])
+                                    T.CenterCrop((32, 32)),
+                                ]
+                            ),
+                        ]
+                    ),
+                    T.RandomChoice([t1, t2, t3, t4]),
+                    T.RandomHorizontalFlip(),
+                    T.RandomGrayscale(p=0.1),
+                    T.ToTensor(),
+                    Normalize(),
+                ]
+            )
         else:
             # TTA at __getitem__
             transform = None
@@ -63,14 +65,13 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
         return len(self.cifar10)
 
     def sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def show(self, im):
-        from nunif.utils.pil_io import to_cv2
         import cv2
+
+        from nunif.utils.pil_io import to_cv2
+
         cv2.imshow("debug", to_cv2(im))
         cv2.waitKey(0)
 
@@ -88,8 +89,7 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
             return x, y
 
 
-CIFAR10_CLASS_NAMES = ('plane', 'car', 'bird', 'cat',
-                       'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+CIFAR10_CLASS_NAMES = ("plane", "car", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck")
 
 
 class VIT(SoftmaxBaseModel):
@@ -123,7 +123,7 @@ class CIFAR10Trainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = CIFAR10Dataset(self.args.data_dir, train=True)
             loader = torch.utils.data.DataLoader(
@@ -133,7 +133,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=True)
+                drop_last=True,
+            )
             return loader
         else:
             dataset = CIFAR10Dataset(self.args.data_dir, train=False)
@@ -143,7 +144,8 @@ class CIFAR10Trainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
 
     def create_env(self):
@@ -163,7 +165,7 @@ def main():
         warmup_epoch=2,
         warmup_learning_rate=1e-7,
         max_epoch=200,
-        disable_amp=False
+        disable_amp=False,
     )
     args = parser.parse_args()
     trainer = CIFAR10Trainer(args)

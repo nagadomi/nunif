@@ -1,10 +1,11 @@
 # merge 2 models
+import argparse
 import os
 from os import path
-import argparse
-from .. models import load_model, save_model
-from .. models.utils import merge_state_dict
-from .. addon import load_addons
+
+from ..addon import load_addons
+from ..models import load_model, save_model
+from ..models.utils import merge_state_dict
 
 
 def main():

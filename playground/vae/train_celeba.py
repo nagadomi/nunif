@@ -1,21 +1,22 @@
 # Conv VAE
 # python3 -m playground.vae.train_celeba --data-dir ./tmp/vae --model-dir ./tmp/vae --latent-dim 2
-from torchvision.datasets import CelebA
-from torchvision import transforms as T
-from torchvision.transforms import functional as TF
-from torchvision.utils import make_grid
+from os import path
+
 import torch
 from torch import nn
 from torch.nn import functional as F
-from os import path
-from nunif.models import Model, get_model_device
+from torchvision import transforms as T
+from torchvision.datasets import CelebA
+from torchvision.transforms import functional as TF
+from torchvision.utils import make_grid
+
 import nunif.modules.vae as VF
+from nunif.models import Model, get_model_device
+from nunif.modules import ClampLoss, LBPLoss, LuminanceWeightedLoss
+from nunif.modules.embedding import PositionalSeeding
+from nunif.modules.res_block import ResBlockSELReLU, ResGroup
 from nunif.training.env import UnsupervisedEnv
 from nunif.training.trainer import Trainer, create_trainer_default_parser
-from nunif.modules.res_block import ResBlockSELReLU, ResGroup
-from nunif.modules.embedding import PositionalSeeding
-from nunif.modules import ClampLoss, LBPLoss, LuminanceWeightedLoss
-
 
 IMAGE_SIZE = 64
 
@@ -23,28 +24,28 @@ IMAGE_SIZE = 64
 class CelebADataset(torch.utils.data.Dataset):
     def __init__(self, root, split="train"):
         super().__init__()
-        transform = T.Compose([
-            T.CenterCrop((160, 160)),
-            T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-            T.RandomAutocontrast(1),
-            T.RandomHorizontalFlip(),
-            T.ToTensor(),
-        ])
-        self.celeba = CelebA(root, split, target_type="bbox",
-                             transform=transform, download=True)
+        transform = T.Compose(
+            [
+                T.CenterCrop((160, 160)),
+                T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+                T.RandomAutocontrast(1),
+                T.RandomHorizontalFlip(),
+                T.ToTensor(),
+            ]
+        )
+        self.celeba = CelebA(root, split, target_type="bbox", transform=transform, download=True)
 
     def __len__(self):
         return len(self.celeba)
 
     def sampler(self, num_samples):
-        return torch.utils.data.sampler.RandomSampler(
-            self,
-            num_samples=num_samples,
-            replacement=True)
+        return torch.utils.data.sampler.RandomSampler(self, num_samples=num_samples, replacement=True)
 
     def show(self, im):
-        from nunif.utils.pil_io import to_cv2
         import cv2
+
+        from nunif.utils.pil_io import to_cv2
+
         cv2.imshow("debug", to_cv2(im))
         cv2.waitKey(0)
 
@@ -77,7 +78,8 @@ class Encoder(nn.Module):
             nn.Flatten(),
             nn.Linear(256 * 8 * 8, feat_dim),
             nn.ReLU(inplace=True),
-            nn.Linear(feat_dim, feat_dim))
+            nn.Linear(feat_dim, feat_dim),
+        )
 
     def forward(self, x):
         return self.net(x)
@@ -87,9 +89,9 @@ class Up2x(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1,
-                      padding=1, padding_mode="replicate"),
-            nn.LeakyReLU(0.2, inplace=True))
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, padding_mode="replicate"),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
 
     def forward(self, x):
         return self.conv(F.interpolate(x, scale_factor=2, mode="nearest"))
@@ -102,15 +104,18 @@ class Decoder(nn.Module):
         self.up1 = nn.Sequential(
             # 8x8
             ResGroup(256, 256, num_layers=2, stride=1, layer=res_block),
-            Up2x(256))
+            Up2x(256),
+        )
         self.up2 = nn.Sequential(
             # 16x16
             ResGroup(256, 128, num_layers=2, stride=1, layer=res_block),
-            Up2x(128))
+            Up2x(128),
+        )
         self.up3 = nn.Sequential(
             # 32x32
             ResGroup(128, 64, num_layers=2, stride=1, layer=res_block_nose),
-            Up2x(64))
+            Up2x(64),
+        )
         # 64x64
         self.final_conv = nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1, padding_mode="replicate")
 
@@ -137,7 +142,7 @@ class ConvVAE(Model):
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
@@ -233,7 +238,7 @@ class VAETrainer(Trainer):
         return model
 
     def create_dataloader(self, type):
-        assert (type in {"train", "eval"})
+        assert type in {"train", "eval"}
         if type == "train":
             dataset = CelebADataset(self.args.data_dir, split="train")
             loader = torch.utils.data.DataLoader(
@@ -243,7 +248,8 @@ class VAETrainer(Trainer):
                 shuffle=False,
                 pin_memory=True,
                 num_workers=self.args.num_workers,
-                drop_last=False)
+                drop_last=False,
+            )
             return loader
         else:
             return None
@@ -264,7 +270,7 @@ def main():
         learning_rate=0.00025,
         learning_rate_decay=0.985,
         optimizer="adam",
-        disable_amp=False
+        disable_amp=False,
     )
     args = parser.parse_args()
     trainer = VAETrainer(args)

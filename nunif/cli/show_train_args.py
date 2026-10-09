@@ -1,9 +1,10 @@
 # python -m nunif.cli.show_train_args -i models/photo_gan/*checkpoint.pth
-import torch
 import argparse
-from .. models import load_model
-from .. addon import load_addons
 from pprint import pprint
+
+import torch
+
+from ..addon import load_addons
 
 
 def main():

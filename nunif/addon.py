@@ -1,9 +1,10 @@
 import os
 from os import path
+
 # TODO: train
 
 
-class Addon():
+class Addon:
     def __init__(self, name):
         self.name = name
 
@@ -29,9 +30,7 @@ def load_addon(addon_dir):
 
 def load_addons(addon_dirs=None):
     if addon_dirs is None:
-        search_dirs = [
-            path.join(path.dirname(__file__), ".."),
-            path.join(path.dirname(__file__), "..", "playground")]
+        search_dirs = [path.join(path.dirname(__file__), ".."), path.join(path.dirname(__file__), "..", "playground")]
         addon_dirs = []
         for root_dir in search_dirs:
             for subdir in os.listdir(root_dir):

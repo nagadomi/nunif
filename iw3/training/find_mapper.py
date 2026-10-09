@@ -1,19 +1,20 @@
-import torch
-import matplotlib.pyplot as plt
 import math
+
+import matplotlib.pyplot as plt
+import torch
 
 
 def softplus01_old(x, c):
     min_v = math.log(1 + math.exp(0 * 12.0 - c)) / (12 - c)
     max_v = math.log(1 + math.exp(1 * 12.0 - c)) / (12 - c)
-    v = torch.log(1. + torch.exp(x * 12.0 - c)) / (12 - c)
+    v = torch.log(1.0 + torch.exp(x * 12.0 - c)) / (12 - c)
     return (v - min_v) / (max_v - min_v)
 
 
 def softplus01(x, bias, scale):
     min_v = math.log(1 + math.exp((0 - bias) * scale))
     max_v = math.log(1 + math.exp((1 - bias) * scale))
-    v = torch.log(1. + torch.exp((x - bias) * scale))
+    v = torch.log(1.0 + torch.exp((x - bias) * scale))
     return (v - min_v) / (max_v - min_v)
 
 
@@ -25,7 +26,7 @@ def inv_softplus01(x, bias, scale):
 
 
 def hardplus(x, scale):
-    threshold = (1.0 - (1.0 / scale))
+    threshold = 1.0 - (1.0 / scale)
     index = threshold <= x
     y = torch.zeros_like(x)
     y[index] = (x[index] - threshold) * scale
@@ -101,7 +102,7 @@ def find_softplus_v2_main():
 
 def find_softplus_mul_main():
     def find_softplus(mul_scale, margin=0.2):
-        threshold = (1.0 - (1.0 / mul_scale))
+        threshold = 1.0 - (1.0 / mul_scale)
         threshold += threshold * margin
         x = torch.linspace(threshold, 1, 1000)
         y = hardplus(x, mul_scale)
@@ -153,7 +154,7 @@ def check_find_softplus_mul_main():
 
 def find_inv_softplus_main():
     def find_inv_softplus(softplus_bias, softplus_scale, mul_scale, margin=0.2):
-        threshold = (1.0 - (1.0 / mul_scale))
+        threshold = 1.0 - (1.0 / mul_scale)
         threshold += threshold * margin
         error_scale2 = (1.0 - threshold) / threshold
         x = torch.linspace(0, 1, 1000)
@@ -271,5 +272,5 @@ if __name__ == "__main__":
     # check_find_softplus_mul_main()
     # find_inv_softplus_main()
     # check_find_inv_softplus_main()
-    #check_distance_to_disparity_main()
+    # check_distance_to_disparity_main()
     check_shift_relative_depth_main()

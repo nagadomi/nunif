@@ -1,6 +1,7 @@
 import argparse
-from .. models import load_model
-from .. addon import load_addons
+
+from ..addon import load_addons
+from ..models import load_model
 
 
 def main():
