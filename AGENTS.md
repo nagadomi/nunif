@@ -31,8 +31,8 @@
   - Do NOT use numbered step comments (e.g., `1. step 1`, `2. step 2`), as they easily become out of sync during modifications.
   - If existing comments become inconsistent with updated code, update or remove them.
 - **Lint & Formatting**:
-  - Run `ruff check --fix <file>` and `ruff format <file>` on changed or created files only.
-  - Do NOT run `ruff` across the entire repository or untouched files, as existing code may not be formatted and will produce large unintended diffs.
+  - The codebase is fully formatted and linted with `ruff`. Ensure changed or created files conform to `ruff check --fix <file>` and `ruff format <file>`.
+  - The repository includes `.git-blame-ignore-revs` to ignore bulk formatting commits. Enable it locally with `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 - **Type Hints**:
   - Add type hints to newly created code and newly added/heavily modified functions. Do not retroactively add type hints to untouched existing code to avoid unnecessary diffs.
   - Use modern Python 3.12 syntax, such as PEP 604 union types (`int | None` instead of `Optional[int]`/`Union[int, None]`) and built-in generics (`list[str]`, `dict[str, Any]`).
