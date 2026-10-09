@@ -1,10 +1,10 @@
 --extra-index-url https://download.pytorch.org/whl/cu126
 
 # Linux
-torch==2.12.1+cu126; sys_platform == "linux"
-torchvision==0.27.1+cu126; sys_platform == "linux"
+torch==2.14.1+cu126; sys_platform == "linux"
+torchvision==0.29.1+cu126; sys_platform == "linux"
 
 # Windows
-torch==2.12.1+cu126; sys_platform == "win32"
-torchvision==0.27.1+cu126; sys_platform == "win32"
-triton-windows~=3.7.1.0; sys_platform == "win32"
+torch==2.14.1+cu126; sys_platform == "win32"
+torchvision==0.29.1+cu126; sys_platform == "win32"
+triton-windows>=3.8.0,<3.9.0; sys_platform == "win32"

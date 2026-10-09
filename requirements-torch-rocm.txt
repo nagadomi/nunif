@@ -1,4 +1,4 @@
 --extra-index-url https://download.pytorch.org/whl/rocm7.2
 
-torch==2.12.1+rocm7.2
-torchvision==0.27.1+rocm7.2
+torch==2.14.1+rocm7.2
+torchvision==0.29.1+rocm7.2
