@@ -94,10 +94,15 @@ def ordered_index_copy(c, src_index, dest_index, index_order, undefined_value=-1
     else:
         out = torch.empty_like(c).fill_(undefined_value)
 
-    indices = dest_index[index_order]
+    # Deterministically resolve "last write wins" without global torch.use_deterministic_algorithms
+    ordered_dest = dest_index[index_order]
+    pos = torch.arange(ordered_dest.numel(), device=c.device)
+    best_pos = torch.full((out.shape[0],), -1, dtype=torch.long, device=c.device)
+    best_pos.scatter_reduce_(0, ordered_dest, pos, reduce="amax", include_self=False)
+
+    valid = best_pos >= 0
     src_values = c[src_index[index_order]]
-    indices = indices.unsqueeze(-1).expand_as(src_values)
-    out.scatter_(0, indices, src_values)
+    out[valid] = src_values[best_pos[valid]]
 
     return out.view(B, H, W, -1).permute(0, 3, 1, 2)
 
@@ -393,7 +398,7 @@ def _bench():
     print(f"GPU Max Memory Allocated {max_vram_mb}MB")
 
 
-def _test_nonwarp_mask():
+def _test_nonwarp_mask(save_path: str | None = None):
     # https://github.com/user-attachments/assets/69ea87ff-4f01-40d2-abd7-477bfe368df6
     import torchvision.io as io
     import torchvision.transforms.functional as TF
@@ -411,7 +416,11 @@ def _test_nonwarp_mask():
 
     x = x.mean(dim=1, keepdim=True)
     x = torch.cat([x, mask, torch.zeros_like(mask)], dim=1)[0]
-    TF.to_pil_image(x).show()
+    im = TF.to_pil_image(x)
+    if save_path:
+        im.save(save_path)
+    else:
+        im.show()
 
 
 def _test_aspect():
