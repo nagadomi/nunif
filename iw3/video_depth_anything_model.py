@@ -357,7 +357,7 @@ def _test():
     model.enable_ema(0.99)
     model.load(gpu=0)
     model.compile()
-    im = Image.open("cc0/320/dog.png").convert("RGB")
+    im = Image.open("tests/images/dog_448.png").convert("RGB")
     x = TF.to_tensor(im).unsqueeze(0).to(model.device)
     reset_pts = set([i + N // 2 for i in range(N // 2) if random.uniform(0, 1) < 0.1])
     outputs = []

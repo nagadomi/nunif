@@ -173,7 +173,7 @@ def _test():
 
     model = VideoDepthAnythingStreamingModel("VDA_Stream_S")
     model.load(gpu=0)
-    im = Image.open("cc0/320/dog.png").convert("RGB")
+    im = Image.open("tests/images/dog_448.png").convert("RGB")
     x = TF.to_tensor(im).to(model.device)
     out = model.infer(x)
     print(out.shape)

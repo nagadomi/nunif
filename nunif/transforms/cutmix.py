@@ -86,23 +86,27 @@ class CutMix:
         return cutmix(a, b, mask_min=self.mask_min, mask_max=self.mask_max, rotate_p=self.rotate_p, blur_p=self.blur_p)
 
 
-if __name__ == "__main__":
+def _test():
     import time
 
-    a = Image.open("cc0/bottle.jpg")
-    b = Image.open("cc0/lighthouse.jpg")
+    a = Image.open("tests/images/bottle_448.png")
+    b = Image.open("tests/images/lighthouse_448.png")
 
-    if False:
-        for i in range(10):
+    if True:
+        for i in range(2):
             out = cutmix(a, b)
             out.show()
-            time.sleep(1)
+            time.sleep(2)
 
     if True:
         # transform = CutMix(blur_p=1)
         # transform = CutMix(rotate_p=1)
         transform = CutMix()
-        for i in range(10):
+        for i in range(2):
             out = transform(b)
             out.show()
-            time.sleep(1)
+            time.sleep(2)
+
+
+if __name__ == "__main__":
+    _test()

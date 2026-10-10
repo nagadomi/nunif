@@ -222,12 +222,15 @@ def _test_image():
     import torchvision.io as io
     import torchvision.transforms.functional as TF
 
+    from iw3.dilation import dilate_edge
+
     model = MLBWInpaintImage().cuda()
-    x = io.read_image("cc0/320/dog.png") / 255.0
-    depth = io.read_image("cc0/depth/dog.png") / 65536.0
+    x = io.read_image("tests/images/dog_448.png") / 255.0
+    depth = io.read_image("tests/images/depth/dog_448.png") / 65536.0
 
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
+    depth = dilate_edge(depth, 2)
 
     with torch.autocast(device_type="cuda"), torch.inference_mode():
         left_eye, right_eye = model.infer(x, depth, divergence=2.0, convergence=1.0, synthetic_view="right")
@@ -245,8 +248,8 @@ def _test_video(pre_padding=3, post_padding=3):
     import torchvision.io as io
 
     model = MLBWInpaintVideo(pre_padding=pre_padding, post_padding=post_padding).cuda()
-    x = io.read_image("cc0/320/dog.png") / 255.0
-    depth = io.read_image("cc0/depth/dog.png") / 65536.0
+    x = io.read_image("tests/images/dog_448.png") / 255.0
+    depth = io.read_image("tests/images/depth/dog_448.png") / 65536.0
 
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()

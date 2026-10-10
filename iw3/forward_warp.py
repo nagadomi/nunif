@@ -406,8 +406,8 @@ def _test_nonwarp_mask(save_path: str | None = None):
     from .dilation import mask_closing
 
     view = "right"  # left
-    x = io.read_image("cc0/320/dog.png") / 255.0
-    depth = io.read_image("cc0/depth/dog.png") / 65536.0
+    x = io.read_image("tests/images/dog_448.png") / 255.0
+    depth = io.read_image("tests/images/depth/dog_448.png") / 65536.0
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
@@ -426,14 +426,14 @@ def _test_nonwarp_mask(save_path: str | None = None):
 def _test_aspect():
     import torchvision.io as io
 
-    x = io.read_image("cc0/518/lighthouse.png") / 255.0
-    depth = io.read_image("cc0/518/depth/lighthouse.png") / 65536.0
+    x = io.read_image("tests/images/lighthouse_448.png") / 255.0
+    depth = io.read_image("tests/images/depth/lighthouse_448.png") / 65536.0
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
     D = 4.0
 
-    sx = 84
-    ex = 518 - 84
+    sx = 5 * 14
+    ex = 448 - sx
 
     for method in ["forward_fill"]:
         view, _ = apply_divergence_forward_warp(

@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
+
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init
 from nunif.modules.pad import get_pad_size
-from nunif.modules.reflection_pad2d import reflection_pad2d_naive
 from nunif.modules.permute import window_partition2d
-
+from nunif.modules.reflection_pad2d import reflection_pad2d_naive
 
 C1 = 32
 C2 = 64
@@ -18,10 +18,7 @@ FEAT_DIMS = [C2, C3, C4, C5]
 RANDOM_PROJECTION_DIM = 64
 # TODO: uplaod
 
-CHECKPOINT_URL = {
-    "art": "../dino/models/l4sn_v3/l4sn.pth",
-    "photo": "../dino/models/l4sn_photo_v1/l4sn.pth"
-}
+CHECKPOINT_URL = {"art": "../dino/models/l4sn_v3/l4sn.pth", "photo": "../dino/models/l4sn_photo_v1/l4sn.pth"}
 
 
 def normalize(x):
@@ -46,12 +43,12 @@ class L4SNFeature(nn.Module):
         self.l3 = nn.Sequential(
             spectral_norm(nn.Conv2d(C3, C4, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
-            spectral_norm(nn.Conv2d(C4, C4, kernel_size=3, stride=1, padding=1, bias=False))
+            spectral_norm(nn.Conv2d(C4, C4, kernel_size=3, stride=1, padding=1, bias=False)),
         )
         self.l4 = nn.Sequential(
             spectral_norm(nn.Conv2d(C4, C5, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
-            spectral_norm(nn.Conv2d(C5, C5, kernel_size=3, stride=1, padding=1, bias=False))
+            spectral_norm(nn.Conv2d(C5, C5, kernel_size=3, stride=1, padding=1, bias=False)),
         )
         basic_module_init(self)
 
@@ -122,7 +119,7 @@ def overlap_window_sliced_wasserstein(input, target, window_size=8):
     pad = window_size // 2
     if input.shape[2] % window_size != 0:
         assert input.shape[2] == input.shape[3]
-        rem = (window_size - input.shape[2] % window_size)
+        rem = window_size - input.shape[2] % window_size
         pad1 = rem // 2
         pad2 = rem - pad1
         input2 = reflection_pad2d_naive(input, (pad1 + pad, pad2 + pad, pad1 + pad, pad2 + pad), detach=True)
@@ -141,12 +138,14 @@ def overlap_window_sliced_wasserstein(input, target, window_size=8):
 
 class L4SNLoss(nn.Module):
     def __init__(
-            self,
-            activation=True,
-            loss_weights=[0.5, 0.3, 1.0, 0.8],
-            avg_weight=1.0,
-            swd_weight=0, swd_indexes=[0, 1], swd_window_size=8,
-            model_type="art",
+        self,
+        activation=True,
+        loss_weights=[0.5, 0.3, 1.0, 0.8],
+        avg_weight=1.0,
+        swd_weight=0,
+        swd_indexes=[0, 1],
+        swd_window_size=8,
+        model_type="art",
     ):
         super().__init__()
         assert all(0 <= i <= 3 for i in swd_indexes)
@@ -198,14 +197,19 @@ class L4SNLoss(nn.Module):
             f1 = F.conv2d(f1, weight=weight, bias=None, stride=1)
             f2 = F.conv2d(f2, weight=weight, bias=None, stride=1)
             if self.avg_weight > 0:
-                f1 = f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False) * self.avg_weight
-                f2 = f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False) * self.avg_weight
+                f1 = (
+                    f1 + F.avg_pool2d(f1, kernel_size=3, stride=1, padding=1, count_include_pad=False) * self.avg_weight
+                )
+                f2 = (
+                    f2 + F.avg_pool2d(f2, kernel_size=3, stride=1, padding=1, count_include_pad=False) * self.avg_weight
+                )
             loss = loss + F.l1_loss(f1, f2) * self.loss_weights[i]
 
             if self.swd_weight > 0 and i in self.swd_indexes:
-                swd_loss = swd_loss + overlap_window_sliced_wasserstein(
-                    f1, f2, window_size=self.swd_window_size
-                ) * self.loss_weights[i]
+                swd_loss = (
+                    swd_loss
+                    + overlap_window_sliced_wasserstein(f1, f2, window_size=self.swd_window_size) * self.loss_weights[i]
+                )
 
         feat_loss = loss / (len(f1s) * (1 + self.avg_weight))
         swd_loss = swd_loss / len(self.swd_indexes)
@@ -237,7 +241,7 @@ class L4SNWith(nn.Module):
 def _test_grad():
     import torchvision.io as io
 
-    y = io.read_image("cc0/320/dog.png") / 255.0
+    y = io.read_image("tests/images/dog_448.png") / 255.0
     y = y.unsqueeze(0)
     x = y + (torch.rand_like(y) * 0.1)
     x.requires_grad_(True)
@@ -259,6 +263,7 @@ def _test_grad():
 
 def _test():
     import torch
+
     device = "cuda:0"
     model = L4SN().to(device)
     x = torch.zeros((1, 3, 256, 256)).to(device)

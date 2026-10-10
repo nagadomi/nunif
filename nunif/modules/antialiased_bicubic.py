@@ -33,9 +33,9 @@ def _find_sigma():
     import torchvision.io as io
 
     xs = (
-        (io.read_image("cc0/320/bottle.png") / 256).unsqueeze(0),
-        (io.read_image("cc0/320/dog.png") / 256).unsqueeze(0),
-        (io.read_image("cc0/320/light_house.png") / 256).unsqueeze(0),
+        (io.read_image("tests/images/bottle_448.png") / 256).unsqueeze(0),
+        (io.read_image("tests/images/dog_448.png") / 256).unsqueeze(0),
+        (io.read_image("tests/images/lighthouse_448.png") / 256).unsqueeze(0),
     )
 
     for downscale_factor in [2, 4]:

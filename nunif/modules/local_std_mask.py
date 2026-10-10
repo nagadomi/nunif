@@ -25,7 +25,7 @@ def _test():
     import torchvision.io as io
     import torchvision.transforms.functional as TF
 
-    x = io.read_image("cc0/320/light_house.png") / 255.0
+    x = io.read_image("tests/images/lighthouse_448.png") / 255.0
     z = compute_local_std_mask(x.unsqueeze(0)).squeeze(0)
     TF.to_pil_image(z).show()
 

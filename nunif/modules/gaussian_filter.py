@@ -146,7 +146,7 @@ def _test_vis():
     import torchvision.transforms.functional as TF
 
     blur = GaussianFilter2d(3, kernel_size=7, padding=3)
-    x = (io.read_image("cc0/320/dog.png") / 256).unsqueeze(0)
+    x = (io.read_image("tests/images/dog_448.png") / 256).unsqueeze(0)
     x = blur(x)
     TF.to_pil_image(x[0]).show()
 

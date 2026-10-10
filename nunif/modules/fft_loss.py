@@ -183,7 +183,7 @@ def _test():
 def _test_grad():
     import torchvision.io as io
 
-    y = io.read_image("cc0/320/dog.png") / 255.0
+    y = io.read_image("tests/images/dog_448.png") / 255.0
     y = y.unsqueeze(0)
     x = y + (torch.rand_like(y) * 0.5)
     x.requires_grad_(True)

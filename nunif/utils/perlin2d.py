@@ -177,7 +177,7 @@ def _test_3d():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    im = IO.read_image("cc0/320/dog.png") / 255.0
+    im = IO.read_image("tests/images/dog_448.png") / 255.0
     print(im.shape)
 
     torch.manual_seed(1)
@@ -202,14 +202,16 @@ def _test_3d():
     noise = noise.expand(T, 3, S, S)
 
     image_list = [TF.to_pil_image(torch.clamp(im + noise[i] * 0.1, 0, 1)) for i in range(noise.shape[0])]
+    output_path = path.join("tmp", "perlin3d.gif")
     image_list[0].save(
-        path.join("tmp", "perlin3d.gif"),
+        output_path,
         format="gif",
         append_images=image_list,
         save_all=True,
         duration=1000 / 30,
         loop=1,
     )
+    print("output", output_path)
 
 
 if __name__ == "__main__":

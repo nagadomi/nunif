@@ -196,7 +196,7 @@ def _test_lut():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    x = IO.read_image("cc0/320/dog.png") / 255.0
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
     lut = load_hdr2sdr_lut("pq2bt709")
     x = apply_lut(x, lut)
     TF.to_pil_image(torch.clamp(x, 0, 1)).show()

@@ -396,14 +396,14 @@ def _test_rotate():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    x = IO.read_image("cc0/dog2.jpg") / 255.0
-    x = x[:, :256, :256].unsqueeze(0)
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
+    x = x.unsqueeze(0)
     # TF.to_pil_image(x[0]).show()
     print(x.shape)
 
     z = diff_rotate(x, 45, expand=False)
     TF.to_pil_image(z[0]).show()
-    time.sleep(0.5)
+    time.sleep(2)
 
     z = diff_rotate(x, 45, expand=False, padding_mode="reflection")
     TF.to_pil_image(z[0]).show()
@@ -412,7 +412,7 @@ def _test_rotate():
     z = diff_random_rotate(x, padding_mode="reflection")
     for i in range(4):
         TF.to_pil_image(z[i]).show()
-        time.sleep(1)
+        time.sleep(2)
 
 
 def _test_translate():
@@ -421,14 +421,14 @@ def _test_translate():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    x = IO.read_image("cc0/dog2.jpg") / 255.0
-    x = x[:, :256, :256].unsqueeze(0)
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
+    x = x.unsqueeze(0)
 
     x = x.repeat(4, 1, 1, 1)
     z = diff_random_translate(x, padding_mode="reflection")
     for i in range(4):
         TF.to_pil_image(z[i]).show()
-        time.sleep(1)
+        time.sleep(2)
 
 
 def _test_translate_random():
@@ -437,15 +437,15 @@ def _test_translate_random():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    x = IO.read_image("cc0/dog2.jpg") / 255.0
-    x = x[:, :256, :256].unsqueeze(0)
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
+    x = x.unsqueeze(0)
     x = x.repeat(4, 1, 1, 1)
 
     z1, z2 = diff_random_translate_pair(x, x, padding_mode="zeros", expand=True)
     for i in range(4):
         assert (z1 - z2).abs().sum() == 0
         TF.to_pil_image(z1[i]).show()
-        time.sleep(1)
+        time.sleep(2)
 
 
 def _bench_random_rotate_pair():
@@ -478,12 +478,12 @@ def _test_compose():
             )
         ]
     )
-    x = IO.read_image("cc0/dog2.jpg") / 255.0
-    x = x[:, :256, :256].unsqueeze(0)
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
+    x = x.unsqueeze(0)
     for _ in range(5):
         x, y = transform(x, x)
         TF.to_pil_image(x[0]).show()
-        time.sleep(1)
+        time.sleep(2)
 
 
 if __name__ == "__main__":

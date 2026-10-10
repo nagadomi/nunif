@@ -234,7 +234,7 @@ def _test_mask():
     import torchvision.transforms.functional as TF
 
     model = MonoBW().cuda()
-    depth = io.read_image("cc0/depth/dog.png") / 65535.0
+    depth = io.read_image("tests/images/depth/dog_448.png") / 65535.0
     depth = depth.cuda().unsqueeze(0)
     depth_low_res = F.interpolate(
         depth, size=(depth.shape[-2] // 2, depth.shape[-1] // 2), mode="bilinear", align_corners=False

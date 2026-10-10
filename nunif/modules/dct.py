@@ -111,7 +111,7 @@ def _test():
     import torchvision.io as IO
     from dctorch.functional import dct2, idct2
 
-    x = (IO.read_image("cc0/320/dog.png") / 256.0).unsqueeze(0)
+    x = (IO.read_image("tests/images/dog_448.png") / 256.0).unsqueeze(0)
     my_dct2 = DCT2((x.shape[2], x.shape[3]))
     my_idct2 = IDCT2((x.shape[2], x.shape[3]))
 
@@ -130,7 +130,7 @@ def _test_window_dct():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    src = IO.read_image("cc0/320/dog.png") / 256.0
+    src = IO.read_image("tests/images/dog_448.png") / 256.0
     dct = WindowDCT(window_size=8)
     idct = ChannelIDCT(3 * 8**2, 3, window_size=8, project=False)
 

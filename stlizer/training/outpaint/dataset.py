@@ -153,7 +153,7 @@ def _test():
 
     import torchvision.io as io
 
-    src = io.read_image("cc0/320/dog.png") / 255.0
+    src = io.read_image("tests/images/dog_448.png") / 255.0
     for _ in range(4):
         x, mask = apply_random_mask(src)
         TF.to_pil_image(x).show()

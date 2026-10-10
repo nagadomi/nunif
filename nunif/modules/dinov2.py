@@ -290,7 +290,7 @@ def _test_grad():
 
     from .lbp_loss import YRGBLBP
 
-    y = io.read_image("cc0/320/dog.png") / 255.0
+    y = io.read_image("tests/images/dog_448.png") / 255.0
     y = y[:, :256, :256]
     y = y.unsqueeze(0)
     x = y + (torch.rand_like(y) * 0.5)

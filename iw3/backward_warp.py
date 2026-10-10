@@ -593,8 +593,8 @@ def _test_nonwarp_mask():
 
     model = create_stereo_model("mask_mlbw_l2", divergence=10, device_id=0)
 
-    x = io.read_image("cc0/320/dog.png") / 255.0
-    depth = io.read_image("cc0/depth/dog.png") / 65536.0
+    x = io.read_image("tests/images/dog_448.png") / 255.0
+    depth = io.read_image("tests/images/depth/dog_448.png") / 65536.0
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
 
@@ -610,14 +610,14 @@ def _test_aspect():
     from . import models  # noqa
     from .stereo_model_factory import create_stereo_model
 
-    x = io.read_image("cc0/518/lighthouse.png") / 255.0
-    depth = io.read_image("cc0/518/depth/lighthouse.png") / 65536.0
+    x = io.read_image("tests/images/lighthouse_448.png") / 255.0
+    depth = io.read_image("tests/images/depth/lighthouse_448.png") / 65536.0
     x = x.unsqueeze(0).cuda()
     depth = depth.unsqueeze(0).cuda()
     D = 4.0
 
-    sx = 84
-    ex = 518 - 84
+    sx = 5 * 14
+    ex = 448 - sx
 
     for method in ["row_flow_v3", "mlbw_l2", "mask_mlbw_l2"]:
         model = create_stereo_model(method, divergence=D, device_id=0)

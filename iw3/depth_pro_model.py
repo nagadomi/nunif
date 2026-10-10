@@ -256,18 +256,17 @@ def _bench():
 
 
 def _test():
-    import cv2
-    import numpy as np
     from PIL import Image
 
     model = DepthProModel("DepthPro")
     model.load(gpu=0)
-    im = Image.open("cc0/dog2.jpg").convert("RGB")
+    im = Image.open("tests/images/dog_448.png").convert("RGB")
     out = batch_infer(
-        model.get_model(), im, flip_aug=False, int16=True, enable_amp=True, output_device="cpu", device="cuda"
+        model.get_model(), im, force_disparity=True, flip_aug=False, enable_amp=True, output_device="cpu", device="cuda"
     )
-    out = out.squeeze(0).numpy().astype(np.uint16)
-    cv2.imwrite("./tmp/depth_pro_out.png", out)
+    out = (out - out.min()) / ((out.max() - out.min()) + 1e-5)
+    out = (0xFFFF * out).to(torch.uint16).squeeze(0).cpu().numpy()
+    Image.fromarray(out).save("./tmp/depth_pro_out.png")
 
 
 if __name__ == "__main__":

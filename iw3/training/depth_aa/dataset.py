@@ -125,7 +125,7 @@ class DepthAADataset(Dataset):
 def _test():
     import time
 
-    src, _ = load_image_simple("cc0/320/dog.png", color="rgb")
+    src, _ = load_image_simple("tests/images/dog_448.png", color="rgb")
     src = TF.to_grayscale(src)
     # gen = GenerateTrainingPair()
     gen = GenerateValidationPair()

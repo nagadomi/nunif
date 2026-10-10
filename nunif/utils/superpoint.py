@@ -398,9 +398,9 @@ def _visualize():
     import torchvision.transforms.functional as TF
     from PIL import ImageDraw
 
-    x1 = IO.read_image("cc0/dog2.jpg") / 255.0
-    x1 = x1[:, :250, :250]
-    x2 = TF.pad(TF.resize(TF.rotate(x1, 30), (200, 200)), (25,) * 4)
+    x1 = IO.read_image("tests/images/dog_448.png") / 255.0
+    x1 = x1[:, :320, :320]
+    x2 = TF.pad(TF.resize(TF.rotate(x1, 30), (270, 270)), (25,) * 4)
     # x2 = TF.rotate(x1, 180)  # This will not result in {scale = 1, rotate = 180}, but {scale = -1, rotate=0}
     # x2 = F.pad(x1, [-25, 25, -5, 5])
 
@@ -459,7 +459,7 @@ def _benchmark():
     B = 8
     N = 100
 
-    x = IO.read_image("cc0/dog2.jpg") / 255.0
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
     x = x[:, :256, :256].unsqueeze(0).repeat(B, 1, 1, 1).cuda()
     model = SuperPoint().load().cuda()
 

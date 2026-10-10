@@ -105,7 +105,7 @@ def _test_vis():
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    x = IO.read_image("cc0/dog2.jpg") / 255.0
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
     x = x[:, :256, :256].unsqueeze(0)
 
     padding = [32] * 4
@@ -115,6 +115,7 @@ def _test_vis():
     TF.to_pil_image(my_pad(x)[0]).show()
     time.sleep(1)
     TF.to_pil_image(nn_pad(x)[0]).show()
+    time.sleep(1)
 
 
 def _test_grad():
@@ -138,14 +139,17 @@ def _test_grad():
 
 
 def _vis_loop():
+    import time
+
     import torchvision.io as IO
     import torchvision.transforms.functional as TF
 
-    x = IO.read_image("cc0/dog2.jpg") / 255.0
+    x = IO.read_image("tests/images/dog_448.png") / 255.0
     x = x[:, :256, :256].unsqueeze(0)
 
     x = reflection_pad2d_loop(x, (640, -10, 320, -10))
     TF.to_pil_image(x[0]).show()
+    time.sleep(1)
 
 
 def _vis_loop2():
@@ -168,6 +172,7 @@ def _vis_loop2():
 
     x = reflection_pad2d_loop(x, (10,) * 4)
     TF.to_pil_image(x[0]).show()
+    time.sleep(1)
 
 
 def _test_loop():
