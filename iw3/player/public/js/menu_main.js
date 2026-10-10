@@ -24,6 +24,7 @@ class MainMenu {
         this.setupControlRow();
         this.setupSliderRow();
         this.setupTimeRow();
+        this.setupSpeedMenu(defaultFont);
         this.setupFooterRow(); // Status info (FPS, Time, Battery)
     }
 
@@ -33,6 +34,25 @@ class MainMenu {
             width: '100%', paddingLeft: 10, paddingRight: 10, marginTop: 4,
         });
         this.container.add(this.footerRow);
+
+        const u = this.uiManager;
+        const toggleSpeed = (e) => {
+            if (!u.visible) return;
+            e.stopPropagation?.();
+            UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
+            u.switchSubMenu(this.speedMenu);
+        };
+        this.speedReadout = new Container({
+            width: 56, height: 24, borderRadius: 6, cursor: 'pointer',
+            alignItems: 'center', justifyContent: 'center',
+            hover: { backgroundColor: COLORS.hover },
+            onPointerDown: (e) => { if (e.button === 2) toggleSpeed(e); },
+            onClick: (e) => { if (e.button !== 2) toggleSpeed(e); }
+        });
+        this.speedReadoutText = new Text({ text: '1.0x', fontSize: 16, color: COLORS.textDim });
+        this.speedReadout.add(this.speedReadoutText);
+        this.footerRow.add(this.speedReadout);
+        this.footerRow.add(new Container({ flexGrow: 1 }));
 
         const statusGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 10, });
         this.footerRow.add(statusGroup);
@@ -166,6 +186,184 @@ class MainMenu {
         volGroup.add(this.volumeSeekBar);
     }
 
+    setupSpeedMenu(defaultFont) {
+        const u = this.uiManager;
+        const popup = new Container({
+            display: 'none', position: 'absolute',
+            marginLeft: UI_CONFIG.menuMarginLeft, marginTop: UI_CONFIG.menuMarginTop,
+            width: 400, padding: 16, gap: 16, flexDirection: 'column',
+            backgroundColor: COLORS.bg, backgroundOpacity: 0.95,
+            borderRadius: 16, borderWidth: 2, borderColor: COLORS.border,
+            fontFamily: defaultFont
+        });
+        this.speedMenu = { container: popup, onClose: () => this.cancelSpeedBoundEdit() };
+        const row = new Container({
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+            gap: 8, width: '100%', height: 48
+        });
+
+        const button = (text, action, width = 48, label = null) => {
+            const control = new Container({
+                width, height: 48, borderRadius: 12, backgroundColor: COLORS.button,
+                alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                hover: { backgroundColor: COLORS.hover }, active: { backgroundColor: COLORS.accent },
+                onPointerEnter: (e) => {
+                    if (u.visible) UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u);
+                },
+                onClick: (e) => {
+                    if (!this.isSpeedMenuActive()) return;
+                    UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
+                    return action();
+                }
+            });
+            control.add(label || new Text({ text, fontSize: 22, color: COLORS.text }));
+            return control;
+        };
+        const header = new Container({ flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%' });
+        this.speedValueText = new Text({ text: 'Speed 1.0x', fontSize: 20, color: COLORS.text });
+        header.add(this.speedValueText);
+        header.add(new Container({ flexGrow: 1 }));
+        this.speedDefaults = button('', () => {
+            this.cancelSpeedBoundEdit();
+            return u.restorePlaybackSpeedDefaults();
+        }, 48, new Image({ src: 'icons/restore.svg', width: 22, height: 22, color: COLORS.text }));
+        header.add(this.speedDefaults);
+        this.speedReset = button('1x', () => u.resetPlaybackSpeed(), 48);
+        header.add(this.speedReset);
+        this.speedClose = button('X', () => u.switchSubMenu(null), 40);
+        header.add(this.speedClose);
+        popup.add(header);
+        popup.add(row);
+        const step = (direction) => {
+            u.playbackSpeed.step(direction);
+            return u.setPlaybackSpeed(u.playbackSpeed.rate);
+        };
+        this.speedMinus = button('-', () => step(-1));
+        row.add(this.speedMinus);
+        this.speedTrack = new Container({
+            width: 240, height: 16, flexDirection: 'row', alignItems: 'center',
+            backgroundColor: COLORS.track, borderRadius: 8, cursor: 'pointer', overflow: 'visible',
+            onPointerDown: (e) => {
+                if (u.visible) UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u);
+            },
+            onClick: (e) => {
+                if (!this.isSpeedMenuActive()) return;
+                UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
+                u.handlePlaybackSpeed(e, this.speedTrack, true);
+            },
+            onPointerMove: (e) => { if (this.isSpeedMenuActive() && e.buttons > 0) u.handlePlaybackSpeed(e, this.speedTrack, false); },
+            onPointerUp: () => { if (this.isSpeedMenuActive()) u.saveSettings(); },
+            onPointerLeave: (e) => { if (this.isSpeedMenuActive() && e.buttons > 0) u.saveSettings(); }
+        });
+        this.speedThumb = new Container({ width: 24, height: 24, backgroundColor: COLORS.thumb, borderRadius: 12, borderWidth: 1.5, borderColor: 0xffffff });
+        this.speedTrack.add(this.speedThumb);
+        row.add(this.speedTrack);
+        this.speedPlus = button('+', () => step(1));
+        row.add(this.speedPlus);
+
+        const boundsRow = new Container({ flexDirection: 'row', gap: 8, width: '100%' });
+        popup.add(boundsRow);
+        this.speedBoundFields = {};
+        this.speedBoundTexts = {};
+        for (const bound of ['min', 'max']) {
+            const group = new Container({ flexDirection: 'column', gap: 4, width: 172 });
+            group.add(new Text({ text: bound === 'min' ? 'Min' : 'Max', fontSize: 16, color: COLORS.textDim }));
+            const label = new Text({ text: String(u.playbackSpeed[bound]), fontSize: 20, color: COLORS.text });
+            this.speedBoundTexts[bound] = label;
+            this.speedBoundFields[bound] = button('', () => this.editSpeedBound(bound), 172, label);
+            group.add(this.speedBoundFields[bound]);
+            boundsRow.add(group);
+        }
+
+        this.speedKeypad = new Container({ display: 'none', flexDirection: 'column', gap: 8, width: '100%' });
+        popup.add(this.speedKeypad);
+        this.speedInputText = new Text({ text: '', fontSize: 20, color: COLORS.text, width: '100%' });
+        this.speedKeypad.add(this.speedInputText);
+        this.speedKeyButtons = {};
+        for (const keys of [['7', '8', '9', 'Back'], ['4', '5', '6', 'Clear'], ['1', '2', '3', 'Cancel'], ['0', '.', 'OK']]) {
+            const keyRow = new Container({ flexDirection: 'row', gap: 8, width: '100%' });
+            this.speedKeypad.add(keyRow);
+            for (const key of keys) {
+                const keyButton = button(key, () => this.handleSpeedKey(key), key === 'OK' ? 172 : 82);
+                this.speedKeyButtons[key] = keyButton;
+                keyRow.add(keyButton);
+            }
+        }
+        if (typeof window !== 'undefined') {
+            // Capture before InputManager's bubbling shortcut listeners, including in XR.
+            const options = { capture: true, signal: u.abortController?.signal };
+            for (const type of ['keydown', 'keyup']) {
+                window.addEventListener(type, (e) => this.handleSpeedKeyboard(e), options);
+            }
+        }
+    }
+
+    handleSpeedKeyboard(e) {
+        if (!this.isSpeedMenuActive() || !this.speedBoundEdit) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.type !== 'keydown') return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+            this.speedBoundEdit.replace = true;
+            return;
+        }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const key = { Enter: 'OK', Escape: 'Cancel', Backspace: 'Back', Delete: 'Clear' }[e.key] || e.key;
+        return this.handleSpeedKey(key);
+    }
+
+    isSpeedMenuActive() {
+        return this.uiManager.visible && this.uiManager.activeSubMenu === this.speedMenu;
+    }
+
+    editSpeedBound(bound) {
+        if (!this.isSpeedMenuActive()) return;
+        const applied = this.uiManager.setPlaybackSpeed(this.uiManager.playbackSpeed[bound]);
+        this.speedBoundEdit = { bound, text: String(this.uiManager.playbackSpeed[bound]), replace: true };
+        this.speedKeypad.setProperties({ display: 'flex' });
+        this.updateSpeedInputText();
+        return applied;
+    }
+
+    updateSpeedInputText() {
+        const edit = this.speedBoundEdit;
+        this.speedInputText.setProperties({ text: `${edit.bound === 'min' ? 'Min' : 'Max'}: ${edit.text || '_'}` });
+    }
+
+    cancelSpeedBoundEdit() {
+        this.speedBoundEdit = null;
+        this.speedKeypad.setProperties({ display: 'none' });
+    }
+
+    async handleSpeedKey(key) {
+        if (!this.isSpeedMenuActive() || !this.speedBoundEdit) return;
+        const edit = this.speedBoundEdit;
+        if (key === 'Cancel') {
+            this.cancelSpeedBoundEdit();
+            return;
+        }
+        if (key === 'OK') {
+            const value = /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(edit.text) ? Number(edit.text) : NaN;
+            const speed = this.uiManager.playbackSpeed;
+            if (await this.uiManager.setPlaybackSpeedBounds(edit.bound === 'min' ? value : speed.min,
+                edit.bound === 'max' ? value : speed.max)) {
+                if (this.speedBoundEdit === edit) this.cancelSpeedBoundEdit();
+                this.sync({});
+            } else {
+                this.uiManager.showNotification('Use 0.01 to 100; Min < Max');
+            }
+            return;
+        }
+        if (key === 'Clear') edit.text = '';
+        else if (key === 'Back') edit.text = edit.text.slice(0, -1);
+        else if (/^[0-9.]$/.test(key)) {
+            if (edit.replace) edit.text = '';
+            if (key !== '.' || !edit.text.includes('.')) edit.text += key;
+        } else return;
+        edit.replace = false;
+        this.updateSpeedInputText();
+    }
+
     setupTimeRow() {
         this.timeRow = new Container({
             flexDirection: 'row',
@@ -206,6 +404,19 @@ class MainMenu {
     }
 
     sync(params) {
+        const speed = this.uiManager.playbackSpeed;
+        const speedKey = `${speed.rate}/${speed.min}/${speed.max}`;
+        if (this._lastSpeedKey !== speedKey) {
+            const displayRate = Number(speed.rate.toPrecision(4));
+            const rateText = Number.isInteger(displayRate) ? displayRate.toFixed(1) : String(displayRate);
+            this.speedValueText.setProperties({ text: `Speed ${rateText}x` });
+            this.speedReadoutText.setProperties({ text: `${rateText}x` });
+            this.speedBoundTexts.min.setProperties({ text: String(speed.min) });
+            this.speedBoundTexts.max.setProperties({ text: String(speed.max) });
+            const percent = Math.max(0, Math.min(1, (speed.rate - speed.min) / (speed.max - speed.min)));
+            this.speedThumb.setProperties({ marginLeft: percent * (240 - 24) });
+            this._lastSpeedKey = speedKey;
+        }
         if (params.slowMetricsUpdated) {
             const now = new Date();
             const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
