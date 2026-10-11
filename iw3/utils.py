@@ -116,7 +116,6 @@ HALF_RGBD_SUFFIX = "_HRGBD"  # TODO
 
 VR180_SUFFIX = "_180x180_LR"
 ANAGLYPH_SUFFIX = "_redcyan"
-DEBUG_SUFFIX = "_debug"
 
 # SMB Invalid characters
 # Linux SMB replaces file names with random strings if they contain these invalid characters
@@ -143,8 +142,6 @@ def make_output_filename(input_filename, args, video=False):
         auto_detect_suffix = RGBD_SUFFIX
     elif args.half_rgbd:
         auto_detect_suffix = HALF_RGBD_SUFFIX
-    elif args.debug_depth:
-        auto_detect_suffix = DEBUG_SUFFIX
     else:
         auto_detect_suffix = FULL_SBS_SUFFIX
 
@@ -563,15 +560,6 @@ def postprocess_image(left_eye, right_eye, args):
     return sbs
 
 
-def debug_depth_image(depth, args):
-    depth = depth.float()
-    depth2 = get_mapper(args.mapper)(depth)
-    out = torch.cat([depth, depth2], dim=2).cpu()
-    out = out.repeat((3, 1, 1))
-
-    return out
-
-
 def process_image(
     x, args, depth_model, side_model, skip_autocrop=None, autocrop_uncrop=False, alpha=None, fill_color=0.0
 ):
@@ -622,9 +610,6 @@ def process_image(
                 depth_aa=args.depth_aa,
             )
             depth = depth_model.minmax_normalize_chw(depth)
-
-        if args.debug_depth:
-            return debug_depth_image(depth, args)
 
         if alpha is not None and args.anaglyph:
             x = x * alpha + 1.0 * (1.0 - alpha)
@@ -794,9 +779,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 assert torch.is_tensor(alpha)
                 alpha = alpha.to(args.state["device"])
 
-            if args.debug_depth:
-                out = debug_depth_image(depth, args)
-            elif args.rgbd or args.half_rgbd:
+            if args.rgbd or args.half_rgbd:
                 left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
                 out = postprocess_image(left_eye, right_eye, args)
             else:
@@ -825,11 +808,6 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                     out = [out]
                 else:
                     out = []
-
-            if pts in segment_pts and args.debug_depth:
-                for o in out:
-                    # debug red line
-                    o[0, 0:8, :] = 1.0
 
             for o in out:
                 yield o
@@ -1276,7 +1254,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
-    if args.low_vram or args.debug_depth:
+    if args.low_vram:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
             VU.process_video(
                 input_filename,
@@ -2394,9 +2372,6 @@ def create_parser(required_true=True):
     parser.add_argument("--keyframe", action="store_true", help="process only keyframe as image")
     parser.add_argument("--keyframe-interval", type=float, default=4.0, help="keyframe minimum interval (sec)")
     parser.add_argument("--vf", type=str, default="", help="video filter options for ffmpeg.")
-    parser.add_argument(
-        "--debug-depth", action="store_true", help="debug output normalized depthmap, info and preprocessed depth"
-    )
     parser.add_argument("--export", action="store_true", help="export depth, frame, audio")
     parser.add_argument(
         "--export-disparity",

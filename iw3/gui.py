@@ -414,7 +414,6 @@ class MainFrame(wx.Frame):
                 "Anaglyph",
                 "Export",
                 "Export disparity",
-                "Debug Depth",
             ],
             name="cbo_stereo_format",
         )
@@ -1276,8 +1275,6 @@ class MainFrame(wx.Frame):
             export_depth_only = None
             export_depth_fit = None
 
-        debug_depth = self.cbo_stereo_format.GetValue() == "Debug Depth"
-
         if self.cbo_pad.GetValue():
             pad = float(self.cbo_pad.GetValue())
         else:
@@ -1406,7 +1403,6 @@ class MainFrame(wx.Frame):
             export_disparity=export_disparity,
             export_depth_only=export_depth_only,
             export_depth_fit=export_depth_fit,
-            debug_depth=debug_depth,
             **ema_options,
             scene_detect=scene_detect,
             disable_scene_cache=disable_scene_cache,
