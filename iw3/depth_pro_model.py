@@ -77,7 +77,7 @@ def batch_infer(
     im,
     flip_aug=True,
     low_vram=False,
-    enable_amp=False,
+    enable_amp=True,
     output_device="cpu",
     device=None,
     edge_dilation=2,
