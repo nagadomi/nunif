@@ -7,11 +7,11 @@ from torchvision.transforms import functional as TF
 
 from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
 
-from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from ..base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from ..depth_scaler import EMAMinMaxScaler
+from ..dilation import dilate_edge, edge_dilation_is_enabled
+from ..models import DepthAA
 from .depth_anything_model import batch_preprocess
-from .depth_scaler import EMAMinMaxScaler
-from .dilation import dilate_edge, edge_dilation_is_enabled
-from .models import DepthAA
 
 NAME_MAP = {
     "Any_V3_Mono": "da3mono-large",

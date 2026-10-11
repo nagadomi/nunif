@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from PIL import Image
 from torchvision.transforms import functional as TF
 
-from .base_depth_model import BaseDepthModel
-from .dilation import dilate_edge, edge_dilation_is_enabled
+from ..base_depth_model import BaseDepthModel
+from ..dilation import dilate_edge, edge_dilation_is_enabled
 
 
 class NullDepth(nn.Module):

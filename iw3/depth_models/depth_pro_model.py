@@ -9,8 +9,8 @@ from torchvision.transforms import functional as TF
 
 from nunif.device import autocast, create_device, device_is_mps  # noqa
 
-from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
-from .dilation import dilate_edge, edge_dilation_is_enabled
+from ..base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from ..dilation import dilate_edge, edge_dilation_is_enabled
 
 NAME_MAP = {
     "DepthPro": 384,

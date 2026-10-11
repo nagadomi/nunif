@@ -1,11 +1,5 @@
+from . import depth_models  # noqa: F401
 from .base_depth_model import BaseDepthModel
-from .depth_anything_model import DepthAnythingModel  # noqa: F401
-from .depth_anything_v3_model import DepthAnythingV3MonoModel  # noqa: F401
-from .depth_pro_model import DepthProModel  # noqa: F401
-from .null_depth_model import NullDepthModel  # noqa: F401
-from .video_depth_anything_model import VideoDepthAnythingModel  # noqa: F401
-from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel  # noqa: F401
-from .zoedepth_model import ZoeDepthModel  # noqa: F401
 
 
 def create_depth_model(model_type: str) -> BaseDepthModel:

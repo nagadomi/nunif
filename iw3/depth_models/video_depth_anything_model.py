@@ -10,10 +10,10 @@ from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  
 from nunif.models.utils import compile_model
 from nunif.modules.reflection_pad2d import reflection_pad2d_naive
 
-from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from ..base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from ..dilation import dilate_edge, edge_dilation_is_enabled
+from ..models import DepthAA
 from .depth_anything_model import batch_preprocess as batch_preprocess_da
-from .dilation import dilate_edge, edge_dilation_is_enabled
-from .models import DepthAA
 
 NAME_MAP = {
     "VDA_S": "vits",

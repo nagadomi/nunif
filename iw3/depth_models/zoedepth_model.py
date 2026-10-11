@@ -9,8 +9,8 @@ from torchvision.transforms import functional as TF
 from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
 from nunif.modules.reflection_pad2d import reflection_pad2d_loop
 
-from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
-from .dilation import dilate_edge, edge_dilation_is_enabled
+from ..base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from ..dilation import dilate_edge, edge_dilation_is_enabled
 
 MODEL_FILES = {
     "ZoeD_N": path.join(HUB_MODEL_DIR, "checkpoints", "ZoeD_M12_N.pt"),

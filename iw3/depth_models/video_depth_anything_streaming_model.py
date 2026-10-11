@@ -8,8 +8,8 @@ from torchvision.transforms import functional as TF
 from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
 from nunif.models.utils import compile_model
 
-from .base_depth_model import HUB_MODEL_DIR, BaseDepthModel
-from .models import DepthAA
+from ..base_depth_model import HUB_MODEL_DIR, BaseDepthModel
+from ..models import DepthAA
 from .video_depth_anything_model import batch_preprocess, postprocess
 
 NAME_MAP = {
