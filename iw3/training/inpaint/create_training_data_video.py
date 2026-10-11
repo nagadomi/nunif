@@ -241,7 +241,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--max-fps", type=int, default=30, help="max sample fps")
     parser.add_argument("--num-samples", type=int, default=1, help="max random crops")
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
-    parser.add_argument("--model-type", type=str, default="ZoeD_Any_L", help="depth model")
+    parser.add_argument("--model-type", type=str, default="ZoeD_Any_N", help="depth model")
     parser.add_argument("--skip-interval", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--skip-first", type=int, default=0)

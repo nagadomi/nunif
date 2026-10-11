@@ -249,7 +249,7 @@ def register(subparsers, default_parser):
     parser.add_argument("--size", type=int, default=512, help="crop size")
     parser.add_argument("--num-samples", type=int, default=2, help="max random crops")
     parser.add_argument("--resolution", type=int, help="input resolution for depth model")
-    parser.add_argument("--model-type", type=str, default="ZoeD_Any_L", help="depth model")
+    parser.add_argument("--model-type", type=str, default="ZoeD_Any_N", help="depth model")
     parser.add_argument("--eval-only", action="store_true", help="Only generate eval")
     parser.add_argument(
         "--max-workers", type=int, default=max_workers, help="Number of worker threads. Set to 1 to disable."
