@@ -201,97 +201,128 @@ class VideoDepthAnythingModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        streaming: bool = False,
         **kwargs,
-    ) -> torch.Tensor:
-        # NOTE: DONT USE THIS
-        assert 0, "No longer reaching this block"
-
+    ) -> torch.Tensor | None:
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).unsqueeze(0).to(self.device)
+        assert torch.is_tensor(x)
 
-        batch = False
-        if x.ndim == 3:
-            x = x.unsqueeze(0)
-        else:
-            batch = True
-
-        self.reset()
-        x = batch_preprocess(
-            x, self.model.prep_lower_bound, metric_depth=self.model.metric_depth, limit_resolution=self.limit_resolution
-        )
-        self.model.infer(x[0], use_amp=enable_amp)
-        self.input_frame_count = 1
-        out = torch.stack(self._flush())
-        out = postprocess(
-            out,
-            edge_dilation=edge_dilation,
-            metric_depth=self.model.metric_depth,
-            force_disparity=self.force_disparity,
-            enable_amp=enable_amp,
-        )
-        if not batch:
-            out = out.squeeze(0)
-        self.reset()
-
-        return out
-
-    def infer_with_normalize(self, x, pts, reset_pts, enable_amp=True, edge_dilation=0, depth_aa=None, **kwargs):
-        assert x.ndim == 4
-        depth_aa = self.depth_aa if depth_aa else None
-
-        B = x.shape[0]
-        x = batch_preprocess(
-            x, self.model.prep_lower_bound, metric_depth=self.model.metric_depth, limit_resolution=self.limit_resolution
-        )
-        outputs = []
-        for i in range(B):
-            self.input_frame_count += 1
-            ret = self.model.infer(x[i], use_amp=enable_amp)
-            if ret is not None:
-                self.output_frame_count += len(ret)
+        if not streaming and x.shape[0] == 1:
+            # Standalone single image inference (tests, etc.)
+            self.reset_state()
+            x_in = batch_preprocess(
+                x,
+                self.model.prep_lower_bound,
+                metric_depth=self.model.metric_depth,
+                limit_resolution=self.limit_resolution,
+            )
+            self.model.infer(x_in[0], use_amp=enable_amp)
+            self.input_frame_count = 1
+            ret = self._flush(enable_amp=enable_amp)
+            if ret:
                 out = torch.stack(ret)
+                depth_aa_module = self.depth_aa if depth_aa else None
                 out = postprocess(
                     out,
                     edge_dilation=edge_dilation,
-                    depth_aa=depth_aa,
+                    depth_aa=depth_aa_module,
                     metric_depth=self.model.metric_depth,
                     force_disparity=self.force_disparity,
                     enable_amp=enable_amp,
                 )
+                self.reset_state()
+                return out.squeeze(0) if x.ndim == 3 else out
+            self.reset_state()
+            return None
+
+        # Streaming video inference (x is BCHW or CHW)
+        if x.ndim == 3:
+            x = x.unsqueeze(0)
+        B = x.shape[0]
+        x_in = batch_preprocess(
+            x,
+            self.model.prep_lower_bound,
+            metric_depth=self.model.metric_depth,
+            limit_resolution=self.limit_resolution,
+        )
+        depth_aa_module = self.depth_aa if depth_aa else None
+        ret_all = []
+        for i in range(B):
+            self.input_frame_count += 1
+            ret = self.model.infer(x_in[i], use_amp=enable_amp)
+            if ret is not None:
+                self.output_frame_count += len(ret)
+                ret_all += ret
+
+        if ret_all:
+            out = torch.stack(ret_all)
+            return postprocess(
+                out,
+                edge_dilation=edge_dilation,
+                depth_aa=depth_aa_module,
+                metric_depth=self.model.metric_depth,
+                force_disparity=self.force_disparity,
+                enable_amp=enable_amp,
+            )
+        return None
+
+    def flush(
+        self,
+        enable_amp: bool = True,
+        edge_dilation: int | tuple[int, int] = 0,
+        depth_aa: bool = False,
+        **kwargs,
+    ) -> torch.Tensor | None:
+        ret = self._flush(enable_amp=enable_amp)
+        if ret:
+            out = torch.stack(ret)
+            depth_aa_module = self.depth_aa if depth_aa else None
+            return postprocess(
+                out,
+                edge_dilation=edge_dilation,
+                depth_aa=depth_aa_module,
+                metric_depth=self.model.metric_depth,
+                force_disparity=self.force_disparity,
+                enable_amp=enable_amp,
+            )
+        return None
+
+    def infer_with_normalize(self, x, pts, reset_pts, enable_amp=True, edge_dilation=0, depth_aa=None, **kwargs):
+        assert x.ndim == 4
+        depth_aa_bool = bool(depth_aa)
+        B = x.shape[0]
+        outputs = []
+        for i in range(B):
+            out = self.infer(
+                x[i : i + 1],
+                enable_amp=enable_amp,
+                edge_dilation=edge_dilation,
+                depth_aa=depth_aa_bool,
+                streaming=True,
+            )
+            if out is not None:
                 for j in range(out.shape[0]):
                     normalized_depth = self.minmax_normalize_chw(out[j])
                     if normalized_depth is not None:
                         outputs.append(normalized_depth)
             if pts[i] in reset_pts:
                 outputs += self.flush_with_normalize(
-                    enable_amp=enable_amp, edge_dilation=edge_dilation, depth_aa=depth_aa
+                    enable_amp=enable_amp, edge_dilation=edge_dilation, depth_aa=depth_aa_bool
                 )
                 self.reset()
-        if outputs:
-            return outputs
-        else:
-            return []
+        return outputs
 
     def flush_with_normalize(self, enable_amp=True, edge_dilation=0, depth_aa=None):
-        if isinstance(depth_aa, bool):
-            depth_aa = self.depth_aa if depth_aa else None
+        depth_aa_bool = bool(depth_aa)
         outputs = []
-        ret = self._flush(enable_amp=enable_amp)
-        if ret:
-            out = torch.stack(ret)
-            out = postprocess(
-                out,
-                edge_dilation=edge_dilation,
-                depth_aa=depth_aa,
-                metric_depth=self.model.metric_depth,
-                force_disparity=self.force_disparity,
-                enable_amp=enable_amp,
-            )
+        out = self.flush(enable_amp=enable_amp, edge_dilation=edge_dilation, depth_aa=depth_aa_bool)
+        if out is not None:
             for i in range(out.shape[0]):
                 normalized_depth = self.minmax_normalize_chw(out[i])
                 if normalized_depth is not None:
                     outputs.append(normalized_depth)
-            outputs += self.flush_minmax_normalize()
+        outputs += self.flush_minmax_normalize()
         return outputs
 
     def _flush(self, enable_amp=True):
@@ -317,6 +348,9 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
     def is_image_supported(self):
         return False
+
+    def is_streaming(self):
+        return True
 
     @classmethod
     def has_checkpoint_file(cls, model_type):
@@ -368,17 +402,24 @@ def _test():
     N = 111
 
     model = VideoDepthAnythingModel("VDA_S")
-    model.enable_ema(0.99)
+    model.enable_ema(decay=0.99, buffer_size=10)
     model.load(gpu=0)
-    model.compile()
+    # model.compile()
     im = Image.open("tests/images/dog_448.png").convert("RGB")
     x = TF.to_tensor(im).unsqueeze(0).to(model.device)
     reset_pts = set([i + N // 2 for i in range(N // 2) if random.uniform(0, 1) < 0.1])
     outputs = []
     for i in range(N):
-        out = model.infer_with_normalize(x, [i], reset_pts=reset_pts)
-        outputs += out
-    outputs += model.flush_with_normalize()
+        depth = model.infer(x, streaming=True)
+        outputs += model.minmax_normalize(depth)
+        if i in reset_pts:
+            flush_depth = model.flush()
+            outputs += model.minmax_normalize(flush_depth)
+            outputs += model.flush_minmax_normalize()
+            model.reset()
+    flush_depth = model.flush()
+    outputs += model.minmax_normalize(flush_depth)
+    outputs += model.flush_minmax_normalize()
 
     assert len(outputs) == N
     print(len(outputs), outputs[0].shape)

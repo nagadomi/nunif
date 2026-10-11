@@ -847,7 +847,15 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
 
         if frame is None:
             # flush
-            yield from _postprocess(depth_model.flush_minmax_normalize(), flush=True)
+            depths = []
+            flush_depth = depth_model.flush(
+                enable_amp=not args.disable_amp,
+                edge_dilation=args.edge_dilation,
+                depth_aa=args.depth_aa,
+            )
+            depths += depth_model.minmax_normalize(flush_depth)
+            depths += depth_model.flush_minmax_normalize()
+            yield from _postprocess(depths, flush=True)
             return
 
         offload_dtype = VU.get_source_dtype(frame)
@@ -884,13 +892,19 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             enable_amp=not args.disable_amp,
             edge_dilation=args.edge_dilation,
             depth_aa=args.depth_aa,
+            streaming=depth_model.is_streaming(),
         )
-        depth = depth_model.minmax_normalize_chw(depth)
-        depths = [depth] if depth is not None else []
         flush = frame.pts in segment_pts
+        depths = depth_model.minmax_normalize(depth)
         if flush:
+            flush_depth = depth_model.flush(
+                enable_amp=not args.disable_amp,
+                edge_dilation=args.edge_dilation,
+                depth_aa=args.depth_aa,
+            )
+            depths += depth_model.minmax_normalize(flush_depth)
             depths += depth_model.flush_minmax_normalize()
-            depth_model.reset_state()
+            depth_model.reset()
 
         yield from _postprocess(depths, flush=flush)
 
@@ -1082,119 +1096,6 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     return _cuda_stream_wrapper, _preprocess
 
 
-def bind_vda_frame_callback(depth_model, side_model, segment_pts, args):
-    src_queue = []
-    batch_queue = []
-    pts_queue = []
-    offload_dtype = None
-    device = args.state["device"]
-    frame_cpu_offload = device.type not in {"cpu", "mps"}
-    offload_resource_manager = None
-    if args.cuda_stream:
-        offload_stream = create_stream(device)
-    else:
-        offload_stream = None
-
-    depth_model.reset()
-
-    def _postprocess(depth_list, flush=False):
-        if args.debug_depth:
-            for depth in depth_list:
-                out = debug_depth_image(depth, args)
-                _, pts = src_queue.pop(0)
-                if pts in segment_pts:
-                    out[0, 0:8, :] = 1.0
-                yield out
-        else:
-            for depths in chunks(depth_list, args.batch_size):
-                depths = torch.stack(depths)
-                x_pts = [src_queue.pop(0) for _ in range(len(depths))]
-                reset_pts = [pts in segment_pts for _, pts in x_pts]
-                x_srcs = []
-                for x, _ in x_pts:
-                    if isinstance(x, VU.OffloadedFrame):
-                        x = x.load(device=device)
-                    elif isinstance(x, av.VideoFrame):
-                        x = VU.to_tensor(x, device=device)
-                    assert torch.is_tensor(x)
-                    x_srcs.append(x)
-                x_srcs = torch.stack(x_srcs)
-                if args.rgbd or args.half_rgbd:
-                    left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
-                else:
-                    left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
-                if left_eyes is not None:
-                    for i in range(left_eyes.shape[0]):
-                        yield postprocess_image(left_eyes[i], right_eyes[i], args)
-
-        if flush and hasattr(side_model, "flush"):
-            left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
-            if left_eyes is not None:
-                for left_eye, right_eye in zip(left_eyes, right_eyes):
-                    yield postprocess_image(left_eye, right_eye, args)
-
-    def _batch_infer():
-        x = torch.stack(batch_queue)
-        depth_list = depth_model.infer_with_normalize(
-            x,
-            pts_queue,
-            segment_pts,
-            enable_amp=not args.disable_amp,
-            edge_dilation=args.edge_dilation,
-            depth_aa=args.depth_aa,
-        )
-
-        pts_queue.clear()
-        batch_queue.clear()
-
-        yield from _postprocess(depth_list)
-
-    @torch.inference_mode()
-    def frame_callback(frame):
-        nonlocal offload_dtype, offload_resource_manager
-
-        if frame is None:
-            # flush
-            if batch_queue:
-                yield from _batch_infer()
-            depth_list = depth_model.flush_with_normalize(
-                enable_amp=not args.disable_amp, edge_dilation=args.edge_dilation, depth_aa=args.depth_aa
-            )
-            yield from _postprocess(depth_list, flush=True)
-            return
-
-        if offload_dtype is None:
-            offload_dtype = VU.get_source_dtype(frame)
-            if offload_dtype == torch.uint16:
-                offload_dtype = torch.float16
-
-        x = VU.to_tensor(frame, device=device)
-        if frame_cpu_offload:
-            if isinstance(frame, av.VideoFrame):
-                src_queue.append((frame, frame.pts))
-            else:
-                if offload_resource_manager is None:
-                    offload_resource_manager = VU.OffloadResourceManager(
-                        size=x.shape,
-                        dtype=offload_dtype,
-                        device=x.device,
-                    )
-                offloaded_frame = VU.OffloadedFrame(
-                    x, dtype=offload_dtype, stream=offload_stream, manager=offload_resource_manager
-                )
-                src_queue.append((offloaded_frame, frame.pts))
-        else:
-            src_queue.append((x, frame.pts))
-
-        batch_queue.append(x)
-        pts_queue.append(frame.pts)
-
-        if len(batch_queue) == args.batch_size:
-            yield from _batch_infer()
-
-    return frame_callback
-
-
 def try_compile_context(side_model, enabled):
     if enabled and side_model is not None and hasattr(side_model, "compile_context"):
         return side_model.compile_context()
@@ -1241,7 +1142,6 @@ def save_scene_cache(video_path, segment_pts, args):
 
 def process_video_full(input_filename, output_path, args, depth_model, side_model):
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
-    is_video_depth_anything = depth_model.get_name() == "VideoDepthAnything"
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
@@ -1347,28 +1247,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
-    if is_video_depth_anything:
-        with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
-            VU.process_video(
-                input_filename,
-                output_filename,
-                config_callback=config_callback,
-                frame_callback=bind_vda_frame_callback(
-                    depth_model=depth_model, side_model=side_model, segment_pts=segment_pts, args=args
-                ),
-                vf=video_filter,
-                stop_event=args.state["stop_event"],
-                suspend_event=args.state["suspend_event"],
-                tqdm_fn=args.state["tqdm_fn"],
-                title=path.basename(input_filename),
-                start_time=args.start_time,
-                end_time=args.end_time,
-                device=args.state["device"],
-                hwaccel=args.hwaccel,
-                disable_software_fallback=args.disable_software_fallback,
-            )
-
-    elif args.low_vram or args.debug_depth:
+    if depth_model.is_streaming() or args.low_vram or args.debug_depth:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
             VU.process_video(
                 input_filename,
@@ -1759,16 +1638,47 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
 
     def _batch_infer():
         x = torch.stack(batch_queue)
-        reset_ema = [t in segment_pts for t in pts_queue]
-        depth_batch = depth_model.infer(
-            x,
-            tta=args.tta,
-            low_vram=args.low_vram,
-            enable_amp=not args.disable_amp,
-            edge_dilation=edge_dilation,
-            depth_aa=args.depth_aa,
-        )
-        depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+        if depth_model.is_streaming():
+            depth_list = []
+            for i in range(x.shape[0]):
+                out = depth_model.infer(
+                    x[i : i + 1],
+                    tta=args.tta,
+                    low_vram=args.low_vram,
+                    enable_amp=not args.disable_amp,
+                    edge_dilation=edge_dilation,
+                    depth_aa=args.depth_aa,
+                    streaming=True,
+                )
+                if out is not None:
+                    for d in out:
+                        normalized_depth = depth_model.minmax_normalize_chw(d)
+                        if normalized_depth is not None:
+                            depth_list.append(normalized_depth)
+                if pts_queue[i] in segment_pts:
+                    flush_depth = depth_model.flush(
+                        enable_amp=not args.disable_amp,
+                        edge_dilation=edge_dilation,
+                        depth_aa=args.depth_aa,
+                    )
+                    if flush_depth is not None:
+                        for d in flush_depth:
+                            normalized_depth = depth_model.minmax_normalize_chw(d)
+                            if normalized_depth is not None:
+                                depth_list.append(normalized_depth)
+                    depth_list += depth_model.flush_minmax_normalize()
+                    depth_model.reset()
+        else:
+            reset_ema = [t in segment_pts for t in pts_queue]
+            depth_batch = depth_model.infer(
+                x,
+                tta=args.tta,
+                low_vram=args.low_vram,
+                enable_amp=not args.disable_amp,
+                edge_dilation=edge_dilation,
+                depth_aa=args.depth_aa,
+            )
+            depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
 
         pts_queue.clear()
         batch_queue.clear()
@@ -1783,7 +1693,19 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
             # flush
             if batch_queue:
                 _batch_infer()
-            return _postprocess(depth_model.flush_minmax_normalize())
+            flush_depth_list = []
+            flush_depth = depth_model.flush(
+                enable_amp=not args.disable_amp,
+                edge_dilation=edge_dilation,
+                depth_aa=args.depth_aa,
+            )
+            if flush_depth is not None:
+                for d in flush_depth:
+                    normalized_depth = depth_model.minmax_normalize_chw(d)
+                    if normalized_depth is not None:
+                        flush_depth_list.append(normalized_depth)
+            flush_depth_list += depth_model.flush_minmax_normalize()
+            return _postprocess(flush_depth_list)
 
         x = VU.to_tensor(frame, device=device)
         batch_queue.append(x)
@@ -1810,105 +1732,6 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
             _batch_infer()
 
     return _frame_callback
-
-
-def bind_export_vda_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
-    src_queue = []
-    batch_queue = []
-    pts_queue = []
-    futures = []
-    device = args.state["device"]
-    offload_resource_manager = None
-
-    depth_model.reset()
-    if args.export_disparity:
-        edge_dilation = args.edge_dilation
-    else:
-        edge_dilation = 0
-
-    def _postprocess(depth_list):
-        for depth in depth_list:
-            x, x_shape, pts = src_queue.pop(0)
-
-            if args.export_disparity:
-                depth = get_mapper(args.mapper)(depth)
-            if args.export_depth_fit:
-                depth = TF.resize(
-                    depth, size=(x_shape[-2], x_shape[-1]), interpolation=InterpolationMode.BILINEAR, antialias=True
-                )
-            seq = str(pts).zfill(8)
-            futures.append(pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png")))
-            if not args.export_depth_only:
-                assert x is not None
-                if isinstance(x, VU.OffloadedFrame):
-                    im_numpy = x.cpu_buffer().permute(1, 2, 0).numpy()
-                elif isinstance(x, av.VideoFrame):
-                    im_numpy = x.reformat(format=VU.RGB_8BIT).to_ndarray(VU.RGB_8BIT)
-                im = Image.fromarray(im_numpy)
-                futures.append(pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png")))
-
-            if len(futures) >= IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures.clear()
-
-        return None
-
-    def _batch_infer():
-        x = torch.stack(batch_queue)
-
-        depth_list = depth_model.infer_with_normalize(
-            x,
-            pts_queue,
-            segment_pts,
-            enable_amp=not args.disable_amp,
-            edge_dilation=edge_dilation,
-            depth_aa=args.depth_aa,
-        )
-
-        pts_queue.clear()
-        batch_queue.clear()
-
-        return _postprocess(depth_list)
-
-    @torch.inference_mode()
-    def frame_callback(frame):
-        nonlocal offload_resource_manager
-
-        if frame is None:
-            # flush
-            if batch_queue:
-                _batch_infer()
-            depth_list = depth_model.flush_with_normalize(
-                enable_amp=not args.disable_amp, edge_dilation=edge_dilation, depth_aa=args.depth_aa
-            )
-            _postprocess(depth_list)
-        else:
-            x = VU.to_tensor(frame, device=device)
-            batch_queue.append(x)
-            pts_queue.append(frame.pts)
-
-            if args.export_depth_only:
-                src_queue.append((None, x.shape, frame.pts))
-            else:
-                if isinstance(frame, av.VideoFrame):
-                    src_queue.append((frame, x.shape, frame.pts))
-                else:
-                    if offload_resource_manager is None:
-                        offload_resource_manager = VU.OffloadResourceManager(
-                            size=x.shape, dtype=torch.uint8, device=x.device
-                        )
-                    offloaded_frame = VU.OffloadedFrame(
-                        x,
-                        dtype=torch.uint8,
-                        manager=offload_resource_manager,
-                    )
-                    src_queue.append((offloaded_frame, x.shape, frame.pts))
-
-            if len(batch_queue) == args.batch_size:
-                _batch_infer()
-
-    return frame_callback
 
 
 def export_video(input_filename, output_dir, args, title=None):
@@ -2051,24 +1874,14 @@ def export_video(input_filename, output_dir, args, title=None):
 
     max_workers = max(args.max_workers, 8)
     with depth_model.compile_context(enabled=args.compile), PoolExecutor(max_workers=max_workers) as pool:
-        if args.state["depth_model"].get_name() == "VideoDepthAnything":
-            frame_callback = bind_export_vda_frame_callback(
-                depth_model=depth_model,
-                segment_pts=segment_pts,
-                rgb_dir=rgb_dir,
-                depth_dir=depth_dir,
-                pool=pool,
-                args=args,
-            )
-        else:
-            frame_callback = bind_export_single_frame_callback(
-                depth_model=depth_model,
-                segment_pts=segment_pts,
-                rgb_dir=rgb_dir,
-                depth_dir=depth_dir,
-                pool=pool,
-                args=args,
-            )
+        frame_callback = bind_export_single_frame_callback(
+            depth_model=depth_model,
+            segment_pts=segment_pts,
+            rgb_dir=rgb_dir,
+            depth_dir=depth_dir,
+            pool=pool,
+            args=args,
+        )
 
         VU.hook_frame(
             input_filename,

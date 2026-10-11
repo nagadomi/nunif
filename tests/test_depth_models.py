@@ -4,7 +4,6 @@ import sys
 from os import path
 
 import torch
-import torchvision.transforms.functional as TF
 from PIL import Image
 
 from iw3.base_depth_model import BaseDepthModel
@@ -47,18 +46,14 @@ def run_model(
 
     model.load(gpu=gpu)
 
-    if model.get_name() == "VideoDepthAnything":
-        # VideoDepthAnything is streaming-based and requires infer_with_normalize
-        x = TF.to_tensor(im).unsqueeze(0).to(model.device)
-        out_list = model.infer_with_normalize(x, pts=[0], reset_pts=[0])
-        model.reset()
-        if len(out_list) == 0:
-            return f"[FAIL] `{model_type}` produced no output frames."
-        depth = out_list[0]
-    else:
-        # Standard BaseDepthModel.infer
-        depth = model.infer(im, tta=False, enable_amp=True)
-        depth = model.minmax_normalize_chw(depth)
+    depth = model.infer(im, tta=False, enable_amp=True)
+    if depth is None:
+        depth = model.flush(enable_amp=True)
+    if depth is None:
+        return f"[FAIL] `{model_type}` produced no output frames."
+    if depth.ndim == 4:
+        depth = depth.squeeze(0)
+    depth = model.minmax_normalize_chw(depth)
 
     output_filename = path.join(output_dir, f"{model_type}.png")
 

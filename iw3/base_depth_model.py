@@ -108,6 +108,9 @@ class BaseDepthModel(metaclass=ABCMeta):
     def is_video_supported(self):
         return True
 
+    def is_streaming(self):
+        return False
+
     @staticmethod
     def force_update_hub(github, model):
         with TorchHubDir(HUB_MODEL_DIR):
@@ -186,8 +189,17 @@ class BaseDepthModel(metaclass=ABCMeta):
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> torch.Tensor | None:
         pass
+
+    def flush(
+        self,
+        enable_amp: bool = True,
+        edge_dilation: int | tuple[int, int] = 0,
+        depth_aa: bool = False,
+        **kwargs,
+    ) -> torch.Tensor | None:
+        return None
 
     def enable_ema(self, decay, buffer_size=None):
         self.scaler.reset(decay=decay, buffer_size=buffer_size)
@@ -218,6 +230,10 @@ class BaseDepthModel(metaclass=ABCMeta):
         return self.scaler.flush(return_minmax=return_minmax)
 
     def minmax_normalize(self, depth, reset_ema=None):
+        if depth is None:
+            return []
+        if depth.ndim == 3:
+            depth = depth.unsqueeze(0)
         assert depth.ndim == 4
         reset_ema = [False] * depth.shape[0] if reset_ema is None else reset_ema
         assert len(reset_ema) == depth.shape[0]
