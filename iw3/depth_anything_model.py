@@ -25,9 +25,6 @@ NAME_MAP = {
     "Any_V2_K_S": "vkitti_s",
     "Any_V2_K_B": "vkitti_b",
     "Any_V2_K_L": "vkitti_l",
-    # for compatibility
-    "Any_V2_N": "hypersim_l",
-    "Any_V2_K": "vkitti_l",
     # Distill Any Depth
     "Distill_Any_S": "distill_any_depth_s",
     "Distill_Any_B": "distill_any_depth_b",
@@ -46,9 +43,6 @@ MODEL_FILES = {
     "Any_V2_K_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vits.pth"),
     "Any_V2_K_B": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitb.pth"),
     "Any_V2_K_L": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
-    # for compatibility
-    "Any_V2_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_hypersim_vitl.pth"),
-    "Any_V2_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_v2_metric_vkitti_vitl.pth"),
     # Distill Any Depth
     "Distill_Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vits.safetensors"),
     "Distill_Any_B": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitb.safetensors"),

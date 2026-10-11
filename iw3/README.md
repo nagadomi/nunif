@@ -511,7 +511,7 @@ See https://github.com/nagadomi/nunif/pull/484 and [Inpainting Model Training](.
 
 
 
-Personally, I recommend `ZoeD_Any_N`, `Any_B` or `VDA_Metric`.
+Personally, I recommend `ZoeD_Any_N`, `Any_B` or `VDA_Metric_L`.
 `ZoeD_Any_N` looks the best for 3D scene. The DepthAnything models have more accurate foreground and background segmentation, but the foreground looks slightly flat.
 
 For art/anime, DepthAnything is better than ZoeDepth.

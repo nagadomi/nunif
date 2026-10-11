@@ -19,7 +19,6 @@ NAME_MAP = {
     "VDA_S": "vits",
     "VDA_B": "vitb",
     "VDA_L": "vitl",
-    "VDA_Metric": "vitl",  # old ver compatibility
     "VDA_Metric_S": "vits",
     "VDA_Metric_B": "vitb",
     "VDA_Metric_L": "vitl",
@@ -28,7 +27,6 @@ MODEL_FILES = {
     "VDA_S": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vits.pth"),
     "VDA_B": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitb.pth"),
     "VDA_L": path.join(HUB_MODEL_DIR, "checkpoints", "video_depth_anything_vitl.pth"),
-    "VDA_Metric": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
     "VDA_Metric_S": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vits.pth"),
     "VDA_Metric_B": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitb.pth"),
     "VDA_Metric_L": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
@@ -38,13 +36,11 @@ AA_SUPPORT_MODELS = {
     "VDA_S",
     "VDA_B",
     "VDA_L",
-    "VDA_Metric",
     "VDA_Metric_S",
     "VDA_Metric_B",
     "VDA_Metric_L",
 }
 METRIC_DEPTH_TYPES = {
-    "VDA_Metric",
     "VDA_Metric_S",
     "VDA_Metric_B",
     "VDA_Metric_L",
