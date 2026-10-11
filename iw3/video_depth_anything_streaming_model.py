@@ -145,6 +145,9 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
     def is_image_supported(self):
         return False
 
+    def is_streaming(self):
+        return True
+
     @classmethod
     def has_checkpoint_file(cls, model_type):
         return cls.supported(model_type) and path.exists(MODEL_FILES[model_type])

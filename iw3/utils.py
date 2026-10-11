@@ -920,13 +920,11 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     offload_resource_manager = None
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 
-    def _postprocess(depth_batch, reset_ema, dequeue_ticket_id, flush, device):
+    def _postprocess(depth_list, dequeue_ticket_id, flush, device):
         # Reorder threads
         with dequeue_ticket_lock(dequeue_ticket_id):
             if flush:
-                depth_list = depth_model.flush_minmax_normalize()
-            else:
-                depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+                depth_list = depth_list + depth_model.flush_minmax_normalize()
 
             for depths in chunks(depth_list, args.batch_size):
                 if isinstance(depths, list):
@@ -934,21 +932,20 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 else:
                     depths = depths.to(device)
 
-                if frame_cpu_offload:
-                    x_srcs = []
-                    alpha_srcs = []
-                    pts = []
-                    for _ in range(len(depths)):
-                        x_src, alpha_i, t = src_queue.pop(0)
+                x_srcs = []
+                alpha_srcs = []
+                pts = []
+                for _ in range(len(depths)):
+                    x_src, alpha_i, t = src_queue.pop(0)
+                    if frame_cpu_offload:
                         x_srcs.append(x_src.load(device=device))
-                        alpha_srcs.append(alpha_i.to(device) if alpha_i is not None else None)
-                        pts.append(t)
-                    x_srcs = torch.stack(x_srcs)
-                    has_alpha = alpha_srcs[0] is not None
-                    alpha_srcs = torch.stack(alpha_srcs) if has_alpha else None
-                else:
-                    x_srcs, alpha_srcs, pts = src_queue.pop(0)
-                    has_alpha = alpha_srcs is not None
+                    else:
+                        x_srcs.append(x_src.to(device))
+                    alpha_srcs.append(alpha_i.to(device) if alpha_i is not None else None)
+                    pts.append(t)
+                x_srcs = torch.stack(x_srcs)
+                has_alpha = alpha_srcs[0] is not None
+                alpha_srcs = torch.stack(alpha_srcs) if has_alpha else None
                 reset_pts = [t in segment_pts for t in pts]
 
                 if args.rgbd or args.half_rgbd:
@@ -999,53 +996,89 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         alpha_i = alpha_batch[i] if alpha_batch is not None else None
                         src_queue.append((offloaded_frame, alpha_i, pts[i]))
                 else:
-                    src_queue.append((x, alpha_batch, pts))
+                    for i in range(len(pts)):
+                        alpha_i = alpha_batch[i] if alpha_batch is not None else None
+                        src_queue.append((x[i], alpha_i, pts[i]))
 
             if flush:
-                return None, dequeue_ticket_id
+                depth_list = []
+                if depth_model.is_streaming():
+                    flush_depth = depth_model.flush(
+                        enable_amp=not args.disable_amp,
+                        edge_dilation=args.edge_dilation,
+                        depth_aa=args.depth_aa,
+                    )
+                    depth_list += depth_model.minmax_normalize(flush_depth)
+                return depth_list, dequeue_ticket_id
             else:
                 if alpha_batch is not None:
                     fill_color = torch.tensor([0.4, 0.5, 0.6], dtype=x.dtype, device=x.device).view(1, 3, 1, 1)
                     x = x * alpha_batch + fill_color * (1.0 - alpha_batch)
-                depth_batch = depth_model.infer(
-                    x,
-                    tta=args.tta,
-                    low_vram=args.low_vram,
-                    enable_amp=not args.disable_amp,
-                    edge_dilation=args.edge_dilation,
-                    depth_aa=args.depth_aa,
-                )
 
-                if alpha_batch is not None:
-                    depth_alpha = F.interpolate(
-                        alpha_batch,
-                        size=depth_batch.shape[-2:],
-                        mode="bilinear",
-                        align_corners=False,
-                        antialias=True,
+                if depth_model.is_streaming():
+                    depth_list = []
+                    B = x.shape[0]
+                    for i in range(B):
+                        depth = depth_model.infer(
+                            x[i : i + 1],
+                            tta=args.tta,
+                            low_vram=args.low_vram,
+                            enable_amp=not args.disable_amp,
+                            edge_dilation=args.edge_dilation,
+                            depth_aa=args.depth_aa,
+                            streaming=True,
+                        )
+                        depth_list += depth_model.minmax_normalize(depth)
+                        if pts[i] in segment_pts:
+                            flush_depth = depth_model.flush(
+                                enable_amp=not args.disable_amp,
+                                edge_dilation=args.edge_dilation,
+                                depth_aa=args.depth_aa,
+                            )
+                            depth_list += depth_model.minmax_normalize(flush_depth)
+                            depth_list += depth_model.flush_minmax_normalize()
+                            depth_model.reset()
+                else:
+                    depth_batch = depth_model.infer(
+                        x,
+                        tta=args.tta,
+                        low_vram=args.low_vram,
+                        enable_amp=not args.disable_amp,
+                        edge_dilation=args.edge_dilation,
+                        depth_aa=args.depth_aa,
                     )
-                    mask = depth_alpha > 0.0
-                    for i in range(depth_batch.shape[0]):
-                        m = mask[i]
-                        if m.any():
-                            bg_depth = (depth_batch[i][m].min() + depth_batch[i].min()) * 0.5
-                            depth_batch[i][torch.logical_not(m)] = bg_depth
 
-            return depth_batch, dequeue_ticket_id
+                    if alpha_batch is not None:
+                        depth_alpha = F.interpolate(
+                            alpha_batch,
+                            size=depth_batch.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False,
+                            antialias=True,
+                        )
+                        mask = depth_alpha > 0.0
+                        for i in range(depth_batch.shape[0]):
+                            m = mask[i]
+                            if m.any():
+                                bg_depth = (depth_batch[i][m].min() + depth_batch[i].min()) * 0.5
+                                depth_batch[i][torch.logical_not(m)] = bg_depth
+
+                    reset_ema = [t in segment_pts for t in pts]
+                    depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
+
+            return depth_list, dequeue_ticket_id
 
     @torch.inference_mode()
     def _cuda_stream_wrapper(preprocess_args):
         x, pts, flush, enqueue_ticket_id, alpha_batch = preprocess_args
         if flush:
             device = args.state["device"]
-            reset_ema = None
-            depth_batch, dequeue_ticket_id = _batch_infer(None, None, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
+            depth_list, dequeue_ticket_id = _batch_infer(None, None, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
             # Return a generator directly to avoid out-of-memory errors during flush.
             # Processing is performed on the main thread.
-            return _postprocess(depth_batch, reset_ema, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
+            return _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
         else:
             device = x.device
-            reset_ema = [t in segment_pts for t in pts]
             if args.cuda_stream:
                 stream_name1 = str(device) + "_default"
                 stream_name2 = str(device) + "_offload"
@@ -1057,7 +1090,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 offload_stream = getattr(streams, stream_name2)
                 stream.wait_stream(get_current_stream(device))
                 with device_context(device), stream:
-                    depth_batch, dequeue_ticket_id = _batch_infer(
+                    depth_list, dequeue_ticket_id = _batch_infer(
                         x,
                         pts,
                         flush=flush,
@@ -1065,18 +1098,14 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         alpha_batch=alpha_batch,
                         offload_stream=offload_stream,
                     )
-                    results = _postprocess(
-                        depth_batch, reset_ema, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device
-                    )
+                    results = _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                     frames = [frame for frame in results]
                     stream.synchronize()
             else:
-                depth_batch, dequeue_ticket_id = _batch_infer(
+                depth_list, dequeue_ticket_id = _batch_infer(
                     x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id, alpha_batch=alpha_batch
                 )
-                results = _postprocess(
-                    depth_batch, reset_ema, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device
-                )
+                results = _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                 frames = [frame for frame in results]
             return frames
 
@@ -1247,7 +1276,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
-    if depth_model.is_streaming() or args.low_vram or args.debug_depth:
+    if args.low_vram or args.debug_depth:
         with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
             VU.process_video(
                 input_filename,
