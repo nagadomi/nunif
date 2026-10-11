@@ -151,7 +151,16 @@ class BaseDepthModel(metaclass=ABCMeta):
             self.model_backup = None
 
     @abstractmethod
-    def infer(self, x, *kwargs):
+    def infer(
+        self,
+        x: torch.Tensor | Image.Image,
+        tta: bool = False,
+        low_vram: bool = False,
+        enable_amp: bool = True,
+        edge_dilation: int | tuple[int, int] = 0,
+        depth_aa: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
         pass
 
     def enable_ema(self, decay, buffer_size=None):
@@ -197,19 +206,23 @@ class BaseDepthModel(metaclass=ABCMeta):
         return normalized_depths
 
     @staticmethod
+    def normalized_depth_to_uint16_image(depth: torch.Tensor) -> Image.Image:
+        depth = torch.clamp(depth, 0, 1)
+        depth_int = (0xFFFF * depth).round().to(torch.uint16).squeeze(0).cpu().numpy()
+        return Image.fromarray(depth_int)
+
+    @staticmethod
     def save_normalized_depth(depth, file_path, png_info={}, min_depth_value=None, max_depth_value=None):
         if min_depth_value is not None:
             png_info.update(iw3_min_depth_value=float(min_depth_value))
         if max_depth_value is not None:
             png_info.update(iw3_max_depth_value=float(max_depth_value))
 
-        depth = torch.clamp(depth, 0, 1)
-        depth_int = (0xFFFF * depth).to(torch.uint16).squeeze(0).cpu().numpy()
+        im = BaseDepthModel.normalized_depth_to_uint16_image(depth)
         metadata = PngInfo()
         for k, v in png_info.items():
             metadata.add_text(k, str(v))
 
-        im = Image.fromarray(depth_int)
         im.save(file_path, pnginfo=metadata)
 
     @staticmethod

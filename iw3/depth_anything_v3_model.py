@@ -2,6 +2,7 @@ import os
 from os import path
 
 import torch
+from PIL import Image
 from torchvision.transforms import functional as TF
 
 from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
@@ -177,9 +178,19 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
 
         return model
 
-    def infer(self, x, tta=False, low_vram=False, enable_amp=True, edge_dilation=0, depth_aa=False, **kwargs):
+    def infer(
+        self,
+        x: torch.Tensor | Image.Image,
+        tta: bool = False,
+        low_vram: bool = False,
+        enable_amp: bool = True,
+        edge_dilation: int | tuple[int, int] = 0,
+        depth_aa: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
         if not torch.is_tensor(x):
             x = TF.to_tensor(x).to(self.device)
+        assert torch.is_tensor(x)
         return batch_infer(
             self.model,
             x,
@@ -220,9 +231,6 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
     @classmethod
     def force_update(cls):
         BaseDepthModel.force_update_hub("nagadomi/Depth-Anything-3_iw3:main", "load_model")
-
-    def infer_raw(self, *args, **kwargs):
-        return batch_infer(self.model, *args, **kwargs)
 
 
 def _bench(resolution=504, do_compile=False):

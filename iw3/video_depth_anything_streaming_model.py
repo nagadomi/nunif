@@ -2,6 +2,7 @@ import os
 from os import path
 
 import torch
+from PIL import Image
 from torchvision.transforms import functional as TF
 
 from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
@@ -89,23 +90,37 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
     def reset_state(self):
         self.model.reset_state()
 
-    def infer(self, x, enable_amp=True, edge_dilation=0, depth_aa=False, **kwargs):
-        if not torch.is_tensor(x):
-            x = TF.to_tensor(x).to(self.device)
+    def infer(
+        self,
+        x: torch.Tensor | Image.Image,
+        tta: bool = False,
+        low_vram: bool = False,
+        enable_amp: bool = True,
+        edge_dilation: int | tuple[int, int] = 0,
+        depth_aa: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
+        if isinstance(x, torch.Tensor):
+            x_tensor: torch.Tensor = x.to(self.device)
+        else:
+            x_tensor = TF.to_tensor(x).to(self.device)
 
-        depth_aa = self.depth_aa if depth_aa else None
+        depth_aa_module = self.depth_aa if depth_aa else None
 
         batch = False
-        if x.ndim == 3:
-            x = x.unsqueeze(0)
+        if x_tensor.ndim == 3:
+            x_tensor = x_tensor.unsqueeze(0)
         else:
             batch = True
 
-        x = batch_preprocess(
-            x, self.model.prep_lower_bound, metric_depth=self.metric_depth, limit_resolution=self.limit_resolution
+        x_frames = batch_preprocess(
+            x_tensor,
+            self.model.prep_lower_bound,
+            metric_depth=self.metric_depth,
+            limit_resolution=self.limit_resolution,
         )
         outputs = []
-        for frame in x:
+        for frame in x_frames:
             outputs.append(self.model.infer_video_depth_one(frame, use_amp=enable_amp).to(torch.float32))
         depth = torch.stack(outputs)
         depth = depth.squeeze(1)  # (B, 1, H, W) -> (B, H, W) for compatibility of VDA
@@ -113,7 +128,7 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         depth = postprocess(
             depth,
             edge_dilation=edge_dilation,
-            depth_aa=depth_aa,
+            depth_aa=depth_aa_module,
             metric_depth=self.metric_depth,
             force_disparity=self.force_disparity,
             enable_amp=enable_amp,

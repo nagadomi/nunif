@@ -9,13 +9,13 @@ from os import path
 
 import torch
 import torch.nn.functional as F
-from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision import transforms as T
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 from tqdm import tqdm
 
+from iw3.base_depth_model import BaseDepthModel
 from iw3.forward_warp import apply_divergence_forward_warp
 from iw3.utils import get_mapper
 from nunif.utils.image_loader import ImageLoader, list_images
@@ -315,7 +315,7 @@ def main(args):
                         assert im_s.height == depth.shape[-2] and im_s.width == depth.shape[-1]
 
                         depth = model.minmax_normalize_chw(depth)
-                        np_depth16 = (depth * 0xFFFF).round().to(torch.uint16).squeeze(0).cpu().numpy()
+                        im_depth = BaseDepthModel.normalized_depth_to_uint16_image(depth)
 
                     c = TF.to_tensor(im_s).unsqueeze(0).to(depth.device)
                     depth_f = apply_mapper(depth, mapper).unsqueeze(0)
@@ -341,7 +341,7 @@ def main(args):
                         im_s,
                         sbs,
                         mask_sbs,
-                        Image.fromarray(np_depth16),
+                        im_depth,
                         divergence,
                         convergence,
                         mapper,

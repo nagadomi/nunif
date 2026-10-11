@@ -3,6 +3,7 @@ from os import path
 
 import torch
 import torch.nn.functional as F
+from PIL import Image
 from torchvision.transforms import functional as TF
 
 from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
@@ -192,7 +193,16 @@ class VideoDepthAnythingModel(BaseDepthModel):
         self.reset_state()
         self.reset_ema()
 
-    def infer(self, x, enable_amp=True, edge_dilation=0, **kwargs):
+    def infer(
+        self,
+        x: torch.Tensor | Image.Image,
+        tta: bool = False,
+        low_vram: bool = False,
+        enable_amp: bool = True,
+        edge_dilation: int | tuple[int, int] = 0,
+        depth_aa: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
         # NOTE: DONT USE THIS
         assert 0, "No longer reaching this block"
 
