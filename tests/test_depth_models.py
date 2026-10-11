@@ -7,27 +7,13 @@ import torch
 from PIL import Image
 
 from iw3.base_depth_model import BaseDepthModel
-from iw3.depth_anything_model import MODEL_FILES as DA_MODELS
-from iw3.depth_anything_v3_model import MODEL_FILES as DA3_MODELS
-from iw3.depth_model_factory import create_depth_model
-from iw3.depth_pro_model import MODEL_FILES as DP_MODELS
+from iw3.depth_model_factory import create_depth_model, get_all_depth_models
 from iw3.mapper import get_mapper, resolve_mapper_name
-from iw3.video_depth_anything_model import MODEL_FILES as VDA_MODELS
-from iw3.video_depth_anything_streaming_model import MODEL_FILES as VDA_STREAM_MODELS
-from iw3.zoedepth_model import MODEL_FILES as ZOE_MODELS
 
 DEFAULT_TEST_IMAGE = "tests/images/dog_448.png"
 DEFAULT_OUTPUT_DIR = "tests/data/test_depth_models"
 
-ALL_MODEL_TYPES = (
-    ["NULL"]
-    + list(ZOE_MODELS.keys())
-    + list(DA_MODELS.keys())
-    + list(DA3_MODELS.keys())
-    + list(DP_MODELS.keys())
-    + list(VDA_STREAM_MODELS.keys())
-    + list(VDA_MODELS.keys())
-)
+ALL_MODEL_TYPES = get_all_depth_models()
 
 
 def run_model(

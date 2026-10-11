@@ -63,15 +63,11 @@ from nunif.gui import (
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models  # noqa
-from .depth_anything_model import DepthAnythingModel
+from .base_depth_model import BaseDepthModel
 from .depth_model_factory import (
     is_depth_aa_supported,
     is_limit_resolution_supported,
     is_resolution_change_supported,
-)
-from .video_depth_anything_model import VideoDepthAnythingModel
-from .video_depth_anything_streaming_model import (
-    VideoDepthAnythingStreamingModel,
 )
 from . import export_config
 from .inpaint_utils import INPAINT_MODELS
@@ -862,49 +858,57 @@ class MainFrame(wx.Frame):
             "Any_L",
             "Any_V2_S",
         ]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_B"):
+        if BaseDepthModel.has_model_checkpoint_file("Any_V2_B"):
             depth_models.append("Any_V2_B")
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
+        if BaseDepthModel.has_model_checkpoint_file("Any_V2_L"):
             depth_models.append("Any_V2_L")
 
         depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):
+        if BaseDepthModel.has_model_checkpoint_file("Any_V2_N_L"):
             depth_models.append("Any_V2_N_L")
         depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
-        if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
+        if BaseDepthModel.has_model_checkpoint_file("Any_V2_K_L"):
             depth_models.append("Any_V2_K_L")
 
         depth_models += ["Distill_Any_S"]
-        if DepthAnythingModel.has_checkpoint_file("Distill_Any_B"):
+        if BaseDepthModel.has_model_checkpoint_file("Distill_Any_B"):
             depth_models.append("Distill_Any_B")
-        if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
+        if BaseDepthModel.has_model_checkpoint_file("Distill_Any_L"):
             depth_models.append("Distill_Any_L")
 
         depth_models += ["Any_V3_Mono", "Any_V3_Mono_01"]
 
         depth_models += ["VDA_S"]
-        if VideoDepthAnythingModel.has_checkpoint_file("VDA_B"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_B"):
             depth_models.append("VDA_B")
-        if VideoDepthAnythingModel.has_checkpoint_file("VDA_L"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_L"):
             depth_models.append("VDA_L")
 
         depth_models += ["VDA_Metric_S"]
-        if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric_B"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_Metric_B"):
             depth_models.append("VDA_Metric_B")
-        if VideoDepthAnythingModel.has_checkpoint_file("VDA_Metric_L"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_Metric_L"):
             depth_models.append("VDA_Metric_L")
 
         depth_models += ["VDA_Stream_S"]
-        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_B"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_B"):
             depth_models.append("VDA_Stream_B")
-        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_L"):
             depth_models.append("VDA_Stream_L")
 
         depth_models += ["VDA_Stream_Metric_S"]
-        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_B"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_Metric_B"):
             depth_models.append("VDA_Stream_Metric_B")
-        if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_L"):
+        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_Metric_L"):
             depth_models.append("VDA_Stream_Metric_L")
+
+        # Include any registered models not explicitly ordered above
+        known_set = set(depth_models)
+        for name in BaseDepthModel.get_all_model_types():
+            if name not in known_set and name != "NULL":
+                if BaseDepthModel.has_model_checkpoint_file(name):
+                    depth_models.append(name)
+                    known_set.add(name)
 
         return depth_models
 

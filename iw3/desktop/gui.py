@@ -37,8 +37,7 @@ from nunif.gui import (
     is_dark_mode,
     get_default_locale,
 )
-from ..depth_anything_model import DepthAnythingModel
-from ..video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
+from ..base_depth_model import BaseDepthModel
 from ..locales import LOCALES, load_language_setting, save_language_setting
 from .utils import (
     get_local_address,
@@ -790,37 +789,43 @@ class MainFrame(wx.Frame):
                 "Any_L",
                 "Any_V2_S",
             ]
-            if DepthAnythingModel.has_checkpoint_file("Any_V2_B"):
+            if BaseDepthModel.has_model_checkpoint_file("Any_V2_B"):
                 depth_models.append("Any_V2_B")
-            if DepthAnythingModel.has_checkpoint_file("Any_V2_L"):
+            if BaseDepthModel.has_model_checkpoint_file("Any_V2_L"):
                 depth_models.append("Any_V2_L")
 
             depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
-            if DepthAnythingModel.has_checkpoint_file("Any_V2_N_L"):
+            if BaseDepthModel.has_model_checkpoint_file("Any_V2_N_L"):
                 depth_models.append("Any_V2_N_L")
             depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
-            if DepthAnythingModel.has_checkpoint_file("Any_V2_K_L"):
+            if BaseDepthModel.has_model_checkpoint_file("Any_V2_K_L"):
                 depth_models.append("Any_V2_K_L")
 
             depth_models += ["Distill_Any_S"]
-            if DepthAnythingModel.has_checkpoint_file("Distill_Any_B"):
+            if BaseDepthModel.has_model_checkpoint_file("Distill_Any_B"):
                 depth_models.append("Distill_Any_B")
-            if DepthAnythingModel.has_checkpoint_file("Distill_Any_L"):
+            if BaseDepthModel.has_model_checkpoint_file("Distill_Any_L"):
                 depth_models.append("Distill_Any_L")
 
             depth_models += ["Any_V3_Mono", "Any_V3_Mono_01"]
 
             depth_models += ["VDA_Stream_S"]
-            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_B"):
+            if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_B"):
                 depth_models.append("VDA_Stream_B")
-            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_L"):
+            if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_L"):
                 depth_models.append("VDA_Stream_L")
 
             depth_models += ["VDA_Stream_Metric_S"]
-            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_B"):
+            if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_Metric_B"):
                 depth_models.append("VDA_Stream_Metric_B")
-            if VideoDepthAnythingStreamingModel.has_checkpoint_file("VDA_Stream_Metric_L"):
+            if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_Metric_L"):
                 depth_models.append("VDA_Stream_Metric_L")
+
+            # Append any other registered models not yet listed (e.g. user-added models)
+            known_set = set(depth_models)
+            for m in BaseDepthModel.get_all_model_types():
+                if m != "NULL" and m not in known_set and BaseDepthModel.has_model_checkpoint_file(m):
+                    depth_models.append(m)
 
         if ADD_DEBUG_METHOD:
             depth_models += ["NULL"]

@@ -39,6 +39,19 @@ class BaseDepthModel(metaclass=ABCMeta):
             BaseDepthModel._subclasses.append(cls)
 
     @classmethod
+    def get_registered_classes(cls) -> list[type["BaseDepthModel"]]:
+        return list(cls._subclasses)
+
+    @classmethod
+    def get_all_model_types(cls) -> list[str]:
+        model_types: list[str] = []
+        for subcls in cls._subclasses:
+            for name in subcls.get_model_types():
+                if name not in model_types:
+                    model_types.append(name)
+        return model_types
+
+    @classmethod
     def get_depth_model_class(cls, model_type: str) -> type["BaseDepthModel"] | None:
         for subcls in cls._subclasses:
             if subcls.supported(model_type):
@@ -46,15 +59,31 @@ class BaseDepthModel(metaclass=ABCMeta):
         return None
 
     @classmethod
+    def has_model_checkpoint_file(cls, model_type: str) -> bool:
+        if cls is BaseDepthModel:
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.has_checkpoint_file(model_type) if subcls is not None else False
+        return cls.has_checkpoint_file(model_type)
+
+    @classmethod
     def is_depth_aa_supported(cls, model_type: str) -> bool:
+        if cls is BaseDepthModel:
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.is_depth_aa_supported(model_type) if subcls is not None else False
         return False
 
     @classmethod
     def is_resolution_change_supported(cls, model_type: str) -> bool:
+        if cls is BaseDepthModel:
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.is_resolution_change_supported(model_type) if subcls is not None else True
         return True
 
     @classmethod
     def is_limit_resolution_supported(cls, model_type: str) -> bool:
+        if cls is BaseDepthModel:
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.is_limit_resolution_supported(model_type) if subcls is not None else True
         return True
 
     def __init__(self, model_type):
@@ -86,6 +115,11 @@ class BaseDepthModel(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def supported(cls, model_type):
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_model_types(cls) -> list[str]:
         pass
 
     @classmethod

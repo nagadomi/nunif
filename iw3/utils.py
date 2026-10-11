@@ -50,7 +50,7 @@ from .backward_warp import (
 )
 from .base_depth_model import BaseDepthModel
 from .convergence_estimator import ConvergenceEstimator
-from .depth_model_factory import create_depth_model, is_depth_aa_supported
+from .depth_model_factory import create_depth_model, get_all_depth_models, is_depth_aa_supported
 from .dilation import dilate_edge, edge_dilation_is_enabled
 from .equirectangular import equirectangular_projection
 from .forward_warp import apply_divergence_forward_warp
@@ -1318,7 +1318,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
-    assert depth_model.get_name() not in {"VideoDepthAnything", "VideoDepthAnythingStreaming"}
+    assert not depth_model.is_streaming()
 
     if is_output_dir(output_path):
         os.makedirs(output_path, exist_ok=True)
@@ -2317,48 +2317,7 @@ def create_parser(required_true=True):
         "--depth-model",
         type=str,
         default="ZoeD_Any_N",
-        choices=[
-            "ZoeD_N",
-            "ZoeD_K",
-            "ZoeD_NK",
-            "Any_S",
-            "Any_B",
-            "Any_L",
-            "ZoeD_Any_N",
-            "ZoeD_Any_K",
-            "Any_V2_S",
-            "Any_V2_B",
-            "Any_V2_L",
-            "Any_V2_N",
-            "Any_V2_K",
-            "Any_V2_N_S",
-            "Any_V2_N_B",
-            "Any_V2_N_L",
-            "Any_V2_K_S",
-            "Any_V2_K_B",
-            "Any_V2_K_L",
-            "Distill_Any_S",
-            "Distill_Any_B",
-            "Distill_Any_L",
-            "Any_V3_Mono",
-            "Any_V3_Mono_01",
-            "DepthPro",
-            "DepthPro_S",
-            "VDA_S",
-            "VDA_B",
-            "VDA_L",
-            "VDA_Metric",
-            "VDA_Metric_S",
-            "VDA_Metric_B",
-            "VDA_Metric_L",
-            "VDA_Stream_S",
-            "VDA_Stream_B",
-            "VDA_Stream_L",
-            "VDA_Stream_Metric_S",
-            "VDA_Stream_Metric_B",
-            "VDA_Stream_Metric_L",
-            "NULL",
-        ],
+        choices=get_all_depth_models(),
         help="depth model name",
     )
     parser.add_argument(

@@ -77,6 +77,10 @@ class NullDepthModel(BaseDepthModel):
         return model_type == "NULL"
 
     @classmethod
+    def get_model_types(cls) -> list[str]:
+        return ["NULL"]
+
+    @classmethod
     def get_model_path(cls, model_type):
         return None
 

@@ -15,16 +15,17 @@ def create_depth_model(model_type: str) -> BaseDepthModel:
     raise ValueError(f"{model_type} is not supported")
 
 
+def get_all_depth_models() -> list[str]:
+    return BaseDepthModel.get_all_model_types()
+
+
 def is_depth_aa_supported(model_type: str) -> bool:
-    cls = BaseDepthModel.get_depth_model_class(model_type)
-    return cls.is_depth_aa_supported(model_type) if cls is not None else False
+    return BaseDepthModel.is_depth_aa_supported(model_type)
 
 
 def is_resolution_change_supported(model_type: str) -> bool:
-    cls = BaseDepthModel.get_depth_model_class(model_type)
-    return cls.is_resolution_change_supported(model_type) if cls is not None else True
+    return BaseDepthModel.is_resolution_change_supported(model_type)
 
 
 def is_limit_resolution_supported(model_type: str) -> bool:
-    cls = BaseDepthModel.get_depth_model_class(model_type)
-    return cls.is_limit_resolution_supported(model_type) if cls is not None else True
+    return BaseDepthModel.is_limit_resolution_supported(model_type)

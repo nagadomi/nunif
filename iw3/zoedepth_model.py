@@ -269,6 +269,10 @@ class ZoeDepthModel(BaseDepthModel):
         return model_type in MODEL_FILES
 
     @classmethod
+    def get_model_types(cls) -> list[str]:
+        return list(MODEL_FILES.keys())
+
+    @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
 
