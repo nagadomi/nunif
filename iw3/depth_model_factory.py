@@ -1,33 +1,30 @@
-from .depth_anything_model import DepthAnythingModel
-from .depth_anything_v3_model import DepthAnythingV3MonoModel
-from .depth_pro_model import DepthProModel
-from .null_depth_model import NullDepthModel
-from .video_depth_anything_model import VideoDepthAnythingModel
-from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel
-from .zoedepth_model import ZoeDepthModel
+from .base_depth_model import BaseDepthModel
+from .depth_anything_model import DepthAnythingModel  # noqa: F401
+from .depth_anything_v3_model import DepthAnythingV3MonoModel  # noqa: F401
+from .depth_pro_model import DepthProModel  # noqa: F401
+from .null_depth_model import NullDepthModel  # noqa: F401
+from .video_depth_anything_model import VideoDepthAnythingModel  # noqa: F401
+from .video_depth_anything_streaming_model import VideoDepthAnythingStreamingModel  # noqa: F401
+from .zoedepth_model import ZoeDepthModel  # noqa: F401
 
 
-def create_depth_model(model_type):
-    if ZoeDepthModel.supported(model_type):
-        model = ZoeDepthModel(model_type)
-        return model
-    elif DepthAnythingModel.supported(model_type):
-        model = DepthAnythingModel(model_type)
-        return model
-    elif DepthAnythingV3MonoModel.supported(model_type):
-        model = DepthAnythingV3MonoModel(model_type)
-        return model
-    elif DepthProModel.supported(model_type):
-        model = DepthProModel(model_type)
-        return model
-    elif VideoDepthAnythingModel.supported(model_type):
-        model = VideoDepthAnythingModel(model_type)
-        return model
-    elif VideoDepthAnythingStreamingModel.supported(model_type):
-        model = VideoDepthAnythingStreamingModel(model_type)
-        return model
-    elif NullDepthModel.supported(model_type):
-        model = NullDepthModel(model_type)
-        return model
-    else:
-        raise ValueError(f"{model_type} is not supported")
+def create_depth_model(model_type: str) -> BaseDepthModel:
+    cls = BaseDepthModel.get_depth_model_class(model_type)
+    if cls is not None:
+        return cls(model_type)
+    raise ValueError(f"{model_type} is not supported")
+
+
+def is_depth_aa_supported(model_type: str) -> bool:
+    cls = BaseDepthModel.get_depth_model_class(model_type)
+    return cls.is_depth_aa_supported(model_type) if cls is not None else False
+
+
+def is_resolution_change_supported(model_type: str) -> bool:
+    cls = BaseDepthModel.get_depth_model_class(model_type)
+    return cls.is_resolution_change_supported(model_type) if cls is not None else True
+
+
+def is_limit_resolution_supported(model_type: str) -> bool:
+    cls = BaseDepthModel.get_depth_model_class(model_type)
+    return cls.is_limit_resolution_supported(model_type) if cls is not None else True

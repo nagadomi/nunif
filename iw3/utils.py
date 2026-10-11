@@ -50,7 +50,7 @@ from .backward_warp import (
 )
 from .base_depth_model import BaseDepthModel
 from .convergence_estimator import ConvergenceEstimator
-from .depth_model_factory import create_depth_model
+from .depth_model_factory import create_depth_model, is_depth_aa_supported
 from .dilation import dilate_edge, edge_dilation_is_enabled
 from .equirectangular import equirectangular_projection
 from .forward_warp import apply_divergence_forward_warp
@@ -2799,6 +2799,9 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
             warnings.warn("--ema-normalize is highly recommended for VideoDepthAnything")
         if not args.scene_detect:
             warnings.warn("--scene-detect is highly recommended for VideoDepthAnything")
+
+    if args.depth_aa and not is_depth_aa_supported(args.depth_model):
+        warnings.warn(f"--depth-aa is not supported for `{args.depth_model}`. Ignored")
 
     if is_video(args.output):
         # replace --video-format when filename is specified

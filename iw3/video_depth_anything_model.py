@@ -340,6 +340,10 @@ class VideoDepthAnythingModel(BaseDepthModel):
         return False  # TODO
 
     @classmethod
+    def is_depth_aa_supported(cls, model_type: str) -> bool:
+        return model_type in AA_SUPPORT_MODELS
+
+    @classmethod
     def force_update(cls):
         BaseDepthModel.force_update_hub("nagadomi/Video-Depth-Anything_iw3:main", "VideoDepthAnythingOnline")
 

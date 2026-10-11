@@ -320,6 +320,10 @@ class DepthAnythingModel(BaseDepthModel):
         return True
 
     @classmethod
+    def is_depth_aa_supported(cls, model_type: str) -> bool:
+        return model_type in AA_SUPPORTED_MODELS
+
+    @classmethod
     def force_update(cls):
         BaseDepthModel.force_update_hub("nagadomi/Depth-Anything_iw3:main", "DepthAnything")
 

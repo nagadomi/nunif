@@ -63,15 +63,16 @@ from nunif.gui import (
 )
 from .locales import LOCALES, load_language_setting, save_language_setting
 from . import models  # noqa
-from .depth_anything_model import DepthAnythingModel, AA_SUPPORTED_MODELS as DA_AA_SUPPORTED_MODELS
-from .video_depth_anything_model import VideoDepthAnythingModel, AA_SUPPORT_MODELS as VDA_AA_SUPPORTED_MODELS
+from .depth_anything_model import DepthAnythingModel
+from .depth_model_factory import (
+    is_depth_aa_supported,
+    is_limit_resolution_supported,
+    is_resolution_change_supported,
+)
+from .video_depth_anything_model import VideoDepthAnythingModel
 from .video_depth_anything_streaming_model import (
     VideoDepthAnythingStreamingModel,
-    AA_SUPPORT_MODELS as VDA_STREAM_AA_SUPPORTED_MODELS,
 )
-from .depth_anything_v3_model import AA_SUPPORTED_MODELS as DA3_AA_SUPPORTED_MODELS
-from .depth_pro_model import MODEL_FILES as DEPTH_PRO_MODELS
-from .zoedepth_model import MODEL_FILES as ZOEDPETH_MODELS
 from . import export_config
 from .inpaint_utils import INPAINT_MODELS
 
@@ -1008,24 +1009,19 @@ class MainFrame(wx.Frame):
     def update_model_selection(self):
         name = self.cbo_depth_model.GetValue()
 
-        if name in DEPTH_PRO_MODELS:
-            self.cbo_resolution.Disable()
-            self.chk_fp16.Disable()
-        else:
+        if is_resolution_change_supported(name):
             self.cbo_resolution.Enable()
             self.chk_fp16.Enable()
-
-        if name in ZOEDPETH_MODELS or name in DEPTH_PRO_MODELS:
-            self.chk_limit_resolution.Disable()
         else:
-            self.chk_limit_resolution.Enable()
+            self.cbo_resolution.Disable()
+            self.chk_fp16.Disable()
 
-        if (
-            name in DA_AA_SUPPORTED_MODELS
-            or name in VDA_AA_SUPPORTED_MODELS
-            or name in VDA_STREAM_AA_SUPPORTED_MODELS
-            or name in DA3_AA_SUPPORTED_MODELS
-        ):
+        if is_limit_resolution_supported(name):
+            self.chk_limit_resolution.Enable()
+        else:
+            self.chk_limit_resolution.Disable()
+
+        if is_depth_aa_supported(name):
             self.chk_depth_aa.Enable()
         else:
             self.chk_depth_aa.Disable()

@@ -31,6 +31,32 @@ class _CompileContext:
 
 
 class BaseDepthModel(metaclass=ABCMeta):
+    _subclasses: list[type["BaseDepthModel"]] = []
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if cls not in BaseDepthModel._subclasses:
+            BaseDepthModel._subclasses.append(cls)
+
+    @classmethod
+    def get_depth_model_class(cls, model_type: str) -> type["BaseDepthModel"] | None:
+        for subcls in cls._subclasses:
+            if subcls.supported(model_type):
+                return subcls
+        return None
+
+    @classmethod
+    def is_depth_aa_supported(cls, model_type: str) -> bool:
+        return False
+
+    @classmethod
+    def is_resolution_change_supported(cls, model_type: str) -> bool:
+        return True
+
+    @classmethod
+    def is_limit_resolution_supported(cls, model_type: str) -> bool:
+        return True
+
     def __init__(self, model_type):
         self.device = None
         self.model = None

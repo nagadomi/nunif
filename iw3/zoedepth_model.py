@@ -272,6 +272,10 @@ class ZoeDepthModel(BaseDepthModel):
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
 
+    @classmethod
+    def is_limit_resolution_supported(cls, model_type: str) -> bool:
+        return False
+
     def is_metric(self):
         return True
 
