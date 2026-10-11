@@ -824,7 +824,14 @@ class MainFrame(wx.Frame):
             # Append any other registered models not yet listed (e.g. user-added models)
             known_set = set(depth_models)
             for m in BaseDepthModel.get_all_model_types():
-                if m != "NULL" and m not in known_set and BaseDepthModel.has_model_checkpoint_file(m):
+                subcls = BaseDepthModel.get_depth_model_class(m)
+                if (
+                    m != "NULL"
+                    and m not in known_set
+                    and subcls is not None
+                    and subcls.get_name() != "VideoDepthAnything"
+                    and BaseDepthModel.has_model_checkpoint_file(m)
+                ):
                     depth_models.append(m)
 
         if ADD_DEBUG_METHOD:
@@ -1236,7 +1243,7 @@ class MainFrame(wx.Frame):
         self.sync_adj_controls(to=True)
         self.Fit()
 
-        if self.args.state["depth_model"].has_checkpoint_file(self.args.depth_model):
+        if BaseDepthModel.has_model_checkpoint_file(self.args.depth_model):
             # Realod depth model
             self.SetStatusText(f"Loading {self.args.depth_model}...")
         else:

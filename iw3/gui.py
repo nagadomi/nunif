@@ -1478,7 +1478,7 @@ class MainFrame(wx.Frame):
         self.prg_tqdm.SetValue(0)
         self.SetStatusText("...")
 
-        if args.state["depth_model"].has_checkpoint_file(args.depth_model):
+        if BaseDepthModel.has_model_checkpoint_file(args.depth_model):
             # Realod depth model
             self.SetStatusText(f"Loading {args.depth_model}...")
         else:
