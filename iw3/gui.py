@@ -6,6 +6,7 @@ from os import path
 import traceback
 import functools
 from time import time
+from collections import deque
 import threading
 import wx
 from wx.lib.delayedresult import startWorker
@@ -85,6 +86,7 @@ os.makedirs(PRESET_DIR, exist_ok=True)
 
 
 LAYOUT_DEBUG = False
+FPS_WINDOW_SEC = 10.0
 
 
 class IW3App(wx.App):
@@ -129,6 +131,7 @@ class MainFrame(wx.Frame):
         )
         self.processing = False
         self.start_time = 0
+        self.fps_history = deque()
         self.input_type = None
         self.stop_event = threading.Event()
         self.suspend_event = threading.Event()
@@ -1465,6 +1468,8 @@ class MainFrame(wx.Frame):
         else:
             self.start_time = time()
             self.suspend_pos = self.prg_tqdm.GetValue()
+            self.fps_history.clear()
+            self.fps_history.append((self.start_time, self.suspend_pos))
             self.suspend_event.set()
             self.btn_suspend.SetLabel(T("Suspend"))
 
@@ -1480,6 +1485,8 @@ class MainFrame(wx.Frame):
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
             self.suspend_pos = 0
+            self.fps_history.clear()
+            self.fps_history.append((self.start_time, 0))
             self.SetStatusText(f"{0}/{value} {desc}")
         elif type == 1:
             # update
@@ -1491,7 +1498,14 @@ class MainFrame(wx.Frame):
             now = time()
             pos = self.prg_tqdm.GetValue()
             end_pos = self.prg_tqdm.GetRange()
-            fps = (pos - self.suspend_pos) / (now - self.start_time + 1e-6)
+            self.fps_history.append((now, pos))
+            if len(self.fps_history) > 2 and self.fps_history[0][1] == self.suspend_pos:
+                self.fps_history.popleft()
+            while len(self.fps_history) > 2 and (now - self.fps_history[0][0]) > FPS_WINDOW_SEC:
+                self.fps_history.popleft()
+            dt = now - self.fps_history[0][0]
+            dp = pos - self.fps_history[0][1]
+            fps = dp / (dt + 1e-6)
             if fps > 0:
                 remaining_time = int((end_pos - pos) / fps)
                 h = remaining_time // 3600
