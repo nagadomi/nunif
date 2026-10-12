@@ -338,9 +338,19 @@ class VideoDepthAnythingModel(BaseDepthModel):
         else:
             return []
 
+    order: int = 50
+
     @classmethod
     def get_name(cls):
         return "VideoDepthAnything"
+
+    @classmethod
+    def is_desktop_supported(cls) -> bool:
+        return False
+
+    @classmethod
+    def has_auto_download(cls, model_type: str) -> bool:
+        return model_type in {"VDA_S", "VDA_Metric_S"}
 
     def is_image_supported(self):
         return False

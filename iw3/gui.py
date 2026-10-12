@@ -845,72 +845,7 @@ class MainFrame(wx.Frame):
         self.update_compile()
 
     def get_depth_models(self):
-        depth_models = [
-            "ZoeD_N",
-            "ZoeD_K",
-            "ZoeD_NK",
-            "ZoeD_Any_N",
-            "ZoeD_Any_K",
-            "DepthPro",
-            "DepthPro_S",
-            "Any_S",
-            "Any_B",
-            "Any_L",
-            "Any_V2_S",
-        ]
-        if BaseDepthModel.has_model_checkpoint_file("Any_V2_B"):
-            depth_models.append("Any_V2_B")
-        if BaseDepthModel.has_model_checkpoint_file("Any_V2_L"):
-            depth_models.append("Any_V2_L")
-
-        depth_models += ["Any_V2_N_S", "Any_V2_N_B"]
-        if BaseDepthModel.has_model_checkpoint_file("Any_V2_N_L"):
-            depth_models.append("Any_V2_N_L")
-        depth_models += ["Any_V2_K_S", "Any_V2_K_B"]
-        if BaseDepthModel.has_model_checkpoint_file("Any_V2_K_L"):
-            depth_models.append("Any_V2_K_L")
-
-        depth_models += ["Distill_Any_S"]
-        if BaseDepthModel.has_model_checkpoint_file("Distill_Any_B"):
-            depth_models.append("Distill_Any_B")
-        if BaseDepthModel.has_model_checkpoint_file("Distill_Any_L"):
-            depth_models.append("Distill_Any_L")
-
-        depth_models += ["Any_V3_Mono", "Any_V3_Mono_01"]
-
-        depth_models += ["VDA_S"]
-        if BaseDepthModel.has_model_checkpoint_file("VDA_B"):
-            depth_models.append("VDA_B")
-        if BaseDepthModel.has_model_checkpoint_file("VDA_L"):
-            depth_models.append("VDA_L")
-
-        depth_models += ["VDA_Metric_S"]
-        if BaseDepthModel.has_model_checkpoint_file("VDA_Metric_B"):
-            depth_models.append("VDA_Metric_B")
-        if BaseDepthModel.has_model_checkpoint_file("VDA_Metric_L"):
-            depth_models.append("VDA_Metric_L")
-
-        depth_models += ["VDA_Stream_S"]
-        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_B"):
-            depth_models.append("VDA_Stream_B")
-        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_L"):
-            depth_models.append("VDA_Stream_L")
-
-        depth_models += ["VDA_Stream_Metric_S"]
-        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_Metric_B"):
-            depth_models.append("VDA_Stream_Metric_B")
-        if BaseDepthModel.has_model_checkpoint_file("VDA_Stream_Metric_L"):
-            depth_models.append("VDA_Stream_Metric_L")
-
-        # Include any registered models not explicitly ordered above
-        known_set = set(depth_models)
-        for name in BaseDepthModel.get_all_model_types():
-            if name not in known_set and name != "NULL":
-                if BaseDepthModel.has_model_checkpoint_file(name):
-                    depth_models.append(name)
-                    known_set.add(name)
-
-        return depth_models
+        return BaseDepthModel.get_available_models()
 
     def get_editable_comboboxes(self):
         editable_comboboxes = [

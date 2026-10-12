@@ -38,18 +38,62 @@ class BaseDepthModel(metaclass=ABCMeta):
         if cls not in BaseDepthModel._subclasses:
             BaseDepthModel._subclasses.append(cls)
 
+    order: int = 100
+
     @classmethod
     def get_registered_classes(cls) -> list[type["BaseDepthModel"]]:
-        return list(cls._subclasses)
+        from . import depth_models  # noqa: F401
+
+        return sorted(cls._subclasses, key=lambda c: getattr(c, "order", 100))
 
     @classmethod
     def get_all_model_types(cls) -> list[str]:
         model_types: list[str] = []
-        for subcls in cls._subclasses:
+        for subcls in cls.get_registered_classes():
             for name in subcls.get_model_types():
                 if name not in model_types:
                     model_types.append(name)
         return model_types
+
+    @classmethod
+    def has_auto_download(cls, model_type: str) -> bool:
+        if cls is BaseDepthModel:
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.has_auto_download(model_type) if subcls is not None else False
+        return False
+
+    @classmethod
+    def is_small(cls, model_type: str) -> bool:
+        if cls is BaseDepthModel:
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.is_small(model_type) if subcls is not None else False
+        return False
+
+    @classmethod
+    def is_desktop_supported(cls) -> bool:
+        return True
+
+    @classmethod
+    def is_model_available(cls, model_type: str) -> bool:
+        if cls is BaseDepthModel:
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.is_model_available(model_type) if subcls is not None else False
+        return cls.has_auto_download(model_type) or cls.has_checkpoint_file(model_type)
+
+    @classmethod
+    def get_available_models(cls, desktop: bool = False, small_only: bool = False) -> list[str]:
+        models: list[str] = []
+        for subcls in cls.get_registered_classes():
+            if desktop and not subcls.is_desktop_supported():
+                continue
+            for m in subcls.get_model_types():
+                if m == "NULL":
+                    continue
+                if small_only and not subcls.is_small(m):
+                    continue
+                if subcls.is_model_available(m):
+                    models.append(m)
+        return models
 
     @classmethod
     def get_depth_model_class(cls, model_type: str) -> type["BaseDepthModel"] | None:

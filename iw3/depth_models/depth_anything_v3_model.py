@@ -205,9 +205,15 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
             limit_resolution=self.limit_resolution,
         )
 
+    order: int = 40
+
     @classmethod
     def get_name(cls):
         return "DepthAnythingV3Mono"
+
+    @classmethod
+    def has_auto_download(cls, model_type: str) -> bool:
+        return cls.supported(model_type)
 
     @classmethod
     def has_checkpoint_file(cls, model_type):

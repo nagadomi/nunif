@@ -64,6 +64,25 @@ AA_SUPPORTED_MODELS = {
     "Ultimate_DAV2_S",
     "Ultimate_DAV2_B",
 }
+AUTO_DOWNLOAD_MODELS = {
+    "Any_S",
+    "Any_B",
+    "Any_L",
+    "Any_V2_S",
+    "Any_V2_N_S",
+    "Any_V2_N_B",
+    "Any_V2_K_S",
+    "Any_V2_K_B",
+    "Distill_Any_S",
+}
+SMALL_MODELS = {
+    "Any_S",
+    "Any_V2_S",
+    "Any_V2_N_S",
+    "Distill_Any_S",
+    "Ultimate_DAV2_UL",
+    "Ultimate_DAV2_S",
+}
 MIN_RESOLUTION = 224
 
 
@@ -319,9 +338,19 @@ class DepthAnythingModel(BaseDepthModel):
             limit_resolution=self.limit_resolution,
         )
 
+    order: int = 30
+
     @classmethod
     def get_name(cls):
         return "DepthAnything"
+
+    @classmethod
+    def has_auto_download(cls, model_type: str) -> bool:
+        return model_type in AUTO_DOWNLOAD_MODELS
+
+    @classmethod
+    def is_small(cls, model_type: str) -> bool:
+        return model_type in SMALL_MODELS
 
     @classmethod
     def has_checkpoint_file(cls, model_type):

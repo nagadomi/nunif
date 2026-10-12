@@ -64,6 +64,8 @@ class NullDepthModel(BaseDepthModel):
 
         return x_out
 
+    order: int = 999
+
     @classmethod
     def get_name(cls):
         return "NullDepth"

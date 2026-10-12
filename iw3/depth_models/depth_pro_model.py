@@ -216,9 +216,15 @@ class DepthProModel(BaseDepthModel):
             force_disparity=self.force_disparity,
         )
 
+    order: int = 20
+
     @classmethod
     def get_name(cls):
         return "DepthPro"
+
+    @classmethod
+    def has_auto_download(cls, model_type: str) -> bool:
+        return cls.supported(model_type)
 
     @classmethod
     def has_checkpoint_file(cls, model_type):

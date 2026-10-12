@@ -256,9 +256,15 @@ class ZoeDepthModel(BaseDepthModel):
             edge_dilation=edge_dilation,
         )
 
+    order: int = 10
+
     @classmethod
     def get_name(cls):
         return "ZoeDepth"
+
+    @classmethod
+    def has_auto_download(cls, model_type: str) -> bool:
+        return cls.supported(model_type)
 
     @classmethod
     def has_checkpoint_file(cls, model_type="ZoeD_N"):

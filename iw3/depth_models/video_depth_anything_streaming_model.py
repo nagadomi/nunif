@@ -138,9 +138,19 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
 
         return depth
 
+    order: int = 60
+
     @classmethod
     def get_name(cls):
         return "VideoDepthAnythingStreaming"
+
+    @classmethod
+    def has_auto_download(cls, model_type: str) -> bool:
+        return model_type in {"VDA_Stream_S", "VDA_Stream_Metric_S"}
+
+    @classmethod
+    def is_small(cls, model_type: str) -> bool:
+        return model_type in {"VDA_Stream_S", "VDA_Stream_Metric_S"}
 
     def is_image_supported(self):
         return False
