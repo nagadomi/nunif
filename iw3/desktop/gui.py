@@ -777,6 +777,10 @@ class MainFrame(wx.Frame):
     def get_depth_models(self, small_only):
         if small_only:
             depth_models = ["Any_S", "Any_V2_S", "Any_V2_N_S", "Distill_Any_S", "VDA_Stream_S", "VDA_Stream_Metric_S"]
+            if BaseDepthModel.has_model_checkpoint_file("Ultimate_DAV2_UL"):
+                depth_models.append("Ultimate_DAV2_UL")
+            if BaseDepthModel.has_model_checkpoint_file("Ultimate_DAV2_S"):
+                depth_models.append("Ultimate_DAV2_S")
         else:
             depth_models = [
                 "ZoeD_N",
