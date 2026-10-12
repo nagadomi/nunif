@@ -167,6 +167,9 @@ Exportした深度画像を別のソフトウェアで処理するときにフ�
 | `Distill_Any_S`  | Distill Any Depth model small.
 | `Distill_Any_B`  | Distill Any Depth model base.
 | `Distill_Any_L`  | Distill Any Depth model large.
+| `Ultimate_DAV2_UL`  | Ultimate DAV2 ViT-S Gaming INet Ultra-Light.
+| `Ultimate_DAV2_S`  | Ultimate DAV2 ViT-S Gaming INet Quality.
+| `Ultimate_DAV2_B`  | Ultimate DAV2 ViT-B Gaming INet Quality.
 | `VDA_S`  | Video Depth Anything small.
 | `VDA_B`  | Video Depth Anything base. (cc-by-nc-4.0)
 | `VDA_L`  | Video Depth Anything large. (cc-by-nc-4.0)
@@ -210,6 +213,21 @@ Exportした深度画像を別のソフトウェアで処理するときにフ�
 これらのファイルは https://github.com/Westlake-AGI-Lab/Distill-Any-Depth のPre-trained Modelセクションからダウンロードできます。
 
 これらのファイルは`.safetensors`形式です。`.pth`への変換は必要ありませんが、上記のファイル名にリネームする必要があります。
+
+### `Ultimate_DAV2_UL`, `Ultimate_DAV2_S`, `Ultimate_DAV2_B` について
+
+関連ディスカッション: https://github.com/nagadomi/nunif/discussions/727
+
+これらのモデルはcc-by-nc-4.0(非商用)の下で配布されています。
+使用したい場合は、それらのライセンスに同意して自分でファイルを配置してください。
+
+| Short Name | ファイル |
+|------------|------|
+| `Ultimate_DAV2_UL` | `iw3/pretrained_models/hub/checkpoints/ultimate_dav2_vits_INet_UL.safetensors`
+| `Ultimate_DAV2_S`  | `iw3/pretrained_models/hub/checkpoints/ultimate_dav2_vits_INet_quality.safetensors`
+| `Ultimate_DAV2_B`  | `iw3/pretrained_models/hub/checkpoints/ultimate_dav2_vitB_INet_quality.safetensors`
+
+これらのファイルは https://huggingface.co/Jokeru1983/Ultimate_DAV2_ViT-S_Gaming からダウンロードできます。
 
 ### Video-Depth-Anythingについて
 

@@ -29,6 +29,10 @@ NAME_MAP = {
     "Distill_Any_S": "distill_any_depth_s",
     "Distill_Any_B": "distill_any_depth_b",
     "Distill_Any_L": "distill_any_depth_l",
+    # Ultimate DAV2
+    "Ultimate_DAV2_UL": "ultimate_dav2_ul",
+    "Ultimate_DAV2_S": "ultimate_dav2_s",
+    "Ultimate_DAV2_B": "ultimate_dav2_b",
 }
 MODEL_FILES = {
     "Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_vits14.pth"),
@@ -47,11 +51,18 @@ MODEL_FILES = {
     "Distill_Any_S": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vits.safetensors"),
     "Distill_Any_B": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitb.safetensors"),
     "Distill_Any_L": path.join(HUB_MODEL_DIR, "checkpoints", "distill_any_depth_vitl.safetensors"),
+    # Ultimate DAV2
+    "Ultimate_DAV2_UL": path.join(HUB_MODEL_DIR, "checkpoints", "ultimate_dav2_vits_INet_UL.safetensors"),
+    "Ultimate_DAV2_S": path.join(HUB_MODEL_DIR, "checkpoints", "ultimate_dav2_vits_INet_quality.safetensors"),
+    "Ultimate_DAV2_B": path.join(HUB_MODEL_DIR, "checkpoints", "ultimate_dav2_vitB_INet_quality.safetensors"),
 }
 AA_SUPPORTED_MODELS = {
     "Any_V2_S",
     "Any_V2_B",
     "Any_V2_L",
+    "Ultimate_DAV2_UL",
+    "Ultimate_DAV2_S",
+    "Ultimate_DAV2_B",
 }
 MIN_RESOLUTION = 224
 
@@ -234,6 +245,27 @@ class DepthAnythingModel(BaseDepthModel):
                     verbose=False,
                     trust_repo=True,
                 )
+        elif encoder.startswith("ultimate_dav2"):
+            # Ultimate DAV2
+            encoder = {"s": "v2_vits", "b": "v2_vitb", "ul": "v2_vits_ul"}[encoder[len("ultimate_dav2_") :]]
+            if not os.getenv("IW3_DEBUG"):
+                model = torch.hub.load(
+                    "nagadomi/Depth-Anything_iw3:main",
+                    "UltimateDAV2",
+                    encoder=encoder,
+                    verbose=False,
+                    trust_repo=True,
+                )
+            else:
+                assert path.exists("../Depth-Anything_iw3/hubconf.py")
+                model = torch.hub.load(
+                    "../Depth-Anything_iw3",
+                    "UltimateDAV2",
+                    encoder=encoder,
+                    source="local",
+                    verbose=False,
+                    trust_repo=True,
+                )
         else:
             # DepthAnything V1 or V2
             if not os.getenv("IW3_DEBUG"):
@@ -331,7 +363,7 @@ def _bench():
 
     B = 4
     N = 20
-    model = DepthAnythingModel("Any_L")
+    model = DepthAnythingModel("Any_V2_S")
     model.load(gpu=0)
     x = torch.randn((B, 3, 1080, 1920)).cuda()
     model.infer(x)

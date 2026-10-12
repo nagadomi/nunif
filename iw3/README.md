@@ -499,6 +499,9 @@ See https://github.com/nagadomi/nunif/pull/484 and [Inpainting Model Training](.
 | `Distill_Any_S`  | Distill Any Depth model small.
 | `Distill_Any_B`  | Distill Any Depth model base.
 | `Distill_Any_L`  | Distill Any Depth model large.
+| `Ultimate_DAV2_UL`  | Ultimate DAV2 ViT-S Gaming INet Ultra-Light.
+| `Ultimate_DAV2_S`  | Ultimate DAV2 ViT-S Gaming INet Quality.
+| `Ultimate_DAV2_B`  | Ultimate DAV2 ViT-B Gaming INet Quality.
 | `VDA_S`  | Video Depth Anything small.
 | `VDA_B`  | Video Depth Anything base. (cc-by-nc-4.0)
 | `VDA_L`  | Video Depth Anything large. (cc-by-nc-4.0)
@@ -508,7 +511,6 @@ See https://github.com/nagadomi/nunif/pull/484 and [Inpainting Model Training](.
 | `VDA_Stream_S`  | Video Depth Anything streaming model small.
 | `VDA_Stream_B`  | Video Depth Anything streaming model base. (cc-by-nc-4.0)
 | `VDA_Stream_L`  | Video Depth Anything streaming model large. (cc-by-nc-4.0)
-
 
 
 Personally, I recommend `ZoeD_Any_N`, `Any_B` or `VDA_Metric_L`.
@@ -594,6 +596,21 @@ If you want to use it, place the checkpoint file yourself.
 These files can be downloaded from Pre-trained Models section of https://github.com/Westlake-AGI-Lab/Distill-Any-Depth .
 
 These files are in `.safetensors` format, so conversion to `.pth` is not required. Renaming to an appropriate file name is required.
+
+### About `Ultimate_DAV2_UL`, `Ultimate_DAV2_S`, `Ultimate_DAV2_B`
+
+Related Posts: https://github.com/nagadomi/nunif/discussions/727
+
+These models are licensed under cc-by-nc-4.0 (Non Commercial).
+If you want to use it, agree to the pre-trained model license and place the checkpoint file yourself.
+
+| Short Name | Path |
+|------------|------|
+| `Ultimate_DAV2_UL` | `iw3/pretrained_models/hub/checkpoints/ultimate_dav2_vits_INet_UL.safetensors`
+| `Ultimate_DAV2_S`  | `iw3/pretrained_models/hub/checkpoints/ultimate_dav2_vits_INet_quality.safetensors`
+| `Ultimate_DAV2_B`  | `iw3/pretrained_models/hub/checkpoints/ultimate_dav2_vitB_INet_quality.safetensors`
+
+These files can be downloaded from https://huggingface.co/Jokeru1983/Ultimate_DAV2_ViT-S_Gaming .
 
 ## Stereo Generation Method (Left-Right Image Generation)
 
