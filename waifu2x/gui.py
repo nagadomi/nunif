@@ -6,6 +6,7 @@ from os import path
 import gc
 import functools
 from time import time
+from collections import deque
 import threading
 from pprint import pprint  # noqa
 import torch
@@ -110,6 +111,7 @@ MODEL_INFO = {
 
 
 LAYOUT_DEBUG = False
+FPS_WINDOW_SEC = 10.0
 
 
 class Waifu2xApp(wx.App):
@@ -145,6 +147,7 @@ class MainFrame(wx.Frame):
         )
         self.processing = False
         self.start_time = 0
+        self.fps_history = deque()
         self.input_type = None
         self.stop_event = threading.Event()
         self.initialize_component()
@@ -708,6 +711,8 @@ class MainFrame(wx.Frame):
             self.prg_tqdm.SetRange(value)
             self.prg_tqdm.SetValue(0)
             self.start_time = time()
+            self.fps_history.clear()
+            self.fps_history.append((self.start_time, 0))
             self.SetStatusText(f"0/{value} {desc}")
         elif type == 1:
             # update
@@ -719,13 +724,21 @@ class MainFrame(wx.Frame):
             now = time()
             pos = self.prg_tqdm.GetValue()
             end_pos = self.prg_tqdm.GetRange()
-            fps = pos / (now - self.start_time)
-            remaining_time = int((end_pos - pos) / fps)
-            h = remaining_time // 3600
-            m = (remaining_time - h * 3600) // 60
-            s = remaining_time - h * 3600 - m * 60
-            t = f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
-            self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ] {desc}")
+            self.fps_history.append((now, pos))
+            if len(self.fps_history) > 2 and self.fps_history[0][1] == 0:
+                self.fps_history.popleft()
+            while len(self.fps_history) > 2 and (now - self.fps_history[0][0]) > FPS_WINDOW_SEC:
+                self.fps_history.popleft()
+            dt = now - self.fps_history[0][0]
+            dp = pos - self.fps_history[0][1]
+            fps = dp / (dt + 1e-6)
+            if fps > 0:
+                remaining_time = int((end_pos - pos) / fps)
+                h = remaining_time // 3600
+                m = (remaining_time - h * 3600) // 60
+                s = remaining_time - h * 3600 - m * 60
+                t = f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
+                self.SetStatusText(f"{pos}/{end_pos} [ {t}, {fps:.2f}FPS ] {desc}")
         elif type == 2:
             # close
             pass
