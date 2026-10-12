@@ -6,7 +6,7 @@ from PIL import Image
 from torchvision.transforms import functional as TF
 
 from nunif.device import autocast, create_device, device_is_mps, device_is_xpu  # noqa
-from nunif.models.utils import compile_model
+from nunif.models.utils import compile_function, compile_model
 
 from ..base_depth_model import HUB_MODEL_DIR, BaseDepthModel
 from ..models import DepthAA
@@ -193,13 +193,15 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
 
     def compile(self):
         if self.model_backup is None:
-            self.model_backup = (self.model.head, self.model.pretrained)
+            self.model_backup = (self.model.head, self.model.pretrained.get_intermediate_layers)
             self.model.head = compile_model(self.model.head)
-            self.model.pretrained = compile_model(self.model.pretrained)
+            self.model.pretrained.get_intermediate_layers = compile_function(
+                self.model.pretrained.get_intermediate_layers, device=self.device
+            )
 
     def clear_compiled_model(self):
         if self.model_backup is not None:
-            self.model.head, self.model.pretrained = self.model_backup
+            self.model.head, self.model.pretrained.get_intermediate_layers = self.model_backup
             self.model_backup = None
 
 
