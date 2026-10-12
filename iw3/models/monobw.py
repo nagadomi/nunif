@@ -80,7 +80,7 @@ class MonoBW(I2IBaseModel):
         dtype = depth.dtype
         device = depth.device
 
-        if isinstance(convergence, float):
+        if isinstance(convergence, (int, float)):
             convergence = torch.tensor(convergence, dtype=dtype, device=device).expand(B, 1).view(B, 1, 1, 1)
         else:
             if convergence.ndim != 4:
@@ -195,6 +195,73 @@ class MonoBW(I2IBaseModel):
 
         return warped_rgb
 
+    def nonwarp_mask(
+        self,
+        c: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        view: str = "right",
+        threshold: float = 0.5,
+        fix_screen_border_mask: int = 1,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        assert view in {"left", "right"}
+        dummy = torch.zeros_like(c)
+        if view == "right":
+            # warp depth to the left
+            warped_depth = self(depth, depth, divergence=divergence, convergence=convergence)
+            # warp warped_depth to the right and back to original position
+            _, mask = self(
+                dummy.flip(-1),
+                warped_depth.flip(-1),
+                divergence=divergence,
+                convergence=convergence,
+                return_mask=True,
+                fix_screen_border_mask=fix_screen_border_mask,
+            )
+            mask = mask.flip(-1)
+        else:
+            # warp depth to the right
+            warped_depth = self(
+                depth.flip(-1),
+                depth.flip(-1),
+                divergence=divergence,
+                convergence=convergence,
+            ).flip(-1)
+            # warp warped_depth to the left and back to original position
+            _, mask = self(
+                dummy,
+                warped_depth,
+                divergence=divergence,
+                convergence=convergence,
+                return_mask=True,
+                fix_screen_border_mask=fix_screen_border_mask,
+            )
+
+        return c, mask
+
+
+def _test_nonwarp_mask(save_path: str | None = None):
+    import torchvision.io as io
+    import torchvision.transforms.functional as TF
+
+    view = "right"  # left
+    x = io.read_image("tests/images/dog_448.png") / 255.0
+    depth = io.read_image("tests/images/depth/dog_448.png") / 65536.0
+    x = x.unsqueeze(0).cuda()
+    depth = depth.unsqueeze(0).cuda()
+
+    model = MonoBW().cuda()
+    x, mask = model.nonwarp_mask(x, depth, divergence=4 * 2, convergence=0.0, view=view)
+
+    x = x.mean(dim=1, keepdim=True)
+    x = torch.cat([x, mask.float(), torch.zeros_like(mask, dtype=torch.float)], dim=1)[0]
+    im = TF.to_pil_image(x)
+    if save_path:
+        im.save(save_path)
+    else:
+        im.show()
+
 
 def _bench(name, preserve_screen_border=False, do_compile=False):
     import time
@@ -258,3 +325,4 @@ if __name__ == "__main__":
     _bench("sbs.monobw", do_compile=True)
 
     # _test_mask()
+    # _test_nonwarp_mask()
