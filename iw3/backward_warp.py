@@ -562,7 +562,7 @@ def nonwarp_mask(
     if mapper is not None:
         disparity = get_mapper(mapper)(warped_depth)
     else:
-        disparity = depth
+        disparity = warped_depth
 
     dummy = torch.zeros_like(c)
     _, mask_logits = apply_divergence_nn_delta_weight(
