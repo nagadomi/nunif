@@ -1,5 +1,5 @@
 diffusers
-transformers
+transformers>=5.10.2
 bitsandbytes>=0.46.1
 gguf>=0.10.0
 peft

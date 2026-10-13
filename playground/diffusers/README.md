@@ -146,3 +146,26 @@ AI : こんにちは！そうですね、私は人間ではありません。私
 何か私に聞いてみたいこと、話したいことはありますか？ どんなことでも、できる限りお手伝いしますよ！
 You >
 ```
+
+
+## Clef-Flash Image Finder
+
+Uses: https://huggingface.co/Cloudflare/clef-flash
+
+Finds images using the multimodal decision model Clef-Flash based on a given prompt/question. Only images matching the criteria are saved to the output directory.
+
+```bash
+python -m playground.diffusers.clef_find -p "Is there a dog in the picture?" -i ./input -o ./output
+```
+
+Options:
+- `-p`, `--prompt`: Question or prompt condition (e.g., `"Is there a dog in the picture?"`).
+- `-i`, `--input`: Input directory or single image file.
+- `-o`, `--output`: Output directory for matched images.
+- `--q8`: Use 8-bit quantization instead of default 4-bit (4-bit requires ~6.5GB VRAM, 8-bit requires ~9.5GB VRAM).
+- `--device`: Target device (`cuda` or `cpu`). Use `--device cpu` to run entirely on system RAM without GPU.
+- `--threshold`: Probability threshold for matching (default: `0.5`).
+- `--max-size`: Max image size (longest edge) for model input. Larger images are downscaled while preserving aspect ratio. `0` disables resizing (default: `512`).
+- `--action`: Action on matched images: `copy` (default) or `symlink`.
+- `--recursive`, `-r`: Search recursively in subdirectories.
+- `-q`, `--quiet`: Suppress per-file logging.
