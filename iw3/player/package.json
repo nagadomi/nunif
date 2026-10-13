@@ -10,7 +10,7 @@
     "dev": "npm run setup-draco && esbuild src/vendor.js --bundle --outfile=public/lib/vendor.bundle.js --format=esm --sourcemap --define:DEBUG_MODE=true",
     "watch": "esbuild src/vendor.js --bundle --outfile=public/lib/vendor.bundle.js --format=esm --watch --sourcemap --define:DEBUG_MODE=true",
     "lint": "eslint public/js/",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

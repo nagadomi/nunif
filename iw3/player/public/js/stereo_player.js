@@ -163,6 +163,7 @@ class StereoPlayer extends THREE.Group {
                 this.videoElement.autoplay = true;
                 this.videoElement.loop = this.uiManager.videoRepeat;
                 this.videoElement.volume = this.uiManager.currentVolume;
+                this.uiManager.applyPlaybackSpeed();
 
                 this.videoElement.onended = () => {
                     this.uiManager.updateFileConfig(file, { playback_time: 0 });
@@ -176,6 +177,8 @@ class StereoPlayer extends THREE.Group {
 
             const handleMetadata = () => {
                 if (this.currentLoadId !== loadId) { if (!forcedFormat) { this.videoElement.pause(); this.videoElement.src = ""; } return; }
+                // Source loads and format/mipmap changes may reset media properties.
+                this.uiManager.applyPlaybackSpeed();
                 const vw = this.videoElement.videoWidth;
                 const vh = this.videoElement.videoHeight;
                 

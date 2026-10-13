@@ -4,6 +4,7 @@ import { Container, Text, reversePainterSortStable } from '@pmndrs/uikit';
 import { forwardHtmlEvents, createRayPointer } from '@pmndrs/pointer-events';
 import { LIMITS, DEFAULTS, UI_CONFIG, COLORS, FONT_CONFIG, SETTINGS_METADATA } from './constants.js';
 import { storage } from './storage.js';
+import { PlaybackSpeed } from './playback_speed.js';
 import { UIUtils } from './ui_common.js';
 
 // Import split UI components
@@ -39,6 +40,7 @@ class UIManager extends THREE.Group {
         
         // Helpers
         this.currentVolume = DEFAULTS.screen_volume;
+        this.playbackSpeed = new PlaybackSpeed();
         this.subY = DEFAULTS.subtitle_y;
         this.subZ = DEFAULTS.subtitle_z;
         this.subFontSize = DEFAULTS.subtitle_font_size;
@@ -144,7 +146,7 @@ class UIManager extends THREE.Group {
     updateMenuPositions() {
         const offset = this.menuAlignment === 'right' ? UI_CONFIG.menuMarginLeft : -UI_CONFIG.menuMarginLeft;
         // Apply to all settings menus except explorer and main menu
-        const targetMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
+        const targetMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings, this.speedMenu];
         targetMenus.forEach(menu => {
             if (menu && menu.container) {
                 menu.container.setProperties({ marginLeft: offset });
@@ -220,6 +222,7 @@ class UIManager extends THREE.Group {
         this.add(this.mainContainer);
 
         this.mainMenu = new MainMenu(this, defaultFont);
+        this.speedMenu = this.mainMenu.speedMenu;
         this.screenSettings = new ScreenSettingsMenu(this, defaultFont);
         this.colorSettings = new ColorSettingsMenu(this, defaultFont);
         this.environmentSettings = new EnvironmentSettingsMenu(this, defaultFont);
@@ -230,6 +233,7 @@ class UIManager extends THREE.Group {
         this.allSettingsMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
 
         this.mainContainer.add(this.mainMenu.container);
+        this.mainContainer.add(this.speedMenu.container);
         this.mainContainer.add(this.screenSettings.container);
         this.mainContainer.add(this.colorSettings.container);
         this.mainContainer.add(this.environmentSettings.container);
@@ -315,6 +319,7 @@ class UIManager extends THREE.Group {
     }
 
     switchSubMenu(targetMenu) {
+        this.activeSubMenu?.onClose?.();
         if (this.activeSubMenu === targetMenu) {
             if (this.activeSubMenu) { this.activeSubMenu.container.setProperties({ display: 'none' }); this.activeSubMenu = null; }
             return;
@@ -749,6 +754,46 @@ class UIManager extends THREE.Group {
         this.onSliderChange('screen_volume', percent, shouldSave);
     }
 
+    applyPlaybackSpeed() {
+        if (!this.playbackSpeed.applyTo(this.stereoPlayer.videoElement)) {
+            this.showNotification(`Speed unsupported; kept ${this.playbackSpeed.rate}x`);
+        }
+    }
+
+    async setPlaybackSpeed(rate, shouldSave = true) {
+        this.playbackSpeed.setRate(rate);
+        this.applyPlaybackSpeed();
+        this.syncUI();
+        if (shouldSave) await storage.set('playback_speed', this.playbackSpeed.toJSON());
+    }
+
+    async setPlaybackSpeedBounds(min, max) {
+        if (!this.playbackSpeed.setBounds(min, max)) return false;
+        await this.setPlaybackSpeed(this.playbackSpeed.rate);
+        return true;
+    }
+
+    resetPlaybackSpeed() {
+        const speed = this.playbackSpeed;
+        speed.setBounds(Math.min(speed.min, 1), Math.max(speed.max, 1));
+        return this.setPlaybackSpeed(1);
+    }
+
+    restorePlaybackSpeedDefaults() {
+        this.playbackSpeed = new PlaybackSpeed();
+        return this.setPlaybackSpeed(1);
+    }
+
+    handlePlaybackSpeed(e, track, shouldSave = true) {
+        if (!this.visible || !e.point) return;
+        const local = track.worldToLocal(e.point.clone());
+        const percent = THREE.MathUtils.clamp(0.5 + local.x, 0, 1);
+        const speed = this.playbackSpeed;
+        const rate = percent === 0 ? speed.min : percent === 1 ? speed.max :
+            Math.round((speed.min + (speed.max - speed.min) * percent) * 100) / 100;
+        return this.setPlaybackSpeed(rate, shouldSave);
+    }
+
     async onSliderChange(id, val, shouldSave = true) {
         // Capture the applying state synchronously to avoid race conditions after await
         const wasApplyingDuringCall = this.isApplyingConfig;
@@ -813,6 +858,8 @@ class UIManager extends THREE.Group {
     // --- Sync & Storage ---
 
     async loadSettings() { 
+        this.playbackSpeed = new PlaybackSpeed(storage.get('playback_speed'));
+        this.applyPlaybackSpeed();
         await this.screenSettings.load();
         await this.colorSettings.load();
         await this.environmentSettings.load();
@@ -826,6 +873,7 @@ class UIManager extends THREE.Group {
     
     async saveSettings() { 
         await Promise.all([
+            storage.set('playback_speed', this.playbackSpeed.toJSON()),
             this.screenSettings.save(),
             this.colorSettings.save(),
             this.environmentSettings.save(),
