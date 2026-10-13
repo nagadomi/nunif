@@ -1,7 +1,9 @@
 import os
 import subprocess
 import sys
+from collections import deque
 from os import path
+from time import time
 
 import wx
 import wx.lib.agw.persist as persist
@@ -36,6 +38,85 @@ class TQDMGUI:
 
     def close(self):
         wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0, self.desc))
+
+
+class FPSTracker:
+    def __init__(
+        self,
+        min_window_sec: float = 15.0,
+        max_window_sec: float = 30.0,
+        target_frames: int = 200,
+        ema_alpha: float = 0.2,
+        update_interval: float = 0.25,
+    ):
+        self.min_window_sec = min_window_sec
+        self.max_window_sec = max_window_sec
+        self.target_frames = target_frames
+        self.ema_alpha = ema_alpha
+        self.update_interval = update_interval
+
+        self.history: deque[tuple[float, int]] = deque()
+        self.suspend_pos: int = 0
+        self.last_status_time: float = 0.0
+        self.smoothed_fps: float | None = None
+
+    def reset(self, start_pos: int = 0) -> None:
+        self.suspend_pos = start_pos
+        self.history.clear()
+        self.last_status_time = 0.0
+        self.smoothed_fps = None
+        self.initialized: bool = False
+
+    @staticmethod
+    def format_time(seconds: int) -> str:
+        h = seconds // 3600
+        m = (seconds - h * 3600) // 60
+        s = seconds - h * 3600 - m * 60
+        return f"{m:02d}:{s:02d}" if h == 0 else f"{h:02d}:{m:02d}:{s:02d}"
+
+    def update(self, pos: int, end_pos: int, desc: str = "") -> str | None:
+        now = time()
+
+        # Establish baseline timestamp on first progress update to exclude initial compile/loading latency
+        if not self.initialized:
+            self.history.clear()
+            self.history.append((now, pos))
+            self.initialized = True
+            return None
+
+        self.history.append((now, pos))
+
+        while len(self.history) > 2:
+            dt_old = now - self.history[0][0]
+            dp_old = pos - self.history[0][1]
+            if dt_old > self.max_window_sec or (dt_old > self.min_window_sec and dp_old > self.target_frames):
+                self.history.popleft()
+            else:
+                break
+
+        dt = now - self.history[0][0]
+        dp = pos - self.history[0][1]
+
+        # Require at least 1.0 second of observations before computing initial FPS
+        if dt < 1.0 and self.smoothed_fps is None and pos != end_pos:
+            return None
+
+        fps = dp / (dt + 1e-6)
+        if fps <= 0:
+            return None
+
+        if now - self.last_status_time >= self.update_interval or pos == end_pos:
+            self.last_status_time = now
+            if self.smoothed_fps is None:
+                self.smoothed_fps = fps
+            else:
+                self.smoothed_fps = self.ema_alpha * fps + (1.0 - self.ema_alpha) * self.smoothed_fps
+
+            remaining_time = int((end_pos - pos) / self.smoothed_fps)
+            t = self.format_time(remaining_time)
+            return f"{pos}/{end_pos} [ {t}, {self.smoothed_fps:.2f}FPS ] {desc}"
+
+        return None
 
 
 class FileDropCallback(wx.FileDropTarget):

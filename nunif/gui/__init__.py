@@ -4,6 +4,7 @@ from .common import (
     EditableComboBox,
     EditableComboBoxPersistentHandler,
     FileDropCallback,
+    FPSTracker,
     IpAddrCtrl,
     TimeCtrl,
     TQDMEvent,
@@ -29,6 +30,7 @@ from .video_encoding_box import VideoEncodingBox
 
 __all__ = [
     "EVT_TQDM",
+    "FPSTracker",
     "TQDMEvent",
     "TQDMGUI",
     "FileDropCallback",
