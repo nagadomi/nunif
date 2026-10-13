@@ -1204,9 +1204,9 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     tqdm_fn=args.state["tqdm_fn"],
                     tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
                 )
-                save_scene_cache(input_filename, segment_pts, args)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     return
+                save_scene_cache(input_filename, segment_pts, args)
             gc_collect()
     else:
         segment_pts = set()
@@ -1812,9 +1812,9 @@ def export_video(input_filename, output_dir, args, title=None):
                     tqdm_fn=args.state["tqdm_fn"],
                     tqdm_title=f"{path.basename(input_filename)}: Scene Boundary Detection",
                 )
-                save_scene_cache(input_filename, segment_pts, args)
                 if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
                     return
+                save_scene_cache(input_filename, segment_pts, args)
             gc_collect()
     else:
         segment_pts = set()
