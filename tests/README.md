@@ -27,6 +27,25 @@ pytest -m "not slow"
 pytest -m "hwaccel"
 ```
 
+## Cleaning Test Data
+
+Clean up generated files in `tests/data/`:
+
+```bash
+# Clean previous test outputs before running tests
+pytest tests/integration --clean
+
+# Clean outputs only (exit without running tests)
+pytest --clean-only
+
+# Clean everything including generated fixtures (re-creates them on next test run)
+pytest --clean-all
+
+# Or use the standalone helper script
+python -m tests.helpers.clean
+python -m tests.helpers.clean --all
+```
+
 ## Comparison Tools
 
 Regression tools under `tests/tools/` compare outputs against a baseline git revision (default: `9fd1812477a2a7f372c87ac7ac14fdfab0a7c3ed`) via `git worktree`:
