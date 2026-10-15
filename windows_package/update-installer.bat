@@ -8,11 +8,13 @@ copy /y "%NUNIF_DIR%\windows_package\update.bat" "%~dp0\update.bat"
 copy /y "%NUNIF_DIR%\windows_package\install.bat" "%~dp0\install.bat"
 
 copy /y "%NUNIF_DIR%\windows_package\nunif-prompt.bat" "%~dp0\nunif-prompt.bat"
+copy /y "%NUNIF_DIR%\windows_package\nunif-cmd.bat" "%~dp0\nunif-cmd.bat"
 copy /y "%NUNIF_DIR%\windows_package\iw3-gui.bat" "%~dp0\iw3-gui.bat"
 copy /y "%NUNIF_DIR%\windows_package\iw3-desktop-gui.bat" "%~dp0\iw3-desktop-gui.bat"
 copy /y "%NUNIF_DIR%\windows_package\iw3-player-gui.bat" "%~dp0\iw3-player-gui.bat"
 copy /y "%NUNIF_DIR%\windows_package\waifu2x-gui.bat" "%~dp0\waifu2x-gui.bat"
 copy /y "%NUNIF_DIR%\windows_package\waifu2x-web.bat" "%~dp0\waifu2x-web.bat"
+copy /y "%NUNIF_DIR%\windows_package\AGENTS.md" "%~dp0\AGENTS.md"
 
 xcopy "%NUNIF_DIR%\windows_package\torch_compile" "%~dp0\torch_compile" /E /H /Y /I
 
