@@ -47,6 +47,11 @@ class BaseDepthModel(metaclass=ABCMeta):
         return sorted(cls._subclasses, key=lambda c: getattr(c, "order", 100))
 
     @classmethod
+    def update_hub(cls):
+        for subcls in cls.get_registered_classes():
+            subcls.force_update()
+
+    @classmethod
     def get_all_model_types(cls) -> list[str]:
         model_types: list[str] = []
         for subcls in cls.get_registered_classes():

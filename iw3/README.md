@@ -639,7 +639,7 @@ Multi-GPU(`All CUDA Device`) feature is supported only for video processing and 
 
 When you manually update the code, run the following command.
 ```
-python -m iw3.download_models
+python -m iw3.update_hub
 ```
 
 The command syncs the following repositories.
@@ -650,8 +650,6 @@ The command syncs the following repositories.
 - https://github.com/nagadomi/ml-depth-pro_iw3
 - https://github.com/nagadomi/Video-Depth-Anything_iw3
 - https://github.com/nagadomi/Depth-Anything-3_iw3
-
-If you already downloaded the model files (checkpoint filess), downloading model files will be skipped.
 
 ## Sub Project
 

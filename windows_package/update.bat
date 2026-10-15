@@ -56,11 +56,8 @@ python -m pip install --no-cache-dir --upgrade -r "%NUNIF_DIR%\requirements-gui.
 if %ERRORLEVEL% neq 0 goto :on_error
 
 
-echo Download Models...
-pushd "%NUNIF_DIR%" && python -m waifu2x.download_models && popd
-if %ERRORLEVEL% neq 0 goto :on_error
-
-pushd "%NUNIF_DIR%" && python -m iw3.download_models && popd
+echo Updating Torch Hub Cache...
+pushd "%NUNIF_DIR%" && python -m iw3.update_hub && popd
 if %ERRORLEVEL% neq 0 goto :on_error
 
 

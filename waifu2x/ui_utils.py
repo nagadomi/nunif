@@ -18,6 +18,7 @@ from nunif.utils.image_loader import ImageLoader
 from nunif.utils.rgb_noise import apply_rgb_noise, rgb_noise_like
 from nunif.utils.ui import is_image, is_output_dir, is_text, is_video, list_subdir, make_parent_dir
 
+from .download_models import has_models
 from .download_models import main as download_main
 from .model_dir import MODEL_DIR
 from .utils import Waifu2x
@@ -423,7 +424,7 @@ def waifu2x_main(args):
         args.method = "noise_scale"
 
     # download models
-    if not path.exists(MODEL_DIR):
+    if not has_models():
         download_main()
 
     # main

@@ -25,6 +25,10 @@ class ModelDownloader(ArchiveDownloader):
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
+def has_models():
+    return path.exists(MODEL_DIR) and path.exists(VERSION_FILE) and path.exists(PATCH1_VERSION_FILE)
+
+
 def main():
     if not path.exists(VERSION_FILE):
         downloder = ModelDownloader(MODEL_URL, name="Waifu2x Models", format="zip")
