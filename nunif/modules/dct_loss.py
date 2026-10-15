@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from dctorch.functional import dct2
 
 from .charbonnier_loss import charbonnier_loss
 from .color import rgb_to_yrgb
+from .dct import dct2
 from .permute import window_partition2d
 from .transforms import diff_random_rotate_pair, diff_rotate
 

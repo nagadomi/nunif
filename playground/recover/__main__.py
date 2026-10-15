@@ -8,11 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.io as io
 import torchvision.transforms.functional as TF
-from dctorch.functional import dct2
 
 from cliqa.models.lpips_repvgg import LPIPSRepVGGLoss
 from cliqa.models.lpips_vgg import LPIPSVGG16Loss
 from dino.models.l4sn import L4SNLoss
+from nunif.modules.dct import dct2
 from nunif.modules.dinov2 import DINOv2Loss, DINOv2PoolLoss, DINOv2StyleLoss
 from nunif.modules.lpips import LPIPSWith
 from nunif.modules.weighted_loss import WeightedLoss

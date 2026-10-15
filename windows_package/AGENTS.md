@@ -24,7 +24,7 @@ This document provides specific instructions when maintaining or working inside 
   - Development and testing tools (`pytest`, `ruff`, `mypy`, and type stubs in `requirements-dev.txt`) are NOT installed by default in the distribution package.
   - Install specific tools on demand:
     - `nunif-cmd.bat python -m pip install pytest ruff mypy types-pywin32`
-  - **Caution**: Prefer installing specific tools rather than `pip install -r requirements-dev.txt`. Installing the entire file introduces packages with legacy constraints (such as `dctorch` requiring `numpy<2.0.0`), which downgrades numpy and causes dependency conflicts with packages requiring `numpy>=2` (such as bundled `opencv-python`).
+  - **Caution**: Prefer installing specific tools rather than `pip install -r requirements-dev.txt`. Installing unnecessary dev packages may introduce dependency conflicts with bundled packages (such as bundled `opencv-python` requiring `numpy>=2`).
 - **Running Tests**:
   - Run tests with `nunif-cmd.bat python -m pytest <test_path>` (e.g., `nunif-cmd.bat python -m pytest tests/integration/waifu2x/test_cli.py`).
   - Tests work in CPU-only environments without a GPU (execution will take longer).

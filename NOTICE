@@ -106,5 +106,11 @@ nunif/utils/repvgg.py: RepVGG
 Code and Weights from https://github.com/DingXiaoH/RepVGG
 DingXiaoH / MIT License
 
+---
+nunif/modules/dct.py
+Adapted from dctorch https://github.com/GallagherCommaJack/dctorch
+Jack Gallagher / MIT License
+
 ----
 Other libraries used are listed in `requirements.txt`.
+

@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import numpy as np
 import scipy.fft
 import torch
@@ -6,9 +8,31 @@ import torch.nn as nn
 from .init import basic_module_init
 from .permute import window_partition2d
 
-# Exportable Compilable DCT2 module
-# Most codes adapted from dctorch
-# https://github.com/GallagherCommaJack/dctorch
+
+@lru_cache(maxsize=64)
+def compute_dct_mat(n: int, device: torch.device | str, dtype: torch.dtype) -> torch.Tensor:
+    m = scipy.fft.dct(np.eye(n), norm="ortho")
+    return torch.tensor(m, device=device, dtype=dtype)
+
+
+@lru_cache(maxsize=64)
+def compute_idct_mat(n: int, device: torch.device | str, dtype: torch.dtype) -> torch.Tensor:
+    m = scipy.fft.idct(np.eye(n), norm="ortho")
+    return torch.tensor(m, device=device, dtype=dtype)
+
+
+def dct2(x: torch.Tensor) -> torch.Tensor:
+    h, w = x.shape[-2:]
+    mh = compute_dct_mat(h, device=x.device, dtype=x.dtype)
+    mw = compute_dct_mat(w, device=x.device, dtype=x.dtype)
+    return torch.einsum("...hw,hi,wj->...ij", x, mh, mw)
+
+
+def idct2(x: torch.Tensor) -> torch.Tensor:
+    h, w = x.shape[-2:]
+    mh = compute_idct_mat(h, device=x.device, dtype=x.dtype)
+    mw = compute_idct_mat(w, device=x.device, dtype=x.dtype)
+    return torch.einsum("...hw,hi,wj->...ij", x, mh, mw)
 
 
 class DCT2(nn.Module):
@@ -109,7 +133,6 @@ def _test():
     import math
 
     import torchvision.io as IO
-    from dctorch.functional import dct2, idct2
 
     x = (IO.read_image("tests/images/dog_448.png") / 256.0).unsqueeze(0)
     my_dct2 = DCT2((x.shape[2], x.shape[3]))
@@ -117,11 +140,12 @@ def _test():
 
     ref_dct_ret = dct2(x)
     my_dct_ret = my_dct2(x)
-    assert math.isclose((ref_dct_ret - my_dct_ret).abs().sum(), 0)
+    assert math.isclose((ref_dct_ret - my_dct_ret).abs().sum().item(), 0)
 
     ref_idct_ret = idct2(ref_dct_ret)
     my_idct_ret = my_idct2(my_dct_ret)
-    assert math.isclose((ref_idct_ret - my_idct_ret).abs().sum(), 0)
+    assert math.isclose((ref_idct_ret - my_idct_ret).abs().sum().item(), 0)
+    assert math.isclose((ref_idct_ret - x).abs().mean().item(), 0, abs_tol=1e-6)
 
 
 def _test_window_dct():
