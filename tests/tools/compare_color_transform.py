@@ -1,6 +1,5 @@
 import argparse
 import os
-import shlex
 import shutil
 
 from nunif.cli.diff_video import VideoMetadata, compare_videos, get_video_metadata
@@ -19,12 +18,23 @@ def run_color_transform_for_repo(
 ) -> None:
     req_file = os.path.join(repo_path, "requirements.txt")
     if os.path.exists(req_file):
-        run(f"python -m pip install -r {shlex.quote(req_file)}")
+        run(["python", "-m", "pip", "install", "-r", req_file])
 
-    iw3_options = (
-        f"-i {shlex.quote(video_path)} --yes --half-sbs --method row_flow_v3 "
-        f"--depth-model Any_V2_S --batch-size 2 --max-workers 2 --cuda-stream"
-    )
+    iw3_options = [
+        "-i",
+        video_path,
+        "--yes",
+        "--half-sbs",
+        "--method",
+        "row_flow_v3",
+        "--depth-model",
+        "Any_V2_S",
+        "--batch-size",
+        "2",
+        "--max-workers",
+        "2",
+        "--cuda-stream",
+    ]
 
     for encoder in ["libx265", "hevc_nvenc"]:
         for pix_fmt in ["yuv420p", "yuv420p10le"]:
@@ -33,40 +43,95 @@ def run_color_transform_for_repo(
                     continue
 
                 out_file = os.path.join(out_dir, f"{encoder}_{pix_fmt}_{colorspace}.mkv")
-                out_file_arg = shlex.quote(os.path.abspath(out_file))
+                out_file_arg = os.path.abspath(out_file)
                 print("-" * 50)
                 print(f"Processing: {out_file}")
                 run(
-                    f"python -m iw3.cli {iw3_options} --video-codec {encoder} --pix-fmt {pix_fmt} "
-                    f"--colorspace {colorspace} -o {out_file_arg}",
+                    [
+                        "python",
+                        "-m",
+                        "iw3.cli",
+                        *iw3_options,
+                        "--video-codec",
+                        encoder,
+                        "--pix-fmt",
+                        pix_fmt,
+                        "--colorspace",
+                        colorspace,
+                        "-o",
+                        out_file_arg,
+                    ],
                     cwd=repo_path,
                 )
 
                 out_file_vf = os.path.join(out_dir, f"{encoder}_{pix_fmt}_{colorspace}_vf.mkv")
-                out_file_vf_arg = shlex.quote(os.path.abspath(out_file_vf))
+                out_file_vf_arg = os.path.abspath(out_file_vf)
                 run(
-                    f"python -m iw3.cli {iw3_options} --video-codec {encoder} --pix-fmt {pix_fmt} "
-                    f"--colorspace {colorspace} --vf crop=x=0:y=0:w=iw:h=ih -o {out_file_vf_arg}",
+                    [
+                        "python",
+                        "-m",
+                        "iw3.cli",
+                        *iw3_options,
+                        "--video-codec",
+                        encoder,
+                        "--pix-fmt",
+                        pix_fmt,
+                        "--colorspace",
+                        colorspace,
+                        "--vf",
+                        "crop=x=0:y=0:w=iw:h=ih",
+                        "-o",
+                        out_file_vf_arg,
+                    ],
                     cwd=repo_path,
                 )
 
                 if is_target:
                     out_file_cuda = os.path.join(out_dir, f"{encoder}_{pix_fmt}_{colorspace}_cuda.mkv")
-                    out_file_cuda_arg = shlex.quote(os.path.abspath(out_file_cuda))
+                    out_file_cuda_arg = os.path.abspath(out_file_cuda)
                     print(f"Processing: {out_file_cuda}")
                     run(
-                        f"python -m iw3.cli {iw3_options} --video-codec {encoder} --pix-fmt {pix_fmt} "
-                        f"--colorspace {colorspace} --hwaccel cuda -o {out_file_cuda_arg}",
+                        [
+                            "python",
+                            "-m",
+                            "iw3.cli",
+                            *iw3_options,
+                            "--video-codec",
+                            encoder,
+                            "--pix-fmt",
+                            pix_fmt,
+                            "--colorspace",
+                            colorspace,
+                            "--hwaccel",
+                            "cuda",
+                            "-o",
+                            out_file_cuda_arg,
+                        ],
                         cwd=repo_path,
                     )
 
                     out_file_cuda_vf = os.path.join(out_dir, f"{encoder}_{pix_fmt}_{colorspace}_cuda_vf.mkv")
-                    out_file_cuda_vf_arg = shlex.quote(os.path.abspath(out_file_cuda_vf))
+                    out_file_cuda_vf_arg = os.path.abspath(out_file_cuda_vf)
                     print(f"Processing: {out_file_cuda_vf}")
                     run(
-                        f"python -m iw3.cli {iw3_options} --video-codec {encoder} --pix-fmt {pix_fmt} "
-                        f"--colorspace {colorspace} --hwaccel cuda "
-                        f"--vf crop=x=0:y=0:w=iw:h=ih -o {out_file_cuda_vf_arg}",
+                        [
+                            "python",
+                            "-m",
+                            "iw3.cli",
+                            *iw3_options,
+                            "--video-codec",
+                            encoder,
+                            "--pix-fmt",
+                            pix_fmt,
+                            "--colorspace",
+                            colorspace,
+                            "--hwaccel",
+                            "cuda",
+                            "--vf",
+                            "crop=x=0:y=0:w=iw:h=ih",
+                            "-o",
+                            out_file_cuda_vf_arg,
+                        ],
                         cwd=repo_path,
                     )
 
@@ -199,7 +264,7 @@ def main() -> None:
     finally:
         orig_req = "requirements.txt"
         if os.path.exists(orig_req):
-            run(f"python -m pip install -r {orig_req}")
+            run(["python", "-m", "pip", "install", "-r", orig_req])
 
 
 if __name__ == "__main__":

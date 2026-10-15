@@ -1,6 +1,5 @@
 import argparse
 import os
-import shlex
 import shutil
 
 from nunif.cli.diff_video import compare_videos
@@ -17,92 +16,292 @@ def run_pipeline_for_repo(
     cache_dir: str,
     video_path: str,
     hwaccel: bool,
-    common_options: str,
+    common_options: list[str],
 ) -> None:
     req_file = os.path.join(repo_path, "requirements.txt")
     if os.path.exists(req_file):
-        run(f"python -m pip install -r {shlex.quote(req_file)}")
+        run(["python", "-m", "pip", "install", "-r", req_file])
 
-    extra_args = "--hwaccel cuda" if hwaccel else ""
-    cache_arg = shlex.quote(os.path.abspath(cache_dir))
+    extra_args = ["--hwaccel", "cuda"] if hwaccel else []
+    cache_arg = os.path.abspath(cache_dir)
 
     def out_path(filename: str) -> str:
-        return shlex.quote(os.path.abspath(os.path.join(output_dir, filename)))
+        return os.path.abspath(os.path.join(output_dir, filename))
 
-    def run_iw3(cmd_args: str) -> None:
-        base = f"python -m iw3.cli -y -i {shlex.quote(video_path)} {common_options}"
-        if extra_args:
-            base = f"{base} {extra_args}"
-        run(f"{base} {cmd_args}", cwd=repo_path)
+    def run_iw3(cmd_args: list[str]) -> None:
+        cmd = [
+            "python",
+            "-m",
+            "iw3.cli",
+            "-y",
+            "-i",
+            video_path,
+            *common_options,
+            *extra_args,
+            *cmd_args,
+        ]
+        run(cmd, cwd=repo_path)
 
-    run_iw3(f"-o {out_path('batch.mkv')} --depth-model Any_V2_S --max-workers 2 --batch-size 2")
+    run_iw3(["-o", out_path("batch.mkv"), "--depth-model", "Any_V2_S", "--max-workers", "2", "--batch-size", "2"])
     run_iw3(
-        f"-o {out_path('batch_forward_fill.mkv')} --depth-model Any_V2_S "
-        f"--method forward_fill --max-workers 1 --batch-size 2"
+        [
+            "-o",
+            out_path("batch_forward_fill.mkv"),
+            "--depth-model",
+            "Any_V2_S",
+            "--method",
+            "forward_fill",
+            "--max-workers",
+            "1",
+            "--batch-size",
+            "2",
+        ]
     )
     run_iw3(
-        f"-o {out_path('batch_yuv420p10le.mkv')} --depth-model Any_V2_S "
-        f"--max-workers 2 --batch-size 2 --pix-fmt yuv420p10le"
-    )
-    run_iw3(f"-o {out_path('batch_cuda.mkv')} --depth-model Any_V2_S --max-workers 2 --batch-size 2 --cuda-stream")
-    run_iw3(f"-o {out_path('low_vram.mkv')} --depth-model Any_V2_S --low-vram")
-    run_iw3(f"-o {out_path('low_vram_yuv420p10le.mkv')} --depth-model Any_V2_S --low-vram --pix-fmt yuv420p10le")
-    run_iw3(
-        f"-o {out_path('batch_ema.mkv')} --depth-model Any_V2_S "
-        f"--max-workers 2 --batch-size 2 --cuda-stream --ema-normalize"
-    )
-    run_iw3(f"-o {out_path('low_vram_ema.mkv')} --depth-model Any_V2_S --low-vram --ema-normalize")
-    run_iw3(
-        f"-o {out_path('vda.mkv')} --depth-model VDA_S --ema-normalize "
-        f"--batch-size 2 --scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("batch_yuv420p10le.mkv"),
+            "--depth-model",
+            "Any_V2_S",
+            "--max-workers",
+            "2",
+            "--batch-size",
+            "2",
+            "--pix-fmt",
+            "yuv420p10le",
+        ]
     )
     run_iw3(
-        f"-o {out_path('vda_yuv420p10le.mkv')} --depth-model VDA_S --ema-normalize "
-        f"--batch-size 2 --scene-detect --scene-cache-dir {cache_arg} --pix-fmt yuv420p10le"
+        [
+            "-o",
+            out_path("batch_cuda.mkv"),
+            "--depth-model",
+            "Any_V2_S",
+            "--max-workers",
+            "2",
+            "--batch-size",
+            "2",
+            "--cuda-stream",
+        ]
+    )
+    run_iw3(["-o", out_path("low_vram.mkv"), "--depth-model", "Any_V2_S", "--low-vram"])
+    run_iw3(
+        [
+            "-o",
+            out_path("low_vram_yuv420p10le.mkv"),
+            "--depth-model",
+            "Any_V2_S",
+            "--low-vram",
+            "--pix-fmt",
+            "yuv420p10le",
+        ]
     )
     run_iw3(
-        f"-o {out_path('vda_stream.mkv')} --depth-model VDA_Stream_S --ema-normalize "
-        f"--batch-size 2 --scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("batch_ema.mkv"),
+            "--depth-model",
+            "Any_V2_S",
+            "--max-workers",
+            "2",
+            "--batch-size",
+            "2",
+            "--cuda-stream",
+            "--ema-normalize",
+        ]
+    )
+    run_iw3(["-o", out_path("low_vram_ema.mkv"), "--depth-model", "Any_V2_S", "--low-vram", "--ema-normalize"])
+    run_iw3(
+        [
+            "-o",
+            out_path("vda.mkv"),
+            "--depth-model",
+            "VDA_S",
+            "--ema-normalize",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
     )
     run_iw3(
-        f"-o {out_path('vda_stream_yuv420p10le.mkv')} --depth-model VDA_Stream_S --ema-normalize "
-        f"--batch-size 2 --scene-detect --scene-cache-dir {cache_arg} --pix-fmt yuv420p10le"
+        [
+            "-o",
+            out_path("vda_yuv420p10le.mkv"),
+            "--depth-model",
+            "VDA_S",
+            "--ema-normalize",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+            "--pix-fmt",
+            "yuv420p10le",
+        ]
     )
     run_iw3(
-        f"-o {out_path('inpaint_batch.mkv')} --depth-model VDA_S --method mlbw_l2_inpaint "
-        f"--inpaint-max-width 1920 --ema-normalize --ema-buffer 30 --batch-size 2 "
-        f"--scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("vda_stream.mkv"),
+            "--depth-model",
+            "VDA_Stream_S",
+            "--ema-normalize",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
     )
     run_iw3(
-        f"-o {out_path('inpaint_vda.mkv')} --depth-model VDA_S --method mlbw_l2_inpaint "
-        f"--inpaint-max-width 1920 --ema-normalize --ema-buffer 30 --batch-size 2 "
-        f"--scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("vda_stream_yuv420p10le.mkv"),
+            "--depth-model",
+            "VDA_Stream_S",
+            "--ema-normalize",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+            "--pix-fmt",
+            "yuv420p10le",
+        ]
     )
     run_iw3(
-        f"-o {out_path('inpaint_vda_stream.mkv')} "
-        f"--depth-model VDA_Stream_S --method mlbw_l2_inpaint "
-        f"--inpaint-max-width 1920 --ema-normalize --ema-buffer 30 --batch-size 2 "
-        f"--scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("inpaint_batch.mkv"),
+            "--depth-model",
+            "VDA_S",
+            "--method",
+            "mlbw_l2_inpaint",
+            "--inpaint-max-width",
+            "1920",
+            "--ema-normalize",
+            "--ema-buffer",
+            "30",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
+    )
+    run_iw3(
+        [
+            "-o",
+            out_path("inpaint_vda.mkv"),
+            "--depth-model",
+            "VDA_S",
+            "--method",
+            "mlbw_l2_inpaint",
+            "--inpaint-max-width",
+            "1920",
+            "--ema-normalize",
+            "--ema-buffer",
+            "30",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
+    )
+    run_iw3(
+        [
+            "-o",
+            out_path("inpaint_vda_stream.mkv"),
+            "--depth-model",
+            "VDA_Stream_S",
+            "--method",
+            "mlbw_l2_inpaint",
+            "--inpaint-max-width",
+            "1920",
+            "--ema-normalize",
+            "--ema-buffer",
+            "30",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
     )
 
     # export
     run_iw3(
-        f"-o {out_path('export')} --export --depth-model Any_V2_S --ema-normalize "
-        f"--ema-buffer 30 --batch-size 2 --scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("export"),
+            "--export",
+            "--depth-model",
+            "Any_V2_S",
+            "--ema-normalize",
+            "--ema-buffer",
+            "30",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
     )
     run_iw3(
-        f"-o {out_path('export_depth_only')} --export-disparity --export-depth-only "
-        f"--depth-model Any_V2_S --ema-normalize --ema-buffer 30 --batch-size 2 "
-        f"--scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("export_depth_only"),
+            "--export-disparity",
+            "--export-depth-only",
+            "--depth-model",
+            "Any_V2_S",
+            "--ema-normalize",
+            "--ema-buffer",
+            "30",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
     )
     run_iw3(
-        f"-o {out_path('export_vda')} --export --depth-model VDA_S --ema-normalize "
-        f"--ema-buffer 30 --batch-size 2 --scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("export_vda"),
+            "--export",
+            "--depth-model",
+            "VDA_S",
+            "--ema-normalize",
+            "--ema-buffer",
+            "30",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
     )
     run_iw3(
-        f"-o {out_path('export_vda_depth_only')} --export-disparity --export-depth-only "
-        f"--depth-model VDA_S --ema-normalize --ema-buffer 30 --batch-size 2 "
-        f"--scene-detect --scene-cache-dir {cache_arg}"
+        [
+            "-o",
+            out_path("export_vda_depth_only"),
+            "--export-disparity",
+            "--export-depth-only",
+            "--depth-model",
+            "VDA_S",
+            "--ema-normalize",
+            "--ema-buffer",
+            "30",
+            "--batch-size",
+            "2",
+            "--scene-detect",
+            "--scene-cache-dir",
+            cache_arg,
+        ]
     )
 
 
@@ -150,7 +349,7 @@ def compare_outputs(ref_dir: str, target_dir: str, video_path: str) -> None:
     for d in output_dirs:
         dir_ref = os.path.join(ref_dir, d, video_basename, "depth")
         dir_target = os.path.join(target_dir, d, video_basename, "depth")
-        run(f"python -m nunif.cli.diff_image -i {shlex.quote(dir_ref)} {shlex.quote(dir_target)}")
+        run(["python", "-m", "nunif.cli.diff_image", "-i", dir_ref, dir_target])
 
 
 def main() -> None:
@@ -177,7 +376,7 @@ def main() -> None:
     ref_dir = os.path.join("tests", "data", "compare_iw3_pipeline", "ref")
     target_dir = os.path.join("tests", "data", "compare_iw3_pipeline", "target")
     cache_dir = os.path.join("tests", "data", "compare_iw3_pipeline", "cache")
-    common_options = "--video-codec hevc_nvenc"
+    common_options = ["--video-codec", "hevc_nvenc"]
 
     shutil.rmtree(ref_dir, ignore_errors=True)
     shutil.rmtree(target_dir, ignore_errors=True)
@@ -217,7 +416,7 @@ def main() -> None:
     finally:
         orig_req = "requirements.txt"
         if os.path.exists(orig_req):
-            run(f"python -m pip install -r {orig_req}")
+            run(["python", "-m", "pip", "install", "-r", orig_req])
 
 
 if __name__ == "__main__":
