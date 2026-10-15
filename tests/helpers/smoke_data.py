@@ -377,6 +377,32 @@ def verify_image(file_path: str, expected_format: str, expected_size: tuple[int,
         return False
 
 
+def ensure_smoke_data(base_dir: str = "tests/data/smoke", duration: float = 1.1, force: bool = False) -> None:
+    for target in VIDEO_TARGETS:
+        out_path = os.path.join(base_dir, target.filename)
+        if force or not os.path.exists(out_path):
+            generate_video(target, out_path, duration=duration)
+
+    sd_path = os.path.join(base_dir, "sd.mkv")
+    png_path = os.path.join(base_dir, "sd.png")
+    if force or not os.path.exists(png_path):
+        generate_image_from_video(sd_path, png_path)
+
+
+def verify_all_smoke_data(base_dir: str = "tests/data/smoke") -> bool:
+    failed = False
+    for target in VIDEO_TARGETS:
+        out_path = os.path.join(base_dir, target.filename)
+        if not verify_video(out_path, target):
+            failed = True
+
+    png_path = os.path.join(base_dir, "sd.png")
+    if not verify_image(png_path, "PNG", (640, 360), "RGB"):
+        failed = True
+
+    return not failed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate smoke test video and image datasets")
     parser.add_argument("--base-dir", type=str, default="tests/data/smoke", help="Output directory")
@@ -384,41 +410,18 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="Force regenerate files")
     args = parser.parse_args()
 
-    base_dir = args.base_dir
-    duration = args.duration
-    force = args.force
+    ensure_smoke_data(base_dir=args.base_dir, duration=args.duration, force=args.force)
 
-    # Generate videos
-    for target in VIDEO_TARGETS:
-        out_path = os.path.join(base_dir, target.filename)
-        if force or not os.path.exists(out_path):
-            generate_video(target, out_path, duration=duration)
-
-    # Generate image
-    sd_path = os.path.join(base_dir, "sd.mkv")
-    png_path = os.path.join(base_dir, "sd.png")
-    if force or not os.path.exists(png_path):
-        generate_image_from_video(sd_path, png_path)
-
-    # Verify generated data
     print("=" * 70)
     print("Verifying smoke test data formats and metadata")
     print("=" * 70)
 
-    failed = False
-    for target in VIDEO_TARGETS:
-        out_path = os.path.join(base_dir, target.filename)
-        if not verify_video(out_path, target):
-            failed = True
-
-    if not verify_image(png_path, "PNG", (640, 360), "RGB"):
-        failed = True
-
-    print("=" * 70)
-    if not failed:
+    if verify_all_smoke_data(base_dir=args.base_dir):
+        print("=" * 70)
         print("ALL SMOKE DATA VERIFICATIONS PASSED!")
         print("=" * 70)
     else:
+        print("=" * 70)
         print("SOME SMOKE DATA VERIFICATIONS FAILED!")
         print("=" * 70)
         sys.exit(1)

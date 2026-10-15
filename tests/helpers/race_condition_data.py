@@ -136,23 +136,17 @@ def copy_video_only(input_path: str, output_path: str) -> None:
         in_video = in_container.streams.video[0]
         out_video = cast(av.video.stream.VideoStream, out_container.add_stream_from_template(in_video))
         for packet in in_container.demux(in_video):
-            if packet.dts is None:
+            if packet.dts is None and packet.pts is None:
                 continue
             packet.stream = out_video
             out_container.mux(packet)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate race condition test video datasets")
-    parser.add_argument("--base-dir", type=str, default="tests/data/race_condition", help="Output directory")
-    parser.add_argument("--scene-duration", type=float, default=1.0, help="Per-scene duration in seconds")
-    parser.add_argument("--force", action="store_true", help="Force regenerate files")
-    args = parser.parse_args()
-
-    base_dir = args.base_dir
-    scene_dur = args.scene_duration
-    force = args.force
-
+def ensure_race_condition_data(
+    base_dir: str = "tests/data/race_condition",
+    scene_duration: float = 1.0,
+    force: bool = False,
+) -> None:
     sd_path = os.path.join(base_dir, "sd.mkv")
     if force or not os.path.exists(sd_path):
         scenes_sd = [
@@ -169,7 +163,7 @@ def main() -> None:
             trc="bt709",
             color_range="tv",
             scene_filters=scenes_sd,
-            scene_duration=scene_dur,
+            scene_duration=scene_duration,
         )
 
     hdr_path = os.path.join(base_dir, "hdr.mkv")
@@ -188,7 +182,7 @@ def main() -> None:
             trc="smpte2084",
             color_range="tv",
             scene_filters=scenes_hdr,
-            scene_duration=scene_dur,
+            scene_duration=scene_duration,
         )
 
     sd_noaudio_path = os.path.join(base_dir, "sd_noaudio.mkv")
@@ -198,6 +192,20 @@ def main() -> None:
     hdr_noaudio_path = os.path.join(base_dir, "hdr_noaudio.mkv")
     if force or not os.path.exists(hdr_noaudio_path):
         copy_video_only(hdr_path, hdr_noaudio_path)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate race condition test video datasets")
+    parser.add_argument("--base-dir", type=str, default="tests/data/race_condition", help="Output directory")
+    parser.add_argument("--scene-duration", type=float, default=1.0, help="Per-scene duration in seconds")
+    parser.add_argument("--force", action="store_true", help="Force regenerate files")
+    args = parser.parse_args()
+
+    ensure_race_condition_data(
+        base_dir=args.base_dir,
+        scene_duration=args.scene_duration,
+        force=args.force,
+    )
 
 
 if __name__ == "__main__":
