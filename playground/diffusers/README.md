@@ -169,3 +169,72 @@ Options:
 - `--action`: Action on matched images: `copy` (default) or `symlink`.
 - `--recursive`, `-r`: Search recursively in subdirectories.
 - `-q`, `--quiet`: Suppress per-file logging.
+
+
+## Qwen3.5 9B Abliterated Chat / Vision
+
+Uses: https://huggingface.co/huihui-ai/Huihui-Qwen3.5-9B-abliterated
+
+A conversational and vision-language pipeline using the abliterated Qwen3.5-9B model with 4-bit / 8-bit `bitsandbytes` quantization.
+
+Requires:
+- 4-bit (default): ~7-8 GB VRAM
+- `--q8`: ~12 GB VRAM
+
+### Interactive Chat
+
+```bash
+python -m playground.diffusers.qwen35_chat
+```
+
+You can pass image files directly in the chat prompt using the `@<path>` syntax:
+```text
+You > What is this? @path/to/image.png
+You > Compare these two images @img1.png @img2.png
+```
+
+Commands during chat:
+- `/reset` or `/clear`: Reset conversation history.
+- `/q` or `quit`: Exit the chat.
+
+### Non-Interactive (Single prompt)
+
+```bash
+# Text only
+python -m playground.diffusers.qwen35_chat -p "What is the capital of Japan?"
+
+# With image input via -i / --image
+python -m playground.diffusers.qwen35_chat -i path/to/image.png -p "Describe this image."
+```
+
+### Options
+
+- `-p`, `--prompt`: Single prompt to execute and exit.
+- `-i`, `--image`: Input image file(s) for initial prompt or single execution.
+- `--q8`: Load model with 8-bit quantization instead of default 4-bit.
+- `--thinking`: Enable thinking mode (chain-of-thought).
+- `--system-prompt`: Set a custom system prompt.
+- `--max-new-tokens`: Maximum new tokens to generate (default: `4096`).
+- `--temperature`: Sampling temperature (default: `0.7`).
+- `--top-p`: Top-p sampling parameter (default: `0.9`).
+
+### Python API
+
+The `Qwen35Chat` class can also be imported and used directly in other scripts:
+
+```python
+from playground.diffusers.qwen35_chat import Qwen35Chat
+
+chat = Qwen35Chat(q8=False, thinking=False)
+
+# Non-interactive generation (returns string)
+response = chat.generate("Hello!")
+print(response)
+
+# With image
+response = chat.generate("Describe this image.", images="path/to/image.png")
+
+# Reset context
+chat.reset()
+```
+
