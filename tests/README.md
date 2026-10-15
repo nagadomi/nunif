@@ -3,7 +3,7 @@
 ## Directory Structure
 
 - `tests/unit/`: Fast unit tests (no video processing or CLI subprocesses).
-- `tests/smoke/`: End-to-end and integration smoke tests. Subdivided by package (e.g., `iw3/`, `waifu2x/`).
+- `tests/integration/`: End-to-end and integration tests. Subdivided by package (e.g., `iw3/`, `waifu2x/`).
 - `tests/tools/`: Regression comparison scripts (e.g. comparing output across git revisions).
 - `tests/helpers/`: Shared test utilities, runners, and data generators.
 
@@ -15,9 +15,9 @@ Run commands from the repository root:
 # Run unit tests only (fast)
 pytest tests/unit
 
-# Run smoke tests
-pytest tests/smoke
-pytest tests/smoke/iw3
+# Run integration tests
+pytest tests/integration
+pytest tests/integration/iw3
 
 # Run all tests
 pytest
