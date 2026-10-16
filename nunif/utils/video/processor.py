@@ -125,17 +125,6 @@ def safe_decode(packet, strict=False):
     return frames
 
 
-def fix_frame_color_av17(frame: av.VideoFrame, sw_format: VideoMetadata) -> av.VideoFrame:
-    # In av17, VideoFrame color properties are lost when HWAccel(is_hw_owned=False),
-    # so restore them from the source properties.
-    if frame.colorspace == 2 and frame.color_primaries == 2 and frame.color_trc == 2 and frame.color_range == 0:
-        frame.colorspace = sw_format.colorspace
-        frame.color_primaries = sw_format.color_primaries
-        frame.color_trc = sw_format.color_trc
-        frame.color_range = sw_format.color_range
-
-    return frame
-
 
 def apply_color_settings(output_stream: av.video.stream.VideoStream, output_reformatter: OutputTransform) -> None:
     ctx = output_stream.codec_context
@@ -327,7 +316,6 @@ def _process_video(
                     break
             if packet.stream.type == "video":
                 for frame in safe_decode(packet, strict=disable_software_fallback):
-                    frame = fix_frame_color_av17(frame, sw_format)
                     for out_frame in video_preprocessor.update(frame):
                         if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
                             gc.collect()
@@ -661,7 +649,6 @@ def hook_frame(
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
             for frame in safe_decode(packet, strict=disable_software_fallback):
-                frame = fix_frame_color_av17(frame, sw_format)
                 if keyframe_only:
                     current_sec = float(frame.pts * video_input_stream.time_base)
                     if current_sec - prev_sec < min_interval_sec:
@@ -762,7 +749,6 @@ def sample_frames(
             packet_count += 1
             for frame in safe_decode(packet, strict=disable_software_fallback):
                 frame_count += 1
-                frame = fix_frame_color_av17(frame, sw_format)
                 if frame.pts is None:
                     continue
                 current_sec = float(frame.pts * packet.time_base)
@@ -799,7 +785,6 @@ def sample_frames(
                     break
                 for frame in safe_decode(packet, strict=disable_software_fallback):
                     frame_count += 1
-                    frame = fix_frame_color_av17(frame, sw_format)
                     if frame.pts is None:
                         continue
                     current_sec = float(frame.pts * packet.time_base)
