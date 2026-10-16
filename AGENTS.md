@@ -16,6 +16,9 @@
 
 ## Forbidden Actions / Directory Restrictions
 
+- **Never access, search, or scan outside the project directory**:
+  - All operations (reading, editing, file searching with `find`/`grep`, etc.) must be strictly confined within the project root.
+  - Never inspect or traverse outside the project directory, including parent directories (`..`), the user home directory (`~`, `$HOME`), `/tmp`, or other projects.
 - **Never list, find, or recursively scan restricted directories**:
   - Do NOT run directory listing (`ls`, `dir`), recursive search (`find`, glob, `grep -r`), or tree exploration on `tmp/`, `data/`, `models/`, or any pretrained model directories (e.g., `*pretrained_models/`).
   - **Reason**: These directories may contain private filenames or massive image datasets (over 10 million files), leading to context overflows, performance degradation, and privacy leaks.
