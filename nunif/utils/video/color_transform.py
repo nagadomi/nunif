@@ -130,8 +130,9 @@ class ColorTransform:
                 t = torch.from_dlpack(plane.__dlpack__())
                 if src_fmt != "cuda":
                     t = t.to(device)
-                # TODO: Use sw_formt
-                if t.dtype == torch.uint8:
+                if frame.sw_format is not None:
+                    fmt = frame.sw_format.name
+                elif t.dtype == torch.uint8:
                     fmt = "nv12"
                 elif t.dtype == torch.uint16:
                     fmt = "p010le"
