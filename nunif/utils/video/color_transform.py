@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.dlpack
-from av.codec.hwaccel import HWDeviceType
 from av.video.frame import CudaContext
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc, VideoReformatter
 
@@ -520,7 +519,6 @@ class InputTransform:
     # Convert av.VideoFrame to RGB Full Range tensor/ndarray
     # For src_*, use VideoMetadata class
 
-    HW_DEVICE_TYPES: Set[str] = set([t.name for t in HWDeviceType if t.name != "none"])
     src_pix_fmt: str
     src_colorspace: Colorspace | int
     src_color_primaries: ColorPrimaries | int
@@ -646,7 +644,7 @@ class InputTransform:
             # expected cuda with nv12 or p010le
             return self.to_tensor_hw(frame)
 
-        if frame.format.name in InputTransform.HW_DEVICE_TYPES:
+        if frame.sw_format is not None:
             # hw download
             frame = frame.reformat()
         assert len(frame.format.components) > 0, f"Unexpected (hw) format {frame.format}"

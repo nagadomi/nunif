@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import av
 
-from ..metadata import HW_PIX_FORMATS, VideoMetadata
+from ..metadata import VideoMetadata
 
 
 class AVFilterGraph:
@@ -34,7 +34,7 @@ class AVFilterGraph:
         )
 
     def update(self, frame: av.VideoFrame) -> av.VideoFrame | None:
-        assert frame.format.name not in HW_PIX_FORMATS
+        assert frame.sw_format is None
         self.graph.push(frame)
         try:
             out_frame = self.graph.pull()
