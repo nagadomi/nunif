@@ -4,7 +4,15 @@ from . import models  # noqa
 
 
 def addon_config():
-    return [SBS3DAddon(), InpaintAddon(), VideoInpaintAddon(), DepthAAAddon(), DA3MonoAddon(), SODAddon()]
+    return [
+        SBS3DAddon(),
+        InpaintAddon(),
+        VideoInpaintAddon(),
+        DepthAAAddon(),
+        DA3MonoAddon(),
+        SODAddon(),
+        FormatAddon(),
+    ]
 
 
 class SBS3DAddon(Addon):
@@ -83,5 +91,20 @@ class SODAddon(Addon):
 
     def register_create_training_data(self, subparsers, default_parser):
         from .training.sod.create_training_data import register
+
+        return register(subparsers, default_parser)
+
+
+class FormatAddon(Addon):
+    def __init__(self):
+        super().__init__("iw3.format")
+
+    def register_train(self, subparsers, default_parser):
+        from .training.format.train import register
+
+        return register(subparsers, default_parser)
+
+    def register_create_training_data(self, subparsers, default_parser):
+        from .training.format.create_training_data import register
 
         return register(subparsers, default_parser)
