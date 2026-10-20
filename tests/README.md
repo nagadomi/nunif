@@ -2,60 +2,49 @@
 
 ## Directory Structure
 
-- `tests/unit/`: Fast unit tests (no video processing or CLI subprocesses).
-- `tests/integration/`: End-to-end and integration tests. Subdivided by package (e.g., `iw3/`, `waifu2x/`).
-- `tests/tools/`: Regression comparison scripts (e.g. comparing output across git revisions).
+- `tests/images/`: Shared test fixture images.
 - `tests/helpers/`: Shared test utilities, runners, and data generators.
+- Package test suites:
+  - `iw3/tests/`: Tests and regression tools (`iw3/tests/tools/`) for iw3.
+  - `iw3/player/tests/`: Tests for iw3-player WebXR server and APIs.
+  - `waifu2x/tests/`: Tests for waifu2x.
+  - `stlizer/tests/`: Tests for stlizer.
+  - `nunif/tests/`: Tests for nunif core framework.
 
 ## Running Tests
 
 Run commands from the repository root:
 
 ```bash
-# Run unit tests only (fast)
-pytest tests/unit
+# Run specific package tests
+pytest iw3/tests
+pytest iw3/player/tests
+pytest waifu2x/tests
+pytest nunif/tests
+pytest stlizer/tests
 
-# Run integration tests
-pytest tests/integration
-pytest tests/integration/iw3
+# Run multiple package tests
+pytest iw3/tests waifu2x/tests
 
 # Run all tests
 pytest
 
 # Filter by markers (defined in pytest.ini: slow, hwaccel)
-pytest -m "not slow"
-pytest -m "hwaccel"
+pytest iw3/tests -m "not slow"
+pytest waifu2x/tests -m "hwaccel"
 ```
 
-## Cleaning Test Data
-
-Clean up generated files in `tests/data/`:
-
-```bash
-# Clean previous test outputs before running tests
-pytest tests/integration --clean
-
-# Clean outputs only (exit without running tests)
-pytest --clean-only
-
-# Clean everything including generated fixtures (re-creates them on next test run)
-pytest --clean-all
-
-# Or use the standalone helper script
-python -m tests.helpers.clean
-python -m tests.helpers.clean --all
-```
+> **Note**: Test inputs (smoke fixtures) and outputs are automatically created in `pytest`'s temporary directory (`tmp_path`) and cleaned up after test runs. No manual cleanup is required.
 
 ## Comparison Tools
 
-Regression tools under `tests/tools/` compare outputs against a baseline git revision (default: `9fd1812477a2a7f372c87ac7ac14fdfab0a7c3ed`) via `git worktree`:
+Regression tools under `iw3/tests/tools/` compare outputs against a baseline git revision (default: `9fd1812477a2a7f372c87ac7ac14fdfab0a7c3ed`) via `git worktree`:
 
 ```bash
 # Compare current working directory against default baseline commit
-python -m tests.tools.compare_iw3_pipeline path/to/video.mp4
+python -m iw3.tests.tools.compare_pipeline path/to/video.mp4
 
 # Specify a custom baseline or target revision/directory
-python -m tests.tools.compare_iw3_pipeline path/to/video.mp4 --ref HEAD~1
-python -m tests.tools.compare_iw3_pipeline path/to/video.mp4 --target path/to/dev --ref master
+python -m iw3.tests.tools.compare_pipeline path/to/video.mp4 --ref HEAD~1
+python -m iw3.tests.tools.compare_pipeline path/to/video.mp4 --target path/to/dev --ref master
 ```
-

@@ -377,7 +377,7 @@ def verify_image(file_path: str, expected_format: str, expected_size: tuple[int,
         return False
 
 
-def ensure_smoke_data(base_dir: str = "tests/data/smoke", duration: float = 1.1, force: bool = False) -> None:
+def ensure_smoke_data(base_dir: str = "tmp/smoke", duration: float = 1.1, force: bool = False) -> None:
     for target in VIDEO_TARGETS:
         out_path = os.path.join(base_dir, target.filename)
         if force or not os.path.exists(out_path):
@@ -389,7 +389,7 @@ def ensure_smoke_data(base_dir: str = "tests/data/smoke", duration: float = 1.1,
         generate_image_from_video(sd_path, png_path)
 
 
-def verify_all_smoke_data(base_dir: str = "tests/data/smoke") -> bool:
+def verify_all_smoke_data(base_dir: str = "tmp/smoke") -> bool:
     failed = False
     for target in VIDEO_TARGETS:
         out_path = os.path.join(base_dir, target.filename)
@@ -405,7 +405,7 @@ def verify_all_smoke_data(base_dir: str = "tests/data/smoke") -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate smoke test video and image datasets")
-    parser.add_argument("--base-dir", type=str, default="tests/data/smoke", help="Output directory")
+    parser.add_argument("--base-dir", type=str, default="tmp/smoke", help="Output directory")
     parser.add_argument("--duration", type=float, default=1.1, help="Duration in seconds")
     parser.add_argument("--force", action="store_true", help="Force regenerate files")
     args = parser.parse_args()

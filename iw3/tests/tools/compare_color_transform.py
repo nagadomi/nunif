@@ -237,8 +237,8 @@ def main() -> None:
 
     video_path = os.path.abspath(args.video)
 
-    ref_dir = os.path.join("tests", "data", "compare_color_transform", "ref")
-    target_dir = os.path.join("tests", "data", "compare_color_transform", "target")
+    ref_dir = os.path.join("tmp", "compare_color_transform", "ref")
+    target_dir = os.path.join("tmp", "compare_color_transform", "target")
 
     shutil.rmtree(ref_dir, ignore_errors=True)
     shutil.rmtree(target_dir, ignore_errors=True)

@@ -27,9 +27,8 @@ This document provides specific instructions when maintaining or working inside 
     - `.\nunif-cmd.bat python -m pip install pytest ruff mypy types-pywin32`
   - **Caution**: Prefer installing specific tools rather than `pip install -r requirements-dev.txt`. Installing unnecessary dev packages may introduce dependency conflicts with bundled packages (such as bundled `opencv-python` requiring `numpy>=2`).
 - **Running Tests**:
-  - Run tests with `.\nunif-cmd.bat python -m pytest <test_path>` (e.g., `.\nunif-cmd.bat python -m pytest tests/integration/waifu2x/test_cli.py`).
+  - Run tests with `.\nunif-cmd.bat python -m pytest <test_path>` (e.g., `.\nunif-cmd.bat python -m pytest waifu2x/tests/test_cli.py`).
   - Tests work in CPU-only environments without a GPU (execution will take longer).
-  - Clean test output directories using `.\nunif-cmd.bat python -m pytest --clean-only`.
 - **Update Mechanism Architecture**:
   - Batch files cannot safely overwrite themselves while running on Windows (causes corrupted execution due to cmd.exe offset reading).
   - Therefore, the update process is decoupled: `update.bat` updates the code and copies `update-installer.bat`, while `update-installer.bat` updates `update.bat` and other launcher batch files. Do not merge them into a single self-modifying batch script.

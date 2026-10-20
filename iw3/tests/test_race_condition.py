@@ -3,9 +3,8 @@ import os
 import pytest
 
 from nunif.cli.diff_video import compare_videos
+from tests.helpers.race_condition_data import ensure_race_condition_data
 from tests.helpers.runner import run
-
-WORK_DIR = "tests/data/race_condition_test"
 
 COMMON_REF_ARGS = ["--low-vram", "--scene-detect", "--ema-normalize", "--ema-buffer", "30", "-y"]
 COMMON_TEST_ARGS = [
@@ -52,10 +51,19 @@ TEST_CASES = [
 ]
 
 
-def run_and_compare(test_name: str, input_video: str, extra_args: list[str]) -> bool:
-    os.makedirs(WORK_DIR, exist_ok=True)
-    ref_output = os.path.join(WORK_DIR, f"{test_name}_ref.mkv")
-    test_output = os.path.join(WORK_DIR, f"{test_name}_test.mkv")
+@pytest.fixture(scope="module")
+def race_condition_setup(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    tmp_dir = tmp_path_factory.mktemp("race_condition")
+    data_dir = str(tmp_dir / "data")
+    work_dir = str(tmp_dir / "work")
+    os.makedirs(work_dir, exist_ok=True)
+    ensure_race_condition_data(base_dir=data_dir)
+    return {"data_dir": data_dir, "work_dir": work_dir}
+
+
+def run_and_compare(work_dir: str, test_name: str, input_video: str, extra_args: list[str]) -> bool:
+    ref_output = os.path.join(work_dir, f"{test_name}_ref.mkv")
+    test_output = os.path.join(work_dir, f"{test_name}_test.mkv")
 
     # Run reference (sequential, low-vram)
     run(["python", "-m", "iw3.cli", "-i", input_video, "-o", ref_output, *COMMON_REF_ARGS, *extra_args])
@@ -82,11 +90,13 @@ def run_and_compare(test_name: str, input_video: str, extra_args: list[str]) -> 
     TEST_CASES,
 )
 def test_race_condition(
-    race_condition_data_dir: str,
+    race_condition_setup: dict[str, str],
     name: str,
     video_file: str,
     extra_args: list[str],
     is_hwaccel: bool,
 ) -> None:
-    input_video = os.path.join(race_condition_data_dir, video_file)
-    assert run_and_compare(name, input_video, extra_args), f"Race condition test failed for {name}"
+    input_video = os.path.join(race_condition_setup["data_dir"], video_file)
+    assert run_and_compare(race_condition_setup["work_dir"], name, input_video, extra_args), (
+        f"Race condition test failed for {name}"
+    )

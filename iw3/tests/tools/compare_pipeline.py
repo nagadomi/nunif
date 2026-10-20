@@ -373,9 +373,9 @@ def main() -> None:
 
     video_path = os.path.abspath(args.video)
 
-    ref_dir = os.path.join("tests", "data", "compare_iw3_pipeline", "ref")
-    target_dir = os.path.join("tests", "data", "compare_iw3_pipeline", "target")
-    cache_dir = os.path.join("tests", "data", "compare_iw3_pipeline", "cache")
+    ref_dir = os.path.join("tmp", "compare_pipeline", "ref")
+    target_dir = os.path.join("tmp", "compare_pipeline", "target")
+    cache_dir = os.path.join("tmp", "compare_pipeline", "cache")
     common_options = ["--video-codec", "hevc_nvenc"]
 
     shutil.rmtree(ref_dir, ignore_errors=True)

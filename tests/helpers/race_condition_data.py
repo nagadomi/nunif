@@ -143,7 +143,7 @@ def copy_video_only(input_path: str, output_path: str) -> None:
 
 
 def ensure_race_condition_data(
-    base_dir: str = "tests/data/race_condition",
+    base_dir: str = "tmp/race_condition",
     scene_duration: float = 1.0,
     force: bool = False,
 ) -> None:
@@ -196,7 +196,7 @@ def ensure_race_condition_data(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate race condition test video datasets")
-    parser.add_argument("--base-dir", type=str, default="tests/data/race_condition", help="Output directory")
+    parser.add_argument("--base-dir", type=str, default="tmp/race_condition", help="Output directory")
     parser.add_argument("--scene-duration", type=float, default=1.0, help="Per-scene duration in seconds")
     parser.add_argument("--force", action="store_true", help="Force regenerate files")
     args = parser.parse_args()
