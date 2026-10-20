@@ -2,20 +2,21 @@ import io
 import os
 import sys
 from typing import Any, Optional, Sequence, Union
+
 import av
-from PIL import Image as PILImage
 from fastapi import HTTPException, Response
 from fastapi.responses import FileResponse
+from PIL import Image as PILImage
 
 from .dir_config import PUBLIC_DIR
 from .stereo_detector import (
     FLAT,
+    SBS_180,
     SBS_FULL,
-    SBS_HALF,
     SBS_FULL_CROSS,
+    SBS_HALF,
     TB_FULL,
     TB_HALF,
-    SBS_180,
     detect_stereo_format,
 )
 

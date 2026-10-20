@@ -1,10 +1,11 @@
 import os
-from os import path
 import shutil
-from nunif.utils.downloader import ArchiveDownloader
-from nunif.logger import logger
-from .dir_config import VERSION_DIR
+from os import path
 
+from nunif.logger import logger
+from nunif.utils.downloader import ArchiveDownloader
+
+from .dir_config import VERSION_DIR
 
 IW3_PLAYER_ROOT = path.dirname(__file__)  # TODO: package
 URL_TEMPALTE = "https://github.com/nagadomi/nunif/releases/download/iw3_player_assets/iw3_player_{name}_{version}.zip"

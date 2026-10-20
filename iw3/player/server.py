@@ -5,14 +5,16 @@ import os
 import secrets
 import socket
 import sys
+
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+
 from .app import app
 from .dir_config import CACHE_DIR, CERT_DIR, EXAMPLE_DIR
 from .media_library import MediaLibrary
-from .server_state import DEFAULT_SECRET_KEY_FILE as SECRET_KEY_FILE, ServerState
+from .server_state import DEFAULT_SECRET_KEY_FILE as SECRET_KEY_FILE
+from .server_state import ServerState
 from .thumbnail_service import init_video_hwaccel
-
 
 CERT_FILE = os.path.join(CERT_DIR, "server.crt")
 KEY_FILE = os.path.join(CERT_DIR, "server.key")

@@ -2,10 +2,11 @@ import json
 import os
 import sys
 from typing import Any, Dict, List, Optional
+
 import av
+import pysubs2
 from av.stream import Disposition
 from fastapi import Response
-import pysubs2
 
 
 def extract_subtitle(fp: Any) -> Optional[List[Dict[str, str]]]:

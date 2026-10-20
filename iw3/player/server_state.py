@@ -1,6 +1,8 @@
 import os
+
 from diskcache import Cache
-from .dir_config import CACHE_DIR, EXAMPLE_DIR, CERT_DIR
+
+from .dir_config import CACHE_DIR, CERT_DIR, EXAMPLE_DIR
 
 DEFAULT_SECRET_KEY_FILE = os.path.join(CERT_DIR, "secret.key")
 
