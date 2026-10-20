@@ -19,6 +19,40 @@
             overflow: hidden;
             touch-action: none;
         }
+
+        #factoryResetButton {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 4px 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            border-radius: 4px;
+            background: rgba(225, 29, 72, 0.1);
+            color: #fda4af;
+            font: 500 10px sans-serif;
+            text-align: center;
+            text-decoration: none;
+            opacity: 0.65;
+            outline: none;
+            z-index: 999;
+            box-sizing: border-box;
+            transition: opacity 0.2s, background-color 0.2s, border-color 0.2s, color 0.2s;
+        }
+
+        #factoryResetButton:hover {
+            opacity: 1.0;
+            background: rgba(225, 29, 72, 0.25);
+            border-color: rgba(244, 63, 94, 0.9);
+            color: #ffffff;
+        }
+
+        #factoryResetButton svg {
+            flex-shrink: 0;
+            stroke: currentColor;
+        }
     </style>
 
     <script type="importmap">
@@ -34,6 +68,14 @@
     </script>
 </head>
 <body>
+    <a id="factoryResetButton" href="/factory_reset.html">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+            <path d="M7 6a7.75 7.75 0 1 0 10 0" />
+            <path d="M12 4l0 8" />
+        </svg>
+        <span>FACTORY RESET</span>
+    </a>
     <script type="module" src="js/main.js"></script>
 </body>
 </html>

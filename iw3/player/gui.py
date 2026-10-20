@@ -62,11 +62,7 @@ class IW3PlayerApp(wx.App):
 class MainFrame(wx.Frame):
     def __init__(self):
         super(MainFrame, self).__init__(
-            None,
-            name="iw3-player",
-            title="iw3-player",
-            size=(460, 380),
-            style=wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX,
+            None, name="iw3-player", title="iw3-player", size=(460, 380), style=wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX
         )
         self.stop_event = threading.Event()
         self.processing = False
@@ -78,7 +74,7 @@ class MainFrame(wx.Frame):
         panel = wx.Panel(self)
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # 1. Root Directory Selection
+        # Root Directory Selection
         grp_root = wx.StaticBox(panel, label=T("Media Directory"))
         root_sizer = wx.StaticBoxSizer(grp_root, wx.HORIZONTAL)
 
@@ -91,7 +87,7 @@ class MainFrame(wx.Frame):
         root_sizer.Add(self.btn_browse_root, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
         main_sizer.Add(root_sizer, 0, wx.ALL | wx.EXPAND, 10)
 
-        # 2. Network Settings
+        # Network Settings
         grp_network = wx.StaticBox(panel, label=T("Network"))
         network_grid = wx.GridBagSizer(vgap=5, hgap=10)
 
@@ -140,7 +136,7 @@ class MainFrame(wx.Frame):
         network_sizer.Add(network_grid, 0, wx.ALL | wx.EXPAND, 5)
         main_sizer.Add(network_sizer, 0, wx.ALL | wx.EXPAND, 10)
 
-        # 4. Process Controls
+        # Process Controls
         process_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.btn_start = wx.Button(panel, label=T("Start"))
         self.btn_stop = wx.Button(panel, label=T("Shutdown"))
@@ -246,10 +242,7 @@ class MainFrame(wx.Frame):
 
     def show_validation_error_message(self, name, min_value, max_value):
         with wx.MessageDialog(
-            None,
-            message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
-            caption=T("Error"),
-            style=wx.OK,
+            None, message=T("`{}` must be a number {} - {}").format(name, min_value, max_value), caption=T("Error"), style=wx.OK
         ) as dlg:
             dlg.ShowModal()
 
@@ -276,9 +269,7 @@ class MainFrame(wx.Frame):
             bind_addr = get_local_address()
 
         parser = create_parser()
-        parser.set_defaults(
-            root=root, port=int(self.txt_port.GetValue()), bind_addr=bind_addr, user=user, password=password
-        )
+        parser.set_defaults(root=root, port=int(self.txt_port.GetValue()), bind_addr=bind_addr, user=user, password=password)
         args = parser.parse_args()
 
         self.stop_event.clear()

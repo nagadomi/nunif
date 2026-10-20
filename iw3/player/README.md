@@ -27,7 +27,8 @@ On Meta Quest 2, 4K videos played smoothly.
 
 The player supports both embedded subtitle streams and external files (`.srt` / `.vtt`). External files named identically to the video will be prioritized. Embedded subtitles are automatically converted to `.vtt` by the backend for seamless streaming.
 
-The stereo format is estimated according to the tags in the filename output by iw3. Even if there is no stereo format tag in the filename, if it exists in the parent folder, it will be used. In the case of an archive, the filename of the archive is also used.
+The stereo format (Side-by-Side, Top-Bottom, VR180, etc.) is automatically detected based on tags in filenames, parent folders, or ZIP archives (e.g., `_LR`, `_TB`, `VR180`).
+Even for files without tags, the format is automatically estimated from the image or video content during playback. Any manual adjustments to the format are saved per file.
 
 ## How to Start
 
@@ -52,6 +53,13 @@ python -m iw3.player.gui
 python -m iw3.player --root /path/to/your/media
 ```
 
+#### Common Options
+- `--root PATH`: Path to media directory (default: `./example`)
+- `--port PORT`: Port number (default: `1304`)
+- `--bind-addr IP`: IP address (default: local IP address)
+- `--user USER` / `--password PASS`: Username and password for authentication
+- `--clear-cache`: Clear thumbnail cache on startup
+
 Once the server is running, access the URL displayed in the terminal or GUI (e.g., `https://[IP address]:1304`) using the browser on your VR device.
 
 #### About SSL Warnings
@@ -67,37 +75,59 @@ During your first visit, your browser will display a security warning (e.g., "Yo
 
 While browsers typically discourage trusting local servers in this manner, it is a necessary workaround for local WebXR development.
 
-## Each Operation and Setting Screens
-
 ## UI and Controls
 
 ### Basic VR Controller Operations
 
-- **Menu Toggle**: Trigger, B, or Y buttons.
-- **Select/Confirm**: Trigger (Index finger).
-- **Navigate Images**: Tilt thumbstick Left/Right (during image playback).
-- **Seek**: Tilt thumbstick Left/Right (during video playback).
-- **Page Navigation**: Tilt thumbstick Up/Down (in File Explorer).
-- **Play/Pause**: A or X buttons (during video playback).
+| Operation | VR Controller | Keyboard / Mouse |
+| :--- | :--- | :--- |
+| **Menu Toggle** | B / Y buttons, or short trigger click in empty space | Space |
+| **Select / Confirm** | Trigger (Index finger) | Mouse click |
+| **Navigate Images** | Stick Left/Right (during image playback) | Left / Right Arrow keys |
+| **Seek (Video)** | Stick Left/Right (during video playback) | Left / Right Arrow keys |
+| **Page Navigation** | Stick Up/Down (in File Explorer) | - |
+| **Play / Pause** | A / X buttons (during video playback) | - |
+| **Zoom (Distance)** | Stick Up/Down (when pointing at background) | Up / Down Arrow keys / Mouse wheel |
+| **Disparity (Scale)** | `[Grip + Stick Y]` | Q / E keys |
+| **Screen Size** | `[Grip + Stick X]` | - |
+| **Tilt / Roll Adjustment**| `[Long-press Trigger + Controller Move]` (pointing at background) | - |
+| **Pan / Position (Pos X / Y)** | `[Grip + Move Controller]` | Mouse drag |
+| **Exit XR** | Power icon at the top-right of the Main Menu | - |
 
-Additional screen-specific shortcuts are detailed in the **Screen Settings** section below.
+*Note: An alignment guide is displayed during VR180 dragging to help center the view and adjust tilt.*
+
+#### Main Menu
+
+A clean menu separating navigation and playback controls.
+
+- **Navigation**: File Explorer, Open Recent File, Repeat playback mode toggle, Reset Settings, Exit XR
+- **Status Display**: Real-time display of current filename, time, battery level, and rendering FPS
+- **Playback Controls (Video)**:
+  - **Seek Bar & Time**: Timeline scrubbing, Play/Pause
+  - **Volume Controls**: Volume slider and Mute toggle button
+  - **Playback Speed**: Adjust video playback speed from 0.25x to 4.00x using `[−]` / `[+]` buttons; click the speed icon to reset to 1.00x
+  - *Note: Volume and playback speed are automatically remembered for future sessions.*
 
 #### Screen Settings
 
-This is the most frequently used menu, allowing you to fine-tune the screen's shape and its position in 3D space.
+This is the most frequently used menu, allowing you to fine-tune the screen's shape and its position in 3D space.  
+(`Stick X` is thumbstick horizontal, `Stick Y` is thumbstick vertical, `Move` is physical controller movement)
 
 | Item | Shortcut | Description |
 | :--- | :--- | :--- |
-| `Screen Size` | `[Grip + Stick X]` | Physical size of the virtual screen |
-| `Tilt` | `[Trigger + Tilt]` | Vertical tilt of the screen |
+| `Screen Size` | `[Grip + Stick X]` | Physical size of the virtual screen (1m to 16m) |
+| `Tilt` | `[Long-press Trigger + Tilt]` | Vertical tilt of the screen (Roll/Tilt in VR180) |
 | `Distance` | `[Stick Y]` | Distance from the viewer (Zoom) |
-| `Scale` | `[Grip + Stick Y]` | Adjusts stereoscopic disparity (Apparent object size) |
+| `Scale` | `[Grip + Stick Y]` | Stereoscopic disparity / Eye Separation (Perceived object size) |
 | `Pos X` / `Pos Y` | `[Grip + Move]` | Move screen horizontally or vertically |
 | `Curvature` | - | Adjusts the horizontal curve of the screen |
 | `Edge Fade` | - | Smoothly fades out the edges of the screen |
 | `Background` | - | Adjusts background brightness (Ignored if a skybox is active) |
 
-*Note: These operations can sometimes result in perceptual effects that differ from the literal mechanical change. We highly recommend reading the [Screen Operation and Perception](#screen-operation-and-perception) section for the best experience.*
+*Note: In VR180 mode, settings exclusive to flat screens are automatically disabled.*  
+*Note: Adjustments are automatically saved per file. Unconfigured files inherit the previous screen settings.*
+
+These operations can sometimes result in perceptual effects that differ from the literal mechanical change. We highly recommend reading the [Screen Operation and Perception](#screen-operation-and-perception) section for the best experience.
 
 #### Color Settings
 
@@ -113,8 +143,8 @@ Using `haldclut2cube.py`, you can convert the effect applied to [Identity HaldCL
 
 Customize your virtual theater. While not strictly necessary for viewing, watching media under a high-fidelity sky can greatly improve the experience.
 
-- **Skybox**: Set a 360-degree background image and adjust its orientation and brightness.
-- **3D Model**: Load a scene model (e.g., a floor or environment) to ground your experience.
+- **Skybox**: Set a 360-degree background image and adjust its orientation, tilt, and brightness.
+- **3D Model**: Load a 3D scene model (e.g., a floor or room), with adjustable size and ground height.
 
 Custom backgrounds (`.hdr` or `.exr`) and models (`.glb`) can be added to the `public/environments/` directory. High-quality HDRI and IBL assets are available at [Poly Haven](https://polyhaven.com/) and [ambientCG](https://ambientcg.com/). Scenes created in Blender can be exported as `.glb` (supporting Draco compression and animations) for use here.
 
@@ -136,13 +166,13 @@ Advanced settings for the rendering engine. **Changes require a browser reload t
 - **Antialias**: Smooths jagged object outlines (aliasing).
 - **Super Sampling**: Increases resolution (pixel density) within VR.
 - **Target Frame Rate**: Sets the target FPS for WebXR (e.g., 72, 90, 120Hz).
-- **Video Mipmap**: Reduces flickering in distant video views using mipmapping.
+- **High Quality Video**: Plays VR180 videos using WebXR Layers (XRMediaBinding) to feed decoded video frames directly into the VR compositor for enhanced quality and lower GPU overhead (supported environments only; enabled by default).
 
 These settings involve a trade-off between visual fidelity and battery/performance:
 
 - **Antialias**: Can be disabled if you use `Edge Fade` to hide screen borders.
 - **Super Sampling**: Setting this to 1x may result in poor image quality on Meta Quest devices due to their default resolution.
-- **Video Mipmap**: May cause texture distortion if the screen is very small or far away; usually unneeded at standard viewing distances.
+- **High Quality Video**: Can generally be left enabled; automatically falls back to standard rendering if unsupported by the browser.
 
 ##### About Fonts and Languages
 
@@ -184,8 +214,8 @@ The keys for thumbnails use a SHA256 hash value of the filename and the last mod
 Browser-side data is saved in IndexedDB.
 This includes the following data:
 
-- Global player settings
-- Screen settings per file
+- Global player settings (volume, playback speed, display preferences, etc.)
+- Screen settings per file (disparity, screen size, tilt, stereo format, etc.)
 - Path of the last opened file
 
 While this cannot be read by any site other than the one running on the same address:port, care is taken not to save raw filenames.

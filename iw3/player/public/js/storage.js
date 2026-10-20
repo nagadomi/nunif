@@ -170,10 +170,6 @@ class StorageManager {
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    async _hashKey(file) {
-        return await this.getHash(file);
-    }
-
     /**
      * General settings API
      */
@@ -204,19 +200,9 @@ class StorageManager {
         });
     }
 
-    async remove(key) {
-        delete this.configCache[key];
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(StorageManager.STORE_CONFIGS, 'readwrite');
-            tx.objectStore(StorageManager.STORE_CONFIGS).delete(key);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
-    }
-
     async getFileConfig(file) {
         await this.ready;
-        const key = await this._hashKey(file);
+        const key = await this.getHash(file);
         if (!key) return null;
 
         return new Promise((resolve) => {
@@ -237,7 +223,7 @@ class StorageManager {
 
     async updateFileConfig(file, updates) {
         await this.ready;
-        const key = await this._hashKey(file);
+        const key = await this.getHash(file);
         if (!key) return;
 
         return new Promise((resolve) => {
@@ -276,33 +262,60 @@ class StorageManager {
         });
     }
 
-    async clearFileConfig(file) {
-        await this.ready;
-        const key = await this._hashKey(file);
-        if (key) {
-            const tx = this.db.transaction(StorageManager.STORE_FILE_CONFIGS, 'readwrite');
-            tx.objectStore(StorageManager.STORE_FILE_CONFIGS).delete(key);
-        }
-    }
-
     /**
-     * Clears all data (Factory Reset)
+     * Clears all data (Factory Reset).
+     * Clears all IndexedDB object stores without closing/deleting the DB connection,
+     * so reopening is not required and the instance remains immediately usable.
      */
     async clearAll() {
         await this.ready;
         this.configCache = {};
-        return new Promise((resolve) => {
-            const tx = this.db.transaction([StorageManager.STORE_CONFIGS, StorageManager.STORE_FILE_CONFIGS], 'readwrite');
-            tx.objectStore(StorageManager.STORE_CONFIGS).clear();
-            tx.objectStore(StorageManager.STORE_FILE_CONFIGS).clear();
-            tx.oncomplete = () => {
-                for (let i = localStorage.length - 1; i >= 0; i--) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith('iw3_')) localStorage.removeItem(key);
-                }
+
+        // 1. Clear all IndexedDB object stores dynamically
+        await new Promise((resolve, reject) => {
+            if (!this.db) {
                 resolve();
-            };
+                return;
+            }
+            const storeNames = Array.from(this.db.objectStoreNames);
+            if (storeNames.length === 0) {
+                resolve();
+                return;
+            }
+            try {
+                const tx = this.db.transaction(storeNames, 'readwrite');
+                for (const name of storeNames) {
+                    tx.objectStore(name).clear();
+                }
+                tx.oncomplete = () => resolve();
+                tx.onerror = (e) => reject(tx.error || e);
+                tx.onabort = (e) => reject(tx.error || e);
+            } catch (err) {
+                reject(err);
+            }
         });
+
+        // 2. Clear browser local and session storage
+        try {
+            localStorage.clear();
+        } catch (e) {
+            this._warn(`Failed to clear localStorage: ${e.message}`);
+        }
+        try {
+            sessionStorage.clear();
+        } catch (e) {
+            this._warn(`Failed to clear sessionStorage: ${e.message}`);
+        }
+
+        // 3. Clear Cache Storage API if available
+        if (typeof window !== 'undefined' && 'caches' in window) {
+            try {
+                const cacheNames = await window.caches.keys();
+                await Promise.all(cacheNames.map(name => window.caches.delete(name)));
+            } catch (e) {
+                this._warn(`Failed to clear CacheStorage: ${e.message}`);
+            }
+        }
     }
 }
 

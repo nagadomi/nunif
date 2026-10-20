@@ -24,7 +24,7 @@ class GalleryManager {
 
     async fetchDirectory(path) {
         try {
-            const response = await fetch(`/api/list?path=${encodeURIComponent(path)}`);
+            const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
             if (!response.ok) throw new Error('Failed to fetch file list');
             
             const list = await response.json();

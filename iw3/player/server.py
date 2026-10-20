@@ -2,29 +2,27 @@ import argparse
 import asyncio
 import ipaddress
 import os
+import secrets
 import socket
 import sys
-
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
-
 from .app import app
 from .dir_config import CACHE_DIR, CERT_DIR, EXAMPLE_DIR
 from .media_library import MediaLibrary
-from .server_state import ServerState
+from .server_state import DEFAULT_SECRET_KEY_FILE as SECRET_KEY_FILE, ServerState
+from .thumbnail_service import init_video_hwaccel
+
 
 CERT_FILE = os.path.join(CERT_DIR, "server.crt")
 KEY_FILE = os.path.join(CERT_DIR, "server.key")
-SECRET_KEY_FILE = os.path.join(CERT_DIR, "secret.key")
 
 
 def get_local_address():
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
     except Exception:
         return "127.0.0.1"
 
@@ -48,8 +46,7 @@ def is_loopback_address(ip):
 def generate_self_signed_cert(cert_dir, cert_file, key_file, bind_addr="127.0.0.1"):
     from OpenSSL import crypto
 
-    if not os.path.exists(cert_dir):
-        os.makedirs(cert_dir)
+    os.makedirs(cert_dir, exist_ok=True)
     if not os.path.exists(cert_file) or not os.path.exists(key_file):
         k = crypto.PKey()
         k.generate_key(crypto.TYPE_RSA, 2048)
@@ -65,10 +62,13 @@ def generate_self_signed_cert(cert_dir, cert_file, key_file, bind_addr="127.0.0.
         cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)
         cert.set_issuer(cert.get_subject())
 
-        # Subject Alternative Name (SAN) is required by modern browsers
-        alt_names = [b"DNS:localhost", "IP:127.0.0.1".encode(), f"IP:{bind_addr}".encode()]
-        # Remove duplicates
-        alt_names = list(set(alt_names))
+        try:
+            ipaddress.ip_address(bind_addr)
+            bind_san = f"IP:{bind_addr}".encode()
+        except ValueError:
+            bind_san = f"DNS:{bind_addr}".encode()
+
+        alt_names = list({b"DNS:localhost", b"IP:127.0.0.1", bind_san})
         san_extension = crypto.X509Extension(b"subjectAltName", False, b", ".join(alt_names))
         cert.add_extensions([san_extension])
 
@@ -115,7 +115,6 @@ async def serve_with_watchdog(args, config, shutdown_event):
     finally:
         if not server_task.done():
             shutdown_event.set()
-            # Wait for graceful shutdown, but enforce a hard timeout
             timeout = (config.graceful_timeout or 0) + 1.0
             try:
                 await asyncio.wait_for(server_task, timeout=timeout)
@@ -129,7 +128,6 @@ async def serve_with_watchdog(args, config, shutdown_event):
                         pass
 
         if server_task.done():
-            # Capture startup errors (like port in use)
             try:
                 await server_task
             except asyncio.CancelledError:
@@ -137,25 +135,6 @@ async def serve_with_watchdog(args, config, shutdown_event):
 
 
 def server_main(args):
-    # Initialize global state attached to app
-    args.secret_key_file = SECRET_KEY_FILE
-    if hasattr(app.state, "server_state") and app.state.server_state is not None:
-        app.state.server_state.close()
-        app.state.server_state = None
-        app.state.media_library = None
-
-    state = ServerState(args)
-    app.state.server_state = state
-    app.state.media_library = MediaLibrary(state)
-
-    generate_self_signed_cert(CERT_DIR, CERT_FILE, KEY_FILE, args.bind_addr)
-    if not os.path.exists(SECRET_KEY_FILE):
-        import secrets
-
-        print(f"Generating new secret key: {SECRET_KEY_FILE}")
-        with open(SECRET_KEY_FILE, "wb") as f:
-            f.write(secrets.token_bytes(32))
-
     if args.bind_addr is None:
         args.bind_addr = get_local_address()
         if not is_private_address(args.bind_addr):
@@ -167,6 +146,23 @@ def server_main(args):
     auth = (args.user, args.password) if (args.user or args.password) else None
     if not is_private_address(args.bind_addr) and auth is None:
         raise RuntimeError(f"({args.bind_addr}) is not LAN Address. Specify --user/--password")
+
+    init_video_hwaccel()
+    generate_self_signed_cert(CERT_DIR, CERT_FILE, KEY_FILE, args.bind_addr)
+    if not os.path.exists(SECRET_KEY_FILE):
+        print(f"Generating new secret key: {SECRET_KEY_FILE}")
+        with open(SECRET_KEY_FILE, "wb") as f:
+            f.write(secrets.token_bytes(32))
+
+    args.secret_key_file = SECRET_KEY_FILE
+    if hasattr(app.state, "server_state") and app.state.server_state is not None:
+        app.state.server_state.close()
+        app.state.server_state = None
+        app.state.media_library = None
+
+    state = ServerState(args)
+    app.state.server_state = state
+    app.state.media_library = MediaLibrary(state)
 
     print(f"Starting iw3-player server on https://{args.bind_addr}:{args.port}")
 
@@ -185,9 +181,8 @@ def server_main(args):
     except KeyboardInterrupt:
         shutdown_event.set()
         print("\nShutdown requested by user (Ctrl+C)")
-    except Exception as e:
-        # Re-raise to be caught by GUI
-        raise e
+    finally:
+        state.close()
 
 
 if __name__ == "__main__":

@@ -2,6 +2,11 @@ import { Container, Image, Text } from '@pmndrs/uikit';
 import { COLORS, UI_CONFIG } from './constants.js';
 import { UIUtils } from './ui_common.js';
 
+const VIDEO_SEEK_BAR_WIDTH = 370;
+const VIDEO_THUMB_SIZE = 24;
+const VOLUME_SEEK_BAR_WIDTH = 100;
+const VOLUME_THUMB_SIZE = 24;
+
 class MainMenu {
     constructor(uiManager, defaultFont) {
         this.uiManager = uiManager;
@@ -22,7 +27,7 @@ class MainMenu {
 
         this.setupSettingsRow();
         this.setupControlRow();
-        this.setupSliderRow();
+        this.setupSliderSection();
         this.setupTimeRow();
         this.setupFooterRow(); // Status info (FPS, Time, Battery)
     }
@@ -81,24 +86,24 @@ class MainMenu {
         const u = this.uiManager;
         
         // Order: Screen, Color, Env, Subtitle | Render, Shutdown
-        this.screenButton = UIUtils.createButton('icons/device-desktop.svg', () => u.toggleScreenSettingsVisibility(), u, 22, 48);
+        this.screenButton = UIUtils.createButton('icons/device-desktop.svg', () => u.switchSubMenu(u.screenSettings), u, 22, 48);
         group.add(this.screenButton.container);
 
-        this.colorButton = UIUtils.createButton('icons/color-filter.svg', () => u.toggleColorSettingsVisibility(), u, 22, 48);
+        this.colorButton = UIUtils.createButton('icons/color-filter.svg', () => u.switchSubMenu(u.colorSettings), u, 22, 48);
         group.add(this.colorButton.container);
 
-        this.envButton = UIUtils.createButton('icons/planet.svg', () => u.toggleEnvironmentSettingsVisibility(), u, 22, 48);
+        this.envButton = UIUtils.createButton('icons/planet.svg', () => u.switchSubMenu(u.environmentSettings), u, 22, 48);
         group.add(this.envButton.container);
         
-        this.subtitleButton = UIUtils.createButton('icons/subtitles.svg', () => u.toggleSubtitleSettingsVisibility(), u, 22, 48);
+        this.subtitleButton = UIUtils.createButton('icons/subtitles.svg', () => u.switchSubMenu(u.subtitleSettings), u, 22, 48);
         group.add(this.subtitleButton.container);
 
         group.add(UIUtils.createSeparator(2, 32, { marginLeft: 8, marginRight: 8 }));
         
-        this.renderButton = UIUtils.createButton('icons/video.svg', () => u.toggleRenderSettingsVisibility(), u, 22, 48);
+        this.renderButton = UIUtils.createButton('icons/video.svg', () => u.switchSubMenu(u.renderSettings), u, 22, 48);
         group.add(this.renderButton.container);
 
-        group.add(UIUtils.createButton('icons/power.svg', () => u.stereoPlayer.exitXR(), u, 22, 48).container);
+        group.add(UIUtils.createButton('icons/power.svg', () => u.exitXR(), u, 22, 48).container);
     }
 
     setupControlRow() {
@@ -106,46 +111,128 @@ class MainMenu {
         this.container.add(row);
         const u = this.uiManager;
         
-        this.explorerButton = UIUtils.createButton('icons/library-photo.svg', () => u.toggleExplorerVisibility(), u);
+        this.explorerButton = UIUtils.createButton('icons/library-photo.svg', () => u.switchSubMenu(u.explorer), u);
         row.add(this.explorerButton.container);
 
         const playbackGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 20, marginLeft: 80 });
         row.add(playbackGroup);
-        playbackGroup.add(UIUtils.createButton('icons/player-skip-back.svg', () => u.stereoPlayer.loadNextImage(-1), u).container);
-        const playPause = UIUtils.createButton('icons/player-play.svg', () => u.stereoPlayer.togglePlayPause(), u, 44, 80, 'play_pause');
+        playbackGroup.add(UIUtils.createButton('icons/player-skip-back.svg', () => u.loadNextMedia(-1), u).container);
+        const playPause = UIUtils.createButton('icons/player-play.svg', () => u.togglePlayPause(), u, 44, 80, 'play_pause');
         this.playPauseButton = playPause.container; this.playPauseIcon = playPause.image;
         playbackGroup.add(this.playPauseButton);
-        playbackGroup.add(UIUtils.createButton('icons/player-skip-forward.svg', () => u.stereoPlayer.loadNextImage(1), u).container);
+        playbackGroup.add(UIUtils.createButton('icons/player-skip-forward.svg', () => u.loadNextMedia(1), u).container);
     }
 
-    setupSliderRow() {
-        const row = new Container({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, width: '100%', backgroundColor: 0x000000, backgroundOpacity: 0.2, borderRadius: 16, padding: 12, });
-        this.container.add(row);
+    setupSliderSection() {
+        const group = new Container({
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 6,
+            width: '100%',
+            overflow: 'visible'
+        });
+        this.container.add(group);
+
+        this.setupSeekBarRow(group);
+        this.setupVolumeRow(group);
+    }
+
+    setupSeekBarRow(parent) {
+        const row = new Container({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            width: '100%',
+            backgroundColor: 0x000000,
+            backgroundOpacity: 0.2,
+            borderRadius: 16,
+            paddingTop: 6,
+            paddingBottom: 6,
+            paddingLeft: 12,
+            paddingRight: 12,
+            overflow: 'visible'
+        });
+        parent.add(row);
         const u = this.uiManager;
 
-        const videoGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 12, overflow: 'visible' });
-        row.add(videoGroup);
-
         const repeat = UIUtils.createButton('icons/repeat.svg', () => u.toggleVideoRepeat(), u, 24, 40);
-        this.repeatButton = repeat; // Store full object
-        videoGroup.add(this.repeatButton.container);
+        this.repeatButton = repeat;
+        row.add(this.repeatButton.container);
 
         this.videoSeekBar = new Container({
-            width: 350, height: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', backgroundColor: COLORS.track, borderRadius: 8, cursor: 'pointer', overflow: 'visible',
+            width: VIDEO_SEEK_BAR_WIDTH,
+            height: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            backgroundColor: COLORS.track,
+            borderRadius: 8,
+            cursor: 'pointer',
+            overflow: 'visible',
             onClick: (e) => u.handleVideoSeek(e, this.videoSeekBar, true),
             onPointerMove: (e) => { if (e.buttons > 0) u.handleVideoSeek(e, this.videoSeekBar, false); },
-            onPointerUp: (_e) => { if (u.visible) u.stereoPlayer.savePlaybackPosition(); },
-            onPointerLeave: (e) => { if (u.visible && e.buttons > 0) u.stereoPlayer.savePlaybackPosition(); }
+            onPointerUp: (_e) => { if (u.visible) u.savePlaybackPosition(); },
+            onPointerLeave: (e) => { if (u.visible && e.buttons > 0) u.savePlaybackPosition(); }
         });
-        this.videoThumb = new Container({ width: 24, height: 24, backgroundColor: COLORS.thumb, borderRadius: 12, borderWidth: 1.5, borderColor: 0xffffff });
+        this.videoThumb = new Container({
+            width: VIDEO_THUMB_SIZE,
+            height: VIDEO_THUMB_SIZE,
+            backgroundColor: COLORS.thumb,
+            borderRadius: VIDEO_THUMB_SIZE / 2,
+            borderWidth: 1.5,
+            borderColor: 0xffffff
+        });
         this.videoSeekBar.add(this.videoThumb);
-        videoGroup.add(this.videoSeekBar);
+        row.add(this.videoSeekBar);
 
-        const volGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 8 });
+        this.videoTimeText = new Text({
+            text: "",
+            fontSize: 14,
+            color: COLORS.textDim,
+            width: 130,
+            textAlign: 'right',
+            wordBreak: 'keep-all'
+        });
+        row.add(this.videoTimeText);
+    }
+
+    setupVolumeRow(parent) {
+        const row = new Container({
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            gap: 12,
+            width: '100%',
+            backgroundColor: 0x000000,
+            backgroundOpacity: 0.2,
+            borderRadius: 16,
+            paddingTop: 6,
+            paddingBottom: 6,
+            paddingLeft: 12,
+            paddingRight: 12,
+            overflow: 'visible'
+        });
+        parent.add(row);
+        const u = this.uiManager;
+
+        // --- Volume Group ---
+        const volGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 12 });
         row.add(volGroup);
-        volGroup.add(new Image({ src: 'icons/volume.svg', width: 32, height: 32, color: COLORS.text }));
+
+        const volBtn = UIUtils.createButton('icons/volume.svg', () => u.toggleMute(), u, 24, 40);
+        this.volumeButton = volBtn;
+        this.volumeIcon = volBtn.image;
+        volGroup.add(this.volumeButton.container);
+
         this.volumeSeekBar = new Container({
-            width: 100, height: 16, flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.track, borderRadius: 8, cursor: 'pointer', overflow: 'visible',
+            width: VOLUME_SEEK_BAR_WIDTH,
+            height: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: COLORS.track,
+            borderRadius: 8,
+            cursor: 'pointer',
+            overflow: 'visible',
             onPointerDown: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u),
             onClick: (e) => { 
                 UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u); 
@@ -161,16 +248,51 @@ class MainMenu {
                 if (u.visible && e.buttons > 0) u.saveSettings();
             },
         });
-        this.volumeThumb = new Container({ width: 24, height: 24, backgroundColor: COLORS.thumb, borderRadius: 12, borderWidth: 1.5, borderColor: 0xffffff });
+        this.volumeThumb = new Container({
+            width: VOLUME_THUMB_SIZE,
+            height: VOLUME_THUMB_SIZE,
+            backgroundColor: COLORS.thumb,
+            borderRadius: VOLUME_THUMB_SIZE / 2,
+            borderWidth: 1.5,
+            borderColor: 0xffffff
+        });
         this.volumeSeekBar.add(this.volumeThumb);
         volGroup.add(this.volumeSeekBar);
+
+        // --- Separator ---
+        row.add(UIUtils.createSeparator(2, 28, { marginLeft: 4, marginRight: 4 }));
+
+        // --- Speed Group ---
+        const speedGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 6 });
+        row.add(speedGroup);
+
+        const speedBtn = UIUtils.createButton('icons/player-speed.svg', () => u.resetPlaybackRate(), u, 24, 40);
+        this.speedButton = speedBtn;
+        speedGroup.add(this.speedButton.container);
+
+        this.minusButton = UIUtils.createButton('icons/minus.svg', () => u.changePlaybackRate(-0.25), u, 20, 40);
+        this.minusButton.container.setProperties({ marginLeft: 8 });
+        speedGroup.add(this.minusButton.container);
+
+        this.speedValueText = new Text({
+            text: "1.00x",
+            fontSize: 14,
+            color: COLORS.textDim,
+            width: 52,
+            textAlign: 'center',
+            wordBreak: 'keep-all'
+        });
+        speedGroup.add(this.speedValueText);
+
+        this.plusButton = UIUtils.createButton('icons/plus.svg', () => u.changePlaybackRate(0.25), u, 20, 40);
+        speedGroup.add(this.plusButton.container);
     }
 
     setupTimeRow() {
         this.timeRow = new Container({
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'flex-start',
             width: '100%',
             height: 24,
             paddingLeft: 10,
@@ -182,7 +304,7 @@ class MainMenu {
         this.container.add(this.timeRow);
 
         // Clip filename horizontally and vertically
-        const fileClip = new Container({ width: 380, height: 24, overflow: 'hidden' });
+        const fileClip = new Container({ width: 568, height: 24, overflow: 'hidden' });
         this.fileNameText = new Text({ 
             text: "", 
             fontSize: 14, 
@@ -192,9 +314,6 @@ class MainMenu {
         });
         fileClip.add(this.fileNameText);
         this.timeRow.add(fileClip);
-
-        this.videoTimeText = new Text({ text: "", fontSize: 14, color: COLORS.textDim, width: 200, textAlign: 'right' });
-        this.timeRow.add(this.videoTimeText);
     }
 
     formatTime(seconds) {
@@ -263,7 +382,7 @@ class MainMenu {
         }
 
         if (params.isVideoActive !== undefined || params.isPlaying !== undefined || params.videoProgress !== undefined) {
-            const isVideo = params.isVideoActive ?? (!!this.uiManager.stereoPlayer.videoElement);
+            const isVideo = params.isVideoActive ?? (!!this.uiManager.videoElement);
             if (isVideo) {
                 if (params.currentTime !== undefined && params.duration !== undefined) {
                     const timeText = `${this.formatTime(params.currentTime)} / ${this.formatTime(params.duration)}`;
@@ -285,7 +404,7 @@ class MainMenu {
                     }
                 }
                 if (params.videoProgress !== undefined) {
-                    const margin = params.videoProgress * (350 - 24);
+                    const margin = params.videoProgress * (VIDEO_SEEK_BAR_WIDTH - VIDEO_THUMB_SIZE);
                     if (Math.abs((this._lastVideoMargin || 0) - margin) > 0.1) {
                         this.videoThumb.setProperties({ marginLeft: margin });
                         this._lastVideoMargin = margin;
@@ -320,11 +439,30 @@ class MainMenu {
             this.repeatButton.setSelected(this.uiManager.videoRepeat);
         }
 
+        if (this.volumeButton) {
+            const isMuted = params.isMuted ?? this.uiManager.isMuted;
+            const currentVol = params.volume !== undefined ? params.volume : this.uiManager.currentVolume;
+            const iconSrc = (isMuted || currentVol === 0) ? 'icons/volume-off.svg' : 'icons/volume.svg';
+            if (this._lastVolumeIcon !== iconSrc) {
+                this.volumeIcon.setProperties({ src: iconSrc });
+                this._lastVolumeIcon = iconSrc;
+            }
+            this.volumeButton.setSelected(isMuted);
+        }
+
         if (params.volume !== undefined) {
-            const volMargin = params.volume * (100 - 24);
+            const volMargin = params.volume * (VOLUME_SEEK_BAR_WIDTH - VOLUME_THUMB_SIZE);
             if (Math.abs((this._lastVolMargin || 0) - volMargin) > 0.1) {
                 this.volumeThumb.setProperties({ marginLeft: volMargin });
                 this._lastVolMargin = volMargin;
+            }
+        }
+
+        if (params.speed !== undefined) {
+            const speedText = `${params.speed.toFixed(2)}x`;
+            if (this._lastSpeedText !== speedText) {
+                this.speedValueText.setProperties({ text: speedText });
+                this._lastSpeedText = speedText;
             }
         }
 

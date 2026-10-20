@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { LUTCubeLoader } from 'three';
 import { Container, Text, reversePainterSortStable } from '@pmndrs/uikit';
 import { forwardHtmlEvents, createRayPointer } from '@pmndrs/pointer-events';
-import { LIMITS, DEFAULTS, UI_CONFIG, COLORS, FONT_CONFIG, SETTINGS_METADATA } from './constants.js';
+import { DEFAULTS, UI_CONFIG, COLORS, FONT_CONFIG, getSettingLimits } from './constants.js';
 import { storage } from './storage.js';
-import { UIUtils } from './ui_common.js';
+import { UIUtils, ThreeUtils } from './ui_common.js';
 
 // Import split UI components
 import { MainMenu } from './menu_main.js';
@@ -14,6 +14,7 @@ import { EnvironmentSettingsMenu } from './menu_environment_settings.js';
 import { RenderSettingsMenu } from './menu_render_settings.js';
 import { ExplorerWindow } from './window_explorer.js';
 import { SubtitleSettingsMenu } from './menu_subtitle_settings.js';
+import { SettingsManager } from './settings_manager.js';
 
 class UIManager extends THREE.Group {
     constructor(scene, camera, renderer, debugLogInstance, stereoPlayer) {
@@ -23,6 +24,7 @@ class UIManager extends THREE.Group {
         this.renderer = renderer;
         this.debugLogInstance = debugLogInstance;
         this.stereoPlayer = stereoPlayer;
+        this.settingsManager = new SettingsManager(this);
 
         this.pixelSize = UI_CONFIG.pixelSize;
         this.renderer.setTransparentSort(reversePainterSortStable);
@@ -32,17 +34,11 @@ class UIManager extends THREE.Group {
         this.isNotificationVisible = false;
         this.activeSubMenu = null;
 
-        // Subtitle State
+        // Subtitle Track State
         this.availableSubtitles = [];
         this.currentSubtitleIndex = -1;
-        this.showSubtitles = DEFAULTS.subtitle_visible;
-        
-        // Helpers
-        this.currentVolume = DEFAULTS.screen_volume;
-        this.subY = DEFAULTS.subtitle_y;
-        this.subZ = DEFAULTS.subtitle_z;
-        this.subFontSize = DEFAULTS.subtitle_font_size;
-        this.subEyeSep = DEFAULTS.subtitle_eye_sep;
+        this._unmuteVolume = DEFAULTS.screen_volume;
+        this._currentLutName = "None";
 
         // Explorer State
         this.currentPage = 0;
@@ -74,7 +70,8 @@ class UIManager extends THREE.Group {
         this.abortController = new AbortController();
         this.pointerEvents = forwardHtmlEvents(renderer.domElement, () => this.camera, this.scene, {
             signal: this.abortController.signal,
-            recursive: true
+            recursive: true,
+            filter: (object) => ThreeUtils.isHierarchyVisible(object)
         });
         this.xrPointers = [null, null];
         this.ignorePointerUntilReleased = [false, false];
@@ -95,30 +92,19 @@ class UIManager extends THREE.Group {
         this.lastStatusUpdateTime = 0;
         this.lastOcclusionUpdateTime = 0;
 
-        this.videoRepeat = DEFAULTS.video_repeat;
-        this.menuAlignment = DEFAULTS.menu_alignment;
-        this.isApplyingConfig = false; // Flag to block saving during loadMedia
-        this.dirtyGroups = new Set(); // Track modified isFileSpecific groups
-
         this.initAsync();
         this.scene.add(this);
     }
 
     async initAsync() {
         await storage.ready;
-        this.stereoPlayer.galleryManager.loadSettings();
-        
-        // Load general settings
-        const general = storage.get('general', {});
-        this.menuAlignment = general.menu_alignment || DEFAULTS.menu_alignment;
+        await this.settingsManager.init();
+        this.galleryManager.loadSettings();
 
         this.setupUI();
-        this.updateMenuPositions(); // Apply loaded alignment
+        this.updateMenuPositions();
 
-        this.isApplyingConfig = true; // Block dirty flags during initial load
-        await this.loadSettings();
-        this.isApplyingConfig = false;
-        this.dirtyGroups.clear();
+        this.settingsManager.applyAll();
 
         this.fetchEnvironments();
         this.fetchLuts();
@@ -133,17 +119,14 @@ class UIManager extends THREE.Group {
         this.showMainMenu();
     }
 
-    toggleMenuAlignment() {
-        this.menuAlignment = this.menuAlignment === 'right' ? 'left' : 'right';
-        this.updateMenuPositions();
-        this.saveSettings();
-        // Sync UI to update the button icon
+    async toggleMenuAlignment() {
+        const next = this.menuAlignment === 'right' ? 'left' : 'right';
+        await this.settingsManager.set('menu_alignment', next);
         this.syncUI(true);
     }
 
     updateMenuPositions() {
         const offset = this.menuAlignment === 'right' ? UI_CONFIG.menuMarginLeft : -UI_CONFIG.menuMarginLeft;
-        // Apply to all settings menus except explorer and main menu
         const targetMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
         targetMenus.forEach(menu => {
             if (menu && menu.container) {
@@ -159,13 +142,13 @@ class UIManager extends THREE.Group {
 
         try {
             // Load the gallery for the saved path
-            await this.stereoPlayer.galleryManager.fetchDirectory(recentPath);
+            await this.galleryManager.fetchDirectory(recentPath);
             // Use playbackGallery (which respects the current sort mode) to find the file
-            const gallery = this.stereoPlayer.galleryManager.playbackGallery;
+            const gallery = this.galleryManager.playbackGallery;
             const index = gallery.findIndex(item => item.name === recentFile);
             
             if (index !== -1) {
-                await this.stereoPlayer.loadMedia(index);
+                await this.loadMedia(index);
                 this.hideRecentButton();
             } else {
                 this.showNotification("Recent file not found");
@@ -184,14 +167,12 @@ class UIManager extends THREE.Group {
     }
 
     setupUI() {
-        const renderSettings = storage.get('render', {});
-        let savedFont = renderSettings.render_font || 'Auto';
+        let savedFont = this.settingsManager.get('render_font') || 'Auto';
 
         // Self-healing: Reset to Auto if the saved font is no longer available (e.g. NotoSansRU)
         if (savedFont !== 'Auto' && !this.fonts.find(f => f.id === savedFont)) {
             this.debugLogInstance.log(`[WARN] Font "${savedFont}" not found, resetting to Auto.`);
             savedFont = 'Auto';
-            // Schedule save to update storage
             setTimeout(() => this.onSliderChange('render_font', 'Auto'), 0);
         }
         
@@ -217,6 +198,7 @@ class UIManager extends THREE.Group {
             flexDirection: 'column', alignItems: 'center', pixelSize: this.pixelSize,
             width: 1600, height: 1200, ...FONT_CONFIG, fontFamily: defaultFont
         });
+        this.mainContainer.frustumCulled = false;
         this.add(this.mainContainer);
 
         this.mainMenu = new MainMenu(this, defaultFont);
@@ -225,9 +207,14 @@ class UIManager extends THREE.Group {
         this.environmentSettings = new EnvironmentSettingsMenu(this, defaultFont);
         this.renderSettings = new RenderSettingsMenu(this, defaultFont);
         this.subtitleSettings = new SubtitleSettingsMenu(this, defaultFont);
-        this.explorer = new ExplorerWindow(this, defaultFont);
+        this.explorer = new ExplorerWindow(this, defaultFont, this.galleryManager);
 
         this.allSettingsMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
+        [...this.allSettingsMenus, this.explorer].forEach(menu => {
+            if (menu?.container) {
+                menu.container.visible = false;
+            }
+        });
 
         this.mainContainer.add(this.mainMenu.container);
         this.mainContainer.add(this.screenSettings.container);
@@ -256,6 +243,103 @@ class UIManager extends THREE.Group {
 
         this.mainContainer.position.set(0, -0.5, DEFAULTS.uiZ);
         this.renderOrder = 999;
+    }
+
+    get galleryManager() {
+        return this.stereoPlayer ? this.stereoPlayer.galleryManager : null;
+    }
+
+    get environmentManager() {
+        return this.stereoPlayer ? this.stereoPlayer.environmentManager : null;
+    }
+
+    get activeScreen() {
+        return this.stereoPlayer ? this.stereoPlayer.activeScreen : null;
+    }
+
+    get videoElement() {
+        return this.stereoPlayer ? this.stereoPlayer.videoElement : null;
+    }
+
+    get currentItem() {
+        return this.galleryManager ? this.galleryManager.getCurrentItem() : null;
+    }
+
+    get screenType() {
+        return this.activeScreen ? this.activeScreen.screenType : 'plane';
+    }
+
+    get currentStereoFormat() {
+        return this.activeScreen ? this.activeScreen.currentStereoFormat : null;
+    }
+
+    get showSubtitles() {
+        return this.settingsManager.get('subtitle_visible');
+    }
+
+    get currentVolume() {
+        return this.settingsManager.get('screen_volume');
+    }
+
+    get playbackRate() {
+        return this.settingsManager.get('video_speed');
+    }
+
+    get isMuted() {
+        return this.settingsManager.get('video_muted');
+    }
+
+    get videoRepeat() {
+        return this.settingsManager.get('video_repeat');
+    }
+
+    get menuAlignment() {
+        return this.settingsManager.get('menu_alignment');
+    }
+
+    togglePlayPause() {
+        if (this.stereoPlayer) this.stereoPlayer.togglePlayPause();
+    }
+
+    async exitXR() {
+        if (this.stereoPlayer) await this.stereoPlayer.exitXR();
+    }
+
+    loadNextMedia(direction) {
+        if (this.stereoPlayer) this.stereoPlayer.loadNextImage(direction);
+    }
+
+    async loadMedia(index, format = null) {
+        if (this.stereoPlayer) {
+            return await this.stereoPlayer.loadMedia(index, format);
+        }
+    }
+
+    seek(seconds) {
+        if (this.stereoPlayer) {
+            this.stereoPlayer.seek(seconds);
+        }
+    }
+
+    savePlaybackPosition() {
+        if (this.stereoPlayer) this.stereoPlayer.savePlaybackPosition();
+    }
+
+    updateTargetFPS(val) {
+        if (this.renderer?.xr?.isPresenting) {
+            const session = this.renderer.xr.getSession();
+            if (session && session.updateTargetFrameRate) {
+                let targetFPS = 0;
+                if (val === 0) {
+                    targetFPS = this.availableFrameRates.find(r => r >= 30) || 0;
+                } else if (this.availableFrameRates.includes(val)) {
+                    targetFPS = val;
+                }
+                if (targetFPS > 0) {
+                    session.updateTargetFrameRate(targetFPS).catch(e => this.debugLogInstance.log(`[ERROR] FPS Change Error: ${e.message}`));
+                }
+            }
+        }
     }
 
     // --- Visibility Control ---
@@ -316,18 +400,28 @@ class UIManager extends THREE.Group {
 
     switchSubMenu(targetMenu) {
         if (this.activeSubMenu === targetMenu) {
-            if (this.activeSubMenu) { this.activeSubMenu.container.setProperties({ display: 'none' }); this.activeSubMenu = null; }
+            if (this.activeSubMenu) {
+                this.activeSubMenu.container.setProperties({ display: 'none' });
+                this.activeSubMenu.container.visible = false;
+                this.activeSubMenu = null;
+            }
+            if (this.mainContainer) this.mainContainer.update(0);
             return;
         }
-        if (this.activeSubMenu) this.activeSubMenu.container.setProperties({ display: 'none' });
+        if (this.activeSubMenu) {
+            this.activeSubMenu.container.setProperties({ display: 'none' });
+            this.activeSubMenu.container.visible = false;
+        }
         this.activeSubMenu = targetMenu;
         if (this.activeSubMenu) {
             this.activeSubMenu.container.setProperties({ display: 'flex' });
+            this.activeSubMenu.container.visible = true;
             if (this.activeSubMenu === this.explorer) {
                 this.shouldJumpToCurrentItem = true;
-                this.fetchDirectory(this.stereoPlayer.galleryManager.currentPath);
+                this.fetchDirectory(this.galleryManager.currentPath);
             } else { this.syncUI(true); }
         }
+        if (this.mainContainer) this.mainContainer.update(0);
     }
 
     showMainMenu(triggeringControllerIndex = -1) {
@@ -349,26 +443,37 @@ class UIManager extends THREE.Group {
         this.camera.updateMatrixWorld(true); this.camera.getWorldPosition(pos); this.camera.getWorldQuaternion(quat);
         this.position.copy(pos); this.quaternion.copy(quat);
         this.visible = this.isMainMenuVisible = true;
+        this.mainContainer.visible = true;
+        this.mainContainer.setProperties({ display: 'flex' });
         this.smoothedOcclusion = 0; this.currentZ = DEFAULTS.uiZ;
 
         this.syncUI(true);
+        this.mainContainer.update(0);
     }
 
     hideMainMenu(force = false) { 
         if (this.isMainMenuVisible || force) { 
-            this.visible = this.isMainMenuVisible = false; 
+            this.visible = this.isMainMenuVisible = false;
+            if (this.mainContainer) {
+                this.mainContainer.visible = false;
+                this.mainContainer.setProperties({ display: 'none' });
+            }
             this.switchSubMenu(null); 
             this.ignorePointerUntilReleased = [false, false];
+            if (this.mainContainer) this.mainContainer.update(0);
+
+            // Clean up VR pointer hover/down states
+            for (let i = 0; i < 2; i++) {
+                const pointer = this.xrPointers[i];
+                if (pointer) {
+                    const ev = { pointerId: pointer.id, button: 0, buttons: 0, timeStamp: performance.now() };
+                    pointer.exit(ev);
+                }
+            }
         } 
     }
     toggleMainMenuVisibility() { if (this.isMainMenuVisible) this.hideMainMenu(); else this.showMainMenu(); }
-    toggleScreenSettingsVisibility() { this.switchSubMenu(this.screenSettings); }
-    toggleColorSettingsVisibility() { this.switchSubMenu(this.colorSettings); }
-    toggleEnvironmentSettingsVisibility() { this.switchSubMenu(this.environmentSettings); }
-    toggleRenderSettingsVisibility() { this.switchSubMenu(this.renderSettings); }
-    toggleSubtitleSettingsVisibility() { this.switchSubMenu(this.subtitleSettings); }
-    toggleExplorerVisibility() { this.switchSubMenu(this.explorer); }
-    isAnyMenuVisible() { return this.isMainMenuVisible; }
+    isAnyMenuVisible() { return this.isMainMenuVisible || this.activeSubMenu !== null; }
     getInteractableMeshes() {
         if (!this.visible) return [];
         const m = [this.mainMenu.container];
@@ -378,108 +483,6 @@ class UIManager extends THREE.Group {
 
     // --- Data Handlers ---
 
-    /**
-     * Applies a file-specific configuration object to the UI and player.
-     * @param {Object} config - The configuration object from storage.
-     */
-    async applyFileConfig(config) {
-        this.isApplyingConfig = true;
-        this.dirtyGroups.clear();
-
-        if (config) {
-            this.debugLogInstance.log(`[Config] Applied saved config (keys: ${Object.keys(config).join(', ')})`);
-
-            for (const [key, meta] of Object.entries(SETTINGS_METADATA)) {
-                if (config[key] !== undefined && meta.isFileSpecific && !meta.isInternal) {
-                    const uiKey = meta.uiKey || key;
-                    const uiVal = meta.toUI ? meta.toUI(config[key]) : config[key];
-                    if (key === 'screen_height') {
-                        this.debugLogInstance.log(`[Config] Load Screen Size: ${config[key]}m (idx: ${uiVal})`);
-                    }
-                    await this.onSliderChange(uiKey, uiVal, false);
-                }
-            }
-
-            if (config.subtitle_index !== undefined) {
-                this.currentSubtitleIndex = config.subtitle_index;
-                // Note: StereoPlayer.loadMedia handles the actual track switching
-            }
-        }
-        
-        this.isApplyingConfig = false;
-        this.dirtyGroups.clear();
-        this.syncUI();
-    }
-
-    /**
-     * Shows a notification at the bottom-center of the screen with the current size index.
-     */
-    showScreenSizeNotification() {
-        const screen = this.stereoPlayer.stereoScreen;
-        const sizeIdx = Math.round(this.screenSettings.values.screen_height_index);
-        
-        // Calculate world position for bottom-center of the actual mesh
-        // Using a vertical offset of -0.2 (20% of mesh height) to stay clear of the image
-        const mesh = screen.displayScreenLeft;
-        const bottomCenter = new THREE.Vector3(0, -0.7, 0); 
-        mesh.updateMatrixWorld(true);
-        mesh.localToWorld(bottomCenter);
-
-        this.showNotification(`Size: ${sizeIdx}`, 1000, bottomCenter);
-    }
-
-    /**
-     * Gets all current values for isFileSpecific settings in a group.
-     * @param {string} groupName 
-     * @returns {Object}
-     */
-    getGroupConfig(groupName) {
-        const config = {};
-        for (const [key, meta] of Object.entries(SETTINGS_METADATA)) {
-            if (meta.group === groupName && meta.isFileSpecific) {
-                if (meta.isInternal) {
-                    if (key === 'subtitle_index') config[key] = this.currentSubtitleIndex;
-                } else {
-                    const uiKey = meta.uiKey || key;
-                    for (const menu of this.allSettingsMenus) {
-                        if (menu.handlesKey(uiKey)) {
-                            const val = menu.values[uiKey];
-                            config[key] = meta.fromUI ? meta.fromUI(val) : val;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        return config;
-    }
-
-    /**
-     * Generates a file-specific configuration object from the current state.
-     * @returns {Object} A configuration object suitable for updateFileConfig.
-     */
-    getCurrentFileConfig() {
-        const config = {};
-        for (const [key, meta] of Object.entries(SETTINGS_METADATA)) {
-            if (meta.isFileSpecific) {
-                if (meta.isInternal) {
-                    if (key === 'subtitle_index') config[key] = this.currentSubtitleIndex;
-                    // Note: playback_time and stereo_format are handled by StereoPlayer/GalleryManager
-                } else {
-                    const uiKey = meta.uiKey || key;
-                    for (const menu of this.allSettingsMenus) {
-                        if (menu.handlesKey(uiKey)) {
-                            const val = menu.values[uiKey];
-                            config[key] = meta.fromUI ? meta.fromUI(val) : val;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        return config;
-    }
-
     async fetchEnvironments() {
         try {
             const response = await fetch('/api/environments');
@@ -488,21 +491,21 @@ class UIManager extends THREE.Group {
             this.skyboxes = ["None", ...list.filter(f => !f.toLowerCase().endsWith('.glb'))];
             this.models = ["None", ...list.filter(f => f.toLowerCase().endsWith('.glb'))];
 
-            const skyboxName = this.environmentSettings.values.environment_name;
+            const skyboxName = this.settingsManager.get('environment_name');
             if (skyboxName) {
                 const idx = this.skyboxes.indexOf(skyboxName);
                 if (idx !== -1) {
                     this.currentSkyboxIndex = idx;
-                    if (skyboxName !== "None") this.stereoPlayer.environmentManager.loadSkybox(skyboxName);
+                    if (skyboxName !== "None") this.environmentManager.loadSkybox(skyboxName);
                 }
             }
 
-            const modelName = this.environmentSettings.values.environment_model_name;
+            const modelName = this.settingsManager.get('environment_model_name');
             if (modelName) {
                 const idx = this.models.indexOf(modelName);
                 if (idx !== -1) {
                     this.currentModelIndex = idx;
-                    if (modelName !== "None") this.stereoPlayer.environmentManager.loadModel(modelName);
+                    if (modelName !== "None") this.environmentManager.loadModel(modelName);
                 }
             }
         } catch (e) { this.debugLogInstance.log(`Env Error: ${e.message}`); }
@@ -514,7 +517,7 @@ class UIManager extends THREE.Group {
             const list = await response.json();
             this.luts = ["None", ...list];
 
-            const lutName = this.colorSettings.values.color_lut;
+            const lutName = this.settingsManager.get('color_lut');
             if (lutName) {
                 const idx = this.luts.indexOf(lutName);
                 if (idx !== -1) {
@@ -526,8 +529,11 @@ class UIManager extends THREE.Group {
     }
 
     async applyLut(filename) {
+        if (this._currentLutName === filename) return;
+        this._currentLutName = filename;
+
         if (filename === "None") {
-            this.stereoPlayer.stereoScreen.setLutTexture(null);
+            this.stereoPlayer?.setLutTexture(null);
             return;
         }
 
@@ -539,76 +545,41 @@ class UIManager extends THREE.Group {
             tex3d.minFilter = THREE.LinearFilter;
             tex3d.magFilter = THREE.LinearFilter;
             tex3d.needsUpdate = true;
-            this.stereoPlayer.stereoScreen.setLutTexture(tex3d);
+            this.stereoPlayer?.setLutTexture(tex3d);
         } catch (e) {
             this.debugLogInstance.log(`LUT Load Error: ${e.message}`);
         }
     }
 
-    changeLut(delta) {
-        const len = this.luts.length;
-        this.currentLutIndex = (this.currentLutIndex + delta + len) % len;
-        const lut = this.luts[this.currentLutIndex];
-        this.applyLut(lut);
-        this.onSliderChange('color_lut', lut);
+    _cycleIndex(currentIndex, len, delta) {
+        return ((Math.max(0, currentIndex) + delta) % len + len) % len;
     }
 
-    resetLut() {
-        this.currentLutIndex = 0;
-        const lut = this.luts[0]; // "None"
-        this.applyLut(lut);
-        this.onSliderChange('color_lut', lut);
+    changeLut(delta) {
+        this.currentLutIndex = this._cycleIndex(this.currentLutIndex, this.luts.length, delta);
+        this.onSliderChange('color_lut', this.luts[this.currentLutIndex]);
     }
 
     changeSkybox(delta) {
-        const len = this.skyboxes.length;
-        this.currentSkyboxIndex = (this.currentSkyboxIndex + delta + len) % len;
-        const skybox = this.skyboxes[this.currentSkyboxIndex];
-        this.stereoPlayer.environmentManager.loadSkybox(skybox);
-        this.onSliderChange('environment_name', skybox);
+        this.currentSkyboxIndex = this._cycleIndex(this.currentSkyboxIndex, this.skyboxes.length, delta);
+        this.onSliderChange('environment_name', this.skyboxes[this.currentSkyboxIndex]);
     }
 
     changeModel(delta) {
-        const len = this.models.length;
-        this.currentModelIndex = (this.currentModelIndex + delta + len) % len;
-        const model = this.models[this.currentModelIndex];
-        this.stereoPlayer.environmentManager.loadModel(model);
-        this.onSliderChange('environment_model_name', model);
-    }
-
-    resetSkybox() {
-        this.currentSkyboxIndex = 0;
-        const skybox = this.skyboxes[0]; // "None"
-        this.stereoPlayer.environmentManager.loadSkybox(skybox);
-        this.onSliderChange('environment_name', skybox);
-    }
-
-    resetModel() {
-        this.currentModelIndex = 0;
-        const model = this.models[0]; // "None"
-        this.stereoPlayer.environmentManager.loadModel(model);
-        this.onSliderChange('environment_model_name', model);
+        this.currentModelIndex = this._cycleIndex(this.currentModelIndex, this.models.length, delta);
+        this.onSliderChange('environment_model_name', this.models[this.currentModelIndex]);
     }
 
     changeFont(delta) {
-        const renderVals = this.renderSettings.values;
-        const currentId = renderVals.render_font || 'Auto';
-        const currentIndex = this.fonts.findIndex(f => f.id === currentId);
-        const len = this.fonts.length;
-        const nextIndex = (currentIndex + delta + len) % len;
-        const nextFont = this.fonts[nextIndex];
-        this.onSliderChange('render_font', nextFont.id);
+        const currentId = this.settingsManager.get('render_font') || 'Auto';
+        const nextIndex = this._cycleIndex(this.fonts.findIndex(f => f.id === currentId), this.fonts.length, delta);
+        this.onSliderChange('render_font', this.fonts[nextIndex].id);
     }
 
     changeFPS(delta) {
-        const currentFPS = this.renderSettings.values.render_fps || 0;
-        const len = this.availableFrameRates.length;
-        let currentIndex = this.availableFrameRates.indexOf(currentFPS);
-        if (currentIndex === -1) currentIndex = 0;
-        
-        const nextIndex = (currentIndex + delta + len) % len;
-        const nextFPS = this.availableFrameRates[nextIndex];
-        this.onSliderChange('render_fps', nextFPS);
+        const currentFPS = this.settingsManager.get('render_fps') || 0;
+        const nextIndex = this._cycleIndex(this.availableFrameRates.indexOf(currentFPS), this.availableFrameRates.length, delta);
+        this.onSliderChange('render_fps', this.availableFrameRates[nextIndex]);
     }
 
     async fetchDirectory(path) {
@@ -616,12 +587,12 @@ class UIManager extends THREE.Group {
             // Clear current view before fetching to avoid showing stale data
             this.explorer.render([], path, 0, this.itemsPerPage);
 
-            const items = await this.stereoPlayer.galleryManager.fetchDirectory(path);
+            const items = await this.galleryManager.fetchDirectory(path);
             this.currentPage = 0;
 
             let targetPath = null;
             if (this.shouldJumpToCurrentItem) {
-                const currentItem = this.stereoPlayer.galleryManager.getCurrentItem();
+                const currentItem = this.currentItem;
                 if (currentItem) targetPath = currentItem.path;
                 this.shouldJumpToCurrentItem = false;
             } else if (this.shouldJumpToPath) {
@@ -644,36 +615,36 @@ class UIManager extends THREE.Group {
     }
 
     async setSortMode(mode) {
-        await this.stereoPlayer.galleryManager.setSortMode(mode);
+        await this.galleryManager.setSortMode(mode);
         this.currentPage = 0;
         if (this.activeSubMenu === this.explorer) {
-            this.explorer.render(this.stereoPlayer.galleryManager.items, this.stereoPlayer.galleryManager.currentPath, this.currentPage, this.itemsPerPage);
+            this.explorer.render(this.galleryManager.items, this.galleryManager.currentPath, this.currentPage, this.itemsPerPage);
         }
     }
 
     changePage(delta) {
-        const max = Math.ceil(this.stereoPlayer.galleryManager.items.length / this.itemsPerPage) - 1;
+        const max = Math.ceil(this.galleryManager.items.length / this.itemsPerPage) - 1;
         const next = THREE.MathUtils.clamp(this.currentPage + delta, 0, Math.max(0, max));
         if (next !== this.currentPage) {
             this.currentPage = next;
             if (this.activeSubMenu === this.explorer) {
-                this.explorer.render(this.stereoPlayer.galleryManager.items, this.stereoPlayer.galleryManager.currentPath, this.currentPage, this.itemsPerPage);
+                this.explorer.render(this.galleryManager.items, this.galleryManager.currentPath, this.currentPage, this.itemsPerPage);
             }
         }
     }
 
     async openImageFromExplorer(allItems, targetItem) {
-        const idx = this.stereoPlayer.galleryManager.findPlaybackIndexByPath(targetItem.path);
+        const idx = this.galleryManager.findPlaybackIndexByPath(targetItem.path);
         if (idx !== -1) {
-            await this.stereoPlayer.loadMedia(idx);
+            await this.loadMedia(idx);
             this.hideMainMenu(true);
-            this.stereoPlayer.toggleControllerUIVisibility(false);
+            if (this.stereoPlayer) this.stereoPlayer.toggleControllerUIVisibility(false);
         }
     }
 
     navigateUp() {
-        const currentPath = this.stereoPlayer.galleryManager.currentPath;
-        const parent = this.stereoPlayer.galleryManager.getParentPath();
+        const currentPath = this.galleryManager.currentPath;
+        const parent = this.galleryManager.getParentPath();
         if (parent) {
             // Set target path to jump to (strip leading slash to match item.path)
             this.shouldJumpToPath = currentPath.startsWith('/') ? currentPath.substring(1) : currentPath;
@@ -682,23 +653,57 @@ class UIManager extends THREE.Group {
     }
 
     toggleVideoRepeat() {
-        this.videoRepeat = !this.videoRepeat;
-        if (this.stereoPlayer.videoElement) {
-            this.stereoPlayer.videoElement.loop = this.videoRepeat;
-        }
-        this.saveSettings();
+        this.settingsManager.set('video_repeat', !this.videoRepeat);
     }
 
-    updateSubtitleText(text) { this.stereoPlayer.subtitleWindow.updateText(text, this.subtitleSettings.values.subtitle_font_size); }
-    toggleSubtitles() { this.onSliderChange('subtitle_visible', !this.subtitleSettings.values.subtitle_visible); }
+    toggleMute() {
+        this.setMuted(!this.isMuted);
+    }
+
+    setMuted(muted) {
+        if (!muted && this.currentVolume === 0) {
+            const restoreVol = this._unmuteVolume || DEFAULTS.screen_volume;
+            this.settingsManager.set('screen_volume', restoreVol);
+        } else if (muted && this.currentVolume > 0) {
+            this._unmuteVolume = this.currentVolume;
+        }
+        this.settingsManager.set('video_muted', muted);
+        this.syncUI(true);
+    }
+
+    setPlaybackRate(speed, shouldSave = true) {
+        this.settingsManager.set('video_speed', speed, { isUserAction: shouldSave });
+        this.syncUI(true);
+    }
+
+    resetPlaybackRate() {
+        this.setPlaybackRate(DEFAULTS.video_speed, true);
+    }
+
+    changePlaybackRate(delta) {
+        const min = 0.25;
+        const max = 4.0;
+        const current = this.playbackRate ?? DEFAULTS.video_speed;
+        const newSpeed = Math.round(THREE.MathUtils.clamp(current + delta, min, max) * 100) / 100;
+        this.setPlaybackRate(newSpeed, true);
+    }
+
+    updateSubtitleText(text) { 
+        if (this.stereoPlayer?.subtitleWindow) {
+            const fontSize = this.settingsManager.get('subtitle_font_size');
+            this.stereoPlayer.subtitleWindow.updateText(text, fontSize); 
+        }
+    }
+    toggleSubtitles() { 
+        const isVisible = this.settingsManager.get('subtitle_visible');
+        this.onSliderChange('subtitle_visible', !isVisible); 
+    }
     changeSubtitle(delta) {
         if (this.availableSubtitles.length === 0) return;
-        const len = this.availableSubtitles.length;
-        this.currentSubtitleIndex = (this.currentSubtitleIndex + delta + len) % len;
-        this.stereoPlayer.setSubtitleTrack(this.currentSubtitleIndex);
+        this.currentSubtitleIndex = this._cycleIndex(this.currentSubtitleIndex, this.availableSubtitles.length, delta);
+        this.stereoPlayer?.setSubtitleTrack(this.currentSubtitleIndex);
 
-        // Save immediately to file config
-        const currentItem = this.stereoPlayer.galleryManager.getCurrentItem();
+        const currentItem = this.currentItem;
         if (currentItem) {
             this.updateFileConfig(currentItem, { subtitle_index: this.currentSubtitleIndex });
         }
@@ -706,7 +711,7 @@ class UIManager extends THREE.Group {
 
     // --- Event Handlers ---
 
-    handleSlider(e, track, id, min, max, shouldSave = true) {
+    async handleSlider(e, track, id, min, max, shouldSave = true) {
         if (!e.point) return;
         const local = track.worldToLocal(e.point.clone());
         const percent = THREE.MathUtils.clamp(0.5 + local.x, 0, 1);
@@ -725,182 +730,83 @@ class UIManager extends THREE.Group {
             this._atLimit[`${id}_max`] = false;
         }
 
-        let actualMin = min, actualMax = max;
-        if (id === 'screen_tx' || id === 'screen_ty') {
-            const s = this.stereoPlayer.stereoScreen;
-            const limit = LIMITS.screen_txMax * s.physicalScreenHeight * (id === 'screen_tx' ? s.aspectRatio : 1.0);
-            actualMin = -limit; actualMax = limit;
-        }
-        this.onSliderChange(id, actualMin + (actualMax - actualMin) * percent, shouldSave);
+        const limits = getSettingLimits(id, this.screenType, this.activeScreen);
+        const actualMin = limits.min ?? min;
+        const actualMax = limits.max ?? max;
+        
+        await this.onSliderChange(id, actualMin + (actualMax - actualMin) * percent, shouldSave);
+        this.syncUI(false);
     }
 
     handleVideoSeek(e, track, shouldSave = true) {
-        if (!e.point || !this.stereoPlayer.videoElement) return;
+        if (!e.point || !this.videoElement) return;
         const local = track.worldToLocal(e.point.clone());
         const percent = THREE.MathUtils.clamp(0.5 + local.x, 0, 1);
-        this.stereoPlayer.seek(percent * this.stereoPlayer.videoElement.duration);
-        if (shouldSave) this.stereoPlayer.savePlaybackPosition();
+        this.seek(percent * this.videoElement.duration);
+        if (shouldSave) this.savePlaybackPosition();
     }
 
     handleVolumeChange(e, track, shouldSave = true) {
         if (!e.point) return;
         const local = track.worldToLocal(e.point.clone());
-        const percent = THREE.MathUtils.clamp(0.5 + local.x, 0, 1);
+        let percent = THREE.MathUtils.clamp(0.5 + local.x, 0, 1);
+        if (percent <= 0.05) {
+            percent = 0;
+        } else if (percent >= 0.95) {
+            percent = 1;
+        }
+        if (this.isMuted && percent > 0) {
+            this.settingsManager.set('video_muted', false, { isUserAction: shouldSave });
+        }
         this.onSliderChange('screen_volume', percent, shouldSave);
     }
 
     async onSliderChange(id, val, shouldSave = true) {
-        // Capture the applying state synchronously to avoid race conditions after await
-        const wasApplyingDuringCall = this.isApplyingConfig;
-
-        for (const menu of this.allSettingsMenus) {
-            if (menu.handlesKey(id)) { 
-                await menu.onValueChange(id, val, shouldSave); 
-
-                // Mark group as dirty if an isFileSpecific setting was touched by user
-                // and we are NOT currently in the middle of a bulk application/load
-                if (!wasApplyingDuringCall) {
-                    const entry = Object.entries(SETTINGS_METADATA).find(([k, m]) => k === id || m.uiKey === id);
-                    if (entry && entry[1].isFileSpecific) {
-                        this.dirtyGroups.add(entry[1].group);
-                    }
-                }
-
-                // Automatically update per-file config if this key is marked as file-specific
-                if (shouldSave && !wasApplyingDuringCall) {
-                    // Find metadata by either the key itself or its uiKey
-                    const entry = Object.entries(SETTINGS_METADATA).find(([k, m]) => k === id || m.uiKey === id);
-                    if (entry) {
-                        const [fileKey, meta] = entry;
-                        if (meta.isFileSpecific) {
-                            const currentItem = this.stereoPlayer.galleryManager.getCurrentItem();
-                            if (currentItem) {
-                                // Save all isFileSpecific settings in this group to 'pin' the state
-                                this.debugLogInstance.log(`[Config] User changed ${fileKey}. Pinning group '${meta.group}'.`);
-                                const updates = this.getGroupConfig(meta.group);
-                                await this.updateFileConfig(currentItem, updates);
-                                this.dirtyGroups.delete(meta.group);
-                            }
-                        }
-                    }
-                }
-
-                // Handle real-time FPS change during XR
-                if (id === 'render_fps' && this.renderer.xr.isPresenting) {
-                    const session = this.renderer.xr.getSession();
-                    if (session && session.updateTargetFrameRate) {
-                        let targetFPS = val;
-                        if (val === 0) {
-                            // Find lowest supported rate >= 30 from the available list
-                            targetFPS = this.availableFrameRates.find(r => r >= 30) || 0;
-                        }
-                        if (targetFPS > 0) {
-                            session.updateTargetFrameRate(targetFPS).catch(e => this.debugLogInstance.log(`[ERROR] FPS Change Error: ${e.message}`));
-                        }
-                    }
-                }
-                return; 
-            }
-        }
+        await this.settingsManager.set(id, val, { isUserAction: shouldSave });
     }
 
     async onFormatChange(fmt) {
-        if (this.stereoPlayer.galleryManager.playingIndex !== -1) {
-            await this.stereoPlayer.loadMedia(this.stereoPlayer.galleryManager.playingIndex, fmt);
+        if (this.galleryManager.playingIndex !== -1) {
+            await this.loadMedia(this.galleryManager.playingIndex, fmt);
         }
     }
 
     // --- Sync & Storage ---
 
-    async loadSettings() { 
-        await this.screenSettings.load();
-        await this.colorSettings.load();
-        await this.environmentSettings.load();
-        await this.renderSettings.load();
-        await this.subtitleSettings.load();
-
-        const general = storage.get('general', {});
-        this.videoRepeat = general.video_repeat !== undefined ? general.video_repeat : DEFAULTS.video_repeat;
-        this.menuAlignment = general.menu_alignment || DEFAULTS.menu_alignment;
-    }
-    
     async saveSettings() { 
-        await Promise.all([
-            this.screenSettings.save(),
-            this.colorSettings.save(),
-            this.environmentSettings.save(),
-            this.renderSettings.save(),
-            this.subtitleSettings.save(),
-            storage.set('general', { 
-                video_repeat: this.videoRepeat,
-                menu_alignment: this.menuAlignment
-            })
-        ]);
-
-        // Also save per-file settings if active and they have been modified by the user
-        const currentItem = this.stereoPlayer.galleryManager.getCurrentItem();
-        if (currentItem && !this.isApplyingConfig && this.dirtyGroups.size > 0) {
-            for (const groupName of this.dirtyGroups) {
-                this.debugLogInstance.log(`[Config] Periodic save for group '${groupName}'`);
-                const updates = this.getGroupConfig(groupName);
-                await this.updateFileConfig(currentItem, updates);
-            }
-            this.dirtyGroups.clear();
-        }
+        await this.settingsManager.flush();
     }
-    async getFileConfig(file) { return await storage.getFileConfig(file); }
-    async updateFileConfig(file, updates) { await storage.updateFileConfig(file, updates); }
-    async clearFileConfig(file) { await storage.clearFileConfig(file); }
+
+    async updateFileConfig(file, updates) { 
+        await this.settingsManager.updateFileState(updates, file);
+    }
 
     syncUI(updateSlowMetrics = false) {
         if (!this.mainContainer || !this.visible) return;
 
         const now = performance.now();
         const slowMetricsUpdated = (now - this.lastStatusUpdateTime > 1000) || updateSlowMetrics;
-        const isVideo = !!this.stereoPlayer.videoElement;
-        const s = this.stereoPlayer.stereoScreen;
+        const isVideo = !!this.videoElement;
 
-        // 1. High-frequency sync: Video progress and Volume (needed for smooth slider feedback)
-        this.mainMenu.sync({
-            videoProgress: isVideo ? (this.stereoPlayer.videoElement.currentTime / this.stereoPlayer.videoElement.duration || 0) : 0,
-            isPlaying: isVideo && !this.stereoPlayer.videoElement.paused,
+        const mainParams = {
+            videoProgress: isVideo ? (this.videoElement.currentTime / this.videoElement.duration || 0) : 0,
+            isPlaying: isVideo && !this.videoElement.paused,
             volume: this.currentVolume,
-            currentTime: isVideo ? this.stereoPlayer.videoElement.currentTime : 0,
-            duration: isVideo ? this.stereoPlayer.videoElement.duration : 0
-        });
+            isMuted: this.isMuted,
+            speed: this.playbackRate,
+            currentTime: isVideo ? this.videoElement.currentTime : 0,
+            duration: isVideo ? this.videoElement.duration : 0
+        };
 
-        // 2. Low-frequency sync: FPS, Clock, Battery, Filename, etc.
         if (slowMetricsUpdated) {
-            const mainParams = {
-                currentFileName: (this.stereoPlayer.galleryManager.getCurrentItem()) ? this.stereoPlayer.galleryManager.getCurrentItem().name : "",
-                isVideoActive: isVideo,
-                fps: this.currentFPS,
-                slowMetricsUpdated: true, 
-                showSubtitles: this.subtitleSettings.values.subtitle_visible,
-                skybox: this.skyboxes[this.currentSkyboxIndex],
-                model: this.models[this.currentModelIndex],
-                volume: this.currentVolume
-            };
-            this.mainMenu.sync(mainParams);
+            mainParams.currentFileName = this.currentItem ? this.currentItem.name : "";
+            mainParams.isVideoActive = isVideo;
+            mainParams.fps = this.currentFPS;
+            mainParams.slowMetricsUpdated = true;
         }
 
-        // 3. High-frequency sub-menu sync: Settings menus need real-time feedback for sliders
-        if (this.activeSubMenu) {
-            const currentFontId = this.renderSettings.values.render_font || 'Auto';
-            const currentFont = this.fonts.find(f => f.id === currentFontId) || this.fonts[0];
-            
-            if (this.activeSubMenu === this.screenSettings) {
-                this.screenSettings.sync({ effective_physical_screen_height: s.physicalScreenHeight, aspect_ratio: s.aspectRatio, currentFormat: s.currentStereoFormat });
-            } else if (this.activeSubMenu === this.colorSettings) {
-                this.colorSettings.sync();
-            } else if (this.activeSubMenu === this.environmentSettings) {
-                this.environmentSettings.sync();
-            } else if (this.activeSubMenu === this.renderSettings) {
-                this.renderSettings.sync({ currentFontLabel: currentFont.label, currentFontLanguages: currentFont.languages });
-            } else if (this.activeSubMenu === this.subtitleSettings) {
-                this.subtitleSettings.sync({ currentSubtitleTitle: this.availableSubtitles[this.currentSubtitleIndex]?.title || "None" });
-            }
-        }
+        this.mainMenu.sync(mainParams);
+        this.activeSubMenu?.sync?.();
     }
 
     update(delta) {
@@ -930,25 +836,26 @@ class UIManager extends THREE.Group {
             this.syncUI(slowMetricsUpdated);
         }
 
-        const isVideo = !!this.stereoPlayer.videoElement;
+        const isVideo = !!this.videoElement;
         const hasActiveSubtitle = this.availableSubtitles.length > 0 && this.currentSubtitleIndex >= 0;
         const sub = this.stereoPlayer?.subtitleWindow;
-        if (sub) {
-            const screen = this.stereoPlayer.stereoScreen;
+        const s = this.activeScreen;
+        if (sub && s.supportsSubtitles) {
+            const getSubVal = (k) => this.settingsManager.get(k);
             const settings = { 
-                y: this.subtitleSettings.values.subtitle_y, 
-                z: this.subtitleSettings.values.subtitle_z, 
-                scale: this.subtitleSettings.values.subtitle_font_size,
-                disparity: this.subtitleSettings.values.subtitle_eye_sep
+                y: getSubVal('subtitle_y'), 
+                z: getSubVal('subtitle_z'), 
+                scale: getSubVal('subtitle_font_size'),
+                disparity: getSubVal('subtitle_eye_sep')
             };
             const screenParams = {
-                aspectRatio: screen.aspectRatio,
-                physicalScreenHeight: screen.physicalScreenHeight,
-                currentScreenX: screen.currentScreenX,
-                currentScreenY: screen.currentScreenY,
-                currentZoom: screen.currentZoom
+                aspectRatio: s.aspectRatio,
+                physicalScreenHeight: s.physicalScreenHeight,
+                currentScreenX: s.currentScreenX,
+                currentScreenY: s.currentScreenY,
+                currentZoom: s.currentZoom
             };
-            sub.updateLayout(screenParams, settings, isVideo && hasActiveSubtitle && this.subtitleSettings.values.subtitle_visible);
+            sub.updateLayout(screenParams, settings, isVideo && hasActiveSubtitle && getSubVal('subtitle_visible'));
         }
 
         if (this.visible) {
@@ -968,10 +875,20 @@ class UIManager extends THREE.Group {
         }
         
         if (this.pointerEvents?.update) this.pointerEvents.update();
-        if (this.renderer.xr.isPresenting) {
+        if (this.renderer.xr.isPresenting && this.isMainMenuVisible) {
             for (let i = 0; i < 2; i++) {
                 const c = this.stereoPlayer.controllers[i]; if (!c) continue;
-                if (!this.xrPointers[i]) this.xrPointers[i] = createRayPointer(() => this.camera, { current: c }, {}, { intersectionRecursive: true });
+                if (!this.xrPointers[i]) {
+                    this.xrPointers[i] = createRayPointer(
+                        () => this.camera,
+                        { current: c },
+                        {},
+                        {
+                            intersectionRecursive: true,
+                            filter: (object) => ThreeUtils.isHierarchyVisible(object)
+                        }
+                    );
+                }
                 const pointer = this.xrPointers[i]; 
                 const pressed = this.stereoPlayer.gamepads[i]?.buttons[0].pressed;
                 
@@ -997,8 +914,13 @@ class UIManager extends THREE.Group {
     updateOcclusionState() {
         this.updateMatrixWorld(true);
         
-        // --- Optimization: Skip raycasting if screen is too far ---
-        const s = this.stereoPlayer.stereoScreen;
+        // --- Optimization: Skip raycasting if screen is too far or not occludable ---
+        const s = this.activeScreen;
+        if (!s.canOccludeUI) {
+            this.targetOcclusion = 0;
+            return;
+        }
+
         const screenDist = Math.abs(s.currentZoom);
         
         // If screen is significantly behind the UI (UI is at ~0.9m), no need to check.
@@ -1019,7 +941,7 @@ class UIManager extends THREE.Group {
                 tempPoint.set(ox * this.pixelSize, -oy * this.pixelSize, 0); target.localToWorld(tempPoint); this.worldToLocal(tempPoint);
                 referencePoint.set(tempPoint.x, tempPoint.y, DEFAULTS.uiZ); this.localToWorld(referencePoint);
                 rayDir.copy(referencePoint).sub(cameraPos).normalize(); this.occlusionRaycaster.set(cameraPos, rayDir);
-                const hits = this.occlusionRaycaster.intersectObject(this.stereoPlayer.stereoScreen, true);
+                const hits = this.occlusionRaycaster.intersectObject(this.activeScreen, true);
                 if (hits.length > 0 && hits[0].distance < cameraPos.distanceTo(referencePoint) + buffer) { isOccluded = true; break; }
             }
             if (isOccluded) break;

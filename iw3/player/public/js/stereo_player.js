@@ -1,12 +1,16 @@
 import * as THREE from "three";
 import { StereoScreen } from './stereo_screen.js';
+import { StereoDomeScreen } from './stereo_dome_screen.js';
+import { StereoDomeXRScreen } from './stereo_dome_xr_screen.js';
 import { UIManager } from './ui_manager.js';
-import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
-import { LIMITS, DEFAULTS, STEREO_FORMATS, PREFETCH_CONFIG } from "./constants.js";
+import { LIMITS, DEFAULTS, STEREO_FORMATS } from "./constants.js";
 import { EnvironmentManager } from './environment_manager.js';
 import { SubtitleWindow } from './window_subtitle.js';
 import { GalleryManager } from './gallery_manager.js';
 import { InputManager } from './input_manager.js';
+import { PlaybackController } from './playback_controller.js';
+import { ScreenTransformController } from './screen_transform_controller.js';
+import { UIUtils } from './ui_common.js';
 import { storage } from './storage.js';
 
 class StereoPlayer extends THREE.Group {
@@ -26,56 +30,86 @@ class StereoPlayer extends THREE.Group {
         this.environmentManager = new EnvironmentManager(scene, debugLogInstance);
         this.scene.add(this.environmentManager);
 
-        // Screen & Subtitle
-        this.stereoScreen = new StereoScreen(new THREE.Texture(), 1.0);
-        this.add(this.stereoScreen);
-        this.stereoScreen.clearScreen(); 
-        this.subtitleWindow = new SubtitleWindow();
-        this.stereoScreen.add(this.subtitleWindow);
+        // Playback Controller
+        this.playbackController = new PlaybackController(renderer, scene, debugLogInstance);
+        this.playbackController.addEventListener('ended', (e) => {
+            this.uiManager.updateFileConfig(e.detail.item, { playback_time: 0 });
+            this.uiManager.syncUI(true);
+        });
+        this.playbackController.addEventListener('error', (e) => {
+            this.uiManager.showNotification(e.detail.message);
+            this.debugLogInstance.log(`[ERROR] ${e.detail.message}`);
+            this.activeScreen.clearScreen();
+        });
+        this.playbackController.addEventListener('play-state-change', () => {
+            this.uiManager.syncUI(true);
+        });
+        this.playbackController.addEventListener('video-destroyed', () => {
+            if (this.planeScreen) this.planeScreen.resetTexture();
+            if (this.domeScreen) this.domeScreen.resetTexture();
+        });
 
+        // Screen & Subtitle
         this.uiManager = new UIManager(scene, camera, renderer, debugLogInstance, this);
+        
+        const screenOptions = {
+            onTransformChange: (key, val) => this.uiManager.onSliderChange(key, val, false),
+            onSizeChange: () => this.uiManager.syncUI(true),
+            debugLogInstance: this.debugLogInstance
+        };
+        this.planeScreen = new StereoScreen(new THREE.Texture(), 1.0, screenOptions);
+        this.domeScreen = new StereoDomeScreen(new THREE.Texture(), 1.0, screenOptions);
+        this.domeXRScreen = new StereoDomeXRScreen(screenOptions);
+        
+        this.add(this.planeScreen);
+        this.add(this.domeScreen);
+        this.add(this.domeXRScreen);
+        
+        this.activeScreen = this.planeScreen;
+        this.planeScreen.visible = false;
+        this.domeScreen.visible = false;
+        this.domeXRScreen.visible = false;
+
+        this.subtitleWindow = new SubtitleWindow();
+        this.activeScreen.add(this.subtitleWindow);
+
+        this.setupAxesGuide();
+
+        // Gesture & Transform Controller
+        this.transformController = new ScreenTransformController({
+            onTransformChange: (key, val) => this.uiManager.onSliderChange(key, val, false),
+            onSaveSettings: () => this.uiManager.saveSettings(),
+            onVibrate: (controllerIndex, intensity, duration) => {
+                const pointer = this.uiManager.xrPointers[controllerIndex];
+                if (pointer) UIUtils.vibratePointer(pointer.id, intensity, duration, this.uiManager);
+            },
+            onDragStateChange: (isDragging) => this.setAxesGuideVisible(isDragging),
+            debugLogInstance: this.debugLogInstance
+        });
+
         this.inputManager = new InputManager(this, this.uiManager);
 
-        // Controller tracking
-        this.controllers = [null, null];
-        this.gamepads = [null, null];
-        this.controllerRays = [null, null];
-        this.controllerGrips = [null, null];
-
-        this.textureLoader = new THREE.TextureLoader();
-        this.textureCache = new Map(); // path -> { texture, aspectRatio }
-
-        // Video state
-        this.videoElement = null;
-        this.currentLoadId = 0;
         this.currentTrackUrl = null;
         this.lastPlaybackTimeSave = 0;
 
-        // Interactive states
-        this.isControllerRotating = false;
-        this.activeRotationController = null;
-        this.initialRotationX = DEFAULTS.screen_tilt * Math.PI / 180;
-        this.initialControllerRotationX = 0;
-
-        this.isControllerTranslating = false;
-        this.activeTranslationController = null;
-        this.initialControllerPosition = new THREE.Vector3();
-        this.initialScreenX = 0;
-        this.initialScreenY = 0;
-
-        this.selectStartTime = [0, 0];
-
-        this.raycaster = new THREE.Raycaster();
-        this.tempMatrix = new THREE.Matrix4();
         this.clock = new THREE.Clock();
         this.isXRActive = false;
         this.backgroundIntensity = DEFAULTS.screen_bg_color;
 
-        this.setupControllers();
+        // Experimental: Toggle between individual eye tracking (correct parallax) 
+        // and head-center fixed (traditional viewing).
+        this.useEyeTracking = true;
+
+        // Caches for tracking
+        this._tempPosL = new THREE.Vector3();
+        this._tempPosR = new THREE.Vector3();
+        this._headWorldPos = new THREE.Vector3();
+
+        this.setupXRSessionEvents();
         
         // Initial state for non-XR mode
-        this.stereoScreen.updateEyeVisibility(false);
-        this.subtitleWindow.updateEyeVisibility(false);
+        this.activeScreen.updateEyeVisibility(false);
+        this.activeScreen.clearScreen();
 
         this.galleryManager.fetchDirectory('/').then(() => {
             this.debugLogInstance.log(`${this.galleryManager.playbackGallery.length} items found`);
@@ -84,6 +118,111 @@ class StereoPlayer extends THREE.Group {
 
     setBackgroundLevel(val) {
         this.environmentManager.setBackgroundLevel(val);
+        // If XR Layers are active, we must keep scene.background as null 
+        // to ensure the video layer remains visible behind the UI.
+        if (this.isXRLayersActive) {
+            this.scene.background = null;
+        }
+    }
+
+    setColorParameter(key, val) {
+        this.planeScreen.setColorParameter(key, val);
+        this.domeScreen.setColorParameter(key, val);
+    }
+
+    setLutTexture(tex) {
+        this.planeScreen.setLutTexture(tex);
+        this.domeScreen.setLutTexture(tex);
+    }
+
+    async switchScreen(format) {
+        if (this._isSwitching) return;
+        this._isSwitching = true;
+
+        try {
+            const isDome = (format === STEREO_FORMATS.SBS_180);
+            const isPresenting = this.renderer.xr.isPresenting;
+            const settingOn = this.uiManager.settingsManager.get('render_xr_layers');
+            const bindingExists = !!window.XRMediaBinding;
+            const hasVideo = !!this.videoElement;
+
+            const useXRLayers = isDome && isPresenting && settingOn && bindingExists && hasVideo;
+            
+            this.debugLogInstance.log(`[XR-Layers] Evaluated: ${useXRLayers} (dome=${isDome}, vr=${isPresenting}, set=${settingOn}, bind=${bindingExists}, vid=${hasVideo})`);
+
+            let nextScreen;
+            if (useXRLayers) {
+                nextScreen = this.domeXRScreen;
+            } else if (isDome) {
+                nextScreen = this.domeScreen;
+            } else {
+                nextScreen = this.planeScreen;
+            }
+            
+            const prevScreen = this.activeScreen;
+
+            if (nextScreen !== prevScreen) {
+                prevScreen.visible = false;
+                this.activeScreen = nextScreen;
+                this.setAxesGuideVisible(false);
+                
+                if (this.activeScreen.supportsSubtitles) {
+                    this.activeScreen.add(this.subtitleWindow);
+                    this.subtitleWindow.visible = true;
+                } else {
+                    if (this.subtitleWindow.parent) this.subtitleWindow.parent.remove(this.subtitleWindow);
+                    this.subtitleWindow.visible = false;
+                    this.uiManager.updateSubtitleText(""); 
+                }
+                
+                // Apply effective settings for the newly activated screen type
+                if (this.uiManager.settingsManager) {
+                    this.uiManager.settingsManager.applyAll(this.activeScreen.screenType);
+                }
+            }
+            
+            this.activeScreen.visible = true;
+            this.activeScreen.updateEyeVisibility(this.renderer.xr.isPresenting);
+            this.environmentManager.visible = !isDome;
+
+            // Sync XR Layers if active
+            if (useXRLayers && this.videoElement) {
+                this.debugLogInstance.log("[XR-Layers] Branch -> setupXRLayers");
+                await this.setupXRLayers();
+            } else {
+                this.debugLogInstance.log(`[XR-Layers] Branch -> teardown (use=${useXRLayers}, vid=${!!this.videoElement})`);
+                this.teardownXRLayers();
+            }
+        } catch (e) {
+            this.debugLogInstance.log(`[XR-Layers] FATAL ERROR: ${e.message}`);
+            console.error(e);
+        } finally {
+            this._isSwitching = false;
+        }
+    }
+
+    get videoElement() {
+        return this.playbackController.videoElement;
+    }
+
+    get videoTexture() {
+        return this.playbackController.videoTexture;
+    }
+
+    get isPlaying() {
+        return this.playbackController.isPlaying;
+    }
+
+    get isXRLayersActive() {
+        return this.playbackController.isXRLayersActive;
+    }
+
+    get controllers() {
+        return this.inputManager.controllers;
+    }
+
+    get gamepads() {
+        return this.inputManager.gamepads;
     }
 
     async loadMedia(index, forcedFormat = null) {
@@ -95,205 +234,106 @@ class StereoPlayer extends THREE.Group {
         const oldVideoTime = (this.videoElement && wasPlaying) ? this.videoElement.currentTime : null;
         const oldFile = wasPlaying ? this.galleryManager.getCurrentItem() : null;
 
-        const loadId = ++this.currentLoadId;
-        const url = `/api/image?path=${encodeURIComponent(file.path)}`;
-
         // Clear previous state
         this.uiManager.updateSubtitleText(""); 
         
         // Save old video position before switching
         if (oldFile && oldVideoTime !== null && !forcedFormat) {
-            await this.uiManager.updateFileConfig(oldFile, { playback_time: oldVideoTime });
+            await this.uiManager.settingsManager.updateFileState({ playback_time: oldVideoTime }, oldFile);
         }
         
         // Update playing item and gallery state
         this.galleryManager.setPlayingItem(index);
 
-        if (forcedFormat) {
-            // If the forced format is the same as the default detected format, remove the override
-            const isDefault = (forcedFormat === file.stereo_format);
-            await this.uiManager.updateFileConfig(file, { stereo_format: isDefault ? undefined : forcedFormat });
-        }
+        // Load settings and state for the new file
+        await this.uiManager.settingsManager.loadForFile(file);
 
-        let targetFormat = forcedFormat;
-        let targetConfig = null;
-        if (!targetFormat) {
-            targetConfig = await this.uiManager.getFileConfig(file);
-            if (targetConfig && targetConfig.stereo_format) targetFormat = targetConfig.stereo_format;
-        } else {
-            targetConfig = await this.uiManager.getFileConfig(file);
-        }
-
-        // Apply file-specific settings using the centralized manager
-        if (targetConfig) {
-            await this.uiManager.applyFileConfig(targetConfig);
-        }
-
-        if (this.videoElement && !forcedFormat) {
-            // Save current playback position before switching
-            if (this.isPlaying) {
-                const currentItem = this.galleryManager.getCurrentItem();
-                if (currentItem) {
-                    await this.uiManager.updateFileConfig(currentItem, { playback_time: this.videoElement.currentTime });
+        // If no user override or saved state, query file info if stereo format is undefined
+        if (!forcedFormat && !this.uiManager.settingsManager.getFileState('stereo_format') && !file.stereo_format) {
+            try {
+                const res = await fetch(`/api/file/info?path=${encodeURIComponent(file.path)}`);
+                if (res.ok) {
+                    const info = await res.json();
+                    if (info && info.stereo_format) {
+                        file.stereo_format = info.stereo_format;
+                    }
                 }
-            }
-
-            if (this.currentTrackUrl) URL.revokeObjectURL(this.currentTrackUrl);
-            this.videoElement.onloadedmetadata = this.videoElement.onerror = null;
-            this.videoElement.pause(); this.videoElement.src = ""; this.videoElement.load();
-            this.videoElement = null; 
-            
-            // Dispose current textures
-            if (this.stereoScreen.displayScreenLeft.material.map) {
-                this.stereoScreen.displayScreenLeft.material.map.dispose();
-            }
-            if (this.stereoScreen.displayScreenRight.material.map) {
-                this.stereoScreen.displayScreenRight.material.map.dispose();
+            } catch {
+                // Ignore network errors and keep current format
             }
         }
+
+        if (forcedFormat) {
+            const isDefault = (forcedFormat === file.stereo_format);
+            await this.uiManager.settingsManager.updateFileState({ stereo_format: isDefault ? undefined : forcedFormat });
+        }
+
+        const finalFormat = forcedFormat || this.uiManager.settingsManager.getFileState('stereo_format') || file.stereo_format || STEREO_FORMATS.SBS_FULL;
+        await this.switchScreen(finalFormat);
+        await this.uiManager.settingsManager.applyForLoadedFile(this.activeScreen.screenType);
+
+        // Teardown XR layers if active before starting the next media load
+        this.teardownXRLayers();
 
         this.debugLogInstance.log(`Loading: ${file.name}`);
 
-        if (file.type === 'video') {
-            if (!(forcedFormat && this.videoElement)) {
-                this.videoElement = document.createElement('video');
-                this.videoElement.src = url;
-                this.videoElement.crossOrigin = "anonymous";
-                this.videoElement.preload = "auto";
-                this.videoElement.autoplay = true;
-                this.videoElement.loop = this.uiManager.videoRepeat;
-                this.videoElement.volume = this.uiManager.currentVolume;
+        const isDome = (finalFormat === STEREO_FORMATS.SBS_180);
+        const isPresenting = this.renderer.xr.isPresenting;
+        const settingOn = this.uiManager.settingsManager.get('render_xr_layers');
+        const bindingExists = !!window.XRMediaBinding;
+        const useXRLayers = isDome && isPresenting && settingOn && bindingExists;
 
-                this.videoElement.onended = () => {
-                    this.uiManager.updateFileConfig(file, { playback_time: 0 });
-                    this.uiManager.syncUI(true);
-                };
+        const options = {
+            forcedFormat,
+            targetFormat: finalFormat,
+            loop: this.uiManager.videoRepeat,
+            volume: this.uiManager.currentVolume,
+            muted: this.uiManager.isMuted,
+            playbackRate: this.uiManager.playbackRate,
+            useXRLayers,
+            domeXRScreen: this.domeXRScreen,
+            environmentManager: this.environmentManager
+        };
 
-                this.videoElement.onstalled = () => {
-                    this.debugLogInstance.log(`[WARN] Video stalled: ${file.name}`);
-                };
+        const result = await this.playbackController.load(file, options);
+        if (!result.success) {
+            if (!result.cancelled) {
+                this.activeScreen.clearScreen();
+            }
+            return;
+        }
+
+        const { detail } = result;
+        if (detail.isVideo) {
+            if (detail.isXRActive) {
+                await this.switchScreen(finalFormat);
+                this.uiManager.settingsManager.applyAll(this.activeScreen.screenType);
+            } else {
+                this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
+            }
+            this.lastPlaybackTimeSave = performance.now();
+            this.loadSubtitles(file.path);
+
+            const savedPlaybackTime = this.uiManager.settingsManager.getFileState('playback_time');
+            if (savedPlaybackTime !== null && savedPlaybackTime !== undefined) {
+                this.seek(savedPlaybackTime);
             }
 
-            const handleMetadata = () => {
-                if (this.currentLoadId !== loadId) { if (!forcedFormat) { this.videoElement.pause(); this.videoElement.src = ""; } return; }
-                const vw = this.videoElement.videoWidth;
-                const vh = this.videoElement.videoHeight;
-                
-                if (vw === 0 || vh === 0) {
-                    this.uiManager.showNotification("Error: No video track or unsupported codec");
-                    this.debugLogInstance.log(`[ERROR] Video dimensions are 0x0. Audio may play but no image.`);
-                    // We don't call updateTexture to avoid invalid geometry, or we call it with a black texture
-                    this.stereoScreen.clearScreen();
-                    return;
-                }
-
-                const texture = new THREE.VideoTexture(this.videoElement);
-                texture.colorSpace = THREE.SRGBColorSpace;
-                texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-                
-                // Mipmap and Filtering based on settings
-                const useMipmap = this.uiManager.renderSettings.values.render_video_mipmap;
-                if (useMipmap) {
-                    texture.generateMipmaps = true;
-                    texture.minFilter = THREE.LinearMipmapLinearFilter;
-                } else {
-                    texture.generateMipmaps = false;
-                    texture.minFilter = THREE.LinearFilter;
-                }
-                texture.magFilter = THREE.LinearFilter;
-                texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-
-                const format = targetFormat || file.stereo_format || STEREO_FORMATS.SBS_FULL;
-                this.stereoScreen.updateTexture(texture, vw / vh, format);
-                this.lastPlaybackTimeSave = performance.now(); // Reset periodic save timer
-                this.loadSubtitles(file.path);
-
-                // Save recent file info (encrypted)
-                storage.set('recent_path', this.galleryManager.currentPath);
-                storage.set('recent_file_name', file.name);
-                this.uiManager.hideRecentButton();
-
-                // Restore playback position
-                if (targetConfig && targetConfig.playback_time !== undefined) {
-                    this.seek(targetConfig.playback_time);
-                }
-            };
-
-            this.videoElement.onloadedmetadata = handleMetadata;
-            this.videoElement.onerror = () => {
-                if (this.currentLoadId === loadId) {
-                    const error = this.videoElement.error;
-                    let msg = "Video Load Error";
-                    if (error) {
-                        switch (error.code) {
-                            case 1: msg = "Aborted"; break;
-                            case 2: msg = "Network Error"; break;
-                            case 3: msg = "Decode Error (Unsupported codec?)"; break;
-                            case 4: msg = "Format Not Supported"; break;
-                        }
-                    }
-                    this.uiManager.showNotification(`Error: ${msg}`);
-                    this.debugLogInstance.log(`[ERROR] ${msg}: ${file.path}`);
-                    this.stereoScreen.clearScreen();
-                    this.videoElement = null;
-                }
-            };
-            if (forcedFormat) handleMetadata(); else this.videoElement.load();
+            if (this.videoElement?.paused) {
+                this.playbackController.play();
+            }
         } else {
-            // Check cache first
-            const cached = this.textureCache.get(file.path);
-            if (cached) {
-                const format = targetFormat || file.stereo_format || STEREO_FORMATS.SBS_FULL;
-                this.stereoScreen.updateTexture(cached.texture, cached.aspectRatio, format);
-                this.uiManager.syncUI(true);
-                
-                // Save recent file info (encrypted)
-                storage.set('recent_path', this.galleryManager.currentPath);
-                storage.set('recent_file_name', file.name);
-                this.uiManager.hideRecentButton();
-
-                // Trigger prefetch for neighbors
-                this.prefetchImages();
-                return;
-            }
-
-            // Clear subtitle state for images
             this.uiManager.availableSubtitles = [];
             this.uiManager.currentSubtitleIndex = -1;
-
-            this.textureLoader.load(url, (texture) => {
-                texture.colorSpace = THREE.SRGBColorSpace;
-                texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-                texture.magFilter = THREE.LinearFilter;
-                texture.minFilter = THREE.LinearMipmapLinearFilter;
-                texture.generateMipmaps = true;
-                texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-                const tw = texture.image.width || 1, th = texture.image.height || 1;
-                const aspectRatio = tw / th;
-                const format = targetFormat || file.stereo_format || STEREO_FORMATS.SBS_FULL;
-
-                // Add to cache
-                this.textureCache.set(file.path, { texture, aspectRatio });
-                this.pruneCache();
-
-                this.stereoScreen.updateTexture(texture, aspectRatio, format);
-                this.uiManager.syncUI(true);
-
-                // Save recent file info (encrypted)
-                storage.set('recent_path', this.galleryManager.currentPath);
-                storage.set('recent_file_name', file.name);
-                this.uiManager.hideRecentButton();
-
-                // Trigger prefetch for neighbors
-                this.prefetchImages();
-            }, undefined, (_err) => {
-                if (this.currentLoadId === loadId) {
-                    this.uiManager.showNotification("Error: Image Load Failed");
-                    this.debugLogInstance.log(`[ERROR] Image Load Failed: ${file.path}`);
-                    this.stereoScreen.clearScreen();
-                }
-            });
+            this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
+            this.playbackController.prefetchImages(this.galleryManager.playingGallery, this.galleryManager.playingIndex);
         }
+
+        // Save recent file info (encrypted)
+        storage.set('recent_path', this.galleryManager.currentPath);
+        storage.set('recent_file_name', file.name);
+        this.uiManager.hideRecentButton();
+        this.uiManager.syncUI(true);
     }
 
     async loadSubtitles(path) {
@@ -316,7 +356,7 @@ class StereoPlayer extends THREE.Group {
             } else {
                 this.uiManager.updateSubtitleText("");
             }
-        } catch (_e) {
+        } catch {
             this.uiManager.updateSubtitleText("");
         }
     }
@@ -353,9 +393,7 @@ class StereoPlayer extends THREE.Group {
     }
 
     togglePlayPause() {
-        if (!this.videoElement) return;
-        if (this.isPlaying) { this.pause(); }
-        else { this.play(); }
+        this.playbackController.togglePlayPause();
     }
 
     updateSubtitlesMode(show) {
@@ -371,8 +409,7 @@ class StereoPlayer extends THREE.Group {
     }
 
     seek(time) {
-        if (!this.videoElement) return;
-        this.videoElement.currentTime = THREE.MathUtils.clamp(time, 0, this.videoElement.duration);
+        this.playbackController.seek(time);
     }
 
     loadNextImage(direction) {
@@ -380,107 +417,106 @@ class StereoPlayer extends THREE.Group {
         if (next !== -1) this.loadMedia(next);
     }
 
-    setupControllers() {
-        const controllerModelFactory = new XRControllerModelFactory();
-        const rayWidth = 0.003, rayLength = 5.0;
-        const rayGeometry = new THREE.CylinderGeometry(rayWidth, rayWidth, rayLength, 8);
-        rayGeometry.rotateX(-Math.PI / 2); rayGeometry.translate(0, 0, -rayLength / 2);
-        const rayMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
-
-        // Handle XR Session end to reload page
+    setupXRSessionEvents() {
         this.renderer.xr.addEventListener('sessionstart', () => {
-            this.stereoScreen.updateEyeVisibility(true);
+            this.activeScreen.updateEyeVisibility(true);
             this.subtitleWindow.updateEyeVisibility(true);
         });
         this.renderer.xr.addEventListener('sessionend', async () => {
-            this.stereoScreen.updateEyeVisibility(false);
+            this.activeScreen.updateEyeVisibility(false);
             this.subtitleWindow.updateEyeVisibility(false);
             await this.uiManager.saveSettings();
             window.location.reload();
         });
-
-        for (let i = 0; i < 2; i++) {
-            this.controllers[i] = this.renderer.xr.getController(i);
-            this.scene.add(this.controllers[i]);
-            this.controllers[i].addEventListener('connected', (event) => {
-                this.gamepads[i] = event.data.gamepad;
-                const grip = this.renderer.xr.getControllerGrip(i);
-                const model = controllerModelFactory.createControllerModel(grip);
-                model.visible = this.uiManager.isMainMenuVisible;
-                grip.add(model); this.scene.add(grip); this.controllerGrips[i] = model;
-                const ray = new THREE.Mesh(rayGeometry, rayMaterial);
-                ray.visible = this.uiManager.isMainMenuVisible;
-                this.controllers[i].add(ray); this.controllerRays[i] = ray;
-            });
-            this.controllers[i].addEventListener('selectstart', (e) => this.onSelectStart(e));
-            this.controllers[i].addEventListener('selectend', (e) => this.onSelectEnd(e));
-            this.controllers[i].addEventListener('squeezestart', (e) => this.onSqueezeStart(e));
-            this.controllers[i].addEventListener('squeezeend', (e) => this.onSqueezeEnd(e));
-        }
-    }
-
-    checkUIHit(controller) {
-        this.tempMatrix.identity().extractRotation(controller.matrixWorld);
-        this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-        this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
-        this.raycaster.near = 0;
-        this.raycaster.far = Infinity;
-        return this.raycaster.intersectObjects(this.uiManager.getInteractableMeshes(), true);
-    }
-
-    onSelectStart(event) {
-        const controller = event.target;
-        if (this.checkUIHit(controller).length > 0) return;
-        const index = this.controllers.indexOf(controller);
-        if (index !== -1) this.selectStartTime[index] = performance.now();
-        this.activeRotationController = controller; this.isControllerRotating = true;
-        this.initialRotationX = this.rotation.x;
-        const quat = new THREE.Quaternion(); controller.getWorldQuaternion(quat);
-        this.initialControllerRotationX = new THREE.Euler().setFromQuaternion(quat, 'YXZ').x;
-    }
-
-    onSelectEnd(event) {
-        const controller = event.target;
-        if (controller !== this.activeRotationController) return;
-        const index = this.controllers.indexOf(controller);
-        const duration = performance.now() - this.selectStartTime[index];
-        const rotDelta = Math.abs(this.rotation.x - this.initialRotationX);
-
-        if (duration < 500 && rotDelta < 0.05) {
-            if (this.uiManager.isAnyMenuVisible() || this.uiManager.activeSubMenu === this.uiManager.explorer) {
-                if (this.checkUIHit(controller).length === 0) {
-                    this.uiManager.hideMainMenu(true); this.toggleControllerUIVisibility(false);
-                }
-            } else {
-                this.uiManager.showMainMenu(index); this.toggleControllerUIVisibility(true);
-            }
-        } else if (this.isControllerRotating) {
-            // Save when rotation (Tilt) ends
-            this.uiManager.saveSettings();
-        }
-        this.isControllerRotating = false; this.activeRotationController = null;
-    }
-
-    onSqueezeStart(event) {
-        const controller = event.target;
-        this.activeTranslationController = controller; this.isControllerTranslating = true;
-        controller.getWorldPosition(this.initialControllerPosition);
-        this.initialScreenX = this.stereoScreen.currentScreenX;
-        this.initialScreenY = this.stereoScreen.currentScreenY;
-    }
-
-    onSqueezeEnd(event) {
-        if (event.target === this.activeTranslationController) {
-            this.isControllerTranslating = false;
-            this.activeTranslationController = null;
-            this.uiManager.saveSettings();
-        }
     }
 
     toggleControllerUIVisibility(isVisible) {
-        for (let i = 0; i < 2; i++) {
-            if (this.controllerRays[i]) this.controllerRays[i].visible = isVisible;
-            if (this.controllerGrips[i]) this.controllerGrips[i].visible = isVisible;
+        this.inputManager.toggleControllerUIVisibility(isVisible);
+    }
+
+    setupAxesGuide() {
+        this.axesGuideGroup = new THREE.Group();
+        this.axesGuideGroup.visible = false;
+
+        const guideLength = 1.0; // 1m total length
+        const guideRadius = 0.0015; // 3mm diameter
+        const guideDistance = 0.65; // Positioned between origin (0m) and UI panel (0.9m)
+
+        const laserMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff3344, // Vivid laser red
+            transparent: true,
+            opacity: 0.85,
+            depthTest: false
+        });
+        laserMaterial.renderOrder = 9999;
+
+        const centerFixedMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff, // White indicator for center zero reference
+            transparent: true,
+            opacity: 0.95,
+            depthTest: false
+        });
+        centerFixedMaterial.renderOrder = 9999;
+
+        // Dynamic horizontal bar (X axis) that tracks Pos Y
+        const xGeo = new THREE.CylinderGeometry(guideRadius, guideRadius, guideLength, 8);
+        xGeo.rotateZ(Math.PI / 2);
+        this.axesGuideHorizontalBar = new THREE.Mesh(xGeo, laserMaterial);
+        this.axesGuideHorizontalBar.renderOrder = 9999;
+
+        // Fixed vertical bar (Y axis)
+        const yGeo = new THREE.CylinderGeometry(guideRadius, guideRadius, guideLength, 8);
+        const yMesh = new THREE.Mesh(yGeo, laserMaterial);
+        yMesh.renderOrder = 9999;
+
+        // Short fixed horizontal bar at center (Y = 0 reference)
+        const centerBarLength = 0.15; // 15cm reference notch
+        const centerBarGeo = new THREE.CylinderGeometry(guideRadius * 1.3, guideRadius * 1.3, centerBarLength, 8);
+        centerBarGeo.rotateZ(Math.PI / 2);
+        const centerBarMesh = new THREE.Mesh(centerBarGeo, centerFixedMaterial);
+        centerBarMesh.renderOrder = 9999;
+
+        // Center zero dot
+        const dotGeo = new THREE.SphereGeometry(guideRadius * 1.8, 8, 8);
+        const dotMesh = new THREE.Mesh(dotGeo, centerFixedMaterial);
+        dotMesh.renderOrder = 9999;
+
+        const crosshair = new THREE.Group();
+        crosshair.add(this.axesGuideHorizontalBar);
+        crosshair.add(yMesh);
+        crosshair.add(centerBarMesh);
+        crosshair.add(dotMesh);
+        crosshair.position.set(0, 0, -guideDistance);
+
+        this.axesGuideGroup.add(crosshair);
+        this.add(this.axesGuideGroup);
+    }
+
+    setAxesGuideVisible(visible) {
+        if (!this.axesGuideGroup) return;
+        const isDome = this.activeScreen && (this.activeScreen.screenType === 'dome' || this.activeScreen.screenType === 'dome_xr');
+        this.axesGuideGroup.visible = visible && isDome;
+        if (this.axesGuideGroup.visible) {
+            this.updateAxesGuide();
+        }
+    }
+
+    updateAxesGuide() {
+        if (!this.axesGuideGroup || !this.axesGuideGroup.visible || !this.activeScreen) return;
+
+        const panDeg = this.activeScreen._unitToAngle ? this.activeScreen._unitToAngle(this.activeScreen.currentScreenX) : 0;
+        const rollDeg = this.activeScreen.currentRoll || 0;
+        const yOffset = this.activeScreen.currentScreenY || 0;
+
+        this.axesGuideGroup.rotation.set(
+            0,
+            THREE.MathUtils.degToRad(panDeg),
+            THREE.MathUtils.degToRad(rollDeg),
+            'YXZ'
+        );
+
+        if (this.axesGuideHorizontalBar) {
+            this.axesGuideHorizontalBar.position.y = yOffset;
         }
     }
 
@@ -495,9 +531,31 @@ class StereoPlayer extends THREE.Group {
         } else if (!this.renderer.xr.isPresenting && this.isXRActive) this.isXRActive = false;
         
         this.position.copy(this.camera.position);
-        this.updateEnvironmentFade(delta);
+        this.environmentManager.update(delta);
+        
+        if (this.useEyeTracking) {
+            // Experimental: Calculate exact eye offsets from world positions
+            const xrCamera = this.renderer.xr.getCamera(this.camera);
+            if (xrCamera.cameras.length >= 2) {
+                this._headWorldPos.setFromMatrixPosition(this.camera.matrixWorld);
+                this._tempPosL.setFromMatrixPosition(xrCamera.cameras[0].matrixWorld).sub(this._headWorldPos);
+                this._tempPosR.setFromMatrixPosition(xrCamera.cameras[1].matrixWorld).sub(this._headWorldPos);
+
+                this.activeScreen.updatePositions(this._tempPosL, this._tempPosR);
+            } else {
+                this.activeScreen.updatePositions();
+            }
+        } else {
+            // Standard: Center fixed (less CPU usage, traditional feeling)
+            this.activeScreen.updatePositions();
+        }
+
         this.uiManager.update(delta);
         this.inputManager.update(delta);
+
+        if (this.axesGuideGroup?.visible) {
+            this.updateAxesGuide();
+        }
 
         // Periodically save playback position
         if (this.isPlaying && this.videoElement) {
@@ -505,6 +563,14 @@ class StereoPlayer extends THREE.Group {
             if (now - this.lastPlaybackTimeSave > 5000) {
                 this.savePlaybackPosition();
             }
+        }
+
+        // Pre-upload dirty dynamic video texture before renderer.render().
+        // This avoids interleaved texture uploads during transparent/MSAA draws in WebXR multiview,
+        // preventing screen and GUI element flickering on Meta Quest / Chromium (Three.js #33458 / #32151).
+        const videoTex = this.videoTexture;
+        if (videoTex && this.videoElement && this.videoElement.readyState >= 2) {
+            this.renderer.initTexture(videoTex);
         }
     }
 
@@ -521,99 +587,22 @@ class StereoPlayer extends THREE.Group {
         this.rotation.x = THREE.MathUtils.clamp(radian, LIMITS.screen_tiltMin * Math.PI / 180, LIMITS.screen_tiltMax * Math.PI / 180);
     }
 
-    get isPlaying() {
-        return !!(this.videoElement && !this.videoElement.paused);
-    }
-
-    play() {
-        if (this.videoElement) {
-            this.videoElement.play();
-        }
-    }
-
-    pause() {
-        if (this.videoElement) {
-            this.videoElement.pause();
-        }
-    }
-
-    exitXR() { 
+    async exitXR() { 
         const session = this.renderer.xr.getSession(); 
-        if (session) session.end(); 
-    }
-    async setEnvironment(filename) { await this.environmentManager.loadEnvironment(filename); }
-
-    updateEnvironmentFade(delta) {
-        this.environmentManager.update(delta);
-    }
-
-    prefetchImages() {
-        const gm = this.galleryManager;
-        if (!gm.playingGallery || gm.playingIndex === -1) return;
-
-        const { count } = PREFETCH_CONFIG;
-        const total = gm.playingGallery.length;
-        const targetIndices = [];
-
-        for (let i = 1; i <= count; i++) {
-            const next = gm.playingIndex + i;
-            const prev = gm.playingIndex - i;
-            if (next < total) targetIndices.push(next);
-            if (prev >= 0) targetIndices.push(prev);
+        if (session) {
+            session.end(); 
+        } else {
+            await this.uiManager.saveSettings();
+            window.location.reload();
         }
-
-        targetIndices.forEach(idx => {
-            const item = gm.playingGallery[idx];
-            if (!item || item.type !== 'image' || this.textureCache.has(item.path)) return;
-
-            const url = `/api/image?path=${encodeURIComponent(item.path)}`;
-            this.textureLoader.load(url, (texture) => {
-                texture.colorSpace = THREE.SRGBColorSpace;
-                texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-                texture.magFilter = THREE.LinearFilter;
-                texture.minFilter = THREE.LinearMipmapLinearFilter;
-                texture.generateMipmaps = true;
-                texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-                
-                const tw = texture.image.width || 1, th = texture.image.height || 1;
-                this.textureCache.set(item.path, { texture, aspectRatio: tw / th });
-                this.pruneCache();
-            });
-        });
     }
 
-    pruneCache() {
-        if (this.textureCache.size <= PREFETCH_CONFIG.maxSize) return;
+    async setupXRLayers() {
+        await this.playbackController.setupXRLayers(this.domeXRScreen, this.environmentManager);
+    }
 
-        const gm = this.galleryManager;
-        const pathsInCache = Array.from(this.textureCache.keys());
-        
-        // Find the furthest item from current playing index
-        let furthestPath = null;
-        let maxDistance = -1;
-
-        pathsInCache.forEach(path => {
-            const idx = gm.playingGallery.findIndex(i => i.path === path);
-            if (idx === -1) {
-                // Not in current gallery anymore, prune immediately
-                maxDistance = Infinity;
-                furthestPath = path;
-                return;
-            }
-            const distance = Math.abs(idx - gm.playingIndex);
-            if (distance > maxDistance) {
-                maxDistance = distance;
-                furthestPath = path;
-            }
-        });
-
-        if (furthestPath) {
-            const entry = this.textureCache.get(furthestPath);
-            if (entry && entry.texture) {
-                entry.texture.dispose();
-            }
-            this.textureCache.delete(furthestPath);
-        }
+    teardownXRLayers() {
+        this.playbackController.teardownXRLayers(this.domeXRScreen, this.environmentManager);
     }
 }
 

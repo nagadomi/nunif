@@ -15,6 +15,8 @@ class EnvironmentManager extends THREE.Group {
         this.currentRotation = DEFAULTS.environment_rotation;
         this.currentTilt = DEFAULTS.environment_tilt;
         this.currentIntensity = DEFAULTS.environment_intensity;
+        this.currentModelScale = DEFAULTS.environment_model_scale;
+        this.currentModelY = DEFAULTS.environment_model_y;
         this.backgroundLevel = DEFAULTS.screen_bg_color;
 
         this.hdrLoader = new HDRLoader();
@@ -29,9 +31,6 @@ class EnvironmentManager extends THREE.Group {
         this._pendingModel = undefined;
         this._pendingMixer = undefined;
 
-        this._queuedSkybox = undefined;
-        this._queuedModel = undefined;
-
         this._skyboxLoadId = 0;
         this._modelLoadId = 0;
         this._loadingSkyboxName = "None";
@@ -44,6 +43,7 @@ class EnvironmentManager extends THREE.Group {
         this.fadeValue = 1.0;
         this._isSkyboxLoading = false;
         this._isModelLoading = false;
+        this.isBackgroundLocked = false;
 
         // Ambient Light (synchronized with background color)
         this.ambientLight = new THREE.AmbientLight(0xffffff, 0.0);
@@ -68,7 +68,9 @@ class EnvironmentManager extends THREE.Group {
 
     setBackgroundLevel(val) {
         this.backgroundLevel = val;
-        this.updateEnvironmentState();
+        if (!this.isBackgroundLocked) {
+            this.updateEnvironmentState();
+        }
     }
 
     setRotation(degrees) {
@@ -86,8 +88,25 @@ class EnvironmentManager extends THREE.Group {
         this.updateEnvironmentState();
     }
 
+    setModelScale(val) {
+        this.currentModelScale = THREE.MathUtils.clamp(val, LIMITS.environment_model_scaleMin, LIMITS.environment_model_scaleMax);
+        if (this.currentModel) {
+            const scale = Math.pow(10, this.currentModelScale);
+            this.currentModel.scale.setScalar(scale);
+        }
+    }
+
+    setModelY(val) {
+        this.currentModelY = THREE.MathUtils.clamp(val, LIMITS.environment_model_yMin, LIMITS.environment_model_yMax);
+        if (this.currentModel) {
+            this.currentModel.position.y = this.currentModelY;
+        }
+    }
+
     async loadSkybox(filename) {
+        if (this.isBackgroundLocked) return;
         if (filename === this.currentEnvironment && this._pendingTexture === undefined) return;
+        if (this._isSkyboxLoading && filename === this._loadingSkyboxName) return;
         this._isSkyboxLoading = true;
         this.fadePhase = 'out';
         this._fadeTimer = 0;
@@ -95,7 +114,9 @@ class EnvironmentManager extends THREE.Group {
     }
 
     async loadModel(filename) {
+        if (this.isBackgroundLocked) return;
         if (filename === this.currentModelName && this._pendingModel === undefined) return;
+        if (this._isModelLoading && filename === this._loadingModelName) return;
         this._isModelLoading = true;
         this.fadePhase = 'out';
         this._fadeTimer = 0;
@@ -177,16 +198,6 @@ class EnvironmentManager extends THREE.Group {
         });
     }
 
-    // loadEnvironment remains for compatibility or simple calls
-    async loadEnvironment(filename) {
-        if (!filename) return;
-        if (filename.toLowerCase().endsWith('.glb')) {
-            this.loadModel(filename);
-        } else {
-            this.loadSkybox(filename);
-        }
-    }
-
     update(delta) {
         // Update animation mixer (delta is in ms)
         if (this.mixer) {
@@ -249,7 +260,10 @@ class EnvironmentManager extends THREE.Group {
                 setTimeout(() => oldEnv.dispose(), 2000);
             }
             
-            if (this._pendingTexture) {
+            if (this.isBackgroundLocked) {
+                this.scene.background = null;
+                this.scene.environment = null;
+            } else if (this._pendingTexture) {
                 this.scene.background = this._pendingTexture;
                 this.scene.environment = this._pendingTexture; // Share reference
             } else {
@@ -275,6 +289,9 @@ class EnvironmentManager extends THREE.Group {
 
             if (this._pendingModel) {
                 this.currentModel = this._pendingModel;
+                const scale = Math.pow(10, this.currentModelScale);
+                this.currentModel.scale.setScalar(scale);
+                this.currentModel.position.y = this.currentModelY;
                 this.mixer = this._pendingMixer;
                 this.add(this.currentModel);
             }
@@ -307,7 +324,7 @@ class EnvironmentManager extends THREE.Group {
         // Handle Background and Ambient Light based on ACTUAL scene background state
         const ambientIntensityMultiplier = 1.0;
 
-        if (this.scene.background instanceof THREE.Color || this.scene.background === null) {
+        if (!this.isBackgroundLocked && (this.scene.background instanceof THREE.Color || this.scene.background === null)) {
             // Handle Solid Background (or null which we treat as black/color transition)
             if (!(this.scene.background instanceof THREE.Color)) {
                 this.scene.background = new THREE.Color(0x000000);

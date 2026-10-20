@@ -21,7 +21,8 @@ init();
 async function init() {
     scene = new THREE.Scene();
 
-    camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.01, 1000);
+    // Recommended near/far for WebXR to maintain high Z-buffer precision and prevent stereo flickering
+    camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.05, 500);
     camera.position.set(0, 0, 0);
 
     // Ensure storage is ready before accessing settings
@@ -32,7 +33,8 @@ async function init() {
     const useAntialias = renderSettings.render_antialias ?? DEFAULTS.render_antialias;
     const ssFactor = renderSettings.render_ss ?? DEFAULTS.render_ss;
 
-    renderer = new THREE.WebGLRenderer({ antialias: useAntialias });
+    renderer = new THREE.WebGLRenderer({ antialias: useAntialias, alpha: true });
+    renderer.setClearAlpha(0);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
@@ -42,12 +44,17 @@ async function init() {
     
     renderer.localClippingEnabled = true;
     document.body.appendChild(renderer.domElement);
-    document.body.appendChild(VRButton.createButton(renderer));
+    document.body.appendChild(VRButton.createButton(renderer, { 
+        optionalFeatures: ['local-floor', 'bounded-floor', 'layers'] 
+    }));
 
     const debugLog = new DebugLog(scene);
 
     // High quality VR settings
     renderer.xr.addEventListener('sessionstart', () => {
+        const resetBtn = document.getElementById('factoryResetButton');
+        if (resetBtn) resetBtn.style.display = 'none';
+
         const session = renderer.xr.getSession();
 
         // Ensure high quality rendering without foveation artifacts
@@ -55,28 +62,15 @@ async function init() {
 
         // Frame Rate control
         if (session && session.supportedFrameRates) {
-            // Update available frame rates in UI based on hardware capability
             const supported = Array.from(session.supportedFrameRates).sort((a, b) => a - b);
             stereoPlayer.uiManager.availableFrameRates = [0, ...supported];
-
-            // Request target frame rate
-            const configFPS = renderSettings.render_fps || 0;
-            let targetFPS = 0;
-
-            if (configFPS === 0) {
-                // Auto: Find lowest supported rate >= 30fps
-                const validRates = supported.filter(r => r >= 30);
-                if (validRates.length > 0) targetFPS = validRates[0]; // sorted asc
-            } else if (supported.includes(configFPS)) {
-                targetFPS = configFPS;
-            }
-
-            if (targetFPS > 0 && session.updateTargetFrameRate) {
-                session.updateTargetFrameRate(targetFPS).catch(err => {
-                    debugLog.log(`[ERROR] Failed to set target frame rate: ${err.message}`);
-                });
-            }
+            stereoPlayer.uiManager.updateTargetFPS(renderSettings.render_fps || 0);
         }
+    });
+
+    renderer.xr.addEventListener('sessionend', () => {
+        const resetBtn = document.getElementById('factoryResetButton');
+        if (resetBtn) resetBtn.style.display = '';
     });
 
     stereoPlayer = new StereoPlayer(renderer, camera, scene, debugLog);

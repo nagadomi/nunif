@@ -1,40 +1,13 @@
-import { Container, Text, Image } from '@pmndrs/uikit';
-import { COLORS, DEFAULTS, UI_CONFIG } from './constants.js';
+import { Container, Text } from '@pmndrs/uikit';
+import { COLORS, UI_CONFIG } from './constants.js';
 import { UIUtils } from './ui_common.js';
-import { storage } from './storage.js';
 
 class RenderSettingsMenu {
     constructor(uiManager, defaultFont) {
         this.uiManager = uiManager;
-        this.managedKeys = new Set([
-            'render_video_mipmap', 'render_antialias', 'render_ss', 'render_fps', 'render_font'
-        ]);
-        this.values = {
-            render_video_mipmap: DEFAULTS.render_video_mipmap,
-            render_antialias: DEFAULTS.render_antialias,
-            render_ss: DEFAULTS.render_ss,
-            render_fps: DEFAULTS.render_fps,
-            render_font: DEFAULTS.render_font
-        };
+        this.container = UIUtils.createSubMenuContainer(defaultFont, { gap: 12 });
 
-        this.container = new Container({
-            flexDirection: 'column',
-            backgroundColor: COLORS.bg,
-            backgroundOpacity: 0.9,
-            borderRadius: 16,
-            borderWidth: 2,
-            borderColor: COLORS.border,
-            padding: 24,
-            gap: 12,
-            width: 400,
-            display: 'none',
-            position: 'absolute',
-            marginLeft: UI_CONFIG.menuMarginLeft,
-            marginTop: UI_CONFIG.menuMarginTop,
-            fontFamily: defaultFont
-        });
-
-        this.setupHeader();
+        this.headerBtns = UIUtils.setupWindowHeader(this.container, "Render Settings", () => this.reset(), this.uiManager);
 
         const group = new Container({
             flexDirection: 'column',
@@ -47,10 +20,33 @@ class RenderSettingsMenu {
         group.add(new Text({ text: "Browser reload required", fontSize: 14, color: COLORS.hint, marginBottom: 4 }));
         
         // Font Selector
-        this.setupFontSelector(group);
+        const fontSelector = UIUtils.createSelector(
+            group,
+            "Font / Language",
+            (d) => this.uiManager.changeFont(d),
+            this.uiManager,
+            { gap: 6, marginTop: 0, marginBottom: 8, initialText: "Auto", wordBreak: 'break-word' }
+        );
+        this.fontNameText = fontSelector.valueText;
+        this.languagesText = new Text({
+            text: "",
+            fontSize: 12,
+            color: COLORS.textDim,
+            marginTop: 4,
+            textAlign: 'center',
+            width: '100%'
+        });
+        fontSelector.group.add(this.languagesText);
 
         // FPS Selector
-        this.setupFPSSelector(group);
+        const fpsSelector = UIUtils.createSelector(
+            group,
+            "Target Frame Rate",
+            (d) => this.uiManager.changeFPS(d),
+            this.uiManager,
+            { gap: 6, marginTop: 0, marginBottom: 8, initialText: "Auto", fontSize: 16, wordBreak: 'break-word' }
+        );
+        this.fpsValueText = fpsSelector.valueText;
 
         this.checkboxes = {};
         
@@ -98,203 +94,35 @@ class RenderSettingsMenu {
 
         const configs = [
             { id: 'render_antialias', label: 'Antialias' },
-            { id: 'render_video_mipmap', label: 'Video Mipmap' }
+            { id: 'render_xr_layers', label: window.XRMediaBinding ? 'High Quality Video' : 'High Quality Video (Not supported)' }
         ];
 
         configs.forEach(cfg => {
-            const row = new Container({
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                width: '100%',
-                height: 44
-            });
-            row.add(new Text({ text: cfg.label, fontSize: 18, color: COLORS.textDim }));
-            
-            const toggle = UIUtils.createButton('icons/square.svg', () => {
-                this.uiManager.onSliderChange(cfg.id, !this.values[cfg.id]);
-            }, this.uiManager, 22, 44);
-            
-            row.add(toggle.container);
-            group.add(row);
-            this.checkboxes[cfg.id] = toggle;
+            this.checkboxes[cfg.id] = UIUtils.createCheckboxRow(
+                group,
+                cfg.label,
+                () => {
+                    const curr = this.uiManager.settingsManager.get(cfg.id);
+                    this.uiManager.onSliderChange(cfg.id, !curr);
+                },
+                this.uiManager,
+                { height: 44, btnSize: 44 }
+            );
         });
     }
 
-    setupHeader() {
-        this.headerBtns = UIUtils.setupWindowHeader(this.container, "Render Settings", () => this.reset(), this.uiManager);
+    async reset() {
+        await this.uiManager.settingsManager.resetGroup('render');
     }
 
-    reset() {
-        const defaults = {
-            render_video_mipmap: DEFAULTS.render_video_mipmap,
-            render_antialias: DEFAULTS.render_antialias,
-            render_ss: DEFAULTS.render_ss,
-            render_font: DEFAULTS.render_font,
-            render_fps: DEFAULTS.render_fps
-        };
-        Object.entries(defaults).forEach(([id, val]) => this.uiManager.onSliderChange(id, val));
-    }
-
-    setupFontSelector(parent) {
-        const group = new Container({
-            flexDirection: 'column',
-            width: '100%',
-            gap: 6,
-            marginBottom: 8
-        });
-        parent.add(group);
-        group.add(new Text({ text: "Font / Language", fontSize: 16, color: COLORS.textDim }));
-
-        const selector = new Container({
-            flexDirection: 'row',
-            width: '100%',
-            height: 48,
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: COLORS.button,
-            borderRadius: 8,
-            padding: 4,
-        });
-        group.add(selector);
-
-        const createArrowBtn = (icon, delta) => {
-            return new Container({
-                width: 40,
-                height: 40,
-                borderRadius: 6,
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                hover: { backgroundColor: COLORS.hover },
-                onPointerEnter: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, this.uiManager),
-                onClick: (e) => {
-                    UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, this.uiManager);
-                    this.uiManager.changeFont(delta);
-                }
-            }).add(new Image({ src: icon, width: 32, height: 32, color: COLORS.text }));
-        };
-
-        selector.add(createArrowBtn('icons/chevron-left.svg', -1));
-        this.fontNameText = new Text({
-            text: "Auto",
-            fontSize: 14,
-            color: COLORS.text,
-            width: 250,
-            textAlign: 'center'
-        });
-        selector.add(this.fontNameText);
-        selector.add(createArrowBtn('icons/chevron-right.svg', 1));
-
-        this.languagesText = new Text({
-            text: "",
-            fontSize: 12,
-            color: COLORS.textDim,
-            marginTop: 4,
-            textAlign: 'center',
-            width: '100%'
-        });
-        group.add(this.languagesText);
-    }
-
-    setupFPSSelector(parent) {
-        const group = new Container({
-            flexDirection: 'column',
-            width: '100%',
-            gap: 6,
-            marginBottom: 8
-        });
-        parent.add(group);
-        group.add(new Text({ text: "Target Frame Rate", fontSize: 16, color: COLORS.textDim }));
-
-        const selector = new Container({
-            flexDirection: 'row',
-            width: '100%',
-            height: 48,
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: COLORS.button,
-            borderRadius: 8,
-            padding: 4,
-        });
-        group.add(selector);
-
-        const createArrowBtn = (icon, delta) => {
-            return new Container({
-                width: 40,
-                height: 40,
-                borderRadius: 6,
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                hover: { backgroundColor: COLORS.hover },
-                onPointerEnter: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, this.uiManager),
-                onClick: (e) => {
-                    UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, this.uiManager);
-                    this.uiManager.changeFPS(delta);
-                }
-            }).add(new Image({ src: icon, width: 32, height: 32, color: COLORS.text }));
-        };
-
-        selector.add(createArrowBtn('icons/chevron-left.svg', -1));
-        this.fpsValueText = new Text({
-            text: "Auto",
-            fontSize: 16,
-            color: COLORS.text,
-            width: 250,
-            textAlign: 'center'
-        });
-        selector.add(this.fpsValueText);
-        selector.add(createArrowBtn('icons/chevron-right.svg', 1));
-    }
-
-    handlesKey(id) {
-        return this.managedKeys.has(id);
-    }
-
-    async onValueChange(id, val, shouldSave) {
-        const s = this.uiManager.stereoPlayer.stereoScreen;
-        const p = this.uiManager.stereoPlayer;
-
-        if (id === 'render_video_mipmap') {
-            if (p.videoElement && val !== this.values.render_video_mipmap) {
-                const currentPos = p.videoElement.currentTime;
-                const format = s.currentStereoFormat;
-                p.loadMedia(p.galleryManager.playingIndex, format).then(() => {
-                    if (p.videoElement) p.videoElement.currentTime = currentPos;
-                });
-            }
-        }
-
-        this.values[id] = val;
-        if (shouldSave) await this.save();
-    }
-
-    load() {
-        const saved = storage.get('render');
-        if (saved) Object.assign(this.values, saved);
-        // Only mipmap needs immediate application if changed, others are handled by main.js on reload
-    }
-
-    async save() { await storage.set('render', this.values); }
-
-    sync(metadata) {
-        const data = this.values;
-        for (let id in this.checkboxes) {
-            const val = data[id];
-            const cb = this.checkboxes[id];
-            if (cb._lastVal !== val) {
-                cb.image.setProperties({ 
-                    src: val ? 'icons/square-check.svg' : 'icons/square.svg',
-                    color: val ? COLORS.text : COLORS.hover
-                });
-                cb.setSelected(val);
-                cb._lastVal = val;
-            }
+    sync() {
+        const sm = this.uiManager.settingsManager;
+        for (const id in this.checkboxes) {
+            this.checkboxes[id].setChecked(sm.get(id));
         }
 
         // Sync SS buttons
-        const currentSS = data.render_ss;
+        const currentSS = sm.get('render_ss');
         for (let factor in this.ssButtons) {
             const isSelected = parseFloat(factor) === currentSS;
             const btn = this.ssButtons[factor];
@@ -306,22 +134,25 @@ class RenderSettingsMenu {
             }
         }
 
+        const currentFontId = sm.get('render_font') || 'Auto';
+        const currentFont = this.uiManager.fonts.find(f => f.id === currentFontId) || this.uiManager.fonts[0];
+
         if (this.fontNameText) {
-            const fontLabel = metadata?.currentFontLabel || "Auto";
+            const fontLabel = currentFont.label || "Auto";
             if (this._lastFontLabel !== fontLabel) {
                 this.fontNameText.setProperties({ text: fontLabel });
                 this._lastFontLabel = fontLabel;
             }
         }
         if (this.languagesText) {
-            const fontLangs = metadata?.currentFontLanguages || "";
+            const fontLangs = currentFont.languages || "";
             if (this._lastFontLangs !== fontLangs) {
                 this.languagesText.setProperties({ text: fontLangs });
                 this._lastFontLangs = fontLangs;
             }
         }
         if (this.fpsValueText) {
-            const fpsVal = this.values.render_fps || 0;
+            const fpsVal = sm.get('render_fps') || 0;
             const fpsStr = fpsVal === 0 ? "Auto" : `${fpsVal} fps`;
             if (this._lastFpsStr !== fpsStr) {
                 this.fpsValueText.setProperties({ text: fpsStr });

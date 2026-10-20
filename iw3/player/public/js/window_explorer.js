@@ -3,9 +3,10 @@ import { COLORS, UI_CONFIG, FONT_CONFIG } from './constants.js';
 import { UIUtils, ThreeUtils } from './ui_common.js';
 
 class ExplorerWindow {
-    constructor(uiManager, defaultFont) {
+    constructor(uiManager, defaultFont, galleryManager = null) {
         this.uiManager = uiManager;
         this.defaultFont = defaultFont;
+        this.galleryManager = galleryManager;
         this.container = new Container({
             flexDirection: 'column',
             backgroundColor: COLORS.bgDark,
@@ -24,6 +25,7 @@ class ExplorerWindow {
             ...FONT_CONFIG,
             fontFamily: defaultFont
         });
+        this.container.visible = false;
 
         this.setupHeader();
 
@@ -55,23 +57,9 @@ class ExplorerWindow {
         this.container.add(this.header);
 
         const u = this.uiManager;
-        const upBtn = new Container({
-            width: 48,
-            height: 48,
-            backgroundColor: COLORS.button,
-            borderRadius: 8,
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            hover: { backgroundColor: COLORS.hover },
-            onPointerEnter: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u),
-            onClick: (e) => {
-                UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
-                u.navigateUp();
-            },
-        });
-        upBtn.add(new Image({ src: 'icons/arrow-big-up.svg', width: 32, height: 32, color: COLORS.text }));
-        this.header.add(upBtn);
+        const upBtn = UIUtils.createButton('icons/arrow-big-up.svg', () => u.navigateUp(), u, 32, 48);
+        upBtn.container.setProperties({ borderRadius: 8 });
+        this.header.add(upBtn.container);
 
         this.pathText = new Text({
             text: "/",
@@ -81,31 +69,19 @@ class ExplorerWindow {
         });
         this.header.add(this.pathText);
 
-        const reloadBtn = new Container({
-            width: 48,
-            height: 48,
-            backgroundColor: COLORS.button,
-            borderRadius: 8,
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            hover: { backgroundColor: COLORS.hover },
-            onPointerEnter: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u),
-            onClick: (e) => {
-                UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
-                const currentPath = this.uiManager.stereoPlayer.galleryManager.currentPath;
-                u.fetchDirectory(currentPath);
-            },
-        });
-        reloadBtn.add(new Image({ src: 'icons/refresh.svg', width: 32, height: 32, color: COLORS.text }));
-        this.header.add(reloadBtn);
+        const reloadBtn = UIUtils.createButton('icons/refresh.svg', () => {
+            const currentPath = this.galleryManager ? this.galleryManager.currentPath : "/";
+            u.fetchDirectory(currentPath);
+        }, u, 32, 48);
+        reloadBtn.container.setProperties({ borderRadius: 8 });
+        this.header.add(reloadBtn.container);
     }
 
     setupFooter() {
         this.footer = new Container({
             flexDirection: 'row',
             width: '100%',
-            height: 80, // Increased height slightly to match header feel
+            height: 80,
             alignItems: 'center',
             justifyContent: 'space-between',
             backgroundColor: COLORS.bg,
@@ -131,61 +107,20 @@ class ExplorerWindow {
         ];
 
         modes.forEach(m => {
-            const btn = new Container({
-                width: 44,
-                height: 44,
-                backgroundColor: COLORS.button,
-                borderRadius: 8,
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                hover: { backgroundColor: COLORS.hover },
-                onPointerEnter: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u),
-                onClick: (e) => {
-                    UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
-                    u.setSortMode(m.id);
-                },
-            });
-            const img = new Image({ src: m.icon, width: 28, height: 28, color: COLORS.text });
-            btn.add(img);
-            sortGroup.add(btn);
-
-            const setSelected = (isSelected) => {
-                if (btn._lastSelected === isSelected) return;
-                btn._lastSelected = isSelected;
-
-                btn.setProperties({
-                    backgroundColor: isSelected ? COLORS.accent : COLORS.button,
-                    hover: { backgroundColor: isSelected ? COLORS.accentHover : COLORS.hover }
-                });
-                img.setProperties({ color: isSelected ? COLORS.text : COLORS.hover });
-            };
-            this.sortButtons[m.id] = { container: btn, setSelected };
+            const btn = UIUtils.createButton(m.icon, () => u.setSortMode(m.id), u, 28, 44);
+            btn.container.setProperties({ borderRadius: 8 });
+            sortGroup.add(btn.container);
+            this.sortButtons[m.id] = btn;
         });
 
         // Right side: Paging Buttons
         const pagingGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 12 });
         this.footer.add(pagingGroup);
 
-        const createPageBtn = (icon, delta) => {
-            return new Container({
-                width: 48,
-                height: 48,
-                backgroundColor: COLORS.button,
-                borderRadius: 8,
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                hover: { backgroundColor: COLORS.hover },
-                onPointerEnter: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u),
-                onClick: (e) => {
-                    UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
-                    u.changePage(delta);
-                },
-            }).add(new Image({ src: icon, width: 32, height: 32, color: COLORS.text }));
-        };
+        const prevPageBtn = UIUtils.createButton("icons/circle-arrow-left.svg", () => u.changePage(-1), u, 32, 48);
+        prevPageBtn.container.setProperties({ borderRadius: 8 });
+        pagingGroup.add(prevPageBtn.container);
 
-        pagingGroup.add(createPageBtn("icons/circle-arrow-left.svg", -1));
         this.pageText = new Text({
             text: "1 / 1",
             fontSize: 18,
@@ -194,7 +129,10 @@ class ExplorerWindow {
             textAlign: 'center'
         });
         pagingGroup.add(this.pageText);
-        pagingGroup.add(createPageBtn("icons/circle-arrow-right.svg", 1));
+
+        const nextPageBtn = UIUtils.createButton("icons/circle-arrow-right.svg", () => u.changePage(1), u, 32, 48);
+        nextPageBtn.container.setProperties({ borderRadius: 8 });
+        pagingGroup.add(nextPageBtn.container);
     }
 
     render(items, path, page, itemsPerPage, activePath = null) {
@@ -209,7 +147,7 @@ class ExplorerWindow {
         this.pageText.setProperties({ text: `${page + 1} / ${Math.max(1, totalPages)}` });
 
         if (this.sortButtons) {
-            const current = this.uiManager.stereoPlayer.galleryManager.sortMode;
+            const current = this.galleryManager ? this.galleryManager.sortMode : 'name_asc';
             Object.entries(this.sortButtons).forEach(([id, btn]) => {
                 if (btn.setSelected) btn.setSelected(id === current);
             });
@@ -242,8 +180,12 @@ class ExplorerWindow {
                 cursor: 'pointer',
                 hover: { backgroundColor: COLORS.hover },
                 active: { backgroundColor: COLORS.accent },
-                onPointerEnter: (e) => UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u),
+                onPointerEnter: (e) => {
+                    if (!u.visible || u.activeSubMenu !== this) return;
+                    UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, u);
+                },
                 onClick: (e) => {
+                    if (!u.visible || u.activeSubMenu !== this) return;
                     UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, u);
                     if (item.type === 'directory' || item.type === 'archive') {
                         u.fetchDirectory("/" + item.path);

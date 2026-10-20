@@ -1,32 +1,28 @@
 import os
-
 from diskcache import Cache
+from .dir_config import CACHE_DIR, EXAMPLE_DIR, CERT_DIR
 
-from .dir_config import CACHE_DIR, CERT_DIR, EXAMPLE_DIR
+DEFAULT_SECRET_KEY_FILE = os.path.join(CERT_DIR, "secret.key")
 
 
 class ServerState:
     """Holds the server configuration and shared state."""
 
-    def __init__(self, args):
-        if args is not None:
-            self.image_root = os.path.abspath(args.root)
-            self.auth_user = args.user
-            self.auth_password = args.password
-            self.debug_mode = args.debug
-            self.debug_console = args.debug_console
-            self.cache_db = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1024 * 1024)
-            if args.clear_cache:
-                self.cache_db.clear()
-            self.secret_key_file = args.secret_key_file
-        else:
-            self.image_root = EXAMPLE_DIR
-            self.auth_user = None
-            self.auth_password = None
-            self.debug_mode = False
-            self.debug_console = False
-            self.cache_db = Cache(CACHE_DIR, size_limit=1000 * 1024 * 1024)
-            self.secret_key_file = os.path.join(CERT_DIR, "secret.txt")
+    def __init__(self, args=None):
+        root = getattr(args, "root", None) or EXAMPLE_DIR
+        cache_dir = getattr(args, "cache_dir", None) or CACHE_DIR
+        cache_size_limit = getattr(args, "cache_size_limit", 1000)
+
+        self.image_root = os.path.abspath(root)
+        self.auth_user = getattr(args, "user", None)
+        self.auth_password = getattr(args, "password", None)
+        self.debug_mode = bool(getattr(args, "debug", False))
+        self.debug_console = bool(getattr(args, "debug_console", False))
+        self.secret_key_file = getattr(args, "secret_key_file", None) or DEFAULT_SECRET_KEY_FILE
+
+        self.cache_db = Cache(cache_dir, size_limit=cache_size_limit * 1024 * 1024)
+        if getattr(args, "clear_cache", False):
+            self.cache_db.clear()
 
     def close(self):
         self.cache_db.close()

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { INPUT_ACTIONS, UI_CONFIG, LIMITS } from './constants.js';
+import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
+import { DEFAULTS, INPUT_ACTIONS, UI_CONFIG, getSettingLimits } from './constants.js';
 import { UIUtils } from './ui_common.js';
 
 /**
@@ -10,11 +11,22 @@ class InputManager {
         this.player = stereoPlayer;
         this.ui = uiManager;
 
-        // VR Controller State
+        // VR Controller Hardware & State
+        this.controllers = [null, null];
+        this.gamepads = [null, null];
+        this.controllerRays = [null, null];
+        this.controllerGrips = [null, null];
+        this.selectStartTime = [0, 0];
+        this.initialRotationX = DEFAULTS.screen_tilt * Math.PI / 180;
+
         this.isStickReset = [true, true];
         this.activeStickAxis = [null, null]; // 'x' or 'y'
         this.isMenuButtonPressed = [false, false];
         this.isAButtonPressed = [false, false];
+
+        // Raycasting helpers
+        this.raycaster = new THREE.Raycaster();
+        this.tempMatrix = new THREE.Matrix4();
 
         // Feedback State
         this._atLimit = {}; // Tracks limit feedback for joysticks and translation
@@ -28,8 +40,110 @@ class InputManager {
         this.lastMouseX = 0;
         this.lastMouseY = 0;
 
+        this.setupXRControllers();
         this.setupKeyboardEvents();
         this.setupMouseEvents();
+    }
+
+    setupXRControllers() {
+        const renderer = this.player.renderer;
+        const scene = this.player.scene;
+        const controllerModelFactory = new XRControllerModelFactory();
+        const rayWidth = 0.003, rayLength = 5.0;
+        const rayGeometry = new THREE.CylinderGeometry(rayWidth, rayWidth, rayLength, 8);
+        rayGeometry.rotateX(-Math.PI / 2);
+        rayGeometry.translate(0, 0, -rayLength / 2);
+        const rayMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+
+        for (let i = 0; i < 2; i++) {
+            this.controllers[i] = renderer.xr.getController(i);
+            scene.add(this.controllers[i]);
+            this.controllers[i].addEventListener('connected', (event) => {
+                this.gamepads[i] = event.data.gamepad;
+                const grip = renderer.xr.getControllerGrip(i);
+                const model = controllerModelFactory.createControllerModel(grip);
+                model.visible = this.ui.isMainMenuVisible;
+                grip.add(model);
+                scene.add(grip);
+                this.controllerGrips[i] = model;
+                const ray = new THREE.Mesh(rayGeometry, rayMaterial);
+                ray.visible = this.ui.isMainMenuVisible;
+                this.controllers[i].add(ray);
+                this.controllerRays[i] = ray;
+            });
+            this.controllers[i].addEventListener('selectstart', (e) => this.onSelectStart(e));
+            this.controllers[i].addEventListener('selectend', (e) => this.onSelectEnd(e));
+            this.controllers[i].addEventListener('squeezestart', (e) => this.onSqueezeStart(e));
+            this.controllers[i].addEventListener('squeezeend', (e) => this.onSqueezeEnd(e));
+        }
+    }
+
+    checkUIHit(controller) {
+        this.tempMatrix.identity().extractRotation(controller.matrixWorld);
+        this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+        this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
+        this.raycaster.near = 0;
+        this.raycaster.far = Infinity;
+        return this.raycaster.intersectObjects(this.ui.getInteractableMeshes(), true);
+    }
+
+    onSelectStart(event) {
+        const controller = event.target;
+        if (this.checkUIHit(controller).length > 0) return;
+        if (this.player.transformController.isRotating) return;
+
+        const index = this.controllers.indexOf(controller);
+        if (index !== -1) this.selectStartTime[index] = performance.now();
+        this.initialRotationX = this.player.rotation.x;
+
+        this.player.transformController.startRotation(
+            controller,
+            this.player.rotation.x * 180 / Math.PI,
+            this.player.activeScreen.currentRoll || 0
+        );
+    }
+
+    onSelectEnd(event) {
+        const controller = event.target;
+        const tc = this.player.transformController;
+        if (controller !== tc.activeRotationController) return;
+        const index = this.controllers.indexOf(controller);
+        const duration = performance.now() - this.selectStartTime[index];
+        const rotDelta = Math.abs(this.player.rotation.x - this.initialRotationX);
+
+        if (duration < 500 && rotDelta < 0.05) {
+            if (this.ui.isAnyMenuVisible() || this.ui.activeSubMenu === this.ui.explorer) {
+                if (this.checkUIHit(controller).length === 0) {
+                    this.ui.hideMainMenu(true);
+                    this.toggleControllerUIVisibility(false);
+                }
+            } else {
+                this.ui.showMainMenu(index);
+                this.toggleControllerUIVisibility(true);
+            }
+            tc.cancelRotation();
+        } else {
+            tc.endRotation(controller);
+        }
+    }
+
+    onSqueezeStart(event) {
+        const controller = event.target;
+        if (this.player.transformController.isTranslating) return;
+        this.player.transformController.startTranslation(controller, this.player.activeScreen);
+    }
+
+    onSqueezeEnd(event) {
+        if (event.target === this.player.transformController.activeTranslationController) {
+            this.player.transformController.endTranslation(event.target);
+        }
+    }
+
+    toggleControllerUIVisibility(isVisible) {
+        for (let i = 0; i < 2; i++) {
+            if (this.controllerRays[i]) this.controllerRays[i].visible = isVisible;
+            if (this.controllerGrips[i]) this.controllerGrips[i].visible = isVisible;
+        }
     }
 
     setupMouseEvents() {
@@ -40,6 +154,7 @@ class InputManager {
         el.addEventListener('mouseup', () => { 
             if (this.isRotating || this.isTranslating) {
                 if (this.ui) this.ui.saveSettings();
+                this.player.setAxesGuideVisible(false);
             }
             this.isRotating = this.isTranslating = false; 
         });
@@ -47,14 +162,15 @@ class InputManager {
 
     onMouseDown(event) {
         const mouse = new THREE.Vector2((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
-        this.player.raycaster.setFromCamera(mouse, this.player.camera);
-        if (this.player.raycaster.intersectObjects(this.ui.getInteractableMeshes(), true).length > 0) return;
+        this.raycaster.setFromCamera(mouse, this.player.camera);
+        if (this.raycaster.intersectObjects(this.ui.getInteractableMeshes(), true).length > 0) return;
         
         this.lastMouseX = event.clientX;
         this.lastMouseY = event.clientY;
         if (event.button === 0) { 
             if (this.isShiftDown || event.shiftKey) this.isTranslating = true; 
             else this.isRotating = true; 
+            this.player.setAxesGuideVisible(true);
         }
     }
 
@@ -65,12 +181,9 @@ class InputManager {
         this.lastMouseY = event.clientY;
 
         if (this.isRotating) {
-            this.player.setRotationX(this.player.rotation.x - dy * 0.01);
-            this.ui.onSliderChange('screen_tilt', this.player.rotation.x * 180 / Math.PI, false);
+            this.player.transformController.handleMouseRotate(dy, this.player.rotation.x);
         } else if (this.isTranslating) {
-            this.player.stereoScreen.translateScreen(dx * 0.005, -dy * 0.005);
-            this.ui.onSliderChange('screen_tx', this.player.stereoScreen.currentScreenX, false);
-            this.ui.onSliderChange('screen_ty', this.player.stereoScreen.currentScreenY, false);
+            this.player.transformController.handleMouseTranslate(dx, dy, this.player.activeScreen);
         }
     }
 
@@ -105,51 +218,12 @@ class InputManager {
     }
 
     handleXRUpdate(delta) {
-        // 1. Controller Rotation (Tilt)
-        if (this.player.isControllerRotating && this.player.activeRotationController && this.player.renderer.xr.isPresenting) {
-            const quat = new THREE.Quaternion();
-            this.player.activeRotationController.getWorldQuaternion(quat);
-            const currRotX = new THREE.Euler().setFromQuaternion(quat, 'YXZ').x;
-            const newTilt = (this.player.initialRotationX + (currRotX - this.player.initialControllerRotationX)) * 180 / Math.PI;
-            this.ui.onSliderChange('screen_tilt', newTilt, false);
-        }
+        const tc = this.player.transformController;
 
-        // 2. Controller Translation (Squeeze + Movement)
-        if (this.player.isControllerTranslating && this.player.activeTranslationController && this.player.renderer.xr.isPresenting) {
-            const pos = new THREE.Vector3();
-            this.player.activeTranslationController.getWorldPosition(pos);
-            const s = this.player.stereoScreen;
-            const scale = s.physicalScreenHeight;
-            const deltaPos = pos.clone().sub(this.player.initialControllerPosition).multiplyScalar(UI_CONFIG.translationSensitivity * scale);
-            
-            const targetX = this.player.initialScreenX + deltaPos.x;
-            const targetY = this.player.initialScreenY + deltaPos.y;
-            
-            // Limit checks for translation haptics
-            const xLimit = LIMITS.screen_txMax * s.physicalScreenHeight * s.aspectRatio;
-            const yLimit = LIMITS.screen_tyMax * s.physicalScreenHeight;
-            
-            const isAtXLimit = Math.abs(targetX) >= xLimit - 0.001;
-            const isAtYLimit = Math.abs(targetY) >= yLimit - 0.001;
-
-            if (isAtXLimit || isAtYLimit) {
-                const cIdx = this.player.controllers.indexOf(this.player.activeTranslationController);
-                if (cIdx !== -1 && !this._atLimit['screen_pos']) {
-                    const pointer = this.ui.xrPointers[cIdx];
-                    if (pointer) UIUtils.vibratePointer(pointer.id, UI_CONFIG.hapticLimitIntensity, UI_CONFIG.hapticLimitDuration, this.ui);
-                    this._atLimit['screen_pos'] = true;
-                }
-            } else {
-                this._atLimit['screen_pos'] = false;
-            }
-
-            this.ui.onSliderChange('screen_tx', targetX, false);
-            this.ui.onSliderChange('screen_ty', targetY, false);
-        }
-
+        // Stick & Button Input Processing
         for (let i = 0; i < 2; i++) {
-            const controller = this.player.controllers[i];
-            const gamepad = this.player.gamepads[i];
+            const controller = this.controllers[i];
+            const gamepad = this.gamepads[i];
             if (!controller || !gamepad) continue;
 
             let stickX = gamepad.axes[2];
@@ -178,7 +252,7 @@ class InputManager {
                     }
                 } else if (!hitInfo.isUI) {
                     const params = { delta, controllerIndex: i };
-                    if (this.player.isControllerTranslating && this.player.activeTranslationController === controller) {
+                    if (tc.isTranslating && tc.activeTranslationController === controller) {
                         this.dispatch(-stickY > 0 ? INPUT_ACTIONS.EYE_SEP_INC : INPUT_ACTIONS.EYE_SEP_DEC, params);
                     } else {
                         this.dispatch(-stickY > 0 ? INPUT_ACTIONS.ZOOM_IN : INPUT_ACTIONS.ZOOM_OUT, params);
@@ -187,7 +261,7 @@ class InputManager {
             }
 
             if (this.activeStickAxis[i] === 'x') {
-                if (this.player.isControllerTranslating && this.player.activeTranslationController === controller) {
+                if (tc.isTranslating && tc.activeTranslationController === controller) {
                     if (this.isStickReset[i]) {
                         this.dispatch(stickX > 0 ? INPUT_ACTIONS.SCREEN_SIZE_INC : INPUT_ACTIONS.SCREEN_SIZE_DEC, { controllerIndex: i });
                         this.isStickReset[i] = false;
@@ -210,24 +284,40 @@ class InputManager {
             if (aPressed && !this.isAButtonPressed[i]) this.dispatch(INPUT_ACTIONS.PLAY_PAUSE, { controllerIndex: i });
             this.isAButtonPressed[i] = aPressed;
 
-            if (this.player.controllerRays[i]?.visible) {
-                this.player.controllerRays[i].scale.z = hitInfo.isUI ? (hitInfo.distance / 5.0) : 1.0;
+            if (this.controllerRays[i]?.visible) {
+                this.controllerRays[i].scale.z = hitInfo.isUI ? (hitInfo.distance / 5.0) : 1.0;
             }
+        }
+
+        // Controller Rotation (Tilt & Roll)
+        if (tc.isRotating && tc.activeRotationController && this.player.renderer.xr.isPresenting) {
+            tc.updateRotation(
+                tc.activeRotationController,
+                this.player.activeScreen
+            );
+        }
+
+        // Controller Translation (Squeeze + Movement)
+        if (tc.isTranslating && tc.activeTranslationController && this.player.renderer.xr.isPresenting) {
+            const cIdx = this.controllers.indexOf(tc.activeTranslationController);
+            tc.updateTranslation(
+                tc.activeTranslationController,
+                this.player.activeScreen,
+                cIdx
+            );
         }
     }
 
     getUIContext(controller) {
         if (!this.ui.visible) return { isUI: false, isExplorer: false, distance: 0 };
         
-        // 1. Primary check: StereoPlayer's raycaster
-        const intersects = this.player.checkUIHit(controller);
+        // Primary check: raycaster
+        const intersects = this.checkUIHit(controller);
         let isUI = intersects.length > 0;
         let distance = isUI ? intersects[0].distance : 0;
 
-        // 2. Fallback: Check uikit's own pointer intersections
-        // This prevents the visual ray from penetrating the UI when uikit's 
-        // internal meshes are in a state that Three's default raycaster misses.
-        const cIdx = this.player.controllers.indexOf(controller);
+        // Fallback: Check uikit's own pointer intersections
+        const cIdx = this.controllers.indexOf(controller);
         if (!isUI && cIdx !== -1 && this.ui.xrPointers[cIdx]) {
             const uiIntersects = this.ui.xrPointers[cIdx].intersections;
             if (uiIntersects && uiIntersects.length > 0) {
@@ -238,8 +328,8 @@ class InputManager {
 
         let isExplorer = false;
         if (isUI && this.ui.activeSubMenu === this.ui.explorer) {
-            // Check if we hit the explorer specifically
-            const targets = intersects.length > 0 ? intersects : this.ui.xrPointers[cIdx].intersections;
+            const pointer = (cIdx !== -1) ? this.ui.xrPointers[cIdx] : null;
+            const targets = intersects.length > 0 ? intersects : (pointer ? pointer.intersections : null);
             isExplorer = targets && targets.some(ins => {
                 let o = ins.object;
                 while (o) { if (o === this.ui.explorer.container) return true; o = o.parent; }
@@ -251,7 +341,7 @@ class InputManager {
 
     dispatch(action, params = {}) {
         const delta = params.delta || 16;
-        const s = this.player.stereoScreen;
+        const s = this.player.activeScreen;
         const cIdx = params.controllerIndex;
         const u = this.ui;
         
@@ -264,13 +354,13 @@ class InputManager {
                 const cIdx = params.controllerIndex ?? -1;
                 if (!u.isAnyMenuVisible()) {
                     u.showMainMenu(cIdx);
-                    if (autoExplorer) u.toggleExplorerVisibility();
+                    if (autoExplorer) u.switchSubMenu(u.explorer);
                 } else {
                     if (autoExplorer) {
                         if (u.activeSubMenu === u.explorer) {
                             u.hideMainMenu();
                         } else {
-                            u.toggleExplorerVisibility();
+                            u.switchSubMenu(u.explorer);
                         }
                     } else {
                         u.toggleMainMenuVisibility();
@@ -311,19 +401,31 @@ class InputManager {
                 u.onSliderChange(id, s.currentZoom, false);
                 break;
             case INPUT_ACTIONS.EYE_SEP_INC: 
-                changed = s.slideEyeSeparation(1, delta); id = 'screen_eye_sep';
+            case INPUT_ACTIONS.EYE_SEP_DEC: {
+                if (!s.supportedSettings.includes('screen_eye_sep')) {
+                    changed = false; id = 'screen_eye_sep';
+                    break;
+                }
+                const dir = (action === INPUT_ACTIONS.EYE_SEP_INC) ? 1 : -1;
+                changed = s.slideEyeSeparation(dir, delta); id = 'screen_eye_sep';
                 u.onSliderChange(id, s.currentEyeSeparation, false);
                 break;
-            case INPUT_ACTIONS.EYE_SEP_DEC: 
-                changed = s.slideEyeSeparation(-1, delta); id = 'screen_eye_sep';
-                u.onSliderChange(id, s.currentEyeSeparation, false);
-                break;
+            }
             case INPUT_ACTIONS.SCREEN_SIZE_INC:
             case INPUT_ACTIONS.SCREEN_SIZE_DEC: {
+                const screenType = s.screenType;
+                if (screenType === 'dome' || screenType === 'dome_xr') {
+                    // Dome has no physical screen size to change via Stick X
+                    changed = false; id = 'screen_height_index';
+                    break;
+                }
+
                 const sizeDir = (action === INPUT_ACTIONS.SCREEN_SIZE_INC) ? 1 : -1;
+                const { min, max } = getSettingLimits('screen_height_index', screenType, s);
+
                 // Round to ensure we start from an integer step
-                const currentSizeIdx = Math.round(u.screenSettings.values.screen_height_index);
-                const nextSizeIdx = THREE.MathUtils.clamp(currentSizeIdx + sizeDir, LIMITS.screen_height_indexMin, LIMITS.screen_height_indexMax);
+                const currentSizeIdx = Math.round(u.settingsManager.get('screen_height_index'));
+                const nextSizeIdx = THREE.MathUtils.clamp(currentSizeIdx + sizeDir, min, max);
                 if (nextSizeIdx !== currentSizeIdx) {
                     u.onSliderChange('screen_height_index', nextSizeIdx, true);
                     u.showNotification(`Screen Size: ${nextSizeIdx}`, 1000);
@@ -345,13 +447,7 @@ class InputManager {
                 }
                 break;
             case INPUT_ACTIONS.PLAY_PAUSE:
-                if (this.player.videoElement) {
-                    if (this.player.videoElement.paused) {
-                        this.player.play();
-                    } else {
-                        this.player.pause();
-                    }
-                }
+                this.player.togglePlayPause();
                 break;
         }
 
