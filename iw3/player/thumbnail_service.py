@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import threading
 from typing import Any, Optional, Sequence, Union
 
 import av
@@ -169,7 +170,12 @@ def init_video_hwaccel() -> bool:
         try:
             from av.codec.hwaccel import HWAccel
 
-            _CUDA_HWACCEL = HWAccel(device_type="cuda", allow_software_fallback=True)
+            _CUDA_HWACCEL = HWAccel(
+                device_type="cuda",
+                is_hw_owned=False,
+                options={"primary_ctx": "1"},
+                allow_software_fallback=True,
+            )
             print("Video thumbnail hwaccel: CUDA enabled", file=sys.stderr)
             return True
         except Exception as e:
@@ -189,41 +195,53 @@ def get_video_hwaccel() -> Optional[Any]:
     return _CUDA_HWACCEL
 
 
+_DECODE_LOCK = threading.Lock()
+
+
+def _frame_to_thumbnail_image(frame: av.VideoFrame, max_size: int = 256) -> PILImage.Image:
+    """Converts a video frame to a thumbnail-sized PIL Image using PyAV scaling and BT.709 color conversion."""
+    reformat_kwargs: dict[str, Any] = {
+        "dst_colorspace": "ITU709",
+        "dst_color_primaries": "BT709",
+        "dst_color_trc": "BT709",
+    }
+    if max(frame.width, frame.height) > max_size:
+        scale = max_size / max(frame.width, frame.height)
+        reformat_kwargs["width"] = max(2, int(frame.width * scale) // 2 * 2)
+        reformat_kwargs["height"] = max(2, int(frame.height * scale) // 2 * 2)
+    return frame.to_image(**reformat_kwargs)
+
+
 def _decode_video_frame(fp: Any, hwaccel: Optional[Any] = None) -> Optional[PILImage.Image]:
     """Decodes a single representative video frame from the stream."""
-    open_kwargs = {"mode": "r"}
-    if hwaccel is not None:
-        open_kwargs["hwaccel"] = hwaccel
+    with _DECODE_LOCK:
+        open_kwargs = {"mode": "r"}
+        if hwaccel is not None:
+            open_kwargs["hwaccel"] = hwaccel
 
-    with av.open(fp, **open_kwargs) as container:
-        if not container.streams.video:
-            return None
-        stream = container.streams.video[0]
+        with av.open(fp, **open_kwargs) as container:
+            if not container.streams.video:
+                return None
+            stream = container.streams.video[0]
+            stream.thread_type = "AUTO"
+            stream.codec_context.skip_frame = "NONKEY"
 
-        duration_sec: Optional[float] = None
-        if container.duration:
-            duration_sec = float(container.duration / av.time_base)
-        elif stream.duration is not None and stream.duration > 0 and stream.time_base is not None:
-            duration_sec = float(stream.duration * stream.time_base)
+            duration_sec: Optional[float] = None
+            if container.duration:
+                duration_sec = float(container.duration / av.time_base)
+            elif stream.duration is not None and stream.duration > 0 and stream.time_base is not None:
+                duration_sec = float(stream.duration * stream.time_base)
 
-        target_sec = compute_video_thumbnail_target_sec(duration_sec)
-        container.seek(int(target_sec * av.time_base), backward=True, any_frame=False)
+            target_sec = compute_video_thumbnail_target_sec(duration_sec)
+            container.seek(int(target_sec * av.time_base), backward=True, any_frame=False)
+            for frame in container.decode(video=0):
+                return _frame_to_thumbnail_image(frame)
 
-        last_frame = None
-        for frame in container.decode(video=0):
-            last_frame = frame
-            frame_time = float(frame.pts * stream.time_base) if frame.pts is not None else target_sec
-            if frame_time >= target_sec:
-                return frame.to_image()
+            container.seek(0, backward=True, any_frame=False)
+            for frame in container.decode(video=0):
+                return _frame_to_thumbnail_image(frame)
 
-        if last_frame is not None:
-            return last_frame.to_image()
-
-        container.seek(0, backward=True, any_frame=False)
-        for frame in container.decode(video=0):
-            return frame.to_image()
-
-    return None
+        return None
 
 
 def extract_video_frame(fp: Any) -> Optional[PILImage.Image]:
