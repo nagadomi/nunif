@@ -36,7 +36,7 @@ def split_image(filepath_prefix, im, size, stride, reject_rate, format):
         if format == "png":
             rect.save(f"{filepath_prefix}_{index}.png")
         elif format == "webp":
-            rect.save(f"{filepath_prefix}_{index}.webp", lossless=True)
+            rect.save(f"{filepath_prefix}_{index}.webp", lossless=True, quality=20, method=4)
         else:
             raise ValueError(f"format {format}")
         index += 1

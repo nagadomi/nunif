@@ -32,7 +32,7 @@ class ConvertWebP(Dataset):
         basename = path.splitext(path.basename(filename))[0]
         output_filename = path.join(dirname, basename + ".webp")
         try:
-            im.save(output_filename, lossless=True)
+            im.save(output_filename, lossless=True, quality=20, method=4)
         except Exception:
             if path.exists(output_filename):
                 os.unlink(output_filename)
