@@ -368,7 +368,10 @@ class Waifu2xDataset(Waifu2xDatasetBase):
             y_min_size = tile_size * scale_factor + (8 * 2 * scale_factor)
             self.gt_transforms = T.Compose(
                 [
-                    T.RandomApply([TS.RandomDownscale(min_size=y_min_size)], p=da_scale_p),
+                    T.RandomApply(
+                        [TS.RandomDownscale(min_size=y_min_size, interpolations=[TF.InterpolationMode.BICUBIC])],
+                        p=da_scale_p,
+                    ),
                     T.RandomApply([T.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.1)], p=da_color_p),
                     T.RandomApply([TS.RandomChannelShuffle()], p=da_chshuf_p),
                     T.RandomApply([TS.RandomUnsharpMask()], p=da_unsharpmask_p),
