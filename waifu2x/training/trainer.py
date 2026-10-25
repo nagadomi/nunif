@@ -924,11 +924,12 @@ def train(args):
             args.loss = "y_charbonnier"
 
     if args.b4b:
-        # disable random resize blur
-        args.resize_blur_p = 0.0
-        args.deblur = 0.0
-        # disable random rescale
-        args.da_scape_p = 0.0
+        # disable data augmentation for target images
+        for var_name in ("resize_blur_p", "deblur", "da_scale_p", "da_unsharpmask_p", "da_rotate_p"):
+            if getattr(args, var_name, 0) != 0.0:
+                logger.warn(f"b4b: set {var_name} = 0.0")
+                setattr(args, var_name, 0.0)
+        args.da_no_rotate = True
 
     trainer = Waifu2xTrainer(args)
     trainer.fit()
