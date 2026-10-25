@@ -2858,6 +2858,7 @@ def iw3_main(args):
     elif is_image(args.input):
         if not depth_model.is_image_supported():
             raise ValueError(f"{args.depth_model} does not support image input")
+        depth_model.disable_ema()
         if side_model is not None and hasattr(side_model, "set_mode"):
             side_model.set_mode("image")
             side_model.reset()
