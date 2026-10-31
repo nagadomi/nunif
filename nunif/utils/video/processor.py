@@ -644,7 +644,7 @@ def hook_frame(
         total = frames_val if isinstance(frames_val, int) else frames_val[0]
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
 
-    prev_sec = start_time if start_time is not None else 0.0
+    prev_sec = None
     try:
         for i, packet in enumerate(input_container.demux([video_input_stream])):
             if packet.pts is not None:
@@ -653,16 +653,17 @@ def hook_frame(
             for frame in video_decoder.decode(packet):
                 if keyframe_only:
                     current_sec = float(frame.pts * video_input_stream.time_base)
-                    if current_sec - prev_sec < min_interval_sec:
+                    if prev_sec is not None and current_sec - prev_sec < min_interval_sec:
                         continue
 
                     for out_frame in video_preprocessor.update(frame):
                         consume_generator(frame_callback(out_frame))
 
-                    progress = current_sec - prev_sec
-                    if progress > 1.0:
-                        pbar.update(math.floor(progress))
-                        prev_sec = current_sec
+                    if prev_sec is not None:
+                        progress = current_sec - prev_sec
+                        if progress > 1.0:
+                            pbar.update(math.floor(progress))
+                    prev_sec = current_sec
                 else:
                     for out_frame in video_preprocessor.update(frame):
                         consume_generator(frame_callback(out_frame))

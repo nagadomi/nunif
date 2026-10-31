@@ -1384,14 +1384,14 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool:
         futures = []
+        fill_color = make_fill_color(args.state["device"])
 
         def frame_callback(frame):
             if frame is None:
                 return
 
-            x = VU.to_tensor(frame, device=args.state["device"])
-            output = process_image(x, args, depth_model, side_model)
-            output = to_pil_image(output)
+            x, alpha = extract_frame_rgb_alpha(frame, args.state["device"])
+            output = process_image(x, args, depth_model, side_model, alpha=alpha, fill_color=fill_color)
             output_filename = path.join(
                 output_dir,
                 path.basename(output_dir)
@@ -1400,7 +1400,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
                 + FULL_SBS_SUFFIX
                 + get_image_ext(args.format),
             )
-            f = pool.submit(save_image, output, output_filename, format=args.format)
+            f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
             futures.append(f)
             if len(futures) > IMAGE_IO_QUEUE_MAX:
                 for f in futures:

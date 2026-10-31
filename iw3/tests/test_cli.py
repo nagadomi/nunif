@@ -2,6 +2,7 @@ import os
 from typing import NamedTuple
 
 import av
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -274,6 +275,33 @@ def test_cli_vf(cli_setup: CliSetup) -> None:
 
 def test_cli_keyframe(cli_setup: CliSetup) -> None:
     run([*cli_setup.cli, "-i", cli_setup.video, "--depth-model", "Any_S", "--keyframe"])
+    out_dir = os.path.join(cli_setup.output, "sd_LRF_Full_SBS")
+    files = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+    assert len(files) > 0
+    with Image.open(os.path.join(out_dir, files[0])) as im:
+        assert im.mode == "RGB"
+
+
+def test_cli_video_rgba_keyframe(cli_setup: CliSetup) -> None:
+    run([*cli_setup.cli, "-i", cli_setup.video_rgba, "--depth-model", "Any_S", "--keyframe"])
+    out_dir = os.path.join(cli_setup.output, "rgba_LRF_Full_SBS")
+    files = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+    assert len(files) > 0
+    with Image.open(os.path.join(out_dir, files[0])) as im:
+        assert im.mode == "RGBA"
+        assert np.array(im)[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_vp9_keyframe(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9() or cli_setup.video_rgba_vp9 is None:
+        pytest.skip("libvpx-vp9 is not supported")
+    run([*cli_setup.cli, "-i", cli_setup.video_rgba_vp9, "--depth-model", "Any_S", "--keyframe"])
+    out_dir = os.path.join(cli_setup.output, "rgba_vp9_LRF_Full_SBS")
+    files = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+    assert len(files) > 0
+    with Image.open(os.path.join(out_dir, files[0])) as im:
+        assert im.mode == "RGBA"
+        assert np.array(im)[:, :, 3].mean() < 240
 
 
 def test_cli_image_rgba(cli_setup: CliSetup) -> None:
