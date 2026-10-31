@@ -41,6 +41,8 @@ tmp
 /windows_package/git
 /windows_package/nunif
 /iw3/pretrained_models
+/iw3/depth_models/_*
+!/iw3/depth_models/__init__.py
 /iw3/inpaint_models.yml
 
 /iw3/player/public/lib
