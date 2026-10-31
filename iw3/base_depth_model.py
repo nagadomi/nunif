@@ -102,7 +102,7 @@ class BaseDepthModel(metaclass=ABCMeta):
 
     @classmethod
     def get_depth_model_class(cls, model_type: str) -> type["BaseDepthModel"] | None:
-        for subcls in cls._subclasses:
+        for subcls in cls.get_registered_classes():
             if subcls.supported(model_type):
                 return subcls
         return None
