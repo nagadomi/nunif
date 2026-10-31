@@ -605,17 +605,22 @@ def process_image(
 ):
     assert depth_model.get_ema_buffer_size() == 1
 
-    if args.autocrop is None or skip_autocrop:
-        autocrop = AutoCropDummy()
-    else:
-        autocrop = AutoCrop.from_image(x, mode=args.autocrop, uncrop_enabled=autocrop_uncrop)
-
     with torch.inference_mode():
         if alpha is not None:
             x = x * alpha + fill_color * (1.0 - alpha)
 
         x = preprocess_image(x, args)
+        if alpha is not None:
+            alpha = preprocess_image(alpha, args)
+
+        if args.autocrop is None or skip_autocrop:
+            autocrop = AutoCropDummy()
+        else:
+            autocrop = AutoCrop.from_image(x, mode=args.autocrop, uncrop_enabled=autocrop_uncrop)
+
         x = autocrop.crop(x)
+        if alpha is not None:
+            alpha = autocrop.crop(alpha)
         if alpha is not None:
             depth = depth_model.infer(
                 x,

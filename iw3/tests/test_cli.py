@@ -275,3 +275,43 @@ def test_cli_image_rgba(cli_setup: CliSetup) -> None:
     run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_file, "--depth-model", "Any_S"])
     with Image.open(out_file) as im:
         assert im.mode == "RGBA"
+
+
+def test_cli_image_rgba_preprocess(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba_prep.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--max-output-height",
+            "320",
+            "--rotate-left",
+        ]
+    )
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"
+        assert im.height == 320
+
+
+def test_cli_image_rgba_autocrop(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba_crop.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--autocrop",
+            "BLACK",
+        ]
+    )
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"
