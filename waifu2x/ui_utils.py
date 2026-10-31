@@ -143,6 +143,11 @@ def process_video(ctx, input_filename, output_path, args):
         elif args.video_codec == "libopenh264":
             # NOTE: It seems libopenh264 does not support most options.
             options = {"b": args.video_bitrate}
+        elif args.video_codec == "libvpx-vp9":
+            options = {"crf": str(args.crf), "b": "0", "row-mt": "1"}
+            if "a" in args.pix_fmt.lower():
+                options["auto-alt-ref"] = "0"
+                options["alpha_mode"] = "1"
         else:
             options = {}
 

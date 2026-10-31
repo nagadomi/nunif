@@ -17,6 +17,7 @@ from .color_transform import (
     configure_video_codec,
     setup_color_transform,
 )
+from .decoder import VideoDecoder
 from .hwaccel import HW_DEVICES, create_hwaccel, get_compatible_hwaccel
 from .metadata import (
     AudioMetadata,
@@ -125,7 +126,6 @@ def safe_decode(packet, strict=False):
     return frames
 
 
-
 def apply_color_settings(output_stream: av.video.stream.VideoStream, output_reformatter: OutputTransform) -> None:
     ctx = output_stream.codec_context
     ctx.pix_fmt = output_reformatter.dst_pix_fmt
@@ -222,6 +222,7 @@ def _process_video(
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
     # _print_len(video_input_stream)
     audio_input_stream = audio_output_stream = None
     if len(input_container.streams.audio) > 0:
@@ -315,7 +316,7 @@ def _process_video(
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
             if packet.stream.type == "video":
-                for frame in safe_decode(packet, strict=disable_software_fallback):
+                for frame in video_decoder.decode(packet):
                     for out_frame in video_preprocessor.update(frame):
                         if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
                             gc.collect()
@@ -594,8 +595,9 @@ def hook_frame(
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
     if keyframe_only:
-        video_input_stream.codec_context.skip_frame = "NONKEY"
+        video_decoder.skip_frame = "NONKEY"
 
     config = config_callback(sw_format)
     if keyframe_only:
@@ -648,7 +650,7 @@ def hook_frame(
             if packet.pts is not None:
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
-            for frame in safe_decode(packet, strict=disable_software_fallback):
+            for frame in video_decoder.decode(packet):
                 if keyframe_only:
                     current_sec = float(frame.pts * video_input_stream.time_base)
                     if current_sec - prev_sec < min_interval_sec:
@@ -712,6 +714,7 @@ def sample_frames(
         raise ValueError("No video stream")
 
     video_input_stream = input_container.streams.video[0]
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
 
     num_frames, duration = sw_format.guess_frames(return_duration=True)
     if duration <= 0 or num_frames <= 0:
@@ -743,11 +746,11 @@ def sample_frames(
         # Full decoding
         step_sec = duration / num_samples
         if keyframe_only:
-            video_input_stream.codec_context.skip_frame = "NONKEY"
+            video_decoder.skip_frame = "NONKEY"
 
         for packet in input_container.demux([video_input_stream]):
             packet_count += 1
-            for frame in safe_decode(packet, strict=disable_software_fallback):
+            for frame in video_decoder.decode(packet):
                 frame_count += 1
                 if frame.pts is None:
                     continue
@@ -770,7 +773,7 @@ def sample_frames(
         seek_offset = int(duration * offset * av.time_base)
 
         if step_sec > 4 or keyframe_only:
-            video_input_stream.codec_context.skip_frame = "NONKEY"
+            video_decoder.skip_frame = "NONKEY"
             keyframe_only = True
         else:
             keyframe_only = False
@@ -783,7 +786,7 @@ def sample_frames(
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
                     break
-                for frame in safe_decode(packet, strict=disable_software_fallback):
+                for frame in video_decoder.decode(packet):
                     frame_count += 1
                     if frame.pts is None:
                         continue
@@ -806,6 +809,7 @@ def sample_frames(
             if pos == 0 or pos == prev_seek_pos:
                 pos += av.time_base
             input_container.seek(pos, backward=True, any_frame=False)
+            video_decoder.flush_buffers()
             prev_seek_pos = pos
             sample_count += sample_one()
             if stop_event is not None and stop_event.is_set():

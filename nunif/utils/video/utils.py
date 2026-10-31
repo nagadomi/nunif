@@ -67,6 +67,10 @@ def has_qsv() -> bool:
     return "h264_qsv" in av.codec.codecs_available and "hevc_qsv" in av.codec.codecs_available
 
 
+def has_vp9() -> bool:
+    return "libvpx-vp9" in av.codec.codecs_available
+
+
 def list_videos(directory: str, extensions: List[str] = VIDEO_EXTENSIONS) -> List[str]:
     return sorted(
         os.path.join(directory, f) for f in os.listdir(directory) if os.path.splitext(f)[-1].lower() in extensions

@@ -4,6 +4,7 @@ from .color_transform import (
     to_ndarray,
     to_tensor,
 )
+from .decoder import VideoDecoder
 from .frame_callback_pool import (
     FrameCallbackPool,
 )
@@ -31,6 +32,7 @@ from .utils import (
     get_default_video_codec,
     has_nvenc,
     has_qsv,
+    has_vp9,
     list_videos,
     pix_fmt_requires_16bit,
 )
@@ -56,6 +58,7 @@ __all__ = [
     "make_error_file_path",
     "process_video",
     "sample_frames",
+    "VideoDecoder",
     "LIBH264",
     "RGB_8BIT",
     "RGB_16BIT",
@@ -63,6 +66,7 @@ __all__ = [
     "get_default_video_codec",
     "has_nvenc",
     "has_qsv",
+    "has_vp9",
     "list_videos",
     "pix_fmt_requires_16bit",
 ]

@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import shutil
 import sys
@@ -9,10 +10,11 @@ import av
 import av.audio.stream
 import av.video.codeccontext
 import av.video.stream
+import numpy as np
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 from PIL import Image
 
-from nunif.utils.video import to_ndarray
+from nunif.utils.video import has_vp9, to_ndarray
 
 COLORSPACE_MAP: Mapping[str, Colorspace] = {
     "bt709": Colorspace.ITU709,
@@ -235,6 +237,60 @@ def generate_image_from_video(video_path: str, image_path: str) -> None:
             break
 
 
+def generate_rgba_video(
+    image_path: str,
+    output_path: str,
+    codec: str = "ffv1",
+    duration: float = 1.1,
+    fps: int = 30,
+) -> None:
+    print(f"Generating [{codec}]: {os.path.basename(output_path)}")
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    with Image.open(image_path) as src_img:
+        src_rgba = src_img.convert("RGBA")
+        w, h = src_rgba.size
+
+    max_frames = int(duration * fps)
+    with (
+        av.open(f"sine=frequency=1000:duration={duration}:sample_rate=44100", format="lavfi") as a_in,
+        av.open(output_path, mode="w", format="matroska") as out_container,
+    ):
+        vcodec = "libvpx-vp9" if codec == "libvpx-vp9" else "ffv1"
+        v_stream = cast(av.video.stream.VideoStream, out_container.add_stream(vcodec, rate=fps))
+        v_stream.width = w
+        v_stream.height = h
+        v_stream.pix_fmt = "yuva420p"
+        if vcodec == "libvpx-vp9":
+            v_stream.options = {"crf": "20", "b": "0", "row-mt": "1", "auto-alt-ref": "0", "alpha_mode": "1"}
+
+        a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=44100))
+        a_stream.format = "fltp"
+        a_stream.layout = "mono"
+        resampler = av.AudioResampler(format="fltp", layout="mono", rate=44100)
+
+        for i in range(max_frames):
+            shift = int(round(16 * math.sin(2 * math.pi * i / max_frames)))
+            canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            canvas.paste(src_rgba, (shift, 0))
+            frame = av.VideoFrame.from_ndarray(np.array(canvas), format="rgba")
+            f_fmt = frame.reformat(format="yuva420p")
+            f_fmt.pts = i
+            for packet in v_stream.encode(f_fmt):
+                out_container.mux(packet)
+
+        for packet in v_stream.encode(None):
+            out_container.mux(packet)
+
+        for audio_frame in a_in.decode(audio=0):
+            a_f = cast(av.AudioFrame, audio_frame)
+            for rf in resampler.resample(a_f):
+                for packet in a_stream.encode(rf):
+                    out_container.mux(packet)
+
+        for packet in a_stream.encode(None):
+            out_container.mux(packet)
+
+
 def colorspace_to_str(val: int | None) -> str:
     if val is None:
         return "None"
@@ -394,6 +450,15 @@ def ensure_smoke_data(base_dir: str = "tmp/smoke", duration: float = 1.1, force:
     if (force or not os.path.exists(rgba_path)) and os.path.exists(rgba_src):
         shutil.copyfile(rgba_src, rgba_path)
 
+    rgba_video_path = os.path.join(base_dir, "rgba.mkv")
+    if (force or not os.path.exists(rgba_video_path)) and os.path.exists(rgba_src):
+        generate_rgba_video(rgba_src, rgba_video_path, codec="ffv1", duration=duration)
+
+    if has_vp9():
+        rgba_vp9_path = os.path.join(base_dir, "rgba_vp9.mkv")
+        if (force or not os.path.exists(rgba_vp9_path)) and os.path.exists(rgba_src):
+            generate_rgba_video(rgba_src, rgba_vp9_path, codec="libvpx-vp9", duration=duration)
+
 
 def verify_all_smoke_data(base_dir: str = "tmp/smoke") -> bool:
     failed = False
@@ -409,6 +474,40 @@ def verify_all_smoke_data(base_dir: str = "tmp/smoke") -> bool:
     rgba_path = os.path.join(base_dir, "dog_448_rgba.png")
     if not verify_image(rgba_path, "PNG", (448, 448), "RGBA"):
         failed = True
+
+    rgba_video_path = os.path.join(base_dir, "rgba.mkv")
+    if os.path.exists(rgba_video_path):
+        with av.open(rgba_video_path) as container:
+            if not container.streams.video:
+                print(f"[FAIL] {os.path.basename(rgba_video_path)}: No video stream")
+                failed = True
+            else:
+                vs = container.streams.video[0]
+                if vs.codec_context.name != "ffv1" or vs.pix_fmt != "yuva420p":
+                    print(
+                        f"[FAIL] {os.path.basename(rgba_video_path)}: "
+                        f"Unexpected codec/pix_fmt ({vs.codec_context.name}, {vs.pix_fmt})"
+                    )
+                    failed = True
+                else:
+                    print(f"[PASS] {os.path.basename(rgba_video_path)}: ffv1 yuva420p")
+
+    rgba_vp9_path = os.path.join(base_dir, "rgba_vp9.mkv")
+    if os.path.exists(rgba_vp9_path):
+        with av.open(rgba_vp9_path) as container:
+            if not container.streams.video:
+                print(f"[FAIL] {os.path.basename(rgba_vp9_path)}: No video stream")
+                failed = True
+            else:
+                vs = container.streams.video[0]
+                if vs.codec_context.name != "vp9" or vs.metadata.get("alpha_mode") != "1":
+                    print(
+                        f"[FAIL] {os.path.basename(rgba_vp9_path)}: "
+                        f"Unexpected codec/alpha_mode ({vs.codec_context.name}, {vs.metadata.get('alpha_mode')})"
+                    )
+                    failed = True
+                else:
+                    print(f"[PASS] {os.path.basename(rgba_vp9_path)}: libvpx-vp9 yuva420p")
 
     return not failed
 

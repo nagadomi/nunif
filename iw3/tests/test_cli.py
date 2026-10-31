@@ -1,9 +1,11 @@
 import os
 from typing import NamedTuple
 
+import av
 import pytest
 from PIL import Image
 
+from nunif.utils import video as VU
 from tests.helpers.runner import run
 from tests.helpers.smoke_data import ensure_smoke_data
 
@@ -12,6 +14,8 @@ class CliSetup(NamedTuple):
     image: str
     image_rgba: str
     video: str
+    video_rgba: str
+    video_rgba_vp9: str | None
     video_hdr: str
     dir: str
     output: str
@@ -28,6 +32,8 @@ def cli_setup(tmp_path_factory: pytest.TempPathFactory) -> CliSetup:
         image=os.path.join(smoke_dir, "sd.png"),
         image_rgba=os.path.join(smoke_dir, "dog_448_rgba.png"),
         video=os.path.join(smoke_dir, "sd.mkv"),
+        video_rgba=os.path.join(smoke_dir, "rgba.mkv"),
+        video_rgba_vp9=os.path.join(smoke_dir, "rgba_vp9.mkv") if VU.has_vp9() else None,
         video_hdr=os.path.join(smoke_dir, "hdr.mkv"),
         dir=smoke_dir,
         output=output_dir,
@@ -334,3 +340,82 @@ def test_cli_image_rgba_sod(cli_setup: CliSetup) -> None:
     )
     with Image.open(out_file) as im:
         assert im.mode == "RGBA"
+
+
+def test_cli_video_rgba_ffv1(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_ffv1.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "ffv1"
+        assert vs.pix_fmt == "yuva420p"
+        f = next(container.decode(vs))
+        rgba = f.to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_vp9(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9():
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_vp9.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--video-codec",
+            "libvpx-vp9",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "vp9"
+        assert vs.metadata.get("alpha_mode") == "1"
+
+
+def test_cli_video_rgba_input_vp9(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9() or cli_setup.video_rgba_vp9 is None:
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_from_vp9.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba_vp9,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "ffv1"
+        assert vs.pix_fmt == "yuva420p"
+        f = next(container.decode(vs))
+        rgba = f.to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240

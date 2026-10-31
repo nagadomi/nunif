@@ -221,6 +221,8 @@ def make_video_codec_option(args, input_path=None):
     elif args.video_codec == "libopenh264":
         # NOTE: It seems libopenh264 does not support most options.
         options = {"b": args.video_bitrate}
+    elif args.video_codec == "libvpx-vp9":
+        options = {"crf": str(args.crf), "b": "0", "row-mt": "1"}
     else:
         options = {}
 
