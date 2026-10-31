@@ -315,3 +315,22 @@ def test_cli_image_rgba_autocrop(cli_setup: CliSetup) -> None:
     )
     with Image.open(out_file) as im:
         assert im.mode == "RGBA"
+
+
+def test_cli_image_rgba_sod(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba_sod.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--convergence-mode",
+            "sod_v1",
+        ]
+    )
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"

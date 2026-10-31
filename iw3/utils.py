@@ -363,7 +363,7 @@ def add_preprocess_vf(vf_org, args) -> str:
         return vf_org
 
 
-def apply_divergence(depth, im, args, side_model, reset_pts=None):
+def apply_divergence(depth, im, args, side_model, reset_pts=None, convergence=None, return_convergence=False):
     batch = True
     if depth.ndim != 4:
         # CHW
@@ -374,7 +374,9 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         # BCHW
         pass
 
-    if args.state["convergence_model"] is not None:
+    if convergence is not None:
+        depth = get_mapper(args.mapper)(depth)
+    elif args.state["convergence_model"] is not None:
         convergence = args.state["convergence_model"](im, depth, reset_pts=reset_pts)
         mapper_fn = get_mapper(args.mapper)
         convergence = mapper_fn(convergence)
@@ -477,7 +479,10 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None):
         if right_eye is not None:
             right_eye = right_eye.squeeze(0)
 
-    return left_eye, right_eye
+    if return_convergence:
+        return left_eye, right_eye, convergence
+    else:
+        return left_eye, right_eye
 
 
 def ratio_pad(target_ratio: float, left_eye, right_eye):
@@ -679,7 +684,7 @@ def process_image(
 
             return sbs
         else:
-            left_eye, right_eye = apply_divergence(depth, x, args, side_model)
+            left_eye, right_eye, convergence = apply_divergence(depth, x, args, side_model, return_convergence=True)
             assert left_eye is not None
             left_eye = autocrop.uncrop(left_eye)
             right_eye = autocrop.uncrop(right_eye)
@@ -687,7 +692,7 @@ def process_image(
 
             if alpha is not None and not args.anaglyph:
                 alpha = alpha.repeat(3, 1, 1)
-                left_alpha, right_alpha = apply_divergence(depth, alpha, args, side_model)
+                left_alpha, right_alpha = apply_divergence(depth, alpha, args, side_model, convergence=convergence)
                 left_alpha = autocrop.uncrop(left_alpha)
                 right_alpha = autocrop.uncrop(right_alpha)
                 sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
@@ -812,13 +817,20 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
                 out = postprocess_image(left_eye, right_eye, args)
             else:
-                left_eye, right_eye = apply_divergence(depth, x, args, side_model, reset_pts=reset_pts)
+                left_eye, right_eye, convergence = apply_divergence(
+                    depth, x, args, side_model, reset_pts=reset_pts, return_convergence=True
+                )
                 if left_eye is not None:
                     if left_eye.ndim == 3:
                         sbs_rgb = postprocess_image(left_eye, right_eye, args)
                         if alpha is not None:
                             left_alpha, right_alpha = apply_divergence(
-                                depth, alpha.repeat(3, 1, 1), args, side_model, reset_pts=reset_pts
+                                depth,
+                                alpha.repeat(3, 1, 1),
+                                args,
+                                side_model,
+                                reset_pts=reset_pts,
+                                convergence=convergence,
                             )
                             if left_alpha is not None:
                                 sbs_alpha = postprocess_image(left_alpha, right_alpha, args).mean(dim=0, keepdim=True)
@@ -959,10 +971,17 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
                     left_alphas = right_alphas = None
                 else:
-                    left_eyes, right_eyes = apply_divergence(depths, x_srcs, args, side_model, reset_pts=reset_pts)
+                    left_eyes, right_eyes, convergence = apply_divergence(
+                        depths, x_srcs, args, side_model, reset_pts=reset_pts, return_convergence=True
+                    )
                     if has_alpha:
                         left_alphas, right_alphas = apply_divergence(
-                            depths, alpha_srcs.repeat(1, 3, 1, 1), args, side_model, reset_pts=reset_pts
+                            depths,
+                            alpha_srcs.repeat(1, 3, 1, 1),
+                            args,
+                            side_model,
+                            reset_pts=reset_pts,
+                            convergence=convergence,
                         )
                     else:
                         left_alphas = right_alphas = None
@@ -2168,12 +2187,14 @@ def process_config_images(config, args, side_model):
                 depth = depth.to(args.state["device"])
                 if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
                     depth = dilate_edge(depth.unsqueeze(0), args.edge_dilation).squeeze(0)
-                left_eye, right_eye = apply_divergence(depth, rgb, args, side_model)
+                left_eye, right_eye, convergence = apply_divergence(
+                    depth, rgb, args, side_model, return_convergence=True
+                )
                 sbs = postprocess_image(left_eye, right_eye, args)
                 sbs = to_pil_image(sbs)
                 if alpha is not None:
                     alpha = alpha.to(args.state["device"]).repeat(3, 1, 1)
-                    left_alpha, right_alpha = apply_divergence(depth, alpha, args, side_model)
+                    left_alpha, right_alpha = apply_divergence(depth, alpha, args, side_model, convergence=convergence)
                     sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
                     sbs_alpha = sbs_alpha.mean(dim=0, keepdim=True)
                     sbs_alpha = to_pil_image(sbs_alpha)
