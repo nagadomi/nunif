@@ -447,3 +447,31 @@ def test_cli_video_rgba_input_vp9(cli_setup: CliSetup) -> None:
         f = next(container.decode(vs))
         rgba = f.to_ndarray(format="rgba")
         assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_low_vram(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_low_vram.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--low-vram",
+            "--ema-normalize",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "ffv1"
+        assert vs.pix_fmt == "yuva420p"
+        f = next(container.decode(vs))
+        rgba = f.to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
