@@ -266,7 +266,47 @@ def save_image(im, output_filename, format="png", png_info=None):
     im.save(output_filename, format=format, **options)
 
 
+def resolve_image_format(output_filename, default_format="png"):
+    ext = path.splitext(output_filename)[-1].lower()
+    if ext == ".png":
+        return "png"
+    elif ext == ".webp":
+        return "webp"
+    elif ext in {".jpg", ".jpeg"}:
+        return "jpeg"
+    return default_format
+
+
+DEFAULT_FILL_COLOR = (0.4, 0.5, 0.6)
+
+
+def make_fill_color(device, color=DEFAULT_FILL_COLOR):
+    return torch.tensor(color, dtype=torch.float32, device=device).view(3, 1, 1)
+
+
+def extract_image_rgb_alpha(im, device):
+    rgb, alpha = IL.to_tensor(im, return_alpha=True)
+    rgb = rgb.to(device)
+    if rgb.shape[0] == 1:
+        rgb = rgb.repeat(3, 1, 1)
+    if alpha is not None and torch.all(alpha == 1.0):
+        alpha = None
+    if alpha is not None:
+        alpha = alpha.to(device)
+    return rgb, alpha
+
+
+def load_image_rgb_alpha(filename, device, exif_transpose=True):
+    im, _ = IL.load_image(filename, color="rgb", exif_transpose=exif_transpose, keep_alpha=True)
+    if im is None:
+        raise RuntimeError(f"Unable to load image: {filename}")
+    return extract_image_rgb_alpha(im, device)
+
+
 def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=None):
+    if rgb.shape[0] == 4 and alpha is None:
+        alpha = rgb[3:]
+        rgb = rgb[:3]
     im = to_pil_image(rgb, alpha=alpha)
     save_image(im, output_filename, format=format, png_info=png_info)
 
@@ -692,7 +732,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool, torch.inference_mode():
-        fill_color = torch.tensor([0.4, 0.5, 0.6], dtype=torch.float32, device=args.state["device"]).view(3, 1, 1)
+        fill_color = make_fill_color(args.state["device"])
         for im, meta in loader:
             filename = meta["filename"]
             output_filename = path.join(output_dir, make_output_filename(filename, args, video=False))
@@ -700,25 +740,9 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
                 pbar.update(1)
                 continue
 
-            rgb, alpha = IL.to_tensor(im, return_alpha=True)
-            rgb = rgb.to(args.state["device"])
-            if rgb.shape[0] == 1:
-                rgb = rgb.repeat(3, 1, 1)
-
-            if alpha is not None and torch.all(alpha == 1.0):
-                alpha = None
-            if alpha is not None:
-                alpha = alpha.to(args.state["device"])
-
+            rgb, alpha = extract_image_rgb_alpha(im, device=args.state["device"])
             output = process_image(rgb, args, depth_model, side_model, alpha=alpha, fill_color=fill_color)
-            if output.shape[0] == 4:
-                # RGBA
-                alpha = output[3:]
-                output = output[:3]
-            else:
-                alpha = None
-
-            f = pool.submit(save_tensor_image, output, output_filename, alpha=alpha, format=args.format)
+            f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
             # f.result() # for debug
 
             futures.append(f)
@@ -1488,7 +1512,7 @@ def export_images(input_path, output_dir, args, title=None):
 
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool, torch.inference_mode():
-        fill_color = torch.tensor([0.4, 0.5, 0.6], dtype=torch.float32, device=args.state["device"]).view(3, 1, 1)
+        fill_color = make_fill_color(args.state["device"])
         for im, meta in loader:
             basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
             rgb_file = path.join(rgb_dir, basename)
@@ -1497,16 +1521,10 @@ def export_images(input_path, output_dir, args, title=None):
                 pbar.update(1)
                 continue
 
-            rgb, alpha = IL.to_tensor(im, return_alpha=True)
-            if alpha is not None and torch.all(alpha == 1.0):
-                alpha = None
-
-            rgb = rgb.to(args.state["device"])
-            if rgb.shape[0] == 1:
-                rgb = rgb.repeat(3, 1, 1)
+            rgb, alpha = extract_image_rgb_alpha(im, device=args.state["device"])
 
             if alpha is not None:
-                alpha = alpha.to(args.state["device"]).clamp(0, 1)
+                alpha = alpha.clamp(0, 1)
                 rgb = rgb * alpha + fill_color * (1.0 - alpha)
                 rgb = preprocess_image(rgb, args)
                 depth = depth_model.infer(
@@ -2868,14 +2886,18 @@ def iw3_main(args):
         if is_output_dir(args.output):
             os.makedirs(args.output, exist_ok=True)
             output_filename = path.join(args.output, make_output_filename(args.input, args, video=False))
+            output_format = args.format
         else:
             output_filename = args.output
-        im, _ = load_image_simple(args.input, color="rgb", exif_transpose=not args.disable_exif_transpose)
-        im = TF.to_tensor(im).to(args.state["device"])
-        output = process_image(im, args, depth_model, side_model)
-        output = to_pil_image(output)
+            output_format = resolve_image_format(output_filename, default_format=args.format)
+
+        fill_color = make_fill_color(args.state["device"])
+        rgb, alpha = load_image_rgb_alpha(
+            args.input, device=args.state["device"], exif_transpose=not args.disable_exif_transpose
+        )
+        output = process_image(rgb, args, depth_model, side_model, alpha=alpha, fill_color=fill_color)
         make_parent_dir(output_filename)
-        output.save(output_filename)
+        save_tensor_image(output, output_filename, format=output_format)
     else:
         raise ValueError("Unrecognized file type")
 

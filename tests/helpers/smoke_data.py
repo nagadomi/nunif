@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 import sys
 from collections.abc import Mapping
 from typing import NamedTuple, cast
@@ -388,6 +389,11 @@ def ensure_smoke_data(base_dir: str = "tmp/smoke", duration: float = 1.1, force:
     if force or not os.path.exists(png_path):
         generate_image_from_video(sd_path, png_path)
 
+    rgba_src = os.path.join(os.path.dirname(__file__), "..", "images", "dog_448_rgba.png")
+    rgba_path = os.path.join(base_dir, "dog_448_rgba.png")
+    if (force or not os.path.exists(rgba_path)) and os.path.exists(rgba_src):
+        shutil.copyfile(rgba_src, rgba_path)
+
 
 def verify_all_smoke_data(base_dir: str = "tmp/smoke") -> bool:
     failed = False
@@ -398,6 +404,10 @@ def verify_all_smoke_data(base_dir: str = "tmp/smoke") -> bool:
 
     png_path = os.path.join(base_dir, "sd.png")
     if not verify_image(png_path, "PNG", (640, 360), "RGB"):
+        failed = True
+
+    rgba_path = os.path.join(base_dir, "dog_448_rgba.png")
+    if not verify_image(rgba_path, "PNG", (448, 448), "RGBA"):
         failed = True
 
     return not failed

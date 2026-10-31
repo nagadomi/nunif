@@ -2,6 +2,7 @@ import os
 from typing import NamedTuple
 
 import pytest
+from PIL import Image
 
 from tests.helpers.runner import run
 from tests.helpers.smoke_data import ensure_smoke_data
@@ -9,6 +10,7 @@ from tests.helpers.smoke_data import ensure_smoke_data
 
 class CliSetup(NamedTuple):
     image: str
+    image_rgba: str
     video: str
     video_hdr: str
     dir: str
@@ -24,6 +26,7 @@ def cli_setup(tmp_path_factory: pytest.TempPathFactory) -> CliSetup:
     ensure_smoke_data(smoke_dir)
     return CliSetup(
         image=os.path.join(smoke_dir, "sd.png"),
+        image_rgba=os.path.join(smoke_dir, "dog_448_rgba.png"),
         video=os.path.join(smoke_dir, "sd.mkv"),
         video_hdr=os.path.join(smoke_dir, "hdr.mkv"),
         dir=smoke_dir,
@@ -265,3 +268,10 @@ def test_cli_vf(cli_setup: CliSetup) -> None:
 
 def test_cli_keyframe(cli_setup: CliSetup) -> None:
     run([*cli_setup.cli, "-i", cli_setup.video, "--depth-model", "Any_S", "--keyframe"])
+
+
+def test_cli_image_rgba(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba.png")
+    run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_file, "--depth-model", "Any_S"])
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"
