@@ -431,8 +431,8 @@ def generate_video(
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     output_container = av.open(output_path_tmp, "w", options=config.container_options)
-    assert config.output_width is not None and config.output_height is not None
-    output_size = config.output_width, config.output_height
+    uninitialized = config.output_width is None or config.output_height is None
+    unmux_packets = []
 
     if not config.container_format:
         config.container_format = path.splitext(output_path)[-1].lower()[1:]
@@ -455,8 +455,9 @@ def generate_video(
 
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
-    video_output_stream.width = output_size[0]
-    video_output_stream.height = output_size[1]
+    if not uninitialized:
+        video_output_stream.width = config.output_width
+        video_output_stream.height = config.output_height
 
     video_output_stream.options = config.options
 
@@ -493,13 +494,19 @@ def generate_video(
                 if packet.dts is not None:
                     if audio_copy:
                         packet.stream = audio_output_stream
-                        output_container.mux(packet)
+                        if uninitialized:
+                            unmux_packets.append(packet)
+                        else:
+                            output_container.mux(packet)
                     else:
                         for frame in safe_decode(packet):
                             frame.pts = None
                             enc_packet = audio_output_stream.encode(frame)
                             if enc_packet:
-                                output_container.mux(enc_packet)
+                                if uninitialized:
+                                    unmux_packets.append(enc_packet)
+                                else:
+                                    output_container.mux(enc_packet)
                 if suspend_event is not None:
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
@@ -507,7 +514,10 @@ def generate_video(
             pbar.close()
             try:
                 for packet in audio_output_stream.encode(None):
-                    output_container.mux(packet)
+                    if uninitialized:
+                        unmux_packets.append(packet)
+                    else:
+                        output_container.mux(packet)
             except ValueError:
                 pass
             input_container.close()
@@ -525,6 +535,9 @@ def generate_video(
             break
         for new_frame in get_new_frames(frame):
             new_frame = output_reformatter(new_frame)
+            if uninitialized:
+                set_output_size_and_flash(output_container, video_output_stream, new_frame, unmux_packets)
+                uninitialized = False
             enc_packet = video_output_stream.encode(new_frame)
             if enc_packet:
                 output_container.mux(enc_packet)
@@ -534,9 +547,10 @@ def generate_video(
         if stop_event is not None and stop_event.is_set():
             break
 
-    packet = video_output_stream.encode(None)
-    if packet:
-        output_container.mux(packet)
+    if not uninitialized:
+        packet = video_output_stream.encode(None)
+        if packet:
+            output_container.mux(packet)
 
     output_reformatter.synchronize()
     pbar.close()
