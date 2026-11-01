@@ -25,6 +25,7 @@ from .processor import (
     sample_frames,
 )
 from .utils import (
+    ALPHA_PIX_FORMATS,
     LIBH264,
     RGB_8BIT,
     RGB_16BIT,
@@ -34,6 +35,7 @@ from .utils import (
     has_qsv,
     has_vp9,
     list_videos,
+    pix_fmt_has_alpha,
     pix_fmt_requires_16bit,
 )
 
@@ -59,6 +61,7 @@ __all__ = [
     "process_video",
     "sample_frames",
     "VideoDecoder",
+    "ALPHA_PIX_FORMATS",
     "LIBH264",
     "RGB_8BIT",
     "RGB_16BIT",
@@ -68,6 +71,7 @@ __all__ = [
     "has_qsv",
     "has_vp9",
     "list_videos",
+    "pix_fmt_has_alpha",
     "pix_fmt_requires_16bit",
 ]
 

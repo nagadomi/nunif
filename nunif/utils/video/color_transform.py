@@ -14,7 +14,13 @@ from .metadata import (
     VideoMetadata,
     get_rgb_pix_fmt,
 )
-from .utils import av_rational_to_fraction, is_discrete_device, is_nvidia_gpu
+from .utils import (
+    av_rational_to_fraction,
+    is_discrete_device,
+    is_nvidia_gpu,
+    pix_fmt_has_alpha,
+    pix_fmt_requires_16bit,
+)
 
 
 class ColorTransform:
@@ -498,23 +504,6 @@ class TensorFrame:
             return self.planes.squeeze(0)
 
 
-def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
-    return pix_fmt in {
-        "yuv420p10le",
-        "p010le",
-        "yuv422p10le",
-        "yuv444p10le",
-        "yuv420p12le",
-        "yuv422p12le",
-        "yuv444p12le",
-        "yuv444p16le",
-        "gbrp16le",
-        "gbrp12le",
-        "gbrp10le",
-        "rgb48le",
-    }
-
-
 class InputTransform:
     # Convert av.VideoFrame to RGB Full Range tensor/ndarray
     # For src_*, use VideoMetadata class
@@ -584,11 +573,7 @@ class InputTransform:
         )
 
     def to_tensor_av(self, frame: av.VideoFrame) -> TensorFrame:
-        has_alpha = (
-            getattr(frame.format, "has_alpha", False)
-            or "a" in frame.format.name.lower()
-            or len(frame.format.components) == 4
-        )
+        has_alpha = pix_fmt_has_alpha(frame.format)
         target_format = self.rgb_format
         if has_alpha:
             target_format = (
@@ -847,7 +832,7 @@ def to_ndarray(frame: av.VideoFrame) -> np.ndarray:
     from .utils import RGB_8BIT, RGB_16BIT
 
     use_16bit = frame.format.components[0].bits > 8
-    has_alpha = getattr(frame.format, "has_alpha", False) or "a" in frame.format.name.lower()
+    has_alpha = pix_fmt_has_alpha(frame.format)
 
     if has_alpha:
         format = "rgba64le" if use_16bit else "rgba"

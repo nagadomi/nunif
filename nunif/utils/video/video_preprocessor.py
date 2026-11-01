@@ -9,7 +9,7 @@ from ..color_lut import get_hdr2sdr_lut_path
 from .color_transform import InputTransform, TensorFrame
 from .hwaccel import should_use_tensor_frame
 from .metadata import VideoMetadata
-from .utils import is_discrete_device
+from .utils import is_discrete_device, pix_fmt_has_alpha
 from .video_filter.av_filter_graph import AVFilterGraph
 from .video_filter.fps import FPSFilter
 from .video_filter.tensor_filter_graph import TensorFilterGraph
@@ -131,11 +131,7 @@ class VideoPreprocessor:
             def _reformatter(frame: av.VideoFrame) -> av.VideoFrame:
                 # Optimized transfer for software decoders when device is GPU
                 dlpack_pix_fmt = sw_format.guess_sw_dlpack_pix_fmt()
-                has_alpha = (
-                    getattr(frame.format, "has_alpha", False)
-                    or "a" in frame.format.name.lower()
-                    or len(frame.format.components) == 4
-                )
+                has_alpha = pix_fmt_has_alpha(frame.format)
 
                 if dlpack_pix_fmt is not None and is_discrete_device(device) and frame.height >= 320 and not has_alpha:
                     dst_pix_fmt: str = dlpack_pix_fmt

@@ -86,8 +86,47 @@ def get_default_video_codec(container_format: str) -> str:
         raise ValueError(f"Unsupported container format: {container_format}")
 
 
+ALPHA_PIX_FORMATS = {
+    "yuva420p",
+    "yuva422p",
+    "yuva444p",
+    "yuva420p9le",
+    "yuva422p9le",
+    "yuva444p9le",
+    "yuva420p10le",
+    "yuva422p10le",
+    "yuva444p10le",
+    "yuva422p12le",
+    "yuva444p12le",
+    "yuva420p16le",
+    "yuva422p16le",
+    "yuva444p16le",
+    "ayuv",
+    "ayuv64le",
+    "rgba",
+    "bgra",
+    "argb",
+    "abgr",
+    "rgba64le",
+    "bgra64le",
+    "gbrap",
+    "gbrap10le",
+    "gbrap12le",
+    "gbrap14le",
+    "gbrap16le",
+    "ya8",
+    "ya16le",
+}
+
+
+def pix_fmt_has_alpha(pix_fmt: str | av.VideoFormat) -> bool:
+    if isinstance(pix_fmt, av.VideoFormat):
+        return pix_fmt.name.lower() in ALPHA_PIX_FORMATS or any(c.is_alpha for c in pix_fmt.components)
+    return pix_fmt.lower() in ALPHA_PIX_FORMATS
+
+
 def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
-    return pix_fmt in {
+    return pix_fmt.lower() in {
         "yuv420p10le",
         "p010le",
         "yuv422p10le",
@@ -95,11 +134,32 @@ def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
         "yuv420p12le",
         "yuv422p12le",
         "yuv444p12le",
+        "yuv420p16le",
+        "yuv422p16le",
         "yuv444p16le",
         RGB_16BIT,
         "gbrp12le",
         "gbrp10le",
         "rgb48le",
+        "yuva420p9le",
+        "yuva422p9le",
+        "yuva444p9le",
+        "yuva420p10le",
+        "yuva422p10le",
+        "yuva444p10le",
+        "yuva422p12le",
+        "yuva444p12le",
+        "yuva420p16le",
+        "yuva422p16le",
+        "yuva444p16le",
+        "ayuv64le",
+        "rgba64le",
+        "bgra64le",
+        "gbrap10le",
+        "gbrap12le",
+        "gbrap14le",
+        "gbrap16le",
+        "ya16le",
     }
 
 

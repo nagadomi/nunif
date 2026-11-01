@@ -226,7 +226,7 @@ def make_video_codec_option(args, input_path=None):
     else:
         options = {}
 
-    if args.video_codec == "libvpx-vp9" and "a" in args.pix_fmt.lower():
+    if args.video_codec == "libvpx-vp9" and VU.pix_fmt_has_alpha(args.pix_fmt):
         options["auto-alt-ref"] = "0"
         options["alpha_mode"] = "1"
 
@@ -894,7 +894,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                         args,
                         left_alpha=left_alpha,
                         right_alpha=right_alpha,
-                        enable_alpha="a" in args.pix_fmt.lower(),
+                        enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
                     )
                 else:
                     out = [postprocess_image(left, right, args) for left, right in zip(left_eye, right_eye)]
@@ -1050,7 +1050,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                             args,
                             left_alpha=left_alpha,
                             right_alpha=right_alpha,
-                            enable_alpha="a" in args.pix_fmt.lower(),
+                            enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
                         )
 
             if flush and hasattr(side_model, "flush"):
@@ -2034,7 +2034,7 @@ def process_config_video(config, args, side_model):
                     args,
                     left_alpha=left_alpha,
                     right_alpha=right_alpha,
-                    enable_alpha="a" in args.pix_fmt.lower(),
+                    enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
                 )
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
