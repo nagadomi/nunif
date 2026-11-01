@@ -312,7 +312,16 @@ def test_cli_image_rgba(cli_setup: CliSetup) -> None:
         arr = np.array(im)
         zero_alpha = arr[:, :, 3] == 0
         assert zero_alpha.any()
-        assert np.all(arr[zero_alpha, :3] == [0, 255, 0])
+        assert not np.all(arr[zero_alpha, :3] == [0, 255, 0])
+
+    out_jpg = os.path.join(cli_setup.output, "out_rgba.jpg")
+    run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_jpg, "--depth-model", "Any_S"])
+    with Image.open(out_jpg) as im:
+        assert im.mode == "RGB"
+        jpg_arr = np.array(im)
+        assert jpg_arr[zero_alpha, 1].mean() > 200
+        assert jpg_arr[zero_alpha, 0].mean() < 50
+        assert jpg_arr[zero_alpha, 2].mean() < 50
 
 
 def test_cli_image_rgba_rgbd_anaglyph(cli_setup: CliSetup) -> None:
@@ -323,7 +332,7 @@ def test_cli_image_rgba_rgbd_anaglyph(cli_setup: CliSetup) -> None:
         arr = np.array(im)
         zero_alpha = arr[:, :, 3] == 0
         assert zero_alpha.any()
-        assert np.all(arr[zero_alpha, :3] == [0, 255, 0])
+        assert not np.all(arr[zero_alpha, :3] == [0, 255, 0])
 
     out_anaglyph = os.path.join(cli_setup.output, "out_rgba_anaglyph.png")
     run(

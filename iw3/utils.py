@@ -349,7 +349,9 @@ def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=N
         alpha = rgb[3:]
         rgb = rgb[:3]
     if format in {"jpeg", "jpg"}:
-        alpha = None
+        if alpha is not None:
+            rgb = apply_alpha_fill(rgb, alpha, color=GREEN_FILL_COLOR)
+            alpha = None
     im = to_pil_image(rgb, alpha=alpha)
     save_image(im, output_filename, format=format, png_info=png_info)
 
@@ -608,7 +610,7 @@ def apply_stereo(x, depth, alpha, args, side_model, reset_pts=None):
     return left_eye, right_eye, left_alpha, right_alpha
 
 
-def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=None):
+def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=None, enable_alpha=True):
     # CHW
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * max(left_eye.shape[-2:]))
     ipd_pad -= ipd_pad % 2
@@ -686,9 +688,10 @@ def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=No
             left_alpha = left_alpha.mean(dim=0, keepdim=True)
             right_alpha = right_alpha.mean(dim=0, keepdim=True)
         sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
-        sbs_alpha = torch.where(sbs_alpha <= (0.5 / 255.0), torch.zeros_like(sbs_alpha), sbs_alpha)
-        sbs = apply_alpha_fill(sbs, sbs_alpha, color=GREEN_FILL_COLOR)
-        sbs = torch.cat([sbs, sbs_alpha], dim=0)
+        if enable_alpha:
+            sbs = torch.cat([sbs, sbs_alpha], dim=0)
+        else:
+            sbs = apply_alpha_fill(sbs, sbs_alpha, color=GREEN_FILL_COLOR)
 
     return sbs
 
@@ -759,7 +762,14 @@ def process_image(
         if left_alpha is not None:
             left_alpha = autocrop.uncrop(left_alpha)
             right_alpha = autocrop.uncrop(right_alpha)
-        sbs = postprocess_image(left_eye, right_eye, args, left_alpha=left_alpha, right_alpha=right_alpha)
+        sbs = postprocess_image(
+            left_eye,
+            right_eye,
+            args,
+            left_alpha=left_alpha,
+            right_alpha=right_alpha,
+            enable_alpha=args.format not in {"jpeg", "jpg"},
+        )
         return sbs
 
 
@@ -878,7 +888,14 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             )
             if left_eye is not None:
                 if left_eye.ndim == 3:
-                    out = postprocess_image(left_eye, right_eye, args, left_alpha=left_alpha, right_alpha=right_alpha)
+                    out = postprocess_image(
+                        left_eye,
+                        right_eye,
+                        args,
+                        left_alpha=left_alpha,
+                        right_alpha=right_alpha,
+                        enable_alpha="a" in args.pix_fmt.lower(),
+                    )
                 else:
                     out = [postprocess_image(left, right, args) for left, right in zip(left_eye, right_eye)]
             else:
@@ -1028,7 +1045,12 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                             right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
                         )
                         yield postprocess_image(
-                            left_eyes[i], right_eyes[i], args, left_alpha=left_alpha, right_alpha=right_alpha
+                            left_eyes[i],
+                            right_eyes[i],
+                            args,
+                            left_alpha=left_alpha,
+                            right_alpha=right_alpha,
+                            enable_alpha="a" in args.pix_fmt.lower(),
                         )
 
             if flush and hasattr(side_model, "flush"):
@@ -2007,7 +2029,12 @@ def process_config_video(config, args, side_model):
                 left_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
                 right_alpha = right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
                 yield postprocess_image(
-                    left_eyes[i], right_eyes[i], args, left_alpha=left_alpha, right_alpha=right_alpha
+                    left_eyes[i],
+                    right_eyes[i],
+                    args,
+                    left_alpha=left_alpha,
+                    right_alpha=right_alpha,
+                    enable_alpha="a" in args.pix_fmt.lower(),
                 )
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
@@ -2170,7 +2197,14 @@ def process_config_images(config, args, side_model):
                 if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
                     depth = dilate_edge(depth.unsqueeze(0), args.edge_dilation).squeeze(0)
                 left_eye, right_eye, left_alpha, right_alpha = apply_stereo(rgb, depth, alpha, args, side_model)
-                sbs = postprocess_image(left_eye, right_eye, args, left_alpha=left_alpha, right_alpha=right_alpha)
+                sbs = postprocess_image(
+                    left_eye,
+                    right_eye,
+                    args,
+                    left_alpha=left_alpha,
+                    right_alpha=right_alpha,
+                    enable_alpha=args.format not in {"jpeg", "jpg"},
+                )
 
                 output_filename = path.join(output_dir, make_output_filename(rgb_filename, args, video=False))
                 f = pool.submit(save_tensor_image, sbs, output_filename, format=args.format)
