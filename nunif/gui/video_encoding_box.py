@@ -88,7 +88,7 @@ class VideoEncodingBox:
 
         self.lbl_video_format = wx.StaticText(self.grp_video, label=T("Video Format"))
         self.cbo_video_format = wx.ComboBox(
-            self.grp_video, choices=["mp4", "mkv", "avi"], name=f"{prefix}cbo_video_format"
+            self.grp_video, choices=["mp4", "mkv", "webm", "avi"], name=f"{prefix}cbo_video_format"
         )
         self.cbo_video_format.SetEditable(False)
         self.cbo_video_format.SetSelection(0)
@@ -278,6 +278,8 @@ class VideoEncodingBox:
         # codec
         if name == "avi":
             choices = codecs_available(["utvideo"])
+        elif name == "webm":
+            choices = codecs_available(["libvpx-vp9"])
         elif name == "mkv":
             choices = codecs_available(["libx264", "libopenh264", "libx265", "libvpx-vp9"])
             if self.has_nvenc:

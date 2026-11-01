@@ -462,6 +462,54 @@ def test_cli_video_rgba_vp9(cli_setup: CliSetup) -> None:
         assert vs.metadata.get("alpha_mode") == "1"
 
 
+def test_cli_video_webm(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9():
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video.webm")
+    run([*cli_setup.cli, "-i", cli_setup.video, "-o", out_file, "--depth-model", "Any_S"])
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "vp9"
+        assert len(container.streams.audio) > 0
+        audio_stream = container.streams.audio[0]
+        assert audio_stream.codec_context.name in {"opus", "libopus"}
+        assert audio_stream.rate == 48000
+
+
+def test_cli_video_rgba_webm(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9():
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video_rgba.webm")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "vp9"
+        assert vs.metadata.get("alpha_mode") == "1"
+        decoder = VU.VideoDecoder(vs)
+        frames = []
+        for packet in container.demux(vs):
+            for frame in decoder.decode(packet):
+                frames.append(frame)
+                break
+            if frames:
+                break
+        assert len(frames) > 0
+        rgba = frames[0].to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
 def test_cli_video_rgba_input_vp9(cli_setup: CliSetup) -> None:
     if not VU.has_vp9() or cli_setup.video_rgba_vp9 is None:
         pytest.skip("libvpx-vp9 is not supported")

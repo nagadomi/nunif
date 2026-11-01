@@ -2546,7 +2546,12 @@ def create_parser(required_true=True):
         help="max inference worker threads for video processing. 0 is disabled",
     )
     parser.add_argument(
-        "--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"], help="video container format"
+        "--video-format",
+        "-vf",
+        type=str,
+        default="mp4",
+        choices=["mp4", "mkv", "webm", "avi"],
+        help="video container format",
     )
     parser.add_argument(
         "--format", "-f", type=str, default="png", choices=["png", "webp", "jpeg"], help="output image format"
@@ -2638,6 +2643,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None, depth_model=None, suspen
             args.video_format = "mkv"
         elif ext == ".avi":
             args.video_format = "avi"
+        elif ext == ".webm":
+            args.video_format = "webm"
 
     args.video_extension = "." + args.video_format
     if args.video_codec is None:

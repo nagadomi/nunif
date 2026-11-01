@@ -82,6 +82,8 @@ def get_default_video_codec(container_format: str) -> str:
         return LIBH264
     elif container_format == "avi":
         return "utvideo"
+    elif container_format == "webm":
+        return "libvpx-vp9"
     else:
         raise ValueError(f"Unsupported container format: {container_format}")
 

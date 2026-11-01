@@ -83,6 +83,19 @@ def try_replace(output_path_tmp, output_path):
                 raise
 
 
+def get_audio_output_rate(acodec: str, input_rate: int) -> int:
+    if acodec == "opus":
+        if input_rate < 16000:
+            return 16000
+        if input_rate in {16000, 24000, 48000}:
+            return input_rate
+        return 48000
+    else:
+        if input_rate < 16000:
+            return 16000
+        return input_rate
+
+
 def test_audio_copy(input_path, output_path):
     buff = io.BytesIO()
     buff.name = path.basename(output_path)
@@ -279,20 +292,21 @@ def _process_video(
 
     # utvideo + flac crashes on windows media player
     # default_acodec = "flac" if config.container_format == "avi" else "aac"
-    default_acodec = "aac"
+    default_acodec = "opus" if config.container_format == "webm" else "aac"
     if audio_input_stream is not None:
+        audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
         if audio_input_stream.rate < 16000:
-            audio_output_stream = output_container.add_stream(default_acodec, 16000)
+            audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
             audio_copy = False
         elif start_time is not None:
-            audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
+            audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
             audio_copy = False
         else:
             if test_audio_copy(input_path, output_path):
                 audio_output_stream = output_container.add_stream_from_template(template=audio_input_stream)
                 audio_copy = True
             else:
-                audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
+                audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                 audio_copy = False
 
     desc = title if title else input_path
@@ -466,15 +480,17 @@ def generate_video(
         if len(input_container.streams.audio) > 0:
             # has audio stream
             audio_input_stream = input_container.streams.audio[0]
+            default_acodec = "opus" if config.container_format == "webm" else "aac"
+            audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
             if audio_input_stream.rate < 16000:
-                audio_output_stream = output_container.add_stream("aac", 16000)
+                audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                 audio_copy = False
             else:
                 if test_audio_copy(audio_file, output_path):
                     audio_output_stream = output_container.add_stream_from_template(template=audio_input_stream)
                     audio_copy = True
                 else:
-                    audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+                    audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                     audio_copy = False
 
             tqdm_fn = tqdm_fn or tqdm

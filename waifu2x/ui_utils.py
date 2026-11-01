@@ -281,7 +281,12 @@ def create_parser(required_true=True):
     parser.add_argument("--resume", action="store_true", help="skip processing when the output file already exists")
 
     parser.add_argument(
-        "--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"], help="video container format"
+        "--video-format",
+        "-vf",
+        type=str,
+        default="mp4",
+        choices=["mp4", "mkv", "webm", "avi"],
+        help="video container format",
     )
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
     parser.add_argument(
@@ -396,6 +401,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None):
             args.video_format = "mkv"
         elif ext == ".avi":
             args.video_format = "avi"
+        elif ext == ".webm":
+            args.video_format = "webm"
 
     args.video_extension = "." + args.video_format
     if args.video_codec is None:
