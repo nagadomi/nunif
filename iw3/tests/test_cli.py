@@ -309,6 +309,38 @@ def test_cli_image_rgba(cli_setup: CliSetup) -> None:
     run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_file, "--depth-model", "Any_S"])
     with Image.open(out_file) as im:
         assert im.mode == "RGBA"
+        arr = np.array(im)
+        zero_alpha = arr[:, :, 3] == 0
+        assert zero_alpha.any()
+        assert np.all(arr[zero_alpha, :3] == [0, 255, 0])
+
+
+def test_cli_image_rgba_rgbd_anaglyph(cli_setup: CliSetup) -> None:
+    out_rgbd = os.path.join(cli_setup.output, "out_rgba_rgbd.png")
+    run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_rgbd, "--depth-model", "Any_S", "--rgbd"])
+    with Image.open(out_rgbd) as im:
+        assert im.mode == "RGBA"
+        arr = np.array(im)
+        zero_alpha = arr[:, :, 3] == 0
+        assert zero_alpha.any()
+        assert np.all(arr[zero_alpha, :3] == [0, 255, 0])
+
+    out_anaglyph = os.path.join(cli_setup.output, "out_rgba_anaglyph.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_anaglyph,
+            "--depth-model",
+            "Any_S",
+            "--anaglyph",
+            "dubois",
+        ]
+    )
+    with Image.open(out_anaglyph) as im:
+        assert im.mode == "RGB"
 
 
 def test_cli_image_rgba_preprocess(cli_setup: CliSetup) -> None:

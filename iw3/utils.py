@@ -257,11 +257,8 @@ def save_image(im, output_filename, format="png", png_info=None):
             "quality": 95,
             "subsampling": "4:2:0",
         }
-        # Drop alpha channel
         if im.mode == "RGBA":
-            new_im = Image.new("RGB", im.size, (255, 255, 255))
-            new_im.paste(im, mask=im.getchannel("A"))
-            im = new_im
+            im = im.convert("RGB")
     else:
         raise NotImplementedError(format)
 
@@ -280,10 +277,52 @@ def resolve_image_format(output_filename, default_format="png"):
 
 
 DEFAULT_FILL_COLOR = (0.4, 0.5, 0.6)
+GREEN_FILL_COLOR = (0.0, 1.0, 0.0)
 
 
-def make_fill_color(device, color=DEFAULT_FILL_COLOR):
-    return torch.tensor(color, dtype=torch.float32, device=device).view(3, 1, 1)
+def apply_alpha_fill(rgb, alpha, color=DEFAULT_FILL_COLOR):
+    if alpha is None:
+        return rgb
+    if torch.is_tensor(color):
+        fill = color.to(dtype=rgb.dtype, device=rgb.device)
+    elif isinstance(color, (int, float)):
+        fill = torch.tensor(color, dtype=rgb.dtype, device=rgb.device)
+    else:
+        fill = torch.tensor(color, dtype=rgb.dtype, device=rgb.device).view(3, 1, 1)
+
+    if rgb.ndim == 4 and fill.ndim == 3:
+        fill = fill.unsqueeze(0)
+    return torch.where(alpha <= (0.5 / 255.0), fill, rgb)
+
+
+def apply_alpha_depth_mask(depth, alpha):
+    if alpha is None:
+        return depth
+    if depth.ndim == 3:
+        depth_alpha = F.interpolate(
+            alpha.unsqueeze(0),
+            size=depth.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        ).squeeze(0)
+        mask = depth_alpha > 0.0
+        if mask.any():
+            depth[torch.logical_not(mask)] = (depth[mask].min() + depth.min()) * 0.5
+    elif depth.ndim == 4:
+        depth_alpha = F.interpolate(
+            alpha,
+            size=depth.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        )
+        mask = depth_alpha > 0.0
+        for i in range(depth.shape[0]):
+            m = mask[i]
+            if m.any():
+                depth[i][torch.logical_not(m)] = (depth[i][m].min() + depth[i].min()) * 0.5
+    return depth
 
 
 def extract_image_rgb_alpha(im, device):
@@ -309,6 +348,8 @@ def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=N
     if rgb.shape[0] == 4 and alpha is None:
         alpha = rgb[3:]
         rgb = rgb[:3]
+    if format in {"jpeg", "jpg"}:
+        alpha = None
     im = to_pil_image(rgb, alpha=alpha)
     save_image(im, output_filename, format=format, png_info=png_info)
 
@@ -532,7 +573,42 @@ def postprocess_padding(left_eye, right_eye, pad, pad_mode):
     return left_eye, right_eye
 
 
-def postprocess_image(left_eye, right_eye, args):
+def apply_stereo(x, depth, alpha, args, side_model, reset_pts=None):
+    if alpha is not None and args.anaglyph:
+        x = x * alpha + (1.0 - alpha)
+        alpha = None
+
+    if args.rgbd or args.half_rgbd:
+        left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
+        if alpha is not None:
+            left_alpha = alpha
+            right_alpha = torch.ones_like(alpha)
+        else:
+            left_alpha = right_alpha = None
+    else:
+        left_eye, right_eye, convergence = apply_divergence(
+            depth, x, args, side_model, reset_pts=reset_pts, return_convergence=True
+        )
+        if alpha is not None and left_eye is not None:
+            alpha_3ch = alpha.repeat(3, 1, 1) if alpha.ndim == 3 else alpha.repeat(1, 3, 1, 1)
+            left_alpha, right_alpha = apply_divergence(
+                depth,
+                alpha_3ch,
+                args,
+                side_model,
+                reset_pts=reset_pts,
+                convergence=convergence,
+            )
+            if left_alpha is not None:
+                left_alpha = left_alpha.mean(dim=-3, keepdim=True)
+                right_alpha = right_alpha.mean(dim=-3, keepdim=True)
+        else:
+            left_alpha = right_alpha = None
+
+    return left_eye, right_eye, left_alpha, right_alpha
+
+
+def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=None):
     # CHW
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * max(left_eye.shape[-2:]))
     ipd_pad -= ipd_pad % 2
@@ -604,48 +680,61 @@ def postprocess_image(left_eye, right_eye, args):
         new_w -= new_w % 2
         sbs = TF.resize(sbs, (new_h, new_w), interpolation=InterpolationMode.BICUBIC, antialias=True)
         sbs = torch.clamp(sbs, 0, 1)
+
+    if left_alpha is not None and right_alpha is not None and not args.anaglyph:
+        if left_alpha.shape[0] > 1:
+            left_alpha = left_alpha.mean(dim=0, keepdim=True)
+            right_alpha = right_alpha.mean(dim=0, keepdim=True)
+        sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
+        sbs_alpha = torch.where(sbs_alpha <= (0.5 / 255.0), torch.zeros_like(sbs_alpha), sbs_alpha)
+        sbs = apply_alpha_fill(sbs, sbs_alpha, color=GREEN_FILL_COLOR)
+        sbs = torch.cat([sbs, sbs_alpha], dim=0)
+
     return sbs
 
 
 def process_image(
-    x, args, depth_model, side_model, skip_autocrop=None, autocrop_uncrop=False, alpha=None, fill_color=0.0
+    x,
+    args,
+    depth_model,
+    side_model,
+    skip_autocrop=None,
+    autocrop_uncrop=False,
+    alpha=None,
+    fill_color=DEFAULT_FILL_COLOR,
 ):
     assert depth_model.get_ema_buffer_size() == 1
 
     with torch.inference_mode():
-        if alpha is not None:
-            x = x * alpha + fill_color * (1.0 - alpha)
-
         x = preprocess_image(x, args)
         if alpha is not None:
             alpha = preprocess_image(alpha, args)
+            depth_x = apply_alpha_fill(x, alpha, fill_color)
+        else:
+            depth_x = x
 
         if args.autocrop is None or skip_autocrop:
             autocrop = AutoCropDummy()
         else:
-            autocrop = AutoCrop.from_image(x, mode=args.autocrop, uncrop_enabled=autocrop_uncrop)
+            autocrop = AutoCrop.from_image(depth_x, mode=args.autocrop, uncrop_enabled=autocrop_uncrop)
 
         x = autocrop.crop(x)
         if alpha is not None:
             alpha = autocrop.crop(alpha)
+            depth_x = autocrop.crop(depth_x)
+        else:
+            depth_x = x
+
         if alpha is not None:
             depth = depth_model.infer(
-                x,
+                depth_x,
                 tta=args.tta,
                 low_vram=args.low_vram,
                 enable_amp=not args.disable_amp,
                 edge_dilation=0,
                 depth_aa=False,
             )
-            depth_alpha = F.interpolate(
-                alpha.unsqueeze(0),
-                size=depth.shape[-2:],
-                mode="bilinear",
-                align_corners=False,
-                antialias=True,
-            ).squeeze(0)
-            mask = depth_alpha > 0.0
-            depth[torch.logical_not(mask)] = (depth[mask].min() + depth.min()) * 0.5
+            depth = apply_alpha_depth_mask(depth, alpha)
             if args.depth_aa and hasattr(depth_model, "depth_aa") and isinstance(depth_model.depth_aa, torch.nn.Module):
                 with autocast(device=depth.device, enabled=not args.disable_amp):
                     depth = depth_model.depth_aa.infer(depth.unsqueeze(0)).squeeze(0)
@@ -654,7 +743,7 @@ def process_image(
             depth = depth_model.minmax_normalize_chw(depth)
         else:
             depth = depth_model.infer(
-                x,
+                depth_x,
                 tta=args.tta,
                 low_vram=args.low_vram,
                 enable_amp=not args.disable_amp,
@@ -663,45 +752,15 @@ def process_image(
             )
             depth = depth_model.minmax_normalize_chw(depth)
 
-        if alpha is not None and args.anaglyph:
-            x = x * alpha + 1.0 * (1.0 - alpha)
-
-        if args.rgbd or args.half_rgbd:
-            left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
-            left_eye = autocrop.uncrop(left_eye)
-            right_eye = autocrop.uncrop(right_eye)
-            sbs = postprocess_image(left_eye, right_eye, args)
-            if alpha is not None:
-                left_alpha = alpha
-                # TODO: I am not sure whether the depth map should preserve the alpha channel
-                #       or whether the alpha channel should be filled with 1.0 for all pixels.
-                if True:
-                    right_alpha = torch.ones_like(alpha)
-                else:
-                    right_alpha = alpha
-                left_alpha = autocrop.uncrop(left_alpha)
-                right_alpha = autocrop.uncrop(right_alpha)
-                sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
-                sbs = torch.cat([sbs, sbs_alpha], dim=0)
-
-            return sbs
-        else:
-            left_eye, right_eye, convergence = apply_divergence(depth, x, args, side_model, return_convergence=True)
-            assert left_eye is not None
-            left_eye = autocrop.uncrop(left_eye)
-            right_eye = autocrop.uncrop(right_eye)
-            sbs = postprocess_image(left_eye, right_eye, args)
-
-            if alpha is not None and not args.anaglyph:
-                alpha = alpha.repeat(3, 1, 1)
-                left_alpha, right_alpha = apply_divergence(depth, alpha, args, side_model, convergence=convergence)
-                left_alpha = autocrop.uncrop(left_alpha)
-                right_alpha = autocrop.uncrop(right_alpha)
-                sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
-                sbs_alpha = sbs_alpha.mean(dim=0, keepdim=True)
-                sbs = torch.cat([sbs, sbs_alpha], dim=0)
-
-            return sbs
+        left_eye, right_eye, left_alpha, right_alpha = apply_stereo(x, depth, alpha, args, side_model)
+        assert left_eye is not None
+        left_eye = autocrop.uncrop(left_eye)
+        right_eye = autocrop.uncrop(right_eye)
+        if left_alpha is not None:
+            left_alpha = autocrop.uncrop(left_alpha)
+            right_alpha = autocrop.uncrop(right_alpha)
+        sbs = postprocess_image(left_eye, right_eye, args, left_alpha=left_alpha, right_alpha=right_alpha)
+        return sbs
 
 
 def process_images(files, output_dir, args, depth_model, side_model, title=None):
@@ -744,7 +803,6 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool, torch.inference_mode():
-        fill_color = make_fill_color(args.state["device"])
         for im, meta in loader:
             filename = meta["filename"]
             output_filename = path.join(output_dir, make_output_filename(filename, args, video=False))
@@ -753,7 +811,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
                 continue
 
             rgb, alpha = extract_image_rgb_alpha(im, device=args.state["device"])
-            output = process_image(rgb, args, depth_model, side_model, alpha=alpha, fill_color=fill_color)
+            output = process_image(rgb, args, depth_model, side_model, alpha=alpha)
             f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
             # f.result() # for debug
 
@@ -815,36 +873,16 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             else:
                 alpha = None
 
-            if args.rgbd or args.half_rgbd:
-                left_eye, right_eye = apply_rgbd(x, depth, mapper=args.mapper)
-                out = postprocess_image(left_eye, right_eye, args)
-            else:
-                left_eye, right_eye, convergence = apply_divergence(
-                    depth, x, args, side_model, reset_pts=reset_pts, return_convergence=True
-                )
-                if left_eye is not None:
-                    if left_eye.ndim == 3:
-                        sbs_rgb = postprocess_image(left_eye, right_eye, args)
-                        if alpha is not None:
-                            left_alpha, right_alpha = apply_divergence(
-                                depth,
-                                alpha.repeat(3, 1, 1),
-                                args,
-                                side_model,
-                                reset_pts=reset_pts,
-                                convergence=convergence,
-                            )
-                            if left_alpha is not None:
-                                sbs_alpha = postprocess_image(left_alpha, right_alpha, args).mean(dim=0, keepdim=True)
-                                out = torch.cat([sbs_rgb, sbs_alpha], dim=0)
-                            else:
-                                out = sbs_rgb
-                        else:
-                            out = sbs_rgb
-                    else:
-                        out = [postprocess_image(left, right, args) for left, right in zip(left_eye, right_eye)]
+            left_eye, right_eye, left_alpha, right_alpha = apply_stereo(
+                x, depth, alpha, args, side_model, reset_pts=reset_pts
+            )
+            if left_eye is not None:
+                if left_eye.ndim == 3:
+                    out = postprocess_image(left_eye, right_eye, args, left_alpha=left_alpha, right_alpha=right_alpha)
                 else:
-                    out = None
+                    out = [postprocess_image(left, right, args) for left, right in zip(left_eye, right_eye)]
+            else:
+                out = None
 
             if not isinstance(out, list):
                 if out is not None:
@@ -909,8 +947,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             rgb, alpha = x[:3], x[3:4]
             if frame_cpu_offload:
                 alpha = alpha.clone()
-            fill_color = make_fill_color(x.device)
-            x = rgb * alpha + fill_color * (1.0 - alpha)
+            x = apply_alpha_fill(rgb, alpha, DEFAULT_FILL_COLOR)
             del rgb
         else:
             alpha = None
@@ -925,17 +962,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
             streaming=depth_model.is_streaming(),
         )
         if alpha is not None and not depth_model.is_streaming():
-            depth_alpha = F.interpolate(
-                alpha.unsqueeze(0),
-                size=depth.shape[-2:],
-                mode="bilinear",
-                align_corners=False,
-                antialias=True,
-            ).squeeze(0)
-            mask = depth_alpha > 0.0
-            if mask.any():
-                bg_depth = (depth[mask].min() + depth.min()) * 0.5
-                depth[torch.logical_not(mask)] = bg_depth
+            depth = apply_alpha_depth_mask(depth, alpha)
         flush = frame.pts in segment_pts
         depths = depth_model.minmax_normalize(depth)
         if flush:
@@ -991,35 +1018,18 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     alpha_srcs = None
                 reset_pts = [t in segment_pts for t in pts]
 
-                if args.rgbd or args.half_rgbd:
-                    left_eyes, right_eyes = apply_rgbd(x_srcs, depths, mapper=args.mapper)
-                    left_alphas = right_alphas = None
-                else:
-                    left_eyes, right_eyes, convergence = apply_divergence(
-                        depths, x_srcs, args, side_model, reset_pts=reset_pts, return_convergence=True
-                    )
-                    if alpha_srcs is not None:
-                        left_alphas, right_alphas = apply_divergence(
-                            depths,
-                            alpha_srcs.repeat(1, 3, 1, 1),
-                            args,
-                            side_model,
-                            reset_pts=reset_pts,
-                            convergence=convergence,
-                        )
-                    else:
-                        left_alphas = right_alphas = None
-
+                left_eyes, right_eyes, left_alphas, right_alphas = apply_stereo(
+                    x_srcs, depths, alpha_srcs, args, side_model, reset_pts=reset_pts
+                )
                 if left_eyes is not None:
                     for i in range(left_eyes.shape[0]):
-                        sbs = postprocess_image(left_eyes[i], right_eyes[i], args)
-                        if left_alphas is not None and i < left_alphas.shape[0]:
-                            sbs_alpha = postprocess_image(left_alphas[i], right_alphas[i], args).mean(
-                                dim=0, keepdim=True
-                            )
-                            yield torch.cat([sbs, sbs_alpha], dim=0)
-                        else:
-                            yield sbs
+                        left_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
+                        right_alpha = (
+                            right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
+                        )
+                        yield postprocess_image(
+                            left_eyes[i], right_eyes[i], args, left_alpha=left_alpha, right_alpha=right_alpha
+                        )
 
             if flush and hasattr(side_model, "flush"):
                 left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
@@ -1063,8 +1073,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     alpha_batch = x[:, 3:4]
                     if frame_cpu_offload:
                         alpha_batch = alpha_batch.clone()
-                    fill_color = make_fill_color(x.device)
-                    x = x[:, :3] * alpha_batch + fill_color * (1.0 - alpha_batch)
+                    x = apply_alpha_fill(x[:, :3], alpha_batch, DEFAULT_FILL_COLOR)
                 else:
                     alpha_batch = None
 
@@ -1102,19 +1111,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     )
 
                     if alpha_batch is not None:
-                        depth_alpha = F.interpolate(
-                            alpha_batch,
-                            size=depth_batch.shape[-2:],
-                            mode="bilinear",
-                            align_corners=False,
-                            antialias=True,
-                        )
-                        mask = depth_alpha > 0.0
-                        for i in range(depth_batch.shape[0]):
-                            m = mask[i]
-                            if m.any():
-                                bg_depth = (depth_batch[i][m].min() + depth_batch[i].min()) * 0.5
-                                depth_batch[i][torch.logical_not(m)] = bg_depth
+                        depth_batch = apply_alpha_depth_mask(depth_batch, alpha_batch)
 
                     reset_ema = [t in segment_pts for t in pts]
                     depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
@@ -1397,14 +1394,13 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool:
         futures = []
-        fill_color = make_fill_color(args.state["device"])
 
         def frame_callback(frame):
             if frame is None:
                 return
 
             x, alpha = extract_frame_rgb_alpha(frame, args.state["device"])
-            output = process_image(x, args, depth_model, side_model, alpha=alpha, fill_color=fill_color)
+            output = process_image(x, args, depth_model, side_model, alpha=alpha)
             output_filename = path.join(
                 output_dir,
                 path.basename(output_dir)
@@ -1551,7 +1547,6 @@ def export_images(input_path, output_dir, args, title=None):
 
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool, torch.inference_mode():
-        fill_color = make_fill_color(args.state["device"])
         for im, meta in loader:
             basename = path.splitext(path.basename(meta["filename"]))[0] + ".png"
             rgb_file = path.join(rgb_dir, basename)
@@ -1561,28 +1556,21 @@ def export_images(input_path, output_dir, args, title=None):
                 continue
 
             rgb, alpha = extract_image_rgb_alpha(im, device=args.state["device"])
+            rgb = preprocess_image(rgb, args)
 
             if alpha is not None:
+                alpha = preprocess_image(alpha, args)
                 alpha = alpha.clamp(0, 1)
-                rgb = rgb * alpha + fill_color * (1.0 - alpha)
-                rgb = preprocess_image(rgb, args)
+                depth_x = apply_alpha_fill(rgb, alpha, DEFAULT_FILL_COLOR)
                 depth = depth_model.infer(
-                    rgb,
+                    depth_x,
                     tta=args.tta,
                     low_vram=args.low_vram,
                     enable_amp=not args.disable_amp,
                     edge_dilation=0,
                     depth_aa=False,
                 )
-                depth_alpha = F.interpolate(
-                    alpha.unsqueeze(0),
-                    size=depth.shape[-2:],
-                    mode="bilinear",
-                    align_corners=False,
-                    antialias=True,
-                ).squeeze(0)
-                mask = depth_alpha > 0.0
-                depth[torch.logical_not(mask)] = (depth[mask].min() + depth.min()) * 0.5
+                depth = apply_alpha_depth_mask(depth, alpha)
 
                 if (
                     args.depth_aa
@@ -1594,15 +1582,7 @@ def export_images(input_path, output_dir, args, title=None):
                 if edge_dilation_is_enabled(edge_dilation):
                     depth = dilate_edge(depth.unsqueeze(0), edge_dilation).squeeze(0)
                 depth = depth_model.minmax_normalize_chw(depth)
-
-                if args.export_disparity:
-                    depth = get_mapper(args.mapper)(depth)
-                if args.export_depth_fit:
-                    depth = F.interpolate(
-                        depth.unsqueeze(0), size=rgb.shape[-2:], mode="bilinear", antialias=True, align_corners=True
-                    ).squeeze(0)
             else:
-                rgb = preprocess_image(rgb, args)
                 depth = depth_model.infer(
                     rgb,
                     tta=args.tta,
@@ -1611,14 +1591,14 @@ def export_images(input_path, output_dir, args, title=None):
                     edge_dilation=edge_dilation,
                     depth_aa=args.depth_aa,
                 )
-
                 depth = depth_model.minmax_normalize_chw(depth)
-                if args.export_disparity:
-                    depth = get_mapper(args.mapper)(depth)
-                if args.export_depth_fit:
-                    depth = F.interpolate(
-                        depth.unsqueeze(0), size=rgb.shape[-2:], mode="bilinear", antialias=True, align_corners=True
-                    ).squeeze(0)
+
+            if args.export_disparity:
+                depth = get_mapper(args.mapper)(depth)
+            if args.export_depth_fit:
+                depth = F.interpolate(
+                    depth.unsqueeze(0), size=rgb.shape[-2:], mode="bilinear", antialias=True, align_corners=True
+                ).squeeze(0)
 
             futures.append(pool.submit(depth_model.save_normalized_depth, depth, depth_file))
 
@@ -1702,8 +1682,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
         batch_queue.clear()
         if x.shape[1] == 4:
             alpha_batch = x[:, 3:4].clone()
-            fill_color = make_fill_color(x.device)
-            x = x[:, :3] * alpha_batch + fill_color * (1.0 - alpha_batch)
+            x = apply_alpha_fill(x[:, :3], alpha_batch, DEFAULT_FILL_COLOR)
         else:
             alpha_batch = None
 
@@ -1748,19 +1727,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                 depth_aa=args.depth_aa,
             )
             if alpha_batch is not None:
-                depth_alpha = F.interpolate(
-                    alpha_batch,
-                    size=depth_batch.shape[-2:],
-                    mode="bilinear",
-                    align_corners=False,
-                    antialias=True,
-                )
-                mask = depth_alpha > 0.0
-                for i in range(depth_batch.shape[0]):
-                    m = mask[i]
-                    if m.any():
-                        bg_depth = (depth_batch[i][m].min() + depth_batch[i].min()) * 0.5
-                        depth_batch[i][torch.logical_not(m)] = bg_depth
+                depth_batch = apply_alpha_depth_mask(depth_batch, alpha_batch)
             depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
 
         pts_queue.clear()
@@ -2031,30 +1998,17 @@ def process_config_video(config, args, side_model):
         else:
             alpha_batch = None
 
-        left_eyes, right_eyes, convergence = apply_divergence(
-            depths, x, args, side_model, reset_pts=reset_pts, return_convergence=True
+        left_eyes, right_eyes, left_alphas, right_alphas = apply_stereo(
+            x, depths, alpha_batch, args, side_model, reset_pts=reset_pts
         )
-
-        if alpha_batch is not None and left_eyes is not None:
-            left_alphas, right_alphas = apply_divergence(
-                depths,
-                alpha_batch.repeat(1, 3, 1, 1),
-                args,
-                side_model,
-                reset_pts=reset_pts,
-                convergence=convergence,
-            )
-        else:
-            left_alphas = right_alphas = None
 
         if left_eyes is not None:
             for i in range(left_eyes.shape[0]):
-                sbs = postprocess_image(left_eyes[i], right_eyes[i], args)
-                if left_alphas is not None and i < left_alphas.shape[0]:
-                    sbs_alpha = postprocess_image(left_alphas[i], right_alphas[i], args).mean(dim=0, keepdim=True)
-                    yield torch.cat([sbs, sbs_alpha], dim=0)
-                else:
-                    yield sbs
+                left_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
+                right_alpha = right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
+                yield postprocess_image(
+                    left_eyes[i], right_eyes[i], args, left_alpha=left_alpha, right_alpha=right_alpha
+                )
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
 
@@ -2210,31 +2164,16 @@ def process_config_images(config, args, side_model):
                 if rgb_filename != depth_filename:
                     raise ValueError(f"No match {rgb_filename} and {depth_filename}")
 
-                rgb, alpha = IL.to_tensor(rgb, return_alpha=True)
-                rgb = rgb.to(args.state["device"])
-                if alpha is not None and torch.all(alpha == 1.0):
-                    alpha = None
-                if rgb.shape[0] == 1:
-                    rgb = rgb.repeat(3, 1, 1)
+                rgb, alpha = extract_image_rgb_alpha(rgb, device=args.state["device"])
 
                 depth = depth.to(args.state["device"])
                 if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
                     depth = dilate_edge(depth.unsqueeze(0), args.edge_dilation).squeeze(0)
-                left_eye, right_eye, convergence = apply_divergence(
-                    depth, rgb, args, side_model, return_convergence=True
-                )
-                sbs = postprocess_image(left_eye, right_eye, args)
-                sbs = to_pil_image(sbs)
-                if alpha is not None:
-                    alpha = alpha.to(args.state["device"]).repeat(3, 1, 1)
-                    left_alpha, right_alpha = apply_divergence(depth, alpha, args, side_model, convergence=convergence)
-                    sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
-                    sbs_alpha = sbs_alpha.mean(dim=0, keepdim=True)
-                    sbs_alpha = to_pil_image(sbs_alpha)
-                    sbs.putalpha(sbs_alpha)
+                left_eye, right_eye, left_alpha, right_alpha = apply_stereo(rgb, depth, alpha, args, side_model)
+                sbs = postprocess_image(left_eye, right_eye, args, left_alpha=left_alpha, right_alpha=right_alpha)
 
                 output_filename = path.join(output_dir, make_output_filename(rgb_filename, args, video=False))
-                f = pool.submit(save_image, sbs, output_filename, format=args.format)
+                f = pool.submit(save_tensor_image, sbs, output_filename, format=args.format)
                 futures.append(f)
                 pbar.update(1)
                 if suspend_event is not None:
@@ -2950,11 +2889,10 @@ def iw3_main(args):
             output_filename = args.output
             output_format = resolve_image_format(output_filename, default_format=args.format)
 
-        fill_color = make_fill_color(args.state["device"])
         rgb, alpha = load_image_rgb_alpha(
             args.input, device=args.state["device"], exif_transpose=not args.disable_exif_transpose
         )
-        output = process_image(rgb, args, depth_model, side_model, alpha=alpha, fill_color=fill_color)
+        output = process_image(rgb, args, depth_model, side_model, alpha=alpha)
         make_parent_dir(output_filename)
         save_tensor_image(output, output_filename, format=output_format)
     else:
