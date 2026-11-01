@@ -306,8 +306,8 @@ class VideoEncodingBox:
         container_format = self.cbo_video_format.GetValue()
         codec = self.cbo_video_codec.GetValue()
 
-        # enabel/disable options
-        if container_format == "avi" or codec == "libopenh264":
+        # enable/disable options
+        if container_format == "avi" or codec in {"libopenh264", "ffv1", "utvideo"}:
             self.cbo_profile_level.Disable()
             self.cbo_crf.Disable()
             self.cbo_preset.Disable()
@@ -356,7 +356,7 @@ class VideoEncodingBox:
             choices = ["auto"] + LEVEL_LIBX264
         elif codec in {"libx265", "hevc_nvenc"}:
             choices = ["auto"] + LEVEL_LIBX265
-        elif codec in {"h264_qsv", "hevc_qsv", "libvpx-vp9"}:
+        elif codec in {"h264_qsv", "hevc_qsv", "libvpx-vp9", "ffv1", "utvideo"}:
             choices = ["auto"]
         else:
             choices = LEVEL_ALL
@@ -369,7 +369,7 @@ class VideoEncodingBox:
 
         # preset
         if container_format in {"mp4", "mkv"}:
-            if codec == "libvpx-vp9":
+            if codec in {"libvpx-vp9", "ffv1", "utvideo"}:
                 self.cbo_preset.SetItems([""])
                 self.cbo_preset.SetSelection(0)
                 self.cbo_preset.Disable()
@@ -390,6 +390,11 @@ class VideoEncodingBox:
                     self.cbo_preset.SetSelection(choices.index(preset))
                 else:
                     self.cbo_preset.SetSelection(choices.index(default_preset))
+        else:
+            self.cbo_preset.SetItems([""])
+            self.cbo_preset.SetSelection(0)
+            self.cbo_preset.Disable()
+
         # tune
         if container_format in {"mp4", "mkv"}:
             if codec == "libx265":
@@ -444,7 +449,7 @@ class VideoEncodingBox:
                 self.chk_tune_fastdecode.Disable()
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
-            elif codec in {"h264_qsv", "hevc_qsv", "libvpx-vp9"}:
+            elif codec in {"h264_qsv", "hevc_qsv", "libvpx-vp9", "ffv1", "utvideo"}:
                 self.cbo_tune.SetItems([""])
                 self.cbo_tune.SetSelection(0)
                 self.cbo_tune.Disable()
@@ -453,6 +458,15 @@ class VideoEncodingBox:
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
                 self.cbo_profile_level.Disable()
+        else:
+            self.cbo_tune.SetItems([""])
+            self.cbo_tune.SetSelection(0)
+            self.cbo_tune.Disable()
+            self.chk_tune_fastdecode.SetValue(False)
+            self.chk_tune_fastdecode.Disable()
+            self.chk_tune_zerolatency.SetValue(False)
+            self.chk_tune_zerolatency.Disable()
+            self.cbo_profile_level.Disable()
 
         # update Layout
         self.sizer.Layout()
