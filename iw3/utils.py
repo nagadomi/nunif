@@ -1686,10 +1686,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
             futures.append(pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png")))
             if not args.export_depth_only:
                 assert x is not None
-                if isinstance(x, VU.OffloadedFrame):
-                    im_numpy = x.cpu_buffer().permute(1, 2, 0).numpy()
-                elif isinstance(x, av.VideoFrame):
-                    im_numpy = x.reformat(format=VU.RGB_8BIT).to_ndarray(VU.RGB_8BIT)
+                im_numpy = x.cpu_buffer().permute(1, 2, 0).numpy()
                 im = Image.fromarray(im_numpy)
                 futures.append(pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png")))
 
@@ -1702,6 +1699,14 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
 
     def _batch_infer():
         x = torch.stack(batch_queue)
+        batch_queue.clear()
+        if x.shape[1] == 4:
+            alpha_batch = x[:, 3:4].clone()
+            fill_color = make_fill_color(x.device)
+            x = x[:, :3] * alpha_batch + fill_color * (1.0 - alpha_batch)
+        else:
+            alpha_batch = None
+
         if depth_model.is_streaming():
             depth_list = []
             for i in range(x.shape[0]):
@@ -1742,10 +1747,23 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                 edge_dilation=edge_dilation,
                 depth_aa=args.depth_aa,
             )
+            if alpha_batch is not None:
+                depth_alpha = F.interpolate(
+                    alpha_batch,
+                    size=depth_batch.shape[-2:],
+                    mode="bilinear",
+                    align_corners=False,
+                    antialias=True,
+                )
+                mask = depth_alpha > 0.0
+                for i in range(depth_batch.shape[0]):
+                    m = mask[i]
+                    if m.any():
+                        bg_depth = (depth_batch[i][m].min() + depth_batch[i].min()) * 0.5
+                        depth_batch[i][torch.logical_not(m)] = bg_depth
             depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
 
         pts_queue.clear()
-        batch_queue.clear()
 
         return _postprocess(depth_list)
 
@@ -1778,19 +1796,14 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
         if args.export_depth_only:
             src_queue.append((None, x.shape, frame.pts))
         else:
-            if isinstance(frame, av.VideoFrame):
-                src_queue.append((frame, x.shape, frame.pts))
-            else:
-                if offload_resource_manager is None:
-                    offload_resource_manager = VU.OffloadResourceManager(
-                        size=x.shape, dtype=torch.uint8, device=x.device
-                    )
-                offloaded_frame = VU.OffloadedFrame(
-                    x,
-                    dtype=torch.uint8,
-                    manager=offload_resource_manager,
-                )
-                src_queue.append((offloaded_frame, x.shape, frame.pts))
+            if offload_resource_manager is None:
+                offload_resource_manager = VU.OffloadResourceManager(size=x.shape, dtype=torch.uint8, device=x.device)
+            offloaded_frame = VU.OffloadedFrame(
+                x,
+                dtype=torch.uint8,
+                manager=offload_resource_manager,
+            )
+            src_queue.append((offloaded_frame, x.shape, frame.pts))
 
         if len(batch_queue) == batch_size:
             _batch_infer()
@@ -2001,42 +2014,47 @@ def process_config_video(config, args, side_model):
     else:
         segment_pts = set()
 
-    rgb_loader = ImageLoader(files=rgb_files, load_func=load_image_simple, load_func_kwargs={"color": "rgb"})
+    rgb_loader = ImageLoader(
+        files=rgb_files,
+        load_func=IL.load_image,
+        load_func_kwargs=dict(color="rgb", keep_alpha=True),
+    )
     depth_loader = ImageLoader(files=depth_files, load_func=BaseDepthModel.load_depth)
-    sbs_lock = threading.Lock()
 
     @torch.inference_mode()
-    def batch_callback(x, depths, reset_pts, test=False):
+    def batch_callback(x, depths, reset_pts):
         if not config.skip_edge_dilation and edge_dilation_is_enabled(args.edge_dilation):
             # apply --edge-dilation
             depths = dilate_edge(depths, args.edge_dilation)
-        with sbs_lock:
-            if test:
-                assert x.shape[0] == 1
-                while True:
-                    left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
-                    if left_eyes is not None:
-                        break
-                left_eyes = left_eyes[0:1]
-                right_eyes = right_eyes[0:1]
-            else:
-                left_eyes, right_eyes = apply_divergence(depths, x, args, side_model, reset_pts=reset_pts)
+        if x.shape[1] == 4:
+            x, alpha_batch = x[:, :3], x[:, 3:4]
+        else:
+            alpha_batch = None
+
+        left_eyes, right_eyes, convergence = apply_divergence(
+            depths, x, args, side_model, reset_pts=reset_pts, return_convergence=True
+        )
+
+        if alpha_batch is not None and left_eyes is not None:
+            left_alphas, right_alphas = apply_divergence(
+                depths,
+                alpha_batch.repeat(1, 3, 1, 1),
+                args,
+                side_model,
+                reset_pts=reset_pts,
+                convergence=convergence,
+            )
+        else:
+            left_alphas = right_alphas = None
 
         if left_eyes is not None:
             for i in range(left_eyes.shape[0]):
-                yield postprocess_image(left_eyes[i], right_eyes[i], args)
-
-    def test_output_size(rgb_file, depth_file):
-        rgb = load_image_simple(rgb_file, color="rgb")[0]
-        depth = BaseDepthModel.load_depth(depth_file)[0].to(args.state["device"])
-        rgb = TF.to_tensor(rgb).to(args.state["device"])
-        frame = next(batch_callback(rgb.unsqueeze(0), depth.unsqueeze(0), [False], test=True))
-        if side_model is not None and hasattr(side_model, "reset"):
-            side_model.reset()
-        if args.state["convergence_model"] is not None:
-            args.state["convergence_model"].reset()
-
-        return frame.shape[-2:]
+                sbs = postprocess_image(left_eyes[i], right_eyes[i], args)
+                if left_alphas is not None and i < left_alphas.shape[0]:
+                    sbs_alpha = postprocess_image(left_alphas[i], right_alphas[i], args).mean(dim=0, keepdim=True)
+                    yield torch.cat([sbs, sbs_alpha], dim=0)
+                else:
+                    yield sbs
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
 
@@ -2070,9 +2088,11 @@ def process_config_video(config, args, side_model):
             depth_batch.clear()
             reset_pts_batch.clear()
 
-    output_height, output_width = test_output_size(rgb_files[0], depth_files[0])
-    if side_model is not None and hasattr(side_model, "reset"):
-        side_model.reset()
+        if hasattr(side_model, "flush"):
+            left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
+            if left_eyes is not None:
+                for i in range(left_eyes.shape[0]):
+                    yield postprocess_image(left_eyes[i], right_eyes[i], args)
 
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
@@ -2082,8 +2102,6 @@ def process_config_video(config, args, side_model):
         colorspace=args.colorspace,
         options=make_video_codec_option(args),
         container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
-        output_width=output_width,
-        output_height=output_height,
     )
     video_config.output_colorspace = config.output_colorspace
     video_config.output_color_trc = config.output_color_trc
