@@ -13,6 +13,7 @@ tmp
 *.tar.gz
 *.tar
 *.zip
+*.ttf
 *.xcf
 /reports
 /data
@@ -54,7 +55,7 @@ tmp
 /iw3/player/package-lock.json
 /iw3/player/node_modules
 /iw3/player/version
-/iw3/player/sync_dev_repo.sh
+/iw3/player/release
 
 /stlizer/pretrained_models/hub
 /cliqa/pretrained_models
