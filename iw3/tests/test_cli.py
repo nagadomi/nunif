@@ -676,3 +676,112 @@ def test_cli_video_rgba_vp9_export_import(cli_setup: CliSetup) -> None:
         assert len(frames) > 0
         rgba = frames[0].to_ndarray(format="rgba")
         assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_image_rgba_inpaint(cli_setup: CliSetup) -> None:
+    for method in ("forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"):
+        out_file = os.path.join(cli_setup.output, f"out_rgba_{method}.png")
+        run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_file, "--depth-model", "Any_S", "--method", method])
+        with Image.open(out_file) as im:
+            assert im.mode == "RGBA"
+            arr = np.array(im)
+            assert (arr[:, :, 3] == 0).any()
+
+
+def test_cli_video_rgba_inpaint(cli_setup: CliSetup) -> None:
+    for method in ("forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"):
+        out_file = os.path.join(cli_setup.output, f"out_video_rgba_{method}.mkv")
+        run(
+            [
+                *cli_setup.cli,
+                "-i",
+                cli_setup.video_rgba,
+                "-o",
+                out_file,
+                "--depth-model",
+                "Any_S",
+                "--method",
+                method,
+                "--video-codec",
+                "ffv1",
+                "--pix-fmt",
+                "yuva420p",
+            ]
+        )
+        with av.open(out_file) as container:
+            vs = container.streams.video[0]
+            assert vs.pix_fmt == "yuva420p"
+            frames = list(container.decode(vs))
+            assert len(frames) > 0
+            for frame in frames:
+                rgba = frame.to_ndarray(format="rgba")
+                assert (rgba[:, :, 3] == 0).any()
+
+
+def test_cli_video_rgba_export_import_inpaint(cli_setup: CliSetup) -> None:
+    export_dir = os.path.join(cli_setup.output, "rgba")
+    yaml_file = os.path.join(export_dir, "iw3_export.yml")
+    if not os.path.exists(yaml_file):
+        test_cli_video_rgba_export_import(cli_setup)
+
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_imported_inpaint.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            yaml_file,
+            "-o",
+            out_file,
+            "--method",
+            "forward_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.pix_fmt == "yuva420p"
+        frames = list(container.decode(vs))
+        assert len(frames) > 0
+        for f in frames:
+            rgba = f.to_ndarray(format="rgba")
+            assert (rgba[:, :, 3] == 0).any()
+
+
+def test_video_inpaint_alpha_memory_corruption() -> None:
+    import torch
+
+    from iw3.forward_inpaint import ForwardInpaintVideo
+
+    vid_model = ForwardInpaintVideo(device_id=-1, pre_padding=1, post_padding=1)
+    vid_model.model_seq = 4
+
+    outputs = []
+    for i in range(5):
+        x = torch.full((1, 3, 16, 16), float(i))
+        depth = torch.ones((1, 1, 16, 16)) * 0.5
+        alpha = torch.full((1, 1, 16, 16), float(i + 1) / 10.0)
+        ret = vid_model.infer(x, depth, divergence=0.0, convergence=0.5, synthetic_view="both", alpha=alpha)
+        if ret[0] is not None:
+            assert len(ret) == 4
+            assert ret[0] is not None and ret[2] is not None
+            outputs.append((ret[0], ret[2]))  # left_eye, left_alpha
+
+    ret = vid_model.flush()
+    if ret[0] is not None:
+        assert len(ret) == 4
+        assert ret[0] is not None and ret[2] is not None
+        outputs.append((ret[0], ret[2]))
+
+    # Flatten all emitted frames
+    all_left_eye = torch.cat([o[0] for o in outputs], dim=0)
+    all_left_alpha = torch.cat([o[1] for o in outputs], dim=0)
+    assert all_left_eye.shape[0] == 5
+    assert all_left_alpha.shape[0] == 5
+
+    # Check each frame's alpha value is not corrupted by subsequent frame additions
+    for i in range(5):
+        expected_alpha = float(i + 1) / 10.0
+        assert torch.allclose(all_left_alpha[i], torch.tensor(expected_alpha), atol=1e-4)

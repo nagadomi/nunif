@@ -43,6 +43,29 @@ class MonoBWInpaintImage(BaseImageInpaint):
         left_eye, right_eye, left_mask, right_mask = results
         return left_eye, right_eye, left_mask, right_mask
 
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str,
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        results = apply_divergence_monobw(
+            self.monobw,
+            alpha,
+            depth,
+            divergence=divergence,
+            convergence=convergence,
+            synthetic_view=synthetic_view,
+            preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=0,
+            return_mask=False,
+        )
+        return results[0], results[1]
+
     def preprocess_mask(
         self,
         mask: torch.Tensor,
@@ -89,7 +112,7 @@ class MonoBWInpaintVideo(BaseVideoInpaint):
             self.monobw = self._monobw_backup
         self._monobw_backup = None
 
-    def create_frame_queue(self, x, depth, synthetic_view) -> FrameQueue:
+    def create_frame_queue(self, x, depth, synthetic_view, has_alpha: bool = False) -> FrameQueue:
         return FrameQueue(
             synthetic_view=synthetic_view,
             seq=self.model_seq,
@@ -97,6 +120,7 @@ class MonoBWInpaintVideo(BaseVideoInpaint):
             width=x.shape[-1],
             dtype=x.dtype,
             device=x.device,
+            has_alpha=has_alpha,
         )
 
     def apply_warp(
@@ -123,6 +147,29 @@ class MonoBWInpaintVideo(BaseVideoInpaint):
         assert len(results) == 4
         left_eye, right_eye, left_mask, right_mask = results
         return left_eye, right_eye, left_mask, right_mask
+
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str,
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        results = apply_divergence_monobw(
+            self.monobw,
+            alpha,
+            depth,
+            divergence=divergence,
+            convergence=convergence,
+            synthetic_view=synthetic_view,
+            preserve_screen_border=preserve_screen_border,
+            fix_screen_border_mask=0,
+            return_mask=False,
+        )
+        return results[0], results[1]
 
     def preprocess_mask(
         self,

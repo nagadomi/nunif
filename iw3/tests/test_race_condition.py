@@ -191,3 +191,60 @@ def test_vda_s_rgba_ffv1(race_condition_setup: RaceConditionSetup) -> None:
         race_condition_setup.rgba,
         ["--depth-model", "VDA_S", "--video-codec", "ffv1", "--pix-fmt", "yuva420p"],
     )
+
+
+@pytest.mark.slow
+def test_any_s_rgba_inpaint_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_rgba_inpaint_ffv1",
+        race_condition_setup.rgba,
+        [
+            "--depth-model",
+            "Any_S",
+            "--method",
+            "forward_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ],
+    )
+
+
+@pytest.mark.slow
+def test_vda_s_rgba_inpaint_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_rgba_inpaint_ffv1",
+        race_condition_setup.rgba,
+        [
+            "--depth-model",
+            "VDA_S",
+            "--method",
+            "mlbw_l2_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_rgba_monobw_inpaint_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_rgba_monobw_inpaint_ffv1",
+        race_condition_setup.rgba,
+        [
+            "--depth-model",
+            "Any_S",
+            "--method",
+            "monobw_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ],
+    )

@@ -408,12 +408,23 @@ def add_preprocess_vf(vf_org, args) -> str:
         return vf_org
 
 
-def apply_divergence(depth, im, args, side_model, reset_pts=None, convergence=None, return_convergence=False):
+def apply_divergence(
+    depth,
+    im,
+    args,
+    side_model,
+    reset_pts=None,
+    convergence=None,
+    return_convergence=False,
+    alpha=None,
+):
     batch = True
     if depth.ndim != 4:
         # CHW
         depth = depth.unsqueeze(0)
         im = im.unsqueeze(0)
+        if alpha is not None:
+            alpha = alpha.unsqueeze(0)
         batch = False
     else:
         # BCHW
@@ -430,6 +441,7 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None, convergence=No
         convergence = args.convergence
         depth = get_mapper(args.mapper)(depth)
 
+    left_alpha = right_alpha = None
     if args.method == "NULL":
         left_eye, right_eye = im.clone(), im.clone()
         if not batch:
@@ -462,10 +474,13 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None, convergence=No
     elif args.method in {"forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"}:
         left_eyes = []
         right_eyes = []
+        left_alphas = []
+        right_alphas = []
         reset_pts = reset_pts if reset_pts is not None else [False] * depth.shape[0]
         for i in range(depth.shape[0]):
             conv_i = convergence[i : i + 1] if torch.is_tensor(convergence) else convergence
-            left_eye, right_eye = side_model.infer(
+            alpha_i = alpha[i : i + 1] if alpha is not None else None
+            ret = side_model.infer(
                 im[i : i + 1],
                 depth[i : i + 1],
                 divergence=args.divergence,
@@ -476,15 +491,33 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None, convergence=No
                 outer_dilation=args.mask_outer_dilation,
                 max_width=args.inpaint_max_width,
                 enable_amp=not args.disable_amp,
+                alpha=alpha_i,
             )
+            if len(ret) == 4:
+                left_eye, right_eye, l_alpha, r_alpha = ret
+            else:
+                left_eye, right_eye = ret
+                l_alpha = r_alpha = None
+
             if left_eye is not None:
                 left_eyes.append(left_eye)
                 right_eyes.append(right_eye)
+                if l_alpha is not None and r_alpha is not None:
+                    left_alphas.append(l_alpha)
+                    right_alphas.append(r_alpha)
             if reset_pts[i]:
-                left_eye, right_eye = side_model.flush(enable_amp=not args.disable_amp)
+                ret = side_model.flush(enable_amp=not args.disable_amp)
+                if len(ret) == 4:
+                    left_eye, right_eye, l_alpha, r_alpha = ret
+                else:
+                    left_eye, right_eye = ret
+                    l_alpha = r_alpha = None
                 if left_eye is not None:
                     left_eyes.append(left_eye)
                     right_eyes.append(right_eye)
+                    if l_alpha is not None and r_alpha is not None:
+                        left_alphas.append(l_alpha)
+                        right_alphas.append(r_alpha)
 
         if left_eyes:
             if len(left_eyes) == 1:
@@ -493,6 +526,13 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None, convergence=No
             else:
                 left_eye = torch.cat(left_eyes, dim=0)
                 right_eye = torch.cat(right_eyes, dim=0)
+            if left_alphas:
+                if len(left_alphas) == 1:
+                    left_alpha = left_alphas[0]
+                    right_alpha = right_alphas[0]
+                else:
+                    left_alpha = torch.cat(left_alphas, dim=0)
+                    right_alpha = torch.cat(right_alphas, dim=0)
         else:
             left_eye = right_eye = None
     else:
@@ -523,11 +563,21 @@ def apply_divergence(depth, im, args, side_model, reset_pts=None, convergence=No
             left_eye = left_eye.squeeze(0)
         if right_eye is not None:
             right_eye = right_eye.squeeze(0)
+        if left_alpha is not None:
+            left_alpha = left_alpha.squeeze(0)
+        if right_alpha is not None:
+            right_alpha = right_alpha.squeeze(0)
 
-    if return_convergence:
-        return left_eye, right_eye, convergence
+    if alpha is not None:
+        if return_convergence:
+            return left_eye, right_eye, left_alpha, right_alpha, convergence
+        else:
+            return left_eye, right_eye, left_alpha, right_alpha
     else:
-        return left_eye, right_eye
+        if return_convergence:
+            return left_eye, right_eye, convergence
+        else:
+            return left_eye, right_eye
 
 
 def ratio_pad(target_ratio: float, left_eye, right_eye):
@@ -588,24 +638,35 @@ def apply_stereo(x, depth, alpha, args, side_model, reset_pts=None):
         else:
             left_alpha = right_alpha = None
     else:
-        left_eye, right_eye, convergence = apply_divergence(
-            depth, x, args, side_model, reset_pts=reset_pts, return_convergence=True
-        )
-        if alpha is not None and left_eye is not None:
-            alpha_3ch = alpha.repeat(3, 1, 1) if alpha.ndim == 3 else alpha.repeat(1, 3, 1, 1)
-            left_alpha, right_alpha = apply_divergence(
+        if alpha is not None and args.method in {"forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"}:
+            left_eye, right_eye, left_alpha, right_alpha, convergence = apply_divergence(
                 depth,
-                alpha_3ch,
+                x,
                 args,
                 side_model,
                 reset_pts=reset_pts,
-                convergence=convergence,
+                return_convergence=True,
+                alpha=alpha,
             )
-            if left_alpha is not None:
-                left_alpha = left_alpha.mean(dim=-3, keepdim=True)
-                right_alpha = right_alpha.mean(dim=-3, keepdim=True)
         else:
-            left_alpha = right_alpha = None
+            left_eye, right_eye, convergence = apply_divergence(
+                depth, x, args, side_model, reset_pts=reset_pts, return_convergence=True
+            )
+            if alpha is not None and left_eye is not None:
+                alpha_3ch = alpha.repeat(3, 1, 1) if alpha.ndim == 3 else alpha.repeat(1, 3, 1, 1)
+                left_alpha, right_alpha = apply_divergence(
+                    depth,
+                    alpha_3ch,
+                    args,
+                    side_model,
+                    reset_pts=reset_pts,
+                    convergence=convergence,
+                )
+                if left_alpha is not None:
+                    left_alpha = left_alpha.mean(dim=-3, keepdim=True)
+                    right_alpha = right_alpha.mean(dim=-3, keepdim=True)
+            else:
+                left_alpha = right_alpha = None
 
     return left_eye, right_eye, left_alpha, right_alpha
 
@@ -897,7 +958,19 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                         enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
                     )
                 else:
-                    out = [postprocess_image(left, right, args) for left, right in zip(left_eye, right_eye)]
+                    out = [
+                        postprocess_image(
+                            left,
+                            right,
+                            args,
+                            left_alpha=left_alpha[i] if left_alpha is not None and i < left_alpha.shape[0] else None,
+                            right_alpha=right_alpha[i]
+                            if right_alpha is not None and i < right_alpha.shape[0]
+                            else None,
+                            enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
+                        )
+                        for i, (left, right) in enumerate(zip(left_eye, right_eye))
+                    ]
             else:
                 out = None
 
@@ -911,11 +984,36 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 yield o
 
         if flush and hasattr(side_model, "flush"):
-            left_eye, right_eye = side_model.flush(enable_amp=not args.disable_amp)
-            if left_eye is not None:
-                for left, right in zip(left_eye, right_eye):
-                    out = postprocess_image(left, right, args)
+            ret = side_model.flush(enable_amp=not args.disable_amp)
+            if ret[0] is not None:
+                if len(ret) == 4:
+                    left_eye, right_eye, left_alpha, right_alpha = ret
+                else:
+                    left_eye, right_eye = ret
+                    left_alpha = right_alpha = None
+                if left_eye.ndim == 3:
+                    out = postprocess_image(
+                        left_eye,
+                        right_eye,
+                        args,
+                        left_alpha=left_alpha,
+                        right_alpha=right_alpha,
+                        enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
+                    )
                     yield out
+                else:
+                    for i, (left, right) in enumerate(zip(left_eye, right_eye)):
+                        l_alpha = left_alpha[i] if left_alpha is not None and i < left_alpha.shape[0] else None
+                        r_alpha = right_alpha[i] if right_alpha is not None and i < right_alpha.shape[0] else None
+                        out = postprocess_image(
+                            left,
+                            right,
+                            args,
+                            left_alpha=l_alpha,
+                            right_alpha=r_alpha,
+                            enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
+                        )
+                        yield out
 
     @torch.inference_mode()
     def _frame_callback(frame):
@@ -1054,10 +1152,24 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         )
 
             if flush and hasattr(side_model, "flush"):
-                left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
-                if left_eyes is not None:
+                ret = side_model.flush(enable_amp=not args.disable_amp)
+                if ret[0] is not None:
+                    if len(ret) == 4:
+                        left_eyes, right_eyes, left_alphas, right_alphas = ret
+                    else:
+                        left_eyes, right_eyes = ret
+                        left_alphas = right_alphas = None
                     for i in range(left_eyes.shape[0]):
-                        yield postprocess_image(left_eyes[i], right_eyes[i], args)
+                        l_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
+                        r_alpha = right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
+                        yield postprocess_image(
+                            left_eyes[i],
+                            right_eyes[i],
+                            args,
+                            left_alpha=l_alpha,
+                            right_alpha=r_alpha,
+                            enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
+                        )
 
     def _batch_infer(x, pts, flush, enqueue_ticket_id, offload_stream=None):
         nonlocal offload_resource_manager
@@ -2070,10 +2182,24 @@ def process_config_video(config, args, side_model):
             reset_pts_batch.clear()
 
         if hasattr(side_model, "flush"):
-            left_eyes, right_eyes = side_model.flush(enable_amp=not args.disable_amp)
-            if left_eyes is not None:
+            ret = side_model.flush(enable_amp=not args.disable_amp)
+            if ret[0] is not None:
+                if len(ret) == 4:
+                    left_eyes, right_eyes, left_alphas, right_alphas = ret
+                else:
+                    left_eyes, right_eyes = ret
+                    left_alphas = right_alphas = None
                 for i in range(left_eyes.shape[0]):
-                    yield postprocess_image(left_eyes[i], right_eyes[i], args)
+                    l_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
+                    r_alpha = right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
+                    yield postprocess_image(
+                        left_eyes[i],
+                        right_eyes[i],
+                        args,
+                        left_alpha=l_alpha,
+                        right_alpha=r_alpha,
+                        enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
+                    )
 
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps

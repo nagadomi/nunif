@@ -37,6 +37,27 @@ class ForwardInpaintImage(BaseImageInpaint):
             width_base=False,
         )
 
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str,
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        left_alpha, right_alpha = apply_divergence_forward_warp(
+            alpha,
+            depth,
+            divergence=divergence,
+            convergence=convergence,
+            synthetic_view=synthetic_view,
+            return_mask=False,
+            width_base=False,
+        )
+        return left_alpha, right_alpha
+
     def preprocess_mask(
         self,
         mask: torch.Tensor,
@@ -62,7 +83,7 @@ class ForwardInpaintVideo(BaseVideoInpaint):
             device_id=device_id,
         )
 
-    def create_frame_queue(self, x, depth, synthetic_view) -> FrameQueue:
+    def create_frame_queue(self, x, depth, synthetic_view, has_alpha: bool = False) -> FrameQueue:
         return FrameQueue(
             synthetic_view=synthetic_view,
             seq=self.model_seq,
@@ -70,6 +91,7 @@ class ForwardInpaintVideo(BaseVideoInpaint):
             width=x.shape[-1],
             dtype=x.dtype,
             device=x.device,
+            has_alpha=has_alpha,
         )
 
     def apply_warp(
@@ -92,6 +114,27 @@ class ForwardInpaintVideo(BaseVideoInpaint):
             return_mask=return_mask,
             width_base=False,
         )
+
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str,
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        left_alpha, right_alpha = apply_divergence_forward_warp(
+            alpha,
+            depth,
+            divergence=divergence,
+            convergence=convergence,
+            synthetic_view=synthetic_view,
+            return_mask=False,
+            width_base=False,
+        )
+        return left_alpha, right_alpha
 
     def preprocess_mask(
         self,
