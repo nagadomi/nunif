@@ -27,6 +27,7 @@ def apply_divergence_mlbw(
     preserve_screen_border: bool = False,
     enable_amp: bool = True,
     return_mask: Literal[True] = True,
+    clear_holes: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]: ...
 
 
@@ -41,6 +42,7 @@ def apply_divergence_mlbw(
     preserve_screen_border: bool = False,
     enable_amp: bool = True,
     return_mask: Literal[False] = False,
+    clear_holes: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]: ...
 
 
@@ -54,6 +56,7 @@ def apply_divergence_mlbw(
     preserve_screen_border: bool = False,
     enable_amp: bool = True,
     return_mask: bool = True,
+    clear_holes: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None] | tuple[torch.Tensor, torch.Tensor]:
     if synthetic_view == "both":
         left_res = apply_divergence_nn_delta_weight(
@@ -67,6 +70,7 @@ def apply_divergence_mlbw(
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=return_mask,
+            clear_holes=clear_holes,
         )
         right_res = apply_divergence_nn_delta_weight(
             model,
@@ -79,6 +83,7 @@ def apply_divergence_mlbw(
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=return_mask,
+            clear_holes=clear_holes,
         )
         if return_mask:
             left_eye, left_mask = left_res
@@ -99,6 +104,7 @@ def apply_divergence_mlbw(
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=return_mask,
+            clear_holes=clear_holes,
         )
         if return_mask:
             right_eye, right_mask = right_res
@@ -117,6 +123,7 @@ def apply_divergence_mlbw(
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
             return_mask=return_mask,
+            clear_holes=clear_holes,
         )
         if return_mask:
             left_eye, left_mask = left_res
