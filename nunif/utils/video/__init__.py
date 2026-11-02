@@ -37,6 +37,7 @@ from .utils import (
     list_videos,
     pix_fmt_has_alpha,
     pix_fmt_requires_16bit,
+    vpx_preset_to_cpu_used,
 )
 
 __all__ = [
@@ -73,6 +74,7 @@ __all__ = [
     "list_videos",
     "pix_fmt_has_alpha",
     "pix_fmt_requires_16bit",
+    "vpx_preset_to_cpu_used",
 ]
 
 # Initialize library defaults (MIME types, logging, env vars)

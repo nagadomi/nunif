@@ -222,7 +222,12 @@ def make_video_codec_option(args, input_path=None):
         # NOTE: It seems libopenh264 does not support most options.
         options = {"b": args.video_bitrate}
     elif args.video_codec == "libvpx-vp9":
-        options = {"crf": str(args.crf), "b": "0", "row-mt": "1"}
+        options = {
+            "crf": str(args.crf),
+            "b": "0",
+            "row-mt": "1",
+            "cpu-used": VU.vpx_preset_to_cpu_used(getattr(args, "preset", "medium")),
+        }
     else:
         options = {}
 

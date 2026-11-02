@@ -169,3 +169,12 @@ def av_rational_to_fraction(value: av.AVRational | None):
     if value is None:
         return None
     return Fraction(value.num, value.den)
+
+
+def vpx_preset_to_cpu_used(preset: str | None) -> str:
+    if preset in {"fast", "faster", "veryfast", "superfast", "ultrafast"}:
+        return "4"
+    elif preset in {"slow", "slower", "veryslow", "placebo"}:
+        return "1"
+    else:
+        return "2"

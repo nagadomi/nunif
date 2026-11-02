@@ -26,6 +26,7 @@ PRESET_LIBX264 = [
 ]
 PRESET_NVENC = ["fast", "medium", "slow", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
 PRESET_QSV = ["veryfast", "fast", "medium", "slow", "veryslow"]
+PRESET_VP9 = ["fast", "medium", "slow"]
 PRESET_ALL = list(dict.fromkeys(PRESET_LIBX264 + PRESET_NVENC))
 PRESET_DEFAULT = "medium"
 
@@ -319,7 +320,7 @@ class VideoEncodingBox:
         elif codec == "libvpx-vp9":
             self.cbo_profile_level.Disable()
             self.cbo_crf.Enable()
-            self.cbo_preset.Disable()
+            self.cbo_preset.Enable()
             self.cbo_tune.Disable()
             self.chk_tune_fastdecode.Disable()
             self.chk_tune_zerolatency.Disable()
@@ -370,8 +371,8 @@ class VideoEncodingBox:
             self.cbo_profile_level.SetSelection(0)
 
         # preset
-        if container_format in {"mp4", "mkv"}:
-            if codec in {"libvpx-vp9", "ffv1", "utvideo"}:
+        if container_format in {"mp4", "mkv", "webm"}:
+            if codec in {"ffv1", "utvideo"}:
                 self.cbo_preset.SetItems([""])
                 self.cbo_preset.SetSelection(0)
                 self.cbo_preset.Disable()
@@ -384,6 +385,8 @@ class VideoEncodingBox:
                     choices = PRESET_NVENC
                 elif codec in {"h264_qsv", "hevc_qsv"}:
                     choices = PRESET_QSV
+                elif codec == "libvpx-vp9":
+                    choices = PRESET_VP9
                 else:
                     choices = PRESET_ALL
 

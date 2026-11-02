@@ -144,7 +144,12 @@ def process_video(ctx, input_filename, output_path, args):
             # NOTE: It seems libopenh264 does not support most options.
             options = {"b": args.video_bitrate}
         elif args.video_codec == "libvpx-vp9":
-            options = {"crf": str(args.crf), "b": "0", "row-mt": "1"}
+            options = {
+                "crf": str(args.crf),
+                "b": "0",
+                "row-mt": "1",
+                "cpu-used": VU.vpx_preset_to_cpu_used(getattr(args, "preset", "medium")),
+            }
             if "a" in args.pix_fmt.lower():
                 options["auto-alt-ref"] = "0"
                 options["alpha_mode"] = "1"
