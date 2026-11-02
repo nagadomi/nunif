@@ -115,6 +115,7 @@ This is the most frequently used menu, allowing you to fine-tune the screen's sh
 
 | Item | Shortcut | Description |
 | :--- | :--- | :--- |
+| `Follow Device` | - | Toggle screen position tracking with the headset (OFF: world-locked, ON: follow head movement). When OFF, click the reset button next to it to recenter screen position and yaw |
 | `Screen Size` | `[Grip + Stick X]` | Physical size of the virtual screen (1m to 16m) |
 | `Tilt` | `[Long-press Trigger + Tilt]` | Vertical tilt of the screen (Roll/Tilt in VR180) |
 | `Distance` | `[Stick Y]` | Distance from the viewer (Zoom) |

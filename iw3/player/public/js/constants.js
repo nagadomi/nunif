@@ -61,6 +61,7 @@ export const DEFAULTS = {
     screen_bg_color: 0.0,
     screen_roll: 0.0,
     screen_height_index: 1.0, // 2^1 = 2m
+    screen_track_device: false,
     screen_volume: 0.5,
 
     environment_name: "None",
@@ -276,6 +277,12 @@ export const SETTINGS_METADATA = {
         default: DEFAULTS.screen_bg_color,
         min: LIMITS.screen_bg_colorMin,
         max: LIMITS.screen_bg_colorMax
+    },
+    screen_track_device: {
+        group: 'screen',
+        isFileSpecific: false,
+        label: "Follow Device",
+        default: DEFAULTS.screen_track_device
     },
     screen_volume: {
         group: 'general',

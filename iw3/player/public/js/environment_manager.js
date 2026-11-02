@@ -45,6 +45,16 @@ class EnvironmentManager extends THREE.Group {
         this._isModelLoading = false;
         this.isBackgroundLocked = false;
 
+        // AR Mode state and dedicated lighting
+        this.isARMode = false;
+        this.arAmbientLight = new THREE.AmbientLight(0xffffff, 1.2);
+        this.arDirectionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        this.arDirectionalLight.position.set(1, 2, 1);
+        this.arAmbientLight.visible = false;
+        this.arDirectionalLight.visible = false;
+        this.add(this.arAmbientLight);
+        this.add(this.arDirectionalLight);
+
         // Ambient Light (synchronized with background color)
         this.ambientLight = new THREE.AmbientLight(0xffffff, 0.0);
         this.add(this.ambientLight);
@@ -68,9 +78,35 @@ class EnvironmentManager extends THREE.Group {
 
     setBackgroundLevel(val) {
         this.backgroundLevel = val;
-        if (!this.isBackgroundLocked) {
+        if (!this.isBackgroundLocked && !this.isARMode) {
             this.updateEnvironmentState();
         }
+    }
+
+    setARMode(enabled) {
+        if (this.isARMode === enabled) return;
+        this.isARMode = enabled;
+
+        if (this.isARMode) {
+            this._savedBackground = this.scene.background;
+            this._savedEnvironment = this.scene.environment;
+
+            this.scene.background = null;
+            this.scene.environment = null;
+
+            this.arAmbientLight.visible = true;
+            this.arDirectionalLight.visible = true;
+            this.ambientLight.intensity = 0;
+        } else {
+            this.scene.background = this._savedBackground ?? null;
+            this.scene.environment = this._savedEnvironment ?? null;
+            this._savedBackground = null;
+            this._savedEnvironment = null;
+
+            this.arAmbientLight.visible = false;
+            this.arDirectionalLight.visible = false;
+        }
+        this.updateEnvironmentState();
     }
 
     setRotation(degrees) {
@@ -260,7 +296,12 @@ class EnvironmentManager extends THREE.Group {
                 setTimeout(() => oldEnv.dispose(), 2000);
             }
             
-            if (this.isBackgroundLocked) {
+            if (this.isARMode) {
+                this._savedBackground = this._pendingTexture ?? null;
+                this._savedEnvironment = this._pendingTexture ?? null;
+                this.scene.background = null;
+                this.scene.environment = null;
+            } else if (this.isBackgroundLocked) {
                 this.scene.background = null;
                 this.scene.environment = null;
             } else if (this._pendingTexture) {
@@ -324,7 +365,11 @@ class EnvironmentManager extends THREE.Group {
         // Handle Background and Ambient Light based on ACTUAL scene background state
         const ambientIntensityMultiplier = 1.0;
 
-        if (!this.isBackgroundLocked && (this.scene.background instanceof THREE.Color || this.scene.background === null)) {
+        if (this.isARMode) {
+            this.scene.background = null;
+            this.scene.environment = null;
+            this.ambientLight.intensity = 0;
+        } else if (!this.isBackgroundLocked && (this.scene.background instanceof THREE.Color || this.scene.background === null)) {
             // Handle Solid Background (or null which we treat as black/color transition)
             if (!(this.scene.background instanceof THREE.Color)) {
                 this.scene.background = new THREE.Color(0x000000);

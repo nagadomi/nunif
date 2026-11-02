@@ -10,7 +10,7 @@ from .dir_config import VERSION_DIR
 IW3_PLAYER_ROOT = path.dirname(__file__)  # TODO: package
 URL_TEMPALTE = "https://github.com/nagadomi/nunif/releases/download/iw3_player_assets/iw3_player_{name}_{version}.zip"
 ASSET_VERSIONS = {
-    "lib": "20260212",
+    "lib": "20261102",
     "fonts": "20260215",
     "lut": "20260217",
     "environments": "20260213",

@@ -23,6 +23,7 @@ class StereoPlayer extends THREE.Group {
 
         storage.setDebugLog(debugLogInstance);
 
+        this.isARMode = false;
         this.scene.background = new THREE.Color(0x000000);
 
         // Managers
@@ -104,6 +105,11 @@ class StereoPlayer extends THREE.Group {
         this._tempPosL = new THREE.Vector3();
         this._tempPosR = new THREE.Vector3();
         this._headWorldPos = new THREE.Vector3();
+
+        this.rotation.order = 'YXZ';
+        this.trackDevice = DEFAULTS.screen_track_device;
+        this._resetScreenFrames = 5;
+        this._resetScreenYaw = false;
 
         this.setupXRSessionEvents();
         
@@ -417,12 +423,65 @@ class StereoPlayer extends THREE.Group {
         if (next !== -1) this.loadMedia(next);
     }
 
+    setARMode(isAR) {
+        if (this.isARMode === isAR) return;
+        this.isARMode = isAR;
+        if (this.debugLogInstance) {
+            this.debugLogInstance.log(`[XR] setARMode: ${isAR}`);
+        }
+        this.environmentManager.setARMode(isAR);
+        if (this.uiManager) {
+            this.uiManager.isARMode = isAR;
+            this.uiManager.syncUI(true);
+        }
+    }
+
+    resetScreenPosition(options = false) {
+        const resetYaw = typeof options === 'boolean' ? options : !!options?.resetYaw;
+        if (this.camera) {
+            this.position.copy(this.camera.position);
+            if (resetYaw) {
+                const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+                this.rotation.y = euler.y;
+            }
+        }
+        this._resetScreenFrames = 5;
+        this._resetScreenYaw = resetYaw;
+    }
+
+    resetScreenTransform() {
+        this.resetScreenPosition(true);
+    }
+
+    setTrackDevice(track) {
+        this.trackDevice = !!track;
+        if (this.trackDevice) {
+            this.resetScreenPosition();
+        }
+    }
+
     setupXRSessionEvents() {
         this.renderer.xr.addEventListener('sessionstart', () => {
+            const blendMode = this.renderer.xr.getEnvironmentBlendMode?.() ?? this.renderer.xr.getSession()?.environmentBlendMode;
+            if (blendMode) {
+                this.setARMode(blendMode === 'alpha-blend' || blendMode === 'additive');
+            }
             this.activeScreen.updateEyeVisibility(true);
             this.subtitleWindow.updateEyeVisibility(true);
+            this.resetScreenPosition();
+
+            const refSpace = this.renderer.xr.getReferenceSpace?.();
+            if (refSpace) {
+                refSpace.addEventListener('reset', () => {
+                    this.resetScreenPosition();
+                    if (this.debugLogInstance) {
+                        this.debugLogInstance.log('[XR] Reference space reset detected, reset screen position');
+                    }
+                });
+            }
         });
         this.renderer.xr.addEventListener('sessionend', async () => {
+            this.setARMode(false);
             this.activeScreen.updateEyeVisibility(false);
             this.subtitleWindow.updateEyeVisibility(false);
             await this.uiManager.saveSettings();
@@ -529,8 +588,30 @@ class StereoPlayer extends THREE.Group {
                 setTimeout(() => { if (this.renderer.xr.isPresenting) this.uiManager.showMainMenu(); }, 500);
             }
         } else if (!this.renderer.xr.isPresenting && this.isXRActive) this.isXRActive = false;
+
+        if (this.renderer.xr.isPresenting) {
+            const blendMode = this.renderer.xr.getEnvironmentBlendMode?.() ?? this.renderer.xr.getSession()?.environmentBlendMode;
+            if (blendMode) {
+                const isAR = (blendMode === 'alpha-blend' || blendMode === 'additive');
+                if (this.isARMode !== isAR) {
+                    this.setARMode(isAR);
+                }
+            }
+        }
         
-        this.position.copy(this.camera.position);
+        if (this.trackDevice || this._resetScreenFrames > 0) {
+            this.position.copy(this.camera.position);
+            if (this._resetScreenYaw && this.camera) {
+                const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+                this.rotation.y = euler.y;
+            }
+            if (this._resetScreenFrames > 0) {
+                this._resetScreenFrames--;
+                if (this._resetScreenFrames === 0) {
+                    this._resetScreenYaw = false;
+                }
+            }
+        }
         this.environmentManager.update(delta);
         
         if (this.useEyeTracking) {

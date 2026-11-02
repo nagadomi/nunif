@@ -181,6 +181,9 @@ export class SettingsManager {
             case 'screen_bg_color':
                 p?.setBackgroundLevel(val);
                 break;
+            case 'screen_track_device':
+                p?.setTrackDevice(val);
+                break;
             case 'screen_height_index':
                 s?.setPhysicalScreenHeight?.(Math.pow(2, Math.round(val)));
                 break;

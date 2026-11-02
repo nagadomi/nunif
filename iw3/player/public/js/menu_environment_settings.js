@@ -49,6 +49,7 @@ class EnvironmentSettingsMenu {
     }
 
     sync() {
+        const isAR = this.uiManager.isARMode;
         const screenType = this.uiManager.screenType;
         const isSupported = (screenType !== 'dome' && screenType !== 'dome_xr');
         UIUtils.syncMenuSupportState(isSupported, {
@@ -60,9 +61,22 @@ class EnvironmentSettingsMenu {
 
         if (isSupported) {
             const sm = this.uiManager.settingsManager;
+
+            if (isAR) {
+                if (this.skyboxGroup) this.skyboxGroup.setProperties({ display: 'none' });
+                SKYBOX_SLIDER_KEYS.forEach(k => {
+                    if (this.sliders[k]?.group) this.sliders[k].group.setProperties({ display: 'none' });
+                });
+            } else {
+                if (this.skyboxGroup) this.skyboxGroup.setProperties({ display: 'flex' });
+                SKYBOX_SLIDER_KEYS.forEach(k => {
+                    if (this.sliders[k]?.group) this.sliders[k].group.setProperties({ display: 'flex' });
+                });
+            }
+
             UIUtils.syncSliders(this.sliders, sm);
 
-            if (this.skyboxNameText) {
+            if (!isAR && this.skyboxNameText) {
                 const skyText = sm.get('environment_name') || "None";
                 if (this._lastSkyText !== skyText) {
                     this.skyboxNameText.setProperties({ text: skyText });
