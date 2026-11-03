@@ -7,6 +7,8 @@ export const COMMON_FRAGMENT_HEADER = `
     uniform float uBrightness, uContrast, uGamma, uSaturation, uHue;
     uniform sampler3D uLutMap;
     uniform float uLutEnabled;
+    uniform float uChromaEnabled, uChromaMode, uChromaThreshold, uChromaSmoothness, uChromaDespill, uARMode;
+    uniform vec2 uChromaTarget;
 
     vec3 rgb2hsv(vec3 c) {
         vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -21,6 +23,28 @@ export const COMMON_FRAGMENT_HEADER = `
         vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
         vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
         return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    }
+`;
+
+export const CHROMAKEY_SNIPPET = `
+    if ( uChromaEnabled > 0.5 ) {
+        vec3 rgb = clamp(diffuseColor.rgb, 0.0, 1.0);
+        float cb = -0.168736 * rgb.r - 0.331264 * rgb.g + 0.5 * rgb.b;
+        float cr =  0.5 * rgb.r - 0.418688 * rgb.g - 0.081312 * rgb.b;
+
+        float dist = length(vec2(cb, cr) - uChromaTarget);
+        float alpha = smoothstep(uChromaThreshold, uChromaThreshold + max(uChromaSmoothness, 0.0001), dist);
+
+        if ( uChromaDespill > 0.001 ) {
+            if ( uChromaMode > 1.5 ) {
+                diffuseColor.b = min(diffuseColor.b, mix(diffuseColor.b, max(diffuseColor.r, diffuseColor.g), uChromaDespill));
+            } else {
+                diffuseColor.g = min(diffuseColor.g, mix(diffuseColor.g, max(diffuseColor.r, diffuseColor.b), uChromaDespill));
+            }
+        }
+
+        diffuseColor.a *= alpha;
+        if ( diffuseColor.a < 0.001 ) discard;
     }
 `;
 
@@ -57,14 +81,17 @@ export const COLOR_CORRECTION_SNIPPET = `
 
 export const COMMON_FRAGMENT_MAP_PATCH = `
     #include <map_fragment>
-` + COLOR_CORRECTION_SNIPPET;
+` + CHROMAKEY_SNIPPET + COLOR_CORRECTION_SNIPPET;
 
 const COLOR_UNIFORM_MAP = {
     color_brightness: 'uBrightness',
     color_contrast: 'uContrast',
     color_gamma: 'uGamma',
     color_saturation: 'uSaturation',
-    color_hue: 'uHue'
+    color_hue: 'uHue',
+    environment_chroma_threshold: 'uChromaThreshold',
+    environment_chroma_smoothness: 'uChromaSmoothness',
+    environment_chroma_despill: 'uChromaDespill'
 };
 
 class StereoBaseScreen extends THREE.Group {
@@ -109,6 +136,7 @@ class StereoBaseScreen extends THREE.Group {
         blackTex.format = THREE.RGBAFormat;
         blackTex.needsUpdate = true;
 
+        const initialChromaIsBlue = DEFAULTS.environment_chroma_color === 'blue';
         this.commonUniforms = {
             uBrightness: { value: DEFAULTS.color_brightness },
             uContrast: { value: DEFAULTS.color_contrast },
@@ -116,7 +144,14 @@ class StereoBaseScreen extends THREE.Group {
             uSaturation: { value: DEFAULTS.color_saturation },
             uHue: { value: DEFAULTS.color_hue },
             uLutMap: { value: blackTex },
-            uLutEnabled: { value: 0.0 }
+            uLutEnabled: { value: 0.0 },
+            uChromaEnabled: { value: DEFAULTS.environment_chroma_enabled ? 1.0 : 0.0 },
+            uChromaTarget: { value: new THREE.Vector2(initialChromaIsBlue ? 0.5 : -0.331264, initialChromaIsBlue ? -0.081312 : -0.418688) },
+            uChromaMode: { value: initialChromaIsBlue ? 2.0 : 1.0 },
+            uChromaThreshold: { value: DEFAULTS.environment_chroma_threshold },
+            uChromaSmoothness: { value: DEFAULTS.environment_chroma_smoothness },
+            uChromaDespill: { value: DEFAULTS.environment_chroma_despill },
+            uARMode: { value: 0.0 }
         };
 
         this.displayScreenLeft = null;
@@ -238,9 +273,34 @@ class StereoBaseScreen extends THREE.Group {
     }
 
     setColorParameter(key, val) {
+        if (key === 'environment_chroma_enabled') {
+            if (this.commonUniforms.uChromaEnabled) {
+                this.commonUniforms.uChromaEnabled.value = val ? 1.0 : 0.0;
+            }
+            return;
+        }
+        if (key === 'environment_chroma_color') {
+            if (this.commonUniforms.uChromaTarget && this.commonUniforms.uChromaMode) {
+                if (val === 'blue') {
+                    this.commonUniforms.uChromaTarget.value.set(0.500000, -0.081312);
+                    this.commonUniforms.uChromaMode.value = 2.0;
+                } else {
+                    // Default to green
+                    this.commonUniforms.uChromaTarget.value.set(-0.331264, -0.418688);
+                    this.commonUniforms.uChromaMode.value = 1.0;
+                }
+            }
+            return;
+        }
         const uniformName = COLOR_UNIFORM_MAP[key];
         if (uniformName && this.commonUniforms[uniformName]) {
             this.commonUniforms[uniformName].value = val;
+        }
+    }
+
+    setARMode(isAR) {
+        if (this.commonUniforms.uARMode) {
+            this.commonUniforms.uARMode.value = isAR ? 1.0 : 0.0;
         }
     }
     

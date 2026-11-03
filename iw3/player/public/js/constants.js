@@ -36,6 +36,12 @@ export const LIMITS = {
     environment_model_scaleMax: 1.0,
     environment_model_yMin: -5.0,
     environment_model_yMax: 5.0,
+    environment_chroma_thresholdMin: 0.00,
+    environment_chroma_thresholdMax: 0.75,
+    environment_chroma_smoothnessMin: 0.00,
+    environment_chroma_smoothnessMax: 0.20,
+    environment_chroma_despillMin: 0.00,
+    environment_chroma_despillMax: 1.00,
     subtitle_yMin: -1.0,
     subtitle_yMax: 1.0,
     subtitle_zMin: -1.0, // Offset from screen
@@ -72,6 +78,11 @@ export const DEFAULTS = {
     environment_model_scale: 0.0, // Exponent: 10^0 = 1.0 (1x scale)
     environment_model_y: 0.0,
     environment_ambient_min: 0.03,
+    environment_chroma_enabled: false,
+    environment_chroma_color: 'green',
+    environment_chroma_threshold: 0.35,
+    environment_chroma_smoothness: 0.10,
+    environment_chroma_despill: 0.50,
     uiZ: -0.9,
     uiForwardLimit: 0.09,
     
@@ -116,7 +127,7 @@ export const UI_CONFIG = {
     translationSensitivity: 3.33,
     eyeSeparationSensitivity: 0.125,
     eyeSeparationSensitivityMin: 0.01875,
-    menuMarginTop: -1180,
+    menuMarginTop: -1280,
     menuMarginLeft: 450
 };
 
@@ -128,6 +139,11 @@ export const STEREO_FORMATS = {
     TB_HALF: "TB_HALF",
     SBS_180: "SBS_180",
     FLAT: "FLAT"
+};
+
+export const CHROMA_COLORS = {
+    GREEN: 'green',
+    BLUE: 'blue'
 };
 
 export const VR_CONFIG = {
@@ -405,6 +421,29 @@ export const SETTINGS_METADATA = {
         min: LIMITS.environment_model_yMin, 
         max: LIMITS.environment_model_yMax, 
         default: DEFAULTS.environment_model_y 
+    },
+    environment_chroma_enabled: { group: 'environment', default: DEFAULTS.environment_chroma_enabled },
+    environment_chroma_color: { group: 'environment', default: DEFAULTS.environment_chroma_color },
+    environment_chroma_threshold: { 
+        group: 'environment', 
+        label: "Threshold",
+        min: LIMITS.environment_chroma_thresholdMin, 
+        max: LIMITS.environment_chroma_thresholdMax, 
+        default: DEFAULTS.environment_chroma_threshold 
+    },
+    environment_chroma_smoothness: { 
+        group: 'environment', 
+        label: "Smoothness",
+        min: LIMITS.environment_chroma_smoothnessMin, 
+        max: LIMITS.environment_chroma_smoothnessMax, 
+        default: DEFAULTS.environment_chroma_smoothness 
+    },
+    environment_chroma_despill: { 
+        group: 'environment', 
+        label: "Despill",
+        min: LIMITS.environment_chroma_despillMin, 
+        max: LIMITS.environment_chroma_despillMax, 
+        default: DEFAULTS.environment_chroma_despill 
     },
 
     // --- Render Settings ---

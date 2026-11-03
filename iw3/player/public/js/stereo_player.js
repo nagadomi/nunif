@@ -430,6 +430,8 @@ class StereoPlayer extends THREE.Group {
             this.debugLogInstance.log(`[XR] setARMode: ${isAR}`);
         }
         this.environmentManager.setARMode(isAR);
+        this.planeScreen?.setARMode?.(isAR);
+        this.domeScreen?.setARMode?.(isAR);
         if (this.uiManager) {
             this.uiManager.isARMode = isAR;
             this.uiManager.syncUI(true);

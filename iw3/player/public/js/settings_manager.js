@@ -211,6 +211,11 @@ export class SettingsManager {
             case 'color_hue':
             case 'color_saturation':
             case 'color_gamma':
+            case 'environment_chroma_enabled':
+            case 'environment_chroma_color':
+            case 'environment_chroma_threshold':
+            case 'environment_chroma_smoothness':
+            case 'environment_chroma_despill':
                 p?.setColorParameter(key, val);
                 break;
             case 'color_lut':

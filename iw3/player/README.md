@@ -142,10 +142,16 @@ Using `haldclut2cube.py`, you can convert the effect applied to [Identity HaldCL
 
 #### Env Settings (Environment)
 
-Customize your virtual theater. While not strictly necessary for viewing, watching media under a high-fidelity sky can greatly improve the experience.
+Customize your virtual theater and background transparency. While not strictly necessary for viewing, watching media under a high-fidelity sky can greatly improve the experience.
 
 - **Skybox**: Set a 360-degree background image and adjust its orientation, tilt, and brightness.
 - **3D Model**: Load a 3D scene model (e.g., a floor or room), with adjustable size and ground height.
+- **Transparent by Color**: Chroma key transparency for green screen or blue screen video/image backgrounds, revealing the virtual environment or AR passthrough world behind it.
+  - `Key Color`: Select the background color to key out (`Green` or `Blue`).
+  - `Threshold`: Tolerance range for color matching.
+  - `Smoothness`: Smooths and softens the transparency edges around the subject.
+  - `Despill`: Suppresses green/blue light reflection on the subject's contours.
+  - *Note: In VR180 mode, enabling background transparency automatically renders the back half transparent as well.*
 
 Custom backgrounds (`.hdr` or `.exr`) and models (`.glb`) can be added to the `public/environments/` directory. High-quality HDRI and IBL assets are available at [Poly Haven](https://polyhaven.com/) and [ambientCG](https://ambientcg.com/). Scenes created in Blender can be exported as `.glb` (supporting Draco compression and animations) for use here.
 
