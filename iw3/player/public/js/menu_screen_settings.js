@@ -78,7 +78,8 @@ class ScreenSettingsMenu {
             height: 44,
             marginBottom: 8
         });
-        trackDeviceRow.add(new Text({ text: "Follow Device", fontSize: 18, color: COLORS.textDim }));
+        this.trackDeviceLabel = new Text({ text: "Follow Device", fontSize: 18, color: COLORS.textDim });
+        trackDeviceRow.add(this.trackDeviceLabel);
 
         const trackDeviceRightGroup = new Container({
             flexDirection: 'row',
@@ -135,14 +136,26 @@ class ScreenSettingsMenu {
         const trackWidth = 332, thumbWidth = 24;
         const activeScreen = this.uiManager.activeScreen;
         const screenType = activeScreen.screenType;
+        const isDome = screenType === 'dome' || screenType === 'dome_xr';
 
         const isTrackDevice = !!this.uiManager.settingsManager.get('screen_track_device');
         this.setTrackDeviceChecked(isTrackDevice);
 
-        const resetDisplay = !isTrackDevice ? 'flex' : 'none';
-        if (this.trackDeviceResetBtn._lastDisplay !== resetDisplay) {
-            this.trackDeviceResetBtn.container.setProperties({ display: resetDisplay });
-            this.trackDeviceResetBtn._lastDisplay = resetDisplay;
+        if (this.trackDeviceResetBtn._lastDisplay !== 'flex') {
+            this.trackDeviceResetBtn.container.setProperties({ display: 'flex' });
+            this.trackDeviceResetBtn._lastDisplay = 'flex';
+        }
+
+        const checkboxDisplay = isDome ? 'none' : 'flex';
+        if (this.trackDeviceCheckbox._lastDisplay !== checkboxDisplay) {
+            this.trackDeviceCheckbox.container.setProperties({ display: checkboxDisplay });
+            this.trackDeviceCheckbox._lastDisplay = checkboxDisplay;
+        }
+
+        const labelText = isDome ? "Recenter Screen" : "Follow Device";
+        if (this.trackDeviceLabel._lastText !== labelText) {
+            this.trackDeviceLabel.setProperties({ text: labelText });
+            this.trackDeviceLabel._lastText = labelText;
         }
 
         for (const id in this.sliders) {

@@ -295,7 +295,7 @@ export const SETTINGS_METADATA = {
         max: LIMITS.screen_bg_colorMax
     },
     screen_track_device: {
-        group: 'screen',
+        group: 'general',
         isFileSpecific: false,
         label: "Follow Device",
         default: DEFAULTS.screen_track_device

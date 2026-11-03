@@ -199,6 +199,9 @@ class StereoPlayer extends THREE.Group {
                 this.debugLogInstance.log(`[XR-Layers] Branch -> teardown (use=${useXRLayers}, vid=${!!this.videoElement})`);
                 this.teardownXRLayers();
             }
+
+            this.updateMatrixWorld(true);
+            this.activeScreen.updatePositions();
         } catch (e) {
             this.debugLogInstance.log(`[XR-Layers] FATAL ERROR: ${e.message}`);
             console.error(e);
@@ -470,14 +473,15 @@ class StereoPlayer extends THREE.Group {
             }
             this.activeScreen.updateEyeVisibility(true);
             this.subtitleWindow.updateEyeVisibility(true);
-            this.resetScreenPosition();
+            this.resetScreenTransform();
 
             const refSpace = this.renderer.xr.getReferenceSpace?.();
             if (refSpace) {
                 refSpace.addEventListener('reset', () => {
-                    this.resetScreenPosition();
+                    this.rotation.y = 0;
+                    this.resetScreenTransform();
                     if (this.debugLogInstance) {
-                        this.debugLogInstance.log('[XR] Reference space reset detected, reset screen position');
+                        this.debugLogInstance.log('[XR] Reference space reset detected, reset screen transform');
                     }
                 });
             }
@@ -601,8 +605,12 @@ class StereoPlayer extends THREE.Group {
             }
         }
         
-        if (this.trackDevice || this._resetScreenFrames > 0) {
+        const isDome = this.activeScreen && (this.activeScreen.screenType === 'dome' || this.activeScreen.screenType === 'dome_xr');
+        
+        if (isDome || this.trackDevice || this._resetScreenFrames > 0) {
             this.position.copy(this.camera.position);
+        }
+        if (this._resetScreenFrames > 0) {
             if (this._resetScreenYaw && this.camera) {
                 const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
                 this.rotation.y = euler.y;
@@ -614,6 +622,7 @@ class StereoPlayer extends THREE.Group {
                 }
             }
         }
+        this.updateMatrixWorld(true);
         this.environmentManager.update(delta);
         
         if (this.useEyeTracking) {
