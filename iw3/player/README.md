@@ -22,7 +22,7 @@ Viewing photos at a realistic scale significantly enhances immersion and brings 
 - **Videos**: `.mp4`, `.mkv`, `.webm`.
 - **Archives**: `.zip`
 
-Supported video formats depend on the browser. The Meta Quest 2 browser supports all combinations of mp4, mkv, h264, and h265 commonly used in iw3. The PC version of Google Chrome does not support h265.
+Supported video formats depend on the browser. The Meta Quest 2 browser supports all combinations of mp4, mkv, h264, and h265 commonly used in iw3. The PC version of Google Chrome does not support h265. In Wolvic (Firefox-based browser), h264 plays smoothly, but hevc (h265) is not hardware-accelerated and plays very slowly.
 On Meta Quest 2, 4K videos played smoothly.
 
 The player supports both embedded subtitle streams and external files (`.srt` / `.vtt`). External files named identically to the video will be prioritized. Embedded subtitles are automatically converted to `.vtt` by the backend for seamless streaming.
