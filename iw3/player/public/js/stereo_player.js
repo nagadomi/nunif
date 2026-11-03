@@ -652,7 +652,11 @@ class StereoPlayer extends THREE.Group {
         // This avoids interleaved texture uploads during transparent/MSAA draws in WebXR multiview,
         // preventing screen and GUI element flickering on Meta Quest / Chromium (Three.js #33458 / #32151).
         const videoTex = this.videoTexture;
-        if (videoTex && this.videoElement && this.videoElement.readyState >= 2) {
+        const videoElem = this.videoElement;
+        if (videoTex && videoElem && videoElem.readyState >= 2) {
+            if (this.isPlaying) {
+                videoTex.needsUpdate = true;
+            }
             this.renderer.initTexture(videoTex);
         }
     }
