@@ -794,7 +794,31 @@ def process_image(
         else:
             depth_x = x
 
-        if alpha is not None:
+        if depth_model.is_matting():
+            out = depth_model.infer(
+                depth_x,
+                tta=args.tta,
+                low_vram=args.low_vram,
+                enable_amp=not args.disable_amp,
+                edge_dilation=args.edge_dilation,
+                depth_aa=args.depth_aa,
+            )
+            assert isinstance(out, (tuple, list)) and len(out) == 2
+            depth, mask = out
+            if mask.shape[-2:] != x.shape[-2:]:
+                mask = F.interpolate(
+                    mask.unsqueeze(0),
+                    size=x.shape[-2:],
+                    mode="bilinear",
+                    align_corners=False,
+                    antialias=True,
+                ).squeeze(0)
+            if alpha is not None:
+                alpha = alpha * mask
+            else:
+                alpha = mask
+            depth = depth_model.minmax_normalize_chw(depth)
+        elif alpha is not None:
             depth = depth_model.infer(
                 depth_x,
                 tta=args.tta,
@@ -927,6 +951,7 @@ def extract_frame_rgb_alpha(frame, device):
 
 def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
+    mask_queue = []
     device = args.state["device"]
     frame_cpu_offload = depth_model.get_ema_buffer_size() > 1 and device.type not in {"cpu", "mps"}
     offload_resource_manager = None
@@ -948,6 +973,21 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 x, alpha = x[:3], x[3:4]
             else:
                 alpha = None
+
+            if mask_queue:
+                mask = mask_queue.pop(0).to(x.device)
+                if mask.shape[-2:] != x.shape[-2:]:
+                    mask = F.interpolate(
+                        mask.unsqueeze(0),
+                        size=x.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                        antialias=True,
+                    ).squeeze(0)
+                if alpha is not None:
+                    alpha = alpha * mask
+                else:
+                    alpha = mask
 
             left_eye, right_eye, left_alpha, right_alpha = apply_stereo(
                 x, depth, alpha, args, side_model, reset_pts=reset_pts
@@ -1072,17 +1112,33 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
         else:
             alpha = None
 
-        depth = depth_model.infer(
-            x,
-            tta=args.tta,
-            low_vram=args.low_vram,
-            enable_amp=not args.disable_amp,
-            edge_dilation=args.edge_dilation,
-            depth_aa=args.depth_aa,
-            streaming=depth_model.is_streaming(),
-        )
-        if alpha is not None and not depth_model.is_streaming():
-            depth = apply_alpha_depth_mask(depth, alpha)
+        if depth_model.is_matting():
+            out = depth_model.infer(
+                x,
+                tta=args.tta,
+                low_vram=args.low_vram,
+                enable_amp=not args.disable_amp,
+                edge_dilation=args.edge_dilation,
+                depth_aa=args.depth_aa,
+                streaming=depth_model.is_streaming(),
+            )
+            assert isinstance(out, (tuple, list)) and len(out) == 2
+            depth, mask = out
+            if frame_cpu_offload:
+                mask = mask.cpu()
+            mask_queue.append(mask)
+        else:
+            depth = depth_model.infer(
+                x,
+                tta=args.tta,
+                low_vram=args.low_vram,
+                enable_amp=not args.disable_amp,
+                edge_dilation=args.edge_dilation,
+                depth_aa=args.depth_aa,
+                streaming=depth_model.is_streaming(),
+            )
+            if alpha is not None and not depth_model.is_streaming():
+                depth = apply_alpha_depth_mask(depth, alpha)
         flush = frame.pts in segment_pts
         depths = depth_model.minmax_normalize(depth)
         if flush:
@@ -1105,6 +1161,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     dequeue_ticket_lock = TicketLock()
     streams = threading.local()
     src_queue = []
+    mask_queue = []
     frame_cpu_offload = depth_model.get_ema_buffer_size() > 1 and args.state["device"].type not in {"cpu", "mps"}
     offload_resource_manager = None
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
@@ -1136,6 +1193,24 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     x_srcs = x_srcs[:, :3]
                 else:
                     alpha_srcs = None
+
+                if mask_queue:
+                    B = x_srcs.shape[0]
+                    masks = [mask_queue.pop(0).to(x_srcs.device) for _ in range(B)]
+                    mask_batch = torch.stack(masks)
+                    if mask_batch.shape[-2:] != x_srcs.shape[-2:]:
+                        mask_batch = F.interpolate(
+                            mask_batch,
+                            size=x_srcs.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False,
+                            antialias=True,
+                        )
+                    if alpha_srcs is not None:
+                        alpha_srcs = alpha_srcs * mask_batch
+                    else:
+                        alpha_srcs = mask_batch
+
                 reset_pts = [t in segment_pts for t in pts]
 
                 left_eyes, right_eyes, left_alphas, right_alphas = apply_stereo(
@@ -1239,6 +1314,24 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                             depth_list += depth_model.minmax_normalize(flush_depth)
                             depth_list += depth_model.flush_minmax_normalize()
                             depth_model.reset()
+                elif depth_model.is_matting():
+                    out = depth_model.infer(
+                        x,
+                        tta=args.tta,
+                        low_vram=args.low_vram,
+                        enable_amp=not args.disable_amp,
+                        edge_dilation=args.edge_dilation,
+                        depth_aa=args.depth_aa,
+                    )
+                    assert isinstance(out, (tuple, list)) and len(out) == 2
+                    depth_batch, mask_batch = out
+                    for i in range(mask_batch.shape[0]):
+                        m = mask_batch[i]
+                        if frame_cpu_offload:
+                            m = m.cpu()
+                        mask_queue.append(m)
+                    reset_ema = [t in segment_pts for t in pts]
+                    depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
                 else:
                     depth_batch = depth_model.infer(
                         x,
@@ -1697,7 +1790,36 @@ def export_images(input_path, output_dir, args, title=None):
             rgb, alpha = extract_image_rgb_alpha(im, device=args.state["device"])
             rgb = preprocess_image(rgb, args)
 
-            if alpha is not None:
+            if depth_model.is_matting():
+                if alpha is not None:
+                    alpha = preprocess_image(alpha, args).clamp(0, 1)
+                    depth_x = apply_alpha_fill(rgb, alpha, DEFAULT_FILL_COLOR)
+                else:
+                    depth_x = rgb
+                out = depth_model.infer(
+                    depth_x,
+                    tta=args.tta,
+                    low_vram=args.low_vram,
+                    enable_amp=not args.disable_amp,
+                    edge_dilation=edge_dilation,
+                    depth_aa=args.depth_aa,
+                )
+                assert isinstance(out, (tuple, list)) and len(out) == 2
+                depth, mask = out
+                if mask.shape[-2:] != rgb.shape[-2:]:
+                    mask = F.interpolate(
+                        mask.unsqueeze(0),
+                        size=rgb.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                        antialias=True,
+                    ).squeeze(0)
+                if alpha is not None:
+                    alpha = alpha * mask
+                else:
+                    alpha = mask
+                depth = depth_model.minmax_normalize_chw(depth)
+            elif alpha is not None:
                 alpha = preprocess_image(alpha, args)
                 alpha = alpha.clamp(0, 1)
                 depth_x = apply_alpha_fill(rgb, alpha, DEFAULT_FILL_COLOR)
@@ -1781,6 +1903,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
     batch_queue = []
     pts_queue = []
     src_queue = []
+    mask_queue = []
     futures = []
     device = args.state["device"]
     offload_resource_manager = None
@@ -1805,7 +1928,26 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
             futures.append(pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png")))
             if not args.export_depth_only:
                 assert x is not None
-                im_numpy = x.cpu_buffer().permute(1, 2, 0).numpy()
+                x_buffer = x.cpu_buffer()
+                if mask_queue:
+                    mask = mask_queue.pop(0).cpu()
+                    if mask.ndim == 2:
+                        mask = mask.unsqueeze(0)
+                    if mask.shape[-2:] != x_buffer.shape[-2:]:
+                        mask = TF.resize(
+                            mask,
+                            size=(x_buffer.shape[-2], x_buffer.shape[-1]),
+                            interpolation=InterpolationMode.BILINEAR,
+                            antialias=True,
+                        )
+                    mask_u8 = (mask * 255.0).clamp(0, 255).to(torch.uint8)
+                    if x_buffer.shape[0] == 4:
+                        orig_alpha = x_buffer[3:4].to(torch.float32) / 255.0
+                        combined_alpha = (orig_alpha * mask * 255.0).clamp(0, 255).to(torch.uint8)
+                        x_buffer = torch.cat([x_buffer[:3], combined_alpha], dim=0)
+                    else:
+                        x_buffer = torch.cat([x_buffer[:3], mask_u8], dim=0)
+                im_numpy = x_buffer.permute(1, 2, 0).numpy()
                 im = Image.fromarray(im_numpy)
                 futures.append(pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png")))
 
@@ -1855,6 +1997,21 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                                 depth_list.append(normalized_depth)
                     depth_list += depth_model.flush_minmax_normalize()
                     depth_model.reset()
+        elif depth_model.is_matting():
+            reset_ema = [t in segment_pts for t in pts_queue]
+            out = depth_model.infer(
+                x,
+                tta=args.tta,
+                low_vram=args.low_vram,
+                enable_amp=not args.disable_amp,
+                edge_dilation=edge_dilation,
+                depth_aa=args.depth_aa,
+            )
+            assert isinstance(out, (tuple, list)) and len(out) == 2
+            depth_batch, mask_batch = out
+            for i in range(mask_batch.shape[0]):
+                mask_queue.append(mask_batch[i].cpu())
+            depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
         else:
             reset_ema = [t in segment_pts for t in pts_queue]
             depth_batch = depth_model.infer(

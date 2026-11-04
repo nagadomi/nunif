@@ -75,6 +75,15 @@ class BaseDepthModel(metaclass=ABCMeta):
         return False
 
     @classmethod
+    def is_matting(cls, model_type: str | None = None) -> bool:
+        if cls is BaseDepthModel:
+            if model_type is None:
+                return False
+            subcls = cls.get_depth_model_class(model_type)
+            return subcls.is_matting(model_type) if subcls is not None else False
+        return False
+
+    @classmethod
     def is_desktop_supported(cls) -> bool:
         return True
 
@@ -272,7 +281,7 @@ class BaseDepthModel(metaclass=ABCMeta):
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
         **kwargs,
-    ) -> torch.Tensor | None:
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         pass
 
     def flush(

@@ -18,7 +18,7 @@ packaging
 filelock
 
 # iw3
-timm
+timm>=1.0.30
 av==19.0.1
 simpleeval
 
