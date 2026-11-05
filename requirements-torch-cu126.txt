@@ -1,3 +1,4 @@
+# NOTE: torch 2.14.1 is the final release for cu126.
 --extra-index-url https://download.pytorch.org/whl/cu126
 
 # Linux
