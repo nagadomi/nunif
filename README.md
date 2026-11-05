@@ -77,12 +77,6 @@ We usually support the latest version. If there are bugs or compatibility issues
 
 Optional dependencies (not installed from the requirements files; install them only if you need the feature):
 
-- [kwcapture](https://pypi.org/project/kwcapture/) — `pip install kwcapture`  
-  Screen capture for [iw3-desktop](./iw3/docs/desktop.md) on Linux **Wayland (KDE Plasma)**
-  (`--screenshot kwcapture`). It asks KWin for the composited desktop image, which no other
-  capture method here can do on Wayland. A warning is printed at startup when a KDE
-  Plasma/Wayland session is running without it.
-
 - [INSTALL-ubuntu](INSTALL-ubuntu.md)
 - [INSTALL-windows](INSTALL-windows.md)
 - [INSTALL-macos](INSTALL-macos.md)
