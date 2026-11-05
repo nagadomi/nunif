@@ -23,3 +23,7 @@ def is_resolution_change_supported(model_type: str) -> bool:
 
 def is_limit_resolution_supported(model_type: str) -> bool:
     return BaseDepthModel.is_limit_resolution_supported(model_type)
+
+
+def is_matting(model_type: str) -> bool:
+    return BaseDepthModel.is_matting(model_type)

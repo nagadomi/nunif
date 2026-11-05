@@ -47,6 +47,7 @@ class UIManager extends THREE.Group {
         this.shouldJumpToPath = null;
 
         // Environment Lists
+        this.isARMode = false;
         this.skyboxes = ["None"];
         this.models = ["None"];
         this.luts = ["None"];

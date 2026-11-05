@@ -6,7 +6,7 @@ import av
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
 from .hwaccel import HW_DEVICES
-from .utils import RGB_8BIT, RGB_16BIT, av_rational_to_fraction
+from .utils import RGB_8BIT, RGB_16BIT, av_rational_to_fraction, pix_fmt_requires_16bit
 
 # Colorspace constants
 COLORSPACE_UNSPECIFIED: int = 2
@@ -543,20 +543,3 @@ class VideoMetadata(MediaMetadata):
     def get_auto_input_reformat_options(self) -> Dict[str, Any]:
         _, colorspace, color_primaries, color_trc, _ = self.get_target_colorspace("auto", self.format.name)
         return self.get_input_reformat_options(colorspace, color_primaries, color_trc)
-
-
-def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
-    return pix_fmt in {
-        "yuv420p10le",
-        "p010le",
-        "yuv422p10le",
-        "yuv444p10le",
-        "yuv420p12le",
-        "yuv422p12le",
-        "yuv444p12le",
-        "yuv444p16le",
-        "gbrp16le",
-        "gbrp12le",
-        "gbrp10le",
-        "rgb48le",
-    }

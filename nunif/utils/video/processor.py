@@ -17,6 +17,7 @@ from .color_transform import (
     configure_video_codec,
     setup_color_transform,
 )
+from .decoder import VideoDecoder
 from .hwaccel import HW_DEVICES, create_hwaccel, get_compatible_hwaccel
 from .metadata import (
     AudioMetadata,
@@ -82,6 +83,19 @@ def try_replace(output_path_tmp, output_path):
                 raise
 
 
+def get_audio_output_rate(acodec: str, input_rate: int) -> int:
+    if acodec == "opus":
+        if input_rate < 16000:
+            return 16000
+        if input_rate in {16000, 24000, 48000}:
+            return input_rate
+        return 48000
+    else:
+        if input_rate < 16000:
+            return 16000
+        return input_rate
+
+
 def test_audio_copy(input_path, output_path):
     buff = io.BytesIO()
     buff.name = path.basename(output_path)
@@ -123,7 +137,6 @@ def safe_decode(packet, strict=False):
         frames = []
         print("\n[WARN] Unknown data/frames type (pyAV Unimplemented)! continuing anyway...", file=sys.stderr)
     return frames
-
 
 
 def apply_color_settings(output_stream: av.video.stream.VideoStream, output_reformatter: OutputTransform) -> None:
@@ -222,6 +235,7 @@ def _process_video(
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
     # _print_len(video_input_stream)
     audio_input_stream = audio_output_stream = None
     if len(input_container.streams.audio) > 0:
@@ -278,20 +292,21 @@ def _process_video(
 
     # utvideo + flac crashes on windows media player
     # default_acodec = "flac" if config.container_format == "avi" else "aac"
-    default_acodec = "aac"
+    default_acodec = "opus" if config.container_format == "webm" else "aac"
     if audio_input_stream is not None:
+        audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
         if audio_input_stream.rate < 16000:
-            audio_output_stream = output_container.add_stream(default_acodec, 16000)
+            audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
             audio_copy = False
         elif start_time is not None:
-            audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
+            audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
             audio_copy = False
         else:
             if test_audio_copy(input_path, output_path):
                 audio_output_stream = output_container.add_stream_from_template(template=audio_input_stream)
                 audio_copy = True
             else:
-                audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
+                audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                 audio_copy = False
 
     desc = title if title else input_path
@@ -315,7 +330,7 @@ def _process_video(
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
             if packet.stream.type == "video":
-                for frame in safe_decode(packet, strict=disable_software_fallback):
+                for frame in video_decoder.decode(packet):
                     for out_frame in video_preprocessor.update(frame):
                         if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
                             gc.collect()
@@ -430,8 +445,8 @@ def generate_video(
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     output_container = av.open(output_path_tmp, "w", options=config.container_options)
-    assert config.output_width is not None and config.output_height is not None
-    output_size = config.output_width, config.output_height
+    uninitialized = config.output_width is None or config.output_height is None
+    unmux_packets = []
 
     if not config.container_format:
         config.container_format = path.splitext(output_path)[-1].lower()[1:]
@@ -454,8 +469,9 @@ def generate_video(
 
     video_output_stream.thread_type = "AUTO"
     video_output_stream.pix_fmt = config.pix_fmt
-    video_output_stream.width = output_size[0]
-    video_output_stream.height = output_size[1]
+    if not uninitialized:
+        video_output_stream.width = config.output_width
+        video_output_stream.height = config.output_height
 
     video_output_stream.options = config.options
 
@@ -464,15 +480,17 @@ def generate_video(
         if len(input_container.streams.audio) > 0:
             # has audio stream
             audio_input_stream = input_container.streams.audio[0]
+            default_acodec = "opus" if config.container_format == "webm" else "aac"
+            audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
             if audio_input_stream.rate < 16000:
-                audio_output_stream = output_container.add_stream("aac", 16000)
+                audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                 audio_copy = False
             else:
                 if test_audio_copy(audio_file, output_path):
                     audio_output_stream = output_container.add_stream_from_template(template=audio_input_stream)
                     audio_copy = True
                 else:
-                    audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+                    audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                     audio_copy = False
 
             tqdm_fn = tqdm_fn or tqdm
@@ -492,13 +510,19 @@ def generate_video(
                 if packet.dts is not None:
                     if audio_copy:
                         packet.stream = audio_output_stream
-                        output_container.mux(packet)
+                        if uninitialized:
+                            unmux_packets.append(packet)
+                        else:
+                            output_container.mux(packet)
                     else:
                         for frame in safe_decode(packet):
                             frame.pts = None
                             enc_packet = audio_output_stream.encode(frame)
                             if enc_packet:
-                                output_container.mux(enc_packet)
+                                if uninitialized:
+                                    unmux_packets.append(enc_packet)
+                                else:
+                                    output_container.mux(enc_packet)
                 if suspend_event is not None:
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
@@ -506,7 +530,10 @@ def generate_video(
             pbar.close()
             try:
                 for packet in audio_output_stream.encode(None):
-                    output_container.mux(packet)
+                    if uninitialized:
+                        unmux_packets.append(packet)
+                    else:
+                        output_container.mux(packet)
             except ValueError:
                 pass
             input_container.close()
@@ -524,6 +551,9 @@ def generate_video(
             break
         for new_frame in get_new_frames(frame):
             new_frame = output_reformatter(new_frame)
+            if uninitialized:
+                set_output_size_and_flash(output_container, video_output_stream, new_frame, unmux_packets)
+                uninitialized = False
             enc_packet = video_output_stream.encode(new_frame)
             if enc_packet:
                 output_container.mux(enc_packet)
@@ -533,9 +563,10 @@ def generate_video(
         if stop_event is not None and stop_event.is_set():
             break
 
-    packet = video_output_stream.encode(None)
-    if packet:
-        output_container.mux(packet)
+    if not uninitialized:
+        packet = video_output_stream.encode(None)
+        if packet:
+            output_container.mux(packet)
 
     output_reformatter.synchronize()
     pbar.close()
@@ -594,8 +625,9 @@ def hook_frame(
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
     if keyframe_only:
-        video_input_stream.codec_context.skip_frame = "NONKEY"
+        video_decoder.skip_frame = "NONKEY"
 
     config = config_callback(sw_format)
     if keyframe_only:
@@ -642,25 +674,26 @@ def hook_frame(
         total = frames_val if isinstance(frames_val, int) else frames_val[0]
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
 
-    prev_sec = start_time if start_time is not None else 0.0
+    prev_sec = None
     try:
         for i, packet in enumerate(input_container.demux([video_input_stream])):
             if packet.pts is not None:
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
-            for frame in safe_decode(packet, strict=disable_software_fallback):
+            for frame in video_decoder.decode(packet):
                 if keyframe_only:
                     current_sec = float(frame.pts * video_input_stream.time_base)
-                    if current_sec - prev_sec < min_interval_sec:
+                    if prev_sec is not None and current_sec - prev_sec < min_interval_sec:
                         continue
 
                     for out_frame in video_preprocessor.update(frame):
                         consume_generator(frame_callback(out_frame))
 
-                    progress = current_sec - prev_sec
-                    if progress > 1.0:
-                        pbar.update(math.floor(progress))
-                        prev_sec = current_sec
+                    if prev_sec is not None:
+                        progress = current_sec - prev_sec
+                        if progress > 1.0:
+                            pbar.update(math.floor(progress))
+                    prev_sec = current_sec
                 else:
                     for out_frame in video_preprocessor.update(frame):
                         consume_generator(frame_callback(out_frame))
@@ -712,6 +745,7 @@ def sample_frames(
         raise ValueError("No video stream")
 
     video_input_stream = input_container.streams.video[0]
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
 
     num_frames, duration = sw_format.guess_frames(return_duration=True)
     if duration <= 0 or num_frames <= 0:
@@ -743,11 +777,11 @@ def sample_frames(
         # Full decoding
         step_sec = duration / num_samples
         if keyframe_only:
-            video_input_stream.codec_context.skip_frame = "NONKEY"
+            video_decoder.skip_frame = "NONKEY"
 
         for packet in input_container.demux([video_input_stream]):
             packet_count += 1
-            for frame in safe_decode(packet, strict=disable_software_fallback):
+            for frame in video_decoder.decode(packet):
                 frame_count += 1
                 if frame.pts is None:
                     continue
@@ -770,7 +804,7 @@ def sample_frames(
         seek_offset = int(duration * offset * av.time_base)
 
         if step_sec > 4 or keyframe_only:
-            video_input_stream.codec_context.skip_frame = "NONKEY"
+            video_decoder.skip_frame = "NONKEY"
             keyframe_only = True
         else:
             keyframe_only = False
@@ -783,7 +817,7 @@ def sample_frames(
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
                     break
-                for frame in safe_decode(packet, strict=disable_software_fallback):
+                for frame in video_decoder.decode(packet):
                     frame_count += 1
                     if frame.pts is None:
                         continue
@@ -806,6 +840,7 @@ def sample_frames(
             if pos == 0 or pos == prev_seek_pos:
                 pos += av.time_base
             input_container.seek(pos, backward=True, any_frame=False)
+            video_decoder.flush_buffers()
             prev_seek_pos = pos
             sample_count += sample_one()
             if stop_event is not None and stop_event.is_set():

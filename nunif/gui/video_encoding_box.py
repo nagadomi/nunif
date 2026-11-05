@@ -26,22 +26,35 @@ PRESET_LIBX264 = [
 ]
 PRESET_NVENC = ["fast", "medium", "slow", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
 PRESET_QSV = ["veryfast", "fast", "medium", "slow", "veryslow"]
+PRESET_VP9 = ["fast", "medium", "slow"]
 PRESET_ALL = list(dict.fromkeys(PRESET_LIBX264 + PRESET_NVENC))
 PRESET_DEFAULT = "medium"
 
-CODEC_ALL = ["libx264", "libopenh264", "libx265", "utvideo", "ffv1", "h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv"]
+CODEC_ALL = [
+    "libx264",
+    "libopenh264",
+    "libx265",
+    "libvpx-vp9",
+    "utvideo",
+    "ffv1",
+    "h264_nvenc",
+    "hevc_nvenc",
+    "h264_qsv",
+    "hevc_qsv",
+]
 
-PIX_FMT_ALL = ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le", "gbrp16le"]
+PIX_FMT_ALL = ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le", "gbrp16le", "yuva420p"]
 CODEC_PIX_FMT = {
     "libx264": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le"],
     "libx265": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le"],
+    "libvpx-vp9": ["yuv420p", "yuva420p"],
     "h264_nvenc": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le"],
     "hevc_nvenc": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le"],
     "h264_qsv": ["yuv420p"],
     "hevc_qsv": ["yuv420p", "yuv420p10le"],
     "libopenh264": ["yuv420p"],
     "utvideo": ["yuv420p", "yuv444p", "rgb24"],
-    "ffv1": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le"],
+    "ffv1": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le", "yuva420p"],
 }
 
 
@@ -76,7 +89,7 @@ class VideoEncodingBox:
 
         self.lbl_video_format = wx.StaticText(self.grp_video, label=T("Video Format"))
         self.cbo_video_format = wx.ComboBox(
-            self.grp_video, choices=["mp4", "mkv", "avi"], name=f"{prefix}cbo_video_format"
+            self.grp_video, choices=["mp4", "mkv", "webm", "avi"], name=f"{prefix}cbo_video_format"
         )
         self.cbo_video_format.SetEditable(False)
         self.cbo_video_format.SetSelection(0)
@@ -266,13 +279,15 @@ class VideoEncodingBox:
         # codec
         if name == "avi":
             choices = codecs_available(["utvideo"])
+        elif name == "webm":
+            choices = codecs_available(["libvpx-vp9"])
         elif name == "mkv":
-            choices = codecs_available(["libx264", "libopenh264", "libx265"])
+            choices = codecs_available(["libx264", "libopenh264", "libx265", "libvpx-vp9"])
             if self.has_nvenc:
                 choices += codecs_available(["h264_nvenc", "hevc_nvenc"])
             if self.has_qsv:
                 choices += codecs_available(["h264_qsv", "hevc_qsv"])
-            choices += codecs_available(["ffv1"])
+            choices += codecs_available(["utvideo", "ffv1"])
         else:
             choices = codecs_available(["libx264", "libopenh264", "libx265"])
             if self.has_nvenc:
@@ -294,11 +309,18 @@ class VideoEncodingBox:
         container_format = self.cbo_video_format.GetValue()
         codec = self.cbo_video_codec.GetValue()
 
-        # enabel/disable options
-        if container_format == "avi" or codec == "libopenh264":
+        # enable/disable options
+        if container_format == "avi" or codec in {"libopenh264", "ffv1", "utvideo"}:
             self.cbo_profile_level.Disable()
             self.cbo_crf.Disable()
             self.cbo_preset.Disable()
+            self.cbo_tune.Disable()
+            self.chk_tune_fastdecode.Disable()
+            self.chk_tune_zerolatency.Disable()
+        elif codec == "libvpx-vp9":
+            self.cbo_profile_level.Disable()
+            self.cbo_crf.Enable()
+            self.cbo_preset.Enable()
             self.cbo_tune.Disable()
             self.chk_tune_fastdecode.Disable()
             self.chk_tune_zerolatency.Disable()
@@ -337,7 +359,7 @@ class VideoEncodingBox:
             choices = ["auto"] + LEVEL_LIBX264
         elif codec in {"libx265", "hevc_nvenc"}:
             choices = ["auto"] + LEVEL_LIBX265
-        elif codec in {"h264_qsv", "hevc_qsv"}:
+        elif codec in {"h264_qsv", "hevc_qsv", "libvpx-vp9", "ffv1", "utvideo"}:
             choices = ["auto"]
         else:
             choices = LEVEL_ALL
@@ -349,23 +371,35 @@ class VideoEncodingBox:
             self.cbo_profile_level.SetSelection(0)
 
         # preset
-        if container_format in {"mp4", "mkv"}:
-            preset = self.cbo_preset.GetValue()
-            default_preset = PRESET_DEFAULT
-            if codec in {"libx265", "libx264", "libopenh264"}:
-                choices = PRESET_LIBX264
-            elif codec in {"h264_nvenc", "hevc_nvenc"}:
-                choices = PRESET_NVENC
-            elif codec in {"h264_qsv", "hevc_qsv"}:
-                choices = PRESET_QSV
+        if container_format in {"mp4", "mkv", "webm"}:
+            if codec in {"ffv1", "utvideo"}:
+                self.cbo_preset.SetItems([""])
+                self.cbo_preset.SetSelection(0)
+                self.cbo_preset.Disable()
             else:
-                choices = PRESET_ALL
+                preset = self.cbo_preset.GetValue()
+                default_preset = PRESET_DEFAULT
+                if codec in {"libx265", "libx264", "libopenh264"}:
+                    choices = PRESET_LIBX264
+                elif codec in {"h264_nvenc", "hevc_nvenc"}:
+                    choices = PRESET_NVENC
+                elif codec in {"h264_qsv", "hevc_qsv"}:
+                    choices = PRESET_QSV
+                elif codec == "libvpx-vp9":
+                    choices = PRESET_VP9
+                else:
+                    choices = PRESET_ALL
 
-            self.cbo_preset.SetItems(choices)
-            if preset in choices:
-                self.cbo_preset.SetSelection(choices.index(preset))
-            else:
-                self.cbo_preset.SetSelection(choices.index(default_preset))
+                self.cbo_preset.SetItems(choices)
+                if preset in choices:
+                    self.cbo_preset.SetSelection(choices.index(preset))
+                else:
+                    self.cbo_preset.SetSelection(choices.index(default_preset))
+        else:
+            self.cbo_preset.SetItems([""])
+            self.cbo_preset.SetSelection(0)
+            self.cbo_preset.Disable()
+
         # tune
         if container_format in {"mp4", "mkv"}:
             if codec == "libx265":
@@ -420,7 +454,7 @@ class VideoEncodingBox:
                 self.chk_tune_fastdecode.Disable()
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
-            elif codec in {"h264_qsv", "hevc_qsv"}:
+            elif codec in {"h264_qsv", "hevc_qsv", "libvpx-vp9", "ffv1", "utvideo"}:
                 self.cbo_tune.SetItems([""])
                 self.cbo_tune.SetSelection(0)
                 self.cbo_tune.Disable()
@@ -429,6 +463,15 @@ class VideoEncodingBox:
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
                 self.cbo_profile_level.Disable()
+        else:
+            self.cbo_tune.SetItems([""])
+            self.cbo_tune.SetSelection(0)
+            self.cbo_tune.Disable()
+            self.chk_tune_fastdecode.SetValue(False)
+            self.chk_tune_fastdecode.Disable()
+            self.chk_tune_zerolatency.SetValue(False)
+            self.chk_tune_zerolatency.Disable()
+            self.cbo_profile_level.Disable()
 
         # update Layout
         self.sizer.Layout()

@@ -2,6 +2,7 @@ export * from 'three';
 export * from '@pmndrs/uikit';
 export * from '@pmndrs/pointer-events';
 export { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
+export { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
 export { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 export { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 export { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';

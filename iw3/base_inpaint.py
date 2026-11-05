@@ -14,7 +14,18 @@ from .models import LightInpaintV1, LightVideoInpaintV1
 
 
 class FrameQueue:
-    def __init__(self, synthetic_view, seq, height, width, dtype, device, mask_height=None, mask_width=None):
+    def __init__(
+        self,
+        synthetic_view,
+        seq,
+        height,
+        width,
+        dtype,
+        device,
+        mask_height=None,
+        mask_width=None,
+        has_alpha=False,
+    ):
         if mask_width is None:
             mask_width = width
         if mask_height is None:
@@ -32,6 +43,13 @@ class FrameQueue:
             self.left_mask = torch.zeros((seq, 1, mask_height, mask_width), dtype=dtype, device=device)
             self.right_mask = None
 
+        if has_alpha:
+            self.left_alpha = torch.zeros((seq, 1, height, width), dtype=dtype, device=device)
+            self.right_alpha = torch.zeros((seq, 1, height, width), dtype=dtype, device=device)
+        else:
+            self.left_alpha = None
+            self.right_alpha = None
+
         self.synthetic_view = synthetic_view
         self.index = 0
         self.max_index = seq
@@ -42,13 +60,17 @@ class FrameQueue:
     def empty(self):
         return self.index == 0
 
-    def add(self, left_eye, right_eye, left_mask=None, right_mask=None):
+    def add(self, left_eye, right_eye, left_mask=None, right_mask=None, left_alpha=None, right_alpha=None):
         self.left_eye[self.index] = left_eye
         self.right_eye[self.index] = right_eye
         if left_mask is not None:
             self.left_mask[self.index] = left_mask
         if right_mask is not None:
             self.right_mask[self.index] = right_mask
+        if left_alpha is not None and self.left_alpha is not None:
+            self.left_alpha[self.index] = left_alpha
+        if right_alpha is not None and self.right_alpha is not None:
+            self.right_alpha[self.index] = right_alpha
 
         self.index += 1
 
@@ -77,6 +99,10 @@ class FrameQueue:
                 right_eye=self.right_eye[i].clone(),
                 left_mask=self.left_mask[i].clone(),
             )
+        if self.left_alpha is not None:
+            frame["left_alpha"] = self.left_alpha[i].clone()
+        if self.right_alpha is not None:
+            frame["right_alpha"] = self.right_alpha[i].clone()
         while not self.full():
             pad += 1
             self.add(**frame)
@@ -92,6 +118,10 @@ class FrameQueue:
                 self.right_mask[i] = self.right_mask[i + n]
             if self.left_mask is not None:
                 self.left_mask[i] = self.left_mask[i + n]
+            if self.left_alpha is not None:
+                self.left_alpha[i] = self.left_alpha[i + n]
+            if self.right_alpha is not None:
+                self.right_alpha[i] = self.right_alpha[i + n]
         self.index -= n
         assert self.index >= 0
 
@@ -103,8 +133,19 @@ class FrameQueue:
         elif self.synthetic_view == "right":
             return self.left_eye, self.right_eye, self.right_mask
 
+    def get_alpha(self):
+        if self.left_alpha is not None and self.right_alpha is not None:
+            return self.left_alpha, self.right_alpha
+        return None, None
+
     def clear(self):
         self.index = 0
+
+
+InferResult = (
+    tuple[torch.Tensor | None, torch.Tensor | None]
+    | tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]
+)
 
 
 class InpaintComponent(nn.Module, ABC):
@@ -113,9 +154,7 @@ class InpaintComponent(nn.Module, ABC):
     def reset(self) -> None:
         pass
 
-    def flush(
-        self, inner_dilation: int = 0, outer_dilation: int = 0, enable_amp: bool = True
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    def flush(self, inner_dilation: int = 0, outer_dilation: int = 0, enable_amp: bool = True) -> InferResult:
         return None, None
 
     def compile(self) -> None:
@@ -137,7 +176,21 @@ class InpaintComponent(nn.Module, ABC):
         outer_dilation: int = 0,
         preserve_screen_border: bool = False,
         enable_amp: bool = True,
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        alpha: torch.Tensor | None = None,
+    ) -> InferResult:
+        pass
+
+    @abstractmethod
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str,
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         pass
 
     # utils
@@ -281,8 +334,11 @@ class BaseImageInpaint(InpaintComponent):
         outer_dilation: int = 0,
         preserve_screen_border: bool = False,
         enable_amp: bool = True,
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        alpha: torch.Tensor | None = None,
+    ) -> InferResult:
         x = self._resize(x, max_width)
+        if alpha is not None:
+            alpha = self._resize(alpha, max_width)
         return self(
             x,
             depth,
@@ -293,6 +349,7 @@ class BaseImageInpaint(InpaintComponent):
             outer_dilation=outer_dilation,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
+            alpha=alpha,
         )
 
     def forward(
@@ -306,7 +363,8 @@ class BaseImageInpaint(InpaintComponent):
         outer_dilation: int = 0,
         preserve_screen_border: bool = False,
         enable_amp: bool = True,
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        alpha: torch.Tensor | None = None,
+    ) -> InferResult:
         left_eye, right_eye, left_mask, right_mask = self.apply_warp(
             x,
             depth,
@@ -316,7 +374,20 @@ class BaseImageInpaint(InpaintComponent):
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
         )
-        return self._inpaint(
+        left_alpha: torch.Tensor | None = None
+        right_alpha: torch.Tensor | None = None
+        if alpha is not None:
+            left_alpha, right_alpha = self.warp_alpha(
+                alpha,
+                depth,
+                divergence=divergence,
+                convergence=convergence,
+                synthetic_view=synthetic_view,
+                preserve_screen_border=preserve_screen_border,
+                enable_amp=enable_amp,
+            )
+
+        left_eye, right_eye = self._inpaint(
             left_eye,
             right_eye,
             left_mask,
@@ -326,6 +397,10 @@ class BaseImageInpaint(InpaintComponent):
             outer_dilation=outer_dilation,
             base_width=depth.shape[-1],
         )
+        if alpha is not None:
+            return left_eye, right_eye, left_alpha, right_alpha
+        else:
+            return left_eye, right_eye
 
 
 class BaseVideoInpaint(InpaintComponent):
@@ -353,7 +428,7 @@ class BaseVideoInpaint(InpaintComponent):
     def reset(self) -> None:
         self.frame_queue = None
 
-    def create_frame_queue(self, x, depth, synthetic_view) -> FrameQueue:
+    def create_frame_queue(self, x, depth, synthetic_view, has_alpha: bool = False) -> FrameQueue:
         return FrameQueue(
             synthetic_view=synthetic_view,
             seq=self.model_seq,
@@ -363,6 +438,7 @@ class BaseVideoInpaint(InpaintComponent):
             mask_width=depth.shape[-1],
             dtype=x.dtype,
             device=x.device,
+            has_alpha=has_alpha,
         )
 
     def compile(self) -> None:
@@ -480,7 +556,7 @@ class BaseVideoInpaint(InpaintComponent):
 
     def forward(
         self, flush: bool = False, inner_dilation: int = 0, outer_dilation: int = 0, base_width: int | None = None
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    ) -> InferResult:
         assert self.frame_queue is not None
         assert self.synthetic_view is not None
         if self.frame_queue.full():
@@ -498,6 +574,8 @@ class BaseVideoInpaint(InpaintComponent):
                 left_eye, right_eye, left_mask = self.frame_queue.get()
                 right_eye = right_eye.clone()
 
+            left_alpha, right_alpha = self.frame_queue.get_alpha()
+
             left_eye, right_eye = self._inpaint(
                 left_eye,
                 right_eye,
@@ -512,18 +590,33 @@ class BaseVideoInpaint(InpaintComponent):
             if flush:
                 left_eye = left_eye[self.pre_padding :]
                 right_eye = right_eye[self.pre_padding :]
+                if left_alpha is not None and right_alpha is not None:
+                    left_alpha = left_alpha[self.pre_padding :].clone()
+                    right_alpha = right_alpha[self.pre_padding :].clone()
                 self.frame_queue.clear()
             else:
                 if self.post_padding > 0:
                     left_eye = left_eye[self.pre_padding : -self.post_padding]
                     right_eye = right_eye[self.pre_padding : -self.post_padding]
+                    if left_alpha is not None and right_alpha is not None:
+                        left_alpha = left_alpha[self.pre_padding : -self.post_padding].clone()
+                        right_alpha = right_alpha[self.pre_padding : -self.post_padding].clone()
                 elif self.pre_padding > 0:
                     left_eye = left_eye[self.pre_padding :]
                     right_eye = right_eye[self.pre_padding :]
+                    if left_alpha is not None and right_alpha is not None:
+                        left_alpha = left_alpha[self.pre_padding :].clone()
+                        right_alpha = right_alpha[self.pre_padding :].clone()
                 self.frame_queue.remove(self.model_seq - (self.pre_padding + self.post_padding))
-            return left_eye, right_eye
+            if left_alpha is not None and right_alpha is not None:
+                return left_eye, right_eye, left_alpha, right_alpha
+            else:
+                return left_eye, right_eye
         else:
-            return None, None
+            if self.frame_queue.left_alpha is not None and self.frame_queue.right_alpha is not None:
+                return None, None, None, None
+            else:
+                return None, None
 
     def infer(
         self,
@@ -537,14 +630,19 @@ class BaseVideoInpaint(InpaintComponent):
         outer_dilation: int = 0,
         preserve_screen_border: bool = False,
         enable_amp: bool = True,
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        alpha: torch.Tensor | None = None,
+    ) -> InferResult:
         assert x.shape[0] <= self.model_seq
         x = self._resize(x, max_width)
+        if alpha is not None:
+            alpha = self._resize(alpha, max_width)
 
         self.synthetic_view = synthetic_view
         self.base_width = depth.shape[-1]
         if self.frame_queue is None:
-            self.frame_queue = self.create_frame_queue(x, depth, synthetic_view=synthetic_view)
+            self.frame_queue = self.create_frame_queue(
+                x, depth, synthetic_view=synthetic_view, has_alpha=alpha is not None
+            )
         assert self.frame_queue is not None
 
         left_eye, right_eye, left_mask, right_mask = self.apply_warp(
@@ -557,43 +655,89 @@ class BaseVideoInpaint(InpaintComponent):
             enable_amp=enable_amp,
         )
 
+        left_alpha: torch.Tensor | None = None
+        right_alpha: torch.Tensor | None = None
+        if alpha is not None:
+            left_alpha, right_alpha = self.warp_alpha(
+                alpha,
+                depth,
+                divergence=divergence,
+                convergence=convergence,
+                synthetic_view=synthetic_view,
+                preserve_screen_border=preserve_screen_border,
+                enable_amp=enable_amp,
+            )
+
         for i in range(left_eye.shape[0]):
             repeat = self.pre_padding + 1 if self.frame_queue.empty() else 1
+            l_alpha = left_alpha[i] if left_alpha is not None else None
+            r_alpha = right_alpha[i] if right_alpha is not None else None
             if synthetic_view == "both":
                 assert left_mask is not None
                 assert right_mask is not None
                 for _ in range(repeat):
-                    self.frame_queue.add(left_eye[i], right_eye[i], left_mask[i], right_mask[i])
+                    self.frame_queue.add(
+                        left_eye[i],
+                        right_eye[i],
+                        left_mask[i],
+                        right_mask[i],
+                        left_alpha=l_alpha,
+                        right_alpha=r_alpha,
+                    )
             elif synthetic_view == "right":
                 assert right_mask is not None
                 for _ in range(repeat):
-                    self.frame_queue.add(left_eye[i], right_eye[i], right_mask=right_mask[i])
+                    self.frame_queue.add(
+                        left_eye[i],
+                        right_eye[i],
+                        right_mask=right_mask[i],
+                        left_alpha=l_alpha,
+                        right_alpha=r_alpha,
+                    )
             elif synthetic_view == "left":
                 assert left_mask is not None
                 for _ in range(repeat):
-                    self.frame_queue.add(left_eye[i], right_eye[i], left_mask=left_mask[i])
+                    self.frame_queue.add(
+                        left_eye[i],
+                        right_eye[i],
+                        left_mask=left_mask[i],
+                        left_alpha=l_alpha,
+                        right_alpha=r_alpha,
+                    )
 
         return self(inner_dilation=inner_dilation, outer_dilation=outer_dilation, base_width=self.base_width)
 
-    def flush(
-        self, inner_dilation: int = 0, outer_dilation: int = 0, enable_amp: bool = True
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    def flush(self, inner_dilation: int = 0, outer_dilation: int = 0, enable_amp: bool = True) -> InferResult:
         assert self.base_width is not None
         if self.frame_queue is None or self.frame_queue.empty():
             return None, None
 
+        has_alpha = self.frame_queue.left_alpha is not None and self.frame_queue.right_alpha is not None
         pad = self.frame_queue.fill()
-        left_eye, right_eye = self(
+        ret = self(
             flush=True,
             inner_dilation=inner_dilation,
             outer_dilation=outer_dilation,
             base_width=self.base_width,
         )
 
-        if pad > 0:
-            return left_eye[:-pad], right_eye[:-pad]
+        if has_alpha:
+            assert len(ret) == 4
+            left_eye, right_eye, left_alpha, right_alpha = ret
+            if pad > 0:
+                assert left_eye is not None and right_eye is not None
+                assert left_alpha is not None and right_alpha is not None
+                return left_eye[:-pad], right_eye[:-pad], left_alpha[:-pad], right_alpha[:-pad]
+            else:
+                return left_eye, right_eye, left_alpha, right_alpha
         else:
-            return left_eye, right_eye
+            assert len(ret) == 2
+            left_eye, right_eye = ret
+            if pad > 0:
+                assert left_eye is not None and right_eye is not None
+                return left_eye[:-pad], right_eye[:-pad]
+            else:
+                return left_eye, right_eye
 
 
 class BaseInpaint(nn.Module):
@@ -640,7 +784,8 @@ class BaseInpaint(nn.Module):
         outer_dilation: int = 0,
         preserve_screen_border: bool = False,
         enable_amp: bool = True,
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        alpha: torch.Tensor | None = None,
+    ) -> InferResult:
         with autocast(device=self.device, enabled=enable_amp):
             return cast(InpaintComponent, self.model[self.mode]).infer(
                 x,
@@ -653,13 +798,34 @@ class BaseInpaint(nn.Module):
                 outer_dilation=outer_dilation,
                 preserve_screen_border=preserve_screen_border,
                 enable_amp=enable_amp,
+                alpha=alpha,
             )
 
     @torch.inference_mode()
-    def flush(
-        self, inner_dilation: int = 0, outer_dilation: int = 0, enable_amp: bool = True
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    def flush(self, inner_dilation: int = 0, outer_dilation: int = 0, enable_amp: bool = True) -> InferResult:
         with autocast(device=self.device, enabled=enable_amp):
             return cast(InpaintComponent, self.model[self.mode]).flush(
                 inner_dilation=inner_dilation, outer_dilation=outer_dilation, enable_amp=enable_amp
+            )
+
+    @torch.inference_mode()
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str = "both",
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        with autocast(device=self.device, enabled=enable_amp):
+            return cast(InpaintComponent, self.model[self.mode]).warp_alpha(
+                alpha,
+                depth,
+                divergence=divergence,
+                convergence=convergence,
+                synthetic_view=synthetic_view,
+                preserve_screen_border=preserve_screen_border,
+                enable_amp=enable_amp,
             )

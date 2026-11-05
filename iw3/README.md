@@ -196,6 +196,26 @@ If you want to output an HDR source as SDR, please use the following settings.
 
 Tone mapping will be applied when the source video is HDR.
 
+
+## Alpha Channel (Transparent Video & Image) Support
+
+iw3 supports both input and output for media with an alpha channel (transparent background).
+
+### Output Formats for Transparent Video
+
+To output transparent 3D video, choose one of the following container, codec, and pixel format combinations:
+
+- **WebM / MKV (VP9 Alpha)**: `--video-format webm` (or `mkv`) `--video-codec libvpx-vp9 --pix-fmt yuva420p`
+- **MKV (FFV1 Lossless)**: `--video-format mkv --video-codec ffv1 --pix-fmt yuva420p`
+
+For images, `--format png` or `--format webp` supports transparency.
+
+### Green Screen Fallback for Non-Alpha Formats
+
+When the input media has an alpha channel, or when using a matting depth model:
+- If the output format does not support transparency (e.g. standard `mp4` with `yuv420p`, or `jpeg` for images), the transparent background is automatically filled with **pure green (`#00FF00`)** instead of an alpha channel. This can be used for chroma key compositing in video editing software.
+
+
 ## About VR Player
 
 I have tested the results with the following software.

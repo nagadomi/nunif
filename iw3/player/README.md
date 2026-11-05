@@ -22,7 +22,7 @@ Viewing photos at a realistic scale significantly enhances immersion and brings 
 - **Videos**: `.mp4`, `.mkv`, `.webm`.
 - **Archives**: `.zip`
 
-Supported video formats depend on the browser. The Meta Quest 2 browser supports all combinations of mp4, mkv, h264, and h265 commonly used in iw3. The PC version of Google Chrome does not support h265.
+Supported video formats depend on the browser. The Meta Quest 2 browser supports all combinations of mp4, mkv, h264, and h265 commonly used in iw3. The PC version of Google Chrome does not support h265. In Wolvic (Firefox-based browser), h264 plays smoothly, but hevc (h265) is not hardware-accelerated and plays very slowly.
 On Meta Quest 2, 4K videos played smoothly.
 
 The player supports both embedded subtitle streams and external files (`.srt` / `.vtt`). External files named identically to the video will be prioritized. Embedded subtitles are automatically converted to `.vtt` by the backend for seamless streaming.
@@ -115,6 +115,7 @@ This is the most frequently used menu, allowing you to fine-tune the screen's sh
 
 | Item | Shortcut | Description |
 | :--- | :--- | :--- |
+| `Follow Device` | - | Toggle screen position tracking with the headset (OFF: world-locked, ON: follow head movement). When OFF, click the reset button next to it to recenter screen position and yaw |
 | `Screen Size` | `[Grip + Stick X]` | Physical size of the virtual screen (1m to 16m) |
 | `Tilt` | `[Long-press Trigger + Tilt]` | Vertical tilt of the screen (Roll/Tilt in VR180) |
 | `Distance` | `[Stick Y]` | Distance from the viewer (Zoom) |
@@ -141,10 +142,16 @@ Using `haldclut2cube.py`, you can convert the effect applied to [Identity HaldCL
 
 #### Env Settings (Environment)
 
-Customize your virtual theater. While not strictly necessary for viewing, watching media under a high-fidelity sky can greatly improve the experience.
+Customize your virtual theater and background transparency. While not strictly necessary for viewing, watching media under a high-fidelity sky can greatly improve the experience.
 
 - **Skybox**: Set a 360-degree background image and adjust its orientation, tilt, and brightness.
 - **3D Model**: Load a 3D scene model (e.g., a floor or room), with adjustable size and ground height.
+- **Transparent by Color**: Chroma key transparency for green screen or blue screen video/image backgrounds, revealing the virtual environment or AR passthrough world behind it.
+  - `Key Color`: Select the background color to key out (`Green` or `Blue`).
+  - `Threshold`: Tolerance range for color matching.
+  - `Smoothness`: Smooths and softens the transparency edges around the subject.
+  - `Despill`: Suppresses green/blue light reflection on the subject's contours.
+  - *Note: In VR180 mode, enabling background transparency automatically renders the back half transparent as well.*
 
 Custom backgrounds (`.hdr` or `.exr`) and models (`.glb`) can be added to the `public/environments/` directory. High-quality HDRI and IBL assets are available at [Poly Haven](https://polyhaven.com/) and [ambientCG](https://ambientcg.com/). Scenes created in Blender can be exported as `.glb` (supporting Draco compression and animations) for use here.
 

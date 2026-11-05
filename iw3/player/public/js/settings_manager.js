@@ -181,6 +181,9 @@ export class SettingsManager {
             case 'screen_bg_color':
                 p?.setBackgroundLevel(val);
                 break;
+            case 'screen_track_device':
+                p?.setTrackDevice(val);
+                break;
             case 'screen_height_index':
                 s?.setPhysicalScreenHeight?.(Math.pow(2, Math.round(val)));
                 break;
@@ -208,6 +211,11 @@ export class SettingsManager {
             case 'color_hue':
             case 'color_saturation':
             case 'color_gamma':
+            case 'environment_chroma_enabled':
+            case 'environment_chroma_color':
+            case 'environment_chroma_threshold':
+            case 'environment_chroma_smoothness':
+            case 'environment_chroma_despill':
                 p?.setColorParameter(key, val);
                 break;
             case 'color_lut':

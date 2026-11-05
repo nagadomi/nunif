@@ -4,6 +4,7 @@ from .color_transform import (
     to_ndarray,
     to_tensor,
 )
+from .decoder import VideoDecoder
 from .frame_callback_pool import (
     FrameCallbackPool,
 )
@@ -24,6 +25,7 @@ from .processor import (
     sample_frames,
 )
 from .utils import (
+    ALPHA_PIX_FORMATS,
     LIBH264,
     RGB_8BIT,
     RGB_16BIT,
@@ -31,8 +33,11 @@ from .utils import (
     get_default_video_codec,
     has_nvenc,
     has_qsv,
+    has_vp9,
     list_videos,
+    pix_fmt_has_alpha,
     pix_fmt_requires_16bit,
+    vpx_preset_to_cpu_used,
 )
 
 __all__ = [
@@ -56,6 +61,8 @@ __all__ = [
     "make_error_file_path",
     "process_video",
     "sample_frames",
+    "VideoDecoder",
+    "ALPHA_PIX_FORMATS",
     "LIBH264",
     "RGB_8BIT",
     "RGB_16BIT",
@@ -63,8 +70,11 @@ __all__ = [
     "get_default_video_codec",
     "has_nvenc",
     "has_qsv",
+    "has_vp9",
     "list_videos",
+    "pix_fmt_has_alpha",
     "pix_fmt_requires_16bit",
+    "vpx_preset_to_cpu_used",
 ]
 
 # Initialize library defaults (MIME types, logging, env vars)

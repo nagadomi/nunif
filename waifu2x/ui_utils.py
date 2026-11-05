@@ -143,6 +143,16 @@ def process_video(ctx, input_filename, output_path, args):
         elif args.video_codec == "libopenh264":
             # NOTE: It seems libopenh264 does not support most options.
             options = {"b": args.video_bitrate}
+        elif args.video_codec == "libvpx-vp9":
+            options = {
+                "crf": str(args.crf),
+                "b": "0",
+                "row-mt": "1",
+                "cpu-used": VU.vpx_preset_to_cpu_used(getattr(args, "preset", "medium")),
+            }
+            if VU.pix_fmt_has_alpha(args.pix_fmt):
+                options["auto-alt-ref"] = "0"
+                options["alpha_mode"] = "1"
         else:
             options = {}
 
@@ -156,20 +166,31 @@ def process_video(ctx, input_filename, output_path, args):
             container_options={"movflags": "+faststart"} if args.video_format == "mp4" else {},
         )
 
+    enable_alpha = VU.pix_fmt_has_alpha(args.pix_fmt)
+
     @torch.inference_mode()
     def frame_callback(frame):
         if frame is None:
             return None
 
-        rgb = VU.to_tensor(frame, device=args.state["device"])
+        x = VU.to_tensor(frame, device=args.state["device"])
+        if x.shape[0] == 4:
+            rgb, alpha = x[:3], x[3:4]
+        else:
+            rgb, alpha = x, None
+
         if args.rotate_left:
             rgb = torch.rot90(rgb, 1, (-2, -1))
+            if alpha is not None:
+                alpha = torch.rot90(alpha, 1, (-2, -1))
         elif args.rotate_right:
             rgb = torch.rot90(rgb, 3, (-2, -1))
+            if alpha is not None:
+                alpha = torch.rot90(alpha, 3, (-2, -1))
 
-        output, _ = ctx.convert(
+        output, alpha = ctx.convert(
             rgb,
-            None,
+            alpha,
             args.method,
             args.noise_level,
             args.tile_size,
@@ -187,6 +208,12 @@ def process_video(ctx, input_filename, output_path, args):
                 args.state["noise_buffer"].mul_((1.0 - args.grain_speed))
                 args.state["noise_buffer"].add_(noise.mul_(args.grain_speed))
             output = apply_rgb_noise(output, args.state["noise_buffer"], strength=args.grain_strength)
+
+        if alpha is not None:
+            if enable_alpha:
+                output = torch.cat([output, alpha], dim=0)
+            else:
+                output = torch.clamp(output * alpha + (1.0 - alpha), 0.0, 1.0)
 
         return output
 
@@ -276,7 +303,12 @@ def create_parser(required_true=True):
     parser.add_argument("--resume", action="store_true", help="skip processing when the output file already exists")
 
     parser.add_argument(
-        "--video-format", "-vf", type=str, default="mp4", choices=["mp4", "mkv", "avi"], help="video container format"
+        "--video-format",
+        "-vf",
+        type=str,
+        default="mp4",
+        choices=["mp4", "mkv", "webm", "avi"],
+        help="video container format",
     )
     parser.add_argument("--video-codec", "-vc", type=str, default=None, help="video codec")
     parser.add_argument(
@@ -330,7 +362,19 @@ def create_parser(required_true=True):
         "--pix-fmt",
         type=str,
         default="yuv420p",
-        choices=["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp", "gbrp10le", "gbrp16le"],
+        choices=[
+            "yuv420p",
+            "yuv444p",
+            "yuv420p10le",
+            "rgb24",
+            "gbrp",
+            "gbrp10le",
+            "gbrp16le",
+            "yuva420p",
+            "rgba",
+            "gbrap",
+            "gbrap10le",
+        ],
         help=("pixel format (video only)"),
     )
     parser.add_argument(
@@ -391,6 +435,8 @@ def set_state_args(args, stop_event=None, tqdm_fn=None):
             args.video_format = "mkv"
         elif ext == ".avi":
             args.video_format = "avi"
+        elif ext == ".webm":
+            args.video_format = "webm"
 
     args.video_extension = "." + args.video_format
     if args.video_codec is None:

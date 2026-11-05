@@ -1,15 +1,22 @@
 import os
 from typing import NamedTuple
 
+import av
+import numpy as np
 import pytest
+from PIL import Image
 
+from nunif.utils import video as VU
 from tests.helpers.runner import run
 from tests.helpers.smoke_data import ensure_smoke_data
 
 
 class CliSetup(NamedTuple):
     image: str
+    image_rgba: str
     video: str
+    video_rgba: str
+    video_rgba_vp9: str | None
     video_hdr: str
     dir: str
     output: str
@@ -24,7 +31,10 @@ def cli_setup(tmp_path_factory: pytest.TempPathFactory) -> CliSetup:
     ensure_smoke_data(smoke_dir)
     return CliSetup(
         image=os.path.join(smoke_dir, "sd.png"),
+        image_rgba=os.path.join(smoke_dir, "dog_448_rgba.png"),
         video=os.path.join(smoke_dir, "sd.mkv"),
+        video_rgba=os.path.join(smoke_dir, "rgba.mkv"),
+        video_rgba_vp9=os.path.join(smoke_dir, "rgba_vp9.mkv") if VU.has_vp9() else None,
         video_hdr=os.path.join(smoke_dir, "hdr.mkv"),
         dir=smoke_dir,
         output=output_dir,
@@ -265,3 +275,476 @@ def test_cli_vf(cli_setup: CliSetup) -> None:
 
 def test_cli_keyframe(cli_setup: CliSetup) -> None:
     run([*cli_setup.cli, "-i", cli_setup.video, "--depth-model", "Any_S", "--keyframe"])
+    out_dir = os.path.join(cli_setup.output, "sd_LRF_Full_SBS")
+    files = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+    assert len(files) > 0
+    with Image.open(os.path.join(out_dir, files[0])) as im:
+        assert im.mode == "RGB"
+
+
+def test_cli_video_rgba_keyframe(cli_setup: CliSetup) -> None:
+    run([*cli_setup.cli, "-i", cli_setup.video_rgba, "--depth-model", "Any_S", "--keyframe"])
+    out_dir = os.path.join(cli_setup.output, "rgba_LRF_Full_SBS")
+    files = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+    assert len(files) > 0
+    with Image.open(os.path.join(out_dir, files[0])) as im:
+        assert im.mode == "RGBA"
+        assert np.array(im)[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_vp9_keyframe(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9() or cli_setup.video_rgba_vp9 is None:
+        pytest.skip("libvpx-vp9 is not supported")
+    run([*cli_setup.cli, "-i", cli_setup.video_rgba_vp9, "--depth-model", "Any_S", "--keyframe"])
+    out_dir = os.path.join(cli_setup.output, "rgba_vp9_LRF_Full_SBS")
+    files = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+    assert len(files) > 0
+    with Image.open(os.path.join(out_dir, files[0])) as im:
+        assert im.mode == "RGBA"
+        assert np.array(im)[:, :, 3].mean() < 240
+
+
+def test_cli_image_rgba(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba.png")
+    run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_file, "--depth-model", "Any_S"])
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"
+        arr = np.array(im)
+        zero_alpha = arr[:, :, 3] == 0
+        assert zero_alpha.any()
+        assert not np.all(arr[zero_alpha, :3] == [0, 255, 0])
+
+    out_jpg = os.path.join(cli_setup.output, "out_rgba.jpg")
+    run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_jpg, "--depth-model", "Any_S"])
+    with Image.open(out_jpg) as im:
+        assert im.mode == "RGB"
+        jpg_arr = np.array(im)
+        assert jpg_arr[zero_alpha, 1].mean() > 200
+        assert jpg_arr[zero_alpha, 0].mean() < 50
+        assert jpg_arr[zero_alpha, 2].mean() < 50
+
+
+def test_cli_image_rgba_rgbd_anaglyph(cli_setup: CliSetup) -> None:
+    out_rgbd = os.path.join(cli_setup.output, "out_rgba_rgbd.png")
+    run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_rgbd, "--depth-model", "Any_S", "--rgbd"])
+    with Image.open(out_rgbd) as im:
+        assert im.mode == "RGBA"
+        arr = np.array(im)
+        zero_alpha = arr[:, :, 3] == 0
+        assert zero_alpha.any()
+        assert not np.all(arr[zero_alpha, :3] == [0, 255, 0])
+
+    out_anaglyph = os.path.join(cli_setup.output, "out_rgba_anaglyph.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_anaglyph,
+            "--depth-model",
+            "Any_S",
+            "--anaglyph",
+            "dubois",
+        ]
+    )
+    with Image.open(out_anaglyph) as im:
+        assert im.mode == "RGB"
+
+
+def test_cli_image_rgba_preprocess(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba_prep.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--max-output-height",
+            "320",
+            "--rotate-left",
+        ]
+    )
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"
+        assert im.height == 320
+
+
+def test_cli_image_rgba_autocrop(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba_crop.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--autocrop",
+            "BLACK",
+        ]
+    )
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"
+
+
+def test_cli_image_rgba_sod(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_rgba_sod.png")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.image_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--convergence-mode",
+            "sod_v1",
+        ]
+    )
+    with Image.open(out_file) as im:
+        assert im.mode == "RGBA"
+
+
+def test_cli_video_rgba_ffv1(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_ffv1.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "ffv1"
+        assert vs.pix_fmt == "yuva420p"
+        f = next(container.decode(vs))
+        rgba = f.to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_vp9(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9():
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_vp9.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--video-codec",
+            "libvpx-vp9",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "vp9"
+        assert vs.metadata.get("alpha_mode") == "1"
+
+
+def test_cli_video_webm(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9():
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video.webm")
+    run([*cli_setup.cli, "-i", cli_setup.video, "-o", out_file, "--depth-model", "Any_S"])
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "vp9"
+        assert len(container.streams.audio) > 0
+        audio_stream = container.streams.audio[0]
+        assert audio_stream.codec_context.name in {"opus", "libopus"}
+        assert audio_stream.rate == 48000
+
+
+def test_cli_video_rgba_webm(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9():
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video_rgba.webm")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "vp9"
+        assert vs.metadata.get("alpha_mode") == "1"
+        decoder = VU.VideoDecoder(vs)
+        frames = []
+        for packet in container.demux(vs):
+            for frame in decoder.decode(packet):
+                frames.append(frame)
+                break
+            if frames:
+                break
+        assert len(frames) > 0
+        rgba = frames[0].to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_input_vp9(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9() or cli_setup.video_rgba_vp9 is None:
+        pytest.skip("libvpx-vp9 is not supported")
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_from_vp9.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba_vp9,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "ffv1"
+        assert vs.pix_fmt == "yuva420p"
+        f = next(container.decode(vs))
+        rgba = f.to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_low_vram(cli_setup: CliSetup) -> None:
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_low_vram.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            out_file,
+            "--depth-model",
+            "Any_S",
+            "--low-vram",
+            "--ema-normalize",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "ffv1"
+        assert vs.pix_fmt == "yuva420p"
+        f = next(container.decode(vs))
+        rgba = f.to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_export_import(cli_setup: CliSetup) -> None:
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba,
+            "-o",
+            cli_setup.output,
+            "--depth-model",
+            "Any_S",
+            "--export",
+        ]
+    )
+    export_dir = os.path.join(cli_setup.output, "rgba")
+    rgb_dir = os.path.join(export_dir, "rgb")
+    depth_dir = os.path.join(export_dir, "depth")
+    yaml_file = os.path.join(export_dir, "iw3_export.yml")
+    assert os.path.exists(yaml_file)
+
+    rgb_files = sorted([f for f in os.listdir(rgb_dir) if f.endswith(".png")])
+    depth_files = sorted([f for f in os.listdir(depth_dir) if f.endswith(".png")])
+    assert len(rgb_files) > 0
+    assert len(rgb_files) == len(depth_files)
+
+    with Image.open(os.path.join(rgb_dir, rgb_files[0])) as im:
+        assert im.mode == "RGBA"
+        assert np.array(im)[:, :, 3].mean() < 240
+
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_imported.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            yaml_file,
+            "-o",
+            out_file,
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "ffv1"
+        assert vs.pix_fmt == "yuva420p"
+        f = next(container.decode(vs))
+        rgba = f.to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_video_rgba_vp9_export_import(cli_setup: CliSetup) -> None:
+    if not VU.has_vp9() or cli_setup.video_rgba_vp9 is None:
+        pytest.skip("libvpx-vp9 is not supported")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            cli_setup.video_rgba_vp9,
+            "-o",
+            cli_setup.output,
+            "--depth-model",
+            "Any_S",
+            "--export",
+        ]
+    )
+    export_dir = os.path.join(cli_setup.output, "rgba_vp9")
+    rgb_dir = os.path.join(export_dir, "rgb")
+    depth_dir = os.path.join(export_dir, "depth")
+    yaml_file = os.path.join(export_dir, "iw3_export.yml")
+    assert os.path.exists(yaml_file)
+
+    rgb_files = sorted([f for f in os.listdir(rgb_dir) if f.endswith(".png")])
+    depth_files = sorted([f for f in os.listdir(depth_dir) if f.endswith(".png")])
+    assert len(rgb_files) > 0
+    assert len(rgb_files) == len(depth_files)
+
+    with Image.open(os.path.join(rgb_dir, rgb_files[0])) as im:
+        assert im.mode == "RGBA"
+        assert np.array(im)[:, :, 3].mean() < 240
+
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_vp9_imported.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            yaml_file,
+            "-o",
+            out_file,
+            "--video-codec",
+            "libvpx-vp9",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.codec_context.name == "vp9"
+        assert vs.metadata.get("alpha_mode") == "1"
+        decoder = VU.VideoDecoder(vs)
+        frames = []
+        for packet in container.demux(vs):
+            for frame in decoder.decode(packet):
+                frames.append(frame)
+                break
+            if frames:
+                break
+        assert len(frames) > 0
+        rgba = frames[0].to_ndarray(format="rgba")
+        assert rgba[:, :, 3].mean() < 240
+
+
+def test_cli_image_rgba_inpaint(cli_setup: CliSetup) -> None:
+    for method in ("forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"):
+        out_file = os.path.join(cli_setup.output, f"out_rgba_{method}.png")
+        run([*cli_setup.cli, "-i", cli_setup.image_rgba, "-o", out_file, "--depth-model", "Any_S", "--method", method])
+        with Image.open(out_file) as im:
+            assert im.mode == "RGBA"
+            arr = np.array(im)
+            assert (arr[:, :, 3] == 0).any()
+
+
+def test_cli_video_rgba_inpaint(cli_setup: CliSetup) -> None:
+    for method in ("forward_inpaint", "mlbw_l2_inpaint", "monobw_inpaint"):
+        out_file = os.path.join(cli_setup.output, f"out_video_rgba_{method}.mkv")
+        run(
+            [
+                *cli_setup.cli,
+                "-i",
+                cli_setup.video_rgba,
+                "-o",
+                out_file,
+                "--depth-model",
+                "Any_S",
+                "--method",
+                method,
+                "--video-codec",
+                "ffv1",
+                "--pix-fmt",
+                "yuva420p",
+            ]
+        )
+        with av.open(out_file) as container:
+            vs = container.streams.video[0]
+            assert vs.pix_fmt == "yuva420p"
+            frames = list(container.decode(vs))
+            assert len(frames) > 0
+            for frame in frames:
+                rgba = frame.to_ndarray(format="rgba")
+                assert (rgba[:, :, 3] == 0).any()
+
+
+def test_cli_video_rgba_export_import_inpaint(cli_setup: CliSetup) -> None:
+    export_dir = os.path.join(cli_setup.output, "rgba")
+    yaml_file = os.path.join(export_dir, "iw3_export.yml")
+    if not os.path.exists(yaml_file):
+        test_cli_video_rgba_export_import(cli_setup)
+
+    out_file = os.path.join(cli_setup.output, "out_video_rgba_imported_inpaint.mkv")
+    run(
+        [
+            *cli_setup.cli,
+            "-i",
+            yaml_file,
+            "-o",
+            out_file,
+            "--method",
+            "forward_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ]
+    )
+    with av.open(out_file) as container:
+        vs = container.streams.video[0]
+        assert vs.pix_fmt == "yuva420p"
+        frames = list(container.decode(vs))
+        assert len(frames) > 0
+        for f in frames:
+            rgba = f.to_ndarray(format="rgba")
+            assert (rgba[:, :, 3] == 0).any()

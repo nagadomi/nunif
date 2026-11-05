@@ -1,4 +1,5 @@
 import os
+from typing import NamedTuple
 
 import pytest
 
@@ -22,43 +23,31 @@ COMMON_TEST_ARGS = [
 
 MIN_PSNR = 44.0
 
-TEST_CASES = [
-    ("vda_s_sd_libx265", "sd.mkv", ["--depth-model", "VDA_S", "--video-codec", "libx265"], False),
-    ("vda_s_sd_nvenc", "sd.mkv", ["--depth-model", "VDA_S", "--video-codec", "hevc_nvenc"], True),
-    (
-        "vda_s_hdr_libx265",
-        "hdr.mkv",
-        ["--depth-model", "VDA_S", "--video-codec", "libx265", "--pix-fmt", "yuv420p10le"],
-        False,
-    ),
-    ("any_s_sd_libx265", "sd.mkv", ["--depth-model", "Any_S", "--video-codec", "libx265"], False),
-    ("any_s_sd_nvenc", "sd.mkv", ["--depth-model", "Any_S", "--video-codec", "hevc_nvenc"], True),
-    (
-        "any_s_hdr_nvenc",
-        "hdr.mkv",
-        ["--depth-model", "Any_S", "--video-codec", "hevc_nvenc", "--pix-fmt", "yuv420p10le"],
-        True,
-    ),
-    (
-        "any_s_sd_inpaint",
-        "sd.mkv",
-        ["--depth-model", "Any_S", "--method", "forward_inpaint", "--video-codec", "libx265"],
-        False,
-    ),
-    ("vda_s_sd_nvenc_noaudio", "sd_noaudio.mkv", ["--depth-model", "VDA_S", "--video-codec", "hevc_nvenc"], True),
-    ("any_s_sd_nvenc_noaudio", "sd_noaudio.mkv", ["--depth-model", "Any_S", "--video-codec", "hevc_nvenc"], True),
-    ("vda_s_sd_libx265_noaudio", "sd_noaudio.mkv", ["--depth-model", "VDA_S", "--video-codec", "libx265"], False),
-]
+
+class RaceConditionSetup(NamedTuple):
+    work_dir: str
+    sd: str
+    hdr: str
+    sd_noaudio: str
+    hdr_noaudio: str
+    rgba: str
 
 
 @pytest.fixture(scope="module")
-def race_condition_setup(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+def race_condition_setup(tmp_path_factory: pytest.TempPathFactory) -> RaceConditionSetup:
     tmp_dir = tmp_path_factory.mktemp("race_condition")
     data_dir = str(tmp_dir / "data")
     work_dir = str(tmp_dir / "work")
     os.makedirs(work_dir, exist_ok=True)
     ensure_race_condition_data(base_dir=data_dir)
-    return {"data_dir": data_dir, "work_dir": work_dir}
+    return RaceConditionSetup(
+        work_dir=work_dir,
+        sd=os.path.join(data_dir, "sd.mkv"),
+        hdr=os.path.join(data_dir, "hdr.mkv"),
+        sd_noaudio=os.path.join(data_dir, "sd_noaudio.mkv"),
+        hdr_noaudio=os.path.join(data_dir, "hdr_noaudio.mkv"),
+        rgba=os.path.join(data_dir, "rgba.mkv"),
+    )
 
 
 def run_and_compare(work_dir: str, test_name: str, input_video: str, extra_args: list[str]) -> bool:
@@ -85,18 +74,177 @@ def run_and_compare(work_dir: str, test_name: str, input_video: str, extra_args:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize(
-    "name,video_file,extra_args,is_hwaccel",
-    TEST_CASES,
-)
-def test_race_condition(
-    race_condition_setup: dict[str, str],
-    name: str,
-    video_file: str,
-    extra_args: list[str],
-    is_hwaccel: bool,
-) -> None:
-    input_video = os.path.join(race_condition_setup["data_dir"], video_file)
-    assert run_and_compare(race_condition_setup["work_dir"], name, input_video, extra_args), (
-        f"Race condition test failed for {name}"
+def test_vda_s_sd_libx265(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_sd_libx265",
+        race_condition_setup.sd,
+        ["--depth-model", "VDA_S", "--video-codec", "libx265"],
+    )
+
+
+@pytest.mark.slow
+def test_vda_s_sd_nvenc(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_sd_nvenc",
+        race_condition_setup.sd,
+        ["--depth-model", "VDA_S", "--video-codec", "hevc_nvenc"],
+    )
+
+
+@pytest.mark.slow
+def test_vda_s_hdr_libx265(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_hdr_libx265",
+        race_condition_setup.hdr,
+        ["--depth-model", "VDA_S", "--video-codec", "libx265", "--pix-fmt", "yuv420p10le"],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_sd_libx265(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_sd_libx265",
+        race_condition_setup.sd,
+        ["--depth-model", "Any_S", "--video-codec", "libx265"],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_sd_nvenc(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_sd_nvenc",
+        race_condition_setup.sd,
+        ["--depth-model", "Any_S", "--video-codec", "hevc_nvenc"],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_hdr_nvenc(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_hdr_nvenc",
+        race_condition_setup.hdr,
+        ["--depth-model", "Any_S", "--video-codec", "hevc_nvenc", "--pix-fmt", "yuv420p10le"],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_sd_inpaint(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_sd_inpaint",
+        race_condition_setup.sd,
+        ["--depth-model", "Any_S", "--method", "forward_inpaint", "--video-codec", "libx265"],
+    )
+
+
+@pytest.mark.slow
+def test_vda_s_sd_nvenc_noaudio(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_sd_nvenc_noaudio",
+        race_condition_setup.sd_noaudio,
+        ["--depth-model", "VDA_S", "--video-codec", "hevc_nvenc"],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_sd_nvenc_noaudio(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_sd_nvenc_noaudio",
+        race_condition_setup.sd_noaudio,
+        ["--depth-model", "Any_S", "--video-codec", "hevc_nvenc"],
+    )
+
+
+@pytest.mark.slow
+def test_vda_s_sd_libx265_noaudio(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_sd_libx265_noaudio",
+        race_condition_setup.sd_noaudio,
+        ["--depth-model", "VDA_S", "--video-codec", "libx265"],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_rgba_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_rgba_ffv1",
+        race_condition_setup.rgba,
+        ["--depth-model", "Any_S", "--video-codec", "ffv1", "--pix-fmt", "yuva420p"],
+    )
+
+
+@pytest.mark.slow
+def test_vda_s_rgba_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_rgba_ffv1",
+        race_condition_setup.rgba,
+        ["--depth-model", "VDA_S", "--video-codec", "ffv1", "--pix-fmt", "yuva420p"],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_rgba_inpaint_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_rgba_inpaint_ffv1",
+        race_condition_setup.rgba,
+        [
+            "--depth-model",
+            "Any_S",
+            "--method",
+            "forward_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ],
+    )
+
+
+@pytest.mark.slow
+def test_vda_s_rgba_inpaint_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "vda_s_rgba_inpaint_ffv1",
+        race_condition_setup.rgba,
+        [
+            "--depth-model",
+            "VDA_S",
+            "--method",
+            "mlbw_l2_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ],
+    )
+
+
+@pytest.mark.slow
+def test_any_s_rgba_monobw_inpaint_ffv1(race_condition_setup: RaceConditionSetup) -> None:
+    assert run_and_compare(
+        race_condition_setup.work_dir,
+        "any_s_rgba_monobw_inpaint_ffv1",
+        race_condition_setup.rgba,
+        [
+            "--depth-model",
+            "Any_S",
+            "--method",
+            "monobw_inpaint",
+            "--video-codec",
+            "ffv1",
+            "--pix-fmt",
+            "yuva420p",
+        ],
     )

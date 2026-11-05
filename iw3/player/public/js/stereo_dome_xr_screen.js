@@ -90,7 +90,7 @@ class StereoDomeXRScreen extends StereoDomeScreen {
 
         if (this.xrLayer && this.xrSession && window.XRRigidTransform) {
             try {
-                this.updateMatrixWorld(true);
+                this.updateWorldMatrix(true, false);
                 
                 const position = new THREE.Vector3();
                 const quaternion = new THREE.Quaternion();

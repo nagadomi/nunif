@@ -9,6 +9,8 @@ import av.video.codeccontext
 import av.video.stream
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
+from tests.helpers.smoke_data import generate_rgba_video
+
 COLORSPACE_MAP: Mapping[str, Colorspace] = {
     "bt709": Colorspace.ITU709,
     "bt2020nc": Colorspace.BT2020,
@@ -192,6 +194,12 @@ def ensure_race_condition_data(
     hdr_noaudio_path = os.path.join(base_dir, "hdr_noaudio.mkv")
     if force or not os.path.exists(hdr_noaudio_path):
         copy_video_only(hdr_path, hdr_noaudio_path)
+
+    rgba_path = os.path.join(base_dir, "rgba.mkv")
+    if force or not os.path.exists(rgba_path):
+        rgba_src = os.path.join(os.path.dirname(__file__), "..", "images", "dog_448_rgba.png")
+        if os.path.exists(rgba_src):
+            generate_rgba_video(rgba_src, rgba_path, codec="ffv1", duration=scene_duration * 3)
 
 
 def main() -> None:

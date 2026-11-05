@@ -292,20 +292,21 @@ class Waifu2x:
             rgb = self.render(x, method, noise_level, tile_size, batch_size, enable_amp)
 
         rgb = rgb.to(output_device)
-        if alpha is not None and method in ("scale", "noise_scale", "scale4x", "noise_scale4x"):
-            if not blank_alpha:
-                model = self.scale4x_model if method in {"scale4x", "noise_scale4x"} else self.scale_model
-                if model is not None:
-                    alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
-                    alpha = tiled_render(
-                        alpha, model, tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp
-                    ).mean(0, keepdim=True)
+        if alpha is not None:
+            if method in ("scale", "noise_scale", "scale4x", "noise_scale4x"):
+                if not blank_alpha:
+                    model = self.scale4x_model if method in {"scale4x", "noise_scale4x"} else self.scale_model
+                    if model is not None:
+                        alpha = alpha.expand(3, alpha.shape[1], alpha.shape[2])
+                        alpha = tiled_render(
+                            alpha, model, tile_size=tile_size, batch_size=batch_size, enable_amp=enable_amp
+                        ).mean(0, keepdim=True)
+                    else:
+                        scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
+                        alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="bilinear").squeeze(0)
                 else:
                     scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
-                    alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="bilinear").squeeze(0)
-            else:
-                scale_factor = 4 if method in {"scale4x", "noise_scale4x"} else 2
-                alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)
+                    alpha = F.interpolate(alpha.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)
             alpha = alpha.to(output_device)
 
         return rgb, alpha

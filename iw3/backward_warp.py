@@ -402,6 +402,7 @@ def apply_divergence_nn_delta_weight(
     preserve_screen_border=False,
     enable_amp=True,
     return_mask=False,
+    clear_holes=False,
 ):
     # BCHW
     assert model.delta_output
@@ -475,7 +476,7 @@ def apply_divergence_nn_delta_weight(
     if return_mask:
         return z, hole_mask_logits
     else:
-        if hole_mask_logits is not None:
+        if clear_holes and hole_mask_logits is not None:
             # hole fill for visualize
             hole_mask = postprocess_hole_mask(
                 hole_mask_logits,
