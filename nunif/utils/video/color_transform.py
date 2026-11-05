@@ -1011,6 +1011,33 @@ def configure_video_codec(config: Any) -> None:
         elif pix_fmt == "yuv420p10le":
             config.pix_fmt = "p010le"
 
+    # AMF (AMD) hardware encoder mappings
+    # AMF encoders accept nv12, yuv420p, p010le and packed RGB (rgb0/bgr0/bgra/rgba);
+    # no yuv444p, no rgb24, no 16-bit. Alpha is dropped (no encoder support).
+    if codec in {"h264_amf", "hevc_amf", "av1_amf"}:
+        if codec == "h264_amf" and pix_fmt in {
+            "yuv420p10le", "p010le", "gbrp10le", "gbrp16le", "gbrap10le", "gbrap16le"
+        }:
+            # h264_amf does not support 10-bit pixel formats
+            config.pix_fmt = "nv12"
+        elif pix_fmt in {"yuv420p", "yuv444p", "yuva420p"}:
+            config.pix_fmt = "nv12"
+        elif pix_fmt == "yuv420p10le":
+            config.pix_fmt = "p010le"
+        elif codec in {"hevc_amf", "av1_amf"} and pix_fmt in {"gbrp10le", "gbrp16le", "gbrap10le", "gbrap16le"}:
+            config.pix_fmt = "p010le"
+        elif pix_fmt in {"rgb24", "rgba", "gbrp", "gbrap"}:
+            # packed RGB is the only RGB input AMF encoders accept
+            config.pix_fmt = "rgb0"
+
+    # VAAPI hardware encoder mappings
+    if codec in {"h264_vaapi", "hevc_vaapi", "av1_vaapi"}:
+        if pix_fmt == "yuv420p10le":
+            config.pix_fmt = "p010le"
+        elif pix_fmt == "rgb24":
+            # VAAPI hwupload has no rgb24 input; bgr0 is the packed RGB format it accepts
+            config.pix_fmt = "bgr0"
+
 
 def _test_configure() -> None:
     class MockConfig:
