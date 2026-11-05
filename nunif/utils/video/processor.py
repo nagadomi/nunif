@@ -31,6 +31,7 @@ from .utils import (
     get_default_video_codec,
     pix_fmt_requires_16bit,
 )
+from .vaapi import VaapiUploader, is_vaapi_codec
 from .video_preprocessor import VideoPreprocessor
 
 
@@ -274,7 +275,13 @@ def _process_video(
     apply_color_settings(video_output_stream, output_reformatter)
 
     video_output_stream.thread_type = "AUTO"
-    video_output_stream.pix_fmt = config.pix_fmt
+    if is_vaapi_codec(config.video_codec):
+        # VAAPI encoders take VAAPI surfaces; frames are uploaded per-frame before encode
+        video_output_stream.pix_fmt = "vaapi"
+        vaapi_uploader = VaapiUploader(time_base=video_output_stream.time_base)
+    else:
+        video_output_stream.pix_fmt = config.pix_fmt
+        vaapi_uploader = None
 
     video_output_stream.options = config.options
     video_preprocessor = VideoPreprocessor(
@@ -346,9 +353,12 @@ def _process_video(
                                 )
                                 uninitialized = False
                             # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
-                            enc_packets = video_output_stream.encode(reformatted_frame)
-                            if enc_packets:
-                                output_container.mux(enc_packets)
+                            if vaapi_uploader is not None:
+                                reformatted_frame = vaapi_uploader.update(reformatted_frame)
+                            if reformatted_frame is not None:
+                                enc_packets = video_output_stream.encode(reformatted_frame)
+                                if enc_packets:
+                                    output_container.mux(enc_packets)
                             pbar.update(1)
             elif packet.stream.type == "audio":
                 assert isinstance(audio_output_stream, av.AudioStream)
@@ -384,9 +394,12 @@ def _process_video(
                     set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
                     uninitialized = False
 
-                enc_packets = video_output_stream.encode(ref_frame)
-                if enc_packets:
-                    output_container.mux(enc_packets)
+                if vaapi_uploader is not None:
+                    ref_frame = vaapi_uploader.update(ref_frame)
+                if ref_frame is not None:
+                    enc_packets = video_output_stream.encode(ref_frame)
+                    if enc_packets:
+                        output_container.mux(enc_packets)
                 pbar.update(1)
 
         for new_frame in get_new_frames(frame_callback(None)):
@@ -397,9 +410,12 @@ def _process_video(
             if uninitialized:
                 set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
                 uninitialized = False
-            enc_packets = video_output_stream.encode(ref_frame)
-            if enc_packets:
-                output_container.mux(enc_packets)
+            if vaapi_uploader is not None:
+                ref_frame = vaapi_uploader.update(ref_frame)
+            if ref_frame is not None:
+                enc_packets = video_output_stream.encode(ref_frame)
+                if enc_packets:
+                    output_container.mux(enc_packets)
             pbar.update(1)
 
         enc_packets = video_output_stream.encode(None)
@@ -472,7 +488,13 @@ def generate_video(
     apply_color_settings(video_output_stream, output_reformatter)
 
     video_output_stream.thread_type = "AUTO"
-    video_output_stream.pix_fmt = config.pix_fmt
+    if is_vaapi_codec(config.video_codec):
+        # VAAPI encoders take VAAPI surfaces; frames are uploaded per-frame before encode
+        video_output_stream.pix_fmt = "vaapi"
+        vaapi_uploader = VaapiUploader(time_base=video_output_stream.time_base)
+    else:
+        video_output_stream.pix_fmt = config.pix_fmt
+        vaapi_uploader = None
     if not uninitialized:
         video_output_stream.width = config.output_width
         video_output_stream.height = config.output_height
@@ -558,9 +580,12 @@ def generate_video(
             if uninitialized:
                 set_output_size_and_flash(output_container, video_output_stream, new_frame, unmux_packets)
                 uninitialized = False
-            enc_packet = video_output_stream.encode(new_frame)
-            if enc_packet:
-                output_container.mux(enc_packet)
+            if vaapi_uploader is not None:
+                new_frame = vaapi_uploader.update(new_frame)
+            if new_frame is not None:
+                enc_packet = video_output_stream.encode(new_frame)
+                if enc_packet:
+                    output_container.mux(enc_packet)
             pbar.update(1)
         if suspend_event is not None:
             suspend_event.wait()

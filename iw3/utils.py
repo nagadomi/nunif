@@ -217,6 +217,41 @@ def make_video_codec_option(args, input_path=None):
                 options["gpu"] = str(args.gpu[0])
     elif args.video_codec in {"h264_qsv", "hevc_qsv"}:
         options = {"preset": args.preset, "crf": str(args.crf), "global_quality": str(args.crf)}
+    elif args.video_codec in {"h264_amf", "hevc_amf", "av1_amf"}:
+        # AMF hardware encoders (AMD GPU)
+        # Map GUI controls: crf -> qp, preset -> quality
+        options = {
+            "rc": "cqp",
+            "qp": str(args.crf),
+            "quality": args.preset,
+            # Quality-oriented defaults (see AMD AMF recommended settings)
+            "usage": "transcoding",
+            "aq_mode": "caq",
+        }
+        if args.tune:
+            options["tune"] = ",".join(set(args.tune))
+
+        if args.profile_level:
+            options["level"] = str(int(float(args.profile_level) * 10))
+
+        if args.video_codec in {"hevc_amf", "av1_amf"}:
+            options["header_insertion_mode"] = "gop"
+        if args.video_codec == "av1_amf":
+            options["max_b_frames"] = "2"
+            options["high_motion_quality_boost_enable"] = "true"
+    elif args.video_codec in {"h264_vaapi", "hevc_vaapi", "av1_vaapi"}:
+        # VAAPI: qp, rc_mode=CQP; preset is mapped to VAAPI "preset" by
+        # ffmpeg (1=veryfast, 7=veryslow, "medium" is also accepted).
+        options = {
+            "rc_mode": "CQP",
+            "qp": str(args.crf),
+            "vaapi_device": args.vaapi_device,
+        }
+        if args.tune:
+            options["tune"] = ",".join(set(args.tune))
+
+        if args.profile_level:
+            options["level"] = str(int(float(args.profile_level) * 10))
     elif args.video_codec == "libopenh264":
         # NOTE: It seems libopenh264 does not support most options.
         options = {"b": args.video_bitrate}
@@ -2581,8 +2616,18 @@ def create_parser(required_true=True):
             "p5",
             "p6",
             "p7",
+            "speed",
+            "balanced",
+            "quality",
+            "high_quality",
         ],
         help="encoder preset option for video",
+    )
+    parser.add_argument(
+        "--vaapi-device",
+        type=str,
+        default="/dev/dri/renderD128",
+        help="VAAPI render node path for h264_vaapi/hevc_vaapi/av1_vaapi",
     )
     parser.add_argument(
         "--tune",
