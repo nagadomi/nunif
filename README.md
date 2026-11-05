@@ -103,6 +103,6 @@ The `~` character at the beginning of a path string is expanded to the home dire
 Note that if you distribute binary builds, it is possible that it will be GPL.
 
 This is due to PyAV(av) wheel package containing the GPL version of ffmpeg library.
-You can build PyAV with the LGPL version of ffmpeg library.
+[You can build PyAV with the LGPL version of ffmpeg library](INSTALL-ubuntu.md#building-pyav-from-source).
 
 If you load this repository with torch.hub.load for waifu2x Python API etc, this problem does not exist because PyAV is not a dependent package.
