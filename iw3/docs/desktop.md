@@ -210,6 +210,9 @@ python -m iw3.desktop --user admin --password 1234
 
 Specify the `--local-viewer` option.
 
+- `--uncap-fps`: Allows Local Viewer to render at frame rates beyond the display's refresh rate.
+- `--fit-window`: Stretches the image to fit the viewer window ignoring aspect ratio.
+
 Even if specified from the CLI, a GUI window will be displayed, so wxpython and OpenGL are required (installed from `requirements-gui.txt`).
 
 On a CUDA run the viewer tries to copy frames straight from GPU memory into the window

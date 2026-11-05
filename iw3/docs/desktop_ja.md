@@ -206,6 +206,9 @@ python -m iw3.desktop --user admin --password 1234
 
 `--local-viewer`オプションを指定します。
 
+- `--uncap-fps`: ディスプレイのリフレッシュレート上限を超えて描画します。
+- `--fit-window`: アスペクト比を無視してビューワーウィンドウ全体に画面を引き伸ばしてフィットさせます。
+
 CLIから指定した場合でもGUIウィンドウが表示されるため、wxpythonとOpenGLが必要です（`requirements-gui.txt`からインストールされます）。
 
 CUDAを使用する実行では、フレームをGPUメモリから直接ウィンドウへコピーします（CUDA-GL Interop）。

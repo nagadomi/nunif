@@ -400,6 +400,8 @@ class MainFrame(wx.Frame):
         self.cbo_stream_quality.SetSelection(2)
         self.chk_pad_16_9 = wx.CheckBox(self.grp_network, label=T("Padding") + " 16:9", name="chk_pad_16_9")
         self.chk_pad_16_9.SetValue(False)
+        self.chk_fit_window = wx.CheckBox(self.grp_network, label=T("Fit Window"), name="chk_fit_window")
+        self.chk_fit_window.SetValue(False)
 
         self.chk_gpu_jpeg = wx.CheckBox(self.grp_network, label=T("GPU JPEG"), name="chk_gpu_jpeg")
         self.chk_gpu_jpeg.SetValue(False)
@@ -434,13 +436,14 @@ class MainFrame(wx.Frame):
         layout.Add(self.cbo_stream_quality, (7, 1), flag=wx.EXPAND)
         layout.Add(self.chk_gpu_jpeg, (8, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_pad_16_9, (9, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.sep_network1, (10, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
+        layout.Add(self.chk_fit_window, (10, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_network1, (11, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
 
-        layout.Add(self.chk_auth, (11, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (12, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (12, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (13, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (13, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_auth, (12, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (13, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (13, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (14, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (14, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -1098,6 +1101,7 @@ class MainFrame(wx.Frame):
                 stream_fps=int(self.cbo_stream_fps.GetValue()),
                 stream_height=int(self.cbo_stream_height.GetValue()),
                 uncap_fps=self.chk_uncap_fps.GetValue(),
+                fit_window=self.chk_fit_window.GetValue(),
             )
         else:
             viewer_kwargs = dict(
@@ -1406,6 +1410,7 @@ class MainFrame(wx.Frame):
         ]
         local_viewer_options = [
             self.chk_uncap_fps,
+            self.chk_fit_window,
         ]
 
         if local_viewer:

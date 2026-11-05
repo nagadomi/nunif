@@ -163,6 +163,11 @@ def create_parser():
         action="store_true",
         help="Allows LocalViewer to render at frame rates beyond the display's refresh rate",
     )
+    parser.add_argument(
+        "--fit-window",
+        action="store_true",
+        help="Stretch image to fit the Local Viewer window ignoring aspect ratio",
+    )
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
@@ -399,7 +404,12 @@ def iw3_desktop_main(args, init_wxapp=True):
         IS_ROCM = getattr(torch.version, "hip", None) is not None
         USE_CUDA = torch.cuda.is_available() and not IS_ROCM
         server = LocalViewer(
-            lock=lock, width=output_frame_width, height=output_frame_height, use_cuda=USE_CUDA, uncap_fps=args.uncap_fps
+            lock=lock,
+            width=output_frame_width,
+            height=output_frame_height,
+            use_cuda=USE_CUDA,
+            uncap_fps=args.uncap_fps,
+            fit_window=args.fit_window,
         )
 
     screenshot_thread = screenshot_factory(
