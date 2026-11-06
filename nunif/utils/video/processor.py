@@ -83,8 +83,14 @@ def try_replace(output_path_tmp, output_path):
                 raise
 
 
+def get_default_audio_codec(container_format: str | None) -> str:
+    # utvideo + flac crashes on windows media player
+    # return "flac" if container_format == "avi" else "aac"
+    return "libopus" if container_format == "webm" else "aac"
+
+
 def get_audio_output_rate(acodec: str, input_rate: int) -> int:
-    if acodec == "opus":
+    if acodec in {"opus", "libopus"}:
         if input_rate < 16000:
             return 16000
         if input_rate in {16000, 24000, 48000}:
@@ -290,9 +296,7 @@ def _process_video(
         video_output_stream.height = config.output_height
         uninitialized = False
 
-    # utvideo + flac crashes on windows media player
-    # default_acodec = "flac" if config.container_format == "avi" else "aac"
-    default_acodec = "opus" if config.container_format == "webm" else "aac"
+    default_acodec = get_default_audio_codec(config.container_format)
     if audio_input_stream is not None:
         audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
         if audio_input_stream.rate < 16000:
@@ -480,7 +484,7 @@ def generate_video(
         if len(input_container.streams.audio) > 0:
             # has audio stream
             audio_input_stream = input_container.streams.audio[0]
-            default_acodec = "opus" if config.container_format == "webm" else "aac"
+            default_acodec = get_default_audio_codec(config.container_format)
             audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
             if audio_input_stream.rate < 16000:
                 audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
