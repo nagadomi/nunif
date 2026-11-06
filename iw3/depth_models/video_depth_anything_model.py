@@ -58,7 +58,14 @@ def batch_preprocess(x, lower_bound, metric_depth, limit_resolution=False):
 
 
 def _postprocess(
-    out, edge_dilation, metric_depth, force_disparity=False, max_dist=None, depth_aa=None, enable_amp=True
+    out,
+    edge_dilation,
+    metric_depth,
+    force_disparity=False,
+    max_dist=None,
+    depth_aa=None,
+    enable_amp=True,
+    alpha=None,
 ):
     out = out.unsqueeze(1)
     out = torch.nan_to_num(out)
@@ -71,16 +78,19 @@ def _postprocess(
         eps = 0.1
         out = 1.0 / (out + eps)
 
+    if metric_depth:
+        out = F.pad(out, (-METRIC_PADDING,) * 4)
+
+    is_disparity = not metric_depth or (metric_depth and force_disparity)
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, is_metric=not is_disparity)
+
     if depth_aa is not None:
         ori_dtype = out.dtype
         with autocast(device=out.device, enabled=enable_amp):
             out = depth_aa.infer(out)
         out = out.to(ori_dtype)
 
-    if metric_depth:
-        out = F.pad(out, (-METRIC_PADDING,) * 4)
-
-    is_disparity = not metric_depth or (metric_depth and force_disparity)
     if edge_dilation_is_enabled(edge_dilation):
         if is_disparity:
             out = dilate_edge(out, edge_dilation)
@@ -95,8 +105,26 @@ def _postprocess(
     return out
 
 
-def postprocess(out, edge_dilation, metric_depth, max_dist=None, depth_aa=None, force_disparity=False, enable_amp=True):
+def postprocess(
+    out,
+    edge_dilation,
+    metric_depth,
+    max_dist=None,
+    depth_aa=None,
+    force_disparity=False,
+    enable_amp=True,
+    alpha=None,
+):
     micro_batch_size = 4
+    batches = torch.split(out, micro_batch_size, dim=0)
+    if alpha is None:
+        alpha_batches: list = [None] * len(batches)
+    elif isinstance(alpha, list):
+        alpha_batches = [alpha[i : i + micro_batch_size] for i in range(0, len(alpha), micro_batch_size)]
+    else:
+        if alpha.ndim == 3:
+            alpha = alpha.unsqueeze(0)
+        alpha_batches = list(torch.split(alpha, micro_batch_size, dim=0))
     return torch.cat(
         [
             _postprocess(
@@ -107,8 +135,9 @@ def postprocess(out, edge_dilation, metric_depth, max_dist=None, depth_aa=None, 
                 max_dist=max_dist,
                 depth_aa=depth_aa,
                 enable_amp=enable_amp,
+                alpha=alpha_batch,
             )
-            for batch in torch.split(out, micro_batch_size, dim=0)
+            for batch, alpha_batch in zip(batches, alpha_batches)
         ],
         dim=0,
     )
@@ -119,6 +148,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
         super().__init__(model_type)
         self.input_frame_count = 0
         self.output_frame_count = 0
+        self.alpha_queue: list[torch.Tensor | None] = []
         self.metric_depth = model_type in METRIC_DEPTH_TYPES
         # if True, use 1 / depth and is_metric==False
         self.force_disparity = True
@@ -184,6 +214,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
         self.model.reset_state()
         self.input_frame_count = 0
         self.output_frame_count = 0
+        self.alpha_queue.clear()
 
     def reset(self):
         self.reset_state()
@@ -197,6 +228,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         streaming: bool = False,
         **kwargs,
     ) -> torch.Tensor | None:
@@ -226,6 +258,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
                     metric_depth=self.model.metric_depth,
                     force_disparity=self.force_disparity,
                     enable_amp=enable_amp,
+                    alpha=alpha,
                 )
                 self.reset_state()
                 return out.squeeze(0) if x.ndim == 3 else out
@@ -235,6 +268,8 @@ class VideoDepthAnythingModel(BaseDepthModel):
         # Streaming video inference (x is BCHW or CHW)
         if x.ndim == 3:
             x = x.unsqueeze(0)
+        if alpha is not None and alpha.ndim == 3:
+            alpha = alpha.unsqueeze(0)
         B = x.shape[0]
         x_in = batch_preprocess(
             x,
@@ -246,6 +281,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
         ret_all = []
         for i in range(B):
             self.input_frame_count += 1
+            self.alpha_queue.append(alpha[i : i + 1] if alpha is not None else None)
             ret = self.model.infer(x_in[i], use_amp=enable_amp)
             if ret is not None:
                 self.output_frame_count += len(ret)
@@ -253,6 +289,8 @@ class VideoDepthAnythingModel(BaseDepthModel):
 
         if ret_all:
             out = torch.stack(ret_all)
+            k = len(ret_all)
+            alphas = [self.alpha_queue.pop(0) for _ in range(min(k, len(self.alpha_queue)))]
             return postprocess(
                 out,
                 edge_dilation=edge_dilation,
@@ -260,6 +298,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
                 metric_depth=self.model.metric_depth,
                 force_disparity=self.force_disparity,
                 enable_amp=enable_amp,
+                alpha=alphas if alphas else None,
             )
         return None
 
@@ -273,6 +312,8 @@ class VideoDepthAnythingModel(BaseDepthModel):
         ret = self._flush(enable_amp=enable_amp)
         if ret:
             out = torch.stack(ret)
+            k = len(ret)
+            alphas = [self.alpha_queue.pop(0) for _ in range(min(k, len(self.alpha_queue)))]
             depth_aa_module = self.depth_aa if depth_aa else None
             return postprocess(
                 out,
@@ -281,6 +322,7 @@ class VideoDepthAnythingModel(BaseDepthModel):
                 metric_depth=self.model.metric_depth,
                 force_disparity=self.force_disparity,
                 enable_amp=enable_amp,
+                alpha=alphas if alphas else None,
             )
         return None
 

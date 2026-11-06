@@ -82,6 +82,7 @@ def batch_infer(
     device=None,
     edge_dilation=2,
     force_disparity=False,
+    alpha=None,
     **kwargs,
 ):
     device = device if device is not None else model.device
@@ -114,6 +115,9 @@ def batch_infer(
 
     if unpad > 0:
         out = out[:, :, unpad:-unpad, unpad:-unpad]
+
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, flip_aug=flip_aug, is_metric=not force_disparity)
 
     if edge_dilation_is_enabled(edge_dilation):
         if force_disparity:
@@ -199,6 +203,7 @@ class DepthProModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         if not torch.is_tensor(x):
@@ -214,6 +219,7 @@ class DepthProModel(BaseDepthModel):
             device=x.device,
             edge_dilation=edge_dilation,
             force_disparity=self.force_disparity,
+            alpha=alpha,
         )
 
     order: int = 20

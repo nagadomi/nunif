@@ -75,6 +75,7 @@ class DummyMattingModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if not torch.is_tensor(x):
@@ -228,3 +229,175 @@ def test_matting_export_callback(tmp_path: Path) -> None:
     assert rgb_path.exists()
     im = Image.open(rgb_path)
     assert im.mode == "RGBA"
+
+
+class DummyAlphaDepthModel(BaseDepthModel):
+    def __init__(self, model_type: str = "DummyAlphaDepth"):
+        super().__init__(model_type)
+        self.device = torch.device("cpu")
+
+    @classmethod
+    def is_matting(cls, model_type: str | None = None) -> bool:
+        return False
+
+    @classmethod
+    def is_desktop_supported(cls) -> bool:
+        return False
+
+    @classmethod
+    def get_name(cls) -> str:
+        return "DummyAlphaDepth"
+
+    @classmethod
+    def supported(cls, model_type: str) -> bool:
+        return model_type == "DummyAlphaDepth"
+
+    @classmethod
+    def get_model_types(cls) -> list[str]:
+        return ["DummyAlphaDepth"]
+
+    @classmethod
+    def has_checkpoint_file(cls, model_type: str) -> bool:
+        return True
+
+    @classmethod
+    def get_model_path(cls, model_type: str) -> str:
+        return ""
+
+    @classmethod
+    def multi_gpu_supported(cls, model_type: str) -> bool:
+        return False
+
+    @classmethod
+    def force_update(cls) -> None:
+        pass
+
+    def load_model(self, *args, **kwargs):
+        return torch.nn.Identity()
+
+    def is_metric(self) -> bool:
+        return False
+
+    def infer(
+        self,
+        x: torch.Tensor | Image.Image,
+        tta: bool = False,
+        low_vram: bool = False,
+        enable_amp: bool = True,
+        edge_dilation: int | tuple[int, int] = 0,
+        depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        if not torch.is_tensor(x):
+            from torchvision.transforms import functional as TF
+
+            x = TF.to_tensor(x)
+        assert torch.is_tensor(x)
+        h, w = x.shape[-2:]
+        if x.ndim == 4:
+            b = x.shape[0]
+            depth = torch.full((b, 1, h, w), 0.2, dtype=torch.float32)
+            depth[:, :, 12:20, 12:20] = 0.8
+        else:
+            depth = torch.full((1, h, w), 0.2, dtype=torch.float32)
+            depth[:, 12:20, 12:20] = 0.8
+
+        if alpha is not None:
+            depth = self.apply_alpha_mask(depth, alpha, is_metric=False)
+
+        from iw3.dilation import dilate_edge, edge_dilation_is_enabled
+
+        if edge_dilation_is_enabled(edge_dilation):
+            if depth.ndim == 3:
+                depth = dilate_edge(depth.unsqueeze(0), edge_dilation).squeeze(0)
+            else:
+                depth = dilate_edge(depth, edge_dilation)
+        return depth.to(x.device)
+
+
+class DummyStreamingAlphaDepthModel(DummyAlphaDepthModel):
+    def is_streaming(self) -> bool:
+        return True
+
+
+def test_alpha_video_callbacks_edge_dilation_order(tmp_path: Path) -> None:
+    # Verify that edge dilation expands foreground depth beyond alpha border
+    # rather than being wiped out by apply_alpha_mask
+    depth_model = DummyAlphaDepthModel()
+
+    # 1. Direct BaseDepthModel.apply_alpha_mask + infer test
+    alpha = torch.zeros((1, 32, 32), dtype=torch.float32)
+    alpha[:, 12:20, 12:20] = 1.0
+    rgb = torch.ones((3, 32, 32), dtype=torch.float32)
+
+    post_depth = depth_model.infer(
+        rgb,
+        edge_dilation=2,
+        depth_aa=False,
+        alpha=alpha,
+    ).squeeze()
+    # Foreground is at (15, 15)
+    assert post_depth[15, 15] > 0.7
+    # Within dilation radius of 2 from border (11, 15), depth is dilated foreground (> 0.7)
+    assert post_depth[11, 15] > 0.7
+    # Far outside (5, 5), depth is masked background (0.5)
+    assert torch.isclose(post_depth[5, 5], torch.tensor(0.5))
+
+    # Also verify metric sign convention in BaseDepthModel.apply_alpha_mask
+    metric_depth = torch.full((1, 1, 32, 32), 5.0, dtype=torch.float32)
+    metric_depth[:, :, 12:20, 12:20] = 1.0  # closer in metric distance
+    masked_metric = BaseDepthModel.apply_alpha_mask(metric_depth.clone(), alpha, is_metric=True)
+    assert masked_metric is not None
+    # Background should be set to (fg.max() + all.max()) * 0.5 = (1.0 + 5.0) * 0.5 = 3.0 (> fg 1.0)
+    assert torch.isclose(masked_metric[0, 0, 5, 5], torch.tensor(3.0))
+    assert torch.isclose(masked_metric[0, 0, 15, 15], torch.tensor(1.0))
+
+    # 2. Export single frame callback (video pipeline verification)
+    args = _create_test_args(
+        video_format="webm",
+        video_codec="libvpx-vp9",
+        pix_fmt="yuva420p",
+        export_disparity=True,
+        edge_dilation=2,
+        batch_size=1,
+        cuda_stream=False,
+        method="forward_fill",
+    )
+    rgb_dir = str(tmp_path / "rgb_alpha")
+    depth_dir = str(tmp_path / "depth_alpha")
+    import os
+
+    os.makedirs(rgb_dir, exist_ok=True)
+    os.makedirs(depth_dir, exist_ok=True)
+
+    with PoolExecutor(max_workers=2) as pool:
+        cb = bind_export_single_frame_callback(depth_model, set(), rgb_dir, depth_dir, pool, args)
+        f_arr = np.zeros((32, 32, 4), dtype=np.uint8)
+        f_arr[12:20, 12:20, :] = 255
+        f = av.VideoFrame.from_ndarray(f_arr, format="rgba")
+        f.pts = 0
+        cb(f)
+        cb(None)
+
+    depth_path = Path(depth_dir) / "00000000.png"
+    assert depth_path.exists()
+    im_depth = Image.open(depth_path)
+    depth_arr = np.array(im_depth)
+    # Check that dilation expanded foreground in the exported depth image
+    assert depth_arr[15, 15] > 50000
+    assert depth_arr[11, 15] > 50000
+    assert depth_arr[5, 5] < 10000
+
+    # 3. Streaming model video pipeline verification (single frame callback)
+    streaming_model = DummyStreamingAlphaDepthModel()
+    cb_single = bind_single_frame_callback(streaming_model, side_model=None, segment_pts=set(), args=args)
+    f_arr = np.zeros((32, 32, 4), dtype=np.uint8)
+    f_arr[12:20, 12:20, :] = 255
+    f = av.VideoFrame.from_ndarray(f_arr, format="rgba")
+    f.pts = 0
+    outs = list(cb_single(f))
+    outs.extend(list(cb_single(None)))
+    assert len(outs) == 1
+    # Check that output frame has 4 channels
+    assert outs[0].shape[0] == 4

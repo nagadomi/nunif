@@ -4,6 +4,7 @@ import pickle
 from abc import ABCMeta, abstractmethod
 
 import torch
+import torch.nn.functional as F
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from torchvision.transforms import functional as TF
@@ -280,9 +281,71 @@ class BaseDepthModel(metaclass=ABCMeta):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         pass
+
+    @staticmethod
+    def apply_alpha_mask(
+        depth: torch.Tensor,
+        alpha: torch.Tensor | list[torch.Tensor | None] | None,
+        flip_aug: bool = False,
+        is_metric: bool = False,
+    ) -> torch.Tensor:
+        if alpha is None:
+            return depth
+
+        if isinstance(alpha, list):
+            if all(a is None for a in alpha):
+                return depth
+            squeeze = False
+            if depth.ndim == 3:
+                depth = depth.unsqueeze(0)
+                squeeze = True
+            for i, a in enumerate(alpha):
+                if a is not None and i < depth.shape[0]:
+                    depth[i : i + 1] = BaseDepthModel.apply_alpha_mask(
+                        depth[i : i + 1], a, flip_aug=False, is_metric=is_metric
+                    )
+            if squeeze:
+                depth = depth.squeeze(0)
+            return depth
+
+        squeeze = False
+        if depth.ndim == 3:
+            depth = depth.unsqueeze(0)
+            squeeze = True
+
+        if alpha.device != depth.device:
+            alpha = alpha.to(depth.device)
+        if alpha.ndim == 3:
+            alpha = alpha.unsqueeze(0)
+
+        if alpha.shape[-2:] != depth.shape[-2:]:
+            alpha = F.interpolate(
+                alpha,
+                size=depth.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+                antialias=True,
+            )
+
+        if flip_aug and depth.shape[0] == alpha.shape[0] * 2:
+            alpha = torch.cat([alpha, torch.flip(alpha, dims=[3])], dim=0)
+
+        mask = alpha > 0.0
+        for i in range(min(depth.shape[0], mask.shape[0])):
+            m = mask[i]
+            if m.any() and not m.all():
+                if is_metric:
+                    depth[i][torch.logical_not(m)] = (depth[i][m].max() + depth[i].max()) * 0.5
+                else:
+                    depth[i][torch.logical_not(m)] = (depth[i][m].min() + depth[i].min()) * 0.5
+
+        if squeeze:
+            depth = depth.squeeze(0)
+        return depth
 
     def flush(
         self,

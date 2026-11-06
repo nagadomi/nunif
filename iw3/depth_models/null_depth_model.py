@@ -40,6 +40,7 @@ class NullDepthModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         if isinstance(x, torch.Tensor):
@@ -55,6 +56,9 @@ class NullDepthModel(BaseDepthModel):
             x_out = (self.model(x_tensor) + self.model(x_tensor)) * 0.5
         else:
             x_out = self.model(x_tensor)
+
+        if alpha is not None:
+            x_out = self.apply_alpha_mask(x_out, alpha, is_metric=False)
 
         if edge_dilation_is_enabled(edge_dilation):
             x_out = dilate_edge(x_out, edge_dilation)

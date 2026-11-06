@@ -22,7 +22,6 @@ import nunif.utils.pil_io as IL
 import nunif.utils.shot_boundary_detection as SBD
 import nunif.utils.video as VU
 from nunif.device import (
-    autocast,
     create_device,
     create_stream,
     device_context,
@@ -298,36 +297,6 @@ def apply_alpha_fill(rgb, alpha, color=DEFAULT_FILL_COLOR):
     if rgb.ndim == 4 and fill.ndim == 3:
         fill = fill.unsqueeze(0)
     return torch.where(alpha <= (0.5 / 255.0), fill, rgb)
-
-
-def apply_alpha_depth_mask(depth, alpha):
-    if alpha is None:
-        return depth
-    if depth.ndim == 3:
-        depth_alpha = F.interpolate(
-            alpha.unsqueeze(0),
-            size=depth.shape[-2:],
-            mode="bilinear",
-            align_corners=False,
-            antialias=True,
-        ).squeeze(0)
-        mask = depth_alpha > 0.0
-        if mask.any():
-            depth[torch.logical_not(mask)] = (depth[mask].min() + depth.min()) * 0.5
-    elif depth.ndim == 4:
-        depth_alpha = F.interpolate(
-            alpha,
-            size=depth.shape[-2:],
-            mode="bilinear",
-            align_corners=False,
-            antialias=True,
-        )
-        mask = depth_alpha > 0.0
-        for i in range(depth.shape[0]):
-            m = mask[i]
-            if m.any():
-                depth[i][torch.logical_not(m)] = (depth[i][m].min() + depth[i].min()) * 0.5
-    return depth
 
 
 def extract_image_rgb_alpha(im, device):
@@ -802,6 +771,7 @@ def process_image(
                 enable_amp=not args.disable_amp,
                 edge_dilation=args.edge_dilation,
                 depth_aa=args.depth_aa,
+                alpha=alpha,
             )
             assert isinstance(out, (tuple, list)) and len(out) == 2
             depth, mask = out
@@ -818,22 +788,6 @@ def process_image(
             else:
                 alpha = mask
             depth = depth_model.minmax_normalize_chw(depth)
-        elif alpha is not None:
-            depth = depth_model.infer(
-                depth_x,
-                tta=args.tta,
-                low_vram=args.low_vram,
-                enable_amp=not args.disable_amp,
-                edge_dilation=0,
-                depth_aa=False,
-            )
-            depth = apply_alpha_depth_mask(depth, alpha)
-            if args.depth_aa and hasattr(depth_model, "depth_aa") and isinstance(depth_model.depth_aa, torch.nn.Module):
-                with autocast(device=depth.device, enabled=not args.disable_amp):
-                    depth = depth_model.depth_aa.infer(depth.unsqueeze(0)).squeeze(0)
-            if edge_dilation_is_enabled(args.edge_dilation):
-                depth = dilate_edge(depth.unsqueeze(0), args.edge_dilation).squeeze(0)
-            depth = depth_model.minmax_normalize_chw(depth)
         else:
             depth = depth_model.infer(
                 depth_x,
@@ -842,6 +796,7 @@ def process_image(
                 enable_amp=not args.disable_amp,
                 edge_dilation=args.edge_dilation,
                 depth_aa=args.depth_aa,
+                alpha=alpha,
             )
             depth = depth_model.minmax_normalize_chw(depth)
 
@@ -1121,6 +1076,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 edge_dilation=args.edge_dilation,
                 depth_aa=args.depth_aa,
                 streaming=depth_model.is_streaming(),
+                alpha=alpha,
             )
             assert isinstance(out, (tuple, list)) and len(out) == 2
             depth, mask = out
@@ -1136,9 +1092,8 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
                 edge_dilation=args.edge_dilation,
                 depth_aa=args.depth_aa,
                 streaming=depth_model.is_streaming(),
+                alpha=alpha,
             )
-            if alpha is not None and not depth_model.is_streaming():
-                depth = apply_alpha_depth_mask(depth, alpha)
         flush = frame.pts in segment_pts
         depths = depth_model.minmax_normalize(depth)
         if flush:
@@ -1295,6 +1250,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                     depth_list = []
                     B = x.shape[0]
                     for i in range(B):
+                        a = alpha_batch[i : i + 1] if alpha_batch is not None else None
                         depth = depth_model.infer(
                             x[i : i + 1],
                             tta=args.tta,
@@ -1303,6 +1259,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                             edge_dilation=args.edge_dilation,
                             depth_aa=args.depth_aa,
                             streaming=True,
+                            alpha=a,
                         )
                         depth_list += depth_model.minmax_normalize(depth)
                         if pts[i] in segment_pts:
@@ -1322,6 +1279,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         enable_amp=not args.disable_amp,
                         edge_dilation=args.edge_dilation,
                         depth_aa=args.depth_aa,
+                        alpha=alpha_batch,
                     )
                     assert isinstance(out, (tuple, list)) and len(out) == 2
                     depth_batch, mask_batch = out
@@ -1340,11 +1298,8 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         enable_amp=not args.disable_amp,
                         edge_dilation=args.edge_dilation,
                         depth_aa=args.depth_aa,
+                        alpha=alpha_batch,
                     )
-
-                    if alpha_batch is not None:
-                        depth_batch = apply_alpha_depth_mask(depth_batch, alpha_batch)
-
                     reset_ema = [t in segment_pts for t in pts]
                     depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
 
@@ -1803,6 +1758,7 @@ def export_images(input_path, output_dir, args, title=None):
                     enable_amp=not args.disable_amp,
                     edge_dilation=edge_dilation,
                     depth_aa=args.depth_aa,
+                    alpha=alpha,
                 )
                 assert isinstance(out, (tuple, list)) and len(out) == 2
                 depth, mask = out
@@ -1819,38 +1775,20 @@ def export_images(input_path, output_dir, args, title=None):
                 else:
                     alpha = mask
                 depth = depth_model.minmax_normalize_chw(depth)
-            elif alpha is not None:
-                alpha = preprocess_image(alpha, args)
-                alpha = alpha.clamp(0, 1)
-                depth_x = apply_alpha_fill(rgb, alpha, DEFAULT_FILL_COLOR)
+            else:
+                if alpha is not None:
+                    alpha = preprocess_image(alpha, args).clamp(0, 1)
+                    depth_x = apply_alpha_fill(rgb, alpha, DEFAULT_FILL_COLOR)
+                else:
+                    depth_x = rgb
                 depth = depth_model.infer(
                     depth_x,
                     tta=args.tta,
                     low_vram=args.low_vram,
                     enable_amp=not args.disable_amp,
-                    edge_dilation=0,
-                    depth_aa=False,
-                )
-                depth = apply_alpha_depth_mask(depth, alpha)
-
-                if (
-                    args.depth_aa
-                    and hasattr(depth_model, "depth_aa")
-                    and isinstance(depth_model.depth_aa, torch.nn.Module)
-                ):
-                    with autocast(device=depth.device, enabled=not args.disable_amp):
-                        depth = depth_model.depth_aa.infer(depth.unsqueeze(0)).squeeze(0)
-                if edge_dilation_is_enabled(edge_dilation):
-                    depth = dilate_edge(depth.unsqueeze(0), edge_dilation).squeeze(0)
-                depth = depth_model.minmax_normalize_chw(depth)
-            else:
-                depth = depth_model.infer(
-                    rgb,
-                    tta=args.tta,
-                    low_vram=args.low_vram,
-                    enable_amp=not args.disable_amp,
                     edge_dilation=edge_dilation,
                     depth_aa=args.depth_aa,
+                    alpha=alpha,
                 )
                 depth = depth_model.minmax_normalize_chw(depth)
 
@@ -1970,6 +1908,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
         if depth_model.is_streaming():
             depth_list = []
             for i in range(x.shape[0]):
+                a = alpha_batch[i : i + 1] if alpha_batch is not None else None
                 out = depth_model.infer(
                     x[i : i + 1],
                     tta=args.tta,
@@ -1978,6 +1917,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                     edge_dilation=edge_dilation,
                     depth_aa=args.depth_aa,
                     streaming=True,
+                    alpha=a,
                 )
                 if out is not None:
                     for d in out:
@@ -2006,6 +1946,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                 enable_amp=not args.disable_amp,
                 edge_dilation=edge_dilation,
                 depth_aa=args.depth_aa,
+                alpha=alpha_batch,
             )
             assert isinstance(out, (tuple, list)) and len(out) == 2
             depth_batch, mask_batch = out
@@ -2021,9 +1962,8 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                 enable_amp=not args.disable_amp,
                 edge_dilation=edge_dilation,
                 depth_aa=args.depth_aa,
+                alpha=alpha_batch,
             )
-            if alpha_batch is not None:
-                depth_batch = apply_alpha_depth_mask(depth_batch, alpha_batch)
             depth_list = depth_model.minmax_normalize(depth_batch, reset_ema=reset_ema)
 
         pts_queue.clear()

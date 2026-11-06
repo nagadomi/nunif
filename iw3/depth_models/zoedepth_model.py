@@ -96,6 +96,7 @@ def batch_infer(
     output_device="cpu",
     device=None,
     edge_dilation=0,
+    alpha=None,
     **kwargs,
 ):
 
@@ -129,6 +130,8 @@ def batch_infer(
             out = torch.cat([out, out2], dim=0)
 
     out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, flip_aug=flip_aug, is_metric=True)
     if edge_dilation_is_enabled(edge_dilation):
         # NOTE: dilate_edge() was developed for DepthAnything and it is not inverted depth
         #       so must be calculated in negative space.
@@ -240,6 +243,7 @@ class ZoeDepthModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         if not torch.is_tensor(x):
@@ -254,6 +258,7 @@ class ZoeDepthModel(BaseDepthModel):
             output_device=x.device,
             device=x.device,
             edge_dilation=edge_dilation,
+            alpha=alpha,
         )
 
     order: int = 10

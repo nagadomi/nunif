@@ -151,6 +151,7 @@ def batch_infer(
     edge_dilation=2,
     depth_aa=None,
     limit_resolution=False,
+    alpha=None,
     **kwargs,
 ):
     device = device if device is not None else model.device
@@ -179,6 +180,10 @@ def batch_infer(
             x = torch.flip(x_org, dims=[3])
             out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
+
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, flip_aug=flip_aug, is_metric=model.metric_depth)
+
     if depth_aa is not None:
         out = depth_aa.infer(out)
 
@@ -319,6 +324,7 @@ class DepthAnythingModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         if not torch.is_tensor(x):
@@ -336,6 +342,7 @@ class DepthAnythingModel(BaseDepthModel):
             depth_aa=self.depth_aa if depth_aa else None,
             resize_depth=False,
             limit_resolution=self.limit_resolution,
+            alpha=alpha,
         )
 
     order: int = 30

@@ -98,6 +98,7 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         if isinstance(x, torch.Tensor):
@@ -132,6 +133,7 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
             metric_depth=self.metric_depth,
             force_disparity=self.force_disparity,
             enable_amp=enable_amp,
+            alpha=alpha,
         )
         if not batch:
             depth = depth.squeeze(0)
