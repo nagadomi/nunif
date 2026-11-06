@@ -1335,17 +1335,17 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         enqueue_ticket_id=enqueue_ticket_id,
                         offload_stream=offload_stream,
                     )
+                    results = _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                     if scene_boundary or len(depth_list) > args.batch_size:
                         stream.synchronize()
-                        return _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
-                    results = _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
+                        return results
                     frames = [frame for frame in results]
                     stream.synchronize()
             else:
                 depth_list, dequeue_ticket_id = _batch_infer(x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
-                if scene_boundary or len(depth_list) > args.batch_size:
-                    return _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                 results = _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
+                if scene_boundary or len(depth_list) > args.batch_size:
+                    return results
                 frames = [frame for frame in results]
             return frames
 
