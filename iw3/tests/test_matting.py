@@ -4,6 +4,7 @@ from pathlib import Path
 
 import av
 import numpy as np
+import pytest
 import torch
 from PIL import Image
 
@@ -401,3 +402,49 @@ def test_alpha_video_callbacks_edge_dilation_order(tmp_path: Path) -> None:
     assert len(outs) == 1
     # Check that output frame has 4 channels
     assert outs[0].shape[0] == 4
+
+
+def test_vp9_alpha_preprocessor_with_vf(tmp_path: Path):
+    import nunif.utils.video as VU
+
+    if not VU.has_vp9():
+        pytest.skip("libvpx-vp9 is not available")
+
+    video_path = str(tmp_path / "test_vp9_alpha.webm")
+    container = av.open(video_path, mode="w")
+    stream = container.add_stream("libvpx-vp9", rate=10)
+    stream.width = 32
+    stream.height = 32
+    stream.pix_fmt = "yuva420p"
+    stream.options = {"auto-alt-ref": "0", "alpha_mode": "1"}
+
+    arr = np.zeros((32, 32, 4), dtype=np.uint8)
+    arr[8:24, 8:24, :3] = 200
+    arr[8:24, 8:24, 3] = 255
+    frame = av.VideoFrame.from_ndarray(arr, format="rgba")
+    for packet in stream.encode(frame.reformat(format="yuva420p")):
+        container.mux(packet)
+    for packet in stream.encode(None):
+        container.mux(packet)
+    container.close()
+
+    meta = VU.VideoMetadata.from_file(video_path)
+    assert meta.format.name == "yuva420p"
+    assert meta.format.width == 32 and meta.format.height == 32
+    assert VU.pix_fmt_has_alpha(meta.format)
+
+    captured_frames = []
+
+    def frame_cb(f):
+        if f is not None:
+            captured_frames.append(f)
+        return f
+
+    VU.hook_frame(video_path, frame_callback=frame_cb, vf="scale=16:16")
+    assert len(captured_frames) == 1
+    out_f = captured_frames[0]
+    assert out_f.format.name == "rgba"
+    assert out_f.width == 16 and out_f.height == 16
+    out_arr = out_f.to_ndarray(format="rgba")
+    assert out_arr[8, 8, 3] > 200
+    assert out_arr[0, 0, 3] == 0

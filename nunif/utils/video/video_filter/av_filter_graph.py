@@ -21,7 +21,7 @@ class AVFilterGraph:
         self.sw_format = sw_format
         deny_filters = deny_filters or []
         video_filters = self.parse_vf_option(vf)
-        video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
+        self.video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
         self.graph = av.filter.Graph()
         self.graph.threads = 1
         self.build_graph(
@@ -30,11 +30,23 @@ class AVFilterGraph:
             width=sw_format.width,
             height=sw_format.height,
             time_base=sw_format.time_base,
-            video_filters=video_filters,
+            video_filters=self.video_filters,
         )
 
     def update(self, frame: av.VideoFrame) -> av.VideoFrame | None:
         assert frame.sw_format is None
+        if frame.format.name != self.pix_fmt:
+            self.pix_fmt = frame.format.name
+            self.graph = av.filter.Graph()
+            self.graph.threads = 1
+            self.build_graph(
+                self.graph,
+                pix_fmt=self.pix_fmt,
+                width=frame.width,
+                height=frame.height,
+                time_base=self.sw_format.time_base,
+                video_filters=self.video_filters,
+            )
         self.graph.push(frame)
         try:
             out_frame = self.graph.pull()

@@ -6,18 +6,9 @@ import av.codec.context
 import av.video.codeccontext
 import av.video.stream
 
-from .utils import has_vp9
+from .utils import has_vp9, is_vp9_alpha
 
 SkipFrameType = Literal["NONE", "DEFAULT", "NONREF", "BIDIR", "NONINTRA", "NONKEY", "ALL"]
-
-
-def is_vp9_alpha(stream: av.video.stream.VideoStream) -> bool:
-    if stream.codec_context.name != "vp9":
-        return False
-    alpha_mode = stream.metadata.get("alpha_mode")
-    if not alpha_mode and stream.container is not None:
-        alpha_mode = stream.container.metadata.get("alpha_mode")
-    return alpha_mode in {"1", "true", "True"}
 
 
 class VideoDecoder:

@@ -71,6 +71,15 @@ def has_vp9() -> bool:
     return "libvpx-vp9" in av.codec.codecs_available
 
 
+def is_vp9_alpha(stream: av.video.stream.VideoStream) -> bool:
+    if stream.codec_context.name != "vp9":
+        return False
+    alpha_mode = stream.metadata.get("alpha_mode")
+    if not alpha_mode and stream.container is not None:
+        alpha_mode = stream.container.metadata.get("alpha_mode")
+    return alpha_mode in {"1", "true", "True"}
+
+
 def list_videos(directory: str, extensions: List[str] = VIDEO_EXTENSIONS) -> List[str]:
     return sorted(
         os.path.join(directory, f) for f in os.listdir(directory) if os.path.splitext(f)[-1].lower() in extensions

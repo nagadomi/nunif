@@ -6,7 +6,14 @@ import av
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 
 from .hwaccel import HW_DEVICES
-from .utils import RGB_8BIT, RGB_16BIT, av_rational_to_fraction, pix_fmt_requires_16bit
+from .utils import (
+    RGB_8BIT,
+    RGB_16BIT,
+    av_rational_to_fraction,
+    has_vp9,
+    is_vp9_alpha,
+    pix_fmt_requires_16bit,
+)
 
 # Colorspace constants
 COLORSPACE_UNSPECIFIED: int = 2
@@ -264,8 +271,20 @@ class VideoMetadata(MediaMetadata):
                 "Please use a software stream for accurate metadata."
             )
 
+        format = stream.format
+        if is_vp9_alpha(stream) and has_vp9():
+            alpha_name = format.name
+            if alpha_name.startswith("yuv") and not alpha_name.startswith("yuva"):
+                alpha_name = alpha_name.replace("yuv", "yuva", 1)
+            elif alpha_name.startswith("gbrp"):
+                alpha_name = alpha_name.replace("gbrp", "gbrap", 1)
+            try:
+                format = av.VideoFormat(alpha_name, width=stream.width, height=stream.height)
+            except ValueError:
+                format = av.VideoFormat("yuva420p", width=stream.width, height=stream.height)
+
         return cls(
-            format=stream.format,
+            format=format,
             colorspace=stream.colorspace,
             color_primaries=stream.color_primaries,
             color_trc=stream.color_trc,
@@ -273,7 +292,7 @@ class VideoMetadata(MediaMetadata):
             width=stream.width,
             height=stream.height,
             time_base=av_rational_to_fraction(stream.time_base),
-            use_16bit=stream.format.components[0].bits > 8,
+            use_16bit=format.components[0].bits > 8,
             stream_frames=stream.frames,
             stream_duration=stream.duration,
             guessed_rate=av_rational_to_fraction(stream.guessed_rate),
@@ -394,7 +413,7 @@ class VideoMetadata(MediaMetadata):
             else:
                 return self.format.name
         else:
-            return stream_pix_fmt
+            return self.format.name
 
     def guess_sw_dlpack_pix_fmt(self) -> str | None:
         if self.format.name in {"yuv420p", "yuvj420p"}:
