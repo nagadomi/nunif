@@ -1316,6 +1316,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             return _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
         else:
             device = x.device
+            scene_boundary = any(t in segment_pts for t in pts)
             if args.cuda_stream:
                 stream_name1 = str(device) + "_default"
                 stream_name2 = str(device) + "_offload"
@@ -1334,11 +1335,16 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                         enqueue_ticket_id=enqueue_ticket_id,
                         offload_stream=offload_stream,
                     )
+                    if scene_boundary or len(depth_list) > args.batch_size:
+                        stream.synchronize()
+                        return _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                     results = _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                     frames = [frame for frame in results]
                     stream.synchronize()
             else:
                 depth_list, dequeue_ticket_id = _batch_infer(x, pts, flush=flush, enqueue_ticket_id=enqueue_ticket_id)
+                if scene_boundary or len(depth_list) > args.batch_size:
+                    return _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                 results = _postprocess(depth_list, dequeue_ticket_id=dequeue_ticket_id, flush=flush, device=device)
                 frames = [frame for frame in results]
             return frames
