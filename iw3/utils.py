@@ -908,7 +908,7 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     src_queue = []
     mask_queue = []
     device = args.state["device"]
-    frame_cpu_offload = depth_model.get_ema_buffer_size() > 1 and device.type not in {"cpu", "mps"}
+    frame_cpu_offload = depth_model.is_buffered() and device.type not in {"cpu", "mps"}
     offload_resource_manager = None
 
     def _postprocess(depths, flush):
@@ -1117,7 +1117,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     streams = threading.local()
     src_queue = []
     mask_queue = []
-    frame_cpu_offload = depth_model.get_ema_buffer_size() > 1 and args.state["device"].type not in {"cpu", "mps"}
+    frame_cpu_offload = depth_model.is_buffered() and args.state["device"].type not in {"cpu", "mps"}
     offload_resource_manager = None
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
 

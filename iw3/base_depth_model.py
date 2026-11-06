@@ -204,6 +204,9 @@ class BaseDepthModel(metaclass=ABCMeta):
     def is_streaming(self):
         return False
 
+    def is_buffered(self) -> bool:
+        return self.get_ema_buffer_size() > 1
+
     @staticmethod
     def force_update_hub(github, model):
         with TorchHubDir(HUB_MODEL_DIR):
