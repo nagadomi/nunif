@@ -27,7 +27,9 @@ PRESET_LIBX264 = [
 PRESET_NVENC = ["fast", "medium", "slow", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
 PRESET_QSV = ["veryfast", "fast", "medium", "slow", "veryslow"]
 PRESET_VP9 = ["fast", "medium", "slow"]
-PRESET_ALL = list(dict.fromkeys(PRESET_LIBX264 + PRESET_NVENC))
+PRESET_AMF = ["speed", "balanced", "quality", "high_quality"]
+PRESET_VAAPI = ["veryfast", "fast", "medium", "slow", "veryslow"]
+PRESET_ALL = list(dict.fromkeys(PRESET_LIBX264 + PRESET_NVENC + PRESET_QSV + PRESET_VP9 + PRESET_AMF + PRESET_VAAPI))
 PRESET_DEFAULT = "medium"
 
 CODEC_ALL = [
@@ -41,6 +43,12 @@ CODEC_ALL = [
     "hevc_nvenc",
     "h264_qsv",
     "hevc_qsv",
+    "h264_amf",
+    "hevc_amf",
+    "av1_amf",
+    "h264_vaapi",
+    "hevc_vaapi",
+    "av1_vaapi",
 ]
 
 PIX_FMT_ALL = ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp10le", "gbrp16le", "yuva420p"]
@@ -52,6 +60,12 @@ CODEC_PIX_FMT = {
     "hevc_nvenc": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le"],
     "h264_qsv": ["yuv420p"],
     "hevc_qsv": ["yuv420p", "yuv420p10le"],
+    "h264_amf": ["yuv420p", "rgb24"],
+    "hevc_amf": ["yuv420p", "yuv420p10le", "rgb24"],
+    "av1_amf": ["yuv420p", "yuv420p10le", "rgb24"],
+    "h264_vaapi": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24"],
+    "hevc_vaapi": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24"],
+    "av1_vaapi": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24"],
     "libopenh264": ["yuv420p"],
     "utvideo": ["yuv420p", "yuv444p", "rgb24"],
     "ffv1": ["yuv420p", "yuv444p", "yuv420p10le", "rgb24", "gbrp16le", "yuva420p"],
@@ -78,12 +92,16 @@ class VideoEncodingBox:
         translate_function=empty_translate_function,
         has_nvenc=False,
         has_qsv=False,
+        has_amf=False,
+        has_vaapi=False,
         **kwargs,
     ):
         T = translate_function
         prefix = name_prefix + "_" if name_prefix else ""
         self.has_nvenc = has_nvenc
         self.has_qsv = has_qsv
+        self.has_amf = has_amf
+        self.has_vaapi = has_vaapi
 
         self.grp_video = wx.StaticBox(parent, label=T("Video Encoding"), **kwargs)
 
@@ -287,6 +305,10 @@ class VideoEncodingBox:
                 choices += codecs_available(["h264_nvenc", "hevc_nvenc"])
             if self.has_qsv:
                 choices += codecs_available(["h264_qsv", "hevc_qsv"])
+            if self.has_amf:
+                choices += codecs_available(["h264_amf", "hevc_amf", "av1_amf"])
+            if self.has_vaapi:
+                choices += codecs_available(["h264_vaapi", "hevc_vaapi", "av1_vaapi"])
             choices += codecs_available(["utvideo", "ffv1"])
         else:
             choices = codecs_available(["libx264", "libopenh264", "libx265"])
@@ -294,6 +316,10 @@ class VideoEncodingBox:
                 choices += codecs_available(["h264_nvenc", "hevc_nvenc"])
             if self.has_qsv:
                 choices += codecs_available(["h264_qsv", "hevc_qsv"])
+            if self.has_amf:
+                choices += codecs_available(["h264_amf", "hevc_amf", "av1_amf"])
+            if self.has_vaapi:
+                choices += codecs_available(["h264_vaapi", "hevc_vaapi", "av1_vaapi"])
 
         user_codec = self.cbo_video_codec.GetValue()
         if user_codec not in CODEC_ALL:
@@ -355,9 +381,9 @@ class VideoEncodingBox:
 
         # level
         user_level = self.cbo_profile_level.GetValue()
-        if codec in {"libx264", "h264_nvenc"}:
+        if codec in {"libx264", "h264_nvenc", "h264_amf", "h264_vaapi"}:
             choices = ["auto"] + LEVEL_LIBX264
-        elif codec in {"libx265", "hevc_nvenc"}:
+        elif codec in {"libx265", "hevc_nvenc", "hevc_amf", "av1_amf", "hevc_vaapi", "av1_vaapi"}:
             choices = ["auto"] + LEVEL_LIBX265
         elif codec in {"h264_qsv", "hevc_qsv", "libvpx-vp9", "ffv1", "utvideo"}:
             choices = ["auto"]
@@ -387,6 +413,12 @@ class VideoEncodingBox:
                     choices = PRESET_QSV
                 elif codec == "libvpx-vp9":
                     choices = PRESET_VP9
+                elif codec in {"h264_amf", "hevc_amf", "av1_amf"}:
+                    choices = PRESET_AMF
+                    default_preset = "balanced"
+                elif codec in {"h264_vaapi", "hevc_vaapi", "av1_vaapi"}:
+                    choices = PRESET_VAAPI
+                    default_preset = "medium"
                 else:
                     choices = PRESET_ALL
 
@@ -463,6 +495,14 @@ class VideoEncodingBox:
                 self.chk_tune_zerolatency.SetValue(False)
                 self.chk_tune_zerolatency.Disable()
                 self.cbo_profile_level.Disable()
+            elif codec in {"h264_amf", "hevc_amf", "av1_amf", "h264_vaapi", "hevc_vaapi", "av1_vaapi"}:
+                self.cbo_tune.SetItems([""])
+                self.cbo_tune.SetSelection(0)
+                self.cbo_tune.Disable()
+                self.chk_tune_fastdecode.SetValue(False)
+                self.chk_tune_fastdecode.Disable()
+                self.chk_tune_zerolatency.SetValue(False)
+                self.chk_tune_zerolatency.Disable()
         else:
             self.cbo_tune.SetItems([""])
             self.cbo_tune.SetSelection(0)
