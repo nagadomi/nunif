@@ -8,15 +8,17 @@ from ..models import get_model_device
 
 
 class SeamBlending(torch.nn.Module):
-    def __init__(self, x_shape, scale, offset, tile_size, blend_size):
+    def __init__(self, x_shape, scale, offset, tile_size, blend_size, dtype=torch.float32, device="cpu"):
         super().__init__()
 
         C, H, W = x_shape
         config = SeamBlending.create_config((H, W), scale, offset, tile_size, blend_size)
-        pixels = torch.zeros((C, config["y_buffer_h"], config["y_buffer_w"]), dtype=torch.float32)
+        pixels = torch.zeros((C, config["y_buffer_h"], config["y_buffer_w"]), dtype=dtype, device=device)
         if blend_size > 0:
-            weights = torch.zeros((C, config["y_buffer_h"], config["y_buffer_w"]), dtype=torch.float32)
-            blend_filter = SeamBlending.create_blend_filter(scale, offset, tile_size, blend_size, C)
+            weights = torch.zeros((C, config["y_buffer_h"], config["y_buffer_w"]), dtype=dtype, device=device)
+            blend_filter = SeamBlending.create_blend_filter(
+                scale, offset, tile_size, blend_size, C, dtype=dtype, device=device
+            )
         else:
             weights = None
             blend_filter = None
@@ -74,14 +76,16 @@ class SeamBlending(torch.nn.Module):
         # print("batch_size", batch_size, "tile_size", tile_size)
 
         device = get_model_device(model)
-
-        seam_blending = (
-            SeamBlending(output_base_shape, scale=scale, offset=offset, tile_size=tile_size, blend_size=blend_size)
-            .to(device)
-            .eval()
-        )
-        if x.dtype == torch.float16:
-            seam_blending = seam_blending.half()
+        dtype = torch.float16 if x.dtype == torch.float16 else torch.float32
+        seam_blending = SeamBlending(
+            output_base_shape,
+            scale=scale,
+            offset=offset,
+            tile_size=tile_size,
+            blend_size=blend_size,
+            dtype=dtype,
+            device=device,
+        ).eval()
 
         minibatch_index = 0
         minibatch = torch.zeros((batch_size, C, tile_size, tile_size), device=x.device, dtype=x.dtype)
@@ -152,10 +156,10 @@ class SeamBlending(torch.nn.Module):
         return p
 
     @staticmethod
-    def create_blend_filter(scale, offset, tile_size, blend_size, out_channels):
+    def create_blend_filter(scale, offset, tile_size, blend_size, out_channels, dtype=torch.float32, device="cpu"):
         model_output_size = tile_size * scale - offset * 2
         inner_tile_size = model_output_size - blend_size * 2
-        x = torch.ones((out_channels, inner_tile_size, inner_tile_size), dtype=torch.float32)
+        x = torch.ones((out_channels, inner_tile_size, inner_tile_size), dtype=dtype, device=device)
         for i in range(blend_size):
             value = 1 - (1 / (blend_size + 1)) * (i + 1)
             x = F.pad(x, (1, 1, 1, 1), mode="constant", value=value)
