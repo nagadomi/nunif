@@ -480,8 +480,8 @@ def api():
             )
             z = im
         else:
-            with torch.inference_mode():
-                rgb, alpha = IL.to_tensor(im, return_alpha=True)
+            with torch.inference_mode(), global_lock:
+                rgb, alpha = IL.to_tensor(im, return_alpha=True, device=art_ctx.device)
                 if rgb.shape[0] == 1:
                     rgb = rgb.repeat(3, 1, 1)
                 ctx_kwargs = {
@@ -493,14 +493,14 @@ def api():
                     "batch_size": command_args.batch_size,
                     "tta": command_args.tta,
                     "enable_amp": not command_args.disable_amp,
+                    "output_device": art_ctx.device,
                 }
-                with global_lock:
-                    if style == StyleOption.ART:
-                        rgb, alpha = art_ctx.convert(**ctx_kwargs)
-                    elif style == StyleOption.ART_SCAN:
-                        rgb, alpha = art_scan_ctx.convert(**ctx_kwargs)
-                    else:
-                        rgb, alpha = photo_ctx.convert(**ctx_kwargs)
+                if style == StyleOption.ART:
+                    rgb, alpha = art_ctx.convert(**ctx_kwargs)
+                elif style == StyleOption.ART_SCAN:
+                    rgb, alpha = art_scan_ctx.convert(**ctx_kwargs)
+                else:
+                    rgb, alpha = photo_ctx.convert(**ctx_kwargs)
                 depth = meta["depth"] if "depth" in meta and meta["depth"] is not None else 8
                 z = IL.to_image(rgb, alpha, depth=depth)
             logger.debug(

@@ -48,7 +48,7 @@ def process_image(ctx, im, meta, args):
     elif args.rotate_right:
         im = im.transpose(Image.Transpose.ROTATE_270)
 
-    rgb, alpha = IL.to_tensor(im, return_alpha=True)
+    rgb, alpha = IL.to_tensor(im, return_alpha=True, device=args.state["device"])
     if rgb.shape[0] == 1:
         rgb = rgb.repeat(3, 1, 1)
 
@@ -67,8 +67,6 @@ def process_image(ctx, im, meta, args):
         noise = rgb_noise_like(rgb)
         # grain_strength = 1/2 for image
         rgb = apply_rgb_noise(rgb, noise, strength=args.grain_strength * 0.5)
-
-    rgb = rgb.to("cpu")
 
     if args.depth is not None and args.image_lib == "wand":
         meta["depth"] = args.depth
