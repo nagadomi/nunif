@@ -220,7 +220,7 @@ def encode_image(im, format="png", meta=None, bg_color=255, **save_options):
         return fp.getvalue()
 
 
-def to_tensor(im, return_alpha=False):
+def to_tensor(im, return_alpha=False, device="cpu"):
     alpha = None
     if im.mode == "RGBA":
         alpha = im.getchannel("A")
@@ -229,13 +229,13 @@ def to_tensor(im, return_alpha=False):
         alpha = im.getchannel("A")
         im = im.convert("L")
 
-    x = TF.pil_to_tensor(im)
+    x = TF.pil_to_tensor(im).to(device)
     if x.dtype != torch.float32:
         x = x.float() / torch.iinfo(x.dtype).max
 
     if return_alpha:
         if alpha is not None:
-            alpha = TF.pil_to_tensor(alpha)
+            alpha = TF.pil_to_tensor(alpha).to(device)
             if alpha.dtype != torch.float32:
                 alpha = alpha.float() / torch.iinfo(alpha.dtype).max
         return x, alpha
@@ -248,13 +248,24 @@ def to_image(im, alpha=None, depth=None):
         if im.shape[0] != 1:
             im = im.mean(dim=0, keepdim=True)
         im = im * 0xFFFF
-        im = im.to(torch.int16).numpy().astype(np.uint16)[0]
+        im = im.to(torch.int16).cpu().numpy().astype(np.uint16)[0]
         im = Image.fromarray(im)
+        if alpha is not None:
+            alpha = Image.fromarray(quantize256(alpha).squeeze(0).contiguous().cpu().numpy())
+            im.putalpha(alpha)
     else:
-        im = TF.to_pil_image(quantize256(im))
-    if alpha is not None:
-        alpha = TF.to_pil_image(quantize256(alpha))
-        im.putalpha(alpha)
+        if alpha is not None and im.shape[0] in {1, 3}:
+            im = torch.cat((im, alpha.to(im.device)), dim=0)
+            alpha = None
+        im = quantize256(im)
+        if im.shape[0] == 1:
+            im = im.squeeze(0).contiguous().cpu().numpy()
+        else:
+            im = im.permute(1, 2, 0).contiguous().cpu().numpy()
+        im = Image.fromarray(im)
+        if alpha is not None:
+            alpha = Image.fromarray(quantize256(alpha).squeeze(0).contiguous().cpu().numpy())
+            im.putalpha(alpha)
     return im
 
 
