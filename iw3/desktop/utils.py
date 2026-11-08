@@ -28,17 +28,25 @@ from .screenshot_process import (  # noqa
     get_window_rect_by_title,
     is_mss_supported,
 )
+from .screenshot_process_obs import (  # noqa
+    ScreenshotProcessOBS,
+    is_obs_supported,
+    is_wayland,
+    obs_unsupported_reason,
+)
 from .screenshot_thread_cuda import ScreenshotThreadWCCUDA
 from .screenshot_thread_kwcapture import (  # noqa
-    KWCAPTURE_MISSING_MESSAGE,
     ScreenshotThreadKWCapture,
-    is_kwcapture_install_recommended,
     is_kwcapture_supported,
     kwcapture_unsupported_reason,
-    warn_if_kwcapture_missing,
 )
 from .screenshot_thread_pil import ScreenshotThreadPIL
 from .streaming_server import StreamingServer
+
+WAYLAND_CAPTURE_MISSING_MESSAGE = (
+    "Wayland capture backend is not available ('pil' uses XWayland, which is usually black). "
+    "Install obs-studio/obs-plugins for 'obs', or 'pip install kwcapture' for 'kwcapture' (KDE Plasma)."
+)
 
 LocalViewer: object | None
 try:
@@ -175,7 +183,7 @@ def create_parser():
         "--screenshot",
         type=str,
         default="pil",
-        choices=["pil", "mss", "wc_mp", "wc_cuda", "kwcapture"],
+        choices=["pil", "mss", "wc_mp", "wc_cuda", "kwcapture", "obs"],
         help="Screenshot method",
     )
     parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
@@ -301,132 +309,150 @@ def iw3_desktop_main(args, init_wxapp=True):
         def screenshot_factory(*args, **kwargs):
             return ScreenshotThreadWCCUDA(*args, **kwargs)
     elif args.screenshot == "kwcapture":
-        # kwcapture is an optional dependency, so this is the point where a user who asked for
-        # it by name gets the reason it cannot run (missing package vs. not a Wayland session)
         reason = kwcapture_unsupported_reason()
         if reason is not None:
             raise ValueError(f"--screenshot kwcapture: {reason}")
         screenshot_factory = ScreenshotThreadKWCapture
+    elif args.screenshot == "obs":
+        reason = obs_unsupported_reason()
+        if reason is not None:
+            raise ValueError(f"--screenshot obs: {reason}")
+        screenshot_factory = ScreenshotProcessOBS
 
-    # Capture problems are configuration problems, so they are reported before the (slow) depth
-    # model load instead of showing up as a black screen afterwards.
-    if args.screenshot != "kwcapture" and is_kwcapture_install_recommended():
-        # On KDE Plasma/Wayland every other method here sees only the XWayland screen, and the one
-        # that works is an optional package: tell the user it exists and how to get it. Anywhere
-        # kwcapture could not help, this stays silent.
-        warn_if_kwcapture_missing()
-    elif args.screenshot == "pil" and is_kwcapture_supported():
-        # PIL grabs the XWayland root window on Wayland, which is black for native Wayland
-        # windows and has no second monitor. Switching the backend silently would be worse
-        # than telling the user, so this only warns.
-        print(
-            "Warning: 'pil' screenshot on Wayland captures the XWayland screen (usually "
-            "black). Use --screenshot kwcapture for the real desktop.",
-            file=sys.stderr,
-        )
+    if args.screenshot == "pil" and is_wayland():
+        if is_obs_supported() or is_kwcapture_supported():
+            print(
+                "Warning: 'pil' screenshot on Wayland captures the XWayland screen (usually "
+                "black). Use --screenshot obs or --screenshot kwcapture.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Warning: {WAYLAND_CAPTURE_MISSING_MESSAGE}", file=sys.stderr)
 
-    device = create_device(args.gpu)
-
-    depth_model = args.state["depth_model"]
-    if not depth_model.loaded():
-        depth_model.load(gpu=args.gpu, resolution=args.resolution, limit_resolution=args.limit_resolution)
-
-    # Use Flicker Reduction to prevent 3D sickness
-    depth_model.enable_ema(args.ema_decay, buffer_size=1)
-    if args.state["convergence_model"] is not None:
-        args.state["convergence_model"].reset(enable_ema=True, decay=0.98)
-
-    args.mapper = IW3U.resolve_mapper_name(
-        mapper=args.mapper, foreground_scale=args.foreground_scale, metric_depth=depth_model.is_metric()
-    )
-
-    # TODO: For mlbw, it is better to switch models when the divergence value dynamically changes
-    side_model = IW3U.create_stereo_model(
-        args.method,
-        divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
-        device_id=args.gpu[0],
-    )
-    if args.screenshot == "pil" and args.monitor_index != 0:
+    if args.screenshot in {"pil", "obs"} and args.monitor_index != 0:
         raise RuntimeError(f"{args.screenshot} does not support monitor_index={args.monitor_index}")
-    if args.screenshot == "pil" and args.window_name:
+    if args.screenshot in {"pil", "obs"} and args.window_name:
         raise RuntimeError(f"{args.screenshot} does not support --window-name option")
 
-    if args.window_name:
-        rect = get_window_rect_by_title(args.window_name)
-        if rect is None:
-            raise RuntimeError(f"window_name={args.window_name} not found")
-        screen_width = rect["width"] - args.crop_left - args.crop_right
-        screen_height = rect["height"] - args.crop_top - args.crop_bottom
-    else:
-        size_list = get_monitor_size_list()
-        if args.monitor_index >= len(size_list):
-            raise RuntimeError(f"monitor_index={args.monitor_index} not found")
-        screen_width, screen_height = size_list[args.monitor_index]
+    device = create_device(args.gpu)
+    depth_model = args.state["depth_model"]
 
-    screen_size = (screen_width, screen_height)
-    if screen_height > args.stream_height:
-        frame_height = args.stream_height
-        frame_width = math.ceil((args.stream_height / screen_height) * screen_width)
-        frame_width -= frame_width % 2
-    else:
-        frame_height = screen_height
-        frame_width = screen_width
-
-    output_frame_height, output_frame_width = test_output_size(
-        (frame_height, frame_width), args, depth_model, side_model
-    )
-
-    lock = threading.Lock()
-    if init_wxapp:
-        empty_app = wx.App()  # noqa: F841 this is needed to initialize wx.GetMousePosition()
-
-    if not args.local_viewer:
-        # Web Streaming
-        with open(path.join(path.dirname(__file__), "views", "index.html.tpl"), mode="r", encoding="utf-8") as f:
-            index_template = f.read()
-
-        server = StreamingServer(
-            host=args.bind_addr,
-            port=args.port,
-            lock=lock,
-            frame_width=output_frame_width,
-            frame_height=output_frame_height,
-            fps=args.stream_fps,
-            index_template=index_template,
-            stream_uri="/stream.jpg",
-            stream_content_type="image/jpeg",
-            auth=auth,
-        )
-    else:
-        # Local Viewer
-        if LocalViewer is None:
-            raise RuntimeError("Local Viewer is not available")
-        IS_ROCM = getattr(torch.version, "hip", None) is not None
-        USE_CUDA = torch.cuda.is_available() and not IS_ROCM
-        server = LocalViewer(
-            lock=lock,
-            width=output_frame_width,
-            height=output_frame_height,
-            use_cuda=USE_CUDA,
-            uncap_fps=args.uncap_fps,
-            fit_window=args.fit_window,
-        )
-
-    screenshot_thread = screenshot_factory(
-        fps=args.stream_fps,
-        frame_width=frame_width,
-        frame_height=frame_height,
-        monitor_index=args.monitor_index,
-        window_name=args.window_name,
-        device=device,
-        crop_top=args.crop_top,
-        crop_left=args.crop_left,
-        crop_right=args.crop_right,
-        crop_bottom=args.crop_bottom,
-        draw_cursor_enabled=not args.disable_draw_cursor,
-    )
-
+    screenshot_thread = None
+    server = None
     try:
+        if args.screenshot == "obs":
+            screenshot_thread = screenshot_factory(
+                fps=args.stream_fps,
+                frame_width=None,
+                frame_height=None,
+                monitor_index=args.monitor_index,
+                window_name=args.window_name,
+                device=device,
+                crop_top=args.crop_top,
+                crop_left=args.crop_left,
+                crop_right=args.crop_right,
+                crop_bottom=args.crop_bottom,
+                draw_cursor_enabled=not args.disable_draw_cursor,
+            )
+            screen_width, screen_height = screenshot_thread.init_capture(stop_event=args.state["stop_event"])
+        elif args.window_name:
+            rect = get_window_rect_by_title(args.window_name)
+            if rect is None:
+                raise RuntimeError(f"window_name={args.window_name} not found")
+            screen_width = rect["width"] - args.crop_left - args.crop_right
+            screen_height = rect["height"] - args.crop_top - args.crop_bottom
+        else:
+            size_list = get_monitor_size_list()
+            if args.monitor_index >= len(size_list):
+                raise RuntimeError(f"monitor_index={args.monitor_index} not found")
+            screen_width, screen_height = size_list[args.monitor_index]
+
+        if not depth_model.loaded():
+            depth_model.load(gpu=args.gpu, resolution=args.resolution, limit_resolution=args.limit_resolution)
+
+        # Use Flicker Reduction to prevent 3D sickness
+        depth_model.enable_ema(args.ema_decay, buffer_size=1)
+        if args.state["convergence_model"] is not None:
+            args.state["convergence_model"].reset(enable_ema=True, decay=0.98)
+
+        args.mapper = IW3U.resolve_mapper_name(
+            mapper=args.mapper, foreground_scale=args.foreground_scale, metric_depth=depth_model.is_metric()
+        )
+
+        # TODO: For mlbw, it is better to switch models when the divergence value dynamically changes
+        side_model = IW3U.create_stereo_model(
+            args.method,
+            divergence=args.divergence * (2.0 if args.synthetic_view in {"right", "left"} else 1.0),
+            device_id=args.gpu[0],
+        )
+
+        screen_size = (screen_width, screen_height)
+        if screen_height > args.stream_height:
+            frame_height = args.stream_height
+            frame_width = math.ceil((args.stream_height / screen_height) * screen_width)
+            frame_width -= frame_width % 2
+        else:
+            frame_height = screen_height
+            frame_width = screen_width
+
+        if screenshot_thread is not None:
+            screenshot_thread.set_frame_size(frame_width, frame_height)
+
+        output_frame_height, output_frame_width = test_output_size(
+            (frame_height, frame_width), args, depth_model, side_model
+        )
+
+        lock = threading.Lock()
+        if init_wxapp:
+            empty_app = wx.App()  # noqa: F841 this is needed to initialize wx.GetMousePosition()
+
+        if not args.local_viewer:
+            # Web Streaming
+            with open(path.join(path.dirname(__file__), "views", "index.html.tpl"), mode="r", encoding="utf-8") as f:
+                index_template = f.read()
+
+            server = StreamingServer(
+                host=args.bind_addr,
+                port=args.port,
+                lock=lock,
+                frame_width=output_frame_width,
+                frame_height=output_frame_height,
+                fps=args.stream_fps,
+                index_template=index_template,
+                stream_uri="/stream.jpg",
+                stream_content_type="image/jpeg",
+                auth=auth,
+            )
+        else:
+            # Local Viewer
+            if LocalViewer is None:
+                raise RuntimeError("Local Viewer is not available")
+            IS_ROCM = getattr(torch.version, "hip", None) is not None
+            USE_CUDA = torch.cuda.is_available() and not IS_ROCM
+            server = LocalViewer(
+                lock=lock,
+                width=output_frame_width,
+                height=output_frame_height,
+                use_cuda=USE_CUDA,
+                uncap_fps=args.uncap_fps,
+                fit_window=args.fit_window,
+            )
+
+        if screenshot_thread is None:
+            screenshot_thread = screenshot_factory(
+                fps=args.stream_fps,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                monitor_index=args.monitor_index,
+                window_name=args.window_name,
+                device=device,
+                crop_top=args.crop_top,
+                crop_left=args.crop_left,
+                crop_right=args.crop_right,
+                crop_bottom=args.crop_bottom,
+                draw_cursor_enabled=not args.disable_draw_cursor,
+            )
+
         if args.compile:
             depth_model.compile()
             if side_model is not None and not isinstance(side_model, DeviceSwitchInference):
@@ -520,8 +546,10 @@ def iw3_desktop_main(args, init_wxapp=True):
             if args.state["stop_event"] and args.state["stop_event"].is_set():
                 break
     finally:
-        server.stop()
-        screenshot_thread.stop()
+        if server is not None:
+            server.stop()
+        if screenshot_thread is not None:
+            screenshot_thread.stop()
         depth_model.clear_compiled_model()
         depth_model.reset()
         gc_collect()

@@ -50,9 +50,10 @@ from .utils import (
     get_monitor_size_list,
     enum_window_names,
     is_mss_supported,
+    is_obs_supported,
     is_kwcapture_supported,
-    is_kwcapture_install_recommended,
-    KWCAPTURE_MISSING_MESSAGE,
+    is_wayland,
+    WAYLAND_CAPTURE_MISSING_MESSAGE,
     IW3U,
     ENABLE_GPU_JPEG,
 )
@@ -69,9 +70,11 @@ LAYOUT_DEBUG = False
 HAS_WINDOWS_CAPTURE = bool(importlib.util.find_spec("windows_capture"))
 IS_ROCM = getattr(torch.version, "hip", None) is not None
 HAS_WINDOWS_CAPTURE_CUDA = bool(importlib.util.find_spec("wc_cuda")) and torch.cuda.is_available() and not IS_ROCM
+HAS_OBS = is_obs_supported()
 HAS_KWCAPTURE = is_kwcapture_supported()
 # Backends that can capture one monitor or one window (the others grab the whole screen)
 BACKENDS_WITH_TARGET = {"wc_mp", "wc_cuda", "mss", "kwcapture"}
+BACKENDS_WITH_CROP = BACKENDS_WITH_TARGET | {"obs"}
 
 
 myEVT_FPS = wx.NewEventType()
@@ -478,6 +481,8 @@ class MainFrame(wx.Frame):
             screenshot_backends += ["wc_mp"]
         if HAS_WINDOWS_CAPTURE_CUDA:
             screenshot_backends += ["wc_cuda"]
+        if HAS_OBS:
+            screenshot_backends += ["obs"]
         if HAS_KWCAPTURE:
             screenshot_backends += ["kwcapture"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor, choices=screenshot_backends, name="cbo_screenshot")
@@ -488,6 +493,8 @@ class MainFrame(wx.Frame):
                 default_screenshot_index = screenshot_backends.index("wc_cuda")
             elif "wc_mp" in screenshot_backends:
                 default_screenshot_index = screenshot_backends.index("wc_mp")
+        elif HAS_OBS and "obs" in screenshot_backends:
+            default_screenshot_index = screenshot_backends.index("obs")
         elif HAS_KWCAPTURE and "kwcapture" in screenshot_backends:
             # On Wayland the other backends see the XWayland screen, not the desktop
             default_screenshot_index = screenshot_backends.index("kwcapture")
@@ -754,25 +761,17 @@ class MainFrame(wx.Frame):
 
         self.grp_adjustment.Hide()
 
-        self.update_kwcapture_warning()
+        self.update_wayland_warning()
 
         self.btn_start.SetFocus()
         self.Fit()
         wx.CallAfter(self.Fit)
 
-    def update_kwcapture_warning(self):
-        """Tell a KDE Plasma/Wayland user that the optional kwcapture package is missing.
-
-        The console is the only place the CLI can talk, and it may not even exist for this GUI
-        (pythonw), so the message also goes to the status bar and to the Screenshot tooltip.
-        Only ever shown where installing kwcapture would actually enable screen capture.
-        """
-        if HAS_KWCAPTURE or not is_kwcapture_install_recommended():
+    def update_wayland_warning(self):
+        if HAS_OBS or HAS_KWCAPTURE or not is_wayland():
             return False
-        print(f"Warning: {KWCAPTURE_MISSING_MESSAGE}", file=sys.stderr)
-        message = T(KWCAPTURE_MISSING_MESSAGE)
-        # The combobox is where the user looks for the missing entry, the status bar is where
-        # they look for "why is the screen black" -- both get it.
+        print(f"Warning: {WAYLAND_CAPTURE_MISSING_MESSAGE}", file=sys.stderr)
+        message = T(WAYLAND_CAPTURE_MISSING_MESSAGE)
         self.cbo_screenshot.SetToolTip(message)
         self.SetStatusText(message)
         return True
@@ -1022,20 +1021,23 @@ class MainFrame(wx.Frame):
             self.show_validation_error_message(T("Port"), 1025, 65535)
             return None
 
-        crop_top = self.txt_crop_top.GetValue()
-        crop_left = self.txt_crop_left.GetValue()
-        crop_right = self.txt_crop_right.GetValue()
-        crop_bottom = self.txt_crop_bottom.GetValue()
+        if self.cbo_screenshot.GetValue() in BACKENDS_WITH_CROP:
+            crop_top = self.txt_crop_top.GetValue()
+            crop_left = self.txt_crop_left.GetValue()
+            crop_right = self.txt_crop_right.GetValue()
+            crop_bottom = self.txt_crop_bottom.GetValue()
 
-        for crop_name, crop_value in [
-            ("Top", crop_top),
-            ("Left", crop_left),
-            ("Right", crop_right),
-            ("Bottom", crop_bottom),
-        ]:
-            if not validate_number(str(crop_value), 0, 500, is_int=True, allow_empty=False):
-                self.show_validation_error_message(T("Crop") + " " + T(crop_name), 0, 500)
-                return None
+            for crop_name, crop_value in [
+                ("Top", crop_top),
+                ("Left", crop_left),
+                ("Right", crop_right),
+                ("Bottom", crop_bottom),
+            ]:
+                if not validate_number(str(crop_value), 0, 500, is_int=True, allow_empty=False):
+                    self.show_validation_error_message(T("Crop") + " " + T(crop_name), 0, 500)
+                    return None
+        else:
+            crop_top = crop_left = crop_right = crop_bottom = 0
 
         resolution = self.cbo_resolution.GetValue()
         if resolution == "Default" or resolution == "":
@@ -1085,7 +1087,7 @@ class MainFrame(wx.Frame):
         else:
             user = password = None
 
-        monitor_index = int(self.cbo_monitor_index.GetValue())
+        monitor_index = int(self.cbo_monitor_index.GetValue() or 0)
         window_name = self.cbo_window_name.GetValue()
         if self.cbo_screenshot.GetValue() not in BACKENDS_WITH_TARGET:
             monitor_index = 0
@@ -1186,7 +1188,11 @@ class MainFrame(wx.Frame):
         self.grp_network.Hide()
         self.grp_adjustment.Show()
         self.sync_adj_controls(to=True)
+        self.pnl_options.Layout()
+        self.pnl_options.InvalidateBestSize()
+        self.Layout()
         self.Fit()
+        wx.CallAfter(self.Fit)
 
         if BaseDepthModel.has_model_checkpoint_file(self.args.depth_model):
             # Realod depth model
@@ -1199,6 +1205,7 @@ class MainFrame(wx.Frame):
         self.processing = True
 
     def on_exit_worker(self, result):
+        error_info = None
         try:
             args = result.get()
             self.depth_model = args.state["depth_model"]
@@ -1208,12 +1215,21 @@ class MainFrame(wx.Frame):
 
             self.SetStatusText(T("Shutdown"))
         except:  # noqa
+            if (
+                self.args is not None
+                and self.args.state.get("depth_model") is not None
+                and self.args.state["depth_model"].loaded()
+            ):
+                self.depth_model = self.args.state["depth_model"]
+                self.depth_model_type = self.args.depth_model
+                self.depth_model_device_id = self.args.gpu
+                self.depth_model_height = self.args.resolution
             self.SetStatusText(T("Error"))
             e_type, e, tb = sys.exc_info()
             message = getattr(e, "message", str(e))
             print(e, file=sys.stderr)
             traceback.print_tb(tb)
-            wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
+            error_info = (message, f"{T('Error')}: {e.__class__.__name__}")
 
         self.args = None
         self.processing = False
@@ -1227,7 +1243,19 @@ class MainFrame(wx.Frame):
         self.grp_network.Show()
         self.grp_adjustment.Hide()
         self.sync_adj_controls(to=False)
+        self.pnl_options.Layout()
+        self.pnl_options.InvalidateBestSize()
+        self.Layout()
         self.Fit()
+        wx.CallAfter(self.Fit)
+
+        if error_info is not None:
+            wx.MessageBox(error_info[0], error_info[1], wx.OK | wx.ICON_ERROR)
+            self.pnl_options.Layout()
+            self.pnl_options.InvalidateBestSize()
+            self.Layout()
+            self.Fit()
+            wx.CallAfter(self.Fit)
 
         # free vram
         gc_collect()
@@ -1345,6 +1373,10 @@ class MainFrame(wx.Frame):
     def on_text_changed_cbo_screenshot(self, event):
         self.update_monitor_index()
         self.update_window_names()
+        self.pnl_options.Layout()
+        self.pnl_options.InvalidateBestSize()
+        self.Layout()
+        self.Fit()
 
     def update_monitor_index(self, *args, **kwargs):
         if self.cbo_screenshot.GetValue() in BACKENDS_WITH_TARGET:
@@ -1357,10 +1389,18 @@ class MainFrame(wx.Frame):
         self.GetSizer().Layout()
 
     def update_window_names(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() in BACKENDS_WITH_TARGET:
+        backend = self.cbo_screenshot.GetValue()
+        if backend in BACKENDS_WITH_TARGET:
             self.lbl_window_name.Show()
             self.cbo_window_name.Show()
             self.btn_reload_window_name.Show()
+            self.cbo_window_name.SetItems([""] + enum_window_names())
+        else:
+            self.lbl_window_name.Hide()
+            self.cbo_window_name.Hide()
+            self.btn_reload_window_name.Hide()
+
+        if backend in BACKENDS_WITH_CROP:
             self.lbl_crop_region.Show()
             self.txt_crop_top.Show()
             self.lbl_crop_top.Show()
@@ -1370,11 +1410,7 @@ class MainFrame(wx.Frame):
             self.lbl_crop_right.Show()
             self.txt_crop_bottom.Show()
             self.lbl_crop_bottom.Show()
-            self.cbo_window_name.SetItems([""] + enum_window_names())
         else:
-            self.lbl_window_name.Hide()
-            self.cbo_window_name.Hide()
-            self.btn_reload_window_name.Hide()
             self.lbl_crop_region.Hide()
             self.txt_crop_top.Hide()
             self.lbl_crop_top.Hide()

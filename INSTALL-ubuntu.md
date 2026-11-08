@@ -68,15 +68,16 @@ pip3 install -r requirements-gui.txt
 
 #### iw3-desktop on Wayland (optional)
 
-[iw3-desktop](iw3/docs/desktop.md) needs [kwcapture](https://pypi.org/project/kwcapture/) to
-capture the screen on a **Wayland** session (KDE Plasma); none of the built-in methods can see a
-Wayland desktop. It is an optional dependency, so it is not in `requirements-gui.txt`:
+To capture the screen on a **Wayland** session in [iw3-desktop](iw3/docs/desktop.md), install either:
 
-```
-pip3 install kwcapture
-```
-
-It is not needed on X11, and it is not needed for any other program in this repository.
+*   `obs` backend (GNOME, KDE, etc. via Desktop Portal / PipeWire):
+    ```
+    sudo apt-get install obs-plugins libobs0t64
+    ```
+*   `kwcapture` backend (KDE Plasma only):
+    ```
+    pip3 install kwcapture
+    ```
 
 If you want to use training code, install `requirements-dev.txt`.
 
