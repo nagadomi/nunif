@@ -3011,6 +3011,9 @@ def is_yaml(filename):
 
 
 def iw3_main(args):
+    if getattr(args, "vaapi_device", None):
+        os.environ["VAAPI_DEVICE"] = args.vaapi_device
+
     assert not (args.rotate_left and args.rotate_right)
     assert (
         sum(

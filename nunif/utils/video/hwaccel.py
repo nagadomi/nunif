@@ -1,4 +1,5 @@
 from typing import List, Set
+import os
 
 import torch
 from av.codec.hwaccel import HWAccel, hwdevices_available
@@ -57,6 +58,14 @@ def create_hwaccel(
             device=device_id,
             is_hw_owned=False,
             options={"primary_ctx": "1"},
+            allow_software_fallback=allow_software_fallback,
+        )
+    elif device == "vaapi":
+        vaapi_device = os.environ.get("VAAPI_DEVICE")
+        return HWAccel(
+            device_type="vaapi",
+            device=vaapi_device,
+            is_hw_owned=False,
             allow_software_fallback=allow_software_fallback,
         )
     else:
