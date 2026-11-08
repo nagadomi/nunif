@@ -36,6 +36,7 @@ from nunif.gui import (
     apply_dark_mode,
     is_dark_mode,
     get_default_locale,
+    refresh_layouts,
 )
 from ..base_depth_model import BaseDepthModel
 from ..locales import LOCALES, load_language_setting, save_language_setting
@@ -132,6 +133,7 @@ class IW3DesktopApp(wx.App):
         set_icon_ex(main_frame, path.join(path.dirname(__file__), "icon.ico"), main_frame.GetTitle())
         self.SetAppName(main_frame.GetTitle())
         main_frame.Show()
+        refresh_layouts(main_frame)
         self.SetTopWindow(main_frame)
 
         return True
@@ -742,6 +744,7 @@ class MainFrame(wx.Frame):
         # state
         self.btn_cancel.Disable()
         self.load_preset()
+        self.grp_adjustment.Hide()
 
         self.update_bind_addr_state()
         self.update_bind_addr_warning()
@@ -759,13 +762,9 @@ class MainFrame(wx.Frame):
         self.update_finetuning()
         self.update_compile()
 
-        self.grp_adjustment.Hide()
-
         self.update_wayland_warning()
 
         self.btn_start.SetFocus()
-        self.Fit()
-        wx.CallAfter(self.Fit)
 
     def update_wayland_warning(self):
         if HAS_OBS or HAS_KWCAPTURE or not is_wayland():
@@ -1188,11 +1187,8 @@ class MainFrame(wx.Frame):
         self.grp_network.Hide()
         self.grp_adjustment.Show()
         self.sync_adj_controls(to=True)
-        self.pnl_options.Layout()
-        self.pnl_options.InvalidateBestSize()
-        self.Layout()
-        self.Fit()
-        wx.CallAfter(self.Fit)
+        refresh_layouts(self)
+        wx.CallAfter(refresh_layouts, self)
 
         if BaseDepthModel.has_model_checkpoint_file(self.args.depth_model):
             # Realod depth model
@@ -1243,19 +1239,13 @@ class MainFrame(wx.Frame):
         self.grp_network.Show()
         self.grp_adjustment.Hide()
         self.sync_adj_controls(to=False)
-        self.pnl_options.Layout()
-        self.pnl_options.InvalidateBestSize()
-        self.Layout()
-        self.Fit()
-        wx.CallAfter(self.Fit)
+        refresh_layouts(self)
+        wx.CallAfter(refresh_layouts, self)
 
         if error_info is not None:
             wx.MessageBox(error_info[0], error_info[1], wx.OK | wx.ICON_ERROR)
-            self.pnl_options.Layout()
-            self.pnl_options.InvalidateBestSize()
-            self.Layout()
-            self.Fit()
-            wx.CallAfter(self.Fit)
+            refresh_layouts(self)
+            wx.CallAfter(refresh_layouts, self)
 
         # free vram
         gc_collect()
@@ -1373,10 +1363,7 @@ class MainFrame(wx.Frame):
     def on_text_changed_cbo_screenshot(self, event):
         self.update_monitor_index()
         self.update_window_names()
-        self.pnl_options.Layout()
-        self.pnl_options.InvalidateBestSize()
-        self.Layout()
-        self.Fit()
+        refresh_layouts(self)
 
     def update_monitor_index(self, *args, **kwargs):
         if self.cbo_screenshot.GetValue() in BACKENDS_WITH_TARGET:
@@ -1460,8 +1447,8 @@ class MainFrame(wx.Frame):
             for control in local_viewer_options:
                 control.Hide()
 
-        self.GetSizer().Layout()
-        self.Fit()
+        if self.IsShown():
+            refresh_layouts(self)
 
     def update_finetuning(self):
         # Fine-tuning spin controls
