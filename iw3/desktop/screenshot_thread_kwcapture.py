@@ -1,24 +1,7 @@
-"""Wayland (KDE Plasma) screenshot backend, through kwcapture.
+"""Wayland (KDE Plasma) screenshot backend using kwcapture.
 
-Why this exists: on a Wayland session every other backend here is wrong. ``mss`` and
-``PIL.ImageGrab`` capture the XWayland root window -- black for native Wayland windows, one
-screen only, no per-window capture (and ``is_mss_supported()`` refuses Wayland outright),
-while ``windows_capture``/``wc_cuda`` are Windows only. kwcapture asks KWin itself for the
-image (``org.kde.KWin.ScreenShot2``), so it gets the real composited frame at device
-resolution, per monitor and per window, at roughly 40 fps at 1440p -- no portal, no root
-access, no XWayland.
-
-See https://pypi.org/project/kwcapture/ (also
-https://github.com/tjandrasg/kwcapture). kwcapture is an **optional** dependency: it is not in
-``requirements-gui.txt``, because it only works on one compositor and the user may not want it.
-Install it with ``pip install kwcapture`` when needed; the wheel ships the small native helper
-that KWin authorises through a KDE desktop entry, which kwcapture installs by itself on first
-use.
-
-Everything in this module degrades gracefully: importing it never requires kwcapture,
-``is_kwcapture_supported()`` is cheap enough to call from the GUI at startup, and
-``warn_if_kwcapture_missing()`` tells the user about the optional package only on a session
-where it would actually have helped (KDE Plasma on Wayland).
+kwcapture: https://pypi.org/project/kwcapture/
+           https://github.com/tjandrasg/kwcapture
 """
 
 import os
@@ -34,24 +17,10 @@ from torchvision.transforms import functional as TF
 
 _kwcapture = None
 _kwcapture_checked = False
-_missing_warned = False
 
 
 def is_wayland():
     return sys.platform == "linux" and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
-
-
-def is_kde_desktop():
-    """True when the session advertises KDE Plasma (the only desktop kwcapture can talk to).
-
-    Used for the *warning* only, never to offer the backend: whether kwcapture works is
-    decided by the presence of the package plus a Wayland session, and a heuristic must not
-    hide a feature from somebody who did install it.
-    """
-    if sys.platform != "linux":
-        return False
-    session = (os.environ.get("XDG_CURRENT_DESKTOP", "") + ":" + os.environ.get("DESKTOP_SESSION", "")).lower()
-    return "kde" in session or "plasma" in session
 
 
 def get_kwcapture():
@@ -69,11 +38,7 @@ def get_kwcapture():
 
 
 def kwcapture_unsupported_reason():
-    """Why kwcapture cannot be used here, or None when it can (cheap: no daemon started).
-
-    A KWin that refuses the helper still fails later, with kwcapture's own message; this only
-    decides whether the backend is offered at all.
-    """
+    """Why kwcapture cannot be used here, or None when it can (cheap: no daemon started)."""
     if get_kwcapture() is None:
         return "kwcapture is not installed (pip install kwcapture)"
     if not is_wayland():
@@ -86,34 +51,6 @@ def kwcapture_unsupported_reason():
 def is_kwcapture_supported():
     """True when this session can plausibly use kwcapture (cheap: no daemon is started)."""
     return kwcapture_unsupported_reason() is None
-
-
-def is_kwcapture_install_recommended():
-    """True when kwcapture would work here and is not installed.
-
-    This is the only situation worth warning about: an optional dependency the user cannot
-    use at all (not a KDE session, X11) should stay quiet.
-    """
-    return is_kde_desktop() and is_wayland() and get_kwcapture() is None
-
-
-# Single source of the text, so the console message and the GUI translation cannot drift
-# apart. Also used as the locale key in iw3/locales/*.yml.
-KWCAPTURE_MISSING_MESSAGE = (
-    "kwcapture is not installed, so this Wayland (KDE Plasma) desktop cannot be captured. "
-    "Install it with `pip install kwcapture`. The other screenshot methods use XWayland, "
-    "which is usually black on Wayland."
-)
-
-
-def warn_if_kwcapture_missing():
-    """Warn once per process that the optional kwcapture package is missing, if it applies."""
-    global _missing_warned
-    if not _missing_warned and is_kwcapture_install_recommended():
-        _missing_warned = True
-        print(f"Warning: {KWCAPTURE_MISSING_MESSAGE}", file=sys.stderr)
-        return True
-    return False
 
 
 def get_monitor_list():
