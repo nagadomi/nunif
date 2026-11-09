@@ -26,19 +26,34 @@ def edge_dilation_is_enabled(edge_dilation):
     return x != 0 or y != 0
 
 
+_GAUSSIAN_KERNEL: dict[tuple[torch.device, torch.dtype], torch.Tensor] = {}
+
+
+def get_gaussian_kernel(device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    key = (device, dtype)
+    kernel = _GAUSSIAN_KERNEL.get(key)
+    if kernel is None:
+        kernel = (
+            torch.tensor(
+                [
+                    [21, 31, 21],
+                    [31, 48, 31],
+                    [21, 31, 21],
+                ],
+                dtype=dtype,
+                device=device,
+            ).reshape(1, 1, 3, 3)
+            / 256.0
+        )
+        if len(_GAUSSIAN_KERNEL) >= 8:
+            _GAUSSIAN_KERNEL.clear()
+        _GAUSSIAN_KERNEL[key] = kernel
+
+    return kernel
+
+
 def gaussian_blur(x):
-    kernel = (
-        torch.tensor(
-            [
-                [21, 31, 21],
-                [31, 48, 31],
-                [21, 31, 21],
-            ],
-            dtype=torch.float32,
-            device=x.device,
-        ).reshape(1, 1, 3, 3)
-        / 256.0
-    )
+    kernel = get_gaussian_kernel(x.device, x.dtype)
     x = F.pad(x, [1] * 4, mode="replicate")
     x = F.conv2d(x, weight=kernel, bias=None, stride=1, padding=0, groups=1)
     return x
@@ -76,15 +91,15 @@ def dilate_outer(mask, n_iter, base_width=None):
         return mask
 
     mask_dtype = mask.dtype
-    mask = mask.bool()
 
     if base_width is not None:
         n_iter = max(round(mask.shape[-1] / base_width * n_iter), 1)
 
-    for i in range(n_iter):
-        mask = mask | F.pad(mask, (1, 0, 0, 0))[:, :, :, :-1]
-
-    return mask.to(mask_dtype)
+    padded = F.pad(mask.float(), (n_iter, 0, 0, 0), mode="constant", value=0)
+    out = F.max_pool2d(padded, kernel_size=(1, n_iter + 1), stride=1)
+    if mask_dtype == torch.bool:
+        return out.bool()
+    return out.to(mask_dtype)
 
 
 def dilate_inner(mask, n_iter, base_width=None):
@@ -93,15 +108,15 @@ def dilate_inner(mask, n_iter, base_width=None):
         return mask
 
     mask_dtype = mask.dtype
-    mask = mask.bool()
 
     if base_width is not None:
         n_iter = max(round(mask.shape[-1] / base_width * n_iter), 1)
 
-    for i in range(n_iter):
-        mask = mask | F.pad(mask, (0, 1, 0, 0))[:, :, :, 1:]
-
-    return mask.to(mask_dtype)
+    padded = F.pad(mask.float(), (0, n_iter, 0, 0), mode="constant", value=0)
+    out = F.max_pool2d(padded, kernel_size=(1, n_iter + 1), stride=1)
+    if mask_dtype == torch.bool:
+        return out.bool()
+    return out.to(mask_dtype)
 
 
 def edge_weight(x):
