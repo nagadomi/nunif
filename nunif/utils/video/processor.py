@@ -9,6 +9,7 @@ from types import GeneratorType
 from typing import List
 
 import av
+from av.codec.hwaccel import HWAccel
 import torch
 from tqdm import tqdm
 
@@ -31,6 +32,7 @@ from .utils import (
     get_default_video_codec,
     pix_fmt_requires_16bit,
 )
+from .vaapi import is_vaapi_codec
 from .video_preprocessor import VideoPreprocessor
 
 
@@ -270,11 +272,19 @@ def _process_video(
     if config.state_updated is not None:
         config.state_updated(config)
 
-    video_output_stream = output_container.add_stream(config.video_codec, output_fps)
+    if is_vaapi_codec(config.video_codec):
+        vaapi_device = (config.options or {}).pop("vaapi_device", None) or os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128")
+        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device)
+        video_output_stream = output_container.add_stream(config.video_codec, output_fps, hwaccel=vaapi_hwaccel)
+    else:
+        video_output_stream = output_container.add_stream(config.video_codec, output_fps)
     apply_color_settings(video_output_stream, output_reformatter)
 
     video_output_stream.thread_type = "AUTO"
-    video_output_stream.pix_fmt = config.pix_fmt
+    if is_vaapi_codec(config.video_codec):
+        video_output_stream.pix_fmt = "vaapi"
+    else:
+        video_output_stream.pix_fmt = config.pix_fmt
 
     video_output_stream.options = config.options
     video_preprocessor = VideoPreprocessor(
@@ -468,11 +478,19 @@ def generate_video(
     if config.state_updated is not None:
         config.state_updated(config)
 
-    video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps))
+    if is_vaapi_codec(config.video_codec):
+        vaapi_device = (config.options or {}).pop("vaapi_device", None) or os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128")
+        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device)
+        video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps), hwaccel=vaapi_hwaccel)
+    else:
+        video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps))
     apply_color_settings(video_output_stream, output_reformatter)
 
     video_output_stream.thread_type = "AUTO"
-    video_output_stream.pix_fmt = config.pix_fmt
+    if is_vaapi_codec(config.video_codec):
+        video_output_stream.pix_fmt = "vaapi"
+    else:
+        video_output_stream.pix_fmt = config.pix_fmt
     if not uninitialized:
         video_output_stream.width = config.output_width
         video_output_stream.height = config.output_height

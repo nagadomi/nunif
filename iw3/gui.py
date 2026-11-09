@@ -30,6 +30,8 @@ from nunif.utils.video import (
     VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS,
     has_nvenc,
     has_qsv,
+    has_amf,
+    has_vaapi,
     pyav_init_cuda_primary_context,
 )
 from nunif.utils.filename import sanitize_filename
@@ -510,7 +512,12 @@ class MainFrame(wx.Frame):
         # sbs/vr180, padding
         # max-fps, crf, preset, tune
         self.grp_video = VideoEncodingBox(
-            self.pnl_options, translate_function=T, has_nvenc=has_nvenc(), has_qsv=has_qsv()
+            self.pnl_options,
+            translate_function=T,
+            has_nvenc=has_nvenc(),
+            has_qsv=has_qsv(),
+            has_amf=has_amf(),
+            has_vaapi=has_vaapi(),
         )
 
         # input video filter
