@@ -954,10 +954,14 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     offload_resource_manager = None
 
     def _postprocess(depths, flush):
+        if frame_cpu_offload and src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+            src_queue[0][0].prefetch(device=device)
         for depth in depths:
             x, pts = src_queue.pop(0)
             reset_pts = [pts in segment_pts]
             if isinstance(x, VU.OffloadedFrame):
+                if src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+                    src_queue[0][0].prefetch(device=device)
                 x = x.load(device=args.state["device"])
             elif isinstance(x, av.VideoFrame):
                 x = VU.to_tensor(x, device=args.state["device"])
@@ -1175,11 +1179,16 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 else:
                     depths = depths.to(device)
 
+                if frame_cpu_offload and src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+                    src_queue[0][0].prefetch(device=device)
+
                 x_srcs = []
                 pts = []
                 for _ in range(len(depths)):
                     x_src, t = src_queue.pop(0)
                     if frame_cpu_offload:
+                        if src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+                            src_queue[0][0].prefetch(device=device)
                         x_srcs.append(x_src.load(device=device))
                     else:
                         x_srcs.append(x_src.to(device))
