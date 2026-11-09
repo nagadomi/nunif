@@ -423,7 +423,7 @@ class BaseDepthModel(metaclass=ABCMeta):
         for k, v in png_info.items():
             metadata.add_text(k, str(v))
 
-        im.save(file_path, pnginfo=metadata)
+        im.save(file_path, pnginfo=metadata, compress_level=1)
 
     @staticmethod
     def load_depth(file_path):

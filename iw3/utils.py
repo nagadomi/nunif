@@ -286,7 +286,7 @@ def get_image_ext(format):
 def save_image(im, output_filename, format="png", png_info=None):
     if format == "png":
         options = {
-            "compress_level": 6,
+            "compress_level": 1,
             "pnginfo": png_info,
         }
     elif format == "webp":
