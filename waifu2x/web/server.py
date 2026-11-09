@@ -129,6 +129,13 @@ def setup():
     parser.add_argument("--tta", action="store_true", help="use TTA mode")
     parser.add_argument("--disable-amp", action="store_true", help="disable AMP for some special reason")
     parser.add_argument("--compile", action="store_true", help="Use torch.compile()")
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help="torch.compile mode",
+    )
     parser.add_argument("--warmup", action="store_true", help="warmup at startup")
     parser.add_argument(
         "--image-lib", type=str, choices=["pil", "wand"], default="pil", help="image library to encode/decode images"
@@ -160,12 +167,15 @@ def setup():
     if args.compile:
         # Force `batch_size=1` to avoid recompilation.
         args.batch_size = 1
+        compile_kwargs = {}
+        if args.compile_mode != "default":
+            compile_kwargs["mode"] = args.compile_mode
         compile_lock = filelock.FileLock(COMPILE_LOCK)
         with compile_lock:
-            logger.info("Compiling models...")
-            art_ctx.compile()
-            art_scan_ctx.compile()
-            photo_ctx.compile()
+            logger.info(f"Compiling models (mode={args.compile_mode})...")
+            art_ctx.compile(**compile_kwargs)
+            art_scan_ctx.compile(**compile_kwargs)
+            photo_ctx.compile(**compile_kwargs)
             if args.warmup:
                 art_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size, enable_amp=not args.disable_amp)
                 art_scan_ctx.warmup(

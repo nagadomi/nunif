@@ -41,10 +41,10 @@ class Waifu2x:
         self.alpha_pad = AlphaBorderPadding()
         self.is_half = False
 
-    def compile(self):
+    def compile(self, **kwargs):
         # TODO: If dynamic tracing works well in the future,
         #       it is better to add `dynamic=True` for variable batch sizes.
-        self._apply(lambda model: compile_model(model) if can_compile(model) else model)
+        self._apply(lambda model: compile_model(model, **kwargs) if can_compile(model) else model)
 
     @torch.inference_mode()
     def warmup(self, tile_size, batch_size, enable_amp):
