@@ -3,6 +3,7 @@ import os
 import pickle
 from abc import ABCMeta, abstractmethod
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -410,7 +411,14 @@ class BaseDepthModel(metaclass=ABCMeta):
         return normalized_depths
 
     @staticmethod
-    def normalized_depth_to_uint16_image(depth: torch.Tensor) -> Image.Image:
+    def to_uint16_numpy(depth: torch.Tensor) -> np.ndarray:
+        depth = torch.clamp(depth, 0, 1)
+        return (0xFFFF * depth).round().to(torch.uint16).squeeze(0).cpu().numpy()
+
+    @staticmethod
+    def normalized_depth_to_uint16_image(depth: torch.Tensor | np.ndarray) -> Image.Image:
+        if isinstance(depth, np.ndarray):
+            return Image.fromarray(depth)
         depth = torch.clamp(depth, 0, 1)
         depth_int = (0xFFFF * depth).round().to(torch.uint16).squeeze(0).cpu().numpy()
         return Image.fromarray(depth_int)

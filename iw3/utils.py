@@ -354,7 +354,9 @@ def load_image_rgb_alpha(filename, device, exif_transpose=True):
     return extract_image_rgb_alpha(im, device)
 
 
-def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=None):
+def tensor_to_pil(rgb, format="png", alpha=None):
+    if isinstance(rgb, Image.Image):
+        return rgb
     if rgb.shape[0] == 4 and alpha is None:
         alpha = rgb[3:]
         rgb = rgb[:3]
@@ -362,7 +364,11 @@ def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=N
         if alpha is not None:
             rgb = apply_alpha_fill(rgb, alpha, color=GREEN_FILL_COLOR)
             alpha = None
-    im = to_pil_image(rgb, alpha=alpha)
+    return to_pil_image(rgb, alpha=alpha)
+
+
+def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=None):
+    im = tensor_to_pil(rgb, format=format, alpha=alpha)
     save_image(im, output_filename, format=format, png_info=png_info)
 
 
@@ -903,7 +909,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
             rgb, alpha = extract_image_rgb_alpha(im, device=args.state["device"])
             output = process_image(rgb, args, depth_model, side_model, alpha=alpha)
-            f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
+            output_im = tensor_to_pil(output, format=args.format)
+            f = pool.submit(save_image, output_im, output_filename, format=args.format)
             # f.result() # for debug
 
             futures.append(f)
@@ -1637,7 +1644,8 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
                 + FULL_SBS_SUFFIX
                 + get_image_ext(args.format),
             )
-            f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
+            output_im = tensor_to_pil(output, format=args.format)
+            f = pool.submit(save_image, output_im, output_filename, format=args.format)
             futures.append(f)
             while len(futures) >= IMAGE_IO_QUEUE_MAX:
                 futures.popleft().result()
@@ -1839,10 +1847,12 @@ def export_images(input_path, output_dir, args, title=None):
                     depth.unsqueeze(0), size=rgb.shape[-2:], mode="bilinear", antialias=True, align_corners=True
                 ).squeeze(0)
 
-            futures.append(pool.submit(depth_model.save_normalized_depth, depth, depth_file))
+            depth_int = depth_model.to_uint16_numpy(depth)
+            futures.append(pool.submit(depth_model.save_normalized_depth, depth_int, depth_file))
 
             if not args.export_depth_only:
-                futures.append(pool.submit(save_tensor_image, rgb, rgb_file, alpha=alpha))
+                rgb_im = tensor_to_pil(rgb, alpha=alpha)
+                futures.append(pool.submit(save_image, rgb_im, rgb_file))
 
             pbar.update(1)
             if suspend_event is not None:
@@ -1902,7 +1912,8 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                     depth, size=(x_shape[-2], x_shape[-1]), interpolation=InterpolationMode.BILINEAR, antialias=True
                 )
             seq = str(pts).zfill(8)
-            futures.append(pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png")))
+            depth_int = depth_model.to_uint16_numpy(depth)
+            futures.append(pool.submit(depth_model.save_normalized_depth, depth_int, path.join(depth_dir, f"{seq}.png")))
             if not args.export_depth_only:
                 assert x is not None
                 x_buffer = x.cpu_buffer()
@@ -2476,7 +2487,8 @@ def process_config_images(config, args, side_model):
                 )
 
                 output_filename = path.join(output_dir, make_output_filename(rgb_filename, args, video=False))
-                f = pool.submit(save_tensor_image, sbs, output_filename, format=args.format)
+                sbs_im = tensor_to_pil(sbs, format=args.format)
+                f = pool.submit(save_image, sbs_im, output_filename, format=args.format)
                 futures.append(f)
                 pbar.update(1)
                 if suspend_event is not None:
