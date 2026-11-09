@@ -557,6 +557,8 @@ def resolve_index_file(root_dir, accept_language):
         index_file = "index.es.html"
     elif lang in {"ca-ES", "ca-FR", "ca-IT", "ca-AD"}:
         index_file = "index.ca.html"
+    elif lang is not None and (lang.startswith("id-") or lang in {"in", "in-ID"}):
+        index_file = "index.id.html"
     else:
         index_file = f"index.{lang}.html"
 

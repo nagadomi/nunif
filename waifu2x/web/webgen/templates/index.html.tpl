@@ -98,6 +98,10 @@
         <a href="index.bg.html">
           Български
         </a>
+        /
+        <a href="index.id.html">
+          Bahasa Indonesia
+        </a>
       </div>
       <p>{{description}}</p>
       <p class="margin1 link-box">
