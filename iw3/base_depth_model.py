@@ -338,13 +338,17 @@ class BaseDepthModel(metaclass=ABCMeta):
             alpha = torch.cat([alpha, torch.flip(alpha, dims=[3])], dim=0)
 
         mask = alpha > 0.0
-        for i in range(min(depth.shape[0], mask.shape[0])):
-            m = mask[i]
-            if m.any() and not m.all():
-                if is_metric:
-                    depth[i][torch.logical_not(m)] = (depth[i][m].max() + depth[i].max()) * 0.5
-                else:
-                    depth[i][torch.logical_not(m)] = (depth[i][m].min() + depth[i].min()) * 0.5
+        num_pixels = mask.shape[-2] * mask.shape[-1]
+        fg_count = mask.sum(dim=(-2, -1), keepdim=True)
+        has_partial_alpha = (fg_count > 0) & (fg_count < num_pixels)
+        if is_metric:
+            fg_depth = torch.where(mask, depth, torch.tensor(-float("inf"), device=depth.device, dtype=depth.dtype))
+            fill_val = (fg_depth.amax(dim=(-2, -1), keepdim=True) + depth.amax(dim=(-2, -1), keepdim=True)) * 0.5
+        else:
+            fg_depth = torch.where(mask, depth, torch.tensor(float("inf"), device=depth.device, dtype=depth.dtype))
+            fill_val = (fg_depth.amin(dim=(-2, -1), keepdim=True) + depth.amin(dim=(-2, -1), keepdim=True)) * 0.5
+        bg_val = torch.where(has_partial_alpha, fill_val, depth)
+        depth = torch.where(mask, depth, bg_val)
 
         if squeeze:
             depth = depth.squeeze(0)
