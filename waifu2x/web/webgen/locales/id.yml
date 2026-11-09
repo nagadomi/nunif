@@ -1,0 +1,32 @@
+---
+description: Super-resolusi citra tunggal untuk ilustrasi bergaya anime menggunakan Deep Convolutional Neural Networks. Juga mendukung foto.
+show_demonstration: Tampilkan demonstrasi lengkap
+go_to_github: Buka GitHub
+image_choosing: Pilih gambar
+type_url: Masukkan URL
+choose_file: Atau pilih file
+file_limits: "Batasan: Ukuran: 5MB, Reduksi Noise: 3000x3000px, Pembesaran: 1500x1500px."
+style: Gaya
+artwork: Ilustrasi
+scan: Pindaian
+photo: Foto
+noise_reduction: Reduksi Noise
+expect_jpeg: untuk artefak kompresi JPEG
+nr_none: Tidak ada
+nr_low: Rendah
+nr_medium: Sedang
+nr_high: Tinggi
+nr_highest: Tertinggi
+nr_hint: "Gunakan reduksi noise hanya jika gambar benar-benar memiliki noise, karena jika tidak, dapat menimbulkan efek sebaliknya (kehilangan detail)."
+upscaling: Pembesaran
+up_none: Tidak ada
+image_format: Format Gambar
+tta: TTA
+tta_best_effort: "n-pass auto"
+tta_rule: "Lihat aturan `n-pass auto`."
+tta_hint: "TTA menghasilkan kualitas yang lebih stabil tetapi membatasi ukuran gambar input."
+button_convert: Konversi
+button_download: Unduh
+button_clear: Hapus
+hints:
+  - "Jika Anda menggunakan Firefox, silakan tekan tombol CTRL+S untuk menyimpan gambar. Opsi \"Simpan Gambar\" tidak berfungsi."
