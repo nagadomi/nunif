@@ -1,4 +1,3 @@
-import io
 import ipaddress
 import math
 import socket
@@ -130,8 +129,6 @@ def fps_sleep(start_time, fps, resolution=2e-4):
 
 
 def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
-    bio = io.BytesIO()
-
     # Thread-safe JPEG encoding with lock
     with _jpeg_encode_lock:
         if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
@@ -139,8 +136,7 @@ def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
         else:
             jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
 
-    bio.write(jpeg_data.numpy())
-    jpeg_data = bio.getbuffer().tobytes()
+    jpeg_data = jpeg_data.numpy().tobytes()
     # debug_jpeg_data(frame, jpeg_data)
     return (jpeg_data, tick)
 
