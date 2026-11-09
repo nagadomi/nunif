@@ -259,7 +259,6 @@ def _bench(resolution=504, do_compile=False):
     import time
 
     gc.collect()
-    torch._dynamo.reset()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
 

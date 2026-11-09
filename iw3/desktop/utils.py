@@ -248,7 +248,6 @@ def try_switch_mlbw_model(old_divergence, new_divergence, old_side_model, args):
     )
     if args.compile and not isinstance(new_side_model, DeviceSwitchInference):
         new_side_model = compile_model(new_side_model, args.state["device"])
-        # NOTE: without this torch._dynamo.reset(), torch will crash
         gc_collect()
 
     if torch.cuda.is_available():

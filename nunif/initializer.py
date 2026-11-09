@@ -47,8 +47,6 @@ def gc_collect():
     # gc.set_debug(gc.DEBUG_LEAK)
     gc.collect()
 
-    if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
-        torch._dynamo.reset()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     if torch.backends.mps.is_available():

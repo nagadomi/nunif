@@ -1,5 +1,4 @@
 import argparse
-import gc
 import hashlib
 import io
 import json
@@ -32,6 +31,7 @@ from bottle import HTTPResponse, request
 from diskcache import Cache
 
 from nunif.device import mps_is_available, xpu_is_available
+from nunif.initializer import gc_collect
 from nunif.logger import logger, set_log_level
 from nunif.utils.filename import set_image_ext
 from nunif.utils.home_dir import ensure_home_dir
@@ -95,11 +95,7 @@ class CacheGC:
         if self.last_expired_at + self.interval < now:
             self.cache.expire(now)
             self.cache.cull()
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
-                torch._dynamo.reset()
+            gc_collect()
             self.last_expired_at = time()
             logger.info(f"diskcache: cache={self.disk_size_mb()}MB, RAM={self.ram_size_mb()}")
 
@@ -177,6 +173,8 @@ def setup():
                 )
                 photo_ctx.warmup(tile_size=args.tile_size, batch_size=args.batch_size, enable_amp=not args.disable_amp)
             logger.info("Done")
+
+    gc_collect()
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
     cache_gc = CacheGC(cache, args.cache_ttl * 60)
