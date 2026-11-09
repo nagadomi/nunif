@@ -131,15 +131,19 @@ python -m iw3.desktop --stream-quality 80
 | `mss` | Windows, X11, macOS | モニター (ウィンドウ: Windows/X11) | LinuxはX11のみ対応 |
 | `wc_mp` | Windows | モニター + ウィンドウ | `windows_capture` (別プロセス) |
 | `wc_cuda` | Windows + NVIDIA | モニター + ウィンドウ | `wc_cuda` |
-| `obs` | Linux Wayland | デスクトップポータル経由 | `libobs` (`linux-pipewire` プラグイン、別プロセス) |
-| `kwcapture` | Linux Wayland (KDE Plasma) | モニター + ウィンドウ | [kwcapture](https://pypi.org/project/kwcapture/) (`org.kde.KWin.ScreenShot2`) |
+| `obs` | Linux Wayland | デスクトップポータル経由 (全画面またはウィンドウ) | `libobs` (`linux-pipewire` プラグイン、別プロセス) |
+| `kwcapture` | Linux Wayland (KDE Plasma) | モニター + ウィンドウ | [kwcapture](https://pypi.org/project/kwcapture/) (`org.kde.KWin.ScreenShot2`)。KDE上でポータルダイアログを介さず直接ウィンドウ/モニターを指定可能 |
 
 #### Linux Wayland (`obs` / `kwcapture`)
 
-*   **`obs`**: `libobs` の `linux-pipewire` プラグインと `xdg-desktop-portal` を使用します。モニターやウィンドウの選択は起動時のシステムのポータルダイアログで行います。
-    *   必要なライブラリ: `libobs`, `obs-plugins` (`linux-pipewire.so`), `libglib-2.0`, `libwayland-client` (例: `apt install obs-plugins libobs0t64` または `obs-studio`)
+*   **`obs`**: `libobs` の `linux-pipewire` プラグインと `xdg-desktop-portal` を使用します。画面またはウィンドウの選択は起動時のシステムのポータルダイアログで行います。
+    *   必要なライブラリ: `libobs`, `obs-plugins` (`linux-pipewire.so`), `libglib-2.0`, `libwayland-client` (例: Ubuntu では `sudo apt install obs-plugins`)。※ Flatpak や Snap 版の OBS は検出されません。
 *   **`kwcapture`**: KWinの `ScreenShot2` D-Busインターフェースを使用します (KDE Plasma専用)。
     *   必要なパッケージ: `pip install kwcapture`
+    *   初回実行時にKWinがキャプチャヘルパーを承認するためのKDEデスクトップエントリーが自動作成されます。ウィンドウ一覧に出ない場合や画面が真っ暗な場合は `python -m kwcapture doctor` で確認できます。
+    *   サイズは**デバイスピクセル**（物理ピクセル）です（例: 125%拡大の2560論理pxは3200pxとして取得されます）。
+    *   `--window-name` はウィンドウタイトル (KWinのキャプション) に一致し、配信中のウィンドウのリサイズや最大化にも自動追従します。
+    *   マウスカーソルはコンポジターによって合成されるため、他バックエンドのような追加のカーソル描画は不要です (`--disable-draw-cursor` で非表示可能)。
 
 ### ステレオ設定
 

@@ -483,10 +483,10 @@ class MainFrame(wx.Frame):
             screenshot_backends += ["wc_mp"]
         if HAS_WINDOWS_CAPTURE_CUDA:
             screenshot_backends += ["wc_cuda"]
-        if HAS_OBS:
-            screenshot_backends += ["obs"]
         if HAS_KWCAPTURE:
             screenshot_backends += ["kwcapture"]
+        if HAS_OBS:
+            screenshot_backends += ["obs"]
         self.cbo_screenshot = wx.ComboBox(self.grp_processor, choices=screenshot_backends, name="cbo_screenshot")
         self.cbo_screenshot.SetEditable(False)
         default_screenshot_index = 0
@@ -495,11 +495,11 @@ class MainFrame(wx.Frame):
                 default_screenshot_index = screenshot_backends.index("wc_cuda")
             elif "wc_mp" in screenshot_backends:
                 default_screenshot_index = screenshot_backends.index("wc_mp")
+        elif HAS_KWCAPTURE and "kwcapture" in screenshot_backends:
+            # Prefer kwcapture on KDE Plasma: no portal dialog, fast native capture
+            default_screenshot_index = screenshot_backends.index("kwcapture")
         elif HAS_OBS and "obs" in screenshot_backends:
             default_screenshot_index = screenshot_backends.index("obs")
-        elif HAS_KWCAPTURE and "kwcapture" in screenshot_backends:
-            # On Wayland the other backends see the XWayland screen, not the desktop
-            default_screenshot_index = screenshot_backends.index("kwcapture")
         elif sys.platform == "darwin":
             if "mss" in screenshot_backends:
                 default_screenshot_index = screenshot_backends.index("mss")

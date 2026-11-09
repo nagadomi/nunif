@@ -19,8 +19,11 @@ _kwcapture = None
 _kwcapture_checked = False
 
 
-def is_wayland():
-    return sys.platform == "linux" and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+def is_wayland() -> bool:
+    if sys.platform != "linux":
+        return False
+    session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
+    return session_type == "wayland" or bool(os.environ.get("WAYLAND_DISPLAY"))
 
 
 def get_kwcapture():
@@ -42,9 +45,7 @@ def kwcapture_unsupported_reason():
     if get_kwcapture() is None:
         return "kwcapture is not installed (pip install kwcapture)"
     if not is_wayland():
-        return (
-            f"kwcapture needs a Wayland session, but XDG_SESSION_TYPE={os.environ.get('XDG_SESSION_TYPE', 'unset')!r}"
-        )
+        return "kwcapture needs a Wayland session"
     return None
 
 

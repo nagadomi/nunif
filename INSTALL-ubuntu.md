@@ -72,7 +72,7 @@ To capture the screen on a **Wayland** session in [iw3-desktop](iw3/docs/desktop
 
 *   `obs` backend (GNOME, KDE, etc. via Desktop Portal / PipeWire):
     ```
-    sudo apt-get install obs-plugins libobs0t64
+    sudo apt-get install obs-plugins
     ```
 *   `kwcapture` backend (KDE Plasma only):
     ```

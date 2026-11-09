@@ -133,15 +133,19 @@ The default is 90. Specifying a lower value reduces network traffic.
 | `mss` | Windows, X11, macOS | monitor (window: Windows/X11) | X11 only on Linux |
 | `wc_mp` | Windows | monitor + window | `windows_capture` (separate process) |
 | `wc_cuda` | Windows + NVIDIA | monitor + window | `wc_cuda` |
-| `obs` | Linux Wayland | via Desktop Portal | `libobs` (`linux-pipewire` plugin, separate process) |
-| `kwcapture` | Linux Wayland (KDE Plasma) | monitor + window | [kwcapture](https://pypi.org/project/kwcapture/) (`org.kde.KWin.ScreenShot2`) |
+| `obs` | Linux Wayland | via Desktop Portal (screen or window) | `libobs` (`linux-pipewire` plugin, separate process) |
+| `kwcapture` | Linux Wayland (KDE Plasma) | monitor + window | [kwcapture](https://pypi.org/project/kwcapture/) (`org.kde.KWin.ScreenShot2`). Direct window/monitor selection without portal on KDE |
 
 #### Linux Wayland (`obs` / `kwcapture`)
 
 *   **`obs`**: Uses `libobs` and the `linux-pipewire` plugin via `xdg-desktop-portal`. Monitor or window selection is handled by the system portal dialog at startup.
-    *   Required libraries: `libobs`, `obs-plugins` (`linux-pipewire.so`), `libglib-2.0`, `libwayland-client` (e.g. `apt install obs-plugins libobs0t64` or `obs-studio`).
+    *   Required libraries: `libobs`, `obs-plugins` (`linux-pipewire.so`), `libglib-2.0`, `libwayland-client` (e.g. `sudo apt install obs-plugins` on Ubuntu). Note: Flatpak and Snap installations of OBS are not detected.
 *   **`kwcapture`**: Uses KWin's `ScreenShot2` D-Bus interface (KDE Plasma only).
     *   Required package: `pip install kwcapture`
+    *   The first run installs a small KDE desktop entry so KWin authorizes the capture helper. If a window is missing or the frame is black, check authorization with `python -m kwcapture doctor`.
+    *   Sizes are **device** pixels (e.g. on a display scaled to 125%, a 2560 logical px desktop arrives as 3200 px).
+    *   `--window-name` matches KWin's window title (caption); dynamic window resizing and maximizing during streaming are supported.
+    *   The cursor is composited by KWin, so the extra cursor marker drawn by other backends is not needed (`--disable-draw-cursor` disables it).
 
 ### Stereo Settings
 
