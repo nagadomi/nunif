@@ -6,6 +6,7 @@ import sys
 import threading
 import traceback
 import warnings
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from os import path
 
@@ -885,7 +886,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
         load_func_kwargs=dict(color="rgb", exif_transpose=not args.disable_exif_transpose, keep_alpha=True),
     )
 
-    futures = []
+    futures = deque()
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
     stop_event = args.state["stop_event"]
@@ -911,12 +912,11 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
                 break
-            if len(futures) > IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures = []
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
         for f in futures:
             f.result()
+        futures.clear()
     pbar.close()
 
 
@@ -1621,7 +1621,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
 
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool:
-        futures = []
+        futures = deque()
 
         def frame_callback(frame):
             if frame is None:
@@ -1639,10 +1639,8 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
             )
             f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
             futures.append(f)
-            if len(futures) > IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures.clear()
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
 
         VU.hook_frame(
             input_filename,
@@ -1662,6 +1660,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         )
         for f in futures:
             f.result()
+        futures.clear()
 
 
 def process_video(input_filename, output_path, args, depth_model, side_model):
@@ -1767,7 +1766,7 @@ def export_images(input_path, output_dir, args, title=None):
             keep_alpha=True,
         ),
     )
-    futures = []
+    futures = deque()
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc=title or "Images")
     stop_event = args.state["stop_event"]
@@ -1850,13 +1849,12 @@ def export_images(input_path, output_dir, args, title=None):
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
                 break
-            if len(futures) > IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures = []
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
 
         for f in futures:
             f.result()
+        futures.clear()
     pbar.close()
     config.save(config_file)
 
@@ -1883,7 +1881,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
     pts_queue = []
     src_queue = []
     mask_queue = []
-    futures = []
+    futures = deque()
     device = args.state["device"]
     offload_resource_manager = None
     batch_size = 1 if args.low_vram else args.batch_size
@@ -1930,10 +1928,8 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                 im = Image.fromarray(im_numpy)
                 futures.append(pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png")))
 
-            if len(futures) >= IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures.clear()
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
 
         return None
 
@@ -2031,7 +2027,11 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                     if normalized_depth is not None:
                         flush_depth_list.append(normalized_depth)
             flush_depth_list += depth_model.flush_minmax_normalize()
-            return _postprocess(flush_depth_list)
+            ret = _postprocess(flush_depth_list)
+            for f in futures:
+                f.result()
+            futures.clear()
+            return ret
 
         x = VU.to_tensor(frame, device=device)
         batch_queue.append(x)
@@ -2453,7 +2453,7 @@ def process_config_images(config, args, side_model):
             pbar = tqdm_fn(ncols=80, total=len(rgb_files), desc="Images")
             stop_event = args.state["stop_event"]
             suspend_event = args.state["suspend_event"]
-            futures = []
+            futures = deque()
             for (rgb, rgb_meta), (depth, depth_meta) in zip(rgb_loader, depth_loader):
                 rgb_filename = path.splitext(path.basename(rgb_meta["filename"]))[0]
                 depth_filename = path.splitext(path.basename(depth_meta["filename"]))[0]
@@ -2483,12 +2483,11 @@ def process_config_images(config, args, side_model):
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
                     break
-                if len(futures) > IMAGE_IO_QUEUE_MAX:
-                    for f in futures:
-                        f.result()
-                    futures = []
+                while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                    futures.popleft().result()
             for f in futures:
                 f.result()
+            futures.clear()
             pbar.close()
     finally:
         args.mapper = original_mapper
