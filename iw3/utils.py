@@ -1882,7 +1882,7 @@ def get_resume_seq(depth_dir, rgb_dir):
 # export callbacks
 
 
-def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args):
+def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_dir, pool, args, resume_seq=-1):
     batch_queue = []
     pts_queue = []
     src_queue = []
@@ -2036,6 +2036,9 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                         flush_depth_list.append(normalized_depth)
             flush_depth_list += depth_model.flush_minmax_normalize()
             return _postprocess(flush_depth_list)
+
+        if resume_seq >= 0 and frame.pts is not None and frame.pts <= resume_seq:
+            return None
 
         x = VU.to_tensor(frame, device=device)
         batch_queue.append(x)
@@ -2207,6 +2210,7 @@ def export_video(input_filename, output_dir, args, title=None):
             depth_dir=depth_dir,
             pool=pool,
             args=args,
+            resume_seq=resume_seq,
         )
 
         VU.hook_frame(
