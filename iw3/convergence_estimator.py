@@ -48,14 +48,9 @@ class ConvergenceEstimator:
             q01 = d.quantile(0.1)
             q09 = d.quantile(0.9)
             q_range = q09 - q01
-            if q_range < 1e-6:
-                q_pos = q01
-            else:
-                # Convert pos from [0, 1] into an internal range of [-1, 2],
-                # effectively 3x the usable depth range around the central region.
-                center = (q01 + q09) / 2
-                expanded_range = q_range * 3.0
-                q_pos = center + (pos - 0.5) * expanded_range
+            center = (q01 + q09) * 0.5
+            expanded_range = q_range * 3.0
+            q_pos = torch.where(q_range < 1e-6, q01, center + (pos - 0.5) * expanded_range)
             result.append(q_pos)
         return torch.stack(result, dim=0).reshape(B, 1, 1, 1).clamp(0, 1)
 

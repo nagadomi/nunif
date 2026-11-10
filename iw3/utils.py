@@ -6,6 +6,7 @@ import sys
 import threading
 import traceback
 import warnings
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from os import path
 
@@ -285,7 +286,7 @@ def get_image_ext(format):
 def save_image(im, output_filename, format="png", png_info=None):
     if format == "png":
         options = {
-            "compress_level": 6,
+            "compress_level": 1,
             "pnginfo": png_info,
         }
     elif format == "webp":
@@ -352,7 +353,9 @@ def load_image_rgb_alpha(filename, device, exif_transpose=True):
     return extract_image_rgb_alpha(im, device)
 
 
-def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=None):
+def tensor_to_pil(rgb, format="png", alpha=None):
+    if isinstance(rgb, Image.Image):
+        return rgb
     if rgb.shape[0] == 4 and alpha is None:
         alpha = rgb[3:]
         rgb = rgb[:3]
@@ -360,7 +363,11 @@ def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=N
         if alpha is not None:
             rgb = apply_alpha_fill(rgb, alpha, color=GREEN_FILL_COLOR)
             alpha = None
-    im = to_pil_image(rgb, alpha=alpha)
+    return to_pil_image(rgb, alpha=alpha)
+
+
+def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=None):
+    im = tensor_to_pil(rgb, format=format, alpha=alpha)
     save_image(im, output_filename, format=format, png_info=png_info)
 
 
@@ -884,7 +891,7 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
         load_func_kwargs=dict(color="rgb", exif_transpose=not args.disable_exif_transpose, keep_alpha=True),
     )
 
-    futures = []
+    futures = deque()
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc=title)
     stop_event = args.state["stop_event"]
@@ -901,7 +908,8 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
 
             rgb, alpha = extract_image_rgb_alpha(im, device=args.state["device"])
             output = process_image(rgb, args, depth_model, side_model, alpha=alpha)
-            f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
+            output_im = tensor_to_pil(output, format=args.format)
+            f = pool.submit(save_image, output_im, output_filename, format=args.format)
             # f.result() # for debug
 
             futures.append(f)
@@ -910,12 +918,11 @@ def process_images(files, output_dir, args, depth_model, side_model, title=None)
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
                 break
-            if len(futures) > IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures = []
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
         for f in futures:
             f.result()
+        futures.clear()
     pbar.close()
 
 
@@ -946,10 +953,14 @@ def bind_single_frame_callback(depth_model, side_model, segment_pts, args):
     offload_resource_manager = None
 
     def _postprocess(depths, flush):
+        if frame_cpu_offload and src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+            src_queue[0][0].prefetch(device=device)
         for depth in depths:
             x, pts = src_queue.pop(0)
             reset_pts = [pts in segment_pts]
             if isinstance(x, VU.OffloadedFrame):
+                if src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+                    src_queue[0][0].prefetch(device=device)
                 x = x.load(device=args.state["device"])
             elif isinstance(x, av.VideoFrame):
                 x = VU.to_tensor(x, device=args.state["device"])
@@ -1167,11 +1178,16 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 else:
                     depths = depths.to(device)
 
+                if frame_cpu_offload and src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+                    src_queue[0][0].prefetch(device=device)
+
                 x_srcs = []
                 pts = []
                 for _ in range(len(depths)):
                     x_src, t = src_queue.pop(0)
                     if frame_cpu_offload:
+                        if src_queue and isinstance(src_queue[0][0], VU.OffloadedFrame):
+                            src_queue[0][0].prefetch(device=device)
                         x_srcs.append(x_src.load(device=device))
                     else:
                         x_srcs.append(x_src.to(device))
@@ -1624,7 +1640,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
 
     max_workers = max(args.max_workers, 8)
     with PoolExecutor(max_workers=max_workers) as pool:
-        futures = []
+        futures = deque()
 
         def frame_callback(frame):
             if frame is None:
@@ -1640,12 +1656,11 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
                 + FULL_SBS_SUFFIX
                 + get_image_ext(args.format),
             )
-            f = pool.submit(save_tensor_image, output, output_filename, format=args.format)
+            output_im = tensor_to_pil(output, format=args.format)
+            f = pool.submit(save_image, output_im, output_filename, format=args.format)
             futures.append(f)
-            if len(futures) > IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures.clear()
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
 
         VU.hook_frame(
             input_filename,
@@ -1666,6 +1681,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
         )
         for f in futures:
             f.result()
+        futures.clear()
 
 
 def process_video(input_filename, output_path, args, depth_model, side_model):
@@ -1771,7 +1787,7 @@ def export_images(input_path, output_dir, args, title=None):
             keep_alpha=True,
         ),
     )
-    futures = []
+    futures = deque()
     tqdm_fn = args.state["tqdm_fn"] or tqdm
     pbar = tqdm_fn(ncols=80, total=len(files), desc=title or "Images")
     stop_event = args.state["stop_event"]
@@ -1844,23 +1860,24 @@ def export_images(input_path, output_dir, args, title=None):
                     depth.unsqueeze(0), size=rgb.shape[-2:], mode="bilinear", antialias=True, align_corners=True
                 ).squeeze(0)
 
-            futures.append(pool.submit(depth_model.save_normalized_depth, depth, depth_file))
+            depth_int = depth_model.to_uint16_numpy(depth)
+            futures.append(pool.submit(depth_model.save_normalized_depth, depth_int, depth_file))
 
             if not args.export_depth_only:
-                futures.append(pool.submit(save_tensor_image, rgb, rgb_file, alpha=alpha))
+                rgb_im = tensor_to_pil(rgb, alpha=alpha)
+                futures.append(pool.submit(save_image, rgb_im, rgb_file))
 
             pbar.update(1)
             if suspend_event is not None:
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
                 break
-            if len(futures) > IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures = []
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
 
         for f in futures:
             f.result()
+        futures.clear()
     pbar.close()
     config.save(config_file)
 
@@ -1887,7 +1904,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
     pts_queue = []
     src_queue = []
     mask_queue = []
-    futures = []
+    futures = deque()
     device = args.state["device"]
     offload_resource_manager = None
     batch_size = 1 if args.low_vram else args.batch_size
@@ -1908,7 +1925,8 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                     depth, size=(x_shape[-2], x_shape[-1]), interpolation=InterpolationMode.BILINEAR, antialias=True
                 )
             seq = str(pts).zfill(8)
-            futures.append(pool.submit(depth_model.save_normalized_depth, depth, path.join(depth_dir, f"{seq}.png")))
+            depth_int = depth_model.to_uint16_numpy(depth)
+            futures.append(pool.submit(depth_model.save_normalized_depth, depth_int, path.join(depth_dir, f"{seq}.png")))
             if not args.export_depth_only:
                 assert x is not None
                 x_buffer = x.cpu_buffer()
@@ -1934,10 +1952,8 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                 im = Image.fromarray(im_numpy)
                 futures.append(pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png")))
 
-            if len(futures) >= IMAGE_IO_QUEUE_MAX:
-                for f in futures:
-                    f.result()
-                futures.clear()
+            while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                futures.popleft().result()
 
         return None
 
@@ -2035,7 +2051,11 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                     if normalized_depth is not None:
                         flush_depth_list.append(normalized_depth)
             flush_depth_list += depth_model.flush_minmax_normalize()
-            return _postprocess(flush_depth_list)
+            ret = _postprocess(flush_depth_list)
+            for f in futures:
+                f.result()
+            futures.clear()
+            return ret
 
         if resume_seq >= 0 and frame.pts is not None and frame.pts <= resume_seq:
             return None
@@ -2464,7 +2484,7 @@ def process_config_images(config, args, side_model):
             pbar = tqdm_fn(ncols=80, total=len(rgb_files), desc="Images")
             stop_event = args.state["stop_event"]
             suspend_event = args.state["suspend_event"]
-            futures = []
+            futures = deque()
             for (rgb, rgb_meta), (depth, depth_meta) in zip(rgb_loader, depth_loader):
                 rgb_filename = path.splitext(path.basename(rgb_meta["filename"]))[0]
                 depth_filename = path.splitext(path.basename(depth_meta["filename"]))[0]
@@ -2487,19 +2507,19 @@ def process_config_images(config, args, side_model):
                 )
 
                 output_filename = path.join(output_dir, make_output_filename(rgb_filename, args, video=False))
-                f = pool.submit(save_tensor_image, sbs, output_filename, format=args.format)
+                sbs_im = tensor_to_pil(sbs, format=args.format)
+                f = pool.submit(save_image, sbs_im, output_filename, format=args.format)
                 futures.append(f)
                 pbar.update(1)
                 if suspend_event is not None:
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
                     break
-                if len(futures) > IMAGE_IO_QUEUE_MAX:
-                    for f in futures:
-                        f.result()
-                    futures = []
+                while len(futures) >= IMAGE_IO_QUEUE_MAX:
+                    futures.popleft().result()
             for f in futures:
                 f.result()
+            futures.clear()
             pbar.close()
     finally:
         args.mapper = original_mapper

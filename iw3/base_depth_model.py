@@ -3,6 +3,7 @@ import os
 import pickle
 from abc import ABCMeta, abstractmethod
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -338,13 +339,17 @@ class BaseDepthModel(metaclass=ABCMeta):
             alpha = torch.cat([alpha, torch.flip(alpha, dims=[3])], dim=0)
 
         mask = alpha > 0.0
-        for i in range(min(depth.shape[0], mask.shape[0])):
-            m = mask[i]
-            if m.any() and not m.all():
-                if is_metric:
-                    depth[i][torch.logical_not(m)] = (depth[i][m].max() + depth[i].max()) * 0.5
-                else:
-                    depth[i][torch.logical_not(m)] = (depth[i][m].min() + depth[i].min()) * 0.5
+        num_pixels = mask.shape[-2] * mask.shape[-1]
+        fg_count = mask.sum(dim=(-2, -1), keepdim=True)
+        has_partial_alpha = (fg_count > 0) & (fg_count < num_pixels)
+        if is_metric:
+            fg_depth = torch.where(mask, depth, torch.tensor(-float("inf"), device=depth.device, dtype=depth.dtype))
+            fill_val = (fg_depth.amax(dim=(-2, -1), keepdim=True) + depth.amax(dim=(-2, -1), keepdim=True)) * 0.5
+        else:
+            fg_depth = torch.where(mask, depth, torch.tensor(float("inf"), device=depth.device, dtype=depth.dtype))
+            fill_val = (fg_depth.amin(dim=(-2, -1), keepdim=True) + depth.amin(dim=(-2, -1), keepdim=True)) * 0.5
+        bg_val = torch.where(has_partial_alpha, fill_val, depth)
+        depth = torch.where(mask, depth, bg_val)
 
         if squeeze:
             depth = depth.squeeze(0)
@@ -406,7 +411,14 @@ class BaseDepthModel(metaclass=ABCMeta):
         return normalized_depths
 
     @staticmethod
-    def normalized_depth_to_uint16_image(depth: torch.Tensor) -> Image.Image:
+    def to_uint16_numpy(depth: torch.Tensor) -> np.ndarray:
+        depth = torch.clamp(depth, 0, 1)
+        return (0xFFFF * depth).round().to(torch.uint16).squeeze(0).cpu().numpy()
+
+    @staticmethod
+    def normalized_depth_to_uint16_image(depth: torch.Tensor | np.ndarray) -> Image.Image:
+        if isinstance(depth, np.ndarray):
+            return Image.fromarray(depth)
         depth = torch.clamp(depth, 0, 1)
         depth_int = (0xFFFF * depth).round().to(torch.uint16).squeeze(0).cpu().numpy()
         return Image.fromarray(depth_int)
@@ -423,7 +435,7 @@ class BaseDepthModel(metaclass=ABCMeta):
         for k, v in png_info.items():
             metadata.add_text(k, str(v))
 
-        im.save(file_path, pnginfo=metadata)
+        im.save(file_path, pnginfo=metadata, compress_level=1)
 
     @staticmethod
     def load_depth(file_path):

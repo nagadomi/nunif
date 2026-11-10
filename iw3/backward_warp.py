@@ -92,15 +92,25 @@ def backward_warp(c, grid, delta, delta_scale):
     return z
 
 
-def make_grid(batch, width, height, device):
-    # TODO: xpu: torch.meshgrid causes fallback from XPU to CPU, but it is faster to simply do nothing
-    mesh_y, mesh_x = torch.meshgrid(
-        torch.linspace(-1, 1, height, device=device), torch.linspace(-1, 1, width, device=device), indexing="ij"
-    )
-    mesh_y = mesh_y.reshape(1, 1, height, width).expand(batch, 1, height, width)
-    mesh_x = mesh_x.reshape(1, 1, height, width).expand(batch, 1, height, width)
-    grid = torch.cat((mesh_x, mesh_y), dim=1)
-    return grid
+# Cache invariant base coordinate grids to avoid repeated linspace/meshgrid allocations.
+_GRID_CACHE: dict[tuple[int, int, torch.device], torch.Tensor] = {}
+
+
+def make_grid(batch: int, width: int, height: int, device: str | torch.device) -> torch.Tensor:
+    dev = torch.device(device)
+    key = (width, height, dev)
+    base_grid = _GRID_CACHE.get(key)
+    if base_grid is None:
+        # TODO: xpu: torch.meshgrid causes fallback from XPU to CPU, but it is faster to simply do nothing
+        mesh_y, mesh_x = torch.meshgrid(
+            torch.linspace(-1, 1, height, device=dev), torch.linspace(-1, 1, width, device=dev), indexing="ij"
+        )
+        base_grid = torch.stack((mesh_x, mesh_y), dim=0).unsqueeze(0)
+        if len(_GRID_CACHE) >= 8:
+            _GRID_CACHE.clear()
+        _GRID_CACHE[key] = base_grid
+
+    return base_grid.expand(batch, 2, height, width)
 
 
 def apply_divergence_grid_sample(c, depth, divergence, convergence, synthetic_view):

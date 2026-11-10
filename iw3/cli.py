@@ -1,4 +1,9 @@
+import os
+
 import torch
+
+if getattr(torch.version, "hip", None) is not None:
+    os.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
 
 from nunif.device import device_is_cuda
 from nunif.logger import logger

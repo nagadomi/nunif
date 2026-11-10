@@ -721,14 +721,14 @@ class OutputTransform:
 
         return self.from_ndarray(x_nd)
 
-    def is_dlpack_supported(self, x) -> bool:
+    def is_dlpack_supported(self, x: torch.Tensor) -> bool:
         # Abort GPU acceleration path if the tensor has an alpha channel
         has_alpha = (x.shape[0] == 4) if x.dim() == 3 else (x.shape[1] == 4)
         if has_alpha:
             return False
 
         return (
-            is_nvidia_gpu(x.device)  # TODO: Remove this condition for xpu/mps
+            x.device.type in {"cuda", "xpu", "mps"}
             and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuvj420p", "yuv420p10le"}
         )
 

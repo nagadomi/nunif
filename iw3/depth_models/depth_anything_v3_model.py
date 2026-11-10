@@ -36,27 +36,25 @@ def _forward(model, x, enable_amp, sky_thresh=0.3, raw_output=False):
     depths = out["depth"]
     sky_masks = out["sky"] > sky_thresh
     sky_weights = (out["sky"].clamp(sky_thresh, 1.0) - sky_thresh) / (1.0 - sky_thresh)
-    disparity_maps = []
-    for depth, sky_mask, sky_weight in zip(depths, sky_masks, sky_weights):
-        # TODO: improve this
-        if not raw_output:
-            non_sky_pixels = sky_mask.numel() - sky_mask.sum()
-            if non_sky_pixels < 10:
-                # all sky
-                depth = torch.zeros_like(depth)
+
+    if not raw_output:
+        num_pixels = sky_masks.shape[-2] * sky_masks.shape[-1]
+        non_sky_pixels = num_pixels - sky_masks.sum(dim=(-2, -1), keepdim=True)
+        # TODO: This value should ideally be adjustable via the foreground scale option,
+        #       but currently it is not possible.
+        shift = 0.2
+        inv_depth = (1.0 / (depths + shift)) * (1.0 - sky_weights)
+        out = torch.where(non_sky_pixels < 10, torch.zeros_like(depths), inv_depth)
+    else:
+        disparity_maps = []
+        for depth, sky_mask, sky_weight in zip(depths, sky_masks, sky_weights):
+            if (~sky_mask).any():
+                max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
             else:
-                # TODO: This value should ideally be adjustable via the foreground scale option,
-                #       but currently it is not possible.
-                shift = 0.2
-                depth = 1.0 / (depth + shift)
-                depth = depth * (1 - sky_weight)
-        else:
-            max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
-            depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
-
-        disparity_maps.append(depth)
-
-    out = torch.stack(disparity_maps)
+                max_rel_dist = depth.amax()
+            depth = (depth * (1.0 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
+            disparity_maps.append(depth)
+        out = torch.stack(disparity_maps)
 
     return out
 

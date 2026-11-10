@@ -414,7 +414,7 @@ class WindowSpatialReductionMHA2d(nn.Module):
         B, N, C, H, W = x.shape
         x = x.reshape(B * N, C, H, W)
         kv = self.kv_proj(self.kv_pad(x)).permute(0, 2, 3, 1).reshape(B * N, -1, self.qkv_dim * self.num_heads * 2)
-        k, v = kv.contiguous().split(self.qkv_dim * self.num_heads, dim=-1)
+        k, v = kv.split(self.qkv_dim * self.num_heads, dim=-1)
         # q
         x = x.permute(0, 2, 3, 1).reshape(B * N, H * W, C)
         q = self.q_proj(x)
