@@ -446,6 +446,15 @@ def ensure_smoke_data(base_dir: str = "tmp/smoke", duration: float = 1.1, force:
         generate_image_from_video(sd_path, png_path)
 
     rgba_src = os.path.join(os.path.dirname(__file__), "..", "images", "dog_448_rgba.png")
+    if not os.path.exists(rgba_src):
+        dog_rgb_path = os.path.join(os.path.dirname(__file__), "..", "images", "dog_448.png")
+        mask_path = os.path.join(os.path.dirname(__file__), "..", "images", "inpaint_mask", "dog_448.png")
+        if os.path.exists(dog_rgb_path) and os.path.exists(mask_path):
+            with Image.open(dog_rgb_path) as dog_img, Image.open(mask_path) as mask_img:
+                rgba = dog_img.convert("RGB")
+                rgba.putalpha(mask_img.convert("L"))
+                rgba.save(rgba_src)
+
     rgba_path = os.path.join(base_dir, "dog_448_rgba.png")
     if (force or not os.path.exists(rgba_path)) and os.path.exists(rgba_src):
         shutil.copyfile(rgba_src, rgba_path)
