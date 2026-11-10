@@ -3,8 +3,11 @@ import os
 import random
 import secrets
 
-import numpy as np
-import torch
+
+def init_torch_env() -> None:
+    """Set PyTorch environment defaults before torch is imported."""
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    os.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
 
 
 def disable_image_lib_threads():
@@ -32,6 +35,9 @@ def disable_image_lib_threads():
 
 
 def set_seed(seed):
+    import numpy as np
+    import torch
+
     if seed is None or seed < 0:
         seed = secrets.randbelow(1_000_000_000)
     torch.manual_seed(seed)
@@ -42,6 +48,8 @@ def set_seed(seed):
 
 
 def gc_collect():
+    import torch
+
     # TODO: Calling `gc.collect()` without first calling `gc.set_debug(gc.DEBUG_LEAK)` will cause a deadlock.
     #       Most likely a problem with pyav.
     # gc.set_debug(gc.DEBUG_LEAK)

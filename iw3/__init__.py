@@ -1,3 +1,3 @@
-import os
+from nunif.initializer import init_torch_env
 
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+init_torch_env()

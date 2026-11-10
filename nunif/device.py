@@ -1,11 +1,6 @@
 import contextlib
-import os
 
 import torch
-
-IS_ROCM = getattr(torch.version, "hip", None) is not None
-if IS_ROCM:
-    os.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
 
 
 def mps_is_available():
