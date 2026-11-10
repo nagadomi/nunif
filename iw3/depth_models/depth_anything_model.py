@@ -198,13 +198,8 @@ def batch_infer(
         out = -out
 
     if flip_aug:
-        if batch:
-            n = out.shape[0] // 2
-            z = torch.empty((n, *out.shape[1:]), device=out.device)
-            for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 0.5
-        else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 0.5
+        n = out.shape[0] // 2
+        z = (out[:n] + torch.flip(out[n:], dims=[3])) * 0.5
     else:
         z = out
     if not batch:
