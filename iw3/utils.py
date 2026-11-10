@@ -285,10 +285,10 @@ def get_image_ext(format):
         raise NotImplementedError(format)
 
 
-def save_image(im, output_filename, format="png", png_info=None):
+def save_image(im, output_filename, format="png", png_info=None, png_compress_level=6):
     if format == "png":
         options = {
-            "compress_level": 1,
+            "compress_level": png_compress_level,
             "pnginfo": png_info,
         }
     elif format == "webp":
@@ -368,9 +368,9 @@ def tensor_to_pil(rgb, format="png", alpha=None):
     return to_pil_image(rgb, alpha=alpha)
 
 
-def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=None):
+def save_tensor_image(rgb, output_filename, format="png", png_info=None, alpha=None, png_compress_level=6):
     im = tensor_to_pil(rgb, format=format, alpha=alpha)
-    save_image(im, output_filename, format=format, png_info=png_info)
+    save_image(im, output_filename, format=format, png_info=png_info, png_compress_level=png_compress_level)
 
 
 def preprocess_image(x, args):
@@ -1890,7 +1890,7 @@ def export_images(input_path, output_dir, args, title=None):
 
             if not args.export_depth_only:
                 rgb_im = tensor_to_pil(rgb, alpha=alpha)
-                futures.append(pool.submit(save_image, rgb_im, rgb_file))
+                futures.append(pool.submit(save_image, rgb_im, rgb_file, png_compress_level=1))
 
             pbar.update(1)
             if suspend_event is not None:
@@ -1977,7 +1977,7 @@ def bind_export_single_frame_callback(depth_model, segment_pts, rgb_dir, depth_d
                         x_buffer = torch.cat([x_buffer[:3], mask_u8], dim=0)
                 im_numpy = x_buffer.permute(1, 2, 0).numpy()
                 im = Image.fromarray(im_numpy)
-                futures.append(pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png")))
+                futures.append(pool.submit(save_image, im, path.join(rgb_dir, f"{seq}.png"), png_compress_level=1))
 
             while len(futures) >= IMAGE_IO_QUEUE_MAX:
                 futures.popleft().result()
