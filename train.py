@@ -2,14 +2,16 @@ import argparse
 import os
 from pprint import pprint
 
-import torch
-
 from nunif.addon import load_addons
+from nunif.initializer import init_torch_env
 from nunif.training.trainer import create_trainer_default_parser
 
 
 def main():
+    init_torch_env()
     os.environ["NUNIF_TRAIN"] = "1"
+    import torch
+
     torch._dynamo.config.recompile_limit = 32
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
