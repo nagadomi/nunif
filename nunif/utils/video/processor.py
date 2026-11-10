@@ -360,7 +360,8 @@ def _process_video(
                     break
                 tag, data = item
                 if tag == "video":
-                    enc_packets = video_output_stream.encode(data)
+                    frame = output_reformatter.finish_async(data)
+                    enc_packets = video_output_stream.encode(frame)
                     if enc_packets:
                         output_container.mux(enc_packets)
                     pbar.update(1)
@@ -388,10 +389,12 @@ def _process_video(
 
     def process_output_frame(new_frame):
         nonlocal uninitialized
-        reformatted_frame = output_reformatter(new_frame)
         if uninitialized:
+            reformatted_frame = output_reformatter(new_frame)
             set_output_size_and_flash(output_container, video_output_stream, reformatted_frame, unmux_packets)
             uninitialized = False
+        else:
+            reformatted_frame = output_reformatter.prepare_async(new_frame)
         return push_queue(("video", reformatted_frame))
 
     def stop_worker(abort=False):

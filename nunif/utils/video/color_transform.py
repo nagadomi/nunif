@@ -341,9 +341,23 @@ class ColorTransform:
                 [-kr / (2.0 * (1.0 - kb)), -kg / (2.0 * (1.0 - kb)), 0.5],
                 [0.5, -kg / (2.0 * (1.0 - kr)), -kb / (2.0 * (1.0 - kr))],
             ]
-            weight_r2y = torch.tensor(m, device=device, dtype=dtype).view(3, 3, 1, 1)
-            ColorTransform._MATRIX_CACHE[key] = weight_r2y
-            return weight_r2y
+            matrix = torch.tensor(m, device=device, dtype=dtype)
+            if color_range is None:
+                weight_r2y = matrix.view(3, 3, 1, 1)
+                ColorTransform._MATRIX_CACHE[key] = weight_r2y
+                return weight_r2y
+
+            if color_range == ColorRange.JPEG:
+                gains = torch.tensor([1.0, 1.0, 1.0], device=device, dtype=dtype)
+                bias = torch.tensor([0.0, 0.5, 0.5], device=device, dtype=dtype)
+            else:
+                gains = torch.tensor([219.0 / 255.0, 224.0 / 255.0, 224.0 / 255.0], device=device, dtype=dtype)
+                bias = torch.tensor([16.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0], device=device, dtype=dtype)
+
+            weight_r2y = (matrix * gains.unsqueeze(1)).view(3, 3, 1, 1)
+            res_r2y = (weight_r2y, bias)
+            ColorTransform._MATRIX_CACHE[key] = res_r2y
+            return res_r2y
 
     @staticmethod
     def yuv_to_rgb(
@@ -382,39 +396,29 @@ class ColorTransform:
         out_format: str | None = "yuv444p",
         mode: str = "bilinear",
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        weight = ColorTransform._get_matrix(colorspace, rgb.device, rgb.dtype, "rgb2yuv")
-        assert isinstance(weight, torch.Tensor)
-        yuv_n = F.conv2d(rgb, weight)
+        res = ColorTransform._get_matrix(colorspace, rgb.device, rgb.dtype, "rgb2yuv", color_range=color_range)
+        assert isinstance(res, tuple)
+        weight, bias = res
+        yuv = F.conv2d(rgb, weight=weight, bias=bias)
 
-        y_n, u_n, v_n = yuv_n[:, 0:1], yuv_n[:, 1:2], yuv_n[:, 2:3]
-
-        y: torch.Tensor
-        u: torch.Tensor
-        v: torch.Tensor
-        if color_range == ColorRange.JPEG:
-            y, u, v = y_n, u_n + 0.5, v_n + 0.5
-        else:
-            y = (y_n * 219.0 + 16.0) / 255.0
-            u = (u_n * 224.0 + 128.0) / 255.0
-            v = (v_n * 224.0 + 128.0) / 255.0
+        y = yuv[:, 0:1]
+        uv = yuv[:, 1:3]
 
         if out_format:
             h, w = y.shape[-2:]
             if out_format in {"yuv420p", "yuvj420p", "yuv420p10le", "nv12", "p010le"}:
                 if mode == "nearest":
-                    u = F.interpolate(u, size=(h // 2, w // 2), mode="nearest")
-                    v = F.interpolate(v, size=(h // 2, w // 2), mode="nearest")
+                    uv = F.interpolate(uv, size=(h // 2, w // 2), mode="nearest")
                 else:
-                    u = F.interpolate(u, size=(h // 2, w // 2), mode="bilinear", align_corners=False)
-                    v = F.interpolate(v, size=(h // 2, w // 2), mode="bilinear", align_corners=False)
+                    uv = F.interpolate(uv, size=(h // 2, w // 2), mode="bilinear", align_corners=False)
             elif out_format in {"yuv422p", "yuvj422p", "yuv422p10le"}:
                 if mode == "nearest":
-                    u = F.interpolate(u, size=(h, w // 2), mode="nearest")
-                    v = F.interpolate(v, size=(h, w // 2), mode="nearest")
+                    uv = F.interpolate(uv, size=(h, w // 2), mode="nearest")
                 else:
-                    u = F.interpolate(u, size=(h, w // 2), mode="bilinear", align_corners=False)
-                    v = F.interpolate(v, size=(h, w // 2), mode="bilinear", align_corners=False)
+                    uv = F.interpolate(uv, size=(h, w // 2), mode="bilinear", align_corners=False)
 
+        u = uv[:, 0:1]
+        v = uv[:, 1:2]
         return y, u, v
 
     @staticmethod
@@ -727,10 +731,13 @@ class OutputTransform:
         if has_alpha:
             return False
 
-        return (
-            x.device.type in {"cuda", "xpu", "mps"}
-            and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuvj420p", "yuv420p10le"}
-        )
+        return x.device.type in {"cuda", "xpu", "mps"} and self.dst_pix_fmt in {
+            "nv12",
+            "p010le",
+            "yuv420p",
+            "yuvj420p",
+            "yuv420p10le",
+        }
 
     def is_cuda_dlpack_supported(self, x: torch.Tensor) -> bool:
         return (
@@ -808,6 +815,55 @@ class OutputTransform:
             return self.from_cuda_tensor(x)
 
         return self.from_tensor(x)
+
+    def prepare_async(self, x: av.VideoFrame | torch.Tensor | np.ndarray | TensorFrame) -> Any:
+        if isinstance(x, TensorFrame):
+            x = x.planes
+
+        if (
+            torch.is_tensor(x)
+            and x.dtype in (torch.float32, torch.float16)
+            and self.is_dlpack_supported(x)
+            and not self.is_cuda_dlpack_supported(x)
+        ):
+            internal_pix_fmt: str
+            if self.dst_pix_fmt in {"yuv420p", "yuvj420p"}:
+                internal_pix_fmt = "nv12"
+            elif self.dst_pix_fmt == "yuv420p10le":
+                internal_pix_fmt = "p010le"
+            else:
+                internal_pix_fmt = self.dst_pix_fmt
+
+            y, u, v = ColorTransform.rgb_to_yuv(
+                x if x.dim() == 4 else x.unsqueeze(0),
+                colorspace=self.dst_colorspace,
+                color_range=self.dst_color_range,
+                out_format=internal_pix_fmt,
+            )
+            y_p, uv_p = ColorTransform.to_yuv_planes(y, u, v, out_format=internal_pix_fmt)
+            y_p = y_p.contiguous().cpu()
+            uv_p = uv_p.contiguous().cpu()
+            return (y_p, uv_p, internal_pix_fmt)
+
+        return self.transform(x)
+
+    def finish_async(self, item: Any, copy_stream: torch.cuda.Stream | None = None) -> av.VideoFrame:
+        if isinstance(item, av.VideoFrame):
+            return item
+
+        y_p, uv_p, internal_pix_fmt = item
+
+        frame = av.VideoFrame.from_dlpack(
+            (y_p, uv_p),
+            format=internal_pix_fmt,
+        )
+        frame.pts = None
+        frame.dts = None
+        frame.colorspace = self.dst_colorspace
+        frame.color_primaries = self.dst_color_primaries
+        frame.color_trc = self.dst_color_trc
+        frame.color_range = self.dst_color_range
+        return frame
 
     def __call__(self, x: av.VideoFrame | torch.Tensor | np.ndarray | TensorFrame) -> av.VideoFrame:
         return self.transform(x)
