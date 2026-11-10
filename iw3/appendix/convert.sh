@@ -7,17 +7,56 @@
 ###############################################################################
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to find the real script directory
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
-# Find nunif project root (supports running from iw3/appendix/ or repository root)
-if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
+# Find nunif project root (supports running from iw3/appendix/, repository root, or external copy)
+PROJECT_DIR=""
+if [ -n "${NUNIF_DIR:-}" ] && [ -f "$NUNIF_DIR/iw3/cli.py" ]; then
+    PROJECT_DIR="$(cd "$NUNIF_DIR" && pwd)"
+elif [ -f "$SCRIPT_DIR/requirements.txt" ] && [ -f "$SCRIPT_DIR/iw3/cli.py" ]; then
     PROJECT_DIR="$SCRIPT_DIR"
-elif [ -f "$SCRIPT_DIR/../../requirements.txt" ]; then
+elif [ -f "$SCRIPT_DIR/../../requirements.txt" ] && [ -f "$SCRIPT_DIR/../../iw3/cli.py" ]; then
     PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 else
-    PROJECT_DIR="$(pwd)"
+    # Traverse parent directories of script location
+    CHECK_DIR="$SCRIPT_DIR"
+    while [ "$CHECK_DIR" != "/" ] && [ -n "$CHECK_DIR" ]; do
+        if [ -f "$CHECK_DIR/requirements.txt" ] && [ -f "$CHECK_DIR/iw3/cli.py" ]; then
+            PROJECT_DIR="$CHECK_DIR"
+            break
+        fi
+        CHECK_DIR="$(dirname "$CHECK_DIR")"
+    done
 fi
-cd "$PROJECT_DIR"
+
+# Fallback: check common locations if script was copied outside the repository
+if [ -z "$PROJECT_DIR" ]; then
+    for candidate in \
+        "$HOME/github/nunif" \
+        "$HOME/nunif" \
+        "/home/speed/github/nunif"; do
+        if [ -f "$candidate/requirements.txt" ] && [ -f "$candidate/iw3/cli.py" ]; then
+            PROJECT_DIR="$(cd "$candidate" && pwd)"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "Error: Cannot locate nunif project root." >&2
+    echo "Please set NUNIF_DIR=/path/to/nunif environment variable." >&2
+    exit 1
+fi
+
+# Export PYTHONPATH so python finds iw3 and nunif regardless of current working directory
+export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PROJECT_DIR}"
 
 # Ensure uv is installed
 if ! command -v uv >/dev/null 2>&1; then
@@ -92,7 +131,7 @@ fi
 # Pipeline Defaults
 # ==============================================================================
 DEFAULT_DEPTH_MODEL="Any_V2_S"
-DEFAULT_METHOD="mlbw_l2"
+DEFAULT_METHOD="row_flow"
 DEFAULT_BATCH_SIZE=4
 DEFAULT_RESOLUTION=518
 DEFAULT_VR180=1
