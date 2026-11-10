@@ -26,6 +26,7 @@ from .processor import (
 )
 from .utils import (
     ALPHA_PIX_FORMATS,
+    DEFAULT_VAAPI_DEVICE,
     LIBH264,
     RGB_8BIT,
     RGB_16BIT,
@@ -79,6 +80,7 @@ __all__ = [
     "pix_fmt_has_alpha",
     "pix_fmt_requires_16bit",
     "vpx_preset_to_cpu_used",
+    "DEFAULT_VAAPI_DEVICE",
 ]
 
 # Initialize library defaults (MIME types, logging, env vars)

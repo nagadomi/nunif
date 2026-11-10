@@ -84,8 +84,15 @@ def has_amf() -> bool:
     return "h264_amf" in av.codec.codecs_available and "hevc_amf" in av.codec.codecs_available
 
 
+DEFAULT_VAAPI_DEVICE = os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128")
+
+
 def has_vaapi() -> bool:
     return "h264_vaapi" in av.codec.codecs_available and "hevc_vaapi" in av.codec.codecs_available
+
+
+def is_vaapi_codec(codec) -> bool:
+    return isinstance(codec, str) and codec.endswith("_vaapi")
 
 
 def list_videos(directory: str, extensions: List[str] = VIDEO_EXTENSIONS) -> List[str]:

@@ -216,6 +216,7 @@ def autocrop_analyze_video(
     tqdm_title=None,
     hwaccel=None,
     disable_software_fallback=False,
+    vaapi_device: str | None = None,
 ):
     model = AutoCropDetector(mode=mode, mod=mod)
     frame_width = frame_height = 0
@@ -247,6 +248,7 @@ def autocrop_analyze_video(
         hwaccel=hwaccel,
         disable_software_fallback=disable_software_fallback,
         device=device,
+        vaapi_device=vaapi_device,
     )
     return model.get_crop() + (frame_height, frame_width)
 
@@ -332,6 +334,7 @@ class AutoCrop:
         tqdm_title=None,
         hwaccel=None,
         disable_software_fallback=False,
+        vaapi_device: str | None = None,
     ):
         slice_h, slice_w, H, W = autocrop_analyze_video(
             video_file=video_file,
@@ -347,6 +350,7 @@ class AutoCrop:
             tqdm_title=tqdm_title,
             hwaccel=hwaccel,
             disable_software_fallback=disable_software_fallback,
+            vaapi_device=vaapi_device,
         )
         pad = cls.calc_pad(slice_h, slice_w, H, W)
         crop_range = cls.calc_crop(slice_h, slice_w, H, W)

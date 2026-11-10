@@ -1771,6 +1771,8 @@ class MainFrame(wx.Frame):
                     vf=args.vf,
                     hwaccel=args.hwaccel,
                     disable_software_fallback=args.disable_software_fallback,
+                    # TODO: Add vaapi_device to GUI
+                    vaapi_device=getattr(args, "vaapi_device", None),
                     device=device,
                     batch_size=args.batch_size,
                     stop_event=self.stop_event,
