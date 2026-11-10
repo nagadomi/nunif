@@ -1016,7 +1016,12 @@ def configure_video_codec(config: Any) -> None:
     # no yuv444p, no rgb24, no 16-bit. Alpha is dropped (no encoder support).
     if codec in {"h264_amf", "hevc_amf", "av1_amf"}:
         if codec == "h264_amf" and pix_fmt in {
-            "yuv420p10le", "p010le", "gbrp10le", "gbrp16le", "gbrap10le", "gbrap16le"
+            "yuv420p10le",
+            "p010le",
+            "gbrp10le",
+            "gbrp16le",
+            "gbrap10le",
+            "gbrap16le",
         }:
             # h264_amf does not support 10-bit pixel formats
             config.pix_fmt = "nv12"

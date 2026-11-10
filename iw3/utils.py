@@ -245,7 +245,6 @@ def make_video_codec_option(args, input_path=None):
         options = {
             "rc_mode": "CQP",
             "qp": str(args.crf),
-            "vaapi_device": args.vaapi_device,
         }
         if args.tune:
             options["tune"] = ",".join(set(args.tune))
@@ -1485,6 +1484,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     device=args.state["device"],
                     hwaccel=args.hwaccel,
                     disable_software_fallback=args.disable_software_fallback,
+                    vaapi_device=args.vaapi_device,
                     start_time=args.start_time,
                     end_time=args.end_time,
                     stop_event=args.state["stop_event"],
@@ -1509,6 +1509,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             vf=args.vf,
             hwaccel=args.hwaccel,
             disable_software_fallback=args.disable_software_fallback,
+            vaapi_device=args.vaapi_device,
             device=args.state["device"],
             batch_size=args.batch_size,
             stop_event=args.state["stop_event"],
@@ -1564,6 +1565,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                 device=args.state["device"],
                 hwaccel=args.hwaccel,
                 disable_software_fallback=args.disable_software_fallback,
+                vaapi_device=args.vaapi_device,
             )
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
@@ -1600,6 +1602,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     device=args.state["device"],
                     hwaccel=args.hwaccel,
                     disable_software_fallback=args.disable_software_fallback,
+                    vaapi_device=args.vaapi_device,
                 )
         finally:
             frame_callback.shutdown()
@@ -1659,6 +1662,7 @@ def process_video_keyframes(input_filename, output_path, args, depth_model, side
             device=args.state["device"],
             hwaccel=args.hwaccel,
             disable_software_fallback=args.disable_software_fallback,
+            vaapi_device=args.vaapi_device,
         )
         for f in futures:
             f.result()
@@ -2119,6 +2123,7 @@ def export_video(input_filename, output_dir, args, title=None):
                     device=args.state["device"],
                     hwaccel=args.hwaccel,
                     disable_software_fallback=args.disable_software_fallback,
+                    vaapi_device=args.vaapi_device,
                     start_time=args.start_time,
                     end_time=args.end_time,
                     stop_event=args.state["stop_event"],
@@ -2218,6 +2223,7 @@ def export_video(input_filename, output_dir, args, title=None):
             device=args.state["device"],
             hwaccel=args.hwaccel,
             disable_software_fallback=args.disable_software_fallback,
+            vaapi_device=args.vaapi_device,
         )
     config.save(config_file)
 
@@ -2383,6 +2389,7 @@ def process_config_video(config, args, side_model):
             suspend_event=args.state["suspend_event"],
             tqdm_fn=args.state["tqdm_fn"],
             device=args.state["device"],
+            vaapi_device=args.vaapi_device,
         )
     finally:
         args.mapper = original_mapper
@@ -2626,7 +2633,7 @@ def create_parser(required_true=True):
     parser.add_argument(
         "--vaapi-device",
         type=str,
-        default="/dev/dri/renderD128",
+        default=VU.DEFAULT_VAAPI_DEVICE,
         help="VAAPI render node path for h264_vaapi/hevc_vaapi/av1_vaapi",
     )
     parser.add_argument(
@@ -3011,9 +3018,6 @@ def is_yaml(filename):
 
 
 def iw3_main(args):
-    if getattr(args, "vaapi_device", None):
-        os.environ["VAAPI_DEVICE"] = args.vaapi_device
-
     assert not (args.rotate_left and args.rotate_right)
     assert (
         sum(

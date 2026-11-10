@@ -244,6 +244,7 @@ def process_video(ctx, input_filename, output_path, args):
         device=args.state["device"],
         hwaccel=args.hwaccel,
         disable_software_fallback=args.disable_software_fallback,
+        vaapi_device=getattr(args, "vaapi_device", None),
     )
 
 
@@ -314,6 +315,12 @@ def create_parser(required_true=True):
     )
     parser.add_argument(
         "--disable-software-fallback", action="store_true", help="disable software fallback for hardware hwaccel"
+    )
+    parser.add_argument(
+        "--vaapi-device",
+        type=str,
+        default=VU.DEFAULT_VAAPI_DEVICE,
+        help="VAAPI render node path for video decoding/encoding",
     )
     parser.add_argument(
         "--max-fps", type=float, default=128, help="max framerate. output fps = min(fps, --max-fps) (video only)"

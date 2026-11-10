@@ -9,8 +9,8 @@ from types import GeneratorType
 from typing import List
 
 import av
-from av.codec.hwaccel import HWAccel
 import torch
+from av.codec.hwaccel import HWAccel
 from tqdm import tqdm
 
 from .color_transform import (
@@ -28,11 +28,12 @@ from .metadata import (
 )
 from .output_config import VideoOutputConfig
 from .utils import (
+    DEFAULT_VAAPI_DEVICE,
     LIBH264,
     get_default_video_codec,
+    is_vaapi_codec,
     pix_fmt_requires_16bit,
 )
-from .vaapi import is_vaapi_codec
 from .video_preprocessor import VideoPreprocessor
 
 
@@ -172,6 +173,7 @@ def process_video(
     inference_mode: bool = True,
     hwaccel: str | None = None,
     disable_software_fallback: bool = False,
+    vaapi_device: str | None = None,
 ):
     with torch.inference_mode(inference_mode):
         _process_video(
@@ -189,6 +191,7 @@ def process_video(
             device=device,
             hwaccel=hwaccel,
             disable_software_fallback=disable_software_fallback,
+            vaapi_device=vaapi_device,
         )
 
 
@@ -217,6 +220,7 @@ def _process_video(
     device: str | torch.device,
     hwaccel: str | None,
     disable_software_fallback: bool,
+    vaapi_device: str | None = None,
 ):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -230,7 +234,10 @@ def _process_video(
     sw_format = VideoMetadata.from_file(input_path)
     hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
-        device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
+        device=hwaccel,
+        device_id=device.index,
+        disable_software_fallback=disable_software_fallback,
+        vaapi_device=vaapi_device,
     )
     output_path_tmp = make_temporary_file_path(output_path)
     input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
@@ -273,8 +280,7 @@ def _process_video(
         config.state_updated(config)
 
     if is_vaapi_codec(config.video_codec):
-        vaapi_device = (config.options or {}).pop("vaapi_device", None) or os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128")
-        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device)
+        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device or DEFAULT_VAAPI_DEVICE)
         video_output_stream = output_container.add_stream(config.video_codec, output_fps, hwaccel=vaapi_hwaccel)
     else:
         video_output_stream = output_container.add_stream(config.video_codec, output_fps)
@@ -453,6 +459,7 @@ def generate_video(
     suspend_event=None,
     tqdm_fn=None,
     device="cpu",
+    vaapi_device=None,
 ):
     if isinstance(device, str):
         device = torch.device(device)
@@ -479,9 +486,10 @@ def generate_video(
         config.state_updated(config)
 
     if is_vaapi_codec(config.video_codec):
-        vaapi_device = (config.options or {}).pop("vaapi_device", None) or os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128")
-        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device)
-        video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps), hwaccel=vaapi_hwaccel)
+        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device or DEFAULT_VAAPI_DEVICE)
+        video_output_stream = output_container.add_stream(
+            config.video_codec, convert_fps_fraction(config.fps), hwaccel=vaapi_hwaccel
+        )
     else:
         video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps))
     apply_color_settings(video_output_stream, output_reformatter)
@@ -622,6 +630,7 @@ def hook_frame(
     device="cpu",
     keyframe_only: bool = False,
     min_interval_sec: float = 0.0,
+    vaapi_device: str | None = None,
 ):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -635,7 +644,10 @@ def hook_frame(
     sw_format = VideoMetadata.from_file(input_path)
     hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
-        device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
+        device=hwaccel,
+        device_id=device.index,
+        disable_software_fallback=disable_software_fallback,
+        vaapi_device=vaapi_device,
     )
     input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
 
@@ -751,6 +763,7 @@ def sample_frames(
     hwaccel=None,
     device="cpu",
     disable_software_fallback=False,
+    vaapi_device=None,
 ):
     assert offset < 0.5, "offset must be less than 0.5"
     if isinstance(device, str):
@@ -759,7 +772,10 @@ def sample_frames(
     sw_format = VideoMetadata.from_file(input_path)
     hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
-        device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
+        device=hwaccel,
+        device_id=device.index,
+        disable_software_fallback=disable_software_fallback,
+        vaapi_device=vaapi_device,
     )
     input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
 
