@@ -71,7 +71,7 @@ GPU_VENDOR="cpu"
 GPU_DESC="CPU (Software Fallback)"
 DEFAULT_CODEC="libx264"
 DEFAULT_HWACCEL=""
-ROCM_INDEX="${ROCM_INDEX:-https://download.pytorch.org/whl/rocm6.3}"
+ROCM_INDEX="${ROCM_INDEX:-https://download.pytorch.org/whl/rocm7.2}"
 CUDA_INDEX="${CUDA_INDEX:-https://download.pytorch.org/whl/cu124}"
 
 # 1. Check for NVIDIA GPU
@@ -95,14 +95,23 @@ elif [ -e "/dev/kfd" ] || (lspci 2>/dev/null | grep -iE "vga|3d|display" | grep 
         GPU_DESC="AMD ($(echo "$AMD_PCI_INFO" | sed -E 's/.*: //'))"
     fi
 
-    # Specific override for RDNA 4 (Navi 48 / RX 9070 / RX 9070 XT)
-    if echo "$AMD_PCI_INFO" | grep -iE "Navi 48|RX 9070|RX 90|gfx1200|7550|7551" >/dev/null 2>&1; then
-        export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-12.0.0}"
+    # WARNING: Do NOT unconditionally force HSA_OVERRIDE_GFX_VERSION=12.0.0 on ROCm 7+.
+    # Navi 48 (RX 9070/XT) is gfx1201; forcing 12.0.0 (Navi 44) dispatches mismatched
+    # code objects and causes kernel page faults (TCP 0x8) and display lockups.
+    # Only keep 12.0.0 as a legacy fallback for ROCm 6.x stacks where gfx1201 was unrecognized.
+    if [[ "$ROCM_INDEX" =~ rocm6 ]]; then
+        if echo "$AMD_PCI_INFO" | grep -iE "Navi 48|RX 9070|RX 90|gfx1200|7550|7551" >/dev/null 2>&1; then
+            export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-12.0.0}"
+        fi
     fi
 
-    export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-    export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
-    export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL="${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}"
+    # WARNING: Do NOT set PYTORCH_ALLOC_CONF or PYTORCH_CUDA_ALLOC_CONF to expandable_segments:True
+    # on AMD. Dynamic virtual address unmapping in HIPCachingAllocator causes amdgpu GCVM_L2
+    # page faults, display artifacts, and driver crashes when VRAM is shared with VA-API / compositor.
+
+    # WARNING: Do NOT set TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 on consumer RDNA GPUs.
+    # Experimental AOTriton attention kernels can hang the GPU compute ring.
+    export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL="${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-0}"
     export LIBVA_DRIVER_NAME="${LIBVA_DRIVER_NAME:-radeonsi}"
     export VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
 
