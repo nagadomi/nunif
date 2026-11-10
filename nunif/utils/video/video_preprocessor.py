@@ -151,6 +151,20 @@ class VideoPreprocessor:
                     if input_reformat_options["dst_color_primaries"] == frame.color_primaries
                     else input_reformat_options["dst_color_primaries"]
                 )
+                same_colorspace = (
+                    input_reformat_options["src_colorspace"] == input_reformat_options["dst_colorspace"]
+                    and dst_color_trc is None
+                    and dst_color_primaries is None
+                )
+                if dst_pix_fmt == dlpack_pix_fmt and same_colorspace:
+                    if frame.format.name == dst_pix_fmt:
+                        frame.colorspace = input_reformat_options["src_colorspace"]
+                        frame.color_range = input_reformat_options["src_color_range"]
+                        return frame
+                    dst_color_range = input_reformat_options["src_color_range"]
+                else:
+                    dst_color_range = input_reformat_options["dst_color_range"]
+
                 new_frame = self.shared_reformatter.reformat(
                     frame,
                     format=dst_pix_fmt,
@@ -159,7 +173,7 @@ class VideoPreprocessor:
                     dst_colorspace=input_reformat_options["dst_colorspace"],
                     dst_color_primaries=dst_color_primaries,
                     dst_color_trc=dst_color_trc,
-                    dst_color_range=input_reformat_options["dst_color_range"],
+                    dst_color_range=dst_color_range,
                     threads=threads,
                 )
                 return new_frame
