@@ -71,8 +71,47 @@ GPU_VENDOR="cpu"
 GPU_DESC="CPU (Software Fallback)"
 DEFAULT_CODEC="libx264"
 DEFAULT_HWACCEL=""
-ROCM_INDEX="${ROCM_INDEX:-https://download.pytorch.org/whl/rocm7.2}"
+
+ROCM_VERSION="${ROCM_VERSION:-10.1}"
+USER_ROCM_INDEX="${ROCM_INDEX:-}"
+ROCM_INDEX=""
 CUDA_INDEX="${CUDA_INDEX:-https://download.pytorch.org/whl/cu124}"
+
+resolve_rocm_config() {
+    # Resolve repository index based on ROCM_VERSION if not explicitly set via ROCM_INDEX
+    if [ -n "$USER_ROCM_INDEX" ]; then
+        ROCM_INDEX="$USER_ROCM_INDEX"
+    else
+        case "$ROCM_VERSION" in
+            10.*)
+                ROCM_INDEX="https://stable.repo.amd.com/rocm/whl-next/"
+                ;;
+            7.*)
+                ROCM_INDEX="https://download.pytorch.org/whl/rocm${ROCM_VERSION}"
+                ;;
+            6.*)
+                ROCM_INDEX="https://download.pytorch.org/whl/rocm${ROCM_VERSION}"
+                ;;
+            *)
+                if [[ "$ROCM_VERSION" =~ ^https?:// ]]; then
+                    ROCM_INDEX="$ROCM_VERSION"
+                else
+                    ROCM_INDEX="https://download.pytorch.org/whl/rocm${ROCM_VERSION}"
+                fi
+                ;;
+        esac
+    fi
+
+    # WARNING: Do NOT unconditionally force HSA_OVERRIDE_GFX_VERSION=12.0.0 on ROCm 7+.
+    # Navi 48 (RX 9070/XT) is gfx1201; forcing 12.0.0 (Navi 44) dispatches mismatched
+    # code objects and causes kernel page faults (TCP 0x8) and display lockups.
+    # Only keep 12.0.0 as a legacy fallback for ROCm 6.x stacks where gfx1201 was unrecognized.
+    if [[ "$ROCM_VERSION" =~ ^6\. ]] || [[ "$ROCM_INDEX" =~ rocm6 ]]; then
+        if echo "$AMD_PCI_INFO" | grep -iE "Navi 48|RX 9070|RX 90|gfx1200|7550|7551" >/dev/null 2>&1; then
+            export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-12.0.0}"
+        fi
+    fi
+}
 
 # 1. Check for NVIDIA GPU
 if command -v nvidia-smi >/dev/null 2>&1 || [ -e "/dev/nvidia0" ] || (lspci 2>/dev/null | grep -iE "vga|3d|display" | grep -iq "nvidia"); then
@@ -95,15 +134,7 @@ elif [ -e "/dev/kfd" ] || (lspci 2>/dev/null | grep -iE "vga|3d|display" | grep 
         GPU_DESC="AMD ($(echo "$AMD_PCI_INFO" | sed -E 's/.*: //'))"
     fi
 
-    # WARNING: Do NOT unconditionally force HSA_OVERRIDE_GFX_VERSION=12.0.0 on ROCm 7+.
-    # Navi 48 (RX 9070/XT) is gfx1201; forcing 12.0.0 (Navi 44) dispatches mismatched
-    # code objects and causes kernel page faults (TCP 0x8) and display lockups.
-    # Only keep 12.0.0 as a legacy fallback for ROCm 6.x stacks where gfx1201 was unrecognized.
-    if [[ "$ROCM_INDEX" =~ rocm6 ]]; then
-        if echo "$AMD_PCI_INFO" | grep -iE "Navi 48|RX 9070|RX 90|gfx1200|7550|7551" >/dev/null 2>&1; then
-            export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-12.0.0}"
-        fi
-    fi
+    resolve_rocm_config
 
     # WARNING: Do NOT set PYTORCH_ALLOC_CONF or PYTORCH_CUDA_ALLOC_CONF to expandable_segments:True
     # on AMD. Dynamic virtual address unmapping in HIPCachingAllocator causes amdgpu GCVM_L2
@@ -269,6 +300,7 @@ Hardware & Performance:
   --low-vram                    Disable batching for low memory GPUs
   --cuda-stream                 Use multi CUDA streams
   --compile                     Compile models with PyTorch 2.x
+  --rocm-version <ver>          AMD ROCm version: 10.1, 7.2, 6.3 (default: ${ROCM_VERSION})
   --max-workers <int>           Inference worker threads (0 to 16, default: 0)
 
 General:
@@ -475,6 +507,14 @@ while [[ $# -gt 0 ]]; do
             CLI_ARGS+=(--vaapi-device "${1#*=}")
             shift 1
             ;;
+        --rocm-version)
+            ROCM_VERSION="$2"
+            shift 2
+            ;;
+        --rocm-version=*)
+            ROCM_VERSION="${1#*=}"
+            shift 1
+            ;;
         --disable-software-fallback)
             CLI_ARGS+=("$1")
             shift 1
@@ -641,7 +681,36 @@ if [ "$ACTIVE_HWACCEL" = "vaapi" ] || [ "$GPU_VENDOR" = "amd" ] || [ "$GPU_VENDO
 fi
 
 if [ "$GPU_VENDOR" = "amd" ]; then
-    UV_RUN_ARGS+=(--index "$ROCM_INDEX" --with torch --with torchvision)
+    resolve_rocm_config
+    case "$ROCM_VERSION" in
+        10.*)
+            UV_RUN_ARGS+=(
+                --index "$ROCM_INDEX"
+                --prerelease-package "torchvision=allow"
+                --with "torch[device-all]"
+                --with "torchvision[device-all]"
+            )
+            ;;
+        7.*|6.*)
+            UV_RUN_ARGS+=(
+                --index "$ROCM_INDEX"
+                --with torch
+                --with torchvision
+            )
+            ;;
+        *)
+            if [[ "$ROCM_INDEX" =~ "amd.com" ]]; then
+                UV_RUN_ARGS+=(
+                    --index "$ROCM_INDEX"
+                    --prerelease-package "torchvision=allow"
+                    --with "torch[device-all]"
+                    --with "torchvision[device-all]"
+                )
+            else
+                UV_RUN_ARGS+=(--index "$ROCM_INDEX" --with torch --with torchvision)
+            fi
+            ;;
+    esac
 elif [ "$GPU_VENDOR" = "nvidia" ]; then
     if [ -f "$PROJECT_DIR/requirements-torch.txt" ]; then
         while IFS= read -r url; do
