@@ -7,7 +7,7 @@ import secrets
 def init_torch_env() -> None:
     """Set PyTorch environment defaults before torch is imported."""
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-    os.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
+    # os.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
 
 
 def disable_image_lib_threads():
