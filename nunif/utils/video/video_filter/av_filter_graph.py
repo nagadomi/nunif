@@ -1,3 +1,4 @@
+import os
 import re
 from fractions import Fraction
 from typing import List, Tuple
@@ -5,6 +6,19 @@ from typing import List, Tuple
 import av
 
 from ..metadata import VideoMetadata
+
+_FFMPEG_FILTER_ESCAPE_TABLE = str.maketrans(
+    {
+        "\\": r"\\",
+        ":": r"\:",
+        "=": r"\=",
+        "'": r"\'",
+    }
+)
+
+
+def _escape_ffmpeg_filter_option(value: str) -> str:
+    return value.translate(_FFMPEG_FILTER_ESCAPE_TABLE)
 
 
 class AVFilterGraph:
@@ -118,6 +132,8 @@ class AVFilterGraph:
         )
         prev_filter = buffer
         for filter_name, filter_option in video_filters:
+            if filter_name == "lut3d" and filter_option and os.path.exists(filter_option):
+                filter_option = _escape_ffmpeg_filter_option(filter_option)
             new_filter = graph.add(filter_name, filter_option if filter_option else None)
             prev_filter.link_to(new_filter)
             prev_filter = new_filter

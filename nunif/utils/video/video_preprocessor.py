@@ -1,3 +1,4 @@
+import sys
 from fractions import Fraction
 from typing import Any, Dict, List
 
@@ -36,6 +37,9 @@ def _is_hdr2sdr_enabled(colorspace: int, color_trc: int, output_colorspace: str)
 
 def _update_hdr2sdr_video_filter(vf: str, colorspace: int, color_trc: int, output_colorspace: str) -> str:
     lut_path = _get_lut_path(colorspace=colorspace, color_trc=color_trc, output_colorspace=output_colorspace)
+    if sys.platform == "win32":
+        lut_path = lut_path.replace("\\", "/")
+    lut_path = lut_path.replace(",", r"\,")
     if "bt709" in output_colorspace:
         colorspace_filter = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"
     else:
