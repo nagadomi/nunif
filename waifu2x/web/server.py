@@ -448,6 +448,11 @@ def api_get():
     return res
 
 
+def is_client_disconnected() -> bool:
+    check_fn = request.environ.get("waitress.client_disconnected")
+    return bool(check_fn and check_fn())
+
+
 @bottle.post("/api")
 def api():
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
@@ -461,6 +466,9 @@ def api():
 
     with global_lock:
         cache_gc.gc()
+    if is_client_disconnected():
+        logger.debug("api: client disconnected before fetch_image")
+        bottle.abort(499, "Client Closed Request")
 
     im, meta = fetch_image(request)
     if im is None:
@@ -488,6 +496,10 @@ def api():
             )
             z = im
         else:
+            if is_client_disconnected():
+                im.close()
+                logger.debug("api: client disconnected before to_tensor")
+                bottle.abort(499, "Client Closed Request")
             with torch.inference_mode():
                 rgb, alpha = IL.to_tensor(im, return_alpha=True, device=art_ctx.device)
                 if rgb.shape[0] == 1:
@@ -504,6 +516,11 @@ def api():
                     "output_device": art_ctx.device,
                 }
                 with global_lock:
+                    if is_client_disconnected():
+                        del rgb, alpha
+                        im.close()
+                        logger.debug("api: client disconnected before model execution")
+                        bottle.abort(499, "Client Closed Request")
                     if style == StyleOption.ART:
                         rgb, alpha = art_ctx.convert(**ctx_kwargs)
                     elif style == StyleOption.ART_SCAN:
@@ -635,7 +652,16 @@ def main():
         return
 
     backend_kwargs = {}
+    server_backend: str | type[bottle.ServerAdapter] = command_args.backend
     if command_args.backend == "waitress":
+        # bottle's built-in WaitressServer ignores self.options
+        class CustomWaitressServer(bottle.ServerAdapter):
+            def run(self, handler: object) -> None:
+                from waitress import serve  # type: ignore[import-untyped]
+
+                serve(handler, host=self.host, port=self.port, **self.options)
+
+        server_backend = CustomWaitressServer
         if not command_args.no_size_limit:
             max_request_body_size = command_args.max_body_size * SIZE_MB
         else:
@@ -647,6 +673,7 @@ def main():
             "max_request_body_size": max_request_body_size,
             "connection_limit": 256,
             "channel_timeout": 120,
+            "channel_request_lookahead": 1,
         }
     elif command_args.backend == "gnunicon":
         # NOTE: gunicorn does not work due to `Cannot re-initialize CUDA in forked subprocess`.
@@ -660,6 +687,6 @@ def main():
         host=command_args.bind_addr,
         port=command_args.port,
         debug=command_args.debug,
-        server=command_args.backend,
+        server=server_backend,
         **backend_kwargs,
     )
