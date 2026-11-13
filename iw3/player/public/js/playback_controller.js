@@ -426,8 +426,9 @@ class PlaybackController extends EventTarget {
     async setupXRLayers(domeXRScreen, environmentManager) {
         this.debugLogInstance?.log("[XR-Layers] setupXRLayers() called");
         const session = this.renderer.xr.getSession();
-        if (!session || !this.videoElement || !window.XRMediaBinding) {
-            this.debugLogInstance?.log(`[XR-Layers] Skip: session=${!!session}, video=${!!this.videoElement}, binding=${!!window.XRMediaBinding}`);
+        const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
+        if (!session || !this.videoElement || !window.XRMediaBinding || !sessionHasLayers) {
+            this.debugLogInstance?.log(`[XR-Layers] Skip: session=${!!session}, video=${!!this.videoElement}, binding=${!!window.XRMediaBinding}, layers=${sessionHasLayers}`);
             return;
         }
 

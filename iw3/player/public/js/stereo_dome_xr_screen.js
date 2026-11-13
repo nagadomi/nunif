@@ -34,16 +34,17 @@ class StereoDomeXRScreen extends StereoDomeScreen {
      * @param {XRReferenceSpace} [refSpace]
      */
     async initXRLayer(session, video, refSpace = null) {
-        if (!session || !video || !window.XRMediaBinding) {
-            this.debugLogInstance?.log(`[XR-Layers] Missing dependency: session=${!!session}, video=${!!video}, binding=${!!window.XRMediaBinding}`);
+        const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
+        if (!session || !video || !window.XRMediaBinding || !sessionHasLayers) {
+            this.debugLogInstance?.log(`[XR-Layers] Missing dependency or 'layers' feature: session=${!!session}, video=${!!video}, binding=${!!window.XRMediaBinding}, layers=${sessionHasLayers}`);
             return;
         }
 
         this.xrSession = session;
         this.videoElement = video;
-        this.binding = new XRMediaBinding(session);
 
         try {
+            this.binding = new XRMediaBinding(session);
             this.debugLogInstance?.log(`[XR-Layers] Creating Equirect Layer: ${video.videoWidth}x${video.videoHeight}`);
             
             const space = refSpace || await session.requestReferenceSpace('local');

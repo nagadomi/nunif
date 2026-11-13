@@ -48,6 +48,26 @@ async function init() {
     renderer.xr.setReferenceSpaceType = (type) => {
         return origSetReferenceSpaceType(type === 'local' ? 'local-floor' : type);
     };
+
+    // Fall back to XRWebGLLayer when 'layers' feature is not granted by the session (e.g. SteamVR OpenXR on Windows),
+    // avoiding Three.js crash in XRProjectionLayer (three.js #32592, Chromium #470685252).
+    const origSetSession = renderer.xr.setSession.bind(renderer.xr);
+    renderer.xr.setSession = async (session) => {
+        const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
+        const shouldBypassLayers = Boolean(session && !sessionHasLayers);
+
+        const origCreateProjectionLayer = window.XRWebGLBinding?.prototype?.createProjectionLayer;
+        if (shouldBypassLayers && origCreateProjectionLayer) {
+            delete XRWebGLBinding.prototype.createProjectionLayer;
+        }
+        try {
+            return await origSetSession(session);
+        } finally {
+            if (shouldBypassLayers && origCreateProjectionLayer) {
+                XRWebGLBinding.prototype.createProjectionLayer = origCreateProjectionLayer;
+            }
+        }
+    };
     
     renderer.localClippingEnabled = true;
     document.body.appendChild(renderer.domElement);

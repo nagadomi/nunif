@@ -151,10 +151,12 @@ class StereoPlayer extends THREE.Group {
             const settingOn = this.uiManager.settingsManager.get('render_xr_layers');
             const bindingExists = !!window.XRMediaBinding;
             const hasVideo = !!this.videoElement;
+            const session = this.renderer.xr.getSession();
+            const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
 
-            const useXRLayers = isDome && isPresenting && settingOn && bindingExists && hasVideo;
+            const useXRLayers = isDome && isPresenting && settingOn && bindingExists && sessionHasLayers && hasVideo;
             
-            this.debugLogInstance.log(`[XR-Layers] Evaluated: ${useXRLayers} (dome=${isDome}, vr=${isPresenting}, set=${settingOn}, bind=${bindingExists}, vid=${hasVideo})`);
+            this.debugLogInstance.log(`[XR-Layers] Evaluated: ${useXRLayers} (dome=${isDome}, vr=${isPresenting}, set=${settingOn}, bind=${bindingExists}, layers=${sessionHasLayers}, vid=${hasVideo})`);
 
             let nextScreen;
             if (useXRLayers) {
@@ -290,7 +292,9 @@ class StereoPlayer extends THREE.Group {
         const isPresenting = this.renderer.xr.isPresenting;
         const settingOn = this.uiManager.settingsManager.get('render_xr_layers');
         const bindingExists = !!window.XRMediaBinding;
-        const useXRLayers = isDome && isPresenting && settingOn && bindingExists;
+        const session = this.renderer.xr.getSession();
+        const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
+        const useXRLayers = isDome && isPresenting && settingOn && bindingExists && sessionHasLayers;
 
         const options = {
             forcedFormat,
