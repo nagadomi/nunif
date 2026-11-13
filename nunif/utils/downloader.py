@@ -1,6 +1,6 @@
 import os
 import shutil
-import urllib
+import urllib.request
 from abc import ABC, abstractmethod
 from tempfile import NamedTemporaryFile, mkdtemp
 
