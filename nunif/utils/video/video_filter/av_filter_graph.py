@@ -6,6 +6,7 @@ from typing import List, Tuple
 import av
 
 from ..metadata import VideoMetadata
+from .scale import ScaleFilter
 
 _FFMPEG_FILTER_ESCAPE_TABLE = str.maketrans(
     {
@@ -22,7 +23,7 @@ def _escape_ffmpeg_filter_option(value: str) -> str:
 
 
 class AVFilterGraph:
-    graph: av.filter.Graph
+    graph: av.filter.Graph | None
 
     def __init__(
         self,
@@ -36,20 +37,32 @@ class AVFilterGraph:
         deny_filters = deny_filters or []
         video_filters = self.parse_vf_option(vf)
         self.video_filters = [(name, option) for name, option in video_filters if name not in deny_filters]
-        self.graph = av.filter.Graph()
-        self.graph.threads = 1
-        self.build_graph(
-            self.graph,
-            pix_fmt=self.pix_fmt,
-            width=sw_format.width,
-            height=sw_format.height,
-            time_base=sw_format.time_base,
-            video_filters=self.video_filters,
-        )
+        if len(self.video_filters) == 1 and self.video_filters[0][0] == "scale":
+            try:
+                ow, oh = ScaleFilter(self.video_filters[0][1]).resolve_size(sw_format.width, sw_format.height)
+                if ow == sw_format.width and oh == sw_format.height:
+                    self.video_filters = []
+            except Exception:
+                pass
+        if self.video_filters:
+            self.graph = av.filter.Graph()
+            self.graph.threads = 1
+            self.build_graph(
+                self.graph,
+                pix_fmt=self.pix_fmt,
+                width=sw_format.width,
+                height=sw_format.height,
+                time_base=sw_format.time_base,
+                video_filters=self.video_filters,
+            )
+        else:
+            self.graph = None
 
     def update(self, frame: av.VideoFrame) -> av.VideoFrame | None:
         assert frame.sw_format is None
-        if frame.format.name != self.pix_fmt:
+        if not self.video_filters:
+            return frame
+        if self.graph is None or frame.format.name != self.pix_fmt:
             self.pix_fmt = frame.format.name
             self.graph = av.filter.Graph()
             self.graph.threads = 1
@@ -73,6 +86,8 @@ class AVFilterGraph:
         return None
 
     def flush(self) -> List[av.VideoFrame]:
+        if not self.video_filters or self.graph is None:
+            return []
         try:
             self.graph.push(None)
         except av.error.EOFError:

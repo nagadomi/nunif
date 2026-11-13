@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
-from nunif.modules.init import basic_module_init
-from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.init import basic_module_init
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive, replication_pad2d_naive
 
 
 class WABlock(nn.Module):
@@ -44,10 +45,9 @@ class DepthAA(I2IBaseModel):
         nn.init.constant_(self.proj_out.weight, 0)
 
     @torch.inference_mode()
-    def infer(self, x):
-        # TODO: not tested
+    def infer(self, x: torch.Tensor) -> torch.Tensor:
         min_value, max_value = x.amin(), x.amax()
-        scale = (max_value - min_value)
+        scale = max_value - min_value
         x = (x - min_value) / scale
         x = torch.nan_to_num(x)
         x = self.forward(x, clamp=False)
@@ -93,8 +93,9 @@ class DepthAA(I2IBaseModel):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
     device = "cuda:0"
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 100

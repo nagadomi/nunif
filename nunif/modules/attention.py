@@ -90,7 +90,7 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, rope=None, dropout_p=0.0, is_
     if rope is not None:
         q, k = rope(q, k)
 
-    use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
+    use_flash = B * num_heads <= 65535  # avoid CUDA error: invalid configuration argument.
     with use_flash_attention(use_flash):
         x = F.scaled_dot_product_attention(
             q,

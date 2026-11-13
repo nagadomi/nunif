@@ -2,7 +2,9 @@ import gc
 import io
 import math
 import os
+import queue
 import sys
+import threading
 import time
 from os import path
 from types import GeneratorType
@@ -344,7 +346,80 @@ def _process_video(
     enable_gc_collect = hwaccel in {"cuda"}
     frame_count = 0
     GC_INTERVAL = 512
+
+    encode_queue: queue.Queue = queue.Queue(maxsize=8)
+    worker_error: list[Exception] = []
+    abort_flag = threading.Event()
+    worker_thread: threading.Thread | None = None
+
+    def encode_worker():
+        try:
+            while True:
+                item = encode_queue.get()
+                if item is None:
+                    break
+                tag, data = item
+                if tag == "video":
+                    frame = output_reformatter.finish_async(data)
+                    enc_packets = video_output_stream.encode(frame)
+                    if enc_packets:
+                        output_container.mux(enc_packets)
+                    pbar.update(1)
+                elif tag == "audio":
+                    output_container.mux(data)
+
+            if not abort_flag.is_set() and not uninitialized:
+                enc_packets = video_output_stream.encode(None)
+                if enc_packets:
+                    output_container.mux(enc_packets)
+        except Exception as e:
+            worker_error.append(e)
+
+    def push_queue(item):
+        while True:
+            if worker_error:
+                raise worker_error[0]
+            if stop_event is not None and stop_event.is_set():
+                return False
+            try:
+                encode_queue.put(item, timeout=0.25)
+                return True
+            except queue.Full:
+                continue
+
+    def process_output_frame(new_frame):
+        nonlocal uninitialized
+        if uninitialized:
+            reformatted_frame = output_reformatter(new_frame)
+            set_output_size_and_flash(output_container, video_output_stream, reformatted_frame, unmux_packets)
+            uninitialized = False
+        else:
+            reformatted_frame = output_reformatter.prepare_async(new_frame)
+        return push_queue(("video", reformatted_frame))
+
+    def stop_worker(abort=False):
+        if abort:
+            abort_flag.set()
+        if worker_thread is not None and worker_thread.is_alive():
+            if abort:
+                while not encode_queue.empty():
+                    try:
+                        encode_queue.get_nowait()
+                    except (queue.Empty, ValueError):
+                        break
+            while worker_thread.is_alive():
+                try:
+                    encode_queue.put(None, timeout=0.25)
+                    break
+                except queue.Full:
+                    continue
+            worker_thread.join()
+        if not abort and worker_error:
+            raise worker_error[0]
+
     try:
+        worker_thread = threading.Thread(target=encode_worker, daemon=True)
+        worker_thread.start()
         for packet in input_container.demux(streams):
             if packet.pts is not None:
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
@@ -355,17 +430,8 @@ def _process_video(
                         if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
                             gc.collect(0)
                         for new_frame in get_new_frames(frame_callback(out_frame)):
-                            reformatted_frame = output_reformatter(new_frame)
-                            if uninitialized:
-                                set_output_size_and_flash(
-                                    output_container, video_output_stream, reformatted_frame, unmux_packets
-                                )
-                                uninitialized = False
-                            # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
-                            enc_packets = video_output_stream.encode(reformatted_frame)
-                            if enc_packets:
-                                output_container.mux(enc_packets)
-                            pbar.update(1)
+                            if not process_output_frame(new_frame):
+                                break
             elif packet.stream.type == "audio":
                 assert isinstance(audio_output_stream, av.AudioStream)
                 if packet.dts is not None:
@@ -374,7 +440,7 @@ def _process_video(
                         if uninitialized:
                             unmux_packets.append(packet)
                         else:
-                            output_container.mux(packet)
+                            push_queue(("audio", packet))
                     else:
                         for frame in safe_decode(packet):
                             frame.pts = None
@@ -383,51 +449,37 @@ def _process_video(
                                 if uninitialized:
                                     unmux_packets.append(enc_packets)
                                 else:
-                                    output_container.mux(enc_packets)
+                                    push_queue(("audio", enc_packets))
 
             if suspend_event is not None:
                 suspend_event.wait()
             if stop_event is not None and stop_event.is_set():
                 break
 
-        for out_frame in video_preprocessor.flush():
-            for new_frame in get_new_frames(frame_callback(out_frame)):
+        if not (stop_event is not None and stop_event.is_set()):
+            for out_frame in video_preprocessor.flush():
+                for new_frame in get_new_frames(frame_callback(out_frame)):
+                    if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
+                        gc.collect(0)
+                    if not process_output_frame(new_frame):
+                        break
+
+            for new_frame in get_new_frames(frame_callback(None)):
                 if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
                     gc.collect(0)
+                if not process_output_frame(new_frame):
+                    break
 
-                ref_frame = output_reformatter(new_frame)
-                if uninitialized:
-                    set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
-                    uninitialized = False
-
-                enc_packets = video_output_stream.encode(ref_frame)
-                if enc_packets:
-                    output_container.mux(enc_packets)
-                pbar.update(1)
-
-        for new_frame in get_new_frames(frame_callback(None)):
-            if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
-                gc.collect(0)
-
-            ref_frame = output_reformatter(new_frame)
-            if uninitialized:
-                set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
-                uninitialized = False
-            enc_packets = video_output_stream.encode(ref_frame)
-            if enc_packets:
-                output_container.mux(enc_packets)
-            pbar.update(1)
-
-        enc_packets = video_output_stream.encode(None)
-        if enc_packets:
-            output_container.mux(enc_packets)
+        stop_worker(abort=bool(stop_event is not None and stop_event.is_set()))
     except KeyboardInterrupt:
+        stop_worker(abort=True)
         output_reformatter.synchronize()
         pbar.close()
         output_container.close()
         input_container.close()
         raise
     except:  # noqa
+        stop_worker(abort=True)
         output_reformatter.synchronize()
         pbar.close()
         output_container.close()

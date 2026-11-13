@@ -150,6 +150,7 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.device = None
         self.model = None
         self.model_backup = None  # for compile
+        self.depth_aa_backup = None
         self.model_type = model_type
         self.scaler = self.create_depth_scaler()
         self.limit_resolution = False
@@ -270,11 +271,17 @@ class BaseDepthModel(metaclass=ABCMeta):
         if self.model_backup is None and not isinstance(self.model, DeviceSwitchInference):
             self.model_backup = self.model
             self.model = compile_model(self.model)
+        if self.depth_aa_backup is None and getattr(self, "depth_aa", None) is not None:
+            self.depth_aa_backup = self.depth_aa
+            self.depth_aa = compile_model(self.depth_aa)
 
     def clear_compiled_model(self):
         if self.model_backup is not None:
             self.model = self.model_backup
             self.model_backup = None
+        if self.depth_aa_backup is not None:
+            self.depth_aa = self.depth_aa_backup
+            self.depth_aa_backup = None
 
     @abstractmethod
     def infer(
