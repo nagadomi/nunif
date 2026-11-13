@@ -5,10 +5,15 @@ import sys
 import pytest
 
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TORCH_ENV_KEYS = (
-    "PYTORCH_ENABLE_MPS_FALLBACK",
-    "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL",
-)
+
+# Flag to test TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL.
+# Currently disabled because it was commented out in nunif/initializer.py due to crashes.
+TEST_ROCM_AOTRITON = False
+
+_keys = ["PYTORCH_ENABLE_MPS_FALLBACK"]
+if TEST_ROCM_AOTRITON:
+    _keys.append("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL")
+TORCH_ENV_KEYS: tuple[str, ...] = tuple(_keys)
 
 
 def _run_python(code: str, env_overrides: dict[str, str] | None = None) -> str:
@@ -30,12 +35,12 @@ def _run_python(code: str, env_overrides: dict[str, str] | None = None) -> str:
 
 @pytest.mark.parametrize("module_name", ["nunif", "iw3", "stlizer", "cliqa", "dino", "create_training_data"])
 def test_init_torch_env_before_torch_import(module_name: str) -> None:
+    env_asserts = "\n".join(f'assert os.environ.get("{key}") == "1"' for key in TORCH_ENV_KEYS)
     code = f"""
 import os, sys
 import {module_name}
 assert "torch" not in sys.modules
-assert os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
-assert os.environ.get("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == "1"
+{env_asserts}
 """
     _run_python(code)
 
@@ -56,6 +61,7 @@ assert os.environ.get("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == "1"
     ],
 )
 def test_init_torch_env_set_before_torch_loaded(module_name: str) -> None:
+    env_asserts = "\n".join(f'assert os.environ.get("{key}") == "1"' for key in TORCH_ENV_KEYS)
     code = f"""
 import os, sys
 orig_setdefault = os.environ.setdefault
@@ -68,25 +74,21 @@ os.environ.setdefault = tracked_setdefault
 import {module_name}
 assert events, "init_torch_env was not called"
 assert all(not loaded for _, loaded in events), events
-assert os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
-assert os.environ.get("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == "1"
+{env_asserts}
 """
     _run_python(code)
 
 
 def test_init_torch_env_respects_existing_env() -> None:
-    code = """
+    env_asserts = "\n".join(f'assert os.environ.get("{key}") == "0"' for key in TORCH_ENV_KEYS)
+    code = f"""
 import os
 import nunif
-assert os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "0"
-assert os.environ.get("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == "0"
+{env_asserts}
 """
     _run_python(
         code,
-        env_overrides={
-            "PYTORCH_ENABLE_MPS_FALLBACK": "0",
-            "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL": "0",
-        },
+        env_overrides={key: "0" for key in TORCH_ENV_KEYS},
     )
 
 
