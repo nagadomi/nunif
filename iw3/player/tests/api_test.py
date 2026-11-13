@@ -1,4 +1,5 @@
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -162,14 +163,36 @@ def test_api_files_with_broken_symlinks(test_setup):
     client = test_setup.client
     media_dir = test_setup.media_dir
 
-    # Create a broken symlink in media_dir
-    broken_link = media_dir / "broken.jpg"
-    os.symlink(media_dir / "nonexistent.jpg", broken_link)
+    # Create a broken link in media_dir (NTFS junction on Windows, symlink on POSIX)
+    broken_link = media_dir / "broken_link"
+    if sys.platform == "win32":
+        import _winapi
 
-    # API should return 200 and omit broken symlink instead of failing with 500
-    res = client.get("/api/files?path=/")
-    assert res.status_code == 200
-    data = res.json()
-    names = [item["name"] for item in data]
-    assert "sample_LRF.png" in names
-    assert "broken.jpg" not in names
+        temp_target = media_dir / "temp_target"
+        temp_target.mkdir()
+        try:
+            _winapi.CreateJunction(str(temp_target), str(broken_link))
+        except OSError as e:
+            temp_target.rmdir()
+            pytest.skip(f"Junction creation not permitted in this environment: {e}")
+        temp_target.rmdir()
+    else:
+        try:
+            os.symlink(media_dir / "nonexistent", broken_link)
+        except OSError as e:
+            pytest.skip(f"Symlink creation not permitted in this environment: {e}")
+
+    try:
+        # API should return 200 and omit broken link instead of failing with 500
+        res = client.get("/api/files?path=/")
+        assert res.status_code == 200
+        data = res.json()
+        names = [item["name"] for item in data]
+        assert "sample_LRF.png" in names
+        assert "broken_link" not in names
+    finally:
+        if os.path.lexists(broken_link):
+            try:
+                os.unlink(broken_link)
+            except OSError:
+                pass

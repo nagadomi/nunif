@@ -263,6 +263,9 @@ class MediaLibrary:
                     try:
                         stat = entry.stat()
                         is_dir = entry.is_dir()
+                        is_link = entry.is_symlink() or (hasattr(entry, "is_junction") and entry.is_junction())
+                        if is_link and not os.path.exists(entry.path):
+                            continue
                     except OSError:
                         # Skip broken symlinks or inaccessible entries
                         continue
