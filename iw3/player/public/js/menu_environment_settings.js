@@ -130,7 +130,7 @@ class EnvironmentSettingsMenu {
 
         if (isSupported) {
             const sm = this.uiManager.settingsManager;
-            const isDome = (screenType === 'dome');
+            const isDome = (screenType === 'dome' || screenType === 'dome_xr');
 
             const showSkybox = !isDome && !isAR;
             this.skyboxSection.setProperties({ display: showSkybox ? 'flex' : 'none' });

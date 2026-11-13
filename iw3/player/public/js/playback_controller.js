@@ -445,9 +445,12 @@ class PlaybackController extends EventTarget {
                         layers: [domeXRScreen.xrLayer, baseLayer]
                     });
 
-                    this.scene.background = null;
+                    if (environmentManager) {
+                        environmentManager.setBackgroundLocked(true);
+                    } else {
+                        this.scene.background = null;
+                    }
                     this.renderer.setClearAlpha(0);
-                    if (environmentManager) environmentManager.isBackgroundLocked = true;
 
                     this.isXRLayersActive = true;
                     this.debugLogInstance?.log("[XR-Layers] Composition Active with Three.js baseLayer");
@@ -475,8 +478,11 @@ class PlaybackController extends EventTarget {
             this.debugLogInstance?.log(`[XR-Layers] Teardown Session Error: ${e.message}`);
         }
 
-        if (environmentManager) environmentManager.isBackgroundLocked = false;
-        this.scene.background = new THREE.Color(0x000000);
+        if (environmentManager) {
+            environmentManager.setBackgroundLocked(false);
+        } else {
+            this.scene.background = new THREE.Color(0x000000);
+        }
         this.renderer.setClearAlpha(1);
 
         if (domeXRScreen) {

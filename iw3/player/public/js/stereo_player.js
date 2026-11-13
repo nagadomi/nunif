@@ -170,6 +170,9 @@ class StereoPlayer extends THREE.Group {
             const prevScreen = this.activeScreen;
 
             if (nextScreen !== prevScreen) {
+                if (!useXRLayers && this.isXRLayersActive) {
+                    this.teardownXRLayers();
+                }
                 prevScreen.visible = false;
                 this.activeScreen = nextScreen;
                 this.setAxesGuideVisible(false);
