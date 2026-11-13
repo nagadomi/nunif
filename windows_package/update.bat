@@ -105,6 +105,10 @@ exit /b 0
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
              "Expand-Archive -Force $env:TMP_DIR\mingit.zip $env:MINGIT_DIR"
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+  if not exist "%MINGIT_DIR%\cmd\git.exe" (
+    echo Failed to extract MinGit
+    exit /b 1
+  )
 
   echo Successfully installed MinGit
 
@@ -137,6 +141,10 @@ exit /b 0
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
              "Expand-Archive -Force $env:TMP_DIR\python.zip $env:PYTHON_DIR"
   if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+  if not exist "%PYTHON_DIR%\python.exe" (
+    echo Failed to extract Python
+    exit /b 1
+  )
 
   @rem setup pth file to work isolated mode
   echo ..\nunif>> "%PTH_PATH%"
