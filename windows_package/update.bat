@@ -28,6 +28,12 @@ if %ERRORLEVEL% neq 0 (
   call :install_git
   if !ERRORLEVEL! neq 0 goto :on_error
 )
+@rem check git version
+for /f "tokens=3" %%A in ('git --version') do set GITVER=%%A
+if "%GITVER%" neq "2.56.1.windows.1" (
+  call :install_git
+  if !ERRORLEVEL! neq 0 goto :on_error
+)
 
 @rem try nunif
 if not exist "%NUNIF_DIR%" (
@@ -78,10 +84,19 @@ exit /b 0
   echo Installing MinGit...
 
   setlocal
-  set MINGIT_URL=https://github.com/git-for-windows/git/releases/download/v2.45.2.windows.1/MinGit-2.45.2-64-bit.zip
+  set MINGIT_URL=https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/MinGit-2.56.1-64-bit.zip
   set TMP_DIR=%ROOT_DIR%\tmp
 
   if not exist "%TMP_DIR%" mkdir "%TMP_DIR%"
+
+  if exist "%MINGIT_DIR%" (
+    echo Uninstalling old MinGit...
+    rmdir /s /q "%MINGIT_DIR%"
+    if exist "%MINGIT_DIR%" (
+      echo Failed to delete "%MINGIT_DIR%"
+      exit /b 1
+    )
+  )
 
   @rem Install MinGit
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
