@@ -10,6 +10,7 @@ import time
 from collections import defaultdict, deque
 from socketserver import ThreadingMixIn
 from string import Template
+from typing import Any
 from wsgiref.simple_server import WSGIServer, make_server
 
 STATUS_OK = "200 OK"
@@ -211,3 +212,134 @@ class StreamingServer:
             return self.send_image_stream(start_response)
         else:
             return self.send_404(start_response)
+
+
+class WebXRStreamingServer:
+    """HTTPS WebXR streaming server backed by iw3.player and StreamFrameHub."""
+
+    def __init__(
+        self,
+        port: int,
+        lock: Any,
+        frame_width: int,
+        frame_height: int,
+        fps: int,
+        stereo_format: str = "SBS_HALF",
+        stream_uri: str = "/stream.jpg",
+        stream_content_type: str = "image/jpeg",
+        auth: tuple[str, str] | None = None,
+        host: str = "",
+    ) -> None:
+        from ..player.stream_hub import StreamFrameHub
+
+        self.port = port
+        self.host = host
+        self.lock = lock
+        self.op_lock = threading.Lock()
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.fps = fps
+        self.stereo_format = stereo_format
+        self.stream_uri = stream_uri
+        self.stream_content_type = stream_content_type
+        self.auth = auth
+
+        self.stream_hub = StreamFrameHub(
+            lock=lock,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            fps=fps,
+            stereo_format=stereo_format,
+            stream_uri=stream_uri,
+            stream_content_type=stream_content_type,
+        )
+        self.thread: threading.Thread | None = None
+        self.state: Any = None
+
+    def _stop(self):
+        self.stream_hub.shutdown_event.set()
+        if self.thread is not None:
+            if self.thread.ident is not None:
+                self.thread.join(timeout=5.0)
+            self.thread = None
+        if self.state is not None:
+            self.state.close()
+            self.state = None
+        self.stream_hub.shutdown_event.clear()
+
+    def _start(self):
+        import asyncio
+        import os
+        import secrets
+        from types import SimpleNamespace
+
+        from hypercorn.config import Config
+
+        from ..player.app import app
+        from ..player.dir_config import CERT_DIR
+        from ..player.server import CERT_FILE, KEY_FILE, SECRET_KEY_FILE, generate_self_signed_cert, serve_with_watchdog
+        from ..player.server_state import ServerState
+
+        bind_host = self.host or "127.0.0.1"
+        generate_self_signed_cert(CERT_DIR, CERT_FILE, KEY_FILE, bind_host)
+        if not os.path.exists(SECRET_KEY_FILE):
+            with open(SECRET_KEY_FILE, "wb") as f:
+                f.write(secrets.token_bytes(32))
+
+        user, password = self.auth if self.auth is not None else (None, None)
+        self.stream_hub.update_stream_params(
+            frame_width=self.frame_width,
+            frame_height=self.frame_height,
+            fps=self.fps,
+            stereo_format=self.stereo_format,
+        )
+
+        args_ns = SimpleNamespace(
+            mode="desktop",
+            enable_file_library=False,
+            stream_hub=self.stream_hub,
+            user=user,
+            password=password,
+            secret_key_file=SECRET_KEY_FILE,
+            debug=False,
+            debug_console=False,
+            state={"stop_event": self.stream_hub.shutdown_event},
+        )
+        if hasattr(app.state, "server_state") and app.state.server_state is not None:
+            app.state.server_state.close()
+        self.state = ServerState(args_ns)
+        app.state.server_state = self.state
+        app.state.media_library = None
+
+        config = Config()
+        config.bind = [f"{bind_host}:{self.port}"]
+        config.certfile = CERT_FILE
+        config.keyfile = KEY_FILE
+        config.accesslog = None
+        config.errorlog = None
+        config.graceful_timeout = 0.5
+
+        def run_server():
+            shutdown_event = asyncio.Event()
+            asyncio.run(serve_with_watchdog(args_ns, config, shutdown_event))
+
+        self.thread = threading.Thread(target=run_server, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        with self.op_lock:
+            self._stop()
+
+    def start(self):
+        with self.op_lock:
+            self._stop()
+            self._start()
+
+    def set_frame_data(self, frame_data):
+        self.stream_hub.set_frame_data(frame_data)
+
+    def get_frame_data(self):
+        return self.stream_hub.get_frame_data()
+
+    def get_fps(self):
+        return self.stream_hub.get_fps()

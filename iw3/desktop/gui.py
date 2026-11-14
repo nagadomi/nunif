@@ -363,7 +363,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_view_mode = wx.StaticText(self.grp_network, label=T("View Mode"))
         self.cbo_view_mode = wx.ComboBox(
-            self.grp_network, choices=["Web Streaming", "Local Viewer"], name="cbo_view_mode"
+            self.grp_network, choices=["Web Streaming", "Web Streaming (Legacy)", "Local Viewer"], name="cbo_view_mode"
         )
         self.cbo_view_mode.SetEditable(False)
         self.cbo_view_mode.SetSelection(0)
@@ -1095,7 +1095,9 @@ class MainFrame(wx.Frame):
             window_name = None
 
         pad_mode = "16:9" if self.chk_pad_16_9.IsChecked() else None
-        local_viewer = self.cbo_view_mode.GetValue() == "Local Viewer"
+        view_mode = self.cbo_view_mode.GetValue()
+        local_viewer = view_mode == "Local Viewer"
+        legacy_stream = view_mode == "Web Streaming (Legacy)"
         if local_viewer:
             viewer_kwargs = dict(
                 local_viewer=True,
@@ -1106,6 +1108,7 @@ class MainFrame(wx.Frame):
             )
         else:
             viewer_kwargs = dict(
+                legacy_stream=legacy_stream,
                 bind_addr=bind_addr,
                 port=self.txt_port.GetValue(),
                 user=user,

@@ -108,6 +108,7 @@ class MainMenu {
 
     setupControlRow() {
         const row = new Container({ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', width: '100%', paddingLeft: 10, });
+        this.controlRow = row;
         this.container.add(row);
         const u = this.uiManager;
         
@@ -115,12 +116,15 @@ class MainMenu {
         row.add(this.explorerButton.container);
 
         const playbackGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 20, marginLeft: 80 });
+        this.playbackGroup = playbackGroup;
         row.add(playbackGroup);
-        playbackGroup.add(UIUtils.createButton('icons/player-skip-back.svg', () => u.loadNextMedia(-1), u).container);
+        this.skipBackButton = UIUtils.createButton('icons/player-skip-back.svg', () => u.loadNextMedia(-1), u);
+        playbackGroup.add(this.skipBackButton.container);
         const playPause = UIUtils.createButton('icons/player-play.svg', () => u.togglePlayPause(), u, 44, 80, 'play_pause');
         this.playPauseButton = playPause.container; this.playPauseIcon = playPause.image;
         playbackGroup.add(this.playPauseButton);
-        playbackGroup.add(UIUtils.createButton('icons/player-skip-forward.svg', () => u.loadNextMedia(1), u).container);
+        this.skipForwardButton = UIUtils.createButton('icons/player-skip-forward.svg', () => u.loadNextMedia(1), u);
+        playbackGroup.add(this.skipForwardButton.container);
     }
 
     setupSliderSection() {
@@ -153,6 +157,7 @@ class MainMenu {
             overflow: 'visible'
         });
         parent.add(row);
+        this.seekBarRow = row;
         const u = this.uiManager;
 
         const repeat = UIUtils.createButton('icons/repeat.svg', () => u.toggleVideoRepeat(), u, 24, 40);
@@ -213,6 +218,7 @@ class MainMenu {
             overflow: 'visible'
         });
         parent.add(row);
+        this.volumeRow = row;
         const u = this.uiManager;
 
         // --- Volume Group ---
@@ -324,6 +330,34 @@ class MainMenu {
         return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
 
+    applyAppConfig(appConfig) {
+        const hasFileLibrary = appConfig?.features?.file_library !== false;
+        const isDesktop = appConfig?.mode === 'desktop';
+        const libDisplay = hasFileLibrary ? 'flex' : 'none';
+
+        this.explorerButton?.container?.setProperties({ display: libDisplay });
+        this.skipBackButton?.container?.setProperties({ display: libDisplay });
+        this.skipForwardButton?.container?.setProperties({ display: libDisplay });
+        this.subtitleButton?.container?.setProperties({ display: libDisplay });
+        if (!hasFileLibrary) {
+            this.recentButton?.setProperties({ display: 'none' });
+        }
+
+        if (this.controlRow && this.playbackGroup) {
+            if (hasFileLibrary) {
+                this.controlRow.setProperties({ justifyContent: 'flex-start', paddingLeft: 10 });
+                this.playbackGroup.setProperties({ marginLeft: 80 });
+            } else {
+                this.controlRow.setProperties({ justifyContent: 'center', paddingLeft: 0 });
+                this.playbackGroup.setProperties({ marginLeft: 0 });
+            }
+        }
+
+        const mediaBarsDisplay = isDesktop ? 'none' : 'flex';
+        this.seekBarRow?.setProperties({ display: mediaBarsDisplay });
+        this.volumeRow?.setProperties({ display: mediaBarsDisplay });
+    }
+
     sync(params) {
         if (params.slowMetricsUpdated) {
             const now = new Date();
@@ -381,26 +415,30 @@ class MainMenu {
             }
         }
 
-        if (params.isVideoActive !== undefined || params.isPlaying !== undefined || params.videoProgress !== undefined) {
+        if (params.isVideoActive !== undefined || params.isStreamActive !== undefined || params.isPlaying !== undefined || params.videoProgress !== undefined) {
             const isVideo = params.isVideoActive ?? (!!this.uiManager.videoElement);
+            const isStream = params.isStreamActive ?? this.uiManager.isStreamActive;
+            const canPlayPause = isVideo || isStream;
+
+            if (canPlayPause && params.isPlaying !== undefined) {
+                const iconSrc = params.isPlaying ? 'icons/player-pause.svg' : 'icons/player-play.svg';
+                const bgColor = params.isPlaying ? COLORS.accent : COLORS.track;
+                if (this._lastPlayIcon !== iconSrc) {
+                    this.playPauseIcon.setProperties({ src: iconSrc });
+                    this._lastPlayIcon = iconSrc;
+                }
+                if (this._lastPlayBg !== bgColor) {
+                    this.playPauseButton.setProperties({ backgroundColor: bgColor });
+                    this._lastPlayBg = bgColor;
+                }
+            }
+
             if (isVideo) {
                 if (params.currentTime !== undefined && params.duration !== undefined) {
                     const timeText = `${this.formatTime(params.currentTime)} / ${this.formatTime(params.duration)}`;
                     if (this._lastVideoTimeText !== timeText) {
                         this.videoTimeText.setProperties({ text: timeText });
                         this._lastVideoTimeText = timeText;
-                    }
-                }
-                if (params.isPlaying !== undefined) {
-                    const iconSrc = params.isPlaying ? 'icons/player-pause.svg' : 'icons/player-play.svg';
-                    const bgColor = params.isPlaying ? COLORS.accent : COLORS.track;
-                    if (this._lastPlayIcon !== iconSrc) {
-                        this.playPauseIcon.setProperties({ src: iconSrc });
-                        this._lastPlayIcon = iconSrc;
-                    }
-                    if (this._lastPlayBg !== bgColor) {
-                        this.playPauseButton.setProperties({ backgroundColor: bgColor });
-                        this._lastPlayBg = bgColor;
                     }
                 }
                 if (params.videoProgress !== undefined) {
@@ -427,10 +465,12 @@ class MainMenu {
                     this.videoThumb.setProperties({ marginLeft: 0 });
                     this._lastVideoMargin = 0;
                 }
-                const disabledBg = COLORS.buttonDisabled;
-                if (this._lastPlayBg !== disabledBg) {
-                    this.playPauseButton.setProperties({ backgroundColor: disabledBg });
-                    this._lastPlayBg = disabledBg;
+                if (!isStream) {
+                    const disabledBg = COLORS.buttonDisabled;
+                    if (this._lastPlayBg !== disabledBg) {
+                        this.playPauseButton.setProperties({ backgroundColor: disabledBg });
+                        this._lastPlayBg = disabledBg;
+                    }
                 }
             }
         }

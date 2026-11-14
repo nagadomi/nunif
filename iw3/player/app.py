@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Callable, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .dir_config import PUBLIC_DIR
@@ -47,7 +47,10 @@ app = FastAPI(lifespan=lifespan, dependencies=[Depends(authenticate)])
 
 
 def get_library(request: Request) -> MediaLibrary:
-    return request.app.state.media_library
+    library = getattr(request.app.state, "media_library", None)
+    if library is None:
+        raise HTTPException(status_code=404, detail="File library is disabled")
+    return library
 
 
 def get_state(request: Request) -> ServerState:
@@ -132,11 +135,55 @@ async def serve_subtitles(
 @app.post("/api/cache/clear")
 async def clear_cache(state: ServerState = Depends(get_state)):
     try:
-        state.cache_db.clear()
+        if state.cache_db is not None:
+            state.cache_db.clear()
         return {"status": "ok", "message": "Cache cleared"}
     except Exception as e:
         print(f"Cache clear error: {e}", file=sys.stderr)
         raise HTTPException(status_code=500, detail="Failed to clear cache")
+
+
+@app.get("/api/config")
+async def get_config(state: ServerState = Depends(get_state)):
+    mode = getattr(state, "mode", "player")
+    enable_file_library = getattr(state, "enable_file_library", mode == "player")
+    stream_hub = getattr(state, "stream_hub", None)
+    return {
+        "mode": mode,
+        "features": {
+            "file_library": bool(enable_file_library),
+            "desktop_stream": stream_hub is not None,
+        },
+    }
+
+
+@app.get("/api/stream/info")
+async def get_stream_info(state: ServerState = Depends(get_state)):
+    stream_hub = getattr(state, "stream_hub", None)
+    if stream_hub is None:
+        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+    return stream_hub.get_stream_info()
+
+
+@app.get("/process_token")
+async def get_process_token(state: ServerState = Depends(get_state)):
+    stream_hub = getattr(state, "stream_hub", None)
+    if stream_hub is None:
+        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+    return {"token": stream_hub.process_token}
+
+
+@app.get("/stream.jpg")
+@app.get("/api/stream")
+async def serve_desktop_stream(state: ServerState = Depends(get_state)):
+    stream_hub = getattr(state, "stream_hub", None)
+    if stream_hub is None:
+        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+    return StreamingResponse(
+        stream_hub.async_stream_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @app.get("/js/debug_log.js")

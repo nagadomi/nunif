@@ -40,7 +40,7 @@ from .screenshot_thread_kwcapture import (  # noqa
     kwcapture_unsupported_reason,
 )
 from .screenshot_thread_pil import ScreenshotThreadPIL
-from .streaming_server import StreamingServer
+from .streaming_server import StreamingServer, WebXRStreamingServer
 
 WAYLAND_CAPTURE_MISSING_MESSAGE = (
     "Wayland capture backend is not available ('pil' uses XWayland, which is usually black). "
@@ -157,6 +157,11 @@ def create_parser():
     local_address = get_local_address()
     parser = IW3U.create_parser(required_true=False)
     parser.add_argument("--local-viewer", action="store_true", help="Use Local Viewer instead of Web Streaming")
+    parser.add_argument(
+        "--legacy-stream",
+        action="store_true",
+        help="Use legacy HTTP MJPEG streaming server instead of WebXR HTTPS player",
+    )
     parser.add_argument("--port", type=int, default=1303, help="HTTP listen port")
     parser.add_argument("--bind-addr", type=str, default=local_address, help="HTTP listen address")
     parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")
@@ -252,10 +257,39 @@ def try_switch_mlbw_model(old_divergence, new_divergence, old_side_model, args):
     return new_side_model
 
 
+def resolve_player_stereo_format(args) -> str:
+    if getattr(args, "vr180", False):
+        return "SBS_180"
+    if getattr(args, "full_sbs", False) or getattr(args, "rgbd", False):
+        return "SBS_FULL"
+    if getattr(args, "half_sbs", False) or getattr(args, "half_rgbd", False):
+        return "SBS_HALF"
+    if getattr(args, "cross_eyed", False):
+        return "SBS_FULL_CROSS"
+    if getattr(args, "tb", False):
+        return "TB_FULL"
+    if getattr(args, "half_tb", False):
+        return "TB_HALF"
+    if getattr(args, "anaglyph", None):
+        return "FLAT"
+    return "SBS_HALF"
+
+
 def iw3_desktop_main(args, init_wxapp=True):
     init_num_threads(args.gpu[0])
 
-    if not any([args.full_sbs, args.tb, args.half_tb, args.cross_eyed, args.rgbd, args.half_rgbd, args.anaglyph]):
+    if not any(
+        [
+            args.full_sbs,
+            args.tb,
+            args.half_tb,
+            args.cross_eyed,
+            args.rgbd,
+            args.half_rgbd,
+            args.anaglyph,
+            args.vr180,
+        ]
+    ):
         args.half_sbs = True
 
     if args.user or args.password:
@@ -403,21 +437,39 @@ def iw3_desktop_main(args, init_wxapp=True):
 
         if not args.local_viewer:
             # Web Streaming
-            with open(path.join(path.dirname(__file__), "views", "index.html.tpl"), mode="r", encoding="utf-8") as f:
-                index_template = f.read()
+            if getattr(args, "legacy_stream", False):
+                index_tpl_path = path.join(path.dirname(__file__), "views", "index.html.tpl")
+                with open(index_tpl_path, mode="r", encoding="utf-8") as f:
+                    index_template = f.read()
 
-            server = StreamingServer(
-                host=args.bind_addr,
-                port=args.port,
-                lock=lock,
-                frame_width=output_frame_width,
-                frame_height=output_frame_height,
-                fps=args.stream_fps,
-                index_template=index_template,
-                stream_uri="/stream.jpg",
-                stream_content_type="image/jpeg",
-                auth=auth,
-            )
+                server = StreamingServer(
+                    host=args.bind_addr,
+                    port=args.port,
+                    lock=lock,
+                    frame_width=output_frame_width,
+                    frame_height=output_frame_height,
+                    fps=args.stream_fps,
+                    index_template=index_template,
+                    stream_uri="/stream.jpg",
+                    stream_content_type="image/jpeg",
+                    auth=auth,
+                )
+            else:
+                from ..player.download_assets import main as download_player_assets
+
+                download_player_assets()
+                server = WebXRStreamingServer(
+                    host=args.bind_addr,
+                    port=args.port,
+                    lock=lock,
+                    frame_width=output_frame_width,
+                    frame_height=output_frame_height,
+                    fps=args.stream_fps,
+                    stereo_format=resolve_player_stereo_format(args),
+                    stream_uri="/stream.jpg",
+                    stream_content_type="image/jpeg",
+                    auth=auth,
+                )
         else:
             # Local Viewer
             if LocalViewer is None:
@@ -459,10 +511,12 @@ def iw3_desktop_main(args, init_wxapp=True):
         screenshot_thread.start()
 
         if not args.local_viewer:
+            scheme = "http" if getattr(args, "legacy_stream", False) else "https"
+            stream_url = f"{scheme}://{args.bind_addr}:{args.port}"
             if args.state["fps_event"] is not None:
-                args.state["fps_event"].set_url(f"http://{args.bind_addr}:{args.port}")
+                args.state["fps_event"].set_url(stream_url)
             else:
-                print(f"Open http://{args.bind_addr}:{args.port}")
+                print(f"Open {stream_url}")
         else:
             if args.state["fps_event"] is not None:
                 args.state["fps_event"].set_url(None)

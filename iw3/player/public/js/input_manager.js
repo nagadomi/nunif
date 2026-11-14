@@ -192,8 +192,16 @@ class InputManager {
             if (e.repeat) return;
             switch (e.code) {
                 case 'Space': e.preventDefault(); this.dispatch(INPUT_ACTIONS.MENU_TOGGLE, { autoExplorer: false }); break;
-                case 'ArrowLeft': this.dispatch(this.player.videoElement ? INPUT_ACTIONS.SEEK_BWD : INPUT_ACTIONS.NAV_PREV); break;
-                case 'ArrowRight': this.dispatch(this.player.videoElement ? INPUT_ACTIONS.SEEK_FWD : INPUT_ACTIONS.NAV_NEXT); break;
+                case 'ArrowLeft':
+                    if (!this.ui.isStreamActive) {
+                        this.dispatch(this.player.videoElement ? INPUT_ACTIONS.SEEK_BWD : INPUT_ACTIONS.NAV_PREV);
+                    }
+                    break;
+                case 'ArrowRight':
+                    if (!this.ui.isStreamActive) {
+                        this.dispatch(this.player.videoElement ? INPUT_ACTIONS.SEEK_FWD : INPUT_ACTIONS.NAV_NEXT);
+                    }
+                    break;
                 case 'ArrowUp': this.dispatch(INPUT_ACTIONS.ZOOM_IN); break;
                 case 'ArrowDown': this.dispatch(INPUT_ACTIONS.ZOOM_OUT); break;
                 case 'KeyQ': this.dispatch(INPUT_ACTIONS.EYE_SEP_DEC); break;
@@ -269,8 +277,10 @@ class InputManager {
                 } else if (!hitInfo.isUI && !gamepad.buttons[0].pressed && !gamepad.buttons[1].pressed) {
                     if (this.isStickReset[i]) {
                         const params = { controllerIndex: i };
-                        if (this.player.videoElement) this.dispatch(stickX > 0 ? INPUT_ACTIONS.SEEK_FWD : INPUT_ACTIONS.SEEK_BWD, params);
-                        else this.dispatch(stickX > 0 ? INPUT_ACTIONS.NAV_NEXT : INPUT_ACTIONS.NAV_PREV, params);
+                        if (!this.ui.isStreamActive) {
+                            if (this.player.videoElement) this.dispatch(stickX > 0 ? INPUT_ACTIONS.SEEK_FWD : INPUT_ACTIONS.SEEK_BWD, params);
+                            else this.dispatch(stickX > 0 ? INPUT_ACTIONS.NAV_NEXT : INPUT_ACTIONS.NAV_PREV, params);
+                        }
                         this.isStickReset[i] = false;
                     }
                 }
@@ -350,7 +360,7 @@ class InputManager {
 
         switch (action) {
             case INPUT_ACTIONS.MENU_TOGGLE: {
-                const autoExplorer = params.autoExplorer ?? false;
+                const autoExplorer = (params.autoExplorer ?? false) && u.hasFileLibrary;
                 const cIdx = params.controllerIndex ?? -1;
                 if (!u.isAnyMenuVisible()) {
                     u.showMainMenu(cIdx);
@@ -371,6 +381,7 @@ class InputManager {
             }
             case INPUT_ACTIONS.NAV_NEXT:
             case INPUT_ACTIONS.NAV_PREV: {
+                if (u.isStreamActive || !u.hasFileLibrary) break;
                 const dir = (action === INPUT_ACTIONS.NAV_NEXT) ? 1 : -1;
                 const next = this.player.galleryManager.getNextIndex(dir);
                 if (next !== -1) {
@@ -434,13 +445,15 @@ class InputManager {
                 }
                 break;
             }
-            case INPUT_ACTIONS.SEEK_FWD: 
+            case INPUT_ACTIONS.SEEK_FWD:
+                if (u.isStreamActive) break;
                 if (this.player.videoElement) {
                     this.player.seek(this.player.videoElement.currentTime + 10);
                     this.player.savePlaybackPosition();
                 }
                 break;
-            case INPUT_ACTIONS.SEEK_BWD: 
+            case INPUT_ACTIONS.SEEK_BWD:
+                if (u.isStreamActive) break;
                 if (this.player.videoElement) {
                     this.player.seek(this.player.videoElement.currentTime - 10);
                     this.player.savePlaybackPosition();

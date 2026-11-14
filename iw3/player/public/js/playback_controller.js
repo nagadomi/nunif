@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { STEREO_FORMATS, PREFETCH_CONFIG } from "./constants.js";
+import { MjpegStream } from "./mjpeg_stream.js";
 
 /**
  * Controller responsible for media resource management (images & videos),
@@ -17,12 +18,24 @@ class PlaybackController extends EventTarget {
         
         this.videoElement = null;
         this.videoTexture = null;
+        this.mjpegStream = null;
         this.currentLoadId = 0;
         this.isXRLayersActive = false;
         this.xrBinding = null;
     }
 
+    get streamTexture() {
+        return this.mjpegStream ? this.mjpegStream.texture : null;
+    }
+
+    get isStreamActive() {
+        return !!(this.mjpegStream && this.mjpegStream.isActive);
+    }
+
     get isPlaying() {
+        if (this.isStreamActive) {
+            return !this.mjpegStream.isPaused;
+        }
         return !!(this.videoElement && !this.videoElement.paused);
     }
 
@@ -35,6 +48,10 @@ class PlaybackController extends EventTarget {
     }
 
     play() {
+        if (this.isStreamActive) {
+            this.mjpegStream.play();
+            return;
+        }
         if (this.videoElement) {
             const playPromise = this.videoElement.play();
             if (playPromise !== undefined) {
@@ -46,17 +63,37 @@ class PlaybackController extends EventTarget {
     }
 
     pause() {
+        if (this.isStreamActive) {
+            this.mjpegStream.pause();
+            return;
+        }
         if (this.videoElement) {
             this.videoElement.pause();
         }
     }
 
     togglePlayPause() {
+        if (this.isStreamActive) {
+            this.mjpegStream.togglePause();
+            return;
+        }
         if (!this.videoElement) return;
         if (this.isPlaying) {
             this.pause();
         } else {
             this.play();
+        }
+    }
+
+    consumeNewStreamFrame() {
+        return this.mjpegStream ? this.mjpegStream.consumeNewFrame() : false;
+    }
+
+    destroyStream() {
+        if (this.mjpegStream) {
+            this.mjpegStream.stop();
+            this.mjpegStream = null;
+            this.dispatchEvent(new CustomEvent('video-destroyed'));
         }
     }
 
@@ -149,8 +186,70 @@ class PlaybackController extends EventTarget {
             const url = `/api/media?path=${encodeURIComponent(item.path)}`;
             const finalFormat = targetFormat || item.stereo_format || STEREO_FORMATS.SBS_FULL;
 
-            if (item.type === 'video') {
+            if (item.type === 'stream') {
+                if (forcedFormat && this.mjpegStream && this.mjpegStream.isActive) {
+                    const detail = {
+                        item,
+                        texture: this.mjpegStream.texture,
+                        isVideo: false,
+                        isStream: true,
+                        aspectRatio: this.mjpegStream.aspectRatio,
+                        format: finalFormat,
+                        isXRActive: false
+                    };
+                    this.dispatchEvent(new CustomEvent('media-loaded', { detail }));
+                    resolve({ success: true, detail });
+                    return;
+                }
+
+                this.destroyVideo();
+                this.destroyStream();
+
+                const streamUrl = item.stream_uri || '/stream.jpg';
+                const stream = new MjpegStream(streamUrl, '/api/stream/info', this.debugLogInstance);
+                this.mjpegStream = stream;
+
+                stream.addEventListener('play-state-change', (e) => {
+                    if (this.mjpegStream === stream) {
+                        this.dispatchEvent(new CustomEvent('play-state-change', { detail: e.detail }));
+                    }
+                });
+                stream.addEventListener('stream-updated', (e) => {
+                    if (this.mjpegStream === stream) {
+                        this.dispatchEvent(new CustomEvent('stream-updated', { detail: e.detail }));
+                    }
+                });
+                stream.addEventListener('auth-required', () => {
+                    if (this.mjpegStream === stream) {
+                        this.dispatchEvent(new CustomEvent('stream-auth-required'));
+                    }
+                });
+
+                stream.start(item.stream_info || null).then((startResult) => {
+                    if (this.currentLoadId !== loadId || this.mjpegStream !== stream || startResult?.cancelled) {
+                        if (this.mjpegStream === stream && this.currentLoadId !== loadId) {
+                            this.destroyStream();
+                        }
+                        resolve({ success: false, cancelled: true });
+                        return;
+                    }
+
+                    stream.texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+                    const detail = {
+                        item,
+                        texture: stream.texture,
+                        isVideo: false,
+                        isStream: true,
+                        aspectRatio: stream.aspectRatio,
+                        format: finalFormat,
+                        isXRActive: false
+                    };
+                    this.dispatchEvent(new CustomEvent('media-loaded', { detail }));
+                    resolve({ success: true, detail });
+                });
+            } else if (item.type === 'video') {
                 if (!(forcedFormat && this.videoElement)) {
+                    this.destroyStream();
                     this.destroyVideo();
                     this.videoElement = document.createElement('video');
                     this.videoElement.crossOrigin = "anonymous";
@@ -309,6 +408,7 @@ class PlaybackController extends EventTarget {
                 }
             } else {
                 // Image Loading
+                this.destroyStream();
                 this.destroyVideo();
 
                 // Check texture cache

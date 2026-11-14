@@ -25,6 +25,10 @@ class StereoPlayer extends THREE.Group {
 
         this.isARMode = false;
         this.scene.background = new THREE.Color(0x000000);
+        this.appConfig = { mode: 'player', features: { file_library: true, desktop_stream: false } };
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+        this.configReady = this._fetchAppConfig();
 
         // Managers
         this.galleryManager = new GalleryManager(debugLogInstance);
@@ -48,6 +52,14 @@ class StereoPlayer extends THREE.Group {
         this.playbackController.addEventListener('video-destroyed', () => {
             if (this.planeScreen) this.planeScreen.resetTexture();
             if (this.domeScreen) this.domeScreen.resetTexture();
+        });
+        this.playbackController.addEventListener('stream-updated', (e) => {
+            this.onStreamUpdated(e.detail);
+        });
+        this.playbackController.addEventListener('stream-auth-required', () => {
+            if (!this.renderer.xr.isPresenting) {
+                window.location.reload();
+            }
         });
 
         // Screen & Subtitle
@@ -117,9 +129,44 @@ class StereoPlayer extends THREE.Group {
         this.activeScreen.updateEyeVisibility(false);
         this.activeScreen.clearScreen();
 
-        this.galleryManager.fetchDirectory('/').then(() => {
-            this.debugLogInstance.log(`${this.galleryManager.playbackGallery.length} items found`);
-        });
+        this.initModeAsync();
+    }
+
+    async _fetchAppConfig() {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const res = await fetch('/api/config', { cache: 'no-store', credentials: 'same-origin' });
+                if (res.ok) {
+                    this.appConfig = await res.json();
+                    return this.appConfig;
+                }
+                if (res.status === 401 && !this.renderer.xr.isPresenting) {
+                    window.location.reload();
+                    return this.appConfig;
+                }
+            } catch {
+                // Retry while server is starting up
+            }
+            if (attempt < 2) {
+                await new Promise((r) => setTimeout(r, 500));
+            }
+        }
+        return this.appConfig;
+    }
+
+    async initModeAsync() {
+        const config = await this.configReady;
+        if (this.uiManager?.ready) {
+            await this.uiManager.ready;
+        }
+        this.uiManager.setAppConfig(config);
+        if (config.mode === 'desktop') {
+            await this.loadStream();
+        } else {
+            this.galleryManager.fetchDirectory('/').then(() => {
+                this.debugLogInstance.log(`${this.galleryManager.playbackGallery.length} items found`);
+            });
+        }
     }
 
     setBackgroundLevel(val) {
@@ -350,6 +397,126 @@ class StereoPlayer extends THREE.Group {
         storage.set('recent_file_name', file.name);
         this.uiManager.hideRecentButton();
         this.uiManager.syncUI(true);
+    }
+
+    async loadStream(forcedFormat = null) {
+        if (this.uiManager?.ready) {
+            await this.uiManager.ready;
+        }
+
+        let info = null;
+        while (!info) {
+            try {
+                const res = await fetch('/api/stream/info', { cache: 'no-store', credentials: 'same-origin' });
+                if (res.ok) {
+                    info = await res.json();
+                    break;
+                }
+                if (res.status === 401 && !this.renderer.xr.isPresenting) {
+                    window.location.reload();
+                    return;
+                }
+                this.debugLogInstance.log(`[WARN] Stream info returned HTTP ${res.status}`);
+            } catch (e) {
+                this.debugLogInstance.log(`[WARN] Failed to fetch stream info: ${e.message}`);
+            }
+
+            if (forcedFormat && this.streamItem?.stream_info) {
+                info = this.streamItem.stream_info;
+                break;
+            }
+            if (this.appConfig?.mode !== 'desktop') {
+                this.uiManager.showNotification('Stream unavailable');
+                return;
+            }
+            await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        const streamFormat = info.stereo_format || STEREO_FORMATS.SBS_HALF;
+        const streamName = (info.width && info.height)
+            ? `Desktop (${info.width}x${info.height} ${info.fps || 30}fps)`
+            : 'Desktop Stream';
+
+        const streamItem = {
+            path: '__desktop_stream__',
+            name: streamName,
+            type: 'stream',
+            mtime: 0,
+            stereo_format: streamFormat,
+            stream_uri: info.stream_uri || '/stream.jpg',
+            stream_info: info,
+        };
+        this.streamItem = streamItem;
+
+        this.uiManager.updateSubtitleText("");
+        this.uiManager.availableSubtitles = [];
+        this.uiManager.currentSubtitleIndex = -1;
+
+        await this.uiManager.settingsManager.loadForFile(streamItem);
+        if (this.uiManager.settingsManager.getFileState('stereo_format') !== null) {
+            await this.uiManager.settingsManager.updateFileState({ stereo_format: undefined });
+        }
+        this.streamFormatOverride = forcedFormat || null;
+
+        const finalFormat = this.streamFormatOverride || streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
+        await this.switchScreen(finalFormat);
+        await this.uiManager.settingsManager.applyForLoadedFile(this.activeScreen.screenType);
+        this.teardownXRLayers();
+
+        this.debugLogInstance.log(`Loading stream: ${streamName} (${finalFormat})`);
+        const result = await this.playbackController.load(streamItem, {
+            forcedFormat,
+            targetFormat: finalFormat,
+        });
+        if (!result.success) {
+            if (!result.cancelled) {
+                this.activeScreen.clearScreen();
+            }
+            return;
+        }
+
+        const { detail } = result;
+        this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
+        this.uiManager.syncUI(true);
+    }
+
+    async onStreamUpdated(info) {
+        if (!info || !this.streamItem) return;
+        try {
+            const prevBackendFormat = this.streamItem.stereo_format;
+            if (info.tokenChanged || (info.stereo_format && info.stereo_format !== prevBackendFormat)) {
+                this.streamFormatOverride = null;
+            }
+
+            this.streamItem.stream_info = { ...this.streamItem.stream_info, ...info };
+            if (info.stereo_format) {
+                this.streamItem.stereo_format = info.stereo_format;
+            }
+            if (info.width && info.height) {
+                const fps = info.fps || this.streamItem.stream_info?.fps || 30;
+                this.streamItem.name = `Desktop (${info.width}x${info.height} ${fps}fps)`;
+            }
+
+            const finalFormat = this.streamFormatOverride || this.streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
+            if (finalFormat !== this.activeScreen.currentStereoFormat) {
+                await this.switchScreen(finalFormat);
+                await this.uiManager.settingsManager.applyForLoadedFile(this.activeScreen.screenType);
+            }
+
+            const aspectRatio = (info.width && info.height)
+                ? (info.width / info.height)
+                : (this.playbackController.mjpegStream?.aspectRatio || this.activeScreen.aspectRatio);
+            const tex = this.playbackController.streamTexture;
+            if (tex) {
+                this.activeScreen.updateTexture(tex, aspectRatio, finalFormat);
+            }
+            this.uiManager.syncUI(true);
+        } catch (e) {
+            this.debugLogInstance?.log(`[ERROR] Stream update failed: ${e.message}`);
+            if (!this.renderer.xr.isPresenting) {
+                window.location.reload();
+            }
+        }
     }
 
     async loadSubtitles(path) {
@@ -674,6 +841,11 @@ class StereoPlayer extends THREE.Group {
                 videoTex.needsUpdate = true;
             }
             this.renderer.initTexture(videoTex);
+        }
+
+        const streamTex = this.playbackController.streamTexture;
+        if (streamTex && this.playbackController.consumeNewStreamFrame()) {
+            this.renderer.initTexture(streamTex);
         }
     }
 

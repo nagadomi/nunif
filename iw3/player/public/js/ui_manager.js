@@ -25,6 +25,7 @@ class UIManager extends THREE.Group {
         this.debugLogInstance = debugLogInstance;
         this.stereoPlayer = stereoPlayer;
         this.settingsManager = new SettingsManager(this);
+        this.appConfig = this.stereoPlayer?.appConfig || { mode: 'player', features: { file_library: true, desktop_stream: false } };
 
         this.pixelSize = UI_CONFIG.pixelSize;
         this.renderer.setTransparentSort(reversePainterSortStable);
@@ -93,16 +94,46 @@ class UIManager extends THREE.Group {
         this.lastStatusUpdateTime = 0;
         this.lastOcclusionUpdateTime = 0;
 
-        this.initAsync();
+        this.ready = this.initAsync();
         this.scene.add(this);
     }
 
+    get hasFileLibrary() {
+        return this.appConfig?.features?.file_library !== false;
+    }
+
+    get isStreamActive() {
+        return !!this.stereoPlayer?.playbackController?.isStreamActive;
+    }
+
+    setAppConfig(config) {
+        if (config) {
+            this.appConfig = config;
+        }
+        if (!this.hasFileLibrary) {
+            this.hideRecentButton();
+            if (this.activeSubMenu === this.explorer) {
+                this.switchSubMenu(null);
+            }
+            if (!this.renderer.xr.isPresenting) {
+                this.hideMainMenu(true);
+            }
+        }
+        this.mainMenu?.applyAppConfig?.(this.appConfig);
+    }
+
     async initAsync() {
-        await storage.ready;
+        await Promise.all([
+            storage.ready,
+            this.stereoPlayer?.configReady?.then((cfg) => {
+                if (cfg) this.appConfig = cfg;
+            }),
+        ]);
         await this.settingsManager.init();
         this.galleryManager.loadSettings();
 
         this.setupUI();
+        this.mainMenu.applyAppConfig(this.appConfig);
         this.updateMenuPositions();
 
         this.settingsManager.applyAll();
@@ -111,13 +142,15 @@ class UIManager extends THREE.Group {
         this.fetchLuts();
 
         // Check for recent file
-        const recentPath = storage.get('recent_path');
-        const recentFile = storage.get('recent_file_name');
-        if (recentPath && recentFile) {
-            this.mainMenu.recentButton.setProperties({ display: 'flex' });
-        }
+        if (this.hasFileLibrary) {
+            const recentPath = storage.get('recent_path');
+            const recentFile = storage.get('recent_file_name');
+            if (recentPath && recentFile) {
+                this.mainMenu.recentButton.setProperties({ display: 'flex' });
+            }
 
-        this.showMainMenu();
+            this.showMainMenu();
+        }
     }
 
     async toggleMenuAlignment() {
@@ -263,6 +296,9 @@ class UIManager extends THREE.Group {
     }
 
     get currentItem() {
+        if (this.stereoPlayer?.streamItem && this.isStreamActive) {
+            return this.stereoPlayer.streamItem;
+        }
         return this.galleryManager ? this.galleryManager.getCurrentItem() : null;
     }
 
@@ -767,6 +803,10 @@ class UIManager extends THREE.Group {
     }
 
     async onFormatChange(fmt) {
+        if (this.isStreamActive && this.stereoPlayer) {
+            await this.stereoPlayer.loadStream(fmt);
+            return;
+        }
         if (this.galleryManager.playingIndex !== -1) {
             await this.loadMedia(this.galleryManager.playingIndex, fmt);
         }
@@ -788,10 +828,11 @@ class UIManager extends THREE.Group {
         const now = performance.now();
         const slowMetricsUpdated = (now - this.lastStatusUpdateTime > 1000) || updateSlowMetrics;
         const isVideo = !!this.videoElement;
+        const isStreamActive = this.isStreamActive;
 
         const mainParams = {
             videoProgress: isVideo ? (this.videoElement.currentTime / this.videoElement.duration || 0) : 0,
-            isPlaying: isVideo && !this.videoElement.paused,
+            isPlaying: this.stereoPlayer ? this.stereoPlayer.isPlaying : false,
             volume: this.currentVolume,
             isMuted: this.isMuted,
             speed: this.playbackRate,
@@ -802,6 +843,7 @@ class UIManager extends THREE.Group {
         if (slowMetricsUpdated) {
             mainParams.currentFileName = this.currentItem ? this.currentItem.name : "";
             mainParams.isVideoActive = isVideo;
+            mainParams.isStreamActive = isStreamActive;
             mainParams.fps = this.currentFPS;
             mainParams.slowMetricsUpdated = true;
         }

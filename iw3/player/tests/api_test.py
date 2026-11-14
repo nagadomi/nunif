@@ -1,5 +1,7 @@
+import asyncio
 import os
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +11,8 @@ from PIL import Image as PILImage
 
 from ..app import app
 from ..media_library import MediaLibrary
+from ..server_state import ServerState
+from ..stream_hub import StreamFrameHub
 
 
 @pytest.fixture
@@ -196,3 +200,140 @@ def test_api_files_with_broken_symlinks(test_setup):
                 os.unlink(broken_link)
             except OSError:
                 pass
+
+
+def test_api_config_player_mode(test_setup):
+    client = test_setup.client
+    res = client.get("/api/config")
+    assert res.status_code == 200
+    assert res.json() == {
+        "mode": "player",
+        "features": {
+            "file_library": True,
+            "desktop_stream": False,
+        },
+    }
+    assert client.get("/api/stream/info").status_code == 404
+    assert client.get("/process_token").status_code == 404
+    assert client.get("/stream.jpg").status_code == 404
+
+
+def test_stream_frame_hub():
+    hub = StreamFrameHub(frame_width=1920, frame_height=1080, fps=30, stereo_format="SBS_HALF")
+    assert hub.get_frame_data() is None
+    assert hub.get_fps() == 0.0
+
+    info = hub.get_stream_info()
+    assert info["width"] == 1920
+    assert info["height"] == 1080
+    assert info["fps"] == 30
+    assert info["stereo_format"] == "SBS_HALF"
+    assert info["stream_uri"] == "/stream.jpg"
+    assert len(info["process_token"]) == 16
+
+    hub.set_frame_data((b"frame1", 1.0))
+    assert hub.get_frame_data() == (b"frame1", 1.0)
+    # Consuming clears frame_data_raw while retaining last frame_data
+    assert hub.get_frame_data() == (b"frame1", 1.0)
+
+    called = 0
+
+    def lazy_provider():
+        nonlocal called
+        called += 1
+        return (b"frame2", 2.0)
+
+    hub.set_frame_data(lazy_provider)
+    assert hub.get_frame_data() == (b"frame2", 2.0)
+    assert called == 1
+    assert hub.get_frame_data() == (b"frame2", 2.0)
+    assert called == 1
+
+    async def read_one_part():
+        hub.set_frame_data((b"\xff\xd8\xff\xd9", time.perf_counter() + 10.0))
+        gen = hub.async_stream_generator()
+        chunk = await anext(gen)
+        hub.shutdown_event.set()
+        with pytest.raises(StopAsyncIteration):
+            await anext(gen)
+        return chunk
+
+    part = asyncio.run(read_one_part())
+    assert b"--frame\r\n" in part
+    assert b"Content-Type: image/jpeg\r\n" in part
+    assert b"Content-Length: 4\r\n\r\n\xff\xd8\xff\xd9\r\n" in part
+
+
+def test_api_desktop_stream_mode(tmp_path):
+    secret_file = tmp_path / "secret.txt"
+    secret_file.write_bytes(b"16bytessecretkey")
+    hub = StreamFrameHub(frame_width=3840, frame_height=1080, fps=60, stereo_format="SBS_FULL")
+    state = ServerState(
+        SimpleNamespace(
+            mode="desktop",
+            enable_file_library=False,
+            stream_hub=hub,
+            secret_key_file=str(secret_file),
+        )
+    )
+    assert state.cache_db is None
+
+    prev_state = getattr(app.state, "server_state", None)
+    prev_lib = getattr(app.state, "media_library", None)
+    app.state.server_state = state
+    app.state.media_library = None
+    try:
+        client = TestClient(app)
+
+        res_cfg = client.get("/api/config")
+        assert res_cfg.status_code == 200
+        assert res_cfg.json() == {
+            "mode": "desktop",
+            "features": {
+                "file_library": False,
+                "desktop_stream": True,
+            },
+        }
+
+        res_info = client.get("/api/stream/info")
+        assert res_info.status_code == 200
+        info = res_info.json()
+        assert info["width"] == 3840
+        assert info["height"] == 1080
+        assert info["fps"] == 60
+        assert info["stereo_format"] == "SBS_FULL"
+        assert info["process_token"] == hub.process_token
+
+        res_token = client.get("/process_token")
+        assert res_token.status_code == 200
+        assert res_token.json() == {"token": hub.process_token}
+
+        assert client.get("/api/files?path=/").status_code == 404
+
+        def one_shot_frame():
+            hub.shutdown_event.set()
+            return (b"\xff\xd8TEST\xff\xd9", 100.0)
+
+        hub.set_frame_data(one_shot_frame)
+        res_stream = client.get("/stream.jpg")
+        assert res_stream.status_code == 200
+        assert "multipart/x-mixed-replace" in res_stream.headers["content-type"]
+        assert b"Content-Length: 8\r\n\r\n\xff\xd8TEST\xff\xd9\r\n" in res_stream.content
+    finally:
+        hub.shutdown_event.set()
+        state.close()
+        app.state.server_state = prev_state
+        app.state.media_library = prev_lib
+
+
+def test_resolve_player_stereo_format():
+    from iw3.desktop.utils import resolve_player_stereo_format
+
+    assert resolve_player_stereo_format(SimpleNamespace(half_sbs=True)) == "SBS_HALF"
+    assert resolve_player_stereo_format(SimpleNamespace(full_sbs=True)) == "SBS_FULL"
+    assert resolve_player_stereo_format(SimpleNamespace(half_tb=True)) == "TB_HALF"
+    assert resolve_player_stereo_format(SimpleNamespace(tb=True)) == "TB_FULL"
+    assert resolve_player_stereo_format(SimpleNamespace(cross_eyed=True)) == "SBS_FULL_CROSS"
+    assert resolve_player_stereo_format(SimpleNamespace(vr180=True)) == "SBS_180"
+    assert resolve_player_stereo_format(SimpleNamespace(anaglyph="dubois")) == "FLAT"
+    assert resolve_player_stereo_format(SimpleNamespace()) == "SBS_HALF"
