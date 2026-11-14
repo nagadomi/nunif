@@ -6,9 +6,16 @@ import secrets
 import socket
 import sys
 import threading
+from typing import cast
 
-from hypercorn.asyncio import serve
+from hypercorn.asyncio.lifespan import Lifespan
+from hypercorn.asyncio.tcp_server import TCPServer
+from hypercorn.asyncio.worker_context import WorkerContext
 from hypercorn.config import Config
+from hypercorn.events import Closed
+from hypercorn.typing import Event as HypercornEvent
+from hypercorn.typing import Framework, LifespanState
+from hypercorn.utils import repr_socket_addr, wrap_app
 
 from .app import app
 from .dir_config import CACHE_DIR, CERT_DIR, EXAMPLE_DIR
@@ -146,37 +153,181 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
         }
 
 
-async def serve_with_watchdog(args, config, shutdown_event):
-    stop_event = getattr(args, "state", {}).get("stop_event")
-    server_task = asyncio.create_task(serve(app, config, shutdown_trigger=shutdown_event.wait))
-    try:
-        if stop_event:
-            while not stop_event.is_set():
-                if server_task.done():
-                    break
-                await asyncio.sleep(0.1)
-        else:
-            await server_task
-    finally:
-        if not server_task.done():
-            shutdown_event.set()
-            timeout = (config.graceful_timeout or 0) + 1.0
-            try:
-                await asyncio.wait_for(server_task, timeout=timeout)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                if not server_task.done():
-                    print("Graceful shutdown timed out, cancelling server task...")
-                    server_task.cancel()
-                    try:
-                        await server_task
-                    except asyncio.CancelledError:
-                        pass
+def _notify_stream_shutdown(args: argparse.Namespace) -> None:
+    stream_hub = getattr(args, "stream_hub", None)
+    if stream_hub is None and hasattr(app.state, "server_state") and app.state.server_state is not None:
+        stream_hub = getattr(app.state.server_state, "stream_hub", None)
+    if stream_hub is not None:
+        stream_hub.shutdown_event.set()
+        stream_hub.clear_frames(stop_clients=True)
 
-        if server_task.done():
+
+async def _wait_for_shutdown_signal(
+    stop_event: threading.Event | None,
+    shutdown_event: asyncio.Event,
+    terminate_event: HypercornEvent,
+) -> None:
+    if stop_event is not None:
+        while not stop_event.is_set() and not shutdown_event.is_set() and not terminate_event.is_set():
+            await asyncio.sleep(0.05)
+        return
+
+    shutdown_task = asyncio.create_task(shutdown_event.wait())
+    terminate_task = asyncio.create_task(terminate_event.wait())
+    try:
+        await asyncio.wait({shutdown_task, terminate_task}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in (shutdown_task, terminate_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(shutdown_task, terminate_task, return_exceptions=True)
+
+
+async def _close_pending_connections(
+    active_connections: dict[asyncio.Task[None], TCPServer],
+    graceful_timeout: float | None,
+) -> None:
+    async def _wait_active(timeout: float | None) -> set[asyncio.Task[None]]:
+        if not active_connections:
+            return set()
+        _, pending_tasks = await asyncio.wait(list(active_connections.keys()), timeout=timeout)
+        return pending_tasks
+
+    pending = await _wait_active(graceful_timeout)
+    if not pending:
+        return
+
+    # Close protocols before cancelling tasks so Hypercorn's h2/TaskGroup does not
+    # schedule _idle_timeout onto a shutting-down TaskGroup.
+    close_tasks: list[asyncio.Task[None]] = []
+    for task in list(pending):
+        tcp_server = active_connections.get(task)
+        if tcp_server is None:
+            continue
+        if hasattr(tcp_server, "protocol"):
+            close_tasks.append(asyncio.create_task(tcp_server.protocol.handle(Closed())))
+        try:
+            tcp_server.writer.close()
+        except Exception:
+            pass
+
+    pending = await _wait_active(0.5)
+
+    if pending:
+        for task in list(pending):
+            tcp_server = active_connections.get(task)
+            if tcp_server is not None:
+                transport = getattr(tcp_server.writer, "transport", None)
+                if transport is not None:
+                    transport.abort()
+        pending = await _wait_active(0.5)
+
+    for close_task in close_tasks:
+        if not close_task.done():
+            close_task.cancel()
+    if close_tasks:
+        await asyncio.gather(*close_tasks, return_exceptions=True)
+
+    for _ in range(2):
+        if not pending:
+            break
+        for task in list(pending):
+            task.cancel()
+        _, pending = await asyncio.wait(pending, timeout=0.5)
+
+
+async def serve_with_watchdog(
+    args: argparse.Namespace,
+    config: Config,
+    shutdown_event: asyncio.Event,
+) -> None:
+    stop_event = getattr(args, "state", {}).get("stop_event")
+    loop = asyncio.get_running_loop()
+    wrapped_app = wrap_app(cast(Framework, app), config.wsgi_max_body_size, "asgi")
+    lifespan_state: LifespanState = {}
+    lifespan = Lifespan(wrapped_app, config, loop, lifespan_state)
+    lifespan_task = loop.create_task(lifespan.handle_lifespan())
+
+    context = WorkerContext(None)
+    servers: list[asyncio.Server] = []
+    active_connections: dict[asyncio.Task[None], TCPServer] = {}
+    interrupted = False
+
+    async def _server_callback(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.current_task(loop)
+        tcp_server = TCPServer(wrapped_app, loop, config, context, lifespan_state, reader, writer)
+        if task is not None:
+            active_connections[task] = tcp_server
+            task.add_done_callback(lambda t: active_connections.pop(t, None))
+        await tcp_server
+
+    try:
+        await lifespan.wait_for_startup()
+        if lifespan_task.done():
+            exception = lifespan_task.exception()
+            if exception is not None:
+                raise exception
+
+        sockets = config.create_sockets()
+        ssl_context = config.create_ssl_context() if config.ssl_enabled else None
+        ssl_handshake_timeout = config.ssl_handshake_timeout if config.ssl_enabled else None
+
+        for sock in sockets.secure_sockets:
+            servers.append(
+                await asyncio.start_server(
+                    _server_callback,
+                    backlog=config.backlog,
+                    ssl=ssl_context,
+                    sock=sock,
+                    ssl_handshake_timeout=ssl_handshake_timeout,
+                )
+            )
+            bind = repr_socket_addr(sock.family, sock.getsockname())
+            await config.log.info(f"Running on https://{bind} (CTRL + C to quit)")
+
+        for sock in sockets.insecure_sockets:
+            servers.append(await asyncio.start_server(_server_callback, backlog=config.backlog, sock=sock))
+            bind = repr_socket_addr(sock.family, sock.getsockname())
+            await config.log.info(f"Running on http://{bind} (CTRL + C to quit)")
+
+        try:
+            await _wait_for_shutdown_signal(stop_event, shutdown_event, context.terminate)
+        except asyncio.CancelledError:
+            interrupted = True
+            current_task = asyncio.current_task(loop)
+            if current_task is not None:
+                current_task.uncancel()
+    finally:
+        _notify_stream_shutdown(args)
+        await context.terminated.set()
+
+        # Close listening sockets first without calling wait_closed(), which in
+        # Python 3.12+ blocks until all active client connections disconnect.
+        for server in servers:
+            server.close()
+
+        await _close_pending_connections(active_connections, config.graceful_timeout)
+
+        for server in servers:
             try:
-                await server_task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(server.wait_closed(), timeout=1.0)
+            except asyncio.TimeoutError:
                 pass
+
+        try:
+            await asyncio.wait_for(lifespan.wait_for_shutdown(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass
+
+        if not lifespan_task.done():
+            lifespan_task.cancel()
+        try:
+            await lifespan_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    if interrupted:
+        print("\nShutdown requested by user (Ctrl+C)")
 
 
 def server_main(args, init_wxapp=True):
@@ -267,9 +418,8 @@ def server_main(args, init_wxapp=True):
         print("\nShutdown requested by user (Ctrl+C)")
     finally:
         state.close()
-
-    if args.state.get("stop_event") and args.state["stop_event"].is_set():
-        args.state["stop_event"].clear()
+        if args.state.get("stop_event") and args.state["stop_event"].is_set():
+            args.state["stop_event"].clear()
 
     return args
 
