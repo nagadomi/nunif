@@ -59,6 +59,7 @@ python -m iw3.player --root /path/to/your/media
 - `--bind-addr IP`: IP address (default: local IP address)
 - `--user USER` / `--password PASS`: Username and password for authentication
 - `--clear-cache`: Clear thumbnail cache on startup
+- `--enable-stream`: Enable real-time PC desktop 3D streaming (`iw3-desktop` options such as `--screenshot`, `--stream-fps`, and `--stream-height` are also available; see [iw3-desktop documentation](../docs/desktop.md))
 
 Once the server is running, access the URL displayed in the terminal or GUI (e.g., `https://[IP address]:1304`) using the browser on your VR device.
 
@@ -74,6 +75,21 @@ During your first visit, your browser will display a security warning (e.g., "Yo
 **Tip:** Bookmarking this page will allow you to skip this warning in the future. 
 
 While browsers typically discourage trusting local servers in this manner, it is a necessary workaround for local WebXR development.
+
+## Desktop Streaming and Audio Output
+
+When `--enable-stream` is enabled (or enabled from the GUI), you can stream your PC desktop in 3D inside `iw3-player`.
+
+Audio behavior differs between **local video file playback** and **desktop streaming**, and also between **standalone VR browsers** and **PCVR**:
+
+- **Local Video Playback (HTML5 `<video>`)**:
+  - Audio is decoded and played by the browser.
+  - **Standalone VR Browser (e.g., Meta Quest Browser)**: Audio is played directly on the VR headset.
+  - **PCVR (e.g., SteamVR via a PC browser)**: Audio is played through the PC's audio output, which PCVR environments such as SteamVR normally route to the VR headset automatically.
+- **Desktop Streaming (`--enable-stream`)**:
+  - Desktop streaming transmits video frames only (MJPEG without an audio track) and does not stream audio over the network.
+  - **Standalone VR Browser (e.g., Meta Quest Browser)**: Audio is **not** sent to the VR headset; it continues to play from the **PC's speakers or headphones**. PC control also requires the PC's keyboard and mouse.
+  - **PCVR (e.g., SteamVR via a PC browser)**: Because the PCVR environment (such as SteamVR) routes the PC's audio output to the VR headset, **desktop audio is still heard on the VR headset** without extra setup (unless configured to output to PC speakers/headphones).
 
 ## UI and Controls
 

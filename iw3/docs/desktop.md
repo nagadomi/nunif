@@ -6,7 +6,10 @@
 
 `iw3-desktop` is a tool that converts your PC desktop screen into 3D in real-time and streams it over Wi-Fi. It can be viewed as side-by-side 3D from the browser on VR devices like Meta Quest.
 
-You can watch any image and video displayed on your PC in real-time within a VR space. To control the PC, you will continue to use the PC's keyboard and mouse, and audio will also be output from the PC. The VR device functions solely as a display.
+You can watch any image and video displayed on your PC in real-time within a VR space. Note that `iw3-desktop` itself streams video only (without audio or remote input):
+
+*   **Standalone VR Browser (e.g., Meta Quest Browser)**: To control the PC, you continue to use the PC's keyboard and mouse, and audio is output from the PC (speakers/headphones). The VR device functions solely as a display.
+*   **PCVR (e.g., SteamVR / Local Viewer with VR desktop software)**: Audio is output through the PC's configured audio device. In PCVR environments such as SteamVR, PC audio is normally routed to the VR headset automatically (unless configured to use PC speakers/headphones). Input/control behavior depends on the PCVR environment or VR desktop software being used.
 
 Please be aware of 3D sickness, as the depth estimation results for GUI windows and text may not be perfect. This tool is primarily intended for full-screen playback of images and videos.
 
