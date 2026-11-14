@@ -1,4 +1,5 @@
 import argparse
+import copy
 import math
 import sys
 import threading
@@ -570,33 +571,36 @@ def run_desktop_processing_loop(
     frame_height = pipeline.frame_height
 
     while True:
+        tick = time.perf_counter()
+        frame = screenshot_thread.get_frame()
+        if frame is None:
+            break
+
         with args.state["args_lock"]:
-            tick = time.perf_counter()
-            frame = screenshot_thread.get_frame()
-            if frame is None:
-                break
-            sbs = IW3U.process_image(frame, args, depth_model, side_model, autocrop_uncrop=True)
-            push_stream_frame(frame_sink, sbs, args, tick)
+            frame_args = copy.copy(args)
 
-            if count > 1 and tick - last_status_time > 1:
-                last_status_time = tick
-                mean_processing_time = sum(fps_counter) / len(fps_counter)
-                estimated_fps = 1.0 / mean_processing_time
-                screen_size_tuple = (screen_size, (frame_width, frame_height))
-                if args.state["fps_event"] is not None:
-                    args.state["fps_event"].update(
-                        estimated_fps, screenshot_thread.get_fps(), frame_sink.get_fps(), screen_size_tuple
-                    )
-                else:
-                    print(
-                        f"\rEstimated FPS = {estimated_fps:.02f}, "
-                        f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                        f"Streaming FPS = {frame_sink.get_fps():.02f}, "
-                        f"Screen Size = {screen_size_tuple}",
-                        end="",
-                    )
+        sbs = IW3U.process_image(frame, frame_args, depth_model, side_model, autocrop_uncrop=True)
+        push_stream_frame(frame_sink, sbs, frame_args, tick)
 
-        if getattr(args, "local_viewer", False):
+        if count > 1 and tick - last_status_time > 1:
+            last_status_time = tick
+            mean_processing_time = sum(fps_counter) / len(fps_counter)
+            estimated_fps = 1.0 / mean_processing_time
+            screen_size_tuple = (screen_size, (frame_width, frame_height))
+            if args.state["fps_event"] is not None:
+                args.state["fps_event"].update(
+                    estimated_fps, screenshot_thread.get_fps(), frame_sink.get_fps(), screen_size_tuple
+                )
+            else:
+                print(
+                    f"\rEstimated FPS = {estimated_fps:.02f}, "
+                    f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
+                    f"Streaming FPS = {frame_sink.get_fps():.02f}, "
+                    f"Screen Size = {screen_size_tuple}",
+                    end="",
+                )
+
+        if getattr(frame_args, "local_viewer", False):
             # Platform-specific behavior for local viewer
             if sys.platform != "win32":
                 # Linux: Use wx.Yield() (original working behavior)
@@ -605,18 +609,18 @@ def run_desktop_processing_loop(
             if frame_sink.is_closed():
                 break
 
-        if prev_divergence != args.divergence:
-            if args.method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
+        if prev_divergence != frame_args.divergence:
+            if frame_args.method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
                 side_model = try_switch_mlbw_model(
                     old_divergence=prev_divergence,
-                    new_divergence=args.divergence,
+                    new_divergence=frame_args.divergence,
                     old_side_model=side_model,
-                    args=args,
+                    args=frame_args,
                 )
-            prev_divergence = args.divergence
+            prev_divergence = frame_args.divergence
 
         process_time = time.perf_counter() - tick
-        wait_time = max((1 / args.stream_fps) - process_time, 0)
+        wait_time = max((1 / frame_args.stream_fps) - process_time, 0)
         time.sleep(wait_time)
         fps_counter.append(process_time)
         count += 1
