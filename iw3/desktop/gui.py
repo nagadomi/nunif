@@ -48,6 +48,7 @@ from .utils import (
     iw3_desktop_main,
     create_parser,
     set_state_args,
+    read_runtime_adjustment_values,
     get_monitor_size_list,
     enum_window_names,
     is_mss_supported,
@@ -164,6 +165,7 @@ class MainFrame(wx.Frame):
         self.processing = False
         self.args = None
         self.args_lock = threading.Lock()
+        self._last_synced_adj = None
         self.initialize_component()
         if is_dark_mode():
             apply_dark_mode(self)
@@ -842,17 +844,36 @@ class MainFrame(wx.Frame):
             self.sld_adj_foreground_scale.SetValue(foreground_scale)
             self.sld_adj_edge_dilation.SetValue(edge_dilation)
             self.cbo_adj_edge_dilation_y.SetValue(edge_dilation_y)
+            self._last_synced_adj = read_runtime_adjustment_values(self.args, self.args_lock)
         else:
             divergence = self.sld_adj_divergence.GetValue()
             convergence = self.sld_adj_convergence.GetValue()
             foreground_scale = self.sld_adj_foreground_scale.GetValue()
             edge_dilation = self.sld_adj_edge_dilation.GetValue()
             edge_dilation_y = self.cbo_adj_edge_dilation_y.GetValue()
-            self.cbo_divergence.SetValue(str(divergence))
-            self.cbo_convergence.SetValue(str(convergence))
-            self.cbo_foreground_scale.SetValue(str(foreground_scale))
+            self.cbo_divergence.SetValue(str(round(float(divergence), 4)))
+            self.cbo_convergence.SetValue(str(round(float(convergence), 4)))
+            self.cbo_foreground_scale.SetValue(str(round(float(foreground_scale), 4)))
             self.cbo_edge_dilation.SetValue(str(edge_dilation))
             self.cbo_edge_dilation_y.SetValue(edge_dilation_y)
+
+    def _apply_args_to_adj_controls(self, args):
+        current = read_runtime_adjustment_values(args, self.args_lock)
+        if current is None or current == self._last_synced_adj:
+            return
+        divergence, convergence, foreground_scale, edge_x, edge_y = current
+        prev = self._last_synced_adj
+        if prev is None or prev[0] != divergence:
+            self.sld_adj_divergence.SetValue(divergence)
+        if prev is None or prev[1] != convergence:
+            self.sld_adj_convergence.SetValue(convergence)
+        if prev is None or prev[2] != foreground_scale:
+            self.sld_adj_foreground_scale.SetValue(foreground_scale)
+        if prev is None or prev[3] != edge_x:
+            self.sld_adj_edge_dilation.SetValue(edge_x)
+        if prev is None or prev[4] != edge_y:
+            self.cbo_adj_edge_dilation_y.SetValue(edge_y)
+        self._last_synced_adj = current
 
     def update_args_adjustment(self, event):
         if self.args is None:
@@ -870,17 +891,28 @@ class MainFrame(wx.Frame):
 
             if edge_dilation_y:
                 try:
-                    self.args.edge_dilation = [edge_dilation, int(edge_dilation_y)]
+                    edge_y_int = int(edge_dilation_y)
+                    self.args.edge_dilation = [edge_dilation, edge_y_int]
+                    edge_y_str = str(edge_y_int)
                 except ValueError:
                     self.args.edge_dilation = edge_dilation
+                    edge_y_str = ""
             else:
                 self.args.edge_dilation = edge_dilation
+                edge_y_str = ""
 
             if self.args.state["depth_model"]:
                 is_metric = self.args.state["depth_model"].is_metric()
                 self.args.mapper = IW3U.resolve_mapper_name(
                     mapper=None, foreground_scale=self.args.foreground_scale, metric_depth=is_metric
                 )
+            self._last_synced_adj = (
+                float(divergence),
+                float(convergence),
+                float(foreground_scale),
+                int(edge_dilation),
+                edge_y_str,
+            )
 
     def update_bind_addr_state(self, *args, **kwargs):
         if not self.chk_bind_addr.IsChecked():
@@ -1174,6 +1206,8 @@ class MainFrame(wx.Frame):
             )
         if url:
             self.txt_url.SetValue(url)
+        if self.args is not None:
+            self._apply_args_to_adj_controls(self.args)
 
     def on_click_btn_start(self, event):
         self.args = self.parse_args()
@@ -1205,8 +1239,10 @@ class MainFrame(wx.Frame):
 
     def on_exit_worker(self, result):
         error_info = None
+        final_args = None
         try:
             args = result.get()
+            final_args = args
             self.depth_model = args.state["depth_model"]
             self.depth_model_type = args.depth_model
             self.depth_model_device_id = args.gpu
@@ -1214,6 +1250,7 @@ class MainFrame(wx.Frame):
 
             self.SetStatusText(T("Shutdown"))
         except:  # noqa
+            final_args = self.args
             if (
                 self.args is not None
                 and self.args.state.get("depth_model") is not None
@@ -1230,6 +1267,8 @@ class MainFrame(wx.Frame):
             traceback.print_tb(tb)
             error_info = (message, f"{T('Error')}: {e.__class__.__name__}")
 
+        if final_args is not None:
+            self._apply_args_to_adj_controls(final_args)
         self.args = None
         self.processing = False
         self.btn_cancel.Disable()
@@ -1242,6 +1281,7 @@ class MainFrame(wx.Frame):
         self.grp_network.Show()
         self.grp_adjustment.Hide()
         self.sync_adj_controls(to=False)
+        self._last_synced_adj = None
         refresh_layouts(self)
         wx.CallAfter(refresh_layouts, self)
 

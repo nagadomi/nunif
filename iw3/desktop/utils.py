@@ -380,6 +380,38 @@ def get_runtime_stream_settings(args: Any) -> dict[str, Any]:
     return _read()
 
 
+def read_runtime_adjustment_values(args: Any, lock: Any = None) -> tuple[float, float, float, int, str] | None:
+    if args is None:
+        return None
+    if lock is None:
+        state = getattr(args, "state", None)
+        lock = state.get("args_lock") if isinstance(state, dict) else None
+
+    def _read() -> tuple[float, float, float, int, str]:
+        edge_dilation = args.edge_dilation
+        if isinstance(edge_dilation, (list, tuple)) and len(edge_dilation) >= 2:
+            edge_x = int(edge_dilation[0])
+            edge_y = str(int(edge_dilation[1]))
+        elif isinstance(edge_dilation, (list, tuple)) and len(edge_dilation) == 1:
+            edge_x = int(edge_dilation[0])
+            edge_y = ""
+        else:
+            edge_x = int(edge_dilation)
+            edge_y = ""
+        return (
+            float(args.divergence),
+            float(args.convergence),
+            float(args.foreground_scale),
+            edge_x,
+            edge_y,
+        )
+
+    if lock is not None:
+        with lock:
+            return _read()
+    return _read()
+
+
 def update_runtime_stream_settings(args: Any, updates: dict[str, Any]) -> dict[str, Any]:
     state = getattr(args, "state", None)
     args_lock = state.get("args_lock") if isinstance(state, dict) else None
@@ -390,6 +422,9 @@ def update_runtime_stream_settings(args: Any, updates: dict[str, Any]) -> dict[s
             args.divergence = float(updates["divergence"])
         if updates.get("convergence") is not None:
             args.convergence = float(updates["convergence"])
+            convergence_model = state.get("convergence_model") if isinstance(state, dict) else None
+            if convergence_model is not None:
+                convergence_model.convergence = args.convergence
         if updates.get("ipd_offset") is not None:
             args.ipd_offset = float(updates["ipd_offset"])
         if updates.get("foreground_scale") is not None:

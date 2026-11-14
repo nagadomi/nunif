@@ -516,6 +516,7 @@ class StereoPlayer extends THREE.Group {
 
         const { detail } = result;
         this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
+        this.uiManager?.streamSettings?.fetchSettings?.();
         this.uiManager.syncUI(true);
         return true;
     }
@@ -525,6 +526,9 @@ class StereoPlayer extends THREE.Group {
         this.streamItem = null;
         this.streamFormatOverride = null;
         this.activeScreen.clearScreen();
+        if (this.uiManager?.activeSubMenu === this.uiManager?.streamSettings) {
+            this.uiManager.switchSubMenu(null);
+        }
         this.uiManager.syncUI(true);
     }
 
@@ -558,6 +562,7 @@ class StereoPlayer extends THREE.Group {
             if (tex) {
                 this.activeScreen.updateTexture(tex, aspectRatio, finalFormat);
             }
+            this.uiManager?.streamSettings?.fetchSettings?.();
             this.uiManager.syncUI(true);
         } catch (e) {
             this.debugLogInstance?.log(`[ERROR] Stream update failed: ${e.message}`);

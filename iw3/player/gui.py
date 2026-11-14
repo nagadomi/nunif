@@ -143,6 +143,8 @@ class MainFrame(wx.Frame):
         self.depth_model_height = None
         self._desktop_ui_initialized = False
         self._enable_gpu_jpeg = False
+        self._read_runtime_adjustment_values = None
+        self._last_synced_stream_settings = None
         self.network_stream_widgets: list[wx.Window] = []
         self.processing = False
         self.args = None
@@ -332,6 +334,7 @@ class MainFrame(wx.Frame):
             is_mss_supported,
             is_obs_supported,
             is_wayland,
+            read_runtime_adjustment_values,
         )
         from nunif.device import create_device, mps_is_available, xpu_is_available
         from nunif.initializer import gc_collect
@@ -346,6 +349,7 @@ class MainFrame(wx.Frame):
         self._check_compile_support = check_compile_support
         self._gc_collect = gc_collect
         self._enable_gpu_jpeg = ENABLE_GPU_JPEG
+        self._read_runtime_adjustment_values = read_runtime_adjustment_values
         self._has_obs = is_obs_supported()
         self._has_kwcapture = is_kwcapture_supported()
 
@@ -1255,8 +1259,37 @@ class MainFrame(wx.Frame):
         )
         return args
 
+    def _sync_stream_settings_to_gui(self, args):
+        if (
+            not self._desktop_ui_initialized
+            or self._read_runtime_adjustment_values is None
+            or args is None
+            or not getattr(args, "enable_stream", False)
+        ):
+            return
+        current = self._read_runtime_adjustment_values(args, self.args_lock)
+        if current is None:
+            return
+        prev = self._last_synced_stream_settings
+        if current == prev:
+            return
+        div, conv, fg, edge_x, edge_y = current
+        if prev is None or div != prev[0]:
+            self.cbo_divergence.SetValue(f"{div:.2f}".rstrip("0").rstrip("."))
+        if prev is None or conv != prev[1]:
+            self.cbo_convergence.SetValue(f"{conv:.2f}".rstrip("0").rstrip("."))
+        if prev is None or fg != prev[2]:
+            self.cbo_foreground_scale.SetValue(f"{fg:.2f}".rstrip("0").rstrip("."))
+        if prev is None or edge_x != prev[3]:
+            self.cbo_edge_dilation.SetValue(str(edge_x))
+        if prev is None or edge_y != prev[4]:
+            self.cbo_edge_dilation_y.SetValue(edge_y)
+        self._last_synced_stream_settings = current
+
     def on_fps(self, event):
         estimated_fps, screenshot_fps, streaming_fps, screen_size, url = event.GetValue()
+        if self.args is not None:
+            self._sync_stream_settings_to_gui(self.args)
         if url:
             self.txt_url.SetValue(url)
             self.btn_url.Enable()
@@ -1280,6 +1313,15 @@ class MainFrame(wx.Frame):
         if self.args is None:
             return
 
+        if (
+            self._desktop_ui_initialized
+            and self._read_runtime_adjustment_values is not None
+            and getattr(self.args, "enable_stream", False)
+        ):
+            self._last_synced_stream_settings = self._read_runtime_adjustment_values(self.args)
+        else:
+            self._last_synced_stream_settings = None
+
         self.stop_event.clear()
         self.btn_start.Disable()
         self.btn_stop.Enable()
@@ -1302,8 +1344,10 @@ class MainFrame(wx.Frame):
 
     def on_exit_worker(self, result):
         error_info = None
+        final_args = None
         try:
             args = result.get()
+            final_args = args
             if (
                 self._desktop_ui_initialized
                 and args is not None
@@ -1316,6 +1360,7 @@ class MainFrame(wx.Frame):
                 self.depth_model_height = args.resolution
             self.SetStatusText(T("Shutdown"))
         except Exception:
+            final_args = self.args
             if (
                 self._desktop_ui_initialized
                 and self.args is not None
@@ -1333,6 +1378,9 @@ class MainFrame(wx.Frame):
             traceback.print_tb(tb)
             error_info = (message, f"{T('Error')}: {e.__class__.__name__}")
 
+        if final_args is not None:
+            self._sync_stream_settings_to_gui(final_args)
+        self._last_synced_stream_settings = None
         self.args = None
         self.processing = False
         self.btn_start.Enable()

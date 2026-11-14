@@ -85,7 +85,11 @@ class MainMenu {
         row.add(group);
         const u = this.uiManager;
         
-        // Order: Screen, Color, Env, Subtitle | Render, Shutdown
+        // Order: Stream, Screen, Color, Env, Subtitle | Render, Shutdown
+        this.streamButton = UIUtils.createButton('icons/cast.svg', () => u.switchSubMenu(u.streamSettings), u, 22, 48);
+        this.streamButton.container.setProperties({ display: 'none' });
+        group.add(this.streamButton.container);
+
         this.screenButton = UIUtils.createButton('icons/device-desktop.svg', () => u.switchSubMenu(u.screenSettings), u, 22, 48);
         group.add(this.screenButton.container);
 
@@ -119,7 +123,7 @@ class MainMenu {
         this.explorerButton = UIUtils.createButton('icons/library-photo.svg', () => u.switchSubMenu(u.explorer), u);
         this.leftControlGroup.add(this.explorerButton.container);
 
-        this.desktopStreamButton = UIUtils.createButton('icons/device-desktop.svg', () => u.toggleDesktopStream(), u);
+        this.desktopStreamButton = UIUtils.createButton('icons/cast.svg', () => u.toggleDesktopStream(), u);
         this.desktopStreamButton.container.setProperties({ display: 'none' });
         this.leftControlGroup.add(this.desktopStreamButton.container);
 
@@ -366,7 +370,10 @@ class MainMenu {
             }
         }
 
-        const isStream = this.uiManager?.isStreamActive;
+        const isStream = !!this.uiManager?.isStreamActive;
+        const streamBtnDisplay = isStream ? 'flex' : 'none';
+        this._lastStreamBtnDisplay = streamBtnDisplay;
+        this.streamButton?.container?.setProperties({ display: streamBtnDisplay });
         const mediaBarsDisplay = (isDesktop || isStream) ? 'none' : 'flex';
         this._lastMediaBarsDisplay = mediaBarsDisplay;
         this.seekBarRow?.setProperties({ display: mediaBarsDisplay });
@@ -532,9 +539,17 @@ class MainMenu {
             }
         }
 
+        const currentIsStream = !!(params.isStreamActive ?? this.uiManager.isStreamActive);
+        const streamBtnDisplay = currentIsStream ? 'flex' : 'none';
+        if (this._lastStreamBtnDisplay !== streamBtnDisplay) {
+            this.streamButton?.container?.setProperties({ display: streamBtnDisplay });
+            this._lastStreamBtnDisplay = streamBtnDisplay;
+        }
+
         // --- Sub-menu selection highlight ---
         const activeMenu = this.uiManager.activeSubMenu;
         const menus = [
+            { btn: this.streamButton, target: this.uiManager.streamSettings },
             { btn: this.screenButton, target: this.uiManager.screenSettings },
             { btn: this.colorButton, target: this.uiManager.colorSettings },
             { btn: this.envButton, target: this.uiManager.environmentSettings },

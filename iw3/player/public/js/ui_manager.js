@@ -8,6 +8,7 @@ import { UIUtils, ThreeUtils } from './ui_common.js';
 
 // Import split UI components
 import { MainMenu } from './menu_main.js';
+import { StreamSettingsMenu } from './menu_stream_settings.js';
 import { ScreenSettingsMenu } from './menu_screen_settings.js';
 import { ColorSettingsMenu } from './menu_color_settings.js';
 import { EnvironmentSettingsMenu } from './menu_environment_settings.js';
@@ -165,7 +166,7 @@ class UIManager extends THREE.Group {
 
     updateMenuPositions() {
         const offset = this.menuAlignment === 'right' ? UI_CONFIG.menuMarginLeft : -UI_CONFIG.menuMarginLeft;
-        const targetMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
+        const targetMenus = [this.streamSettings, this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
         targetMenus.forEach(menu => {
             if (menu && menu.container) {
                 menu.container.setProperties({ marginLeft: offset });
@@ -242,6 +243,7 @@ class UIManager extends THREE.Group {
         this.add(this.mainContainer);
 
         this.mainMenu = new MainMenu(this, defaultFont);
+        this.streamSettings = new StreamSettingsMenu(this, defaultFont);
         this.screenSettings = new ScreenSettingsMenu(this, defaultFont);
         this.colorSettings = new ColorSettingsMenu(this, defaultFont);
         this.environmentSettings = new EnvironmentSettingsMenu(this, defaultFont);
@@ -249,7 +251,7 @@ class UIManager extends THREE.Group {
         this.subtitleSettings = new SubtitleSettingsMenu(this, defaultFont);
         this.explorer = new ExplorerWindow(this, defaultFont, this.galleryManager);
 
-        this.allSettingsMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
+        this.allSettingsMenus = [this.streamSettings, this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
         [...this.allSettingsMenus, this.explorer].forEach(menu => {
             if (menu?.container) {
                 menu.container.visible = false;
@@ -257,6 +259,7 @@ class UIManager extends THREE.Group {
         });
 
         this.mainContainer.add(this.mainMenu.container);
+        this.mainContainer.add(this.streamSettings.container);
         this.mainContainer.add(this.screenSettings.container);
         this.mainContainer.add(this.colorSettings.container);
         this.mainContainer.add(this.environmentSettings.container);
@@ -461,6 +464,9 @@ class UIManager extends THREE.Group {
     }
 
     switchSubMenu(targetMenu) {
+        if (targetMenu === this.streamSettings && !this.isStreamActive) {
+            targetMenu = null;
+        }
         if (this.activeSubMenu === targetMenu) {
             if (this.activeSubMenu) {
                 this.activeSubMenu.container.setProperties({ display: 'none' });
@@ -481,7 +487,12 @@ class UIManager extends THREE.Group {
             if (this.activeSubMenu === this.explorer) {
                 this.shouldJumpToCurrentItem = true;
                 this.fetchDirectory(this.galleryManager.currentPath);
-            } else { this.syncUI(true); }
+            } else {
+                if (this.activeSubMenu === this.streamSettings) {
+                    this.streamSettings.fetchSettings();
+                }
+                this.syncUI(true);
+            }
         }
         if (this.mainContainer) this.mainContainer.update(0);
     }
@@ -779,18 +790,7 @@ class UIManager extends THREE.Group {
         const percent = THREE.MathUtils.clamp(0.5 + local.x, 0, 1);
         
         const rawPercent = 0.5 + local.x; // Keep for limit detection
-        const atMin = rawPercent <= 0.01;
-        const atMax = rawPercent >= 0.99;
-        if (atMin || atMax) {
-            const limitKey = `${id}_${atMin ? 'min' : 'max'}`;
-            if (!this._atLimit[limitKey]) {
-                UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticLimitIntensity, UI_CONFIG.hapticLimitDuration, this);
-                this._atLimit[limitKey] = true;
-            }
-        } else {
-            this._atLimit[`${id}_min`] = false;
-            this._atLimit[`${id}_max`] = false;
-        }
+        UIUtils.checkSliderLimitHaptic(e, rawPercent, id, this);
 
         const limits = getSettingLimits(id, this.screenType, this.activeScreen);
         const actualMin = limits.min ?? min;
@@ -854,6 +854,10 @@ class UIManager extends THREE.Group {
         const slowMetricsUpdated = (now - this.lastStatusUpdateTime > 1000) || updateSlowMetrics;
         const isVideo = !!this.videoElement;
         const isStreamActive = this.isStreamActive;
+
+        if (!isStreamActive && this.activeSubMenu === this.streamSettings) {
+            this.switchSubMenu(null);
+        }
 
         const mainParams = {
             videoProgress: isVideo ? (this.videoElement.currentTime / this.videoElement.duration || 0) : 0,

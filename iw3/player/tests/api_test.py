@@ -385,6 +385,7 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
     from iw3.desktop.utils import (
         ensure_default_stereo_format,
         get_runtime_stream_settings,
+        read_runtime_adjustment_values,
         resolve_player_stereo_format,
         update_runtime_stream_settings,
     )
@@ -427,6 +428,8 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
     parser = create_parser()
     cli_args = parser.parse_args(["--enable-stream"])
     set_state_args(cli_args)
+    dummy_convergence_model = SimpleNamespace(convergence=cli_args.convergence)
+    cli_args.state["convergence_model"] = dummy_convergence_model
 
     secret_file = tmp_path / "secret.txt"
     secret_file.write_bytes(b"16bytessecretkey")
@@ -491,6 +494,7 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
             json={
                 "divergence": 2.5,
                 "convergence": 0.75,
+                "foreground_scale": -1.5,
                 "edge_dilation": 4,
                 "stream_fps": 45,
                 "stream_quality": 85,
@@ -503,7 +507,10 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
         updated = res_post_settings.json()
         assert updated["divergence"] == 2.5
         assert updated["convergence"] == 0.75
+        assert dummy_convergence_model.convergence == 0.75
+        assert updated["foreground_scale"] == -1.5
         assert updated["edge_dilation"] == 4
+        assert read_runtime_adjustment_values(cli_args) == (2.5, 0.75, -1.5, 4, "")
         assert updated["stream_fps"] == 45
         assert updated["stream_quality"] == 85
         assert updated["synthetic_view"] == "left"
