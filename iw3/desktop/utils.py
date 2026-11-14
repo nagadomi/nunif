@@ -468,6 +468,7 @@ def init_desktop_pipeline(
     depth_model = args.state["depth_model"]
     effective_stop_event = stop_event if stop_event is not None else args.state.get("stop_event")
     screenshot_thread = None
+    empty_app = None
 
     try:
         if args.screenshot == "obs":
@@ -536,7 +537,7 @@ def init_desktop_pipeline(
         )
 
         if init_wxapp and wx.GetApp() is None:
-            _empty_app = wx.App()  # needed to initialize wx.GetMousePosition()
+            empty_app = wx.App()  # needed to initialize wx.GetMousePosition()
 
         if screenshot_thread is None:
             screenshot_thread = screenshot_factory(
@@ -574,6 +575,7 @@ def init_desktop_pipeline(
         frame_height=frame_height,
         output_frame_width=output_frame_width,
         output_frame_height=output_frame_height,
+        empty_app=empty_app,
     )
 
 
