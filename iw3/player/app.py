@@ -58,6 +58,13 @@ def get_state(request: Request) -> ServerState:
     return request.app.state.server_state
 
 
+def get_stream_hub(state: ServerState = Depends(get_state)):
+    stream_hub = getattr(state, "stream_hub", None)
+    if stream_hub is None:
+        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+    return stream_hub
+
+
 def _list_public_files(
     subdir: str,
     extensions: tuple[str, ...],
@@ -173,28 +180,28 @@ async def _ensure_desktop_service_running(state: ServerState) -> None:
 
 
 @app.get("/api/stream/info")
-async def get_stream_info(state: ServerState = Depends(get_state)):
-    stream_hub = getattr(state, "stream_hub", None)
-    if stream_hub is None:
-        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+async def get_stream_info(
+    state: ServerState = Depends(get_state),
+    stream_hub=Depends(get_stream_hub),
+):
     await _ensure_desktop_service_running(state)
     return stream_hub.get_stream_info()
 
 
 @app.post("/api/stream/start")
-async def start_desktop_stream(state: ServerState = Depends(get_state)):
-    stream_hub = getattr(state, "stream_hub", None)
-    if stream_hub is None:
-        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+async def start_desktop_stream(
+    state: ServerState = Depends(get_state),
+    stream_hub=Depends(get_stream_hub),
+):
     await _ensure_desktop_service_running(state)
     return stream_hub.get_stream_info()
 
 
 @app.post("/api/stream/stop")
-async def stop_desktop_stream(state: ServerState = Depends(get_state)):
-    stream_hub = getattr(state, "stream_hub", None)
-    if stream_hub is None:
-        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+async def stop_desktop_stream(
+    state: ServerState = Depends(get_state),
+    _stream_hub=Depends(get_stream_hub),
+):
     desktop_service = getattr(state, "desktop_service", None)
     if desktop_service is not None:
         await asyncio.to_thread(desktop_service.stop)
@@ -203,10 +210,10 @@ async def stop_desktop_stream(state: ServerState = Depends(get_state)):
 
 
 @app.get("/api/stream/settings")
-async def get_stream_settings(state: ServerState = Depends(get_state)):
-    stream_hub = getattr(state, "stream_hub", None)
-    if stream_hub is None:
-        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+async def get_stream_settings(
+    state: ServerState = Depends(get_state),
+    _stream_hub=Depends(get_stream_hub),
+):
     service = _get_stream_service(state)
     if service is None:
         return {}
@@ -214,10 +221,11 @@ async def get_stream_settings(state: ServerState = Depends(get_state)):
 
 
 @app.post("/api/stream/settings")
-async def update_stream_settings(payload: StreamSettingsUpdate, state: ServerState = Depends(get_state)):
-    stream_hub = getattr(state, "stream_hub", None)
-    if stream_hub is None:
-        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+async def update_stream_settings(
+    payload: StreamSettingsUpdate,
+    state: ServerState = Depends(get_state),
+    _stream_hub=Depends(get_stream_hub),
+):
     service = _get_stream_service(state)
     if service is None:
         raise HTTPException(status_code=404, detail="Desktop stream service is unavailable")
@@ -226,19 +234,16 @@ async def update_stream_settings(payload: StreamSettingsUpdate, state: ServerSta
 
 
 @app.get("/process_token")
-async def get_process_token(state: ServerState = Depends(get_state)):
-    stream_hub = getattr(state, "stream_hub", None)
-    if stream_hub is None:
-        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+async def get_process_token(stream_hub=Depends(get_stream_hub)):
     return {"token": stream_hub.process_token}
 
 
 @app.get("/stream.jpg")
 @app.get("/api/stream")
-async def serve_desktop_stream(state: ServerState = Depends(get_state)):
-    stream_hub = getattr(state, "stream_hub", None)
-    if stream_hub is None:
-        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+async def serve_desktop_stream(
+    state: ServerState = Depends(get_state),
+    stream_hub=Depends(get_stream_hub),
+):
     await _ensure_desktop_service_running(state)
     return StreamingResponse(
         stream_hub.async_stream_generator(),

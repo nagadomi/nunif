@@ -4,9 +4,8 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from nunif.initializer import gc_collect
-
 from .utils import (
+    cleanup_desktop_pipeline,
     ensure_default_stereo_format,
     get_runtime_stream_settings,
     init_desktop_pipeline,
@@ -137,11 +136,7 @@ class DesktopStreamService:
         finally:
             ready_event.set()
             self.stream_hub.clear_frames(stop_clients=True)
-            if pipeline is not None and pipeline.screenshot_thread is not None:
-                pipeline.screenshot_thread.stop()
-            depth_model.clear_compiled_model()
-            depth_model.reset()
-            gc_collect()
+            cleanup_desktop_pipeline(pipeline, depth_model)
             fps_event = self.args.state.get("fps_event")
             if fps_event is not None:
                 fps_event.update(0.0, 0.0, 0.0, None)

@@ -6,7 +6,7 @@ import secrets
 import socket
 import sys
 import threading
-from typing import cast
+from typing import Any, cast
 
 from hypercorn.asyncio.lifespan import Lifespan
 from hypercorn.asyncio.tcp_server import TCPServer
@@ -89,6 +89,93 @@ def generate_self_signed_cert(cert_dir, cert_file, key_file, bind_addr="127.0.0.
         with open(key_file, "wb") as f:
             f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, k))
         print(f"Generated new self-signed certificate with SAN: {bind_addr}")
+
+
+def ensure_server_credentials(
+    bind_addr: str,
+    cert_dir: str = CERT_DIR,
+    cert_file: str = CERT_FILE,
+    key_file: str = KEY_FILE,
+    secret_key_file: str = SECRET_KEY_FILE,
+) -> tuple[str, str, str]:
+    generate_self_signed_cert(cert_dir, cert_file, key_file, bind_addr)
+    if not os.path.exists(secret_key_file):
+        print(f"Generating new secret key: {secret_key_file}")
+        with open(secret_key_file, "wb") as f:
+            f.write(secrets.token_bytes(32))
+    return cert_file, key_file, secret_key_file
+
+
+def create_hypercorn_config(
+    bind_addr: str,
+    port: int,
+    cert_file: str | None = CERT_FILE,
+    key_file: str | None = KEY_FILE,
+    graceful_timeout: float = 1.0,
+) -> Config:
+    config = Config()
+    config.bind = [f"{bind_addr}:{port}"]
+    if cert_file is not None and key_file is not None:
+        config.certfile = cert_file
+        config.keyfile = key_file
+    config.accesslog = None
+    config.errorlog = None
+    config.graceful_timeout = graceful_timeout
+    return config
+
+
+def init_server_runtime(
+    args: Any,
+    bind_addr: str,
+    port: int,
+    enable_media_library: bool = True,
+    graceful_timeout: float = 1.0,
+) -> tuple[ServerState, Config]:
+    cert_file, key_file, secret_key_file = ensure_server_credentials(bind_addr)
+    args.secret_key_file = secret_key_file
+
+    if hasattr(app.state, "server_state") and app.state.server_state is not None:
+        app.state.server_state.close()
+        app.state.server_state = None
+        app.state.media_library = None
+
+    state = ServerState(args)
+    app.state.server_state = state
+    app.state.media_library = MediaLibrary(state) if enable_media_library else None
+    config = create_hypercorn_config(
+        bind_addr=bind_addr,
+        port=port,
+        cert_file=cert_file,
+        key_file=key_file,
+        graceful_timeout=graceful_timeout,
+    )
+    return state, config
+
+
+def validate_bind_address_and_auth(args: Any) -> tuple[str, str] | None:
+    if args.bind_addr is None:
+        args.bind_addr = get_local_address()
+        if not is_private_address(args.bind_addr):
+            raise RuntimeError(f"Detected IP address({args.bind_addr}) is not LAN Address. Specify --bind-addr")
+
+    if is_loopback_address(args.bind_addr):
+        print(
+            (
+                f"Warning: {args.bind_addr} is only accessible from this PC. "
+                "If this option is not explicitly enabled, the network connection might be unavailable."
+            ),
+            file=sys.stderr,
+        )
+
+    if args.user or args.password:
+        auth: tuple[str, str] | None = (args.user or "", args.password or "")
+    else:
+        auth = None
+
+    if not is_private_address(args.bind_addr) and auth is None:
+        raise RuntimeError(f"({args.bind_addr}) is not LAN Address. Specify --user/--password")
+
+    return auth
 
 
 def _add_player_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -344,26 +431,9 @@ def server_main(args, init_wxapp=True):
             depth_model=existing_state.get("depth_model"),
         )
 
-    if args.bind_addr is None:
-        args.bind_addr = get_local_address()
-        if not is_private_address(args.bind_addr):
-            raise RuntimeError(f"Detected IP address({args.bind_addr}) is not LAN Address. Specify --bind-addr")
-
-    if is_loopback_address(args.bind_addr):
-        print(f"Warning: {args.bind_addr} is loopback only.", file=sys.stderr)
-
-    auth = (args.user, args.password) if (args.user or args.password) else None
-    if not is_private_address(args.bind_addr) and auth is None:
-        raise RuntimeError(f"({args.bind_addr}) is not LAN Address. Specify --user/--password")
+    validate_bind_address_and_auth(args)
 
     init_video_hwaccel()
-    generate_self_signed_cert(CERT_DIR, CERT_FILE, KEY_FILE, args.bind_addr)
-    if not os.path.exists(SECRET_KEY_FILE):
-        print(f"Generating new secret key: {SECRET_KEY_FILE}")
-        with open(SECRET_KEY_FILE, "wb") as f:
-            f.write(secrets.token_bytes(32))
-
-    args.secret_key_file = SECRET_KEY_FILE
     if enable_stream and getattr(args, "stream_hub", None) is None:
         from ..desktop.service import DesktopStreamService
         from ..desktop.utils import init_win32, resolve_player_stereo_format
@@ -386,28 +456,19 @@ def server_main(args, init_wxapp=True):
         args.stream_hub = stream_hub
         args.desktop_service = desktop_service
 
-    if hasattr(app.state, "server_state") and app.state.server_state is not None:
-        app.state.server_state.close()
-        app.state.server_state = None
-        app.state.media_library = None
-
-    state = ServerState(args)
-    app.state.server_state = state
-    app.state.media_library = MediaLibrary(state)
+    state, config = init_server_runtime(
+        args,
+        bind_addr=args.bind_addr,
+        port=args.port,
+        enable_media_library=True,
+        graceful_timeout=1.0,
+    )
 
     stream_url = f"https://{args.bind_addr}:{args.port}"
     print(f"Starting iw3-player server on {stream_url}")
     fps_event = args.state.get("fps_event")
     if fps_event is not None:
         fps_event.set_url(stream_url)
-
-    config = Config()
-    config.bind = [f"{args.bind_addr}:{args.port}"]
-    config.certfile = CERT_FILE
-    config.keyfile = KEY_FILE
-    config.accesslog = None
-    config.errorlog = None
-    config.graceful_timeout = 1.0  # Allow 1 second for connections to close during shutdown
 
     shutdown_event = asyncio.Event()
 

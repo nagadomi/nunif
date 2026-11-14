@@ -272,23 +272,11 @@ class WebXRStreamingServer:
 
     def _start(self):
         import asyncio
-        import os
-        import secrets
         from types import SimpleNamespace
 
-        from hypercorn.config import Config
-
-        from ..player.app import app
-        from ..player.dir_config import CERT_DIR
-        from ..player.server import CERT_FILE, KEY_FILE, SECRET_KEY_FILE, generate_self_signed_cert, serve_with_watchdog
-        from ..player.server_state import ServerState
+        from ..player.server import init_server_runtime, serve_with_watchdog
 
         bind_host = self.host or "127.0.0.1"
-        generate_self_signed_cert(CERT_DIR, CERT_FILE, KEY_FILE, bind_host)
-        if not os.path.exists(SECRET_KEY_FILE):
-            with open(SECRET_KEY_FILE, "wb") as f:
-                f.write(secrets.token_bytes(32))
-
         user, password = self.auth if self.auth is not None else (None, None)
         self.stream_hub.update_stream_params(
             frame_width=self.frame_width,
@@ -303,24 +291,17 @@ class WebXRStreamingServer:
             stream_hub=self.stream_hub,
             user=user,
             password=password,
-            secret_key_file=SECRET_KEY_FILE,
             debug=False,
             debug_console=False,
             state={"stop_event": self.stream_hub.shutdown_event},
         )
-        if hasattr(app.state, "server_state") and app.state.server_state is not None:
-            app.state.server_state.close()
-        self.state = ServerState(args_ns)
-        app.state.server_state = self.state
-        app.state.media_library = None
-
-        config = Config()
-        config.bind = [f"{bind_host}:{self.port}"]
-        config.certfile = CERT_FILE
-        config.keyfile = KEY_FILE
-        config.accesslog = None
-        config.errorlog = None
-        config.graceful_timeout = 0.5
+        self.state, config = init_server_runtime(
+            args_ns,
+            bind_addr=bind_host,
+            port=self.port,
+            enable_media_library=False,
+            graceful_timeout=0.5,
+        )
 
         def run_server():
             shutdown_event = asyncio.Event()

@@ -8,10 +8,9 @@ import warnings
 
 import httpx
 import pytest
-from hypercorn.config import Config
 
 from ..app import app
-from ..server import generate_self_signed_cert, serve_with_watchdog
+from ..server import create_hypercorn_config, generate_self_signed_cert, serve_with_watchdog
 from ..server_state import ServerState
 from ..stream_hub import StreamFrameHub
 
@@ -63,17 +62,21 @@ def _setup_test_server(tmp_path, use_tls: bool = True):
     )
     state = ServerState(args)
 
-    config = Config()
-    config.bind = [f"127.0.0.1:{port}"]
-    config.accesslog = None
-    config.errorlog = None
-    config.graceful_timeout = 0.5
     if use_tls:
         cert_file = str(tmp_path / "server.crt")
         key_file = str(tmp_path / "server.key")
         generate_self_signed_cert(str(tmp_path), cert_file, key_file, "127.0.0.1")
-        config.certfile = cert_file
-        config.keyfile = key_file
+    else:
+        cert_file = None
+        key_file = None
+
+    config = create_hypercorn_config(
+        bind_addr="127.0.0.1",
+        port=port,
+        cert_file=cert_file,
+        key_file=key_file,
+        graceful_timeout=0.5,
+    )
 
     scheme = "https" if use_tls else "http"
     base_url = f"{scheme}://127.0.0.1:{port}"

@@ -243,27 +243,26 @@ class StreamSettingsMenu {
         }
     }
 
-    async resetSetting(key) {
-        const def = STREAM_SETTINGS_DEFS[key];
-        if (!def) return;
+    async resetKeys(keys) {
         this._isDragging = false;
         this._clearThrottleTimer();
-        this.values[key] = def.default;
-        this.pendingUpdates[key] = def.default;
+        for (const key of keys) {
+            const def = STREAM_SETTINGS_DEFS[key];
+            if (!def) continue;
+            this.values[key] = def.default;
+            this.pendingUpdates[key] = def.default;
+        }
         this.uiManager.syncUI(true);
         await this.flushSettings();
     }
 
+    async resetSetting(key) {
+        if (!STREAM_SETTINGS_DEFS[key]) return;
+        await this.resetKeys([key]);
+    }
+
     async reset() {
-        this._isDragging = false;
-        this._clearThrottleTimer();
-        for (const key of STREAM_SETTING_KEYS) {
-            const defVal = STREAM_SETTINGS_DEFS[key].default;
-            this.values[key] = defVal;
-            this.pendingUpdates[key] = defVal;
-        }
-        this.uiManager.syncUI(true);
-        await this.flushSettings();
+        await this.resetKeys(STREAM_SETTING_KEYS);
     }
 
     sync() {

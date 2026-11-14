@@ -1,7 +1,5 @@
 import argparse
-import ipaddress
 import math
-import socket
 import sys
 import threading
 import time
@@ -24,6 +22,10 @@ from nunif.models.data_parallel import DeviceSwitchInference
 
 from .. import models  # noqa
 from .. import utils as IW3U
+from ..player.server import (
+    get_local_address,
+    validate_bind_address_and_auth,
+)
 from ..stereo_model_factory import get_mlbw_divergence_level
 from .screenshot_process import (  # noqa
     ScreenshotProcess,
@@ -92,34 +94,6 @@ def init_num_threads(device_id):
         torch.set_num_threads(TORCH_NUM_THREADS)
     else:
         torch.set_num_threads(1)
-
-
-def get_local_address():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # 8.8.8.8 is Google DNS address
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except:  # noqa
-        return "127.0.0.1"  # unknown
-
-
-def is_private_address(ip):
-    try:
-        ip = ipaddress.ip_address(ip)
-        return not ip.is_unspecified and ip.is_private
-    except ValueError:
-        return False
-
-
-def is_loopback_address(ip):
-    try:
-        ip = ipaddress.ip_address(ip)
-        return ip.is_loopback
-    except ValueError:
-        return False
 
 
 def to_uint8(x):
@@ -677,37 +651,21 @@ def run_desktop_processing_loop(
             break
 
 
+def cleanup_desktop_pipeline(pipeline: SimpleNamespace | None, depth_model: Any) -> None:
+    if pipeline is not None and pipeline.screenshot_thread is not None:
+        pipeline.screenshot_thread.stop()
+    depth_model.clear_compiled_model()
+    depth_model.reset()
+    gc_collect()
+
+
 def iw3_desktop_main(args, init_wxapp=True):
     ensure_default_stereo_format(args)
 
-    if args.user or args.password:
-        user = args.user or ""
-        password = args.password or ""
-        auth = (user, password)
+    if not args.local_viewer:
+        auth = validate_bind_address_and_auth(args)
     else:
         auth = None
-
-    if not args.local_viewer:
-        if args.bind_addr is None:
-            args.bind_addr = get_local_address()
-            if not is_private_address(args.bind_addr):
-                raise RuntimeError(
-                    f"Detected IP address({args.bind_addr}) is not Local Area Network Address. "
-                    " Specify --bind-addr option"
-                )
-
-        if is_loopback_address(args.bind_addr):
-            print(
-                (
-                    f"Warning: {args.bind_addr} is only accessible from this PC. "
-                    "If this option is not explicitly enabled, the network connection might be unavailable."
-                ),
-                file=sys.stderr,
-            )
-        if not is_private_address(args.bind_addr) and auth is None:
-            raise RuntimeError(
-                f"({args.bind_addr}) is not Local Area Network Address. Specify --username/--password option."
-            )
 
     validate_screenshot_args(args)
 
@@ -788,11 +746,7 @@ def iw3_desktop_main(args, init_wxapp=True):
     finally:
         if server is not None:
             server.stop()
-        if pipeline is not None and pipeline.screenshot_thread is not None:
-            pipeline.screenshot_thread.stop()
-        depth_model.clear_compiled_model()
-        depth_model.reset()
-        gc_collect()
+        cleanup_desktop_pipeline(pipeline, depth_model)
 
     if args.state["stop_event"] and args.state["stop_event"].is_set():
         args.state["stop_event"].clear()
