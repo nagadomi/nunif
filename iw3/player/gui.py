@@ -657,7 +657,7 @@ def main():
     app.MainLoop()
 
 
-LOCALE_LIST = list(LOCALES.keys())
+LOCALE_LIST = sorted(list(LOCALES.keys()))
 LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 

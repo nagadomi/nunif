@@ -151,6 +151,9 @@ class DesktopStreamGUIMixin:
         if not self._enable_gpu_jpeg:
             self.chk_gpu_jpeg.Disable()
 
+        self.chk_pad_16_9 = wx.CheckBox(parent, label=T("Padding") + " 16:9", name="chk_pad_16_9")
+        self.chk_pad_16_9.SetValue(False)
+
         r = start_row
         grid.Add(self.sep_network2, (r, 0), (1, 3), flag=wx.EXPAND | wx.ALL)
         grid.Add(self.lbl_stream_fps, (r + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
@@ -160,6 +163,7 @@ class DesktopStreamGUIMixin:
         grid.Add(self.lbl_stream_quality, (r + 3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.cbo_stream_quality, (r + 3, 1), flag=wx.EXPAND)
         grid.Add(self.chk_gpu_jpeg, (r + 4, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.chk_pad_16_9, (r + 5, 1), flag=wx.ALIGN_CENTER_VERTICAL)
 
         return [
             self.sep_network2,
@@ -170,6 +174,7 @@ class DesktopStreamGUIMixin:
             self.lbl_stream_quality,
             self.cbo_stream_quality,
             self.chk_gpu_jpeg,
+            self.chk_pad_16_9,
         ]
 
     def _build_stereo_group(
@@ -216,23 +221,23 @@ class DesktopStreamGUIMixin:
         self.cbo_synthetic_view.SetSelection(0)
 
         self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
+        method_choices = [
+            "mlbw_l2",
+            "mlbw_l4",
+            "mlbw_l2s",
+            "row_flow_v3",
+            "row_flow_v3_sym",
+            "row_flow_v2",
+            "forward_fill",
+            "monobw",
+        ] + (["NULL"] if ADD_DEBUG_METHOD else [])
         self.cbo_method = wx.ComboBox(
             self.grp_stereo,
-            choices=[
-                "mlbw_l2",
-                "mlbw_l4",
-                "mlbw_l2s",
-                "row_flow_v3",
-                "row_flow_v3_sym",
-                "row_flow_v2",
-                "forward_fill",
-                "monobw",
-            ]
-            + (["NULL"] if ADD_DEBUG_METHOD else []),
+            choices=method_choices,
             name="cbo_method",
         )
         self.cbo_method.SetEditable(False)
-        self.cbo_method.SetSelection(4)
+        self.cbo_method.SetSelection(method_choices.index("row_flow_v3"))
 
         self.chk_small_model_only = wx.CheckBox(
             self.grp_stereo, label=T("List small model only"), name="chk_small_model_only"
@@ -311,15 +316,6 @@ class DesktopStreamGUIMixin:
         self.cbo_anaglyph_method.Hide()
 
         self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
-        self.chk_pad_16_9 = wx.CheckBox(self.grp_stereo, label=T("Padding") + " 16:9", name="chk_pad_16_9")
-        self.chk_pad_16_9.SetValue(False)
-
-        self.lbl_autocrop = wx.StaticText(self.grp_stereo, label=T("AutoCrop"))
-        self.cbo_autocrop = wx.ComboBox(
-            self.grp_stereo, choices=["", "BLACK_TB", "BLACK", "FLAT_TB", "FLAT"], name="cbo_autocrop"
-        )
-        self.cbo_autocrop.SetEditable(False)
-        self.cbo_autocrop.SetSelection(0)
 
         stereo_layout = wx.GridBagSizer(vgap=4, hgap=4)
         stereo_layout.SetEmptyCellSize((0, 0))
@@ -357,9 +353,6 @@ class DesktopStreamGUIMixin:
         stereo_layout.Add(self.lbl_anaglyph_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         stereo_layout.Add(self.cbo_anaglyph_method, (i, 1), (1, 2), flag=wx.EXPAND)
         stereo_layout.Add(self.lbl_format_device, (i := i + 1, 1), (1, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
-        stereo_layout.Add(self.chk_pad_16_9, (i := i + 1, 0), (1, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        stereo_layout.Add(self.lbl_autocrop, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        stereo_layout.Add(self.cbo_autocrop, (i, 1), (1, 2), flag=wx.EXPAND)
 
         if extra_layout_fn is not None:
             extra_layout_fn(self.grp_stereo, stereo_layout, i)
@@ -471,6 +464,13 @@ class DesktopStreamGUIMixin:
         )
         self.chk_disable_draw_cursor.SetValue(False)
 
+        self.lbl_autocrop = wx.StaticText(self.grp_processor, label=T("AutoCrop"))
+        self.cbo_autocrop = wx.ComboBox(
+            self.grp_processor, choices=["", "BLACK_TB", "BLACK", "FLAT_TB", "FLAT"], name="cbo_autocrop"
+        )
+        self.cbo_autocrop.SetEditable(False)
+        self.cbo_autocrop.SetSelection(0)
+
         self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
         self.chk_compile.SetToolTip(T("Enable model compiling"))
         self.chk_compile.SetValue(False)
@@ -500,7 +500,10 @@ class DesktopStreamGUIMixin:
         crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
         processor_layout.Add(crop_layout, (5, 1), flag=wx.EXPAND)
 
-        processor_layout.Add(self.chk_compile, (6, 0), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
+        processor_layout.Add(self.lbl_autocrop, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        processor_layout.Add(self.cbo_autocrop, (6, 1), flag=wx.EXPAND)
+
+        processor_layout.Add(self.chk_compile, (7, 0), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
 
         self.sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
         self.sizer_processor.Add(processor_layout, 1, wx.ALL | wx.EXPAND, 4)

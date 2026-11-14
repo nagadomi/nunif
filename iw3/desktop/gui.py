@@ -7,17 +7,14 @@ import math
 from os import path
 import traceback
 import threading
-import importlib.util
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
 import wx.lib.stattext as stattext
 from wx.lib.buttons import GenBitmapButton
 from wx.lib.intctrl import IntCtrl
-import torch
 from nunif.utils.git import get_current_branch
 from nunif.initializer import gc_collect
-from nunif.device import mps_is_available, xpu_is_available
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
@@ -39,7 +36,6 @@ from nunif.gui import (
 from ..locales import LOCALES, load_language_setting, save_language_setting
 from ..player.server import get_local_address, is_loopback_address, is_private_address
 from .gui_shared import (
-    ADD_DEBUG_METHOD,
     EVT_FPS,
     FPSGUI,
     DesktopStreamGUIMixin,
@@ -50,10 +46,6 @@ from .utils import (
     create_parser,
     set_state_args,
     read_runtime_adjustment_values,
-    get_monitor_size_list,
-    is_mss_supported,
-    is_obs_supported,
-    is_kwcapture_supported,
     IW3U,
     ENABLE_GPU_JPEG,
 )
@@ -67,11 +59,6 @@ os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(PRESET_DIR, exist_ok=True)
 
 LAYOUT_DEBUG = False
-HAS_WINDOWS_CAPTURE = bool(importlib.util.find_spec("windows_capture"))
-IS_ROCM = getattr(torch.version, "hip", None) is not None
-HAS_WINDOWS_CAPTURE_CUDA = bool(importlib.util.find_spec("wc_cuda")) and torch.cuda.is_available() and not IS_ROCM
-HAS_OBS = is_obs_supported()
-HAS_KWCAPTURE = is_kwcapture_supported()
 
 
 # Spin inclrement value
@@ -150,179 +137,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             self.pnl_options.SetBackgroundColour("#cfc")
 
         # stereo generation settings
-
-        self.grp_stereo = wx.StaticBox(self.pnl_options, label=T("Stereo Generation"))
+        sizer_stereo = self._build_stereo_group(self.pnl_options, WARNING_FONT, WARNING_COLOR)
         if LAYOUT_DEBUG:
             self.grp_stereo.SetBackgroundColour("#fcf")
-
-        self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
-        self.cbo_divergence = EditableComboBox(
-            self.grp_stereo, choices=["5.0", "4.0", "3.0", "2.5", "2.0", "1.0"], name="cbo_divergence"
-        )
-        self.lbl_divergence_warning = stattext.GenStaticText(self.grp_stereo, label="")
-        self.lbl_divergence_warning.SetFont(WARNING_FONT)
-        self.lbl_divergence_warning.SetForegroundColour(WARNING_COLOR)
-        self.lbl_divergence_warning.Hide()
-
-        self.cbo_divergence.SetToolTip("Divergence")
-        self.cbo_divergence.SetSelection(5)
-
-        self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
-        self.cbo_convergence_mode = wx.ComboBox(
-            self.grp_stereo, choices=["constant", "sod_v1"], name="cbo_convergence_mode"
-        )
-        self.cbo_convergence_mode.SetEditable(False)
-        self.cbo_convergence_mode.SetSelection(0)
-
-        self.cbo_convergence = EditableComboBox(
-            self.grp_stereo, choices=["0.0", "0.25", "0.5", "1.0"], name="cbo_convergence"
-        )
-        self.cbo_convergence.SetSelection(2)
-        self.cbo_convergence.SetToolTip("Convergence")
-
-        self.lbl_synthetic_view = wx.StaticText(self.grp_stereo, label=T("Synthetic View"))
-        self.cbo_synthetic_view = wx.ComboBox(
-            self.grp_stereo, choices=["both", "right", "left"], name="cbo_synthetic_view"
-        )
-        self.cbo_synthetic_view.SetEditable(False)
-        self.cbo_synthetic_view.SetSelection(0)
-
-        self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
-        self.cbo_method = wx.ComboBox(
-            self.grp_stereo,
-            choices=[
-                "mlbw_l2",
-                "mlbw_l4",
-                "mlbw_l2s",
-                "row_flow_v3",
-                "row_flow_v3_sym",
-                "row_flow_v2",
-                "forward_fill",
-                "monobw",
-            ]
-            + (["NULL"] if ADD_DEBUG_METHOD else []),
-            name="cbo_method",
-        )
-        self.cbo_method.SetEditable(False)
-        self.cbo_method.SetSelection(4)
-
-        self.chk_small_model_only = wx.CheckBox(
-            self.grp_stereo, label=T("List small model only"), name="chk_small_model_only"
-        )
-        self.chk_small_model_only.SetValue(True)
-        self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-
-        depth_models = self.get_depth_models(small_only=False)
-        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=depth_models, name="cbo_depth_model")
-        self.cbo_depth_model.SetEditable(False)
-        self.cbo_depth_model.SetSelection(depth_models.index("Any_V2_S"))
-
-        self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
-        self.cbo_resolution = EditableComboBox(self.grp_stereo, choices=["Default", "512"], name="cbo_zoed_resolution")
-        self.cbo_resolution.SetSelection(0)
-
-        self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
-        self.cbo_foreground_scale = EditableComboBox(
-            self.grp_stereo, choices=["-3", "-2", "-1", "0", "1", "2", "3"], name="cbo_foreground_scale"
-        )
-        self.cbo_foreground_scale.SetSelection(3)
-
-        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"), name="lbl_edge_dilation")
-        self.cbo_edge_dilation = EditableComboBox(
-            self.grp_stereo, choices=["0", "1", "2", "3", "4"], size=self.FromDIP((90, -1)), name="cbo_edge_dilation"
-        )
-        self.cbo_edge_dilation_y = EditableComboBox(
-            self.grp_stereo, choices=["", "0", "1", "2"], name="cbo_edge_dilation_y"
-        )
-        self.cbo_edge_dilation.SetSelection(2)
-        self.cbo_edge_dilation_y.SetSelection(0)
-        self.lbl_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
-        self.cbo_edge_dilation.SetToolTip(T("X or XY"))
-        self.cbo_edge_dilation_y.SetToolTip(T("Y"))
-
-        self.chk_ema_normalize = wx.CheckBox(self.grp_stereo, label=T("Flicker Reduction"), name="chk_ema_normalize")
-        self.chk_ema_normalize.SetValue(True)
-        self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
-        self.cbo_ema_decay = EditableComboBox(
-            self.grp_stereo, choices=["0.99", "0.95", "0.9", "0.75", "0.5"], name="cbo_ema_decay"
-        )
-        self.cbo_ema_decay.SetSelection(2)
-        self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
-
-        self.chk_preserve_screen_border = wx.CheckBox(
-            self.grp_stereo, label=T("Preserve Screen Border"), name="chk_preserve_screen_border"
-        )
-        self.chk_preserve_screen_border.SetValue(True)
-        self.chk_preserve_screen_border.SetToolTip(T("Force set screen border parallax to zero"))
-
-        self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
-        self.cbo_stereo_format = wx.ComboBox(
-            self.grp_stereo,
-            choices=[
-                "Half SBS",
-                "Full SBS",
-                "Half TB",
-                "Full TB",
-                "Cross Eyed",
-                "RGB-D",
-                "Half RGB-D",
-                "Anaglyph",
-            ],
-            name="cbo_stereo_format",
-        )
-        self.cbo_stereo_format.SetEditable(False)
-        self.cbo_stereo_format.SetSelection(0)
-
-        self.lbl_anaglyph_method = wx.StaticText(self.grp_stereo, label=T("Anaglyph Method"))
-        self.cbo_anaglyph_method = wx.ComboBox(
-            self.grp_stereo,
-            choices=["dubois", "dubois2", "color", "gray", "half-color", "wimmer", "wimmer2"],
-            name="cbo_anaglyph_method",
-        )
-        self.cbo_anaglyph_method.SetEditable(False)
-        self.cbo_anaglyph_method.SetSelection(0)
-        self.lbl_anaglyph_method.Hide()
-        self.cbo_anaglyph_method.Hide()
-
-        self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
-
-        layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.SetEmptyCellSize((0, 0))
-
-        i = 0
-        layout.Add(self.lbl_divergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_divergence, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(
-            self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 3), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL
-        )
-        layout.Add(self.lbl_convergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_convergence_mode, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.cbo_convergence, (i, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_synthetic_view, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_synthetic_view, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_small_model_only, (i := i + 1, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_depth_model, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.cbo_edge_dilation_y, (i, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_ema_decay, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stereo_format, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_anaglyph_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_anaglyph_method, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_format_device, (i := i + 1, 1), (1, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
-
-        sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
-        sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # network settings
         self.grp_network = wx.StaticBox(self.pnl_options, label=T("Network"))
@@ -422,148 +239,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # processor settings
-        self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
+        sizer_processor = self._build_processor_group(self.pnl_options)
         if LAYOUT_DEBUG:
             self.grp_processor.SetBackgroundColour("#fcf")
-
-        self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), name="cbo_device")
-        self.cbo_device.SetEditable(False)
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                device_name = torch.cuda.get_device_properties(i).name
-                self.cbo_device.Append(f"{i}:{device_name}", i)
-        elif mps_is_available():
-            self.cbo_device.Append("MPS", 0)
-        elif xpu_is_available():
-            for i in range(torch.xpu.device_count()):
-                device_name = torch.xpu.get_device_name(i)
-                self.cbo_device.Append(f"{i}:{device_name}", i)
-
-        self.cbo_device.Append("CPU", -1)
-        self.cbo_device.SetSelection(0)
-
-        self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
-        screenshot_backends = ["pil"]
-        if is_mss_supported():
-            screenshot_backends += ["mss"]
-        if HAS_WINDOWS_CAPTURE:
-            screenshot_backends += ["wc_mp"]
-        if HAS_WINDOWS_CAPTURE_CUDA:
-            screenshot_backends += ["wc_cuda"]
-        if HAS_KWCAPTURE:
-            screenshot_backends += ["kwcapture"]
-        if HAS_OBS:
-            screenshot_backends += ["obs"]
-        self.cbo_screenshot = wx.ComboBox(self.grp_processor, choices=screenshot_backends, name="cbo_screenshot")
-        self.cbo_screenshot.SetEditable(False)
-        default_screenshot_index = 0
-        if sys.platform == "win32":
-            if "wc_cuda" in screenshot_backends:
-                default_screenshot_index = screenshot_backends.index("wc_cuda")
-            elif "wc_mp" in screenshot_backends:
-                default_screenshot_index = screenshot_backends.index("wc_mp")
-        elif HAS_KWCAPTURE and "kwcapture" in screenshot_backends:
-            # Prefer kwcapture on KDE Plasma: no portal dialog, fast native capture
-            default_screenshot_index = screenshot_backends.index("kwcapture")
-        elif HAS_OBS and "obs" in screenshot_backends:
-            default_screenshot_index = screenshot_backends.index("obs")
-        elif sys.platform == "darwin":
-            if "mss" in screenshot_backends:
-                default_screenshot_index = screenshot_backends.index("mss")
-        self.cbo_screenshot.SetSelection(default_screenshot_index)
-
-        self.lbl_monitor_index = wx.StaticText(self.grp_processor, label=T("Monitor Index"))
-        self.cbo_monitor_index = wx.ComboBox(
-            self.grp_processor, choices=[str(i) for i in range(len(get_monitor_size_list()))], name="cbo_monitor_index"
-        )
-        self.cbo_monitor_index.SetEditable(False)
-        self.cbo_monitor_index.SetSelection(0)
-
-        self.lbl_window_name = wx.StaticText(self.grp_processor, label=T("Window Name"))
-        self.cbo_window_name = EditableComboBox(
-            self.grp_processor, size=self.FromDIP((200, -1)), choices=[""], name="cbo_window_name"
-        )
-        self.cbo_window_name.SetSelection(0)
-        self.btn_reload_window_name = GenBitmapButton(self.grp_processor, bitmap=load_icon("view-refresh.png"))
-        self.btn_reload_window_name.SetToolTip(T("Reload"))
-
-        self.lbl_crop_region = wx.StaticText(self.grp_processor, label=T("Crop Region (px)"))
-
-        self.lbl_crop_top = wx.StaticText(self.grp_processor, label=T("Top"))
-        self.txt_crop_top = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_top"
-        )
-        self.txt_crop_top.SetValue(0)
-
-        self.lbl_crop_left = wx.StaticText(self.grp_processor, label=T("Left"))
-        self.txt_crop_left = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_left"
-        )
-        self.txt_crop_left.SetValue(0)
-
-        self.lbl_crop_right = wx.StaticText(self.grp_processor, label=T("Right"))
-        self.txt_crop_right = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_right"
-        )
-        self.txt_crop_right.SetValue(0)
-
-        self.lbl_crop_bottom = wx.StaticText(self.grp_processor, label=T("Bottom"))
-        self.txt_crop_bottom = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_bottom"
-        )
-        self.txt_crop_bottom.SetValue(0)
-
-        self.lbl_autocrop = wx.StaticText(self.grp_processor, label=T("AutoCrop"))
-        self.cbo_autocrop = wx.ComboBox(
-            self.grp_processor, choices=["", "BLACK_TB", "BLACK", "FLAT_TB", "FLAT"], name="cbo_autocrop"
-        )
-        self.cbo_autocrop.SetEditable(False)
-        self.cbo_autocrop.SetSelection(0)
-
-        self.chk_disable_draw_cursor = wx.CheckBox(
-            self.grp_processor, label=T("Disable Draw Cursor"), name="chk_disable_draw_cursor"
-        )
-        self.chk_disable_draw_cursor.SetValue(False)
-
-        self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
-        self.chk_compile.SetToolTip(T("Enable model compiling"))
-        self.chk_compile.SetValue(False)
-
-        layout = wx.GridBagSizer(vgap=5, hgap=4)
-        layout.SetEmptyCellSize((0, 0))
-        layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_screenshot, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_screenshot, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_disable_draw_cursor, (2, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_monitor_index, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_monitor_index, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_window_name, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_window_name, (4, 1), flag=wx.EXPAND)
-        layout.Add(self.btn_reload_window_name, (4, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_crop_region, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-
-        # Create a sub-layout for crop controls
-        crop_layout = wx.GridBagSizer(vgap=2, hgap=4)
-        crop_layout.Add(self.lbl_crop_top, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_top, (0, 1), flag=wx.EXPAND)
-        crop_layout.Add(self.lbl_crop_left, (0, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_left, (0, 3), flag=wx.EXPAND)
-        crop_layout.Add(self.lbl_crop_right, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_right, (1, 1), flag=wx.EXPAND)
-        crop_layout.Add(self.lbl_crop_bottom, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
-
-        layout.Add(crop_layout, (5, 1), flag=wx.EXPAND)
-
-        layout.Add(self.lbl_autocrop, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_autocrop, (6, 1), flag=wx.EXPAND)
-
-        layout.Add(self.chk_compile, (7, 0), flag=wx.EXPAND)
-
-        sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
-        sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # adjustment settings
         self.grp_adjustment = wx.StaticBox(self.pnl_options, label=T("Adjustment"))
@@ -673,26 +351,13 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.SetSizer(layout)
 
         # bind
+        self._bind_desktop_events()
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
-        self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
-        self.cbo_synthetic_view.Bind(wx.EVT_TEXT, self.update_divergence_warning)
-        self.cbo_method.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_method)
-        self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
-
-        self.chk_small_model_only.Bind(wx.EVT_CHECKBOX, self.update_depth_model_list)
-        self.cbo_edge_dilation_y.Bind(wx.EVT_TEXT, self.on_changed_edge_dilation)
-        self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
         self.txt_bind_addr.Bind(wx.EVT_TEXT, self.update_bind_addr_warning)
         self.lbl_bind_addr_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_bind_addr_warning)
         self.chk_auth.Bind(wx.EVT_CHECKBOX, self.update_auth_state)
-        self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.update_stereo_format)
-        self.cbo_screenshot.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_screenshot)
-        self.btn_reload_window_name.Bind(wx.EVT_BUTTON, self.update_window_names)
-
-        self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
-        self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
 
         self.tgl_adj_fine.Bind(wx.EVT_TOGGLEBUTTON, self.on_toggle_finetuning)
         self.btn_adj_align.Bind(wx.EVT_BUTTON, self.on_click_align)
@@ -741,7 +406,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.btn_start.SetFocus()
 
     def get_editable_comboboxes(self):
-        return self.get_desktop_editable_comboboxes()[:-1]
+        return self.get_desktop_editable_comboboxes()
 
     def on_close(self, event):
         self.save_preset()
