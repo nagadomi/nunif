@@ -5,6 +5,7 @@ import os
 import secrets
 import socket
 import sys
+import threading
 
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
@@ -83,24 +84,66 @@ def generate_self_signed_cert(cert_dir, cert_file, key_file, bind_addr="127.0.0.
         print(f"Generated new self-signed certificate with SAN: {bind_addr}")
 
 
-def create_parser():
-    local_address = get_local_address()
-    parser = argparse.ArgumentParser(description="WebXR View Server")
+def _add_player_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--root", default=EXAMPLE_DIR, help="Root directory for image files")
-    parser.add_argument("--port", type=int, default=1304, help="HTTP listen port")
-    parser.add_argument("--bind-addr", type=str, default=local_address, help="HTTP listen address")
-    parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")
-    parser.add_argument("--password", type=str, help="HTTP Basic Authentication password")
     parser.add_argument("--cache-dir", default=CACHE_DIR, help="Directory for thumbnail cache")
     parser.add_argument("--cache-size-limit", type=int, default=1000, help="Cache size limit in MB")
     parser.add_argument("--clear-cache", action="store_true", help="Clear thumbnail cache on startup")
     parser.add_argument("--debug", action="store_true", help="Enable debug log window in VR")
     parser.add_argument("--debug-console", action="store_true", help="Enable debug log in browser console only")
+    parser.add_argument("--enable-stream", action="store_true", help="Enable desktop screenshot streaming")
     return parser
 
 
-def set_state_args(args, stop_event=None):
-    args.state = {"stop_event": stop_event}
+class _PlayerArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args=None, namespace=None):  # type: ignore[override]
+        effective_args = sys.argv[1:] if args is None else list(args)
+        if (
+            "--enable-stream" in effective_args
+            or getattr(namespace, "enable_stream", False)
+            or bool(self.get_default("enable_stream"))
+        ):
+            full_parser = create_parser(enable_stream=True)
+            full_parser.set_defaults(**self._defaults)
+            return full_parser.parse_args(args=args, namespace=namespace)
+        return super().parse_args(args=args, namespace=namespace)
+
+
+def create_parser(enable_stream: bool = False) -> argparse.ArgumentParser:
+    if enable_stream:
+        from .. import utils as IW3U
+        from ..desktop.utils import add_desktop_stream_args
+
+        parser = IW3U.create_parser(required_true=False)
+        add_desktop_stream_args(parser, default_port=1304)
+        parser.description = "WebXR View Server"
+        return _add_player_args(parser)
+
+    parser = _PlayerArgumentParser(description="WebXR View Server")
+    parser.add_argument("--port", type=int, default=1304, help="HTTP listen port")
+    parser.add_argument("--bind-addr", type=str, default=get_local_address(), help="HTTP listen address")
+    parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")
+    parser.add_argument("--password", type=str, help="HTTP Basic Authentication password")
+    return _add_player_args(parser)
+
+
+def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_model=None):
+    if getattr(args, "enable_stream", False):
+        from ..desktop.utils import set_state_args as set_desktop_state_args
+
+        set_desktop_state_args(
+            args,
+            args_lock=args_lock,
+            stop_event=stop_event,
+            fps_event=fps_event,
+            depth_model=depth_model,
+        )
+    else:
+        args.state = {
+            "stop_event": stop_event,
+            "fps_event": fps_event,
+            "args_lock": args_lock,
+        }
 
 
 async def serve_with_watchdog(args, config, shutdown_event):
@@ -136,7 +179,20 @@ async def serve_with_watchdog(args, config, shutdown_event):
                 pass
 
 
-def server_main(args):
+def server_main(args, init_wxapp=True):
+    enable_stream = bool(getattr(args, "enable_stream", False))
+    if not hasattr(args, "state") or not isinstance(args.state, dict):
+        set_state_args(args)
+    elif enable_stream and "depth_model" not in args.state:
+        existing_state = args.state
+        set_state_args(
+            args,
+            args_lock=existing_state.get("args_lock"),
+            stop_event=existing_state.get("stop_event"),
+            fps_event=existing_state.get("fps_event"),
+            depth_model=existing_state.get("depth_model"),
+        )
+
     if args.bind_addr is None:
         args.bind_addr = get_local_address()
         if not is_private_address(args.bind_addr):
@@ -157,6 +213,28 @@ def server_main(args):
             f.write(secrets.token_bytes(32))
 
     args.secret_key_file = SECRET_KEY_FILE
+    if enable_stream and getattr(args, "stream_hub", None) is None:
+        from ..desktop.service import DesktopStreamService
+        from ..desktop.utils import init_win32, resolve_player_stereo_format
+        from .stream_hub import StreamFrameHub
+
+        init_win32()
+        stream_hub = StreamFrameHub(
+            lock=threading.Lock(),
+            frame_width=1920,
+            frame_height=1080,
+            fps=int(getattr(args, "stream_fps", 30)),
+            stereo_format=resolve_player_stereo_format(args),
+        )
+        desktop_service = DesktopStreamService(
+            args=args,
+            stream_hub=stream_hub,
+            idle_timeout=10.0,
+            init_wxapp=init_wxapp,
+        )
+        args.stream_hub = stream_hub
+        args.desktop_service = desktop_service
+
     if hasattr(app.state, "server_state") and app.state.server_state is not None:
         app.state.server_state.close()
         app.state.server_state = None
@@ -166,7 +244,11 @@ def server_main(args):
     app.state.server_state = state
     app.state.media_library = MediaLibrary(state)
 
-    print(f"Starting iw3-player server on https://{args.bind_addr}:{args.port}")
+    stream_url = f"https://{args.bind_addr}:{args.port}"
+    print(f"Starting iw3-player server on {stream_url}")
+    fps_event = args.state.get("fps_event")
+    if fps_event is not None:
+        fps_event.set_url(stream_url)
 
     config = Config()
     config.bind = [f"{args.bind_addr}:{args.port}"]
@@ -185,6 +267,11 @@ def server_main(args):
         print("\nShutdown requested by user (Ctrl+C)")
     finally:
         state.close()
+
+    if args.state.get("stop_event") and args.state["stop_event"].is_set():
+        args.state["stop_event"].clear()
+
+    return args
 
 
 if __name__ == "__main__":

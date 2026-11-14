@@ -19,6 +19,7 @@ class ServerState:
         self.mode: str = getattr(args, "mode", "player")
         self.enable_file_library: bool = bool(getattr(args, "enable_file_library", self.mode == "player"))
         self.stream_hub = getattr(args, "stream_hub", None)
+        self.desktop_service = getattr(args, "desktop_service", None)
 
         self.image_root = os.path.abspath(root)
         self.auth_user = getattr(args, "user", None)
@@ -34,5 +35,7 @@ class ServerState:
                 self.cache_db.clear()
 
     def close(self) -> None:
+        if self.desktop_service is not None:
+            self.desktop_service.stop()
         if self.cache_db is not None:
             self.cache_db.close()

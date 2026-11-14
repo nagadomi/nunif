@@ -229,6 +229,7 @@ class WebXRStreamingServer:
         stream_content_type: str = "image/jpeg",
         auth: tuple[str, str] | None = None,
         host: str = "",
+        args: Any = None,
     ) -> None:
         from ..player.stream_hub import StreamFrameHub
 
@@ -243,6 +244,7 @@ class WebXRStreamingServer:
         self.stream_uri = stream_uri
         self.stream_content_type = stream_content_type
         self.auth = auth
+        self.args = args
 
         self.stream_hub = StreamFrameHub(
             lock=lock,
@@ -253,6 +255,7 @@ class WebXRStreamingServer:
             stream_uri=stream_uri,
             stream_content_type=stream_content_type,
         )
+        self.stream_hub.service = self
         self.thread: threading.Thread | None = None
         self.state: Any = None
 
@@ -334,6 +337,23 @@ class WebXRStreamingServer:
         with self.op_lock:
             self._stop()
             self._start()
+
+    def is_running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def get_settings(self) -> dict[str, Any]:
+        if self.args is None:
+            return {}
+        from .utils import get_runtime_stream_settings
+
+        return get_runtime_stream_settings(self.args)
+
+    def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
+        if self.args is None:
+            return {}
+        from .utils import update_runtime_stream_settings
+
+        return update_runtime_stream_settings(self.args, updates)
 
     def set_frame_data(self, frame_data):
         self.stream_hub.set_frame_data(frame_data)

@@ -106,6 +106,10 @@ class UIManager extends THREE.Group {
         return !!this.stereoPlayer?.playbackController?.isStreamActive;
     }
 
+    get hasDesktopStream() {
+        return !!this.appConfig?.features?.desktop_stream;
+    }
+
     setAppConfig(config) {
         if (config) {
             this.appConfig = config;
@@ -169,7 +173,7 @@ class UIManager extends THREE.Group {
         });
     }
 
-    async openRecentFile() {
+    async openRecentFile(showNotFound = true) {
         const recentPath = storage.get('recent_path');
         const recentFile = storage.get('recent_file_name');
         if (!recentPath || !recentFile) return;
@@ -185,7 +189,9 @@ class UIManager extends THREE.Group {
                 await this.loadMedia(index);
                 this.hideRecentButton();
             } else {
-                this.showNotification("Recent file not found");
+                if (showNotFound) {
+                    this.showNotification("Recent file not found");
+                }
                 this.hideRecentButton();
             }
         } catch (e) {
@@ -352,6 +358,16 @@ class UIManager extends THREE.Group {
         }
     }
 
+    async toggleDesktopStream() {
+        if (!this.hasDesktopStream || !this.stereoPlayer) return;
+        if (this.isStreamActive) {
+            await this.stereoPlayer.stopStream();
+            await this.openRecentFile(false);
+        } else {
+            await this.stereoPlayer.loadStream();
+        }
+    }
+
     seek(seconds) {
         if (this.stereoPlayer) {
             this.stereoPlayer.seek(seconds);
@@ -428,11 +444,20 @@ class UIManager extends THREE.Group {
         this.notificationContainer.visible = true;
 
         this.notificationTimeout = setTimeout(() => {
+            this.hideNotification();
+        }, duration);
+    }
+
+    hideNotification() {
+        if (this.notificationTimeout) {
+            clearTimeout(this.notificationTimeout);
+            this.notificationTimeout = null;
+        }
+        if (this.notificationContainer) {
             this.notificationContainer.setProperties({ display: 'none' });
             this.notificationContainer.visible = false;
-            this.isNotificationVisible = false;
-            this.notificationTimeout = null;
-        }, duration);
+        }
+        this.isNotificationVisible = false;
     }
 
     switchSubMenu(targetMenu) {

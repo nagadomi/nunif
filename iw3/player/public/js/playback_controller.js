@@ -89,11 +89,14 @@ class PlaybackController extends EventTarget {
         return this.mjpegStream ? this.mjpegStream.consumeNewFrame() : false;
     }
 
-    destroyStream() {
+    destroyStream(notifyServer = false) {
         if (this.mjpegStream) {
             this.mjpegStream.stop();
             this.mjpegStream = null;
             this.dispatchEvent(new CustomEvent('video-destroyed'));
+            if (notifyServer) {
+                fetch('/api/stream/stop', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+            }
         }
     }
 
@@ -249,7 +252,7 @@ class PlaybackController extends EventTarget {
                 });
             } else if (item.type === 'video') {
                 if (!(forcedFormat && this.videoElement)) {
-                    this.destroyStream();
+                    this.destroyStream(true);
                     this.destroyVideo();
                     this.videoElement = document.createElement('video');
                     this.videoElement.crossOrigin = "anonymous";
@@ -408,7 +411,7 @@ class PlaybackController extends EventTarget {
                 }
             } else {
                 // Image Loading
-                this.destroyStream();
+                this.destroyStream(true);
                 this.destroyVideo();
 
                 // Check texture cache

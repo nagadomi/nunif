@@ -290,6 +290,9 @@ class StereoPlayer extends THREE.Group {
         const file = this.galleryManager.playbackGallery[index];
         if (!file) return;
 
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+
         // IMMEDIATELY stop periodic saves to avoid race conditions during async operations
         const wasPlaying = this.isPlaying;
         const oldVideoTime = (this.videoElement && wasPlaying) ? this.videoElement.currentTime : null;
@@ -404,7 +407,26 @@ class StereoPlayer extends THREE.Group {
             await this.uiManager.ready;
         }
 
+        if (!forcedFormat) {
+            const oldFile = this.galleryManager.getCurrentItem();
+            const oldVideoTime = (this.videoElement && !isNaN(this.videoElement.currentTime))
+                ? this.videoElement.currentTime
+                : null;
+            this.uiManager.updateSubtitleText("");
+            this.uiManager.availableSubtitles = [];
+            this.uiManager.currentSubtitleIndex = -1;
+            if (oldFile && oldVideoTime !== null) {
+                await this.uiManager.settingsManager.updateFileState({ playback_time: oldVideoTime }, oldFile);
+            }
+            this.playbackController.destroyVideo();
+            this.galleryManager.setPlayingItem(-1);
+            if (this.appConfig?.mode !== 'desktop') {
+                this.uiManager.showNotification('Starting Desktop Stream...', 10000);
+            }
+        }
+
         let info = null;
+        let errorDetail = null;
         while (!info) {
             try {
                 const res = await fetch('/api/stream/info', { cache: 'no-store', credentials: 'same-origin' });
@@ -414,7 +436,13 @@ class StereoPlayer extends THREE.Group {
                 }
                 if (res.status === 401 && !this.renderer.xr.isPresenting) {
                     window.location.reload();
-                    return;
+                    return false;
+                }
+                try {
+                    const errData = await res.json();
+                    if (errData?.detail) errorDetail = errData.detail;
+                } catch {
+                    // ignore non-json error body
                 }
                 this.debugLogInstance.log(`[WARN] Stream info returned HTTP ${res.status}`);
             } catch (e) {
@@ -426,10 +454,18 @@ class StereoPlayer extends THREE.Group {
                 break;
             }
             if (this.appConfig?.mode !== 'desktop') {
-                this.uiManager.showNotification('Stream unavailable');
-                return;
+                this.uiManager.showNotification(
+                    errorDetail ? `Stream unavailable: ${errorDetail}` : 'Stream unavailable',
+                    3000
+                );
+                this.uiManager.syncUI(true);
+                return false;
             }
             await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        if (this.appConfig?.mode !== 'desktop' && !forcedFormat) {
+            this.uiManager.hideNotification();
         }
 
         const streamFormat = info.stereo_format || STEREO_FORMATS.SBS_HALF;
@@ -470,13 +506,25 @@ class StereoPlayer extends THREE.Group {
         });
         if (!result.success) {
             if (!result.cancelled) {
+                this.streamItem = null;
+                this.streamFormatOverride = null;
                 this.activeScreen.clearScreen();
             }
-            return;
+            this.uiManager.syncUI(true);
+            return false;
         }
 
         const { detail } = result;
         this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
+        this.uiManager.syncUI(true);
+        return true;
+    }
+
+    async stopStream() {
+        this.playbackController.destroyStream(true);
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+        this.activeScreen.clearScreen();
         this.uiManager.syncUI(true);
     }
 
@@ -596,6 +644,7 @@ class StereoPlayer extends THREE.Group {
     }
 
     loadNextImage(direction) {
+        if (this.playbackController.isStreamActive) return;
         const next = this.galleryManager.getNextIndex(direction);
         if (next !== -1) this.loadMedia(next);
     }

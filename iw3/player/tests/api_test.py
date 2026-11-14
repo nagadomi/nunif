@@ -337,3 +337,182 @@ def test_resolve_player_stereo_format():
     assert resolve_player_stereo_format(SimpleNamespace(vr180=True)) == "SBS_180"
     assert resolve_player_stereo_format(SimpleNamespace(anaglyph="dubois")) == "FLAT"
     assert resolve_player_stereo_format(SimpleNamespace()) == "SBS_HALF"
+
+
+def test_player_create_parser():
+    from iw3.player.server import create_parser, set_state_args
+
+    parser = create_parser()
+    args = parser.parse_args([])
+    assert args.enable_stream is False
+    assert args.port == 1304
+    set_state_args(args)
+    assert "depth_model" not in args.state
+
+    custom = parser.parse_args(
+        ["--enable-stream", "--full-sbs", "--stream-fps", "60", "--screenshot", "pil", "--divergence", "2.5"]
+    )
+    assert custom.enable_stream is True
+    assert custom.full_sbs is True
+    assert custom.stream_fps == 60
+    assert custom.screenshot == "pil"
+    assert custom.divergence == 2.5
+    assert custom.depth_model == "Any_V2_S"
+    assert custom.convergence == 1.0
+    assert custom.ema_normalize is True
+
+
+def test_stream_hub_clear_frames_stops_clients():
+    hub = StreamFrameHub(frame_width=1920, frame_height=1080, fps=30)
+
+    async def exercise():
+        hub.set_frame_data((b"\xff\xd8A\xff\xd9", time.perf_counter() + 10.0))
+        gen = hub.async_stream_generator()
+        part = await anext(gen)
+        assert b"A" in part
+        assert hub.active_clients == 1
+
+        hub.clear_frames(stop_clients=True)
+        with pytest.raises(StopAsyncIteration):
+            await anext(gen)
+        assert hub.active_clients == 0
+        assert not hub.shutdown_event.is_set()
+
+    asyncio.run(exercise())
+
+
+def test_api_player_desktop_stream_lifecycle(tmp_path):
+    from iw3.desktop.utils import (
+        ensure_default_stereo_format,
+        get_runtime_stream_settings,
+        resolve_player_stereo_format,
+        update_runtime_stream_settings,
+    )
+    from iw3.player.server import create_parser, set_state_args
+
+    class DummyDesktopService:
+        def __init__(self, args, stream_hub):
+            self.args = args
+            self.stream_hub = stream_hub
+            self.stream_hub.service = self
+            self.running = False
+            self.start_count = 0
+            self.stop_count = 0
+            ensure_default_stereo_format(self.args)
+
+        def is_running(self):
+            return self.running
+
+        def ensure_running(self, timeout=30.0):
+            self.start_count += 1
+            self.running = True
+            self.stream_hub.update_stream_params(
+                frame_width=2560,
+                frame_height=720,
+                fps=int(self.args.stream_fps),
+                stereo_format=resolve_player_stereo_format(self.args),
+            )
+
+        def stop(self):
+            self.stop_count += 1
+            self.running = False
+            self.stream_hub.clear_frames(stop_clients=True)
+
+        def get_settings(self):
+            return get_runtime_stream_settings(self.args)
+
+        def update_settings(self, updates):
+            return update_runtime_stream_settings(self.args, updates)
+
+    parser = create_parser()
+    cli_args = parser.parse_args(["--enable-stream"])
+    set_state_args(cli_args)
+
+    secret_file = tmp_path / "secret.txt"
+    secret_file.write_bytes(b"16bytessecretkey")
+    hub = StreamFrameHub(frame_width=1920, frame_height=1080, fps=30, stereo_format="SBS_HALF")
+    service = DummyDesktopService(cli_args, hub)
+    state = ServerState(
+        SimpleNamespace(
+            mode="player",
+            root=str(tmp_path),
+            cache_dir=str(tmp_path / "cache"),
+            enable_file_library=True,
+            stream_hub=hub,
+            desktop_service=service,
+            secret_key_file=str(secret_file),
+        )
+    )
+    library = MediaLibrary(state)
+
+    prev_state = getattr(app.state, "server_state", None)
+    prev_lib = getattr(app.state, "media_library", None)
+    app.state.server_state = state
+    app.state.media_library = library
+    try:
+        client = TestClient(app)
+
+        res_cfg = client.get("/api/config")
+        assert res_cfg.status_code == 200
+        assert res_cfg.json() == {
+            "mode": "player",
+            "features": {
+                "file_library": True,
+                "desktop_stream": True,
+            },
+        }
+
+        res_info = client.get("/api/stream/info")
+        assert res_info.status_code == 200
+        info = res_info.json()
+        assert info["active"] is True
+        assert info["width"] == 2560
+        assert info["height"] == 720
+        assert service.start_count == 1
+
+        res_stop = client.post("/api/stream/stop")
+        assert res_stop.status_code == 200
+        assert res_stop.json() == {"active": False}
+        assert service.stop_count == 1
+
+        res_start = client.post("/api/stream/start")
+        assert res_start.status_code == 200
+        assert res_start.json()["active"] is True
+        assert service.start_count == 2
+
+        res_get_settings = client.get("/api/stream/settings")
+        assert res_get_settings.status_code == 200
+        settings = res_get_settings.json()
+        assert settings["divergence"] == 1.0
+        assert settings["stereo_format"] == "SBS_HALF"
+
+        res_post_settings = client.post(
+            "/api/stream/settings",
+            json={
+                "divergence": 2.5,
+                "convergence": 0.75,
+                "edge_dilation": 4,
+                "stream_fps": 45,
+                "stream_quality": 85,
+                "synthetic_view": "left",
+                "ema_normalize": False,
+                "ema_decay": 0.85,
+            },
+        )
+        assert res_post_settings.status_code == 200
+        updated = res_post_settings.json()
+        assert updated["divergence"] == 2.5
+        assert updated["convergence"] == 0.75
+        assert updated["edge_dilation"] == 4
+        assert updated["stream_fps"] == 45
+        assert updated["stream_quality"] == 85
+        assert updated["synthetic_view"] == "left"
+        assert updated["ema_normalize"] is False
+        assert updated["ema_decay"] == 0.85
+    finally:
+        state.close()
+        app.state.server_state = prev_state
+        app.state.media_library = prev_lib
+
+    assert service.is_running() is False
+    assert service.stop_count == 2
