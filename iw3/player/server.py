@@ -453,6 +453,7 @@ def server_main(args, init_wxapp=True):
             idle_timeout=10.0,
             init_wxapp=init_wxapp,
         )
+        desktop_service.authorize_capture()
         args.stream_hub = stream_hub
         args.desktop_service = desktop_service
 

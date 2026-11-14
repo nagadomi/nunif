@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -39,8 +40,28 @@ class DesktopStreamService:
         self._worker_stop_event: threading.Event | None = None
         self._ready_event: threading.Event | None = None
         self._error: BaseException | None = None
+        self._obs_restore_token: str | None = None
         ensure_default_stereo_format(self.args)
         validate_screenshot_args(self.args)
+
+    def authorize_capture(self) -> None:
+        if getattr(self.args, "screenshot", None) != "obs":
+            return
+        from .screenshot_process_obs import authorize_obs_capture
+
+        state = getattr(self.args, "state", None)
+        stop_event = state.get("stop_event") if isinstance(state, dict) else None
+        token = authorize_obs_capture(
+            draw_cursor_enabled=not getattr(self.args, "disable_draw_cursor", False),
+            stop_event=stop_event,
+        )
+        if not token:
+            print(
+                "Warning: Wayland portal did not return a RestoreToken; "
+                "capture confirmation dialog may appear again when streaming starts.",
+                file=sys.stderr,
+            )
+        self._obs_restore_token = token
 
     def is_running(self) -> bool:
         with self._op_lock:
@@ -113,7 +134,10 @@ class DesktopStreamService:
                 self.args,
                 init_wxapp=self.init_wxapp,
                 stop_event=stop_event,
+                obs_restore_token=self._obs_restore_token,
             )
+            if getattr(self.args, "screenshot", None) == "obs":
+                self._obs_restore_token = getattr(pipeline.screenshot_thread, "restore_token", None)
             self.stream_hub.clear_frames(stop_clients=False)
             self.stream_hub.update_stream_params(
                 frame_width=pipeline.output_frame_width,

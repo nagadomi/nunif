@@ -458,6 +458,7 @@ def init_desktop_pipeline(
     args: Any,
     init_wxapp: bool = False,
     stop_event: threading.Event | None = None,
+    obs_restore_token: str | None = None,
 ) -> SimpleNamespace:
     init_num_threads(args.gpu[0])
     ensure_default_stereo_format(args)
@@ -482,6 +483,7 @@ def init_desktop_pipeline(
                 crop_right=args.crop_right,
                 crop_bottom=args.crop_bottom,
                 draw_cursor_enabled=not args.disable_draw_cursor,
+                restore_token=obs_restore_token,
             )
             screen_width, screen_height = screenshot_thread.init_capture(stop_event=effective_stop_event)
         elif args.window_name:
@@ -549,6 +551,7 @@ def init_desktop_pipeline(
                 crop_right=args.crop_right,
                 crop_bottom=args.crop_bottom,
                 draw_cursor_enabled=not args.disable_draw_cursor,
+                restore_token=obs_restore_token,
             )
 
         if args.compile:
