@@ -303,6 +303,6 @@ The output file will be generated in `public/lib`.
 
 ### Dependency on `nunif`
 
-The core backend (CLI) and frontend do not strictly depend on the `nunif` framework. They can operate standalone by configuring `dir_config.py`. 
+Except for `--enable-stream`, the core backend (CLI) and frontend do not strictly depend on the `nunif` framework. They can operate standalone by configuring `dir_config.py`. 
 
-However, the GUI and certain other utility scripts are integrated with and dependent on `nunif`.
+However, `--enable-stream`, the GUI, and certain other utility scripts are integrated with and dependent on `nunif`.

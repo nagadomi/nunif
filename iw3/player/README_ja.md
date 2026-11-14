@@ -326,6 +326,6 @@ npm run build
 
 ### `nunif`への依存関係
 
-バックエンド(cli)とフロントエンドは`nunif`に依存していません。`dir_config.py`を調節すればスタンドアローンで動作します。
+`--enable-stream`を除き、バックエンド(cli)とフロントエンドは`nunif`に依存していません。`dir_config.py`を調節すればスタンドアローンで動作します。
 
-GUIやその他のユーティリティは`nunif`に依存しています。
+`--enable-stream`、GUI、およびその他のユーティリティは`nunif`に依存しています。
