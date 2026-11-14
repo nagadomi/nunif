@@ -609,8 +609,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             return
 
         self.stop_event.clear()
-        self.btn_start.Disable()
         self.btn_cancel.Enable()
+        self.btn_cancel.SetFocus()
+        self.btn_start.Disable()
         self.btn_url.Enable()
         self.pnl_preset.Hide()
         self.grp_stereo.Hide()
@@ -653,8 +654,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             self._apply_args_to_adj_controls(final_args)
         self.args = None
         self.processing = False
-        self.btn_cancel.Disable()
         self.btn_start.Enable()
+        self.btn_start.SetFocus()
+        self.btn_cancel.Disable()
         self.txt_url.SetValue("")
         self.btn_url.Disable()
         self.pnl_preset.Show()

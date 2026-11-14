@@ -535,8 +535,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             self._last_synced_stream_settings = None
 
         self.stop_event.clear()
-        self.btn_start.Disable()
         self.btn_stop.Enable()
+        self.btn_stop.SetFocus()
+        self.btn_start.Disable()
         self.pnl_top.Disable()
         self.pnl_file.Disable()
         self.pnl_options.Disable()
@@ -580,6 +581,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.args = None
         self.processing = False
         self.btn_start.Enable()
+        self.btn_start.SetFocus()
         self.btn_stop.Disable()
         self.txt_url.SetValue("")
         self.btn_url.Disable()
