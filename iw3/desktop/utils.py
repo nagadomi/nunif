@@ -334,18 +334,8 @@ def get_runtime_stream_settings(args: Any) -> dict[str, Any]:
         return {
             "divergence": float(args.divergence),
             "convergence": float(args.convergence),
-            "ipd_offset": float(args.ipd_offset),
             "foreground_scale": float(args.foreground_scale),
             "edge_dilation": edge_dilation,
-            "ema_normalize": bool(args.ema_normalize),
-            "ema_decay": float(args.ema_decay),
-            "depth_aa": bool(args.depth_aa),
-            "preserve_screen_border": bool(args.preserve_screen_border),
-            "synthetic_view": str(args.synthetic_view),
-            "stream_fps": int(args.stream_fps),
-            "stream_quality": int(args.stream_quality),
-            "stereo_format": resolve_player_stereo_format(args),
-            "mapper": getattr(args, "mapper", None),
         }
 
     if args_lock is not None:
@@ -399,8 +389,6 @@ def update_runtime_stream_settings(args: Any, updates: dict[str, Any]) -> dict[s
             convergence_model = state.get("convergence_model") if isinstance(state, dict) else None
             if convergence_model is not None:
                 convergence_model.convergence = args.convergence
-        if updates.get("ipd_offset") is not None:
-            args.ipd_offset = float(updates["ipd_offset"])
         if updates.get("foreground_scale") is not None:
             args.foreground_scale = float(updates["foreground_scale"])
             if isinstance(state, dict):
@@ -413,22 +401,6 @@ def update_runtime_stream_settings(args: Any, updates: dict[str, Any]) -> dict[s
                 )
         if updates.get("edge_dilation") is not None:
             args.edge_dilation = int(updates["edge_dilation"])
-        if updates.get("ema_normalize") is not None:
-            args.ema_normalize = bool(updates["ema_normalize"])
-        if updates.get("ema_decay") is not None:
-            args.ema_decay = float(updates["ema_decay"])
-            if depth_model is not None and depth_model.loaded():
-                depth_model.enable_ema(args.ema_decay, buffer_size=1)
-        if updates.get("depth_aa") is not None:
-            args.depth_aa = bool(updates["depth_aa"])
-        if updates.get("preserve_screen_border") is not None:
-            args.preserve_screen_border = bool(updates["preserve_screen_border"])
-        if updates.get("synthetic_view") is not None:
-            args.synthetic_view = str(updates["synthetic_view"])
-        if updates.get("stream_fps") is not None:
-            args.stream_fps = max(1, int(updates["stream_fps"]))
-        if updates.get("stream_quality") is not None:
-            args.stream_quality = max(1, min(100, int(updates["stream_quality"])))
 
     if args_lock is not None:
         with args_lock:

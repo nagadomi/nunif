@@ -486,8 +486,12 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
         res_get_settings = client.get("/api/stream/settings")
         assert res_get_settings.status_code == 200
         settings = res_get_settings.json()
-        assert settings["divergence"] == 1.0
-        assert settings["stereo_format"] == "SBS_HALF"
+        assert settings == {
+            "divergence": 1.0,
+            "convergence": 1.0,
+            "foreground_scale": 0.0,
+            "edge_dilation": 2,
+        }
 
         res_post_settings = client.post(
             "/api/stream/settings",
@@ -496,26 +500,18 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
                 "convergence": 0.75,
                 "foreground_scale": -1.5,
                 "edge_dilation": 4,
-                "stream_fps": 45,
-                "stream_quality": 85,
-                "synthetic_view": "left",
-                "ema_normalize": False,
-                "ema_decay": 0.85,
             },
         )
         assert res_post_settings.status_code == 200
         updated = res_post_settings.json()
-        assert updated["divergence"] == 2.5
-        assert updated["convergence"] == 0.75
+        assert updated == {
+            "divergence": 2.5,
+            "convergence": 0.75,
+            "foreground_scale": -1.5,
+            "edge_dilation": 4,
+        }
         assert dummy_convergence_model.convergence == 0.75
-        assert updated["foreground_scale"] == -1.5
-        assert updated["edge_dilation"] == 4
         assert read_runtime_adjustment_values(cli_args) == (2.5, 0.75, -1.5, 4, "")
-        assert updated["stream_fps"] == 45
-        assert updated["stream_quality"] == 85
-        assert updated["synthetic_view"] == "left"
-        assert updated["ema_normalize"] is False
-        assert updated["ema_decay"] == 0.85
     finally:
         state.close()
         app.state.server_state = prev_state
