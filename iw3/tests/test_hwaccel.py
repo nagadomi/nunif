@@ -2,7 +2,10 @@ import os
 from typing import NamedTuple
 
 import pytest
+import torch
 
+from nunif.utils.video import HW_DEVICES, has_nvenc, has_vaapi
+from nunif.utils.video.utils import is_nvidia_gpu
 from tests.helpers.runner import run
 from tests.helpers.smoke_data import ensure_smoke_data
 
@@ -11,6 +14,35 @@ H265_ENC = "hevc_nvenc"
 HWACCEL = ["--hwaccel", "cuda"]
 H264_OPT = ["--video-codec", H264_ENC, *HWACCEL]
 H265_OPT = ["--video-codec", H265_ENC, *HWACCEL]
+
+VAAPI_H264_ENC = "h264_vaapi"
+VAAPI_H265_ENC = "hevc_vaapi"
+VAAPI_HWACCEL = ["--hwaccel", "vaapi"]
+VAAPI_H264_OPT = ["--video-codec", VAAPI_H264_ENC, *VAAPI_HWACCEL]
+VAAPI_H265_OPT = ["--video-codec", VAAPI_H265_ENC, *VAAPI_HWACCEL]
+
+
+def is_cuda_available() -> bool:
+    if "cuda" not in HW_DEVICES or not has_nvenc():
+        return False
+    if not torch.cuda.is_available():
+        return False
+    return is_nvidia_gpu(torch.device("cuda:0"))
+
+
+def is_vaapi_available() -> bool:
+    return "vaapi" in HW_DEVICES and has_vaapi()
+
+
+cuda_required = pytest.mark.skipif(
+    not is_cuda_available(),
+    reason="CUDA/NVENC hwaccel not available on this host",
+)
+
+vaapi_required = pytest.mark.skipif(
+    not is_vaapi_available(),
+    reason="VAAPI hwaccel not available on this host",
+)
 
 
 class HwaccelSetup(NamedTuple):
@@ -39,12 +71,14 @@ def hwaccel_setup(tmp_path_factory: pytest.TempPathFactory) -> HwaccelSetup:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_video(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run([*hwaccel_setup.cli, "-i", video, "--depth-model", "Any_S", "--metadata", *H264_OPT])
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_dir(hwaccel_setup: HwaccelSetup) -> None:
     test_dir = hwaccel_setup.dir
     out = hwaccel_setup.output
@@ -52,6 +86,7 @@ def test_hwaccel_dir(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_ema(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run(
@@ -71,6 +106,7 @@ def test_hwaccel_ema(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_batch(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run(
@@ -92,12 +128,14 @@ def test_hwaccel_batch(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_low_vram(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run([*hwaccel_setup.cli, "-i", video, "--depth-model", "Any_S", "--metadata", "--low-vram", *H264_OPT])
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_vda(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run(
@@ -119,6 +157,7 @@ def test_hwaccel_vda(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_vda_stream(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run(
@@ -139,6 +178,7 @@ def test_hwaccel_vda_stream(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_hdr(hwaccel_setup: HwaccelSetup) -> None:
     video_hdr = hwaccel_setup.video_hdr
     run(
@@ -158,6 +198,7 @@ def test_hwaccel_hdr(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_hdr_vda(hwaccel_setup: HwaccelSetup) -> None:
     video_hdr = hwaccel_setup.video_hdr
     run(
@@ -181,6 +222,7 @@ def test_hwaccel_hdr_vda(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_hdr2sdr(hwaccel_setup: HwaccelSetup) -> None:
     video_hdr = hwaccel_setup.video_hdr
     run(
@@ -200,12 +242,14 @@ def test_hwaccel_hdr2sdr(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_inpaint(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run([*hwaccel_setup.cli, "-i", video, "--depth-model", "Any_S", "--method", "forward_inpaint", *H264_OPT])
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_inpaint_vda(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run(
@@ -227,6 +271,7 @@ def test_hwaccel_inpaint_vda(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_export_import(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     video_hdr = hwaccel_setup.video_hdr
@@ -255,12 +300,69 @@ def test_hwaccel_export_import(hwaccel_setup: HwaccelSetup) -> None:
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_vf(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run([*hwaccel_setup.cli, "-i", video, "--depth-model", "Any_S", "--vf", "scale=-2:320,crop=256:256", *HWACCEL])
 
 
 @pytest.mark.hwaccel
+@cuda_required
 def test_hwaccel_keyframe(hwaccel_setup: HwaccelSetup) -> None:
     video = hwaccel_setup.video
     run([*hwaccel_setup.cli, "-i", video, "--depth-model", "Any_S", "--keyframe", *HWACCEL])
+
+
+@pytest.mark.hwaccel
+@vaapi_required
+def test_hwaccel_vaapi_video(hwaccel_setup: HwaccelSetup) -> None:
+    video = hwaccel_setup.video
+    run([*hwaccel_setup.cli, "-i", video, "--depth-model", "Any_S", "--metadata", *VAAPI_H264_OPT])
+
+
+@pytest.mark.hwaccel
+@vaapi_required
+def test_hwaccel_vaapi_batch(hwaccel_setup: HwaccelSetup) -> None:
+    video = hwaccel_setup.video
+    run(
+        [
+            *hwaccel_setup.cli,
+            "-i",
+            video,
+            "--depth-model",
+            "Any_S",
+            "--metadata",
+            "--batch-size",
+            "4",
+            "--max-workers",
+            "2",
+            *VAAPI_H264_OPT,
+        ]
+    )
+
+
+@pytest.mark.hwaccel
+@vaapi_required
+def test_hwaccel_vaapi_hdr(hwaccel_setup: HwaccelSetup) -> None:
+    video_hdr = hwaccel_setup.video_hdr
+    run(
+        [
+            *hwaccel_setup.cli,
+            "-i",
+            video_hdr,
+            "--depth-model",
+            "Any_S",
+            "--colorspace",
+            "auto",
+            "--pix-fmt",
+            "yuv420p10le",
+            *VAAPI_H265_OPT,
+        ]
+    )
+
+
+@pytest.mark.hwaccel
+@vaapi_required
+def test_hwaccel_vaapi_inpaint(hwaccel_setup: HwaccelSetup) -> None:
+    video = hwaccel_setup.video
+    run([*hwaccel_setup.cli, "-i", video, "--depth-model", "Any_S", "--method", "forward_inpaint", *VAAPI_H264_OPT])

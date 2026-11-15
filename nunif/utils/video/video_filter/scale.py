@@ -52,11 +52,7 @@ class ScaleFilter:
 
         self.evaluator = get_evaluator()
 
-    def __call__(self, frame: TensorFrame) -> TensorFrame:
-        x = frame.planes
-        # Input width and height from tensor (..., H, W)
-        ih, iw = x.shape[-2:]
-
+    def resolve_size(self, iw: int, ih: int) -> tuple[int, int]:
         # Variables for expression evaluation
         self.evaluator.names.update(
             {
@@ -89,6 +85,14 @@ class ScaleFilter:
         elif oh < 0:
             n_scale = abs(oh)
             oh = int((ow / aspect) / n_scale + 0.5) * n_scale
+
+        return ow, oh
+
+    def __call__(self, frame: TensorFrame) -> TensorFrame:
+        x = frame.planes
+        # Input width and height from tensor (..., H, W)
+        ih, iw = x.shape[-2:]
+        ow, oh = self.resolve_size(iw, ih)
 
         # Skip if size is same
         if ow == iw and oh == ih:
