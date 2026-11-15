@@ -470,7 +470,7 @@ class StereoPlayer extends THREE.Group {
 
         const streamFormat = info.stereo_format || STEREO_FORMATS.SBS_HALF;
         const streamName = (info.width && info.height)
-            ? `Desktop (${info.width}x${info.height} ${info.fps || 30}fps)`
+            ? `Desktop (${info.width}x${info.height})`
             : 'Desktop Stream';
 
         const streamItem = {
@@ -545,8 +545,7 @@ class StereoPlayer extends THREE.Group {
                 this.streamItem.stereo_format = info.stereo_format;
             }
             if (info.width && info.height) {
-                const fps = info.fps || this.streamItem.stream_info?.fps || 30;
-                this.streamItem.name = `Desktop (${info.width}x${info.height} ${fps}fps)`;
+                this.streamItem.name = `Desktop (${info.width}x${info.height})`;
             }
 
             const finalFormat = this.streamFormatOverride || this.streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
