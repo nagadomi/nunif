@@ -460,7 +460,7 @@ class DesktopStreamGUIMixin:
         self.txt_crop_bottom.SetValue(0)
 
         self.chk_disable_draw_cursor = wx.CheckBox(
-            self.grp_processor, label=T("Disable Draw Cursor"), name="chk_disable_draw_cursor"
+            self.grp_processor, label=T("Hide Cursor"), name="chk_disable_draw_cursor"
         )
         self.chk_disable_draw_cursor.SetValue(False)
 

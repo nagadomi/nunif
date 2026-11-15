@@ -522,7 +522,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
                 f" Screen: {screen_size}"
             )
         elif screen_size is None and url is None and self.processing:
-            self.SetStatusText("Ready (Desktop Stream: Idle)")
+            self.SetStatusText(T("Running"))
 
     def on_start(self, event):
         self.args = self.parse_args()

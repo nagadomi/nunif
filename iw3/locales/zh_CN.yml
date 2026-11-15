@@ -160,7 +160,12 @@
 "AutoCrop": "自动剪裁"
 "Enable model compiling": "启用模型编译"
 "Wayland capture backend is not available ('pil' uses XWayland, which is usually black). Install obs-studio/obs-plugins for 'obs', or 'pip install kwcapture' for 'kwcapture' (KDE Plasma).": "Wayland 捕获后端不可用（'pil' 使用 XWayland，通常只能得到黑屏）。请安装 obs-studio/obs-plugins 以使用 'obs'，或运行 `pip install kwcapture` 以使用 'kwcapture' (KDE Plasma)。"
+"Hide Cursor": "隐藏光标"
+"Crop": "裁剪"
+"X or XY": "X 或 XY"
 
 # iw3.player
 "Media Directory": "媒体目录"
 "Please select a valid Media Directory.": "请选择有效的媒体目录。"
+"Desktop Stream": "桌面串流"
+"Running": "运行中"

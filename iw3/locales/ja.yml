@@ -156,7 +156,12 @@
 "AutoCrop": "自動クロップ"
 "Enable model compiling": "モデルのコンパイルを有効化"
 "Wayland capture backend is not available ('pil' uses XWayland, which is usually black). Install obs-studio/obs-plugins for 'obs', or 'pip install kwcapture' for 'kwcapture' (KDE Plasma).": "Wayland用のキャプチャバックエンドが利用できません ('pil' はXWaylandを使用するため通常黒画面になります)。'obs' を使うには obs-studio/obs-plugins を、'kwcapture' (KDE Plasma) を使うには `pip install kwcapture` をインストールしてください。"
+"Hide Cursor": "カーソルを非表示"
+"Crop": "クロップ"
+"X or XY": "X または XY"
 
 # iw3.player
 "Media Directory": "メディアディレクトリ"
 "Please select a valid Media Directory.": "有効なメディアディレクトリを選択してください"
+"Desktop Stream": "デスクトップストリーム"
+"Running": "実行中"
