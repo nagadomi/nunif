@@ -897,7 +897,8 @@ class StereoPlayer extends THREE.Group {
         }
 
         const streamTex = this.playbackController.streamTexture;
-        if (streamTex && this.playbackController.consumeNewStreamFrame()) {
+        if (streamTex && streamTex.image) {
+            this.playbackController.consumeNewStreamFrame();
             this.renderer.initTexture(streamTex);
         }
     }

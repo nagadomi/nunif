@@ -6,6 +6,7 @@ import { StereoBaseScreen, COMMON_FRAGMENT_HEADER, CHROMAKEY_SNIPPET, COLOR_CORR
 
 const VERTEX_HEADER = `
     varying vec2 vFadeUv;
+    uniform float uFlipTexY;
     uniform vec4 uTiling;
 `;
 
@@ -13,6 +14,9 @@ const VERTEX_UV_PATCH = `
     #include <uv_vertex>
     vFadeUv = uv;
     vMapUv = uv * uTiling.xy + uTiling.zw;
+    if ( uFlipTexY > 0.5 ) {
+        vMapUv.y = 1.0 - vMapUv.y;
+    }
 `;
 
 const FRAGMENT_HEADER = `

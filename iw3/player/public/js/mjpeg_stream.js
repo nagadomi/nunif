@@ -5,8 +5,18 @@ const HEADER_END_BYTES = new Uint8Array([13, 10, 13, 10]); // \r\n\r\n
 const JPEG_SOI_BYTES = new Uint8Array([0xff, 0xd8]);
 const JPEG_EOI_BYTES = new Uint8Array([0xff, 0xd9]);
 
-function indexOfBytes(haystack, needle, start = 0) {
-    const limit = haystack.length - needle.length;
+const INITIAL_RX_CAPACITY = 512 * 1024;
+const MAX_HEADER_BYTES = 64 * 1024;
+const MAX_FRAME_BYTES = 32 * 1024 * 1024;
+
+const STATE_FIND_BOUNDARY = 0;
+const STATE_READ_HEADER = 1;
+const STATE_READ_BODY = 2;
+const STATE_READ_FALLBACK_SOI = 3;
+const STATE_READ_FALLBACK_EOI = 4;
+
+function indexOfBytes(haystack, needle, start = 0, end = haystack.length) {
+    const limit = end - needle.length;
     if (limit < start || needle.length === 0) return -1;
     const first = needle[0];
     for (let i = start; i <= limit; i++) {
@@ -21,15 +31,6 @@ function indexOfBytes(haystack, needle, start = 0) {
         if (matched) return i;
     }
     return -1;
-}
-
-function concatBytes(a, b) {
-    if (a.length === 0) return b;
-    if (b.length === 0) return a;
-    const out = new Uint8Array(a.length + b.length);
-    out.set(a, 0);
-    out.set(b, a.length);
-    return out;
 }
 
 /**
@@ -50,6 +51,7 @@ class MjpegStream extends EventTarget {
         this.texture.minFilter = THREE.LinearFilter;
         this.texture.magFilter = THREE.LinearFilter;
         this.texture.flipY = false;
+        this.texture.userData.shaderFlipY = true;
 
         this.isActive = false;
         this.isPaused = false;
@@ -264,8 +266,43 @@ class MjpegStream extends EventTarget {
         this._resolveFirstFrame({ cancelled: true });
     }
 
+    _appendRxChunk(rx, chunk) {
+        const chunkLen = chunk.length;
+        if (rx.writePos + chunkLen > rx.buf.length) {
+            const unread = rx.writePos - rx.readPos;
+            if (unread + chunkLen <= rx.buf.length) {
+                if (unread > 0 && rx.readPos > 0) {
+                    rx.buf.copyWithin(0, rx.readPos, rx.writePos);
+                }
+            } else {
+                const needed = unread + chunkLen;
+                let newCap = rx.buf.length;
+                while (newCap < needed) {
+                    newCap *= 2;
+                }
+                const nextBuf = new Uint8Array(newCap);
+                if (unread > 0) {
+                    nextBuf.set(rx.buf.subarray(rx.readPos, rx.writePos), 0);
+                }
+                rx.buf = nextBuf;
+            }
+            rx.scanPos = Math.max(0, rx.scanPos - rx.readPos);
+            rx.readPos = 0;
+            rx.writePos = unread;
+        }
+        rx.buf.set(chunk, rx.writePos);
+        rx.writePos += chunkLen;
+    }
+
     async _readMultipartStream(reader) {
-        let buffer = new Uint8Array(0);
+        const rx = {
+            buf: new Uint8Array(INITIAL_RX_CAPACITY),
+            readPos: 0,
+            writePos: 0,
+            scanPos: 0,
+        };
+        let state = STATE_FIND_BOUNDARY;
+        let expectedLength = 0;
 
         while (this.isActive) {
             const now = performance.now();
@@ -289,64 +326,108 @@ class MjpegStream extends EventTarget {
             if (done) break;
             if (!value || value.length === 0) continue;
 
-            buffer = concatBytes(buffer, value);
+            this._appendRxChunk(rx, value);
+
+            let latestFrameStart = -1;
+            let latestFrameEnd = -1;
 
             while (this.isActive) {
-                const boundaryIdx = indexOfBytes(buffer, BOUNDARY_BYTES, 0);
-                if (boundaryIdx === -1) {
-                    // Keep tail bytes in case boundary straddles chunk boundary
-                    const keep = Math.min(buffer.length, BOUNDARY_BYTES.length - 1);
-                    buffer = buffer.slice(buffer.length - keep);
-                    break;
-                }
-
-                const headerEnd = indexOfBytes(buffer, HEADER_END_BYTES, boundaryIdx);
-                if (headerEnd === -1) {
-                    if (buffer.length - boundaryIdx > 64 * 1024) {
-                        buffer = new Uint8Array(0);
-                    } else if (boundaryIdx > 0) {
-                        buffer = buffer.slice(boundaryIdx);
+                if (state === STATE_FIND_BOUNDARY) {
+                    const searchStart = Math.max(rx.readPos, rx.scanPos);
+                    const boundaryIdx = indexOfBytes(rx.buf, BOUNDARY_BYTES, searchStart, rx.writePos);
+                    if (boundaryIdx === -1) {
+                        // Keep tail bytes in case boundary straddles chunk boundary
+                        const available = rx.writePos - rx.readPos;
+                        const keep = Math.min(available, BOUNDARY_BYTES.length - 1);
+                        rx.readPos = rx.writePos - keep;
+                        rx.scanPos = rx.readPos;
+                        break;
                     }
-                    break;
-                }
-
-                const headerText = this._textDecoder.decode(buffer.subarray(boundaryIdx, headerEnd));
-                const match = /content-length:\s*(\d+)/i.exec(headerText);
-                const frameStart = headerEnd + HEADER_END_BYTES.length;
-                const contentLength = match ? parseInt(match[1], 10) : -1;
-
-                if (contentLength > 0 && contentLength <= 32 * 1024 * 1024) {
-                    const frameEnd = frameStart + contentLength;
-                    if (buffer.length < frameEnd) {
-                        if (boundaryIdx > 0) {
-                            buffer = buffer.slice(boundaryIdx);
+                    rx.readPos = boundaryIdx;
+                    rx.scanPos = boundaryIdx + BOUNDARY_BYTES.length;
+                    state = STATE_READ_HEADER;
+                } else if (state === STATE_READ_HEADER) {
+                    const searchStart = Math.max(rx.readPos, rx.scanPos - (HEADER_END_BYTES.length - 1));
+                    const headerEnd = indexOfBytes(rx.buf, HEADER_END_BYTES, searchStart, rx.writePos);
+                    if (headerEnd === -1) {
+                        if (rx.writePos - rx.readPos > MAX_HEADER_BYTES) {
+                            rx.readPos = rx.writePos;
+                            rx.scanPos = rx.writePos;
+                            state = STATE_FIND_BOUNDARY;
+                        } else {
+                            rx.scanPos = rx.writePos;
                         }
                         break;
                     }
-                    const jpegBytes = buffer.slice(frameStart, frameEnd);
-                    buffer = buffer.slice(frameEnd);
-                    this._scheduleDecode(jpegBytes);
-                } else {
-                    // Fallback when Content-Length header is absent
-                    const soi = indexOfBytes(buffer, JPEG_SOI_BYTES, frameStart);
+                    const headerText = this._textDecoder.decode(rx.buf.subarray(rx.readPos, headerEnd));
+                    const match = /content-length:\s*(\d+)/i.exec(headerText);
+                    const frameStart = headerEnd + HEADER_END_BYTES.length;
+                    const contentLength = match ? parseInt(match[1], 10) : -1;
+
+                    rx.readPos = frameStart;
+                    rx.scanPos = frameStart;
+                    if (contentLength > 0 && contentLength <= MAX_FRAME_BYTES) {
+                        expectedLength = contentLength;
+                        state = STATE_READ_BODY;
+                    } else {
+                        state = STATE_READ_FALLBACK_SOI;
+                    }
+                } else if (state === STATE_READ_BODY) {
+                    if (rx.writePos - rx.readPos < expectedLength) {
+                        break;
+                    }
+                    latestFrameStart = rx.readPos;
+                    latestFrameEnd = rx.readPos + expectedLength;
+                    rx.readPos = latestFrameEnd;
+                    rx.scanPos = latestFrameEnd;
+                    expectedLength = 0;
+                    state = STATE_FIND_BOUNDARY;
+                } else if (state === STATE_READ_FALLBACK_SOI) {
+                    const searchStart = Math.max(rx.readPos, rx.scanPos - 1);
+                    const soi = indexOfBytes(rx.buf, JPEG_SOI_BYTES, searchStart, rx.writePos);
                     if (soi === -1) {
-                        if (buffer.length - frameStart > 64 * 1024) {
-                            buffer = new Uint8Array(0);
+                        if (rx.writePos - rx.readPos > MAX_HEADER_BYTES) {
+                            rx.readPos = rx.writePos;
+                            rx.scanPos = rx.writePos;
+                            state = STATE_FIND_BOUNDARY;
+                        } else {
+                            rx.scanPos = rx.writePos;
                         }
                         break;
                     }
-                    const eoi = indexOfBytes(buffer, JPEG_EOI_BYTES, soi + 2);
+                    rx.readPos = soi;
+                    rx.scanPos = soi + 2;
+                    state = STATE_READ_FALLBACK_EOI;
+                } else if (state === STATE_READ_FALLBACK_EOI) {
+                    const searchStart = Math.max(rx.readPos + 2, rx.scanPos - 1);
+                    const eoi = indexOfBytes(rx.buf, JPEG_EOI_BYTES, searchStart, rx.writePos);
                     if (eoi === -1) {
-                        if (boundaryIdx > 0) {
-                            buffer = buffer.slice(boundaryIdx);
+                        if (rx.writePos - rx.readPos > MAX_FRAME_BYTES) {
+                            rx.readPos = rx.writePos;
+                            rx.scanPos = rx.writePos;
+                            state = STATE_FIND_BOUNDARY;
+                        } else {
+                            rx.scanPos = rx.writePos;
                         }
                         break;
                     }
-                    const frameEnd = eoi + JPEG_EOI_BYTES.length;
-                    const jpegBytes = buffer.slice(soi, frameEnd);
-                    buffer = buffer.slice(frameEnd);
-                    this._scheduleDecode(jpegBytes);
+                    latestFrameStart = rx.readPos;
+                    latestFrameEnd = eoi + JPEG_EOI_BYTES.length;
+                    rx.readPos = latestFrameEnd;
+                    rx.scanPos = latestFrameEnd;
+                    state = STATE_FIND_BOUNDARY;
                 }
+            }
+
+            if (latestFrameStart >= 0) {
+                const jpegBytes = rx.buf.slice(latestFrameStart, latestFrameEnd);
+                this._scheduleDecode(jpegBytes);
+            }
+
+            if (rx.readPos === rx.writePos) {
+                rx.readPos = 0;
+                rx.writePos = 0;
+                rx.scanPos = 0;
             }
         }
     }
@@ -368,7 +449,7 @@ class MjpegStream extends EventTarget {
 
                 try {
                     const blob = new Blob([bytes], { type: "image/jpeg" });
-                    const bitmap = await createImageBitmap(blob, { imageOrientation: "flipY" });
+                    const bitmap = await createImageBitmap(blob);
 
                     if (!this.isActive) {
                         bitmap.close();
