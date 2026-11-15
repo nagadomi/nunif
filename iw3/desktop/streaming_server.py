@@ -225,7 +225,6 @@ class WebXRStreamingServer:
         frame_height: int,
         fps: int,
         stereo_format: str = "SBS_HALF",
-        stream_uri: str = "/stream.jpg",
         stream_content_type: str = "image/jpeg",
         auth: tuple[str, str] | None = None,
         host: str = "",
@@ -241,7 +240,6 @@ class WebXRStreamingServer:
         self.frame_height = frame_height
         self.fps = fps
         self.stereo_format = stereo_format
-        self.stream_uri = stream_uri
         self.stream_content_type = stream_content_type
         self.auth = auth
         self.args = args
@@ -252,7 +250,6 @@ class WebXRStreamingServer:
             frame_height=frame_height,
             fps=fps,
             stereo_format=stereo_format,
-            stream_uri=stream_uri,
             stream_content_type=stream_content_type,
         )
         self.stream_hub.service = self

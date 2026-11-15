@@ -425,11 +425,17 @@ class StereoPlayer extends THREE.Group {
             }
         }
 
+        const infoEndpoint = forcedFormat ? '/api/stream/info' : '/api/stream/start';
+        const infoMethod = forcedFormat ? 'GET' : 'POST';
         let info = null;
         let errorDetail = null;
         while (!info) {
             try {
-                const res = await fetch('/api/stream/info', { cache: 'no-store', credentials: 'same-origin' });
+                const res = await fetch(infoEndpoint, {
+                    method: infoMethod,
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                });
                 if (res.ok) {
                     info = await res.json();
                     break;
@@ -479,7 +485,7 @@ class StereoPlayer extends THREE.Group {
             type: 'stream',
             mtime: 0,
             stereo_format: streamFormat,
-            stream_uri: info.stream_uri || '/stream.jpg',
+            stream_uri: info.stream_uri || '/api/stream',
             stream_info: info,
         };
         this.streamItem = streamItem;

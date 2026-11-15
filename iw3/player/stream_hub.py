@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator, Callable
 
 FrameData = tuple[bytes, float]
 FrameProvider = FrameData | Callable[[], FrameData]
+STREAM_URI = "/api/stream"
 
 
 class StreamFrameHub:
@@ -21,7 +22,6 @@ class StreamFrameHub:
         frame_height: int = 1080,
         fps: int = 30,
         stereo_format: str = "SBS_HALF",
-        stream_uri: str = "/stream.jpg",
         stream_content_type: str = "image/jpeg",
     ) -> None:
         self.lock = lock if lock is not None else threading.Lock()
@@ -30,12 +30,12 @@ class StreamFrameHub:
         self.frame_height = frame_height
         self.fps = fps
         self.stereo_format = stereo_format
-        self.stream_uri = stream_uri
+        self.stream_uri = STREAM_URI
         self.stream_content_type = stream_content_type
 
         self.frame_data: FrameData | None = None
         self.frame_data_raw: FrameProvider | None = None
-        self.process_token = f"{random.getrandbits(64):016x}"
+        self.stream_token = f"{random.getrandbits(64):016x}"
         self.shutdown_event = threading.Event()
         self.fps_counter: deque[tuple[int, float]] = deque(maxlen=120)
         self.active_clients: int = 0
@@ -44,7 +44,7 @@ class StreamFrameHub:
         self._stream_epoch: int = 0
 
     def reset_token(self) -> None:
-        self.process_token = f"{random.getrandbits(64):016x}"
+        self.stream_token = f"{random.getrandbits(64):016x}"
 
     def touch(self) -> None:
         with self.op_lock:
@@ -118,7 +118,7 @@ class StreamFrameHub:
                 "height": self.frame_height,
                 "fps": self.fps,
                 "stereo_format": self.stereo_format,
-                "process_token": self.process_token,
+                "stream_token": self.stream_token,
                 "stream_uri": self.stream_uri,
             }
         active = bool(service.is_running()) if service is not None and hasattr(service, "is_running") else True

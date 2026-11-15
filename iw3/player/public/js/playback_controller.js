@@ -208,7 +208,7 @@ class PlaybackController extends EventTarget {
                 this.destroyVideo();
                 this.destroyStream();
 
-                const streamUrl = item.stream_uri || '/stream.jpg';
+                const streamUrl = item.stream_uri || '/api/stream';
                 const stream = new MjpegStream(streamUrl, '/api/stream/info', this.debugLogInstance);
                 this.mjpegStream = stream;
 

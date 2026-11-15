@@ -180,11 +180,7 @@ async def _ensure_desktop_service_running(state: ServerState) -> None:
 
 
 @app.get("/api/stream/info")
-async def get_stream_info(
-    state: ServerState = Depends(get_state),
-    stream_hub=Depends(get_stream_hub),
-):
-    await _ensure_desktop_service_running(state)
+async def get_stream_info(stream_hub=Depends(get_stream_hub)):
     return stream_hub.get_stream_info()
 
 
@@ -233,12 +229,6 @@ async def update_stream_settings(
     return service.update_settings(updates)
 
 
-@app.get("/process_token")
-async def get_process_token(stream_hub=Depends(get_stream_hub)):
-    return {"token": stream_hub.process_token}
-
-
-@app.get("/stream.jpg")
 @app.get("/api/stream")
 async def serve_desktop_stream(
     state: ServerState = Depends(get_state),

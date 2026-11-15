@@ -37,7 +37,7 @@ function indexOfBytes(haystack, needle, start = 0, end = haystack.length) {
  * Live MJPEG multipart stream loader backed by fetch ReadableStream + createImageBitmap.
  */
 class MjpegStream extends EventTarget {
-    constructor(streamUrl = "/stream.jpg", infoUrl = "/api/stream/info", debugLogInstance = null) {
+    constructor(streamUrl = "/api/stream", infoUrl = "/api/stream/info", debugLogInstance = null) {
         super();
         this.streamUrl = streamUrl;
         this.infoUrl = infoUrl;
@@ -60,7 +60,7 @@ class MjpegStream extends EventTarget {
         this.height = 0;
         this.aspectRatio = 16 / 9;
         this.stereoFormat = null;
-        this.processToken = null;
+        this.streamToken = null;
 
         this._pendingBytes = null;
         this._isDecoding = false;
@@ -108,7 +108,7 @@ class MjpegStream extends EventTarget {
         const width = info.width || 0;
         const height = info.height || 0;
         const format = info.stereo_format || null;
-        const token = info.process_token || null;
+        const token = info.stream_token || null;
         if (info.stream_uri) {
             this.streamUrl = info.stream_uri;
         }
@@ -116,8 +116,8 @@ class MjpegStream extends EventTarget {
         const widthChanged = Boolean(width && (this._infoWidth ? width !== this._infoWidth : width !== this.width));
         const heightChanged = Boolean(height && (this._infoHeight ? height !== this._infoHeight : height !== this.height));
         const formatChanged = Boolean(format && this.stereoFormat && format !== this.stereoFormat);
-        const tokenChanged = Boolean(token && this.processToken && token !== this.processToken);
-        const initialMetaLoaded = Boolean((!this.stereoFormat && format) || (!this.processToken && token));
+        const tokenChanged = Boolean(token && this.streamToken && token !== this.streamToken);
+        const initialMetaLoaded = Boolean((!this.stereoFormat && format) || (!this.streamToken && token));
 
         if (widthChanged || heightChanged || tokenChanged) {
             this._needsTextureDispose = true;
@@ -139,7 +139,7 @@ class MjpegStream extends EventTarget {
             this.aspectRatio = this.width / this.height;
         }
         if (format) this.stereoFormat = format;
-        if (token) this.processToken = token;
+        if (token) this.streamToken = token;
 
         if (notifyChange && (widthChanged || heightChanged || formatChanged || tokenChanged || initialMetaLoaded)) {
             this.dispatchEvent(
@@ -149,7 +149,7 @@ class MjpegStream extends EventTarget {
                         width: this.width,
                         height: this.height,
                         stereo_format: this.stereoFormat,
-                        process_token: this.processToken,
+                        stream_token: this.streamToken,
                         tokenChanged,
                     },
                 })
@@ -158,6 +158,9 @@ class MjpegStream extends EventTarget {
     }
 
     async _pollStreamInfo() {
+        if (!this.isActive) {
+            return false;
+        }
         if (this._pollPromise) {
             return await this._pollPromise;
         }
@@ -167,8 +170,14 @@ class MjpegStream extends EventTarget {
                     cache: "no-store",
                     credentials: "same-origin",
                 });
+                if (!this.isActive) {
+                    return false;
+                }
                 if (res.ok) {
                     const info = await res.json();
+                    if (!this.isActive) {
+                        return false;
+                    }
                     this._applyStreamInfo(info, true);
                     return true;
                 }
@@ -216,7 +225,7 @@ class MjpegStream extends EventTarget {
     async _connectLoop() {
         let isReconnect = false;
         while (this.isActive) {
-            if (isReconnect || !this.processToken) {
+            if (isReconnect || !this.streamToken) {
                 const infoOk = await this._pollStreamInfo();
                 if (!this.isActive) break;
                 if (!infoOk) {
@@ -308,13 +317,13 @@ class MjpegStream extends EventTarget {
             const now = performance.now();
             if (now - this._lastInfoPollTime > 2000) {
                 this._lastInfoPollTime = now;
-                const prevToken = this.processToken;
+                const prevToken = this.streamToken;
                 this._pollStreamInfo().then((ok) => {
                     if (
                         ok &&
                         prevToken &&
-                        this.processToken &&
-                        this.processToken !== prevToken &&
+                        this.streamToken &&
+                        this.streamToken !== prevToken &&
                         this._abortController
                     ) {
                         this._abortController.abort();
@@ -493,7 +502,7 @@ class MjpegStream extends EventTarget {
                                     width: this.width,
                                     height: this.height,
                                     stereo_format: this.stereoFormat,
-                                    process_token: this.processToken,
+                                    stream_token: this.streamToken,
                                     tokenChanged: false,
                                 },
                             })

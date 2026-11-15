@@ -688,7 +688,6 @@ def iw3_desktop_main(args, init_wxapp=True):
                     frame_height=pipeline.output_frame_height,
                     fps=args.stream_fps,
                     stereo_format=resolve_player_stereo_format(args),
-                    stream_uri="/stream.jpg",
                     stream_content_type="image/jpeg",
                     auth=auth,
                     args=args,

@@ -214,6 +214,7 @@ def test_api_config_player_mode(test_setup):
         },
     }
     assert client.get("/api/stream/info").status_code == 404
+    assert client.get("/api/stream").status_code == 404
     assert client.get("/process_token").status_code == 404
     assert client.get("/stream.jpg").status_code == 404
 
@@ -228,8 +229,8 @@ def test_stream_frame_hub():
     assert info["height"] == 1080
     assert info["fps"] == 30
     assert info["stereo_format"] == "SBS_HALF"
-    assert info["stream_uri"] == "/stream.jpg"
-    assert len(info["process_token"]) == 16
+    assert info["stream_uri"] == "/api/stream"
+    assert len(info["stream_token"]) == 16
 
     hub.set_frame_data((b"frame1", 1.0))
     assert hub.get_frame_data() == (b"frame1", 1.0)
@@ -302,11 +303,12 @@ def test_api_desktop_stream_mode(tmp_path):
         assert info["height"] == 1080
         assert info["fps"] == 60
         assert info["stereo_format"] == "SBS_FULL"
-        assert info["process_token"] == hub.process_token
+        assert info["stream_uri"] == "/api/stream"
+        assert info["stream_token"] == hub.stream_token
 
-        res_token = client.get("/process_token")
-        assert res_token.status_code == 200
-        assert res_token.json() == {"token": hub.process_token}
+        # Legacy iw3.desktop endpoints should not be exposed by iw3.player
+        assert client.get("/process_token").status_code == 404
+        assert client.get("/stream.jpg").status_code == 404
 
         assert client.get("/api/files?path=/").status_code == 404
 
@@ -315,7 +317,7 @@ def test_api_desktop_stream_mode(tmp_path):
             return (b"\xff\xd8TEST\xff\xd9", 100.0)
 
         hub.set_frame_data(one_shot_frame)
-        res_stream = client.get("/stream.jpg")
+        res_stream = client.get("/api/stream")
         assert res_stream.status_code == 200
         assert "multipart/x-mixed-replace" in res_stream.headers["content-type"]
         assert b"Content-Length: 8\r\n\r\n\xff\xd8TEST\xff\xd9\r\n" in res_stream.content
@@ -465,12 +467,22 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
             },
         }
 
-        res_info = client.get("/api/stream/info")
-        assert res_info.status_code == 200
-        info = res_info.json()
+        res_info_initial = client.get("/api/stream/info")
+        assert res_info_initial.status_code == 200
+        assert res_info_initial.json()["active"] is False
+        assert service.start_count == 0
+
+        res_start = client.post("/api/stream/start")
+        assert res_start.status_code == 200
+        info = res_start.json()
         assert info["active"] is True
         assert info["width"] == 2560
         assert info["height"] == 720
+        assert service.start_count == 1
+
+        res_info = client.get("/api/stream/info")
+        assert res_info.status_code == 200
+        assert res_info.json()["active"] is True
         assert service.start_count == 1
 
         res_stop = client.post("/api/stream/stop")
@@ -478,9 +490,14 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
         assert res_stop.json() == {"active": False}
         assert service.stop_count == 1
 
-        res_start = client.post("/api/stream/start")
-        assert res_start.status_code == 200
-        assert res_start.json()["active"] is True
+        res_info_stopped = client.get("/api/stream/info")
+        assert res_info_stopped.status_code == 200
+        assert res_info_stopped.json()["active"] is False
+        assert service.start_count == 1
+
+        res_restart = client.post("/api/stream/start")
+        assert res_restart.status_code == 200
+        assert res_restart.json()["active"] is True
         assert service.start_count == 2
 
         res_get_settings = client.get("/api/stream/settings")
