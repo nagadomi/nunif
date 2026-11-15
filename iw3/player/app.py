@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import secrets
@@ -6,12 +7,12 @@ from contextlib import asynccontextmanager
 from typing import Callable, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .dir_config import PUBLIC_DIR
 from .media_library import MediaLibrary
-from .schema import MediaItem
+from .schema import MediaItem, StreamSettingsUpdate
 from .server_state import ServerState
 
 # auto_error=False prevents automatic 401 response from the dependency itself
@@ -47,11 +48,21 @@ app = FastAPI(lifespan=lifespan, dependencies=[Depends(authenticate)])
 
 
 def get_library(request: Request) -> MediaLibrary:
-    return request.app.state.media_library
+    library = getattr(request.app.state, "media_library", None)
+    if library is None:
+        raise HTTPException(status_code=404, detail="File library is disabled")
+    return library
 
 
 def get_state(request: Request) -> ServerState:
     return request.app.state.server_state
+
+
+def get_stream_hub(state: ServerState = Depends(get_state)):
+    stream_hub = getattr(state, "stream_hub", None)
+    if stream_hub is None:
+        raise HTTPException(status_code=404, detail="Desktop stream is not active")
+    return stream_hub
 
 
 def _list_public_files(
@@ -132,11 +143,103 @@ async def serve_subtitles(
 @app.post("/api/cache/clear")
 async def clear_cache(state: ServerState = Depends(get_state)):
     try:
-        state.cache_db.clear()
+        if state.cache_db is not None:
+            state.cache_db.clear()
         return {"status": "ok", "message": "Cache cleared"}
     except Exception as e:
         print(f"Cache clear error: {e}", file=sys.stderr)
         raise HTTPException(status_code=500, detail="Failed to clear cache")
+
+
+@app.get("/api/config")
+async def get_config(state: ServerState = Depends(get_state)):
+    mode = getattr(state, "mode", "player")
+    enable_file_library = getattr(state, "enable_file_library", mode == "player")
+    stream_hub = getattr(state, "stream_hub", None)
+    return {
+        "mode": mode,
+        "features": {
+            "file_library": bool(enable_file_library),
+            "desktop_stream": stream_hub is not None,
+        },
+    }
+
+
+def _get_stream_service(state: ServerState):
+    return getattr(state, "desktop_service", None) or getattr(getattr(state, "stream_hub", None), "service", None)
+
+
+async def _ensure_desktop_service_running(state: ServerState) -> None:
+    desktop_service = getattr(state, "desktop_service", None)
+    if desktop_service is None or desktop_service.is_running():
+        return
+    try:
+        await asyncio.to_thread(desktop_service.ensure_running)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/stream/info")
+async def get_stream_info(stream_hub=Depends(get_stream_hub)):
+    return stream_hub.get_stream_info()
+
+
+@app.post("/api/stream/start")
+async def start_desktop_stream(
+    state: ServerState = Depends(get_state),
+    stream_hub=Depends(get_stream_hub),
+):
+    await _ensure_desktop_service_running(state)
+    return stream_hub.get_stream_info()
+
+
+@app.post("/api/stream/stop")
+async def stop_desktop_stream(
+    state: ServerState = Depends(get_state),
+    _stream_hub=Depends(get_stream_hub),
+):
+    desktop_service = getattr(state, "desktop_service", None)
+    if desktop_service is not None:
+        await asyncio.to_thread(desktop_service.stop)
+        return {"active": bool(desktop_service.is_running())}
+    return {"active": True}
+
+
+@app.get("/api/stream/settings")
+async def get_stream_settings(
+    state: ServerState = Depends(get_state),
+    _stream_hub=Depends(get_stream_hub),
+):
+    service = _get_stream_service(state)
+    if service is None:
+        return {}
+    return service.get_settings()
+
+
+@app.post("/api/stream/settings")
+async def update_stream_settings(
+    payload: StreamSettingsUpdate,
+    state: ServerState = Depends(get_state),
+    _stream_hub=Depends(get_stream_hub),
+):
+    service = _get_stream_service(state)
+    if service is None:
+        raise HTTPException(status_code=404, detail="Desktop stream service is unavailable")
+    updates = payload.model_dump(exclude_none=True)
+    return service.update_settings(updates)
+
+
+@app.get("/api/stream")
+async def serve_desktop_stream(
+    state: ServerState = Depends(get_state),
+    stream_hub=Depends(get_stream_hub),
+):
+    await _ensure_desktop_service_running(state)
+    return StreamingResponse(
+        stream_hub.async_stream_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @app.get("/js/debug_log.js")

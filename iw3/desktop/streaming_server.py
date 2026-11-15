@@ -10,6 +10,7 @@ import time
 from collections import defaultdict, deque
 from socketserver import ThreadingMixIn
 from string import Template
+from typing import Any
 from wsgiref.simple_server import WSGIServer, make_server
 
 STATUS_OK = "200 OK"
@@ -211,3 +212,132 @@ class StreamingServer:
             return self.send_image_stream(start_response)
         else:
             return self.send_404(start_response)
+
+
+class WebXRStreamingServer:
+    """HTTPS WebXR streaming server backed by iw3.player and StreamFrameHub."""
+
+    def __init__(
+        self,
+        port: int,
+        lock: Any,
+        frame_width: int,
+        frame_height: int,
+        fps: int,
+        stereo_format: str = "SBS_HALF",
+        stream_content_type: str = "image/jpeg",
+        auth: tuple[str, str] | None = None,
+        host: str = "",
+        args: Any = None,
+    ) -> None:
+        from ..player.stream_hub import StreamFrameHub
+
+        self.port = port
+        self.host = host
+        self.lock = lock
+        self.op_lock = threading.Lock()
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.fps = fps
+        self.stereo_format = stereo_format
+        self.stream_content_type = stream_content_type
+        self.auth = auth
+        self.args = args
+
+        self.stream_hub = StreamFrameHub(
+            lock=lock,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            fps=fps,
+            stereo_format=stereo_format,
+            stream_content_type=stream_content_type,
+        )
+        self.stream_hub.service = self
+        self.thread: threading.Thread | None = None
+        self.state: Any = None
+
+    def _stop(self):
+        self.stream_hub.shutdown_event.set()
+        if self.thread is not None:
+            if self.thread.ident is not None:
+                self.thread.join(timeout=5.0)
+            self.thread = None
+        if self.state is not None:
+            self.state.close()
+            self.state = None
+        self.stream_hub.shutdown_event.clear()
+
+    def _start(self):
+        import asyncio
+        from types import SimpleNamespace
+
+        from ..player.server import init_server_runtime, serve_with_watchdog
+
+        bind_host = self.host or "127.0.0.1"
+        user, password = self.auth if self.auth is not None else (None, None)
+        self.stream_hub.update_stream_params(
+            frame_width=self.frame_width,
+            frame_height=self.frame_height,
+            fps=self.fps,
+            stereo_format=self.stereo_format,
+        )
+
+        args_ns = SimpleNamespace(
+            mode="desktop",
+            enable_file_library=False,
+            stream_hub=self.stream_hub,
+            user=user,
+            password=password,
+            debug=False,
+            debug_console=False,
+            state={"stop_event": self.stream_hub.shutdown_event},
+        )
+        self.state, config = init_server_runtime(
+            args_ns,
+            bind_addr=bind_host,
+            port=self.port,
+            enable_media_library=False,
+            graceful_timeout=0.5,
+        )
+
+        def run_server():
+            shutdown_event = asyncio.Event()
+            asyncio.run(serve_with_watchdog(args_ns, config, shutdown_event))
+
+        self.thread = threading.Thread(target=run_server, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        with self.op_lock:
+            self._stop()
+
+    def start(self):
+        with self.op_lock:
+            self._stop()
+            self._start()
+
+    def is_running(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def get_settings(self) -> dict[str, Any]:
+        if self.args is None:
+            return {}
+        from .utils import get_runtime_stream_settings
+
+        return get_runtime_stream_settings(self.args)
+
+    def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
+        if self.args is None:
+            return {}
+        from .utils import update_runtime_stream_settings
+
+        return update_runtime_stream_settings(self.args, updates)
+
+    def set_frame_data(self, frame_data):
+        self.stream_hub.set_frame_data(frame_data)
+
+    def get_frame_data(self):
+        return self.stream_hub.get_frame_data()
+
+    def get_fps(self):
+        return self.stream_hub.get_fps()

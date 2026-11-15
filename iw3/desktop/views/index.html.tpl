@@ -22,6 +22,9 @@
             const img = new Image();
             let last_timestamp = 0;
 
+            img.onerror = () => {
+                stop_update = true;
+            };
             img.src = STREAM_URI;
             img.onload = () => {
                 function render(timestamp) {
@@ -43,14 +46,23 @@
                           method: 'GET',
 	              })
 	            .then((res) => {
+                        if (res.status === 401) {
+                            location.reload();
+                            throw new Error("auth");
+                        }
                         if (!res.ok) {
 	                    stop_update = true;
 	                    //console.log("err1", res.status, res.statusText);
+                            throw new Error("http");
                         }
                         return res.json();
 	            })
 	            .then((res) => {
 	                //console.log("check token", process_token, res.token);
+                        if (stop_update) {
+                            location.reload();
+                            return;
+                        }
 	                if (process_token == null) {
 	                    process_token = res.token;
 	                } else if (process_token != res.token) {

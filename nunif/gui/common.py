@@ -349,6 +349,8 @@ def init_win32_dpi():
 
 
 def refresh_layouts(window):
+    if isinstance(window, wx.StatusBar):
+        return
     window.InvalidateBestSize()
     for child in window.GetChildren():
         refresh_layouts(child)

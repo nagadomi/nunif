@@ -151,7 +151,8 @@ class StereoBaseScreen extends THREE.Group {
             uChromaThreshold: { value: DEFAULTS.environment_chroma_threshold },
             uChromaSmoothness: { value: DEFAULTS.environment_chroma_smoothness },
             uChromaDespill: { value: DEFAULTS.environment_chroma_despill },
-            uARMode: { value: 0.0 }
+            uARMode: { value: 0.0 },
+            uFlipTexY: { value: 0.0 }
         };
 
         this.displayScreenLeft = null;
@@ -199,6 +200,7 @@ class StereoBaseScreen extends THREE.Group {
      */
     resetTexture() {
         if (!this.displayScreenLeft || !this.displayScreenRight || !this.dummyTexture) return;
+        this.commonUniforms.uFlipTexY.value = 0.0;
         this.displayScreenLeft.material.map = this.dummyTexture;
         this.displayScreenLeft.material.needsUpdate = true;
         this.displayScreenRight.material.map = this.dummyTexture;
@@ -207,6 +209,7 @@ class StereoBaseScreen extends THREE.Group {
 
     _applyTextureToMeshes(texture, newGeometry = null) {
         if (!this.displayScreenLeft || !this.displayScreenRight) return;
+        this.commonUniforms.uFlipTexY.value = texture?.userData?.shaderFlipY ? 1.0 : 0.0;
         this.displayScreenLeft.visible = true;
         this.displayScreenRight.visible = this.isXR;
         if (newGeometry && this.displayScreenLeft.geometry) {

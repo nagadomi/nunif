@@ -2,7 +2,7 @@ import { Container, Image, Text } from '@pmndrs/uikit';
 import { COLORS, UI_CONFIG } from './constants.js';
 import { UIUtils } from './ui_common.js';
 
-const VIDEO_SEEK_BAR_WIDTH = 370;
+const VIDEO_SEEK_BAR_WIDTH = 430;
 const VIDEO_THUMB_SIZE = 24;
 const VOLUME_SEEK_BAR_WIDTH = 100;
 const VOLUME_THUMB_SIZE = 24;
@@ -21,7 +21,7 @@ class MainMenu {
             gap: 12,
             alignItems: 'center',
             marginTop: 500,
-            width: 620, // Slightly wider to accommodate one more button
+            width: 680,
             fontFamily: defaultFont
         });
 
@@ -85,7 +85,11 @@ class MainMenu {
         row.add(group);
         const u = this.uiManager;
         
-        // Order: Screen, Color, Env, Subtitle | Render, Shutdown
+        // Order: Stream, Screen, Color, Env, Subtitle | Render, Shutdown
+        this.streamButton = UIUtils.createButton('icons/cast.svg', () => u.switchSubMenu(u.streamSettings), u, 22, 48);
+        this.streamButton.container.setProperties({ display: 'none' });
+        group.add(this.streamButton.container);
+
         this.screenButton = UIUtils.createButton('icons/device-desktop.svg', () => u.switchSubMenu(u.screenSettings), u, 22, 48);
         group.add(this.screenButton.container);
 
@@ -107,20 +111,32 @@ class MainMenu {
     }
 
     setupControlRow() {
-        const row = new Container({ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', width: '100%', paddingLeft: 10, });
+        const row = new Container({ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', width: '100%', paddingLeft: 10 });
+        this.controlRow = row;
         this.container.add(row);
         const u = this.uiManager;
-        
-        this.explorerButton = UIUtils.createButton('icons/library-photo.svg', () => u.switchSubMenu(u.explorer), u);
-        row.add(this.explorerButton.container);
 
-        const playbackGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 20, marginLeft: 80 });
+        // Reserve fixed width for left-side buttons so playback controls stay centered
+        this.leftControlGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 12, width: 156 });
+        row.add(this.leftControlGroup);
+
+        this.explorerButton = UIUtils.createButton('icons/library-photo.svg', () => u.switchSubMenu(u.explorer), u);
+        this.leftControlGroup.add(this.explorerButton.container);
+
+        this.desktopStreamButton = UIUtils.createButton('icons/cast.svg', () => u.toggleDesktopStream(), u);
+        this.desktopStreamButton.container.setProperties({ display: 'none' });
+        this.leftControlGroup.add(this.desktopStreamButton.container);
+
+        const playbackGroup = new Container({ flexDirection: 'row', alignItems: 'center', gap: 20, marginLeft: 26 });
+        this.playbackGroup = playbackGroup;
         row.add(playbackGroup);
-        playbackGroup.add(UIUtils.createButton('icons/player-skip-back.svg', () => u.loadNextMedia(-1), u).container);
+        this.skipBackButton = UIUtils.createButton('icons/player-skip-back.svg', () => u.loadNextMedia(-1), u);
+        playbackGroup.add(this.skipBackButton.container);
         const playPause = UIUtils.createButton('icons/player-play.svg', () => u.togglePlayPause(), u, 44, 80, 'play_pause');
         this.playPauseButton = playPause.container; this.playPauseIcon = playPause.image;
         playbackGroup.add(this.playPauseButton);
-        playbackGroup.add(UIUtils.createButton('icons/player-skip-forward.svg', () => u.loadNextMedia(1), u).container);
+        this.skipForwardButton = UIUtils.createButton('icons/player-skip-forward.svg', () => u.loadNextMedia(1), u);
+        playbackGroup.add(this.skipForwardButton.container);
     }
 
     setupSliderSection() {
@@ -153,6 +169,7 @@ class MainMenu {
             overflow: 'visible'
         });
         parent.add(row);
+        this.seekBarRow = row;
         const u = this.uiManager;
 
         const repeat = UIUtils.createButton('icons/repeat.svg', () => u.toggleVideoRepeat(), u, 24, 40);
@@ -213,6 +230,7 @@ class MainMenu {
             overflow: 'visible'
         });
         parent.add(row);
+        this.volumeRow = row;
         const u = this.uiManager;
 
         // --- Volume Group ---
@@ -304,7 +322,7 @@ class MainMenu {
         this.container.add(this.timeRow);
 
         // Clip filename horizontally and vertically
-        const fileClip = new Container({ width: 568, height: 24, overflow: 'hidden' });
+        const fileClip = new Container({ width: 628, height: 24, overflow: 'hidden' });
         this.fileNameText = new Text({ 
             text: "", 
             fontSize: 14, 
@@ -322,6 +340,44 @@ class MainMenu {
         const m = Math.floor((seconds % 3600) / 60);
         const s = Math.floor(seconds % 60);
         return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    applyAppConfig(appConfig) {
+        const hasFileLibrary = appConfig?.features?.file_library !== false;
+        const hasDesktopStream = !!appConfig?.features?.desktop_stream;
+        const isDesktop = appConfig?.mode === 'desktop';
+        const libDisplay = hasFileLibrary ? 'flex' : 'none';
+
+        this.leftControlGroup?.setProperties({ display: libDisplay });
+        this.explorerButton?.container?.setProperties({ display: libDisplay });
+        this.skipBackButton?.container?.setProperties({ display: libDisplay });
+        this.skipForwardButton?.container?.setProperties({ display: libDisplay });
+        this.subtitleButton?.container?.setProperties({ display: libDisplay });
+        this.desktopStreamButton?.container?.setProperties({
+            display: (hasFileLibrary && hasDesktopStream) ? 'flex' : 'none'
+        });
+        if (!hasFileLibrary) {
+            this.recentButton?.setProperties({ display: 'none' });
+        }
+
+        if (this.controlRow && this.playbackGroup) {
+            if (hasFileLibrary) {
+                this.controlRow.setProperties({ justifyContent: 'flex-start', paddingLeft: 10 });
+                this.playbackGroup.setProperties({ marginLeft: 26 });
+            } else {
+                this.controlRow.setProperties({ justifyContent: 'center', paddingLeft: 0 });
+                this.playbackGroup.setProperties({ marginLeft: 0 });
+            }
+        }
+
+        const isStream = !!this.uiManager?.isStreamActive;
+        const streamBtnDisplay = isStream ? 'flex' : 'none';
+        this._lastStreamBtnDisplay = streamBtnDisplay;
+        this.streamButton?.container?.setProperties({ display: streamBtnDisplay });
+        const mediaBarsDisplay = (isDesktop || isStream) ? 'none' : 'flex';
+        this._lastMediaBarsDisplay = mediaBarsDisplay;
+        this.seekBarRow?.setProperties({ display: mediaBarsDisplay });
+        this.volumeRow?.setProperties({ display: mediaBarsDisplay });
     }
 
     sync(params) {
@@ -381,26 +437,41 @@ class MainMenu {
             }
         }
 
-        if (params.isVideoActive !== undefined || params.isPlaying !== undefined || params.videoProgress !== undefined) {
+        if (params.isVideoActive !== undefined || params.isStreamActive !== undefined || params.isPlaying !== undefined || params.videoProgress !== undefined) {
             const isVideo = params.isVideoActive ?? (!!this.uiManager.videoElement);
+            const isStream = params.isStreamActive ?? this.uiManager.isStreamActive;
+            const isDesktop = this.uiManager.appConfig?.mode === 'desktop';
+            const canPlayPause = isVideo || isStream;
+
+            if (this.desktopStreamButton?.setSelected) {
+                this.desktopStreamButton.setSelected(!!isStream);
+            }
+            const mediaBarsDisplay = (isDesktop || isStream) ? 'none' : 'flex';
+            if (this._lastMediaBarsDisplay !== mediaBarsDisplay) {
+                this.seekBarRow?.setProperties({ display: mediaBarsDisplay });
+                this.volumeRow?.setProperties({ display: mediaBarsDisplay });
+                this._lastMediaBarsDisplay = mediaBarsDisplay;
+            }
+
+            if (canPlayPause && params.isPlaying !== undefined) {
+                const iconSrc = params.isPlaying ? 'icons/player-pause.svg' : 'icons/player-play.svg';
+                const bgColor = params.isPlaying ? COLORS.accent : COLORS.track;
+                if (this._lastPlayIcon !== iconSrc) {
+                    this.playPauseIcon.setProperties({ src: iconSrc });
+                    this._lastPlayIcon = iconSrc;
+                }
+                if (this._lastPlayBg !== bgColor) {
+                    this.playPauseButton.setProperties({ backgroundColor: bgColor });
+                    this._lastPlayBg = bgColor;
+                }
+            }
+
             if (isVideo) {
                 if (params.currentTime !== undefined && params.duration !== undefined) {
                     const timeText = `${this.formatTime(params.currentTime)} / ${this.formatTime(params.duration)}`;
                     if (this._lastVideoTimeText !== timeText) {
                         this.videoTimeText.setProperties({ text: timeText });
                         this._lastVideoTimeText = timeText;
-                    }
-                }
-                if (params.isPlaying !== undefined) {
-                    const iconSrc = params.isPlaying ? 'icons/player-pause.svg' : 'icons/player-play.svg';
-                    const bgColor = params.isPlaying ? COLORS.accent : COLORS.track;
-                    if (this._lastPlayIcon !== iconSrc) {
-                        this.playPauseIcon.setProperties({ src: iconSrc });
-                        this._lastPlayIcon = iconSrc;
-                    }
-                    if (this._lastPlayBg !== bgColor) {
-                        this.playPauseButton.setProperties({ backgroundColor: bgColor });
-                        this._lastPlayBg = bgColor;
                     }
                 }
                 if (params.videoProgress !== undefined) {
@@ -427,10 +498,12 @@ class MainMenu {
                     this.videoThumb.setProperties({ marginLeft: 0 });
                     this._lastVideoMargin = 0;
                 }
-                const disabledBg = COLORS.buttonDisabled;
-                if (this._lastPlayBg !== disabledBg) {
-                    this.playPauseButton.setProperties({ backgroundColor: disabledBg });
-                    this._lastPlayBg = disabledBg;
+                if (!isStream) {
+                    const disabledBg = COLORS.buttonDisabled;
+                    if (this._lastPlayBg !== disabledBg) {
+                        this.playPauseButton.setProperties({ backgroundColor: disabledBg });
+                        this._lastPlayBg = disabledBg;
+                    }
                 }
             }
         }
@@ -466,9 +539,17 @@ class MainMenu {
             }
         }
 
+        const currentIsStream = !!(params.isStreamActive ?? this.uiManager.isStreamActive);
+        const streamBtnDisplay = currentIsStream ? 'flex' : 'none';
+        if (this._lastStreamBtnDisplay !== streamBtnDisplay) {
+            this.streamButton?.container?.setProperties({ display: streamBtnDisplay });
+            this._lastStreamBtnDisplay = streamBtnDisplay;
+        }
+
         // --- Sub-menu selection highlight ---
         const activeMenu = this.uiManager.activeSubMenu;
         const menus = [
+            { btn: this.streamButton, target: this.uiManager.streamSettings },
             { btn: this.screenButton, target: this.uiManager.screenSettings },
             { btn: this.colorButton, target: this.uiManager.colorSettings },
             { btn: this.envButton, target: this.uiManager.environmentSettings },

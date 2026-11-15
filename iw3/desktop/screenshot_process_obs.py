@@ -145,6 +145,8 @@ def _obs_capture_worker(
     frame_lock: MpLock,
     frame_event: MpEvent,
     stop_event: MpEvent,
+    restore_token: str | None = None,
+    probe_only: bool = False,
 ) -> None:
     """Isolated worker process that loads libobs (GPL) and captures frames via PipeWire."""
     shm: shared_memory.SharedMemory | None = None
@@ -236,11 +238,17 @@ def _obs_capture_worker(
     libobs.obs_data_create.restype = ctypes.c_void_p
     libobs.obs_data_set_bool.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_bool]
     libobs.obs_data_set_bool.restype = None
+    libobs.obs_data_set_string.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+    libobs.obs_data_set_string.restype = None
+    libobs.obs_data_get_string.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    libobs.obs_data_get_string.restype = ctypes.c_char_p
     libobs.obs_data_release.argtypes = [ctypes.c_void_p]
     libobs.obs_data_release.restype = None
 
     libobs.obs_source_create.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p]
     libobs.obs_source_create.restype = ctypes.c_void_p
+    libobs.obs_source_get_settings.argtypes = [ctypes.c_void_p]
+    libobs.obs_source_get_settings.restype = ctypes.c_void_p
     libobs.obs_source_get_width.argtypes = [ctypes.c_void_p]
     libobs.obs_source_get_width.restype = ctypes.c_uint32
     libobs.obs_source_get_height.argtypes = [ctypes.c_void_p]
@@ -325,6 +333,8 @@ def _obs_capture_worker(
     libobs.obs_post_load_modules()
 
     settings = libobs.obs_data_create()
+    if restore_token:
+        libobs.obs_data_set_string(settings, b"RestoreToken", restore_token.encode("utf-8"))
     libobs.obs_data_set_bool(settings, b"ShowCursor", bool(draw_cursor_enabled))
 
     source = libobs.obs_source_create(b"pipewire-screen-capture-source", b"screen_cap", settings, None)
@@ -404,6 +414,21 @@ def _obs_capture_worker(
     cap_w = max(raw_w & ~3, 4)
     cap_h = max(raw_h & ~1, 2)
 
+    new_restore_token: str | None = None
+    cur_settings = libobs.obs_source_get_settings(source)
+    if cur_settings:
+        try:
+            raw_token = libobs.obs_data_get_string(cur_settings, b"RestoreToken")
+            if raw_token:
+                new_restore_token = raw_token.decode("utf-8", errors="replace") or None
+        finally:
+            libobs.obs_data_release(cur_settings)
+
+    if probe_only:
+        conn.send({"status": "ok", "width": cap_w, "height": cap_h, "restore_token": new_restore_token})
+        libobs.obs_set_output_source(0, None)
+        os._exit(0)
+
     if cap_w != probe_w or cap_h != probe_h or capture_fps != probe_fps:
         ovi.fps_num = capture_fps
         ovi.base_width = cap_w
@@ -415,7 +440,7 @@ def _obs_capture_worker(
             conn.send({"status": "error", "message": f"obs_reset_video({cap_w}x{cap_h}) failed (code={res})"})
             os._exit(1)
 
-    conn.send({"status": "ok", "width": cap_w, "height": cap_h})
+    conn.send({"status": "ok", "width": cap_w, "height": cap_h, "restore_token": new_restore_token})
     try:
         reply = conn.recv()
     except EOFError:
@@ -499,6 +524,7 @@ class ScreenshotProcessOBS(threading.Thread):
         crop_right: int = 0,
         crop_bottom: int = 0,
         draw_cursor_enabled: bool = True,
+        restore_token: str | None = None,
         **_ignore_unsupported_kwargs: object,
     ) -> None:
         super().__init__(daemon=True)
@@ -513,6 +539,7 @@ class ScreenshotProcessOBS(threading.Thread):
         self.crop_right = crop_right
         self.crop_bottom = crop_bottom
         self.draw_cursor_enabled = draw_cursor_enabled
+        self.restore_token: str | None = restore_token
 
         self.cap_width = 0
         self.cap_height = 0
@@ -543,7 +570,7 @@ class ScreenshotProcessOBS(threading.Thread):
         self.frame_width = frame_width
         self.frame_height = frame_height
 
-    def init_capture(self, stop_event: threading.Event | None = None) -> tuple[int, int]:
+    def init_capture(self, stop_event: threading.Event | None = None, probe_only: bool = False) -> tuple[int, int]:
         lib_paths, reason = _resolve_obs_paths()
         if lib_paths is None or reason is not None:
             raise RuntimeError(reason or "libobs PipeWire capture is not supported")
@@ -566,6 +593,8 @@ class ScreenshotProcessOBS(threading.Thread):
                 self.process_frame_lock,
                 self.process_frame_event,
                 self.process_stop_event,
+                self.restore_token,
+                probe_only,
             ),
             daemon=True,
         )
@@ -574,10 +603,11 @@ class ScreenshotProcessOBS(threading.Thread):
         child_conn.close()
 
         try:
-            print(
-                "Waiting for Wayland screen/window selection (please select a target in the portal dialog)...",
-                file=sys.stderr,
-            )
+            if not self.restore_token:
+                print(
+                    "Waiting for Wayland screen/window selection (please select a target in the portal dialog)...",
+                    file=sys.stderr,
+                )
             while not parent_conn.poll(0.05):
                 if (stop_event is not None and stop_event.is_set()) or self.stop_event.is_set():
                     raise RuntimeError("Screen capture selection was cancelled")
@@ -589,8 +619,15 @@ class ScreenshotProcessOBS(threading.Thread):
                 error_msg = msg.get("message", "Unknown OBS worker error") if isinstance(msg, dict) else str(msg)
                 raise RuntimeError(error_msg)
 
+            new_token = msg.get("restore_token")
+            self.restore_token = new_token if isinstance(new_token, str) and new_token else None
+
             self.cap_width = int(msg["width"])
             self.cap_height = int(msg["height"])
+
+            if probe_only:
+                self._cleanup_process()
+                return self.cap_width, self.cap_height
 
             screen_width = self.cap_width - self.crop_left - self.crop_right
             screen_height = self.cap_height - self.crop_top - self.crop_bottom
@@ -744,3 +781,18 @@ class ScreenshotProcessOBS(threading.Thread):
         if self.ident is not None:
             self.join(timeout=4)
         self._cleanup_process()
+
+
+def authorize_obs_capture(
+    draw_cursor_enabled: bool = True,
+    stop_event: threading.Event | None = None,
+) -> str | None:
+    """Prompt the Wayland portal once and return the resulting RestoreToken, if any."""
+    cap = ScreenshotProcessOBS(
+        fps=30,
+        frame_width=None,
+        frame_height=None,
+        draw_cursor_enabled=draw_cursor_enabled,
+    )
+    cap.init_capture(stop_event=stop_event, probe_only=True)
+    return cap.restore_token

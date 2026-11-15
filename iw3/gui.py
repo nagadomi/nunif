@@ -720,7 +720,7 @@ class MainFrame(wx.Frame):
         self.cbo_language.SetEditable(False)
 
         lang_selection = 0
-        for i, lang in enumerate(LOCAL_LIST):
+        for i, lang in enumerate(LOCALE_LIST):
             t = LOCALES.get(lang)
             name = t.get("_NAME", "Undefined")
             self.cbo_language.Append(name, lang)
@@ -1847,7 +1847,7 @@ class MainFrame(wx.Frame):
             wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
 
-LOCAL_LIST = sorted(list(LOCALES.keys()))
+LOCALE_LIST = sorted(list(LOCALES.keys()))
 LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 
@@ -1862,7 +1862,7 @@ def main():
     global LOCALE_DICT
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--lang", type=str, choices=LOCAL_LIST, help="translation")
+    parser.add_argument("--lang", type=str, choices=LOCALE_LIST, help="translation")
     args = parser.parse_args()
     if args.lang:
         LOCALE_DICT = LOCALES.get(args.lang, {})

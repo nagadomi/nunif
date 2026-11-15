@@ -6,7 +6,10 @@
 
 `iw3-desktop` is a tool that converts your PC desktop screen into 3D in real-time and streams it over Wi-Fi. It can be viewed as side-by-side 3D from the browser on VR devices like Meta Quest.
 
-You can watch any image and video displayed on your PC in real-time within a VR space. To control the PC, you will continue to use the PC's keyboard and mouse, and audio will also be output from the PC. The VR device functions solely as a display.
+You can watch any image and video displayed on your PC in real-time within a VR space. Note that `iw3-desktop` itself streams video only (without audio or remote input):
+
+*   **Standalone VR Browser (e.g., Meta Quest Browser)**: To control the PC, you continue to use the PC's keyboard and mouse, and audio is output from the PC (speakers/headphones). The VR device functions solely as a display.
+*   **PCVR (e.g., SteamVR / Local Viewer with VR desktop software)**: Audio is output through the PC's configured audio device. In PCVR environments such as SteamVR, PC audio is normally routed to the VR headset automatically (unless configured to use PC speakers/headphones). Input/control behavior depends on the PCVR environment or VR desktop software being used.
 
 Please be aware of 3D sickness, as the depth estimation results for GUI windows and text may not be perfect. This tool is primarily intended for full-screen playback of images and videos.
 
@@ -21,7 +24,7 @@ In addition to web streaming, it also supports local viewer window display. This
 
 ## Security Notice
 
-`iw3-desktop` starts an HTTP server without a password by default. Please be aware that other PCs within the same network may be able to access it.
+`iw3-desktop` starts an HTTPS server (or HTTP when using `--legacy-stream`) without a password by default. Please be aware that other PCs within the same network may be able to access it.
 
 You can set a password for Basic Authentication using the `--password` option.
 
@@ -49,14 +52,14 @@ python -m iw3.desktop
 If the server starts successfully, a message like the following will be displayed:
 
 ```
-Open http://192.168.11.6:1303
+Open https://192.168.11.6:1303
 Estimated FPS = 30.24, Streaming FPS = 0.00
 ```
-(The `192.168.11.6` address will vary depending on your network environment.)
+(The `192.168.11.6` address will vary depending on your network environment. When `--legacy-stream` is specified, an `http://` URL is displayed.)
 
 If a Firewall dialog appears, please allow access.
 
-Open the displayed URL in your PC browser and check if the video can be played. The web page has been confirmed to work with Google Chrome and Meta Quest 2 Browser. It does not work on Firefox.
+Open the displayed URL in your PC browser or VR device browser and check if the stream can be played.
 
 If the PC's IP address is not detected correctly within the LAN, you can specify the IP address with the `--bind-addr` option:
 
@@ -64,12 +67,42 @@ If the PC's IP address is not detected correctly within the LAN, you can specify
 python -m iw3.desktop --bind-addr 192.168.1.2
 ```
 
-## How to View on Meta Quest
+## How to View on VR Devices
 
-Confirmed to work with Meta Quest 2. You can play 3D videos by following these steps:
+### WebXR (Default: `Web Streaming`)
+
+By default, `iw3-desktop` uses the WebXR player (`iw3-player`) over HTTPS.
+
+#### About SSL Warnings
+
+To meet WebXR's mandatory HTTPS requirement, the server generates a self-signed certificate on startup.
+During your first visit, your browser will display a security warning (e.g., "Your connection is not private"). To proceed:
+
+1.  Click **"Advanced"**.
+2.  Select **"Proceed to [IP address]"**.
+
+**Tip:** Bookmarking this page will allow you to skip this warning in the future.
+
+#### Playback Steps
+
+1.  Launch the browser on your VR device (or a WebXR-compatible PC browser for PCVR) and open the `https://...` URL.
+2.  Skip the SSL warning if it appears.
+3.  Wait for the stream to start, then click **Enter VR** to enter WebXR mode.
+
+For WebXR player controls and screen settings, see the [iw3-player documentation](../player/README.md).
+
+### Web Streaming (Legacy) (`--legacy-stream`)
+
+If you prefer to use the VR browser's built-in HTML5 `<video>` 3D display mode (instead of WebXR), select **`Web Streaming (Legacy)`** in the GUI or pass the `--legacy-stream` option in the CLI:
+
+```bash
+python -m iw3.desktop --legacy-stream
+```
+
+Confirmed to work with Meta Quest 2 Browser and Google Chrome (does not work on Firefox). On Meta Quest, you can play 3D video by following these steps:
 
 1.  Launch `Browser`.
-2.  Enter the server URL.
+2.  Enter the `http://...` server URL.
 3.  (Optional) Add the URL to favorites.
 4.  Play the video.
 5.  Make the **Browser** full screen using the icon in the top right corner of the Browser.

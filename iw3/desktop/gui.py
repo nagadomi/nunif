@@ -7,18 +7,14 @@ import math
 from os import path
 import traceback
 import threading
-import importlib.util
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
 import wx.lib.stattext as stattext
 from wx.lib.buttons import GenBitmapButton
 from wx.lib.intctrl import IntCtrl
-import torch
 from nunif.utils.git import get_current_branch
 from nunif.initializer import gc_collect
-from nunif.device import mps_is_available, xpu_is_available, create_device
-from nunif.models.utils import check_compile_support
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
@@ -29,7 +25,6 @@ from nunif.gui import (
     persistent_manager_unregister_all,
     persistent_manager_restore_all,
     persistent_manager_register,
-    validate_number,
     set_icon_ex,
     load_icon,
     start_file,
@@ -38,23 +33,19 @@ from nunif.gui import (
     get_default_locale,
     refresh_layouts,
 )
-from ..base_depth_model import BaseDepthModel
 from ..locales import LOCALES, load_language_setting, save_language_setting
+from ..player.server import get_local_address, is_loopback_address, is_private_address
+from .gui_shared import (
+    EVT_FPS,
+    FPSGUI,
+    DesktopStreamGUIMixin,
+)
 from .utils import (
-    get_local_address,
-    is_private_address,
-    is_loopback_address,
     init_win32,
     iw3_desktop_main,
     create_parser,
     set_state_args,
-    get_monitor_size_list,
-    enum_window_names,
-    is_mss_supported,
-    is_obs_supported,
-    is_kwcapture_supported,
-    is_wayland,
-    WAYLAND_CAPTURE_MISSING_MESSAGE,
+    read_runtime_adjustment_values,
     IW3U,
     ENABLE_GPU_JPEG,
 )
@@ -68,18 +59,6 @@ os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(PRESET_DIR, exist_ok=True)
 
 LAYOUT_DEBUG = False
-HAS_WINDOWS_CAPTURE = bool(importlib.util.find_spec("windows_capture"))
-IS_ROCM = getattr(torch.version, "hip", None) is not None
-HAS_WINDOWS_CAPTURE_CUDA = bool(importlib.util.find_spec("wc_cuda")) and torch.cuda.is_available() and not IS_ROCM
-HAS_OBS = is_obs_supported()
-HAS_KWCAPTURE = is_kwcapture_supported()
-# Backends that can capture one monitor or one window (the others grab the whole screen)
-BACKENDS_WITH_TARGET = {"wc_mp", "wc_cuda", "mss", "kwcapture"}
-BACKENDS_WITH_CROP = BACKENDS_WITH_TARGET | {"obs"}
-
-
-myEVT_FPS = wx.NewEventType()
-EVT_FPS = wx.PyEventBinder(myEVT_FPS, 0)
 
 
 # Spin inclrement value
@@ -89,35 +68,6 @@ CONVERGENCE_INC_DEFAULT = 0.1
 CONVERGENCE_INC_FINE = 0.005
 FOREGROUNDSCALE_INC_DEFAULT = 0.2
 FOREGROUNDSCALE_INC_FINE = 0.005
-ADD_DEBUG_METHOD = bool(os.getenv("DEBUG", False))
-
-
-class FPSEvent(wx.PyCommandEvent):
-    def __init__(
-        self, etype, eid, estimated_fps=None, screenshot_fps=None, streaming_fps=None, screen_size=None, url=None
-    ):
-        super(FPSEvent, self).__init__(etype, eid)
-        self.estimated_fps = estimated_fps
-        self.screenshot_fps = screenshot_fps
-        self.streaming_fps = streaming_fps
-        self.screen_size = screen_size
-        self.url = url
-
-    def GetValue(self):
-        return (self.estimated_fps, self.screenshot_fps, self.streaming_fps, self.screen_size, self.url)
-
-
-class FPSGUI:
-    def __init__(self, parent, **kwargs):
-        self.parent = parent
-
-    def set_url(self, url):
-        wx.PostEvent(self.parent, FPSEvent(myEVT_FPS, -1, None, None, None, None, url))
-
-    def update(self, estimated_fps, screenshot_fps, streaming_fps, screen_size):
-        wx.PostEvent(
-            self.parent, FPSEvent(myEVT_FPS, -1, estimated_fps, screenshot_fps, streaming_fps, screen_size, None)
-        )
 
 
 class IW3DesktopApp(wx.App):
@@ -139,7 +89,7 @@ class IW3DesktopApp(wx.App):
         return True
 
 
-class MainFrame(wx.Frame):
+class MainFrame(wx.Frame, DesktopStreamGUIMixin):
     def __init__(self):
         branch_name = get_current_branch()
         if branch_name is None or branch_name in {"master", "main"}:
@@ -164,9 +114,14 @@ class MainFrame(wx.Frame):
         self.processing = False
         self.args = None
         self.args_lock = threading.Lock()
+        self._last_synced_adj = None
+        self._init_desktop_deps()
         self.initialize_component()
         if is_dark_mode():
             apply_dark_mode(self)
+
+    def _T(self, s: str) -> str:
+        return T(s)
 
     def initialize_component(self):
         NORMAL_FONT = wx.Font(10, family=wx.FONTFAMILY_MODERN, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_NORMAL)
@@ -182,179 +137,9 @@ class MainFrame(wx.Frame):
             self.pnl_options.SetBackgroundColour("#cfc")
 
         # stereo generation settings
-
-        self.grp_stereo = wx.StaticBox(self.pnl_options, label=T("Stereo Generation"))
+        sizer_stereo = self._build_stereo_group(self.pnl_options, WARNING_FONT, WARNING_COLOR)
         if LAYOUT_DEBUG:
             self.grp_stereo.SetBackgroundColour("#fcf")
-
-        self.lbl_divergence = wx.StaticText(self.grp_stereo, label=T("3D Strength"))
-        self.cbo_divergence = EditableComboBox(
-            self.grp_stereo, choices=["5.0", "4.0", "3.0", "2.5", "2.0", "1.0"], name="cbo_divergence"
-        )
-        self.lbl_divergence_warning = stattext.GenStaticText(self.grp_stereo, label="")
-        self.lbl_divergence_warning.SetFont(WARNING_FONT)
-        self.lbl_divergence_warning.SetForegroundColour(WARNING_COLOR)
-        self.lbl_divergence_warning.Hide()
-
-        self.cbo_divergence.SetToolTip("Divergence")
-        self.cbo_divergence.SetSelection(5)
-
-        self.lbl_convergence = wx.StaticText(self.grp_stereo, label=T("Convergence Plane"))
-        self.cbo_convergence_mode = wx.ComboBox(
-            self.grp_stereo, choices=["constant", "sod_v1"], name="cbo_convergence_mode"
-        )
-        self.cbo_convergence_mode.SetEditable(False)
-        self.cbo_convergence_mode.SetSelection(0)
-
-        self.cbo_convergence = EditableComboBox(
-            self.grp_stereo, choices=["0.0", "0.25", "0.5", "1.0"], name="cbo_convergence"
-        )
-        self.cbo_convergence.SetSelection(2)
-        self.cbo_convergence.SetToolTip("Convergence")
-
-        self.lbl_synthetic_view = wx.StaticText(self.grp_stereo, label=T("Synthetic View"))
-        self.cbo_synthetic_view = wx.ComboBox(
-            self.grp_stereo, choices=["both", "right", "left"], name="cbo_synthetic_view"
-        )
-        self.cbo_synthetic_view.SetEditable(False)
-        self.cbo_synthetic_view.SetSelection(0)
-
-        self.lbl_method = wx.StaticText(self.grp_stereo, label=T("Method"))
-        self.cbo_method = wx.ComboBox(
-            self.grp_stereo,
-            choices=[
-                "mlbw_l2",
-                "mlbw_l4",
-                "mlbw_l2s",
-                "row_flow_v3",
-                "row_flow_v3_sym",
-                "row_flow_v2",
-                "forward_fill",
-                "monobw",
-            ]
-            + (["NULL"] if ADD_DEBUG_METHOD else []),
-            name="cbo_method",
-        )
-        self.cbo_method.SetEditable(False)
-        self.cbo_method.SetSelection(4)
-
-        self.chk_small_model_only = wx.CheckBox(
-            self.grp_stereo, label=T("List small model only"), name="chk_small_model_only"
-        )
-        self.chk_small_model_only.SetValue(True)
-        self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-
-        depth_models = self.get_depth_models(small_only=False)
-        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=depth_models, name="cbo_depth_model")
-        self.cbo_depth_model.SetEditable(False)
-        self.cbo_depth_model.SetSelection(depth_models.index("Any_V2_S"))
-
-        self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
-        self.cbo_resolution = EditableComboBox(self.grp_stereo, choices=["Default", "512"], name="cbo_zoed_resolution")
-        self.cbo_resolution.SetSelection(0)
-
-        self.lbl_foreground_scale = wx.StaticText(self.grp_stereo, label=T("Foreground Scale"))
-        self.cbo_foreground_scale = EditableComboBox(
-            self.grp_stereo, choices=["-3", "-2", "-1", "0", "1", "2", "3"], name="cbo_foreground_scale"
-        )
-        self.cbo_foreground_scale.SetSelection(3)
-
-        self.lbl_edge_dilation = wx.StaticText(self.grp_stereo, label=T("Edge Fix"), name="lbl_edge_dilation")
-        self.cbo_edge_dilation = EditableComboBox(
-            self.grp_stereo, choices=["0", "1", "2", "3", "4"], size=self.FromDIP((90, -1)), name="cbo_edge_dilation"
-        )
-        self.cbo_edge_dilation_y = EditableComboBox(
-            self.grp_stereo, choices=["", "0", "1", "2"], name="cbo_edge_dilation_y"
-        )
-        self.cbo_edge_dilation.SetSelection(2)
-        self.cbo_edge_dilation_y.SetSelection(0)
-        self.lbl_edge_dilation.SetToolTip(T("Reduce distortion of foreground and background edges"))
-        self.cbo_edge_dilation.SetToolTip(T("X or XY"))
-        self.cbo_edge_dilation_y.SetToolTip(T("Y"))
-
-        self.chk_ema_normalize = wx.CheckBox(self.grp_stereo, label=T("Flicker Reduction"), name="chk_ema_normalize")
-        self.chk_ema_normalize.SetValue(True)
-        self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
-        self.cbo_ema_decay = EditableComboBox(
-            self.grp_stereo, choices=["0.99", "0.95", "0.9", "0.75", "0.5"], name="cbo_ema_decay"
-        )
-        self.cbo_ema_decay.SetSelection(2)
-        self.chk_ema_normalize.SetToolTip(T("Video Only") + " " + T("(experimental)"))
-
-        self.chk_preserve_screen_border = wx.CheckBox(
-            self.grp_stereo, label=T("Preserve Screen Border"), name="chk_preserve_screen_border"
-        )
-        self.chk_preserve_screen_border.SetValue(True)
-        self.chk_preserve_screen_border.SetToolTip(T("Force set screen border parallax to zero"))
-
-        self.lbl_stereo_format = wx.StaticText(self.grp_stereo, label=T("Stereo Format"))
-        self.cbo_stereo_format = wx.ComboBox(
-            self.grp_stereo,
-            choices=[
-                "Half SBS",
-                "Full SBS",
-                "Half TB",
-                "Full TB",
-                "Cross Eyed",
-                "RGB-D",
-                "Half RGB-D",
-                "Anaglyph",
-            ],
-            name="cbo_stereo_format",
-        )
-        self.cbo_stereo_format.SetEditable(False)
-        self.cbo_stereo_format.SetSelection(0)
-
-        self.lbl_anaglyph_method = wx.StaticText(self.grp_stereo, label=T("Anaglyph Method"))
-        self.cbo_anaglyph_method = wx.ComboBox(
-            self.grp_stereo,
-            choices=["dubois", "dubois2", "color", "gray", "half-color", "wimmer", "wimmer2"],
-            name="cbo_anaglyph_method",
-        )
-        self.cbo_anaglyph_method.SetEditable(False)
-        self.cbo_anaglyph_method.SetSelection(0)
-        self.lbl_anaglyph_method.Hide()
-        self.cbo_anaglyph_method.Hide()
-
-        self.lbl_format_device = wx.StaticText(self.grp_stereo, label=T(""))
-
-        layout = wx.GridBagSizer(vgap=4, hgap=4)
-        layout.SetEmptyCellSize((0, 0))
-
-        i = 0
-        layout.Add(self.lbl_divergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_divergence, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(
-            self.lbl_divergence_warning, pos=(i := i + 1, 0), span=(0, 3), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL
-        )
-        layout.Add(self.lbl_convergence, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_convergence_mode, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.cbo_convergence, (i, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_synthetic_view, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_synthetic_view, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_method, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_small_model_only, (i := i + 1, 1), (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_depth_model, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_depth_model, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_resolution, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_resolution, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_foreground_scale, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_foreground_scale, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_edge_dilation, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_edge_dilation, (i, 1), flag=wx.EXPAND)
-        layout.Add(self.cbo_edge_dilation_y, (i, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_ema_normalize, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_ema_decay, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.chk_preserve_screen_border, (i := i + 1, 0), (0, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_stereo_format, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stereo_format, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_anaglyph_method, (i := i + 1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_anaglyph_method, (i, 1), (1, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_format_device, (i := i + 1, 1), (1, 2), flag=wx.EXPAND | wx.ALIGN_CENTER_VERTICAL)
-
-        sizer_stereo = wx.StaticBoxSizer(self.grp_stereo, wx.VERTICAL)
-        sizer_stereo.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # network settings
         self.grp_network = wx.StaticBox(self.pnl_options, label=T("Network"))
@@ -363,7 +148,7 @@ class MainFrame(wx.Frame):
 
         self.lbl_view_mode = wx.StaticText(self.grp_network, label=T("View Mode"))
         self.cbo_view_mode = wx.ComboBox(
-            self.grp_network, choices=["Web Streaming", "Local Viewer"], name="cbo_view_mode"
+            self.grp_network, choices=["Web Streaming", "Web Streaming (Legacy)", "Local Viewer"], name="cbo_view_mode"
         )
         self.cbo_view_mode.SetEditable(False)
         self.cbo_view_mode.SetSelection(0)
@@ -454,142 +239,9 @@ class MainFrame(wx.Frame):
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # processor settings
-        self.grp_processor = wx.StaticBox(self.pnl_options, label=T("Processor"))
+        sizer_processor = self._build_processor_group(self.pnl_options)
         if LAYOUT_DEBUG:
             self.grp_processor.SetBackgroundColour("#fcf")
-
-        self.lbl_device = wx.StaticText(self.grp_processor, label=T("Device"))
-        self.cbo_device = wx.ComboBox(self.grp_processor, size=self.FromDIP((200, -1)), name="cbo_device")
-        self.cbo_device.SetEditable(False)
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                device_name = torch.cuda.get_device_properties(i).name
-                self.cbo_device.Append(f"{i}:{device_name}", i)
-        elif mps_is_available():
-            self.cbo_device.Append("MPS", 0)
-        elif xpu_is_available():
-            for i in range(torch.xpu.device_count()):
-                device_name = torch.xpu.get_device_name(i)
-                self.cbo_device.Append(f"{i}:{device_name}", i)
-
-        self.cbo_device.Append("CPU", -1)
-        self.cbo_device.SetSelection(0)
-
-        self.lbl_screenshot = wx.StaticText(self.grp_processor, label=T("Screenshot"))
-        screenshot_backends = ["pil"]
-        if is_mss_supported():
-            screenshot_backends += ["mss"]
-        if HAS_WINDOWS_CAPTURE:
-            screenshot_backends += ["wc_mp"]
-        if HAS_WINDOWS_CAPTURE_CUDA:
-            screenshot_backends += ["wc_cuda"]
-        if HAS_KWCAPTURE:
-            screenshot_backends += ["kwcapture"]
-        if HAS_OBS:
-            screenshot_backends += ["obs"]
-        self.cbo_screenshot = wx.ComboBox(self.grp_processor, choices=screenshot_backends, name="cbo_screenshot")
-        self.cbo_screenshot.SetEditable(False)
-        default_screenshot_index = 0
-        if sys.platform == "win32":
-            if "wc_cuda" in screenshot_backends:
-                default_screenshot_index = screenshot_backends.index("wc_cuda")
-            elif "wc_mp" in screenshot_backends:
-                default_screenshot_index = screenshot_backends.index("wc_mp")
-        elif HAS_KWCAPTURE and "kwcapture" in screenshot_backends:
-            # Prefer kwcapture on KDE Plasma: no portal dialog, fast native capture
-            default_screenshot_index = screenshot_backends.index("kwcapture")
-        elif HAS_OBS and "obs" in screenshot_backends:
-            default_screenshot_index = screenshot_backends.index("obs")
-        elif sys.platform == "darwin":
-            if "mss" in screenshot_backends:
-                default_screenshot_index = screenshot_backends.index("mss")
-        self.cbo_screenshot.SetSelection(default_screenshot_index)
-
-        self.lbl_monitor_index = wx.StaticText(self.grp_processor, label=T("Monitor Index"))
-        self.cbo_monitor_index = wx.ComboBox(
-            self.grp_processor, choices=[str(i) for i in range(len(get_monitor_size_list()))], name="cbo_monitor_index"
-        )
-        self.cbo_monitor_index.SetEditable(False)
-        self.cbo_monitor_index.SetSelection(0)
-
-        self.lbl_window_name = wx.StaticText(self.grp_processor, label=T("Window Name"))
-        self.cbo_window_name = EditableComboBox(
-            self.grp_processor, size=self.FromDIP((200, -1)), choices=[""], name="cbo_window_name"
-        )
-        self.cbo_window_name.SetSelection(0)
-        self.btn_reload_window_name = GenBitmapButton(self.grp_processor, bitmap=load_icon("view-refresh.png"))
-        self.btn_reload_window_name.SetToolTip(T("Reload"))
-
-        self.lbl_crop_region = wx.StaticText(self.grp_processor, label=T("Crop Region (px)"))
-
-        self.lbl_crop_top = wx.StaticText(self.grp_processor, label=T("Top"))
-        self.txt_crop_top = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_top"
-        )
-        self.txt_crop_top.SetValue(0)
-
-        self.lbl_crop_left = wx.StaticText(self.grp_processor, label=T("Left"))
-        self.txt_crop_left = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_left"
-        )
-        self.txt_crop_left.SetValue(0)
-
-        self.lbl_crop_right = wx.StaticText(self.grp_processor, label=T("Right"))
-        self.txt_crop_right = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_right"
-        )
-        self.txt_crop_right.SetValue(0)
-
-        self.lbl_crop_bottom = wx.StaticText(self.grp_processor, label=T("Bottom"))
-        self.txt_crop_bottom = IntCtrl(
-            self.grp_processor, size=self.FromDIP((60, -1)), allow_none=False, min=0, max=500, name="txt_crop_bottom"
-        )
-        self.txt_crop_bottom.SetValue(0)
-
-        self.lbl_autocrop = wx.StaticText(self.grp_processor, label=T("AutoCrop"))
-        self.cbo_autocrop = wx.ComboBox(
-            self.grp_processor, choices=["", "BLACK_TB", "BLACK", "FLAT_TB", "FLAT"], name="cbo_autocrop"
-        )
-        self.cbo_autocrop.SetEditable(False)
-        self.cbo_autocrop.SetSelection(0)
-
-        self.chk_compile = wx.CheckBox(self.grp_processor, label=T("torch.compile"), name="chk_compile")
-        self.chk_compile.SetToolTip(T("Enable model compiling"))
-        self.chk_compile.SetValue(False)
-
-        layout = wx.GridBagSizer(vgap=5, hgap=4)
-        layout.SetEmptyCellSize((0, 0))
-        layout.Add(self.lbl_device, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_device, (0, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_screenshot, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_screenshot, (1, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_monitor_index, (2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_monitor_index, (2, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_window_name, (3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_window_name, (3, 1), flag=wx.EXPAND)
-        layout.Add(self.btn_reload_window_name, (3, 2), flag=wx.EXPAND)
-        layout.Add(self.lbl_crop_region, (4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-
-        # Create a sub-layout for crop controls
-        crop_layout = wx.GridBagSizer(vgap=2, hgap=4)
-        crop_layout.Add(self.lbl_crop_top, (0, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_top, (0, 1), flag=wx.EXPAND)
-        crop_layout.Add(self.lbl_crop_left, (0, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_left, (0, 3), flag=wx.EXPAND)
-        crop_layout.Add(self.lbl_crop_right, (1, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_right, (1, 1), flag=wx.EXPAND)
-        crop_layout.Add(self.lbl_crop_bottom, (1, 2), flag=wx.ALIGN_CENTER_VERTICAL)
-        crop_layout.Add(self.txt_crop_bottom, (1, 3), flag=wx.EXPAND)
-
-        layout.Add(crop_layout, (4, 1), flag=wx.EXPAND)
-
-        layout.Add(self.lbl_autocrop, (5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_autocrop, (5, 1), flag=wx.EXPAND)
-
-        layout.Add(self.chk_compile, (6, 0), flag=wx.EXPAND)
-
-        sizer_processor = wx.StaticBoxSizer(self.grp_processor, wx.VERTICAL)
-        sizer_processor.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
 
         # adjustment settings
         self.grp_adjustment = wx.StaticBox(self.pnl_options, label=T("Adjustment"))
@@ -675,7 +327,7 @@ class MainFrame(wx.Frame):
         self.lbl_language = wx.StaticText(self.pnl_preset, label=T("Language"))
         self.cbo_language = wx.ComboBox(self.pnl_preset, name="cbo_language")
         lang_selection = 0
-        for i, lang in enumerate(LOCAL_LIST):
+        for i, lang in enumerate(LOCALE_LIST):
             t = LOCALES.get(lang)
             name = t.get("_NAME", "Undefined")
             self.cbo_language.Append(name, lang)
@@ -699,26 +351,13 @@ class MainFrame(wx.Frame):
         self.SetSizer(layout)
 
         # bind
+        self._bind_desktop_events()
         self.cbo_language.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_language)
 
-        self.cbo_divergence.Bind(wx.EVT_TEXT, self.update_divergence_warning)
-        self.cbo_synthetic_view.Bind(wx.EVT_TEXT, self.update_divergence_warning)
-        self.cbo_method.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_method)
-        self.lbl_divergence_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_divergence_warning)
-
-        self.chk_small_model_only.Bind(wx.EVT_CHECKBOX, self.update_depth_model_list)
-        self.cbo_edge_dilation_y.Bind(wx.EVT_TEXT, self.on_changed_edge_dilation)
-        self.chk_ema_normalize.Bind(wx.EVT_CHECKBOX, self.on_changed_chk_ema_normalize)
         self.chk_bind_addr.Bind(wx.EVT_CHECKBOX, self.update_bind_addr_state)
         self.txt_bind_addr.Bind(wx.EVT_TEXT, self.update_bind_addr_warning)
         self.lbl_bind_addr_warning.Bind(wx.EVT_LEFT_DOWN, self.on_click_bind_addr_warning)
         self.chk_auth.Bind(wx.EVT_CHECKBOX, self.update_auth_state)
-        self.cbo_stereo_format.Bind(wx.EVT_TEXT, self.update_stereo_format)
-        self.cbo_screenshot.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_screenshot)
-        self.btn_reload_window_name.Bind(wx.EVT_BUTTON, self.update_window_names)
-
-        self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
-        self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
 
         self.tgl_adj_fine.Bind(wx.EVT_TOGGLEBUTTON, self.on_toggle_finetuning)
         self.btn_adj_align.Bind(wx.EVT_BUTTON, self.on_click_align)
@@ -766,41 +405,8 @@ class MainFrame(wx.Frame):
 
         self.btn_start.SetFocus()
 
-    def update_wayland_warning(self):
-        if HAS_OBS or HAS_KWCAPTURE or not is_wayland():
-            return False
-        print(f"Warning: {WAYLAND_CAPTURE_MISSING_MESSAGE}", file=sys.stderr)
-        message = T(WAYLAND_CAPTURE_MISSING_MESSAGE)
-        self.cbo_screenshot.SetToolTip(message)
-        self.SetStatusText(message)
-        return True
-
-    def get_depth_models(self, small_only):
-        depth_models = BaseDepthModel.get_available_models(desktop=True, small_only=small_only)
-        if ADD_DEBUG_METHOD:
-            depth_models.append("NULL")
-        return depth_models
-
     def get_editable_comboboxes(self):
-        editable_comboboxes = [
-            self.cbo_divergence,
-            self.cbo_convergence,
-            self.cbo_resolution,
-            self.cbo_edge_dilation,
-            self.cbo_edge_dilation_y,
-            self.cbo_ema_decay,
-            self.cbo_foreground_scale,
-            self.cbo_stream_fps,
-            self.cbo_stream_height,
-        ]
-        return editable_comboboxes
-
-    def get_anaglyph_method(self):
-        if self.cbo_stereo_format.GetValue() == "Anaglyph":
-            anaglyph = self.cbo_anaglyph_method.GetValue()
-        else:
-            anaglyph = None
-        return anaglyph
+        return self.get_desktop_editable_comboboxes()
 
     def on_close(self, event):
         self.save_preset()
@@ -817,18 +423,6 @@ class MainFrame(wx.Frame):
                 # It may be deadlocked, so force exit
                 os._exit(-1)
 
-    def update_depth_model_list(self, *args, **kwargs):
-        default_model = "Any_V2_S"
-        small_only = self.chk_small_model_only.IsChecked()
-        depth_model = self.cbo_depth_model.GetValue()
-        choices = self.get_depth_models(small_only=small_only)
-        self.cbo_depth_model.SetItems(choices)
-
-        if depth_model in choices:
-            self.cbo_depth_model.SetSelection(choices.index(depth_model))
-        else:
-            self.cbo_depth_model.SetSelection(choices.index(default_model))
-
     def sync_adj_controls(self, to=True):
         if to:
             divergence = float(self.cbo_divergence.GetValue())
@@ -842,17 +436,36 @@ class MainFrame(wx.Frame):
             self.sld_adj_foreground_scale.SetValue(foreground_scale)
             self.sld_adj_edge_dilation.SetValue(edge_dilation)
             self.cbo_adj_edge_dilation_y.SetValue(edge_dilation_y)
+            self._last_synced_adj = read_runtime_adjustment_values(self.args, self.args_lock)
         else:
             divergence = self.sld_adj_divergence.GetValue()
             convergence = self.sld_adj_convergence.GetValue()
             foreground_scale = self.sld_adj_foreground_scale.GetValue()
             edge_dilation = self.sld_adj_edge_dilation.GetValue()
             edge_dilation_y = self.cbo_adj_edge_dilation_y.GetValue()
-            self.cbo_divergence.SetValue(str(divergence))
-            self.cbo_convergence.SetValue(str(convergence))
-            self.cbo_foreground_scale.SetValue(str(foreground_scale))
+            self.cbo_divergence.SetValue(str(round(float(divergence), 4)))
+            self.cbo_convergence.SetValue(str(round(float(convergence), 4)))
+            self.cbo_foreground_scale.SetValue(str(round(float(foreground_scale), 4)))
             self.cbo_edge_dilation.SetValue(str(edge_dilation))
             self.cbo_edge_dilation_y.SetValue(edge_dilation_y)
+
+    def _apply_args_to_adj_controls(self, args):
+        current = read_runtime_adjustment_values(args, self.args_lock)
+        if current is None or current == self._last_synced_adj:
+            return
+        divergence, convergence, foreground_scale, edge_x, edge_y = current
+        prev = self._last_synced_adj
+        if prev is None or prev[0] != divergence:
+            self.sld_adj_divergence.SetValue(divergence)
+        if prev is None or prev[1] != convergence:
+            self.sld_adj_convergence.SetValue(convergence)
+        if prev is None or prev[2] != foreground_scale:
+            self.sld_adj_foreground_scale.SetValue(foreground_scale)
+        if prev is None or prev[3] != edge_x:
+            self.sld_adj_edge_dilation.SetValue(edge_x)
+        if prev is None or prev[4] != edge_y:
+            self.cbo_adj_edge_dilation_y.SetValue(edge_y)
+        self._last_synced_adj = current
 
     def update_args_adjustment(self, event):
         if self.args is None:
@@ -870,17 +483,28 @@ class MainFrame(wx.Frame):
 
             if edge_dilation_y:
                 try:
-                    self.args.edge_dilation = [edge_dilation, int(edge_dilation_y)]
+                    edge_y_int = int(edge_dilation_y)
+                    self.args.edge_dilation = [edge_dilation, edge_y_int]
+                    edge_y_str = str(edge_y_int)
                 except ValueError:
                     self.args.edge_dilation = edge_dilation
+                    edge_y_str = ""
             else:
                 self.args.edge_dilation = edge_dilation
+                edge_y_str = ""
 
             if self.args.state["depth_model"]:
                 is_metric = self.args.state["depth_model"].is_metric()
                 self.args.mapper = IW3U.resolve_mapper_name(
                     mapper=None, foreground_scale=self.args.foreground_scale, metric_depth=is_metric
                 )
+            self._last_synced_adj = (
+                float(divergence),
+                float(convergence),
+                float(foreground_scale),
+                int(edge_dilation),
+                edge_y_str,
+            )
 
     def update_bind_addr_state(self, *args, **kwargs):
         if not self.chk_bind_addr.IsChecked():
@@ -915,62 +539,6 @@ class MainFrame(wx.Frame):
             self.txt_auth_username.Disable()
             self.txt_auth_password.Disable()
 
-    def update_stereo_format(self, *args, **kwargs):
-        stereo_format = self.cbo_stereo_format.GetValue()
-        if stereo_format in {"Half SBS", "Half TB"}:
-            self.lbl_format_device.SetLabel("Meta Quest 2/3")
-        elif stereo_format in {"Full SBS", "Full TB"}:
-            self.lbl_format_device.SetLabel("PICO 4")
-        else:
-            self.lbl_format_device.SetLabel("")
-        self.update_anaglyph_state()
-
-    def update_edge_dilation(self):
-        if self.cbo_edge_dilation_y.GetValue():
-            self.cbo_edge_dilation.SetToolTip(T("X"))
-        else:
-            self.cbo_edge_dilation.SetToolTip(T("X, Y"))
-
-    def on_changed_edge_dilation(self, event):
-        self.update_edge_dilation()
-
-    def update_preserve_screen_border(self):
-        if self.cbo_method.GetValue() in {
-            "row_flow_v2",
-            "row_flow_v3",
-            "row_flow_v3_sym",
-            "mlbw_l2",
-            "mlbw_l4",
-            "mlbw_l2s",
-            "mlbw_l4s",
-            "monobw",
-        }:
-            self.chk_preserve_screen_border.Enable()
-        else:
-            self.chk_preserve_screen_border.Disable()
-
-    def on_selected_index_changed_cbo_method(self, event):
-        self.update_divergence_warning()
-        self.update_preserve_screen_border()
-
-    def update_anaglyph_state(self):
-        if self.cbo_stereo_format.GetValue() == "Anaglyph":
-            self.lbl_anaglyph_method.Show()
-            self.cbo_anaglyph_method.Show()
-        else:
-            self.lbl_anaglyph_method.Hide()
-            self.cbo_anaglyph_method.Hide()
-        self.GetSizer().Layout()
-
-    def update_ema_normalize(self):
-        if self.chk_ema_normalize.IsChecked():
-            self.cbo_ema_decay.Enable()
-        else:
-            self.cbo_ema_decay.Disable()
-
-    def on_changed_chk_ema_normalize(self, event):
-        self.update_ema_normalize()
-
     def on_click_btn_detect_ip(self, event):
         self.txt_bind_addr.SetValue(get_local_address())
 
@@ -979,106 +547,11 @@ class MainFrame(wx.Frame):
         if url:
             start_file(url)
 
-    def show_validation_error_message(self, name, min_value, max_value):
-        with wx.MessageDialog(
-            None,
-            message=T("`{}` must be a number {} - {}").format(name, min_value, max_value),
-            caption=T("Error"),
-            style=wx.OK,
-        ) as dlg:
-            dlg.ShowModal()
-
     def parse_args(self):
-        if not validate_number(self.cbo_divergence.GetValue(), 0.0, 100.0):
-            self.show_validation_error_message(T("3D Strength"), 0.0, 100.0)
+        if not self.validate_desktop_stream_inputs(validate_port=True):
             return None
-        if not validate_number(self.cbo_convergence.GetValue(), -100.0, 100.0):
-            self.show_validation_error_message(T("Convergence Plane"), -100.0, 100.0)
-            return None
-        if not validate_number(self.cbo_edge_dilation.GetValue(), 0, 20, is_int=True, allow_empty=False):
-            self.show_validation_error_message(T("Edge Fix"), 0, 20)
-            return None
-        if not validate_number(self.cbo_edge_dilation_y.GetValue(), 0, 20, is_int=True, allow_empty=True):
-            self.show_validation_error_message(T("Edge Fix"), 0, 20)
-            return None
-        if not validate_number(self.cbo_ema_decay.GetValue(), 0.1, 0.999):
-            self.show_validation_error_message(T("Flicker Reduction"), 0.1, 0.999)
-            return None
-        if not validate_number(self.cbo_foreground_scale.GetValue(), -3.0, 3.0, allow_empty=False):
-            self.show_validation_error_message(T("Foreground Scale"), -3, 3)
-            return None
-        if not validate_number(self.cbo_stream_fps.GetValue(), 1, 240, allow_empty=False):
-            self.show_validation_error_message(T("Streaming FPS"), 1, 240)
-            return None
-        if not validate_number(self.cbo_stream_height.GetValue(), 320, 4320, allow_empty=False):
-            self.show_validation_error_message(T("Streaming Resolution"), 320, 4320)
-            return None
-        if not validate_number(self.cbo_stream_quality.GetValue(), 1, 100, allow_empty=False):
-            self.show_validation_error_message(T("MJPEG Quality"), 1, 100)
-            return None
-        if not validate_number(self.txt_port.GetValue(), 1025, 65535, allow_empty=False):
-            self.show_validation_error_message(T("Port"), 1025, 65535)
-            return None
-
-        if self.cbo_screenshot.GetValue() in BACKENDS_WITH_CROP:
-            crop_top = self.txt_crop_top.GetValue()
-            crop_left = self.txt_crop_left.GetValue()
-            crop_right = self.txt_crop_right.GetValue()
-            crop_bottom = self.txt_crop_bottom.GetValue()
-
-            for crop_name, crop_value in [
-                ("Top", crop_top),
-                ("Left", crop_left),
-                ("Right", crop_right),
-                ("Bottom", crop_bottom),
-            ]:
-                if not validate_number(str(crop_value), 0, 500, is_int=True, allow_empty=False):
-                    self.show_validation_error_message(T("Crop") + " " + T(crop_name), 0, 500)
-                    return None
-        else:
-            crop_top = crop_left = crop_right = crop_bottom = 0
-
-        resolution = self.cbo_resolution.GetValue()
-        if resolution == "Default" or resolution == "":
-            resolution = None
-        else:
-            if not validate_number(resolution, 192, 8190, is_int=True, allow_empty=False):
-                self.show_validation_error_message(T("Depth") + " " + T("Resolution"), 192, 8190)
-                return
-            resolution = int(resolution)
 
         parser = create_parser()
-
-        full_sbs = self.cbo_stereo_format.GetValue() == "Full SBS"
-        tb = self.cbo_stereo_format.GetValue() == "Full TB"
-        half_tb = self.cbo_stereo_format.GetValue() == "Half TB"
-        cross_eyed = self.cbo_stereo_format.GetValue() == "Cross Eyed"
-        rgbd = self.cbo_stereo_format.GetValue() == "RGB-D"
-        half_rgbd = self.cbo_stereo_format.GetValue() == "Half RGB-D"
-        anaglyph = self.get_anaglyph_method()
-
-        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
-        device_id = [device_id]
-
-        depth_model_type = self.cbo_depth_model.GetValue()
-        if self.depth_model is None or (
-            self.depth_model_type != depth_model_type
-            or self.depth_model_device_id != device_id
-            or self.depth_model_height != resolution
-        ):
-            self.depth_model = None
-            self.depth_model_type = None
-            self.depth_model_device_id = None
-            gc_collect()
-
-        if self.cbo_edge_dilation_y.GetValue():
-            edge_dilation = [int(self.cbo_edge_dilation.GetValue()), int(self.cbo_edge_dilation_y.GetValue())]
-        else:
-            edge_dilation = int(self.cbo_edge_dilation.GetValue())
-
-        preserve_screen_border = (
-            self.chk_preserve_screen_border.IsEnabled() and self.chk_preserve_screen_border.IsChecked()
-        )
         bind_addr = self.txt_bind_addr.GetAddress() if self.chk_bind_addr.IsChecked() else None
         if self.chk_auth.IsChecked():
             user = self.txt_auth_username.GetValue()
@@ -1086,70 +559,26 @@ class MainFrame(wx.Frame):
         else:
             user = password = None
 
-        monitor_index = int(self.cbo_monitor_index.GetValue() or 0)
-        window_name = self.cbo_window_name.GetValue()
-        if self.cbo_screenshot.GetValue() not in BACKENDS_WITH_TARGET:
-            monitor_index = 0
-            window_name = None
-        if not window_name:
-            window_name = None
-
-        pad_mode = "16:9" if self.chk_pad_16_9.IsChecked() else None
-        local_viewer = self.cbo_view_mode.GetValue() == "Local Viewer"
+        defaults = self.collect_desktop_stream_defaults()
+        view_mode = self.cbo_view_mode.GetValue()
+        local_viewer = view_mode == "Local Viewer"
+        legacy_stream = view_mode == "Web Streaming (Legacy)"
         if local_viewer:
             viewer_kwargs = dict(
                 local_viewer=True,
-                stream_fps=int(self.cbo_stream_fps.GetValue()),
-                stream_height=int(self.cbo_stream_height.GetValue()),
                 uncap_fps=self.chk_uncap_fps.GetValue(),
                 fit_window=self.chk_fit_window.GetValue(),
             )
         else:
             viewer_kwargs = dict(
+                legacy_stream=legacy_stream,
                 bind_addr=bind_addr,
                 port=self.txt_port.GetValue(),
                 user=user,
                 password=password,
-                stream_fps=int(self.cbo_stream_fps.GetValue()),
-                stream_height=int(self.cbo_stream_height.GetValue()),
-                stream_quality=int(self.cbo_stream_quality.GetValue()),
-                gpu_jpeg=self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
             )
 
-        parser.set_defaults(
-            gpu=device_id,
-            divergence=float(self.cbo_divergence.GetValue()),
-            convergence=float(self.cbo_convergence.GetValue()),
-            convergence_mode=self.cbo_convergence_mode.GetValue(),
-            synthetic_view=self.cbo_synthetic_view.GetValue(),
-            method=self.cbo_method.GetValue(),
-            preserve_screen_border=preserve_screen_border,
-            depth_model=depth_model_type,
-            foreground_scale=float(self.cbo_foreground_scale.GetValue()),
-            edge_dilation=edge_dilation,
-            ema_normalize=self.chk_ema_normalize.GetValue(),
-            ema_decay=float(self.cbo_ema_decay.GetValue()),
-            resolution=resolution,
-            autocrop=self.cbo_autocrop.GetValue() if self.cbo_autocrop.GetValue() else None,
-            compile=self.chk_compile.IsEnabled() and self.chk_compile.IsChecked(),
-            screenshot=self.cbo_screenshot.GetValue(),
-            monitor_index=monitor_index,
-            window_name=window_name,
-            crop_top=crop_top,
-            crop_left=crop_left,
-            crop_right=crop_right,
-            crop_bottom=crop_bottom,
-            # in iw3.desktop, half_sbs by default
-            full_sbs=full_sbs,
-            tb=tb,
-            half_tb=half_tb,
-            cross_eyed=cross_eyed,
-            rgbd=rgbd,
-            half_rgbd=half_rgbd,
-            anaglyph=anaglyph,
-            pad_mode=pad_mode,
-            **viewer_kwargs,
-        )
+        parser.set_defaults(**defaults, **viewer_kwargs)
         args = parser.parse_args()
         set_state_args(
             args,
@@ -1171,6 +600,8 @@ class MainFrame(wx.Frame):
             )
         if url:
             self.txt_url.SetValue(url)
+        if self.args is not None:
+            self._apply_args_to_adj_controls(self.args)
 
     def on_click_btn_start(self, event):
         self.args = self.parse_args()
@@ -1178,8 +609,9 @@ class MainFrame(wx.Frame):
             return
 
         self.stop_event.clear()
-        self.btn_start.Disable()
         self.btn_cancel.Enable()
+        self.btn_cancel.SetFocus()
+        self.btn_start.Disable()
         self.btn_url.Enable()
         self.pnl_preset.Hide()
         self.grp_stereo.Hide()
@@ -1190,7 +622,7 @@ class MainFrame(wx.Frame):
         refresh_layouts(self)
         wx.CallAfter(refresh_layouts, self)
 
-        if BaseDepthModel.has_model_checkpoint_file(self.args.depth_model):
+        if self._BaseDepthModel.has_model_checkpoint_file(self.args.depth_model):
             # Realod depth model
             self.SetStatusText(f"Loading {self.args.depth_model}...")
         else:
@@ -1202,24 +634,15 @@ class MainFrame(wx.Frame):
 
     def on_exit_worker(self, result):
         error_info = None
+        final_args = None
         try:
             args = result.get()
-            self.depth_model = args.state["depth_model"]
-            self.depth_model_type = args.depth_model
-            self.depth_model_device_id = args.gpu
-            self.depth_model_height = args.resolution
-
+            final_args = args
+            self.sync_depth_model_from_args(args)
             self.SetStatusText(T("Shutdown"))
         except:  # noqa
-            if (
-                self.args is not None
-                and self.args.state.get("depth_model") is not None
-                and self.args.state["depth_model"].loaded()
-            ):
-                self.depth_model = self.args.state["depth_model"]
-                self.depth_model_type = self.args.depth_model
-                self.depth_model_device_id = self.args.gpu
-                self.depth_model_height = self.args.resolution
+            final_args = self.args
+            self.sync_depth_model_from_args(self.args)
             self.SetStatusText(T("Error"))
             e_type, e, tb = sys.exc_info()
             message = getattr(e, "message", str(e))
@@ -1227,10 +650,13 @@ class MainFrame(wx.Frame):
             traceback.print_tb(tb)
             error_info = (message, f"{T('Error')}: {e.__class__.__name__}")
 
+        if final_args is not None:
+            self._apply_args_to_adj_controls(final_args)
         self.args = None
         self.processing = False
-        self.btn_cancel.Disable()
         self.btn_start.Enable()
+        self.btn_start.SetFocus()
+        self.btn_cancel.Disable()
         self.txt_url.SetValue("")
         self.btn_url.Disable()
         self.pnl_preset.Show()
@@ -1239,6 +665,7 @@ class MainFrame(wx.Frame):
         self.grp_network.Show()
         self.grp_adjustment.Hide()
         self.sync_adj_controls(to=False)
+        self._last_synced_adj = None
         refresh_layouts(self)
         wx.CallAfter(refresh_layouts, self)
 
@@ -1293,65 +720,6 @@ class MainFrame(wx.Frame):
         persistent_manager_restore_all(manager, exclude_names)
         persistent_manager_unregister_all(manager)
 
-    def on_click_divergence_warning(self, event):
-        self.lbl_divergence_warning.Hide()
-        self.GetSizer().Layout()
-
-    def update_divergence_warning(self, *args, **kwargs):
-        try:
-            divergence = float(self.cbo_divergence.GetValue())
-            method = self.cbo_method.GetValue()
-            synthetic_view = self.cbo_synthetic_view.GetValue()
-            max_divergence = float("inf")
-
-            if method in {"row_flow_v3", "row_flow_v3_sym"}:
-                if synthetic_view == "both":
-                    max_divergence = 5.0
-                else:
-                    max_divergence = 5.0 * 0.5
-            elif method == "row_flow_v2":
-                if synthetic_view == "both":
-                    max_divergence = 2.5
-                else:
-                    max_divergence = 2.5 * 0.5
-            elif method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
-                if synthetic_view == "both":
-                    max_divergence = 10.0
-                else:
-                    max_divergence = 10.0 * 0.5
-
-            if divergence > max_divergence:
-                self.lbl_divergence_warning.SetLabel(
-                    f"{divergence}: " + T("Out of range of training data") + f": {method}, {synthetic_view}"
-                )
-                self.lbl_divergence_warning.SetToolTip(
-                    T("This result could be unstable"),
-                )
-                self.lbl_divergence_warning.Show()
-            else:
-                self.lbl_divergence_warning.SetLabel("")
-                self.lbl_divergence_warning.SetToolTip("")
-                self.lbl_divergence_warning.Hide()
-
-            self.GetSizer().Layout()
-        except ValueError:
-            pass
-
-    def on_selected_index_changed_cbo_device(self, event):
-        self.update_compile()
-
-    def update_compile(self, *args, **kwargs):
-        device_id = int(self.cbo_device.GetClientData(self.cbo_device.GetSelection()))
-        if device_id == -2:
-            # currently "All CUDA" does not support compile
-            self.chk_compile.SetValue(False)
-        else:
-            # check compiler support
-            if self.chk_compile.IsChecked():
-                device = create_device(device_id)
-                if not check_compile_support(device):
-                    self.chk_compile.SetValue(False)
-
     def on_text_changed_cbo_language(self, event):
         lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
         save_language_setting(LANG_CONFIG_PATH, lang)
@@ -1359,56 +727,6 @@ class MainFrame(wx.Frame):
             None, message=T("The language setting will be applied after restarting"), style=wx.OK
         ) as dlg:
             dlg.ShowModal()
-
-    def on_text_changed_cbo_screenshot(self, event):
-        self.update_monitor_index()
-        self.update_window_names()
-        refresh_layouts(self)
-
-    def update_monitor_index(self, *args, **kwargs):
-        if self.cbo_screenshot.GetValue() in BACKENDS_WITH_TARGET:
-            self.lbl_monitor_index.Show()
-            self.cbo_monitor_index.Show()
-        else:
-            self.lbl_monitor_index.Hide()
-            self.cbo_monitor_index.Hide()
-
-        self.GetSizer().Layout()
-
-    def update_window_names(self, *args, **kwargs):
-        backend = self.cbo_screenshot.GetValue()
-        if backend in BACKENDS_WITH_TARGET:
-            self.lbl_window_name.Show()
-            self.cbo_window_name.Show()
-            self.btn_reload_window_name.Show()
-            self.cbo_window_name.SetItems([""] + enum_window_names())
-        else:
-            self.lbl_window_name.Hide()
-            self.cbo_window_name.Hide()
-            self.btn_reload_window_name.Hide()
-
-        if backend in BACKENDS_WITH_CROP:
-            self.lbl_crop_region.Show()
-            self.txt_crop_top.Show()
-            self.lbl_crop_top.Show()
-            self.txt_crop_left.Show()
-            self.lbl_crop_left.Show()
-            self.txt_crop_right.Show()
-            self.lbl_crop_right.Show()
-            self.txt_crop_bottom.Show()
-            self.lbl_crop_bottom.Show()
-        else:
-            self.lbl_crop_region.Hide()
-            self.txt_crop_top.Hide()
-            self.lbl_crop_top.Hide()
-            self.txt_crop_left.Hide()
-            self.lbl_crop_left.Hide()
-            self.txt_crop_right.Hide()
-            self.lbl_crop_right.Hide()
-            self.txt_crop_bottom.Hide()
-            self.lbl_crop_bottom.Hide()
-
-        self.GetSizer().Layout()
 
     def on_text_changed_cbo_view_mode(self, event):
         self.update_view_mode()
@@ -1487,7 +805,7 @@ class MainFrame(wx.Frame):
         w.SetFont(font)
 
 
-LOCAL_LIST = sorted(list(LOCALES.keys()))
+LOCALE_LIST = sorted(list(LOCALES.keys()))
 LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 

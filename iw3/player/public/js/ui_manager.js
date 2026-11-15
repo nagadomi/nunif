@@ -8,6 +8,7 @@ import { UIUtils, ThreeUtils } from './ui_common.js';
 
 // Import split UI components
 import { MainMenu } from './menu_main.js';
+import { StreamSettingsMenu } from './menu_stream_settings.js';
 import { ScreenSettingsMenu } from './menu_screen_settings.js';
 import { ColorSettingsMenu } from './menu_color_settings.js';
 import { EnvironmentSettingsMenu } from './menu_environment_settings.js';
@@ -25,6 +26,7 @@ class UIManager extends THREE.Group {
         this.debugLogInstance = debugLogInstance;
         this.stereoPlayer = stereoPlayer;
         this.settingsManager = new SettingsManager(this);
+        this.appConfig = this.stereoPlayer?.appConfig || { mode: 'player', features: { file_library: true, desktop_stream: false } };
 
         this.pixelSize = UI_CONFIG.pixelSize;
         this.renderer.setTransparentSort(reversePainterSortStable);
@@ -93,16 +95,50 @@ class UIManager extends THREE.Group {
         this.lastStatusUpdateTime = 0;
         this.lastOcclusionUpdateTime = 0;
 
-        this.initAsync();
+        this.ready = this.initAsync();
         this.scene.add(this);
     }
 
+    get hasFileLibrary() {
+        return this.appConfig?.features?.file_library !== false;
+    }
+
+    get isStreamActive() {
+        return !!this.stereoPlayer?.playbackController?.isStreamActive;
+    }
+
+    get hasDesktopStream() {
+        return !!this.appConfig?.features?.desktop_stream;
+    }
+
+    setAppConfig(config) {
+        if (config) {
+            this.appConfig = config;
+        }
+        if (!this.hasFileLibrary) {
+            this.hideRecentButton();
+            if (this.activeSubMenu === this.explorer) {
+                this.switchSubMenu(null);
+            }
+            if (!this.renderer.xr.isPresenting) {
+                this.hideMainMenu(true);
+            }
+        }
+        this.mainMenu?.applyAppConfig?.(this.appConfig);
+    }
+
     async initAsync() {
-        await storage.ready;
+        await Promise.all([
+            storage.ready,
+            this.stereoPlayer?.configReady?.then((cfg) => {
+                if (cfg) this.appConfig = cfg;
+            }),
+        ]);
         await this.settingsManager.init();
         this.galleryManager.loadSettings();
 
         this.setupUI();
+        this.mainMenu.applyAppConfig(this.appConfig);
         this.updateMenuPositions();
 
         this.settingsManager.applyAll();
@@ -111,13 +147,15 @@ class UIManager extends THREE.Group {
         this.fetchLuts();
 
         // Check for recent file
-        const recentPath = storage.get('recent_path');
-        const recentFile = storage.get('recent_file_name');
-        if (recentPath && recentFile) {
-            this.mainMenu.recentButton.setProperties({ display: 'flex' });
-        }
+        if (this.hasFileLibrary) {
+            const recentPath = storage.get('recent_path');
+            const recentFile = storage.get('recent_file_name');
+            if (recentPath && recentFile) {
+                this.mainMenu.recentButton.setProperties({ display: 'flex' });
+            }
 
-        this.showMainMenu();
+            this.showMainMenu();
+        }
     }
 
     async toggleMenuAlignment() {
@@ -128,7 +166,7 @@ class UIManager extends THREE.Group {
 
     updateMenuPositions() {
         const offset = this.menuAlignment === 'right' ? UI_CONFIG.menuMarginLeft : -UI_CONFIG.menuMarginLeft;
-        const targetMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
+        const targetMenus = [this.streamSettings, this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
         targetMenus.forEach(menu => {
             if (menu && menu.container) {
                 menu.container.setProperties({ marginLeft: offset });
@@ -136,7 +174,7 @@ class UIManager extends THREE.Group {
         });
     }
 
-    async openRecentFile() {
+    async openRecentFile(showNotFound = true) {
         const recentPath = storage.get('recent_path');
         const recentFile = storage.get('recent_file_name');
         if (!recentPath || !recentFile) return;
@@ -152,7 +190,9 @@ class UIManager extends THREE.Group {
                 await this.loadMedia(index);
                 this.hideRecentButton();
             } else {
-                this.showNotification("Recent file not found");
+                if (showNotFound) {
+                    this.showNotification("Recent file not found");
+                }
                 this.hideRecentButton();
             }
         } catch (e) {
@@ -203,6 +243,7 @@ class UIManager extends THREE.Group {
         this.add(this.mainContainer);
 
         this.mainMenu = new MainMenu(this, defaultFont);
+        this.streamSettings = new StreamSettingsMenu(this, defaultFont);
         this.screenSettings = new ScreenSettingsMenu(this, defaultFont);
         this.colorSettings = new ColorSettingsMenu(this, defaultFont);
         this.environmentSettings = new EnvironmentSettingsMenu(this, defaultFont);
@@ -210,7 +251,7 @@ class UIManager extends THREE.Group {
         this.subtitleSettings = new SubtitleSettingsMenu(this, defaultFont);
         this.explorer = new ExplorerWindow(this, defaultFont, this.galleryManager);
 
-        this.allSettingsMenus = [this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
+        this.allSettingsMenus = [this.streamSettings, this.screenSettings, this.colorSettings, this.environmentSettings, this.renderSettings, this.subtitleSettings];
         [...this.allSettingsMenus, this.explorer].forEach(menu => {
             if (menu?.container) {
                 menu.container.visible = false;
@@ -218,6 +259,7 @@ class UIManager extends THREE.Group {
         });
 
         this.mainContainer.add(this.mainMenu.container);
+        this.mainContainer.add(this.streamSettings.container);
         this.mainContainer.add(this.screenSettings.container);
         this.mainContainer.add(this.colorSettings.container);
         this.mainContainer.add(this.environmentSettings.container);
@@ -263,6 +305,9 @@ class UIManager extends THREE.Group {
     }
 
     get currentItem() {
+        if (this.stereoPlayer?.streamItem && this.isStreamActive) {
+            return this.stereoPlayer.streamItem;
+        }
         return this.galleryManager ? this.galleryManager.getCurrentItem() : null;
     }
 
@@ -313,6 +358,16 @@ class UIManager extends THREE.Group {
     async loadMedia(index, format = null) {
         if (this.stereoPlayer) {
             return await this.stereoPlayer.loadMedia(index, format);
+        }
+    }
+
+    async toggleDesktopStream() {
+        if (!this.hasDesktopStream || !this.stereoPlayer) return;
+        if (this.isStreamActive) {
+            await this.stereoPlayer.stopStream();
+            await this.openRecentFile(false);
+        } else {
+            await this.stereoPlayer.loadStream();
         }
     }
 
@@ -392,14 +447,26 @@ class UIManager extends THREE.Group {
         this.notificationContainer.visible = true;
 
         this.notificationTimeout = setTimeout(() => {
-            this.notificationContainer.setProperties({ display: 'none' });
-            this.notificationContainer.visible = false;
-            this.isNotificationVisible = false;
-            this.notificationTimeout = null;
+            this.hideNotification();
         }, duration);
     }
 
+    hideNotification() {
+        if (this.notificationTimeout) {
+            clearTimeout(this.notificationTimeout);
+            this.notificationTimeout = null;
+        }
+        if (this.notificationContainer) {
+            this.notificationContainer.setProperties({ display: 'none' });
+            this.notificationContainer.visible = false;
+        }
+        this.isNotificationVisible = false;
+    }
+
     switchSubMenu(targetMenu) {
+        if (targetMenu === this.streamSettings && !this.isStreamActive) {
+            targetMenu = null;
+        }
         if (this.activeSubMenu === targetMenu) {
             if (this.activeSubMenu) {
                 this.activeSubMenu.container.setProperties({ display: 'none' });
@@ -420,7 +487,12 @@ class UIManager extends THREE.Group {
             if (this.activeSubMenu === this.explorer) {
                 this.shouldJumpToCurrentItem = true;
                 this.fetchDirectory(this.galleryManager.currentPath);
-            } else { this.syncUI(true); }
+            } else {
+                if (this.activeSubMenu === this.streamSettings) {
+                    this.streamSettings.fetchSettings();
+                }
+                this.syncUI(true);
+            }
         }
         if (this.mainContainer) this.mainContainer.update(0);
     }
@@ -718,18 +790,7 @@ class UIManager extends THREE.Group {
         const percent = THREE.MathUtils.clamp(0.5 + local.x, 0, 1);
         
         const rawPercent = 0.5 + local.x; // Keep for limit detection
-        const atMin = rawPercent <= 0.01;
-        const atMax = rawPercent >= 0.99;
-        if (atMin || atMax) {
-            const limitKey = `${id}_${atMin ? 'min' : 'max'}`;
-            if (!this._atLimit[limitKey]) {
-                UIUtils.vibratePointer(e.pointerId, UI_CONFIG.hapticLimitIntensity, UI_CONFIG.hapticLimitDuration, this);
-                this._atLimit[limitKey] = true;
-            }
-        } else {
-            this._atLimit[`${id}_min`] = false;
-            this._atLimit[`${id}_max`] = false;
-        }
+        UIUtils.checkSliderLimitHaptic(e, rawPercent, id, this);
 
         const limits = getSettingLimits(id, this.screenType, this.activeScreen);
         const actualMin = limits.min ?? min;
@@ -767,6 +828,10 @@ class UIManager extends THREE.Group {
     }
 
     async onFormatChange(fmt) {
+        if (this.isStreamActive && this.stereoPlayer) {
+            await this.stereoPlayer.loadStream(fmt);
+            return;
+        }
         if (this.galleryManager.playingIndex !== -1) {
             await this.loadMedia(this.galleryManager.playingIndex, fmt);
         }
@@ -788,10 +853,15 @@ class UIManager extends THREE.Group {
         const now = performance.now();
         const slowMetricsUpdated = (now - this.lastStatusUpdateTime > 1000) || updateSlowMetrics;
         const isVideo = !!this.videoElement;
+        const isStreamActive = this.isStreamActive;
+
+        if (!isStreamActive && this.activeSubMenu === this.streamSettings) {
+            this.switchSubMenu(null);
+        }
 
         const mainParams = {
             videoProgress: isVideo ? (this.videoElement.currentTime / this.videoElement.duration || 0) : 0,
-            isPlaying: isVideo && !this.videoElement.paused,
+            isPlaying: this.stereoPlayer ? this.stereoPlayer.isPlaying : false,
             volume: this.currentVolume,
             isMuted: this.isMuted,
             speed: this.playbackRate,
@@ -802,6 +872,7 @@ class UIManager extends THREE.Group {
         if (slowMetricsUpdated) {
             mainParams.currentFileName = this.currentItem ? this.currentItem.name : "";
             mainParams.isVideoActive = isVideo;
+            mainParams.isStreamActive = isStreamActive;
             mainParams.fps = this.currentFPS;
             mainParams.slowMetricsUpdated = true;
         }

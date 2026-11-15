@@ -55,7 +55,23 @@ export const UIUtils = {
         return { container: b, image: img, setSelected };
     },
 
-    createSlider(container, label, id, min, max, uiManager, onReset = null, shortcut = null) {
+    checkSliderLimitHaptic(e, rawPercent, id, uiManager) {
+        if (!uiManager?._atLimit) return;
+        const atMin = rawPercent <= 0.01;
+        const atMax = rawPercent >= 0.99;
+        if (atMin || atMax) {
+            const limitKey = `${id}_${atMin ? 'min' : 'max'}`;
+            if (!uiManager._atLimit[limitKey]) {
+                this.vibratePointer(e.pointerId, UI_CONFIG.hapticLimitIntensity, UI_CONFIG.hapticLimitDuration, uiManager);
+                uiManager._atLimit[limitKey] = true;
+            }
+        } else {
+            uiManager._atLimit[`${id}_min`] = false;
+            uiManager._atLimit[`${id}_max`] = false;
+        }
+    },
+
+    createSlider(container, label, id, min, max, uiManager, onReset = null, shortcut = null, options = {}) {
         const group = new Container({
             flexDirection: 'column',
             width: '100%',
@@ -94,28 +110,55 @@ export const UIUtils = {
             }));
         }
 
-        if (onReset) {
-            const resetBtn = new Container({
-                width: 24,
-                height: 24,
-                borderRadius: 4,
+        let valueText = null;
+        if (options.showValue || onReset) {
+            const rightGroup = new Container({
+                flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                hover: { backgroundColor: COLORS.hover },
-                onPointerEnter: (e) => {
-                    if (!uiManager.visible) return;
-                    this.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, uiManager);
-                },
-                onClick: (e) => {
-                    if (!uiManager.visible) return;
-                    this.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, uiManager);
-                    onReset();
-                }
+                gap: 8
             });
-            resetBtn.add(new Image({ src: 'icons/restore.svg', width: 16, height: 16, color: COLORS.textDim }));
-            labelRow.add(resetBtn);
+            labelRow.add(rightGroup);
+
+            if (options.showValue) {
+                valueText = new Text({
+                    text: "",
+                    fontSize: 14,
+                    color: COLORS.text,
+                    textAlign: 'right'
+                });
+                rightGroup.add(valueText);
+            }
+
+            if (onReset) {
+                const resetBtn = new Container({
+                    width: 24,
+                    height: 24,
+                    borderRadius: 4,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    hover: { backgroundColor: COLORS.hover },
+                    onPointerEnter: (e) => {
+                        if (!uiManager.visible) return;
+                        this.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, uiManager);
+                    },
+                    onClick: (e) => {
+                        if (!uiManager.visible) return;
+                        this.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, uiManager);
+                        onReset();
+                    }
+                });
+                resetBtn.add(new Image({ src: 'icons/restore.svg', width: 16, height: 16, color: COLORS.textDim }));
+                rightGroup.add(resetBtn);
+            }
         }
+
+        const handleSliderEvent = options.onSlider
+            ? (e, shouldSave) => options.onSlider(e, track, id, min, max, shouldSave)
+            : (e, shouldSave) => uiManager.handleSlider(e, track, id, min, max, shouldSave);
+        const handleCommitEvent = options.onCommit
+            ? () => options.onCommit()
+            : () => uiManager.saveSettings();
 
         const track = new Container({
             width: 332,
@@ -131,32 +174,32 @@ export const UIUtils = {
             onPointerDown: (e) => {
                 if (!uiManager.visible) return;
                 this.vibratePointer(e.pointerId, UI_CONFIG.hapticHoverIntensity, UI_CONFIG.hapticHoverDuration, uiManager);
-                uiManager.handleSlider(e, track, id, min, max, false);
+                handleSliderEvent(e, false);
             },
             onClick: (e) => {
                 if (!uiManager.visible) return;
                 this.vibratePointer(e.pointerId, UI_CONFIG.hapticClickIntensity, UI_CONFIG.hapticClickDuration, uiManager);
-                uiManager.handleSlider(e, track, id, min, max, true);
+                handleSliderEvent(e, true);
             },
             onPointerMove: (e) => {
                 if (!uiManager.visible) return;
-                e.buttons > 0 && uiManager.handleSlider(e, track, id, min, max, false);
+                e.buttons > 0 && handleSliderEvent(e, false);
             },
             onPointerUp: async (_e) => {
                 if (!uiManager.visible) return;
-                await uiManager.saveSettings();
+                await handleCommitEvent();
                 uiManager.syncUI(true);
             },
             onPointerLeave: async (e) => {
                 // If dragging and pointer leaves the track, save the last value
                 if (!uiManager.visible) return;
                 if (e.buttons > 0) {
-                    await uiManager.saveSettings();
+                    await handleCommitEvent();
                     uiManager.syncUI(true);
                 }
             },
         });
-        
+
         const thumb = new Container({
             width: 24,
             height: 24,
@@ -168,8 +211,8 @@ export const UIUtils = {
         track.add(thumb);
         group.add(track);
         container.add(group);
-        
-        return { group, thumb, label: labelText, min, max };
+
+        return { group, thumb, label: labelText, valueText, min, max };
     },
 
     createSlidersForKeys(container, keys, uiManager, sliders = {}) {

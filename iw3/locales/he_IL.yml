@@ -2,7 +2,7 @@
 "_LOCALE": ["he_IL"]
 "_NAME": "עברית"
 "Language": "שפה"
-"The language stting will be applied after restarting": "הגדרת השפה תוחל לאחר הפעלה מחדש"
+"The language setting will be applied after restarting": "הגדרת השפה תוחל לאחר הפעלה מחדש"
 
 "Load": "טעינה"
 "Save": "שמירה"
@@ -159,7 +159,13 @@
 "Swap left image and right image": "החלף בין תמונת שמאל לימין"
 "AutoCrop": "חיתוך אוטומטי"
 "Enable model compiling": "אפשר הידור מודל (Compiling)"
+"Wayland capture backend is not available ('pil' uses XWayland, which is usually black). Install obs-studio/obs-plugins for 'obs', or 'pip install kwcapture' for 'kwcapture' (KDE Plasma).": "מנוע לכידת המסך של Wayland אינו זמין ('pil' משתמש ב-XWayland, שבדרך כלל מציג מסך שחור). התקן obs-studio/obs-plugins עבור 'obs', או 'pip install kwcapture' עבור 'kwcapture' (KDE Plasma)."
+"Hide Cursor": "הסתר סמן"
+"Crop": "חיתוך"
+"X or XY": "X או XY"
 
 # iw3.player
 "Media Directory": "תיקיית מדיה"
 "Please select a valid Media Directory.": "אנא בחר תיקיית מדיה תקינה."
+"Desktop Stream": "הזרמת שולחן עבודה"
+"Running": "פועל"

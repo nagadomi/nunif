@@ -25,6 +25,10 @@ class StereoPlayer extends THREE.Group {
 
         this.isARMode = false;
         this.scene.background = new THREE.Color(0x000000);
+        this.appConfig = { mode: 'player', features: { file_library: true, desktop_stream: false } };
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+        this.configReady = this._fetchAppConfig();
 
         // Managers
         this.galleryManager = new GalleryManager(debugLogInstance);
@@ -48,6 +52,14 @@ class StereoPlayer extends THREE.Group {
         this.playbackController.addEventListener('video-destroyed', () => {
             if (this.planeScreen) this.planeScreen.resetTexture();
             if (this.domeScreen) this.domeScreen.resetTexture();
+        });
+        this.playbackController.addEventListener('stream-updated', (e) => {
+            this.onStreamUpdated(e.detail);
+        });
+        this.playbackController.addEventListener('stream-auth-required', () => {
+            if (!this.renderer.xr.isPresenting) {
+                window.location.reload();
+            }
         });
 
         // Screen & Subtitle
@@ -117,9 +129,44 @@ class StereoPlayer extends THREE.Group {
         this.activeScreen.updateEyeVisibility(false);
         this.activeScreen.clearScreen();
 
-        this.galleryManager.fetchDirectory('/').then(() => {
-            this.debugLogInstance.log(`${this.galleryManager.playbackGallery.length} items found`);
-        });
+        this.initModeAsync();
+    }
+
+    async _fetchAppConfig() {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const res = await fetch('/api/config', { cache: 'no-store', credentials: 'same-origin' });
+                if (res.ok) {
+                    this.appConfig = await res.json();
+                    return this.appConfig;
+                }
+                if (res.status === 401 && !this.renderer.xr.isPresenting) {
+                    window.location.reload();
+                    return this.appConfig;
+                }
+            } catch {
+                // Retry while server is starting up
+            }
+            if (attempt < 2) {
+                await new Promise((r) => setTimeout(r, 500));
+            }
+        }
+        return this.appConfig;
+    }
+
+    async initModeAsync() {
+        const config = await this.configReady;
+        if (this.uiManager?.ready) {
+            await this.uiManager.ready;
+        }
+        this.uiManager.setAppConfig(config);
+        if (config.mode === 'desktop') {
+            await this.loadStream();
+        } else {
+            this.galleryManager.fetchDirectory('/').then(() => {
+                this.debugLogInstance.log(`${this.galleryManager.playbackGallery.length} items found`);
+            });
+        }
     }
 
     setBackgroundLevel(val) {
@@ -243,6 +290,9 @@ class StereoPlayer extends THREE.Group {
         const file = this.galleryManager.playbackGallery[index];
         if (!file) return;
 
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+
         // IMMEDIATELY stop periodic saves to avoid race conditions during async operations
         const wasPlaying = this.isPlaying;
         const oldVideoTime = (this.videoElement && wasPlaying) ? this.videoElement.currentTime : null;
@@ -352,6 +402,181 @@ class StereoPlayer extends THREE.Group {
         this.uiManager.syncUI(true);
     }
 
+    async loadStream(forcedFormat = null) {
+        if (this.uiManager?.ready) {
+            await this.uiManager.ready;
+        }
+
+        if (!forcedFormat) {
+            const oldFile = this.galleryManager.getCurrentItem();
+            const oldVideoTime = (this.videoElement && !isNaN(this.videoElement.currentTime))
+                ? this.videoElement.currentTime
+                : null;
+            this.uiManager.updateSubtitleText("");
+            this.uiManager.availableSubtitles = [];
+            this.uiManager.currentSubtitleIndex = -1;
+            if (oldFile && oldVideoTime !== null) {
+                await this.uiManager.settingsManager.updateFileState({ playback_time: oldVideoTime }, oldFile);
+            }
+            this.playbackController.destroyVideo();
+            this.galleryManager.setPlayingItem(-1);
+            if (this.appConfig?.mode !== 'desktop') {
+                this.uiManager.showNotification('Starting Desktop Stream...', 10000);
+            }
+        }
+
+        const infoEndpoint = forcedFormat ? '/api/stream/info' : '/api/stream/start';
+        const infoMethod = forcedFormat ? 'GET' : 'POST';
+        let info = null;
+        let errorDetail = null;
+        while (!info) {
+            try {
+                const res = await fetch(infoEndpoint, {
+                    method: infoMethod,
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                });
+                if (res.ok) {
+                    info = await res.json();
+                    break;
+                }
+                if (res.status === 401 && !this.renderer.xr.isPresenting) {
+                    window.location.reload();
+                    return false;
+                }
+                try {
+                    const errData = await res.json();
+                    if (errData?.detail) errorDetail = errData.detail;
+                } catch {
+                    // ignore non-json error body
+                }
+                this.debugLogInstance.log(`[WARN] Stream info returned HTTP ${res.status}`);
+            } catch (e) {
+                this.debugLogInstance.log(`[WARN] Failed to fetch stream info: ${e.message}`);
+            }
+
+            if (forcedFormat && this.streamItem?.stream_info) {
+                info = this.streamItem.stream_info;
+                break;
+            }
+            if (this.appConfig?.mode !== 'desktop') {
+                this.uiManager.showNotification(
+                    errorDetail ? `Stream unavailable: ${errorDetail}` : 'Stream unavailable',
+                    3000
+                );
+                this.uiManager.syncUI(true);
+                return false;
+            }
+            await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        if (this.appConfig?.mode !== 'desktop' && !forcedFormat) {
+            this.uiManager.hideNotification();
+        }
+
+        const streamFormat = info.stereo_format || STEREO_FORMATS.SBS_HALF;
+        const streamName = (info.width && info.height)
+            ? `Desktop (${info.width}x${info.height})`
+            : 'Desktop Stream';
+
+        const streamItem = {
+            path: '__desktop_stream__',
+            name: streamName,
+            type: 'stream',
+            mtime: 0,
+            stereo_format: streamFormat,
+            stream_uri: info.stream_uri || '/api/stream',
+            stream_info: info,
+        };
+        this.streamItem = streamItem;
+
+        this.uiManager.updateSubtitleText("");
+        this.uiManager.availableSubtitles = [];
+        this.uiManager.currentSubtitleIndex = -1;
+
+        await this.uiManager.settingsManager.loadForFile(streamItem);
+        if (this.uiManager.settingsManager.getFileState('stereo_format') !== null) {
+            await this.uiManager.settingsManager.updateFileState({ stereo_format: undefined });
+        }
+        this.streamFormatOverride = forcedFormat || null;
+
+        const finalFormat = this.streamFormatOverride || streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
+        await this.switchScreen(finalFormat);
+        await this.uiManager.settingsManager.applyForLoadedFile(this.activeScreen.screenType);
+        this.teardownXRLayers();
+
+        this.debugLogInstance.log(`Loading stream: ${streamName} (${finalFormat})`);
+        const result = await this.playbackController.load(streamItem, {
+            forcedFormat,
+            targetFormat: finalFormat,
+        });
+        if (!result.success) {
+            if (!result.cancelled) {
+                this.streamItem = null;
+                this.streamFormatOverride = null;
+                this.activeScreen.clearScreen();
+            }
+            this.uiManager.syncUI(true);
+            return false;
+        }
+
+        const { detail } = result;
+        this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
+        this.uiManager?.streamSettings?.fetchSettings?.();
+        this.uiManager.syncUI(true);
+        return true;
+    }
+
+    async stopStream() {
+        this.playbackController.destroyStream(true);
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+        this.activeScreen.clearScreen();
+        if (this.uiManager?.activeSubMenu === this.uiManager?.streamSettings) {
+            this.uiManager.switchSubMenu(null);
+        }
+        this.uiManager.syncUI(true);
+    }
+
+    async onStreamUpdated(info) {
+        if (!info || !this.streamItem) return;
+        try {
+            const prevBackendFormat = this.streamItem.stereo_format;
+            if (info.tokenChanged || (info.stereo_format && info.stereo_format !== prevBackendFormat)) {
+                this.streamFormatOverride = null;
+            }
+
+            this.streamItem.stream_info = { ...this.streamItem.stream_info, ...info };
+            if (info.stereo_format) {
+                this.streamItem.stereo_format = info.stereo_format;
+            }
+            if (info.width && info.height) {
+                this.streamItem.name = `Desktop (${info.width}x${info.height})`;
+            }
+
+            const finalFormat = this.streamFormatOverride || this.streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
+            if (finalFormat !== this.activeScreen.currentStereoFormat) {
+                await this.switchScreen(finalFormat);
+                await this.uiManager.settingsManager.applyForLoadedFile(this.activeScreen.screenType);
+            }
+
+            const aspectRatio = (info.width && info.height)
+                ? (info.width / info.height)
+                : (this.playbackController.mjpegStream?.aspectRatio || this.activeScreen.aspectRatio);
+            const tex = this.playbackController.streamTexture;
+            if (tex) {
+                this.activeScreen.updateTexture(tex, aspectRatio, finalFormat);
+            }
+            this.uiManager?.streamSettings?.fetchSettings?.();
+            this.uiManager.syncUI(true);
+        } catch (e) {
+            this.debugLogInstance?.log(`[ERROR] Stream update failed: ${e.message}`);
+            if (!this.renderer.xr.isPresenting) {
+                window.location.reload();
+            }
+        }
+    }
+
     async loadSubtitles(path) {
         if (!this.videoElement) return;
         this.videoElement.querySelectorAll('track').forEach(t => t.remove());
@@ -429,6 +654,7 @@ class StereoPlayer extends THREE.Group {
     }
 
     loadNextImage(direction) {
+        if (this.playbackController.isStreamActive) return;
         const next = this.galleryManager.getNextIndex(direction);
         if (next !== -1) this.loadMedia(next);
     }
@@ -674,6 +900,12 @@ class StereoPlayer extends THREE.Group {
                 videoTex.needsUpdate = true;
             }
             this.renderer.initTexture(videoTex);
+        }
+
+        const streamTex = this.playbackController.streamTexture;
+        if (streamTex && streamTex.image) {
+            this.playbackController.consumeNewStreamFrame();
+            this.renderer.initTexture(streamTex);
         }
     }
 
