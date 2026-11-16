@@ -423,22 +423,29 @@ class ColorTransform:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Convert float Y, U, V tensors to output format planes (tensors)."""
         if out_format == "nv12":
-            # Y: [0, 1] -> uint8 [0, 255]
-            y_out = (y * 255.0 + 0.5).clamp(0, 255).to(torch.uint8)
-            # UV: Interleave U and V
-            # u, v are (B, 1, H/2, w/2)
-            uv_out = torch.stack([u, v], dim=-1)  # (B, 1, H/2, W/2, 2)
-            uv_out = (uv_out * 255.0 + 0.5).clamp(0, 255).to(torch.uint8)
-            return y_out.squeeze(0).squeeze(0), uv_out.squeeze(0).squeeze(0)
+            dtype = torch.uint8
+            max_val = 255.0
+            align_elems = 512
         elif out_format == "p010le":
-            # Y: [0, 1] -> uint16 [0, 1023 << 6]
             # 1023 << 6 = 65472
-            y_out = (y * 65472.0 + 0.5).clamp(0, 65472).to(torch.uint16)
-            # UV: Interleave U and V
-            uv_out = torch.stack([u, v], dim=-1)  # (B, 1, H/2, W/2, 2)
-            uv_out = (uv_out * 65472.0 + 0.5).clamp(0, 65472).to(torch.uint16)
-            return y_out.squeeze(0).squeeze(0), uv_out.squeeze(0).squeeze(0)
-        raise ValueError(f"Unsupported output format for to_yuv_planes: {out_format}")
+            dtype = torch.uint16
+            max_val = 65472.0
+            align_elems = 256
+        else:
+            raise ValueError(f"Unsupported output format for to_yuv_planes: {out_format}")
+
+        # Pack Y and UV into one contiguous pitch-aligned allocation so FFmpeg NVENC
+        # (AV_PIX_FMT_CUDA) finds UV immediately after Y at data[0] + linesize[0] * height.
+        h, w = int(y.shape[-2]), int(y.shape[-1])
+        stride_w = ((w + align_elems - 1) // align_elems) * align_elems
+        buf = torch.empty((h + h // 2, stride_w), dtype=dtype, device=y.device)
+        y_out = buf[:h, :w]
+        uv_out = buf[h:, :w]
+
+        y_out.copy_((y.squeeze(0).squeeze(0) * max_val + 0.5).clamp_(0.0, max_val).to(dtype))
+        uv_interleaved = torch.stack([u.squeeze(0).squeeze(0), v.squeeze(0).squeeze(0)], dim=-1)
+        uv_out.view(h // 2, w // 2, 2).copy_((uv_interleaved * max_val + 0.5).clamp_(0.0, max_val).to(dtype))
+        return y_out, uv_out
 
 
 class TensorFrame:
