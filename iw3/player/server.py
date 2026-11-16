@@ -436,16 +436,21 @@ def server_main(args, init_wxapp=True):
     init_video_hwaccel()
     if enable_stream and getattr(args, "stream_hub", None) is None:
         from ..desktop.service import DesktopStreamService
-        from ..desktop.utils import init_win32, resolve_player_stereo_format
+        from ..desktop.utils import get_stream_codec_config, init_win32, resolve_player_stereo_format
+        from ..desktop.video_stream_encoder import validate_stream_video_codec
         from .stream_hub import StreamFrameHub
 
         init_win32()
+        video_codec, available_codecs, _ = get_stream_codec_config(args)
+        validate_stream_video_codec(video_codec)
         stream_hub = StreamFrameHub(
             lock=threading.Lock(),
             frame_width=1920,
             frame_height=1080,
             fps=int(getattr(args, "stream_fps", 30)),
             stereo_format=resolve_player_stereo_format(args),
+            video_codec=video_codec,
+            available_stream_codecs=available_codecs,
         )
         desktop_service = DesktopStreamService(
             args=args,

@@ -47,7 +47,6 @@ from .utils import (
     set_state_args,
     read_runtime_adjustment_values,
     IW3U,
-    ENABLE_GPU_JPEG,
 )
 
 
@@ -115,6 +114,8 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.args = None
         self.args_lock = threading.Lock()
         self._last_synced_adj = None
+        self._last_webxr_video_codec = None
+        self._last_legacy_video_codec = None
         self._init_desktop_deps()
         self.initialize_component()
         if is_dark_mode():
@@ -180,23 +181,29 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.chk_uncap_fps.SetValue(False)
 
         self.lbl_stream_height = wx.StaticText(self.grp_network, label=T("Streaming Resolution"))
-        self.cbo_stream_height = EditableComboBox(self.grp_network, choices=["1080", "720"], name="cbo_stream_height")
-        self.cbo_stream_height.SetSelection(0)
+        self.cbo_stream_height = EditableComboBox(
+            self.grp_network, choices=["2160", "1080", "720"], name="cbo_stream_height"
+        )
+        self.cbo_stream_height.SetSelection(1)
 
-        self.lbl_stream_quality = wx.StaticText(self.grp_network, label=T("MJPEG Quality"))
+        self.lbl_stream_quality = wx.StaticText(self.grp_network, label=T("Streaming Quality"))
         self.cbo_stream_quality = EditableComboBox(
             self.grp_network, choices=["100", "95", "90", "85", "80"], name="cbo_stream_quality"
         )
         self.cbo_stream_quality.SetSelection(2)
+        self.lbl_video_codec = wx.StaticText(self.grp_network, label=T("Video Codec"))
+        self.cbo_video_codec = wx.ComboBox(
+            self.grp_network,
+            choices=list(self._available_stream_video_codecs),
+            name="cbo_video_codec",
+        )
+        self.cbo_video_codec.SetEditable(False)
+        self.cbo_video_codec.SetSelection(0)
         self.chk_pad_16_9 = wx.CheckBox(self.grp_network, label=T("Padding") + " 16:9", name="chk_pad_16_9")
         self.chk_pad_16_9.SetValue(False)
         self.chk_fit_window = wx.CheckBox(self.grp_network, label=T("Fit Window"), name="chk_fit_window")
         self.chk_fit_window.SetValue(False)
 
-        self.chk_gpu_jpeg = wx.CheckBox(self.grp_network, label=T("GPU JPEG"), name="chk_gpu_jpeg")
-        self.chk_gpu_jpeg.SetValue(False)
-        if not ENABLE_GPU_JPEG:
-            self.chk_gpu_jpeg.Disable()
         self.sep_network1 = wx.StaticLine(self.grp_network, style=wx.LI_HORIZONTAL)
 
         self.chk_auth = wx.CheckBox(self.grp_network, label=T("Basic Authentication"), name="chk_auth")
@@ -224,7 +231,8 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         layout.Add(self.cbo_stream_height, (6, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_stream_quality, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stream_quality, (7, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_gpu_jpeg, (8, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_video_codec, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_video_codec, (8, 1), flag=wx.EXPAND)
         layout.Add(self.chk_pad_16_9, (9, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.chk_fit_window, (10, 1), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.sep_network1, (11, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
@@ -719,6 +727,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             persistent_manager_register(manager, control, EditableComboBoxPersistentHandler)
         persistent_manager_restore_all(manager, exclude_names)
         persistent_manager_unregister_all(manager)
+        self.ensure_valid_video_codec_selection()
 
     def on_text_changed_cbo_language(self, event):
         lang = self.cbo_language.GetClientData(self.cbo_language.GetSelection())
@@ -732,7 +741,29 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.update_view_mode()
 
     def update_view_mode(self, *args, **kwargs):
-        local_viewer = self.cbo_view_mode.GetValue() == "Local Viewer"
+        view_mode = self.cbo_view_mode.GetValue()
+        local_viewer = view_mode == "Local Viewer"
+        legacy_stream = view_mode == "Web Streaming (Legacy)"
+        target_codecs = (
+            list(self._available_legacy_video_codecs) if legacy_stream else list(self._available_stream_video_codecs)
+        )
+        current_codecs = self.cbo_video_codec.GetItems()
+        if current_codecs != target_codecs:
+            current_codec = self.cbo_video_codec.GetValue()
+            if current_codec:
+                if current_codecs == self._available_legacy_video_codecs:
+                    self._last_legacy_video_codec = current_codec
+                else:
+                    self._last_webxr_video_codec = current_codec
+            preferred = self._last_legacy_video_codec if legacy_stream else self._last_webxr_video_codec
+            if preferred not in target_codecs:
+                preferred = current_codec if current_codec in target_codecs else None
+            self.cbo_video_codec.SetItems(target_codecs)
+            if preferred in target_codecs:
+                self.cbo_video_codec.SetSelection(target_codecs.index(preferred))
+            elif target_codecs:
+                self.cbo_video_codec.SetSelection(0)
+
         streaming_options = [
             self.chk_bind_addr,
             self.txt_bind_addr,
@@ -741,7 +772,8 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             self.txt_port,
             self.lbl_stream_quality,
             self.cbo_stream_quality,
-            self.chk_gpu_jpeg,
+            self.lbl_video_codec,
+            self.cbo_video_codec,
             self.sep_network1,
             self.chk_auth,
             self.lbl_auth_username,

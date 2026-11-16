@@ -475,9 +475,7 @@ class StereoPlayer extends THREE.Group {
         }
 
         const streamFormat = info.stereo_format || STEREO_FORMATS.SBS_HALF;
-        const streamName = (info.width && info.height)
-            ? `Desktop (${info.width}x${info.height})`
-            : 'Desktop Stream';
+        const streamName = this._formatStreamName(info.width, info.height, null);
 
         const streamItem = {
             path: '__desktop_stream__',
@@ -521,10 +519,28 @@ class StereoPlayer extends THREE.Group {
         }
 
         const { detail } = result;
+        const activeWidth = this.playbackController.desktopStream?.width || info.width || 0;
+        const activeHeight = this.playbackController.desktopStream?.height || info.height || 0;
+        const activeCodec = this.playbackController.streamCodecName || null;
+        streamItem.name = this._formatStreamName(activeWidth, activeHeight, activeCodec);
         this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
         this.uiManager?.streamSettings?.fetchSettings?.();
         this.uiManager.syncUI(true);
         return true;
+    }
+
+    _formatStreamName(width, height, codecName) {
+        const hasDims = Boolean(width && height);
+        if (hasDims && codecName) {
+            return `Desktop (${width}x${height}, ${codecName})`;
+        }
+        if (hasDims) {
+            return `Desktop (${width}x${height})`;
+        }
+        if (codecName) {
+            return `Desktop (${codecName})`;
+        }
+        return 'Desktop Stream';
     }
 
     async stopStream() {
@@ -550,9 +566,10 @@ class StereoPlayer extends THREE.Group {
             if (info.stereo_format) {
                 this.streamItem.stereo_format = info.stereo_format;
             }
-            if (info.width && info.height) {
-                this.streamItem.name = `Desktop (${info.width}x${info.height})`;
-            }
+            const streamWidth = info.width || this.playbackController.desktopStream?.width || this.streamItem.stream_info?.width || 0;
+            const streamHeight = info.height || this.playbackController.desktopStream?.height || this.streamItem.stream_info?.height || 0;
+            const streamCodec = this.playbackController.streamCodecName || info.active_video_codec || null;
+            this.streamItem.name = this._formatStreamName(streamWidth, streamHeight, streamCodec);
 
             const finalFormat = this.streamFormatOverride || this.streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
             if (finalFormat !== this.activeScreen.currentStereoFormat) {
@@ -562,7 +579,7 @@ class StereoPlayer extends THREE.Group {
 
             const aspectRatio = (info.width && info.height)
                 ? (info.width / info.height)
-                : (this.playbackController.mjpegStream?.aspectRatio || this.activeScreen.aspectRatio);
+                : (this.playbackController.desktopStream?.aspectRatio || this.activeScreen.aspectRatio);
             const tex = this.playbackController.streamTexture;
             if (tex) {
                 this.activeScreen.updateTexture(tex, aspectRatio, finalFormat);
@@ -903,9 +920,14 @@ class StereoPlayer extends THREE.Group {
         }
 
         const streamTex = this.playbackController.streamTexture;
-        if (streamTex && streamTex.image) {
+        if (streamTex) {
             this.playbackController.consumeNewStreamFrame();
-            this.renderer.initTexture(streamTex);
+            const hasValidStreamImage = streamTex.isVideoFrameTexture
+                ? (typeof VideoFrame !== "undefined" && streamTex.image instanceof VideoFrame)
+                : Boolean(streamTex.image);
+            if (hasValidStreamImage) {
+                this.renderer.initTexture(streamTex);
+            }
         }
     }
 

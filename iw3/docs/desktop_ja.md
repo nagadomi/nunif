@@ -127,7 +127,7 @@ python -m iw3.desktop --full-sbs
 
 ### 解像度 (動画解像度)
 
-`--stream-height`オプションで画面の垂直方向の解像度を指定できます。デフォルトは1080pxです。
+`--stream-height`オプションで画面の垂直方向の上限解像度を指定できます。デフォルトは`1080`pxです（GUIでは`2160`・`1080`・`720`を選択できます）。指定値以下の解像度の画面はリサイズされずにそのまま配信されます。
 
 ```bash
 python -m iw3.desktop --stream-height 720
@@ -143,11 +143,37 @@ python -m iw3.desktop --stream-fps 30
 
 `Estimated FPS`が指定されたFPSよりも著しく低い場合、PCの性能が指定されたFPSの処理に追いついていないことを意味します。
 
-`--batch-size 1`での処理のため、FPSは動画変換時よりもかなり低くなります。また、ブラウザの制限により、`Streaming FPS = 30`を超えるFPSは達成できない可能性があります。
+`--batch-size 1`での処理のため、FPSは動画変換時よりもかなり低くなります。
 
-### MJPEG 設定
+### 動画コーデック・画質設定
 
-`--stream-quality`オプションでJPEGの品質を指定できます（0-100）。
+デフォルトの `Web Streaming`（WebXR）では、H.264 / HEVC 動画コーデックによる低遅延・省帯域配信と、MJPEG（`jpeg` / `jpeg-gpu`）の両方を利用できます。`--video-codec`（または GUI の `Video Codec`）でエンコーダを指定します（デフォルトは `libx264`、LGPL 環境では `libopenh264`）。
+
+```bash
+python -m iw3.desktop --video-codec h264_nvenc
+```
+
+*   **利用可能な主なコーデック**: `libx264`, `libopenh264`, `h264_nvenc`, `hevc_nvenc`, `h264_vaapi`, `hevc_vaapi`, `h264_qsv`, `hevc_qsv`, `h264_amf`, `hevc_amf`, `libx265`, `jpeg`, `jpeg-gpu`
+*   **推奨コーデック (H.264 推奨)**: Meta Quest のブラウザは H.265 (HEVC) のデコードに対応していますが、一般的な PC (PCVR) のブラウザは H.264 にしか対応していないことが多く、`hevc_nvenc` 等を使うと MJPEG にフォールバックされる場合があります。幅 4096 px を超える解像度が必要なケースを除き、**基本的には H.264（`h264_nvenc` や `libx264` 等）の利用をおすすめします**。
+*   **自動フォールバック**: 指定したコーデックに PC 側または視聴側のブラウザが対応していない場合は、自動的に MJPEG 配信へフォールバックします。実際に動作しているコーデックはプレイヤー画面上のファイル名表示（例: `Desktop (1920x1080, hevc_nvenc)` / `Desktop (1920x1080, mjpeg)`）で確認できます。
+*   **`Web Streaming (Legacy)`**: Legacy モードは MJPEG のみ対応しているため、GUI 上では `jpeg` / `jpeg-gpu` のみが選択できます。
+
+#### 解像度・3D形式ごとの H.264 / HEVC 対応目安
+
+H.264 ハードウェアエンコーダ（`h264_nvenc` など）や多くの端末の H.264 デコーダは幅・高さ **4096 px** までが上限となるため、横幅が 4096 px を超える Full SBS（`2560x1080` の Full SBS や 4K Full SBS 等）を動画配信する場合は **HEVC**（`hevc_nvenc` など）が必要です。
+
+| 入力画面 / 3D 形式 | 配信映像サイズ | H.264 (`h264_nvenc` 等) | HEVC (`hevc_nvenc` 等) |
+| --- | --- | --- | --- |
+| `1920x1080` Half SBS | `1920x1080` | 対応 | 対応 |
+| `1920x1080` Full SBS | `3840x1080` | 対応 | 対応 |
+| `2560x1080` Half SBS | `2560x1080` | 対応 | 対応 |
+| `2560x1080` Full SBS | `5120x1080` | 非対応 (4096 px 超) | 対応 |
+| 4K (`3840x2160`) Half SBS | `3840x2160` | 対応 | 対応 |
+| 4K (`3840x2160`) Full SBS | `7680x2160` | 非対応 (4096 px 超) | 対応 (※視聴端末のデコード上限により MJPEG へフォールバックする場合あり) |
+
+#### 画質（`--stream-quality`）
+
+`--stream-quality`オプションで動画コーデック・JPEG の品質を指定できます（1-100）。
 
 ```bash
 python -m iw3.desktop --stream-quality 80

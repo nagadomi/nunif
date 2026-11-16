@@ -231,6 +231,7 @@ class WebXRStreamingServer:
         args: Any = None,
     ) -> None:
         from ..player.stream_hub import StreamFrameHub
+        from .video_stream_encoder import resolve_stream_codec_config
 
         self.port = port
         self.host = host
@@ -244,6 +245,8 @@ class WebXRStreamingServer:
         self.auth = auth
         self.args = args
 
+        video_codec, available_codecs, _ = resolve_stream_codec_config(self.args)
+
         self.stream_hub = StreamFrameHub(
             lock=lock,
             frame_width=frame_width,
@@ -251,6 +254,8 @@ class WebXRStreamingServer:
             fps=fps,
             stereo_format=stereo_format,
             stream_content_type=stream_content_type,
+            video_codec=video_codec,
+            available_stream_codecs=available_codecs,
         )
         self.stream_hub.service = self
         self.thread: threading.Thread | None = None
@@ -272,14 +277,18 @@ class WebXRStreamingServer:
         from types import SimpleNamespace
 
         from ..player.server import init_server_runtime, serve_with_watchdog
+        from .video_stream_encoder import resolve_stream_codec_config
 
         bind_host = self.host or "127.0.0.1"
         user, password = self.auth if self.auth is not None else (None, None)
+        video_codec, available_codecs, _ = resolve_stream_codec_config(self.args)
         self.stream_hub.update_stream_params(
             frame_width=self.frame_width,
             frame_height=self.frame_height,
             fps=self.fps,
             stereo_format=self.stereo_format,
+            video_codec=video_codec,
+            available_stream_codecs=available_codecs,
         )
 
         args_ns = SimpleNamespace(

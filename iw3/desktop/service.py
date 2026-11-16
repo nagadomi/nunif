@@ -9,12 +9,14 @@ from .utils import (
     cleanup_desktop_pipeline,
     ensure_default_stereo_format,
     get_runtime_stream_settings,
+    get_stream_codec_config,
     init_desktop_pipeline,
     resolve_player_stereo_format,
     run_desktop_processing_loop,
     update_runtime_stream_settings,
     validate_screenshot_args,
 )
+from .video_stream_encoder import validate_stream_video_codec
 
 if TYPE_CHECKING:
     from ..player.stream_hub import StreamFrameHub
@@ -43,6 +45,7 @@ class DesktopStreamService:
         self._obs_restore_token: str | None = None
         ensure_default_stereo_format(self.args)
         validate_screenshot_args(self.args)
+        validate_stream_video_codec(getattr(self.args, "video_codec", None))
 
     def authorize_capture(self) -> None:
         if getattr(self.args, "screenshot", None) != "obs":
@@ -122,7 +125,7 @@ class DesktopStreamService:
     def _is_idle(self) -> bool:
         if self.idle_timeout <= 0:
             return False
-        if self.stream_hub.active_clients > 0:
+        if self.stream_hub.has_any_clients():
             return False
         return (time.perf_counter() - self.stream_hub.last_activity_time) > self.idle_timeout
 
@@ -139,11 +142,14 @@ class DesktopStreamService:
             if getattr(self.args, "screenshot", None) == "obs":
                 self._obs_restore_token = getattr(pipeline.screenshot_thread, "restore_token", None)
             self.stream_hub.clear_frames(stop_clients=False)
+            video_codec, available_codecs, _ = get_stream_codec_config(self.args)
             self.stream_hub.update_stream_params(
                 frame_width=pipeline.output_frame_width,
                 frame_height=pipeline.output_frame_height,
                 fps=int(self.args.stream_fps),
                 stereo_format=resolve_player_stereo_format(self.args),
+                video_codec=video_codec,
+                available_stream_codecs=available_codecs,
             )
             pipeline.screenshot_thread.start()
             self.stream_hub.touch()
