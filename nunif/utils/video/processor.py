@@ -195,14 +195,48 @@ def process_video(
         )
 
 
-def set_output_size_and_flash(container, stream, frame, unmux_packets):
-    stream.width = frame.width
-    stream.height = frame.height
-    if not stream.codec_context.is_open:
-        stream.codec_context.open(strict=False)
-    for enc_packet in unmux_packets:
-        container.mux(enc_packet)
-    unmux_packets.clear()
+def encode_and_mux_video_frame(
+    container: av.container.OutputContainer,
+    stream: av.video.stream.VideoStream,
+    frame: av.VideoFrame,
+    unmux_packets: List[av.Packet | List[av.Packet]],
+    uninitialized: bool,
+    fallback_pix_fmt: str | None = None,
+) -> bool:
+    """Encode a video frame, initializing the output stream and flushing buffered audio on first frame."""
+    if frame.pts is None:
+        # PyAV's zero-copy hwframe pass-through skips the fallback PTS assignment.
+        frame.pts = stream.codec_context.frame_num
+
+    if uninitialized:
+        stream.width = frame.width
+        stream.height = frame.height
+        if not stream.codec_context.is_open:
+            if frame.format.name == "cuda":
+                stream.pix_fmt = "cuda"
+            elif fallback_pix_fmt is not None and stream.pix_fmt == "cuda":
+                stream.pix_fmt = fallback_pix_fmt
+
+        if frame.format.name == "cuda":
+            # Defer codec open and header write until encode() adopts the first CUDA frame's hw_frames_ctx.
+            enc_packets = stream.encode(frame)
+            for enc_packet in unmux_packets:
+                container.mux(enc_packet)
+            unmux_packets.clear()
+            if enc_packets:
+                container.mux(enc_packets)
+            return False
+
+        if not stream.codec_context.is_open:
+            stream.codec_context.open(strict=False)
+        for enc_packet in unmux_packets:
+            container.mux(enc_packet)
+        unmux_packets.clear()
+
+    enc_packets = stream.encode(frame)
+    if enc_packets:
+        container.mux(enc_packets)
+    return False
 
 
 def _process_video(
@@ -289,6 +323,8 @@ def _process_video(
     video_output_stream.thread_type = "AUTO"
     if is_vaapi_codec(config.video_codec):
         video_output_stream.pix_fmt = "vaapi"
+    elif output_reformatter.cuda_context is not None:
+        video_output_stream.pix_fmt = "cuda"
     else:
         video_output_stream.pix_fmt = config.pix_fmt
 
@@ -310,7 +346,8 @@ def _process_video(
     if config.output_width is not None and config.output_height is not None:
         video_output_stream.width = config.output_width
         video_output_stream.height = config.output_height
-        uninitialized = False
+        if output_reformatter.cuda_context is None:
+            uninitialized = False
 
     default_acodec = get_default_audio_codec(config.container_format)
     if audio_input_stream is not None:
@@ -341,7 +378,7 @@ def _process_video(
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
 
-    enable_gc_collect = hwaccel in {"cuda"}
+    enable_gc_collect = hwaccel in {"cuda"} or output_reformatter.cuda_context is not None
     frame_count = 0
     GC_INTERVAL = 512
     try:
@@ -356,15 +393,14 @@ def _process_video(
                             gc.collect(0)
                         for new_frame in get_new_frames(frame_callback(out_frame)):
                             reformatted_frame = output_reformatter(new_frame)
-                            if uninitialized:
-                                set_output_size_and_flash(
-                                    output_container, video_output_stream, reformatted_frame, unmux_packets
-                                )
-                                uninitialized = False
-                            # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
-                            enc_packets = video_output_stream.encode(reformatted_frame)
-                            if enc_packets:
-                                output_container.mux(enc_packets)
+                            uninitialized = encode_and_mux_video_frame(
+                                output_container,
+                                video_output_stream,
+                                reformatted_frame,
+                                unmux_packets,
+                                uninitialized,
+                                fallback_pix_fmt=config.pix_fmt,
+                            )
                             pbar.update(1)
             elif packet.stream.type == "audio":
                 assert isinstance(audio_output_stream, av.AudioStream)
@@ -396,13 +432,14 @@ def _process_video(
                     gc.collect(0)
 
                 ref_frame = output_reformatter(new_frame)
-                if uninitialized:
-                    set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
-                    uninitialized = False
-
-                enc_packets = video_output_stream.encode(ref_frame)
-                if enc_packets:
-                    output_container.mux(enc_packets)
+                uninitialized = encode_and_mux_video_frame(
+                    output_container,
+                    video_output_stream,
+                    ref_frame,
+                    unmux_packets,
+                    uninitialized,
+                    fallback_pix_fmt=config.pix_fmt,
+                )
                 pbar.update(1)
 
         for new_frame in get_new_frames(frame_callback(None)):
@@ -410,17 +447,20 @@ def _process_video(
                 gc.collect(0)
 
             ref_frame = output_reformatter(new_frame)
-            if uninitialized:
-                set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
-                uninitialized = False
-            enc_packets = video_output_stream.encode(ref_frame)
-            if enc_packets:
-                output_container.mux(enc_packets)
+            uninitialized = encode_and_mux_video_frame(
+                output_container,
+                video_output_stream,
+                ref_frame,
+                unmux_packets,
+                uninitialized,
+                fallback_pix_fmt=config.pix_fmt,
+            )
             pbar.update(1)
 
-        enc_packets = video_output_stream.encode(None)
-        if enc_packets:
-            output_container.mux(enc_packets)
+        if not uninitialized:
+            enc_packets = video_output_stream.encode(None)
+            if enc_packets:
+                output_container.mux(enc_packets)
     except KeyboardInterrupt:
         output_reformatter.synchronize()
         pbar.close()
@@ -466,7 +506,6 @@ def generate_video(
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     output_container = av.open(output_path_tmp, "w", options=config.container_options)
-    uninitialized = config.output_width is None or config.output_height is None
     unmux_packets = []
 
     if not config.container_format:
@@ -497,9 +536,15 @@ def generate_video(
     video_output_stream.thread_type = "AUTO"
     if is_vaapi_codec(config.video_codec):
         video_output_stream.pix_fmt = "vaapi"
+    elif output_reformatter.cuda_context is not None:
+        video_output_stream.pix_fmt = "cuda"
     else:
         video_output_stream.pix_fmt = config.pix_fmt
-    if not uninitialized:
+
+    uninitialized = (
+        config.output_width is None or config.output_height is None or output_reformatter.cuda_context is not None
+    )
+    if config.output_width is not None and config.output_height is not None:
         video_output_stream.width = config.output_width
         video_output_stream.height = config.output_height
 
@@ -576,17 +621,24 @@ def generate_video(
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     pbar = tqdm_fn(desc=desc, total=total_frames, ncols=ncols)
+    enable_gc_collect = output_reformatter.cuda_context is not None
+    frame_count = 0
+    GC_INTERVAL = 512
     for frame in frame_generator():
         if frame is None:
             break
         for new_frame in get_new_frames(frame):
+            if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
+                gc.collect(0)
             new_frame = output_reformatter(new_frame)
-            if uninitialized:
-                set_output_size_and_flash(output_container, video_output_stream, new_frame, unmux_packets)
-                uninitialized = False
-            enc_packet = video_output_stream.encode(new_frame)
-            if enc_packet:
-                output_container.mux(enc_packet)
+            uninitialized = encode_and_mux_video_frame(
+                output_container,
+                video_output_stream,
+                new_frame,
+                unmux_packets,
+                uninitialized,
+                fallback_pix_fmt=config.pix_fmt,
+            )
             pbar.update(1)
         if suspend_event is not None:
             suspend_event.wait()
