@@ -442,7 +442,9 @@ def server_main(args, init_wxapp=True):
 
         init_win32()
         video_codec, available_codecs, _ = get_stream_codec_config(args)
-        validate_stream_video_codec(video_codec)
+        gpu = getattr(args, "gpu", None)
+        gpu_id = gpu[0] if isinstance(gpu, (list, tuple)) and len(gpu) > 0 else None
+        validate_stream_video_codec(video_codec, gpu_id=gpu_id)
         stream_hub = StreamFrameHub(
             lock=threading.Lock(),
             frame_width=1920,

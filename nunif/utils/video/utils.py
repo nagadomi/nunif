@@ -1,9 +1,11 @@
 import os
+import threading
 from fractions import Fraction
 from typing import List
 
 import av
 import torch
+from av.codec.hwaccel import hwdevices_available
 
 IS_ROCM = getattr(torch.version, "hip", None) is not None
 
@@ -59,12 +61,117 @@ def _get_libh264() -> str:
 LIBH264 = _get_libh264()
 
 
-def has_nvenc() -> bool:
-    return "h264_nvenc" in av.codec.codecs_available and "hevc_nvenc" in av.codec.codecs_available
+DEFAULT_VAAPI_DEVICE = os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128")
+
+_VIDEO_CODEC_CACHE_LOCK = threading.Lock()
+_VIDEO_CODEC_CACHE: dict[tuple[str, int | None], bool] = {}
+
+
+def clear_video_codec_cache() -> None:
+    """Clear the cached results of video encoder probe checks."""
+    with _VIDEO_CODEC_CACHE_LOCK:
+        _VIDEO_CODEC_CACHE.clear()
+
+
+def is_vaapi_codec(codec) -> bool:
+    return isinstance(codec, str) and codec.endswith("_vaapi")
+
+
+def _probe_video_codec(codec: str, gpu_id: int | None = None) -> bool:
+    """Verify that a video encoder can open and encode a 256x256 frame."""
+    if codec not in av.codec.codecs_available:
+        return False
+
+    from typing import cast
+
+    from av.video.codeccontext import VideoCodecContext
+
+    ctx: VideoCodecContext | None = None
+    try:
+        options: dict[str, str] = {}
+        if codec.endswith(("_nvenc", "_qsv", "_amf")):
+            ctx_pix_fmt = "nv12"
+            frame_pix_fmt = "nv12"
+            if codec.endswith("_nvenc") and gpu_id is not None:
+                options["gpu"] = str(gpu_id)
+        else:
+            ctx_pix_fmt = "yuv420p"
+            frame_pix_fmt = "yuv420p"
+            if codec == "libx265":
+                options["x265-params"] = "log-level=error"
+
+        ctx = cast(VideoCodecContext, av.codec.CodecContext.create(codec, "w"))
+        ctx.width = 256
+        ctx.height = 256
+        ctx.time_base = Fraction(1, 30)
+        ctx.framerate = Fraction(30, 1)
+        ctx.pix_fmt = ctx_pix_fmt
+        if options:
+            ctx.options = options
+        ctx.open(strict=False)
+
+        frame = av.VideoFrame(256, 256, frame_pix_fmt)
+        for plane in frame.planes:
+            plane.update(bytes(plane.buffer_size))
+
+        packets = list(ctx.encode(frame))
+        packets.extend(ctx.encode(None))
+        return len(packets) > 0
+    except Exception:
+        return False
+    finally:
+        del ctx
+
+
+def _has_video_codec_cached(codec: str, cache_gpu_id: int | None) -> bool:
+    key = (codec, cache_gpu_id)
+    with _VIDEO_CODEC_CACHE_LOCK:
+        cached = _VIDEO_CODEC_CACHE.get(key)
+        if cached is not None:
+            return cached
+        ok = _probe_video_codec(codec, gpu_id=cache_gpu_id)
+        _VIDEO_CODEC_CACHE[key] = ok
+        return ok
+
+
+def has_video_codec(codec: str, gpu_id: int | None = None) -> bool:
+    """Return whether the given video encoder is usable on this machine (cached)."""
+    if not codec or codec not in av.codec.codecs_available:
+        return False
+
+    # VAAPI is only enabled in custom FFmpeg/PyAV builds and depends on render node paths,
+    # so only check codec and hwdevice availability without running a dummy encode probe.
+    if is_vaapi_codec(codec):
+        return "vaapi" in hwdevices_available()
+
+    if codec.endswith("_nvenc"):
+        if gpu_id is not None and gpu_id >= 0:
+            return _has_video_codec_cached(codec, gpu_id)
+        with _VIDEO_CODEC_CACHE_LOCK:
+            cached = _VIDEO_CODEC_CACHE.get((codec, None))
+            if cached is not None:
+                return cached
+        ok = False
+        for dev_id in range(4):
+            if _has_video_codec_cached(codec, dev_id):
+                ok = True
+                break
+        with _VIDEO_CODEC_CACHE_LOCK:
+            _VIDEO_CODEC_CACHE[(codec, None)] = ok
+        return ok
+
+    if codec.endswith(("_qsv", "_amf")):
+        return _has_video_codec_cached(codec, None)
+
+    return True
+
+
+def has_nvenc(gpu_id: int | None = None) -> bool:
+    return any(has_video_codec(c, gpu_id=gpu_id) for c in ("h264_nvenc", "hevc_nvenc"))
 
 
 def has_qsv() -> bool:
-    return "h264_qsv" in av.codec.codecs_available and "hevc_qsv" in av.codec.codecs_available
+    return any(has_video_codec(c) for c in ("h264_qsv", "hevc_qsv"))
 
 
 def has_vp9() -> bool:
@@ -81,18 +188,11 @@ def is_vp9_alpha(stream: av.video.stream.VideoStream) -> bool:
 
 
 def has_amf() -> bool:
-    return "h264_amf" in av.codec.codecs_available and "hevc_amf" in av.codec.codecs_available
-
-
-DEFAULT_VAAPI_DEVICE = os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128")
+    return any(has_video_codec(c) for c in ("h264_amf", "hevc_amf", "av1_amf"))
 
 
 def has_vaapi() -> bool:
-    return "h264_vaapi" in av.codec.codecs_available and "hevc_vaapi" in av.codec.codecs_available
-
-
-def is_vaapi_codec(codec) -> bool:
-    return isinstance(codec, str) and codec.endswith("_vaapi")
+    return any(has_video_codec(c) for c in ("h264_vaapi", "hevc_vaapi", "av1_vaapi"))
 
 
 def list_videos(directory: str, extensions: List[str] = VIDEO_EXTENSIONS) -> List[str]:

@@ -45,7 +45,9 @@ class DesktopStreamService:
         self._obs_restore_token: str | None = None
         ensure_default_stereo_format(self.args)
         validate_screenshot_args(self.args)
-        validate_stream_video_codec(getattr(self.args, "video_codec", None))
+        gpu = getattr(self.args, "gpu", None)
+        gpu_id = gpu[0] if isinstance(gpu, (list, tuple)) and len(gpu) > 0 else None
+        validate_stream_video_codec(getattr(self.args, "video_codec", None), gpu_id=gpu_id)
 
     def authorize_capture(self) -> None:
         if getattr(self.args, "screenshot", None) != "obs":

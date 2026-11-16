@@ -78,26 +78,15 @@ def get_codec_family(video_codec: str) -> str | None:
     return None
 
 
-def _can_create_encoder(video_codec: str) -> bool:
-    try:
-        av.Codec(video_codec, "w")
-        return True
-    except Exception:
-        return False
-
-
-def get_available_stream_video_codecs() -> list[str]:
-    has_nvidia = torch.cuda.is_available() and not VU.IS_ROCM
+def get_available_stream_video_codecs(gpu_id: int | None = None) -> list[str]:
     has_vaapi = "vaapi" in HW_DEVICES
     codecs: list[str] = []
     for codec in STREAM_VIDEO_CODECS:
         if codec not in av.codec.codecs_available:
             continue
-        if codec in NVENC_CODECS and not has_nvidia:
-            continue
         if codec in VAAPI_CODECS and not has_vaapi:
             continue
-        if not _can_create_encoder(codec):
+        if not VU.has_video_codec(codec, gpu_id=gpu_id):
             continue
         codecs.append(codec)
     codecs.append("jpeg")
@@ -106,7 +95,7 @@ def get_available_stream_video_codecs() -> list[str]:
     return codecs
 
 
-def validate_stream_video_codec(video_codec: str | None) -> str:
+def validate_stream_video_codec(video_codec: str | None, gpu_id: int | None = None) -> str:
     vc = normalize_video_codec(video_codec)
     if vc == "jpeg":
         return vc
@@ -117,13 +106,12 @@ def validate_stream_video_codec(video_codec: str | None) -> str:
             raise ValueError("video_codec='jpeg-gpu' requires an NVIDIA CUDA GPU")
         return vc
     if get_codec_family(vc) is None:
-        raise ValueError(
-            f"Unsupported stream video codec: {vc}. Supported codecs: {', '.join(get_available_stream_video_codecs())}"
-        )
-    if vc not in av.codec.codecs_available or not _can_create_encoder(vc):
-        raise ValueError(f"Video encoder '{vc}' is not available in PyAV/FFmpeg")
+        supported = ", ".join(get_available_stream_video_codecs(gpu_id=gpu_id))
+        raise ValueError(f"Unsupported stream video codec: {vc}. Supported codecs: {supported}")
     if vc in VAAPI_CODECS and "vaapi" not in HW_DEVICES:
         raise ValueError(f"VAAPI hardware device is not available for '{vc}'")
+    if vc not in av.codec.codecs_available or not VU.has_video_codec(vc, gpu_id=gpu_id):
+        raise ValueError(f"Video encoder '{vc}' is not available on this system")
     return vc
 
 

@@ -761,7 +761,9 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     if not args.local_viewer:
         auth = validate_bind_address_and_auth(args)
-        validate_stream_video_codec(getattr(args, "video_codec", None))
+        gpu = getattr(args, "gpu", None)
+        gpu_id = gpu[0] if isinstance(gpu, (list, tuple)) and len(gpu) > 0 else None
+        validate_stream_video_codec(getattr(args, "video_codec", None), gpu_id=gpu_id)
     else:
         auth = None
 
