@@ -4,8 +4,11 @@ from typing import NamedTuple
 import pytest
 
 from nunif.cli.diff_video import compare_videos
+from tests.helpers.hwaccel import nvenc_required
 from tests.helpers.race_condition_data import ensure_race_condition_data
 from tests.helpers.runner import run
+
+HEVC_NVENC_REQUIRED = nvenc_required("hevc_nvenc", require_cuda_hwaccel=False)
 
 COMMON_REF_ARGS = ["--low-vram", "--scene-detect", "--ema-normalize", "--ema-buffer", "30", "--crf", "4", "-y"]
 COMMON_TEST_ARGS = [
@@ -86,6 +89,7 @@ def test_vda_s_sd_libx265(race_condition_setup: RaceConditionSetup) -> None:
 
 
 @pytest.mark.slow
+@HEVC_NVENC_REQUIRED
 def test_vda_s_sd_nvenc(race_condition_setup: RaceConditionSetup) -> None:
     assert run_and_compare(
         race_condition_setup.work_dir,
@@ -116,6 +120,7 @@ def test_any_s_sd_libx265(race_condition_setup: RaceConditionSetup) -> None:
 
 
 @pytest.mark.slow
+@HEVC_NVENC_REQUIRED
 def test_any_s_sd_nvenc(race_condition_setup: RaceConditionSetup) -> None:
     assert run_and_compare(
         race_condition_setup.work_dir,
@@ -126,6 +131,7 @@ def test_any_s_sd_nvenc(race_condition_setup: RaceConditionSetup) -> None:
 
 
 @pytest.mark.slow
+@HEVC_NVENC_REQUIRED
 def test_any_s_hdr_nvenc(race_condition_setup: RaceConditionSetup) -> None:
     assert run_and_compare(
         race_condition_setup.work_dir,
@@ -146,6 +152,7 @@ def test_any_s_sd_inpaint(race_condition_setup: RaceConditionSetup) -> None:
 
 
 @pytest.mark.slow
+@HEVC_NVENC_REQUIRED
 def test_vda_s_sd_nvenc_noaudio(race_condition_setup: RaceConditionSetup) -> None:
     assert run_and_compare(
         race_condition_setup.work_dir,
@@ -156,6 +163,7 @@ def test_vda_s_sd_nvenc_noaudio(race_condition_setup: RaceConditionSetup) -> Non
 
 
 @pytest.mark.slow
+@HEVC_NVENC_REQUIRED
 def test_any_s_sd_nvenc_noaudio(race_condition_setup: RaceConditionSetup) -> None:
     assert run_and_compare(
         race_condition_setup.work_dir,

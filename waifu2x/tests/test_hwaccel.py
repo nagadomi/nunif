@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from tests.helpers.hwaccel import nvenc_h264_required
 from tests.helpers.runner import run
 from tests.helpers.smoke_data import ensure_smoke_data
 
@@ -25,6 +26,7 @@ def hwaccel_setup(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
 
 
 @pytest.mark.hwaccel
+@nvenc_h264_required
 def test_hwaccel_video(hwaccel_setup: dict[str, str]) -> None:
     run(
         [
@@ -50,6 +52,7 @@ def test_hwaccel_video(hwaccel_setup: dict[str, str]) -> None:
 
 
 @pytest.mark.hwaccel
+@nvenc_h264_required
 def test_hwaccel_dir(hwaccel_setup: dict[str, str]) -> None:
     run(
         [
