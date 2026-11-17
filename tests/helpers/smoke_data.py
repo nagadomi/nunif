@@ -8,6 +8,7 @@ from typing import NamedTuple, cast
 
 import av
 import av.audio.stream
+import av.container
 import av.video.codeccontext
 import av.video.stream
 import numpy as np
@@ -59,7 +60,7 @@ VIDEO_TARGETS: list[VideoTarget] = [
         primaries="bt709",
         trc="bt709",
         color_range="tv",
-        input_filter="gradients=size=640x360:rate=30:n=8:seed=1",
+        input_filter="testsrc2=size=640x360:rate=30",
         width=640,
         height=360,
     ),
@@ -75,7 +76,7 @@ for _pix_fmt in ("yuv444p", "yuv422p", "gbrp"):
             primaries="bt709",
             trc="bt709",
             color_range="tv",
-            input_filter="gradients=size=640x360:rate=30:n=8:seed=1",
+            input_filter="testsrc2=size=640x360:rate=30",
             width=640,
             height=360,
         )
@@ -89,7 +90,7 @@ for _pix_fmt in ("yuv444p", "yuv422p", "gbrp"):
             primaries="bt709",
             trc="bt709",
             color_range="tv",
-            input_filter="gradients=size=640x360:rate=30:n=8:seed=1",
+            input_filter="testsrc2=size=640x360:rate=30",
             width=640,
             height=360,
         )
@@ -104,11 +105,61 @@ VIDEO_TARGETS.append(
         primaries="bt2020",
         trc="smpte2084",
         color_range="tv",
-        input_filter="gradients=size=1280x720:rate=30:n=8:seed=1",
+        input_filter="testsrc2=size=1280x720:rate=30",
         width=1280,
         height=720,
     )
 )
+
+
+def apply_color_metadata(
+    v_ctx: av.video.codeccontext.VideoCodecContext,
+    colorspace: str,
+    primaries: str,
+    trc: str,
+    color_range: str,
+    is_rgb: bool = False,
+) -> None:
+    if is_rgb:
+        v_ctx.colorspace = 0
+        v_ctx.color_range = ColorRange.JPEG
+    else:
+        if colorspace in COLORSPACE_MAP:
+            v_ctx.colorspace = COLORSPACE_MAP[colorspace]
+        if color_range in RANGE_MAP:
+            v_ctx.color_range = RANGE_MAP[color_range]
+
+    if primaries in PRIMARIES_MAP:
+        v_ctx.color_primaries = PRIMARIES_MAP[primaries]
+    if trc in TRC_MAP:
+        v_ctx.color_trc = TRC_MAP[trc]
+
+
+def add_sine_audio_stream(
+    out_container: av.container.OutputContainer, sample_rate: int = 44100
+) -> av.audio.stream.AudioStream:
+    a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=sample_rate))
+    a_stream.format = "fltp"
+    a_stream.layout = "mono"
+    return a_stream
+
+
+def mux_sine_audio(
+    out_container: av.container.OutputContainer,
+    a_stream: av.audio.stream.AudioStream,
+    duration: float,
+    sample_rate: int = 44100,
+) -> None:
+    resampler = av.AudioResampler(format="fltp", layout="mono", rate=sample_rate)
+    with av.open(f"sine=frequency=1000:duration={duration}:sample_rate={sample_rate}", format="lavfi") as a_in:
+        for audio_frame in a_in.decode(audio=0):
+            a_f = cast(av.AudioFrame, audio_frame)
+            for rf in resampler.resample(a_f):
+                for packet in a_stream.encode(rf):
+                    out_container.mux(packet)
+
+    for packet in a_stream.encode(None):
+        out_container.mux(packet)
 
 
 def generate_video(
@@ -165,7 +216,6 @@ def generate_video(
 
     with (
         av.open(filter_chain, format="lavfi") as v_in,
-        av.open(f"sine=frequency=1000:duration={duration}:sample_rate=44100", format="lavfi") as a_in,
         av.open(output_path, mode="w", format="matroska") as out_container,
     ):
         v_stream = cast(av.video.stream.VideoStream, out_container.add_stream(vcodec, rate=fps))
@@ -176,25 +226,16 @@ def generate_video(
         v_stream.options = dict(options)
 
         v_ctx = cast(av.video.codeccontext.VideoCodecContext, v_stream.codec_context)
-        if is_rgb:
-            v_ctx.colorspace = 0
-            v_ctx.color_range = ColorRange.JPEG
-        else:
-            if target.colorspace in COLORSPACE_MAP:
-                v_ctx.colorspace = COLORSPACE_MAP[target.colorspace]
-            if target.color_range in RANGE_MAP:
-                v_ctx.color_range = RANGE_MAP[target.color_range]
+        apply_color_metadata(
+            v_ctx,
+            colorspace=target.colorspace,
+            primaries=target.primaries,
+            trc=target.trc,
+            color_range=target.color_range,
+            is_rgb=is_rgb,
+        )
 
-        if target.primaries in PRIMARIES_MAP:
-            v_ctx.color_primaries = PRIMARIES_MAP[target.primaries]
-        if target.trc in TRC_MAP:
-            v_ctx.color_trc = TRC_MAP[target.trc]
-
-        a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=44100))
-        a_stream.format = "fltp"
-        a_stream.layout = "mono"
-        resampler = av.AudioResampler(format="fltp", layout="mono", rate=44100)
-
+        a_stream = add_sine_audio_stream(out_container)
         max_frames = int(duration * fps)
 
         # Encode video frames
@@ -215,15 +256,7 @@ def generate_video(
         for packet in v_stream.encode(None):
             out_container.mux(packet)
 
-        # Encode audio frames
-        for audio_frame in a_in.decode(audio=0):
-            a_f = cast(av.AudioFrame, audio_frame)
-            for rf in resampler.resample(a_f):
-                for packet in a_stream.encode(rf):
-                    out_container.mux(packet)
-
-        for packet in a_stream.encode(None):
-            out_container.mux(packet)
+        mux_sine_audio(out_container, a_stream, duration)
 
 
 def generate_image_from_video(video_path: str, image_path: str) -> None:
@@ -251,10 +284,7 @@ def generate_rgba_video(
         w, h = src_rgba.size
 
     max_frames = int(duration * fps)
-    with (
-        av.open(f"sine=frequency=1000:duration={duration}:sample_rate=44100", format="lavfi") as a_in,
-        av.open(output_path, mode="w", format="matroska") as out_container,
-    ):
+    with av.open(output_path, mode="w", format="matroska") as out_container:
         vcodec = "libvpx-vp9" if codec == "libvpx-vp9" else "ffv1"
         v_stream = cast(av.video.stream.VideoStream, out_container.add_stream(vcodec, rate=fps))
         v_stream.width = w
@@ -263,10 +293,7 @@ def generate_rgba_video(
         if vcodec == "libvpx-vp9":
             v_stream.options = {"crf": "20", "b": "0", "row-mt": "1", "auto-alt-ref": "0", "alpha_mode": "1"}
 
-        a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=44100))
-        a_stream.format = "fltp"
-        a_stream.layout = "mono"
-        resampler = av.AudioResampler(format="fltp", layout="mono", rate=44100)
+        a_stream = add_sine_audio_stream(out_container)
 
         for i in range(max_frames):
             shift = int(round(16 * math.sin(2 * math.pi * i / max_frames)))
@@ -281,14 +308,7 @@ def generate_rgba_video(
         for packet in v_stream.encode(None):
             out_container.mux(packet)
 
-        for audio_frame in a_in.decode(audio=0):
-            a_f = cast(av.AudioFrame, audio_frame)
-            for rf in resampler.resample(a_f):
-                for packet in a_stream.encode(rf):
-                    out_container.mux(packet)
-
-        for packet in a_stream.encode(None):
-            out_container.mux(packet)
+        mux_sine_audio(out_container, a_stream, duration)
 
 
 def colorspace_to_str(val: int | None) -> str:

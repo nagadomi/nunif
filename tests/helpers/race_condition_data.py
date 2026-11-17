@@ -1,66 +1,21 @@
 import argparse
 import math
 import os
-from collections.abc import Mapping
 from typing import cast
 
 import av
-import av.audio.stream
-import av.container
 import av.video.codeccontext
 import av.video.stream
 import numpy as np
-from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
+from av.video.reformatter import ColorRange, Colorspace
 from PIL import Image
 
-from tests.helpers.smoke_data import generate_rgba_video
-
-COLORSPACE_MAP: Mapping[str, Colorspace] = {
-    "bt709": Colorspace.ITU709,
-    "bt2020nc": Colorspace.BT2020,
-}
-
-PRIMARIES_MAP: Mapping[str, ColorPrimaries] = {
-    "bt709": ColorPrimaries.BT709,
-    "bt2020": ColorPrimaries.BT2020,
-}
-
-TRC_MAP: Mapping[str, ColorTrc] = {
-    "bt709": ColorTrc.BT709,
-    "smpte2084": ColorTrc.SMPTE2084,
-}
-
-RANGE_MAP: Mapping[str, ColorRange] = {
-    "tv": ColorRange.MPEG,
-    "pc": ColorRange.JPEG,
-}
-
-
-def _add_sine_audio_stream(
-    out_container: av.container.OutputContainer, sample_rate: int = 44100
-) -> av.audio.stream.AudioStream:
-    a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=sample_rate))
-    a_stream.format = "fltp"
-    a_stream.layout = "mono"
-    return a_stream
-
-
-def _mux_sine_audio(
-    out_container: av.container.OutputContainer,
-    a_stream: av.audio.stream.AudioStream,
-    duration: float,
-    sample_rate: int = 44100,
-) -> None:
-    resampler = av.AudioResampler(format="fltp", layout="mono", rate=sample_rate)
-    with av.open(f"sine=frequency=1000:duration={duration}:sample_rate={sample_rate}", format="lavfi") as a_in:
-        for audio_frame in a_in.decode(audio=0):
-            a_f = cast(av.AudioFrame, audio_frame)
-            for rf in resampler.resample(a_f):
-                for packet in a_stream.encode(rf):
-                    out_container.mux(packet)
-
-    for packet in a_stream.encode(None):
-        out_container.mux(packet)
+from tests.helpers.smoke_data import (
+    add_sine_audio_stream,
+    apply_color_metadata,
+    generate_rgba_video,
+    mux_sine_audio,
+)
 
 
 def generate_concatenated_video(
@@ -93,7 +48,7 @@ def generate_concatenated_video(
 
     with av.open(output_path, mode="w", format="matroska") as out_container:
         v_stream: av.video.stream.VideoStream | None = None
-        a_stream = _add_sine_audio_stream(out_container)
+        a_stream = add_sine_audio_stream(out_container)
         global_frame_idx = 0
 
         for scene_idx, flt in enumerate(scene_filters):
@@ -108,14 +63,7 @@ def generate_concatenated_video(
                     v_stream.options = dict(options)
 
                     v_ctx = cast(av.video.codeccontext.VideoCodecContext, v_stream.codec_context)
-                    if colorspace in COLORSPACE_MAP:
-                        v_ctx.colorspace = COLORSPACE_MAP[colorspace]
-                    if color_range in RANGE_MAP:
-                        v_ctx.color_range = RANGE_MAP[color_range]
-                    if primaries in PRIMARIES_MAP:
-                        v_ctx.color_primaries = PRIMARIES_MAP[primaries]
-                    if trc in TRC_MAP:
-                        v_ctx.color_trc = TRC_MAP[trc]
+                    apply_color_metadata(v_ctx, colorspace, primaries, trc, color_range)
 
                     # write first frame
                     f_fmt = first_frame.reformat(format=pix_fmt)
@@ -142,7 +90,7 @@ def generate_concatenated_video(
         for packet in v_stream.encode(None):
             out_container.mux(packet)
 
-        _mux_sine_audio(out_container, a_stream, total_duration)
+        mux_sine_audio(out_container, a_stream, total_duration)
 
 
 def generate_image_scenes_video(
@@ -167,12 +115,9 @@ def generate_image_scenes_video(
         v_stream.options = {"crf": "16", "preset": "superfast"}
 
         v_ctx = cast(av.video.codeccontext.VideoCodecContext, v_stream.codec_context)
-        v_ctx.colorspace = Colorspace.ITU709
-        v_ctx.color_range = ColorRange.MPEG
-        v_ctx.color_primaries = ColorPrimaries.BT709
-        v_ctx.color_trc = ColorTrc.BT709
+        apply_color_metadata(v_ctx, colorspace="bt709", primaries="bt709", trc="bt709", color_range="tv")
 
-        a_stream = _add_sine_audio_stream(out_container)
+        a_stream = add_sine_audio_stream(out_container)
         canvas_w = width + 80
         canvas_h = height + 80
         global_frame_idx = 0
@@ -199,7 +144,7 @@ def generate_image_scenes_video(
         for packet in v_stream.encode(None):
             out_container.mux(packet)
 
-        _mux_sine_audio(out_container, a_stream, total_duration)
+        mux_sine_audio(out_container, a_stream, total_duration)
 
 
 def copy_video_only(input_path: str, output_path: str) -> None:
