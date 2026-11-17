@@ -17,7 +17,7 @@ import torch
 import wx  # for mouse pointer
 from torchvision.io import encode_jpeg
 
-from nunif.device import create_device
+from nunif.device import IS_ROCM, create_device
 from nunif.initializer import gc_collect
 from nunif.models import compile_model
 from nunif.models.data_parallel import DeviceSwitchInference
@@ -815,7 +815,6 @@ def iw3_desktop_main(args, init_wxapp=True):
             # Local Viewer
             if LocalViewer is None:
                 raise RuntimeError("Local Viewer is not available")
-            IS_ROCM = getattr(torch.version, "hip", None) is not None
             USE_CUDA = torch.cuda.is_available() and not IS_ROCM
             server = LocalViewer(
                 lock=lock,

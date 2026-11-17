@@ -104,7 +104,7 @@ class DesktopStreamGUIMixin:
             get_default_stream_video_codec,
             is_jpeg_codec,
         )
-        from nunif.device import create_device, mps_is_available, xpu_is_available
+        from nunif.device import IS_ROCM, create_device, mps_is_available, xpu_is_available
         from nunif.initializer import gc_collect
         from nunif.models.utils import check_compile_support
 
@@ -121,6 +121,7 @@ class DesktopStreamGUIMixin:
         self._is_wayland = is_wayland
         self._wayland_missing_msg = WAYLAND_CAPTURE_MISSING_MESSAGE
         self._create_device = create_device
+        self._is_rocm = IS_ROCM
         self._mps_is_available = mps_is_available
         self._xpu_is_available = xpu_is_available
         self._check_compile_support = check_compile_support
@@ -378,9 +379,8 @@ class DesktopStreamGUIMixin:
         T = self._T
 
         has_windows_capture = bool(importlib.util.find_spec("windows_capture"))
-        is_rocm = getattr(self._torch.version, "hip", None) is not None
         has_windows_capture_cuda = (
-            bool(importlib.util.find_spec("wc_cuda")) and self._torch.cuda.is_available() and not is_rocm
+            bool(importlib.util.find_spec("wc_cuda")) and self._torch.cuda.is_available() and not self._is_rocm
         )
 
         self.grp_processor = wx.StaticBox(parent, label=T("Processor"))

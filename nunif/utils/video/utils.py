@@ -7,7 +7,7 @@ import av
 import torch
 from av.codec.hwaccel import hwdevices_available
 
-IS_ROCM = getattr(torch.version, "hip", None) is not None
+from nunif.device import IS_ROCM
 
 
 def is_nvidia_gpu(device: torch.device | None) -> bool:
