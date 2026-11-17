@@ -2,6 +2,8 @@ import contextlib
 
 import torch
 
+IS_ROCM: bool = getattr(torch.version, "hip", None) is not None
+
 
 def mps_is_available():
     return torch.backends.mps.is_available()
