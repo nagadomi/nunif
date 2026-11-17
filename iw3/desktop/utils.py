@@ -4,6 +4,8 @@ import math
 import sys
 import threading
 import time
+import traceback
+import warnings
 from collections import deque
 from collections.abc import Callable
 from functools import partial
@@ -13,7 +15,6 @@ from typing import Any
 
 import torch
 import wx  # for mouse pointer
-from packaging.version import Version
 from torchvision.io import encode_jpeg
 
 from nunif.device import create_device
@@ -27,6 +28,7 @@ from ..player.server import (
     get_local_address,
     validate_bind_address_and_auth,
 )
+from ..player.stream_hub import EncodedPacket
 from ..stereo_model_factory import get_mlbw_divergence_level
 from .screenshot_process import (  # noqa
     ScreenshotProcess,
@@ -49,6 +51,16 @@ from .screenshot_thread_kwcapture import (  # noqa
 )
 from .screenshot_thread_pil import ScreenshotThreadPIL
 from .streaming_server import StreamingServer, WebXRStreamingServer
+from .video_stream_encoder import (
+    VideoStreamEncoder,
+    get_codec_family,
+    get_default_stream_video_codec,
+    is_gpu_jpeg_available,
+    normalize_video_codec,
+    resolve_stream_codec_config,
+    resolve_stream_video_codec,
+    validate_stream_video_codec,
+)
 
 WAYLAND_CAPTURE_MISSING_MESSAGE = (
     "Wayland capture backend is not available ('pil' uses XWayland, which is usually black). "
@@ -62,8 +74,6 @@ except ImportError:
     LocalViewer = None
 
 
-TORCH_VERSION = Version(torch.__version__)
-ENABLE_GPU_JPEG = (TORCH_VERSION.major, TORCH_VERSION.minor) >= (2, 7)
 TORCH_NUM_THREADS = torch.get_num_threads()
 
 # Thread-safe JPEG encoding lock
@@ -111,7 +121,7 @@ def fps_sleep(start_time, fps, resolution=2e-4):
 def to_jpeg_data(frame, quality, tick, gpu_jpeg=True):
     # Thread-safe JPEG encoding with lock
     with _jpeg_encode_lock:
-        if ENABLE_GPU_JPEG and gpu_jpeg and frame.device.type == "cuda":
+        if gpu_jpeg and is_gpu_jpeg_available() and frame.device.type == "cuda":
             jpeg_data = encode_jpeg(to_uint8(frame), quality=quality).cpu()
         else:
             jpeg_data = encode_jpeg(to_uint8(frame).cpu(), quality=quality)
@@ -141,7 +151,7 @@ def add_desktop_stream_args(parser: argparse.ArgumentParser, default_port: int =
     parser.add_argument("--password", type=str, help="HTTP Basic Authentication password")
     parser.add_argument("--stream-fps", type=int, default=30, help="Streaming FPS")
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
-    parser.add_argument("--stream-quality", type=int, default=90, help="Streaming JPEG quality")
+    parser.add_argument("--stream-quality", type=int, default=90, help="Streaming quality")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
     parser.add_argument(
         "--screenshot",
@@ -150,7 +160,7 @@ def add_desktop_stream_args(parser: argparse.ArgumentParser, default_port: int =
         choices=["pil", "mss", "wc_mp", "wc_cuda", "kwcapture", "obs"],
         help="Screenshot method",
     )
-    parser.add_argument("--gpu-jpeg", action="store_true", help="Use GPU JPEG Encoder")
+    parser.add_argument("--gpu-jpeg", action="store_true", help="Deprecated. Use --video-codec jpeg-gpu instead")
     parser.add_argument("--monitor-index", type=int, default=0, help="monitor_index for wc_mp. 0 origin. 0 = monitor 1")
     parser.add_argument(
         "--window-name",
@@ -199,13 +209,26 @@ def create_parser():
 
 
 def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_model=None):
+    user_video_codec = getattr(args, "video_codec", None)
+    if getattr(args, "gpu_jpeg", False):
+        warnings.warn("--gpu-jpeg is deprecated. Use --video-codec jpeg-gpu instead")
+        if user_video_codec is None or normalize_video_codec(user_video_codec) == "jpeg":
+            args.video_codec = "jpeg-gpu"
+    elif user_video_codec is None:
+        args.video_codec = get_default_stream_video_codec()
+
     IW3U.set_state_args(args, stop_event=stop_event, depth_model=depth_model)
+    args.video_codec = normalize_video_codec(getattr(args, "video_codec", None))
     args.state["fps_event"] = fps_event
     args.state["args_lock"] = args_lock if args_lock is not None else threading.Lock()
     args.state.setdefault("initial_mapper", getattr(args, "mapper", None))
     args.state.setdefault("mapper_overridden", False)
     if args.edge_dilation is None or (isinstance(args.edge_dilation, list) and len(args.edge_dilation) == 0):
         args.edge_dilation = 2
+
+
+def get_stream_codec_config(args: Any) -> tuple[str, list[str], str | None]:
+    return resolve_stream_codec_config(args)
 
 
 def test_output_size(size, args, depth_model, side_model):
@@ -411,20 +434,108 @@ def update_runtime_stream_settings(args: Any, updates: dict[str, Any]) -> dict[s
     return get_runtime_stream_settings(args)
 
 
-def push_stream_frame(frame_sink: Any, sbs: torch.Tensor, args: Any, tick: float) -> None:
+def _get_stream_hub(frame_sink: Any) -> Any | None:
+    if hasattr(frame_sink, "stream_hub"):
+        return frame_sink.stream_hub
+    if hasattr(frame_sink, "push_encoded_packet"):
+        return frame_sink
+    return None
+
+
+def push_stream_frame(
+    frame_sink: Any,
+    sbs: torch.Tensor,
+    args: Any,
+    tick: float,
+    video_encoder: VideoStreamEncoder | None = None,
+) -> VideoStreamEncoder | None:
     if getattr(args, "local_viewer", False):
         frame_sink.set_frame_data((sbs, tick))
-        return
-    if args.gpu_jpeg:
-        frame_sink.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=args.gpu_jpeg))
+        return video_encoder
+
+    hub = _get_stream_hub(frame_sink)
+    video_codec, _, vaapi_device = resolve_stream_codec_config(args)
+    if hub is not None:
+        has_ws_subs, has_active_ws, requested_codecs, force_keyframe, has_mjpeg = hub.begin_frame_encode()
     else:
-        with torch.no_grad():
-            sbs_gpu_clone = sbs.detach().clone().contiguous()
-        frame_sink.set_frame_data(
-            lambda sbs=sbs_gpu_clone, quality=args.stream_quality, t=tick: to_jpeg_data(
-                sbs, quality=quality, tick=t, gpu_jpeg=False
-            )
+        has_ws_subs = False
+        has_active_ws = False
+        requested_codecs = None
+        force_keyframe = False
+        has_mjpeg = True
+
+    if hub is not None and has_ws_subs:
+        target_codec = resolve_stream_video_codec(
+            video_codec=video_codec,
+            client_codecs=requested_codecs,
         )
+        if target_codec is None:
+            if video_encoder is not None:
+                video_encoder.close()
+                video_encoder = None
+        elif has_active_ws:
+            target_fps = max(1, int(args.stream_fps))
+            target_quality = int(args.stream_quality)
+            try:
+                if video_encoder is not None and (
+                    video_encoder.video_codec != target_codec
+                    or video_encoder.fps != target_fps
+                    or video_encoder.quality != target_quality
+                    or video_encoder.vaapi_device != vaapi_device
+                ):
+                    video_encoder.close()
+                    video_encoder = None
+                if video_encoder is None:
+                    video_encoder = VideoStreamEncoder(
+                        video_codec=target_codec,
+                        fps=target_fps,
+                        quality=target_quality,
+                        vaapi_device=vaapi_device,
+                    )
+                encoded = video_encoder.encode(
+                    sbs,
+                    timestamp_us=int(tick * 1_000_000),
+                    force_keyframe=force_keyframe,
+                )
+                if encoded is not None:
+                    payload, is_keyframe, codec_string, enc_w, enc_h = encoded
+                    family = get_codec_family(video_encoder.video_codec) or "h264"
+                    hub.push_encoded_packet(
+                        EncodedPacket(
+                            data=payload,
+                            timestamp_us=int(tick * 1_000_000),
+                            is_keyframe=is_keyframe,
+                            codec_string=codec_string,
+                            codec_family=family,
+                            video_codec=video_encoder.video_codec,
+                            width=enc_w,
+                            height=enc_h,
+                        )
+                    )
+            except Exception:
+                traceback.print_exc(file=sys.stderr)
+                if video_encoder is not None:
+                    video_encoder.close()
+                    video_encoder = None
+                hub.fail_ws_streams(reason="encoder_error")
+    elif video_encoder is not None:
+        video_encoder.close()
+        video_encoder = None
+
+    need_jpeg = hub is None or has_mjpeg
+    if need_jpeg:
+        use_gpu_jpeg = (video_codec == "jpeg-gpu") or bool(getattr(args, "gpu_jpeg", False))
+        if use_gpu_jpeg:
+            frame_sink.set_frame_data(to_jpeg_data(sbs, quality=args.stream_quality, tick=tick, gpu_jpeg=True))
+        else:
+            with torch.no_grad():
+                sbs_gpu_clone = sbs.detach().clone().contiguous()
+            frame_sink.set_frame_data(
+                lambda sbs=sbs_gpu_clone, quality=args.stream_quality, t=tick: to_jpeg_data(
+                    sbs, quality=quality, tick=t, gpu_jpeg=False
+                )
+            )
+    return video_encoder
 
 
 def init_desktop_pipeline(
@@ -569,67 +680,72 @@ def run_desktop_processing_loop(
     screen_size = pipeline.screen_size
     frame_width = pipeline.frame_width
     frame_height = pipeline.frame_height
+    video_encoder: VideoStreamEncoder | None = None
 
-    while True:
-        tick = time.perf_counter()
-        frame = screenshot_thread.get_frame()
-        if frame is None:
-            break
-
-        with args.state["args_lock"]:
-            frame_args = copy.copy(args)
-
-        sbs = IW3U.process_image(frame, frame_args, depth_model, side_model, autocrop_uncrop=True)
-        push_stream_frame(frame_sink, sbs, frame_args, tick)
-
-        if count > 1 and tick - last_status_time > 1:
-            last_status_time = tick
-            mean_processing_time = sum(fps_counter) / len(fps_counter)
-            estimated_fps = 1.0 / mean_processing_time
-            screen_size_tuple = (screen_size, (frame_width, frame_height))
-            if args.state["fps_event"] is not None:
-                args.state["fps_event"].update(
-                    estimated_fps, screenshot_thread.get_fps(), frame_sink.get_fps(), screen_size_tuple
-                )
-            else:
-                print(
-                    f"\rEstimated FPS = {estimated_fps:.02f}, "
-                    f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
-                    f"Streaming FPS = {frame_sink.get_fps():.02f}, "
-                    f"Screen Size = {screen_size_tuple}",
-                    end="",
-                )
-
-        if getattr(frame_args, "local_viewer", False):
-            # Platform-specific behavior for local viewer
-            if sys.platform != "win32":
-                # Linux: Use wx.Yield() (original working behavior)
-                if not wx.GetApp().IsMainLoopRunning():
-                    wx.Yield()
-            if frame_sink.is_closed():
+    try:
+        while True:
+            tick = time.perf_counter()
+            frame = screenshot_thread.get_frame()
+            if frame is None:
                 break
 
-        if prev_divergence != frame_args.divergence:
-            if frame_args.method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
-                side_model = try_switch_mlbw_model(
-                    old_divergence=prev_divergence,
-                    new_divergence=frame_args.divergence,
-                    old_side_model=side_model,
-                    args=frame_args,
-                )
-            prev_divergence = frame_args.divergence
+            with args.state["args_lock"]:
+                frame_args = copy.copy(args)
 
-        process_time = time.perf_counter() - tick
-        wait_time = max((1 / frame_args.stream_fps) - process_time, 0)
-        time.sleep(wait_time)
-        fps_counter.append(process_time)
-        count += 1
-        if stop_event is not None and stop_event.is_set():
-            break
-        if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
-            break
-        if idle_check is not None and idle_check():
-            break
+            sbs = IW3U.process_image(frame, frame_args, depth_model, side_model, autocrop_uncrop=True)
+            video_encoder = push_stream_frame(frame_sink, sbs, frame_args, tick, video_encoder=video_encoder)
+
+            if count > 1 and tick - last_status_time > 1:
+                last_status_time = tick
+                mean_processing_time = sum(fps_counter) / len(fps_counter)
+                estimated_fps = 1.0 / mean_processing_time
+                screen_size_tuple = (screen_size, (frame_width, frame_height))
+                if args.state["fps_event"] is not None:
+                    args.state["fps_event"].update(
+                        estimated_fps, screenshot_thread.get_fps(), frame_sink.get_fps(), screen_size_tuple
+                    )
+                else:
+                    print(
+                        f"\rEstimated FPS = {estimated_fps:.02f}, "
+                        f"Screenshot FPS = {screenshot_thread.get_fps():.02f}, "
+                        f"Streaming FPS = {frame_sink.get_fps():.02f}, "
+                        f"Screen Size = {screen_size_tuple}",
+                        end="",
+                    )
+
+            if getattr(frame_args, "local_viewer", False):
+                # Platform-specific behavior for local viewer
+                if sys.platform != "win32":
+                    # Linux: Use wx.Yield() (original working behavior)
+                    if not wx.GetApp().IsMainLoopRunning():
+                        wx.Yield()
+                if frame_sink.is_closed():
+                    break
+
+            if prev_divergence != frame_args.divergence:
+                if frame_args.method in {"mlbw_l2", "mlbw_l4", "mlbw_l2s", "mlbw_l4s"}:
+                    side_model = try_switch_mlbw_model(
+                        old_divergence=prev_divergence,
+                        new_divergence=frame_args.divergence,
+                        old_side_model=side_model,
+                        args=frame_args,
+                    )
+                prev_divergence = frame_args.divergence
+
+            process_time = time.perf_counter() - tick
+            wait_time = max((1 / frame_args.stream_fps) - process_time, 0)
+            time.sleep(wait_time)
+            fps_counter.append(process_time)
+            count += 1
+            if stop_event is not None and stop_event.is_set():
+                break
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                break
+            if idle_check is not None and idle_check():
+                break
+    finally:
+        if video_encoder is not None:
+            video_encoder.close()
 
 
 def cleanup_desktop_pipeline(pipeline: SimpleNamespace | None, depth_model: Any) -> None:
@@ -645,6 +761,9 @@ def iw3_desktop_main(args, init_wxapp=True):
 
     if not args.local_viewer:
         auth = validate_bind_address_and_auth(args)
+        gpu = getattr(args, "gpu", None)
+        gpu_id = gpu[0] if isinstance(gpu, (list, tuple)) and len(gpu) > 0 else None
+        validate_stream_video_codec(getattr(args, "video_codec", None), gpu_id=gpu_id)
     else:
         auth = None
 

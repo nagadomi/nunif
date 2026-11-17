@@ -1,14 +1,19 @@
 import asyncio
 import base64
+import json
 import os
 import secrets
+import struct
 import sys
 from contextlib import asynccontextmanager
 from typing import Callable, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.requests import HTTPConnection
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+
+from iw3.desktop.video_stream_encoder import resolve_stream_video_codec
 
 from .dir_config import PUBLIC_DIR
 from .media_library import MediaLibrary
@@ -19,8 +24,8 @@ from .server_state import ServerState
 security = HTTPBasic(auto_error=False)
 
 
-async def authenticate(request: Request, credentials: Optional[HTTPBasicCredentials] = Depends(security)):
-    state: ServerState = request.app.state.server_state
+async def authenticate(conn: HTTPConnection, credentials: Optional[HTTPBasicCredentials] = Depends(security)):
+    state: ServerState = conn.app.state.server_state
     if state.auth_user is None and state.auth_password is None:
         return None
 
@@ -240,6 +245,161 @@ async def serve_desktop_stream(
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
+
+
+def _parse_requested_codecs(raw_codecs: str | None) -> list[str]:
+    if not raw_codecs:
+        return ["hevc", "h264"]
+    parsed = [c.strip().lower() for c in raw_codecs.split(",") if c.strip().lower() in {"h264", "hevc"}]
+    return parsed
+
+
+def _can_accept_ws_codecs(stream_hub, requested_codecs: list[str]) -> bool:
+    if not requested_codecs:
+        return False
+    available_codecs = getattr(stream_hub, "available_stream_codecs", None)
+    if available_codecs is not None:
+        available_set = {c.lower() for c in available_codecs if c}
+        effective_codecs = [c for c in requested_codecs if c.lower() in available_set]
+        if not effective_codecs:
+            return False
+    else:
+        effective_codecs = requested_codecs
+    return (
+        resolve_stream_video_codec(
+            video_codec=getattr(stream_hub, "video_codec", "libx264"),
+            client_codecs=effective_codecs,
+        )
+        is not None
+    )
+
+
+@app.websocket("/api/stream/ws")
+async def serve_desktop_stream_ws(websocket: WebSocket):
+    state: ServerState = websocket.app.state.server_state
+    stream_hub = getattr(state, "stream_hub", None)
+    await websocket.accept()
+
+    if stream_hub is None:
+        await websocket.send_json({"type": "error", "message": "Desktop stream is not active"})
+        await websocket.close(code=1008)
+        return
+
+    requested_codecs = _parse_requested_codecs(websocket.query_params.get("codecs"))
+
+    try:
+        await _ensure_desktop_service_running(state)
+    except HTTPException as e:
+        await websocket.send_json({"type": "error", "message": str(e.detail)})
+        await websocket.close(code=1011)
+        return
+
+    if not _can_accept_ws_codecs(stream_hub, requested_codecs):
+        await websocket.send_json({"type": "fallback", "reason": "codec_unavailable"})
+        await websocket.close(code=1000)
+        return
+
+    subscriber, _ = stream_hub.subscribe_ws(requested_codecs=requested_codecs)
+
+    def _signal_sender_stop() -> None:
+        while subscriber.queue.full():
+            try:
+                subscriber.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        try:
+            subscriber.queue.put_nowait(None)
+        except asyncio.QueueFull:
+            pass
+
+    async def _receive_control() -> None:
+        try:
+            while True:
+                event = await websocket.receive()
+                if event.get("type") == "websocket.disconnect":
+                    break
+                raw_text = event.get("text")
+                if not raw_text:
+                    continue
+                try:
+                    msg = json.loads(raw_text)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    continue
+                if not isinstance(msg, dict):
+                    continue
+                msg_type = msg.get("type")
+                if msg_type == "request_keyframe":
+                    stream_hub.request_keyframe()
+                elif msg_type == "pause":
+                    stream_hub.set_ws_paused(subscriber.client_id, True)
+                elif msg_type == "resume":
+                    stream_hub.set_ws_paused(subscriber.client_id, False)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            _signal_sender_stop()
+
+    recv_task = asyncio.create_task(_receive_control())
+    last_codec_string: str | None = None
+    last_video_codec: str | None = None
+    last_width = 0
+    last_height = 0
+    last_epoch = -1
+
+    try:
+        while not stream_hub.shutdown_event.is_set():
+            item = await subscriber.queue.get()
+            if item is None:
+                break
+            if isinstance(item, dict):
+                await websocket.send_json(item)
+                await websocket.close(code=1000)
+                break
+
+            packet = item
+            if (
+                packet.codec_string != last_codec_string
+                or packet.video_codec != last_video_codec
+                or packet.width != last_width
+                or packet.height != last_height
+                or packet.epoch != last_epoch
+            ):
+                await websocket.send_json(
+                    {
+                        "type": "config",
+                        "codec": packet.codec_string,
+                        "codecFamily": packet.codec_family,
+                        "videoCodec": packet.video_codec,
+                        "width": packet.width,
+                        "height": packet.height,
+                        "fps": stream_hub.fps,
+                        "epoch": packet.epoch,
+                    }
+                )
+                last_codec_string = packet.codec_string
+                last_video_codec = packet.video_codec
+                last_width = packet.width
+                last_height = packet.height
+                last_epoch = packet.epoch
+
+            header = struct.pack(
+                "<IIQ",
+                packet.epoch & 0xFFFFFFFF,
+                1 if packet.is_keyframe else 0,
+                packet.timestamp_us,
+            )
+            await websocket.send_bytes(header + packet.data)
+            stream_hub.record_ws_frame_sent(subscriber.client_id)
+    except (WebSocketDisconnect, RuntimeError, OSError):
+        pass
+    finally:
+        if not recv_task.done():
+            recv_task.cancel()
+        try:
+            await recv_task
+        except (asyncio.CancelledError, WebSocketDisconnect):
+            pass
+        stream_hub.unsubscribe_ws(subscriber.client_id)
 
 
 @app.get("/js/debug_log.js")

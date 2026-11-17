@@ -129,7 +129,7 @@ The default is Half SBS. Meta Quest's browser only supports Half SBS.
 
 ### Resolution (Video Resolution)
 
-You can specify the vertical resolution of the screen with the `--stream-height` option. The default is 1080px.
+You can specify the maximum vertical resolution of the screen with the `--stream-height` option. The default is 1080px (`2160`, `1080`, and `720` are selectable in the GUI). Screens with height less than or equal to this value are streamed without resizing.
 
 ```bash
 python -m iw3.desktop --stream-height 720
@@ -145,11 +145,37 @@ python -m iw3.desktop --stream-fps 30
 
 If the `Estimated FPS` is significantly lower than the specified FPS, it means that the PC's performance is not sufficient to process the specified FPS.
 
-Due to `--batch-size 1` processing, the FPS will be considerably lower than during video conversion. Also, due to browser limitations, it may not be possible to achieve an FPS higher than `Streaming FPS = 30`.
+Due to `--batch-size 1` processing, the FPS will be considerably lower than during video conversion.
 
-### MJPEG Settings
+### Video Codec & Quality Settings
 
-You can specify the JPEG quality with the `--stream-quality` option (0-100).
+The default `Web Streaming` (WebXR) mode supports low-latency H.264 / HEVC video streaming as well as MJPEG (`jpeg` / `jpeg-gpu`). Select the encoder with `--video-codec` (or `Video Codec` in the GUI; default is `libx264`, or `libopenh264` in LGPL builds).
+
+```bash
+python -m iw3.desktop --video-codec h264_nvenc
+```
+
+*   **Supported codecs**: `libx264`, `libopenh264`, `h264_nvenc`, `hevc_nvenc`, `h264_vaapi`, `hevc_vaapi`, `h264_qsv`, `hevc_qsv`, `h264_amf`, `hevc_amf`, `libx265`, `jpeg`, `jpeg-gpu`
+*   **Recommended codec (H.264)**: While the Meta Quest browser supports H.265 (HEVC) decoding, typical PC (PCVR) browsers often only support H.264 for WebCodecs and may fall back to MJPEG when using `hevc_nvenc` / HEVC. Unless you specifically need > 4096 px width, **H.264 (`h264_nvenc`, `libx264`, etc.) is generally recommended**.
+*   **Automatic fallback**: If the PC encoder fails or the client browser/device does not support the selected video codec, playback automatically falls back to MJPEG. You can see the active codec next to the name in the player (e.g., `Desktop (1920x1080, hevc_nvenc)` or `Desktop (1920x1080, mjpeg)`).
+*   **`Web Streaming (Legacy)`**: Legacy mode only supports MJPEG, so only `jpeg` / `jpeg-gpu` are selectable in the GUI.
+
+#### Resolution Compatibility (H.264 vs HEVC)
+
+H.264 hardware encoders (such as `h264_nvenc`) and typical H.264 decoders are limited to **4096 px** in width/height. When streaming wide Full SBS formats exceeding 4096 px (such as `2560x1080` Full SBS or 4K Full SBS), **HEVC** (`hevc_nvenc`, etc.) is required:
+
+| Screen / Stereo Mode | Stream Resolution | H.264 (`h264_nvenc`, etc.) | HEVC (`hevc_nvenc`, etc.) |
+| --- | --- | --- | --- |
+| `1920x1080` Half SBS | `1920x1080` | Supported | Supported |
+| `1920x1080` Full SBS | `3840x1080` | Supported | Supported |
+| `2560x1080` Half SBS | `2560x1080` | Supported | Supported |
+| `2560x1080` Full SBS | `5120x1080` | Not supported (> 4096 px) | Supported |
+| 4K (`3840x2160`) Half SBS | `3840x2160` | Supported | Supported |
+| 4K (`3840x2160`) Full SBS | `7680x2160` | Not supported (> 4096 px) | Supported (falls back to MJPEG if client decoder limit is exceeded) |
+
+#### Stream Quality (`--stream-quality`)
+
+You can specify the video/JPEG quality with the `--stream-quality` option (1-100).
 
 ```bash
 python -m iw3.desktop --stream-quality 80

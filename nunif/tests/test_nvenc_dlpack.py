@@ -8,7 +8,7 @@ import pytest
 import torch
 from av.video.frame import CudaContext
 
-from nunif.utils.video import VideoOutputConfig, generate_video, has_nvenc, process_video
+from nunif.utils.video import VideoOutputConfig, generate_video, has_nvenc, has_video_codec, process_video
 from nunif.utils.video.color_transform import (
     ColorPrimaries,
     ColorRange,
@@ -157,6 +157,8 @@ def test_generate_video_nvenc(
     pix_fmt: str,
     out_wh: tuple[int, int] | None,
 ) -> None:
+    if not has_video_codec(codec, gpu_id=0):
+        pytest.skip(f"{codec} not supported on cuda:0")
     device = torch.device("cuda:0")
     width, height = 642, 362
     audio_mp4 = _create_sample_mp4(tmp_path / "audio_src.mp4", width=width, height=height)
@@ -187,6 +189,8 @@ def test_generate_video_nvenc(
 @pytest.mark.hwaccel
 @pytest.mark.skipif(not _nvenc_ready(), reason="CUDA and NVENC required")
 def test_process_video_nvenc(tmp_path: Path) -> None:
+    if not has_video_codec("hevc_nvenc", gpu_id=0):
+        pytest.skip("hevc_nvenc not supported on cuda:0")
     device = torch.device("cuda:0")
     width, height = 642, 362
     in_mp4 = _create_sample_mp4(tmp_path / "in.mp4", width=width, height=height)

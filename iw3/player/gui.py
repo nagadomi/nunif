@@ -314,6 +314,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             persistent_manager_register(manager, control, EditableComboBoxPersistentHandler)
         persistent_manager_restore_all(manager, exclude_names=BASIC_PERSIST_NAMES)
         persistent_manager_unregister_all(manager)
+        self.ensure_valid_video_codec_selection()
 
         self.update_depth_model_list()
         self.update_stereo_format()
@@ -594,8 +595,6 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         if self._desktop_ui_initialized:
             self.update_ema_normalize()
             self.update_preserve_screen_border()
-            if not self._enable_gpu_jpeg:
-                self.chk_gpu_jpeg.Disable()
 
         refresh_layouts(self)
         wx.CallAfter(refresh_layouts, self)

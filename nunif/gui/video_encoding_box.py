@@ -1,5 +1,6 @@
-import av
 import wx
+
+from nunif.utils.video import has_video_codec
 
 from .common import EditableComboBox
 
@@ -81,7 +82,7 @@ def empty_translate_function(s):
 
 
 def codecs_available(codecs):
-    return [codec for codec in codecs if codec in av.codec.codecs_available]
+    return [codec for codec in codecs if has_video_codec(codec)]
 
 
 class VideoEncodingBox:

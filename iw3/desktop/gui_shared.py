@@ -90,7 +90,6 @@ class DesktopStreamGUIMixin:
 
         from iw3.base_depth_model import BaseDepthModel
         from iw3.desktop.utils import (
-            ENABLE_GPU_JPEG,
             WAYLAND_CAPTURE_MISSING_MESSAGE,
             enum_window_names,
             get_monitor_size_list,
@@ -100,12 +99,22 @@ class DesktopStreamGUIMixin:
             is_wayland,
             read_runtime_adjustment_values,
         )
+        from iw3.desktop.video_stream_encoder import (
+            get_available_stream_video_codecs,
+            get_default_stream_video_codec,
+            is_jpeg_codec,
+        )
         from nunif.device import create_device, mps_is_available, xpu_is_available
         from nunif.initializer import gc_collect
         from nunif.models.utils import check_compile_support
 
         self._torch = torch
         self._BaseDepthModel = BaseDepthModel
+        self._available_stream_video_codecs = get_available_stream_video_codecs()
+        self._available_legacy_video_codecs = [
+            codec for codec in self._available_stream_video_codecs if is_jpeg_codec(codec)
+        ]
+        self._default_stream_video_codec = get_default_stream_video_codec()
         self._enum_window_names = enum_window_names
         self._get_monitor_size_list = get_monitor_size_list
         self._is_mss_supported = is_mss_supported
@@ -116,7 +125,6 @@ class DesktopStreamGUIMixin:
         self._xpu_is_available = xpu_is_available
         self._check_compile_support = check_compile_support
         self._gc_collect = gc_collect
-        self._enable_gpu_jpeg = ENABLE_GPU_JPEG
         self._read_runtime_adjustment_values = read_runtime_adjustment_values
         self._has_obs = is_obs_supported()
         self._has_kwcapture = is_kwcapture_supported()
@@ -137,19 +145,21 @@ class DesktopStreamGUIMixin:
         self.cbo_stream_fps.SetSelection(1)
 
         self.lbl_stream_height = wx.StaticText(parent, label=T("Streaming Resolution"))
-        self.cbo_stream_height = EditableComboBox(parent, choices=["1080", "720"], name="cbo_stream_height")
-        self.cbo_stream_height.SetSelection(0)
+        self.cbo_stream_height = EditableComboBox(parent, choices=["2160", "1080", "720"], name="cbo_stream_height")
+        self.cbo_stream_height.SetSelection(1)
 
-        self.lbl_stream_quality = wx.StaticText(parent, label=T("MJPEG Quality"))
+        self.lbl_stream_quality = wx.StaticText(parent, label=T("Streaming Quality"))
         self.cbo_stream_quality = EditableComboBox(
             parent, choices=["100", "95", "90", "85", "80"], name="cbo_stream_quality"
         )
         self.cbo_stream_quality.SetSelection(2)
 
-        self.chk_gpu_jpeg = wx.CheckBox(parent, label=T("GPU JPEG"), name="chk_gpu_jpeg")
-        self.chk_gpu_jpeg.SetValue(False)
-        if not self._enable_gpu_jpeg:
-            self.chk_gpu_jpeg.Disable()
+        self.lbl_video_codec = wx.StaticText(parent, label=T("Video Codec"))
+        self.cbo_video_codec = wx.ComboBox(
+            parent, choices=list(self._available_stream_video_codecs), name="cbo_video_codec"
+        )
+        self.cbo_video_codec.SetEditable(False)
+        self.cbo_video_codec.SetSelection(0)
 
         self.chk_pad_16_9 = wx.CheckBox(parent, label=T("Padding") + " 16:9", name="chk_pad_16_9")
         self.chk_pad_16_9.SetValue(False)
@@ -162,7 +172,8 @@ class DesktopStreamGUIMixin:
         grid.Add(self.cbo_stream_height, (r + 2, 1), flag=wx.EXPAND)
         grid.Add(self.lbl_stream_quality, (r + 3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.cbo_stream_quality, (r + 3, 1), flag=wx.EXPAND)
-        grid.Add(self.chk_gpu_jpeg, (r + 4, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.lbl_video_codec, (r + 4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.cbo_video_codec, (r + 4, 1), flag=wx.EXPAND)
         grid.Add(self.chk_pad_16_9, (r + 5, 1), flag=wx.ALIGN_CENTER_VERTICAL)
 
         return [
@@ -173,7 +184,8 @@ class DesktopStreamGUIMixin:
             self.cbo_stream_height,
             self.lbl_stream_quality,
             self.cbo_stream_quality,
-            self.chk_gpu_jpeg,
+            self.lbl_video_codec,
+            self.cbo_video_codec,
             self.chk_pad_16_9,
         ]
 
@@ -755,7 +767,7 @@ class DesktopStreamGUIMixin:
             self.show_validation_error_message(T("Streaming Resolution"), 320, 4320)
             return False
         if not validate_number(self.cbo_stream_quality.GetValue(), 1, 100, allow_empty=False):
-            self.show_validation_error_message(T("MJPEG Quality"), 1, 100)
+            self.show_validation_error_message(T("Streaming Quality"), 1, 100)
             return False
         if validate_port and not validate_number(self.txt_port.GetValue(), 1025, 65535, allow_empty=False):
             self.show_validation_error_message(T("Port"), 1025, 65535)
@@ -861,8 +873,12 @@ class DesktopStreamGUIMixin:
             "stream_fps": int(self.cbo_stream_fps.GetValue()),
             "stream_height": int(self.cbo_stream_height.GetValue()),
             "stream_quality": int(self.cbo_stream_quality.GetValue()),
-            "gpu_jpeg": self.chk_gpu_jpeg.IsEnabled() and self.chk_gpu_jpeg.IsChecked(),
+            "video_codec": self.cbo_video_codec.GetValue() or self._default_stream_video_codec,
         }
+
+    def ensure_valid_video_codec_selection(self) -> None:
+        if self.cbo_video_codec.GetSelection() == wx.NOT_FOUND and self.cbo_video_codec.GetCount() > 0:
+            self.cbo_video_codec.SetSelection(0)
 
     def sync_depth_model_from_args(self, args: Any) -> None:
         if args is not None and args.state.get("depth_model") is not None and args.state["depth_model"].loaded():

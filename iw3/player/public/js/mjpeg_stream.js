@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BaseDesktopStream } from "./desktop_stream_base.js";
 
 const BOUNDARY_BYTES = new TextEncoder().encode("--frame");
 const HEADER_END_BYTES = new Uint8Array([13, 10, 13, 10]); // \r\n\r\n
@@ -36,47 +37,24 @@ function indexOfBytes(haystack, needle, start = 0, end = haystack.length) {
 /**
  * Live MJPEG multipart stream loader backed by fetch ReadableStream + createImageBitmap.
  */
-class MjpegStream extends EventTarget {
+class MjpegStream extends BaseDesktopStream {
     constructor(streamUrl = "/api/stream", infoUrl = "/api/stream/info", debugLogInstance = null) {
-        super();
+        super(infoUrl, debugLogInstance, new THREE.Texture());
         this.streamUrl = streamUrl;
-        this.infoUrl = infoUrl;
-        this.debugLogInstance = debugLogInstance;
-
-        this.texture = new THREE.Texture();
-        this.texture.colorSpace = THREE.SRGBColorSpace;
-        this.texture.wrapS = THREE.ClampToEdgeWrapping;
-        this.texture.wrapT = THREE.ClampToEdgeWrapping;
-        this.texture.generateMipmaps = false;
-        this.texture.minFilter = THREE.LinearFilter;
-        this.texture.magFilter = THREE.LinearFilter;
-        this.texture.flipY = false;
-        this.texture.userData.shaderFlipY = true;
-
-        this.isActive = false;
-        this.isPaused = false;
-        this.hasNewFrame = false;
-        this.width = 0;
-        this.height = 0;
-        this.aspectRatio = 16 / 9;
-        this.stereoFormat = null;
-        this.streamToken = null;
 
         this._pendingBytes = null;
         this._isDecoding = false;
         this._abortController = null;
-        this._reconnectTimer = null;
         this._reconnectResolve = null;
-        this._firstFrameResolve = null;
         this._textDecoder = new TextDecoder("ascii");
 
         this._texWidth = 0;
         this._texHeight = 0;
-        this._infoWidth = 0;
-        this._infoHeight = 0;
-        this._needsTextureDispose = false;
         this._lastInfoPollTime = 0;
-        this._pollPromise = null;
+    }
+
+    get codecName() {
+        return "mjpeg";
     }
 
     start(initialInfo = null) {
@@ -95,103 +73,13 @@ class MjpegStream extends EventTarget {
         });
     }
 
-    _resolveFirstFrame(result) {
-        if (this._firstFrameResolve) {
-            const resolve = this._firstFrameResolve;
-            this._firstFrameResolve = null;
-            resolve(result);
-        }
-    }
-
-    _applyStreamInfo(info, notifyChange = true) {
-        if (!info) return;
-        const width = info.width || 0;
-        const height = info.height || 0;
-        const format = info.stereo_format || null;
-        const token = info.stream_token || null;
+    _onStreamInfo(info, _notifyChange, { widthChanged, heightChanged, tokenChanged }) {
         if (info.stream_uri) {
             this.streamUrl = info.stream_uri;
         }
-
-        const widthChanged = Boolean(width && (this._infoWidth ? width !== this._infoWidth : width !== this.width));
-        const heightChanged = Boolean(height && (this._infoHeight ? height !== this._infoHeight : height !== this.height));
-        const formatChanged = Boolean(format && this.stereoFormat && format !== this.stereoFormat);
-        const tokenChanged = Boolean(token && this.streamToken && token !== this.streamToken);
-        const initialMetaLoaded = Boolean((!this.stereoFormat && format) || (!this.streamToken && token));
-
         if (widthChanged || heightChanged || tokenChanged) {
             this._needsTextureDispose = true;
         }
-
-        if (width) {
-            this._infoWidth = width;
-            if (widthChanged || !this.width) {
-                this.width = width;
-            }
-        }
-        if (height) {
-            this._infoHeight = height;
-            if (heightChanged || !this.height) {
-                this.height = height;
-            }
-        }
-        if (this.width && this.height) {
-            this.aspectRatio = this.width / this.height;
-        }
-        if (format) this.stereoFormat = format;
-        if (token) this.streamToken = token;
-
-        if (notifyChange && (widthChanged || heightChanged || formatChanged || tokenChanged || initialMetaLoaded)) {
-            this.dispatchEvent(
-                new CustomEvent("stream-updated", {
-                    detail: {
-                        ...info,
-                        width: this.width,
-                        height: this.height,
-                        stereo_format: this.stereoFormat,
-                        stream_token: this.streamToken,
-                        tokenChanged,
-                    },
-                })
-            );
-        }
-    }
-
-    async _pollStreamInfo() {
-        if (!this.isActive) {
-            return false;
-        }
-        if (this._pollPromise) {
-            return await this._pollPromise;
-        }
-        this._pollPromise = (async () => {
-            try {
-                const res = await fetch(this.infoUrl, {
-                    cache: "no-store",
-                    credentials: "same-origin",
-                });
-                if (!this.isActive) {
-                    return false;
-                }
-                if (res.ok) {
-                    const info = await res.json();
-                    if (!this.isActive) {
-                        return false;
-                    }
-                    this._applyStreamInfo(info, true);
-                    return true;
-                }
-                if (res.status === 401) {
-                    this.dispatchEvent(new CustomEvent("auth-required"));
-                }
-            } catch {
-                // Server might still be restarting; retry on next tick
-            } finally {
-                this._pollPromise = null;
-            }
-            return false;
-        })();
-        return await this._pollPromise;
     }
 
     _readWithTimeout(reader, timeoutMs = 3000) {
@@ -529,36 +417,12 @@ class MjpegStream extends EventTarget {
         return false;
     }
 
-    pause() {
-        if (!this.isPaused) {
-            this.isPaused = true;
-            this._pendingBytes = null;
-            this.dispatchEvent(new CustomEvent("play-state-change", { detail: { isPlaying: false } }));
-        }
-    }
-
-    play() {
-        if (this.isPaused) {
-            this.isPaused = false;
-            this.dispatchEvent(new CustomEvent("play-state-change", { detail: { isPlaying: true } }));
-        }
-    }
-
-    togglePause() {
-        if (this.isPaused) {
-            this.play();
-        } else {
-            this.pause();
-        }
-    }
-
-    stop() {
-        this.isActive = false;
+    _onPaused() {
         this._pendingBytes = null;
-        if (this._reconnectTimer) {
-            clearTimeout(this._reconnectTimer);
-            this._reconnectTimer = null;
-        }
+    }
+
+    _onStop() {
+        this._pendingBytes = null;
         if (this._reconnectResolve) {
             this._reconnectResolve();
             this._reconnectResolve = null;
@@ -567,14 +431,6 @@ class MjpegStream extends EventTarget {
             this._abortController.abort();
             this._abortController = null;
         }
-        if (this.texture) {
-            if (this.texture.image && typeof this.texture.image.close === "function") {
-                this.texture.image.close();
-                this.texture.image = null;
-            }
-            this.texture.dispose();
-        }
-        this._resolveFirstFrame({ cancelled: true });
     }
 }
 
