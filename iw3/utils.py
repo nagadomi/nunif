@@ -54,7 +54,7 @@ from .base_depth_model import BaseDepthModel
 from .convergence_estimator import ConvergenceEstimator
 from .depth_model_factory import create_depth_model, get_all_depth_models, is_depth_aa_supported
 from .dilation import dilate_edge, edge_dilation_is_enabled
-from .equirectangular import equirectangular_projection
+from .equirectangular import equirectangular_projection, resolve_equirectangular_size
 from .forward_warp import apply_divergence_forward_warp
 from .hub_dir import HUB_MODEL_DIR
 from .inpaint_utils import INPAINT_MODELS
@@ -599,7 +599,7 @@ def apply_divergence(
 
 def ratio_pad(target_ratio: float, left_eye, right_eye):
     eps = 1e-3
-    height, width = left_eye.shape[1:]
+    height, width = left_eye.shape[-2:]
     current_ratio = width / height
     if abs(target_ratio - current_ratio) > eps:
         pad_h = pad_w = 0
@@ -621,13 +621,13 @@ def postprocess_padding(left_eye, right_eye, pad, pad_mode):
     if pad_mode in {"tblr", "tb", "lr"}:
         pad_h = pad_w = 0
         if "tb" in pad_mode:
-            pad_h = round(left_eye.shape[1] * pad) // 2
+            pad_h = round(left_eye.shape[-2] * pad) // 2
         if "lr" in pad_mode:
-            pad_w = round(left_eye.shape[2] * pad) // 2
+            pad_w = round(left_eye.shape[-1] * pad) // 2
         left_eye = TF.pad(left_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
         right_eye = TF.pad(right_eye, (pad_w, pad_h, pad_w, pad_h), padding_mode="constant")
     elif pad_mode == "top":
-        pad_top = round(left_eye.shape[1] * pad)
+        pad_top = round(left_eye.shape[-2] * pad)
         left_eye = TF.pad(left_eye, (0, pad_top, 0, 0), padding_mode="constant")
         right_eye = TF.pad(right_eye, (0, pad_top, 0, 0), padding_mode="constant")
     elif pad_mode == "16:9":
@@ -700,31 +700,51 @@ def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=No
     if args.pad is not None or args.pad_mode in {"16:9", "1:1"}:
         left_eye, right_eye = postprocess_padding(left_eye, right_eye, pad=args.pad, pad_mode=args.pad_mode)
     if args.vr180:
-        left_eye = equirectangular_projection(left_eye, device=left_eye.device)
-        right_eye = equirectangular_projection(right_eye, device=right_eye.device)
+        eye_h, eye_w = resolve_equirectangular_size(*left_eye.shape[-2:])
+        sbs_h = eye_h * 2 if (args.tb or args.half_tb) else eye_h
+        sbs_w = eye_w if (args.tb or args.half_tb) else eye_w * 2
+        new_h, new_w = sbs_h, sbs_w
+        if args.max_output_height is not None and new_h > args.max_output_height:
+            if args.keep_aspect_ratio:
+                new_w = int(args.max_output_height / new_h * new_w)
+            new_h = args.max_output_height
+        if args.max_output_width is not None and new_w > args.max_output_width:
+            if args.keep_aspect_ratio:
+                new_h = int(args.max_output_width / new_w * new_h)
+            new_w = args.max_output_width
+        if new_w != sbs_w or new_h != sbs_h:
+            new_h -= new_h % 2
+            new_w -= new_w % 2
+            eye_h = new_h // 2 if (args.tb or args.half_tb) else new_h
+            eye_w = new_w if (args.tb or args.half_tb) else new_w // 2
+            eye_h -= eye_h % 2
+            eye_w -= eye_w % 2
+
+        left_eye = equirectangular_projection(left_eye, device=left_eye.device, output_size=(eye_h, eye_w))
+        right_eye = equirectangular_projection(right_eye, device=right_eye.device, output_size=(eye_h, eye_w))
     elif args.half_sbs or args.half_rgbd:
         left_eye = TF.resize(
             left_eye,
-            (left_eye.shape[1], left_eye.shape[2] // 2),
+            (left_eye.shape[-2], left_eye.shape[-1] // 2),
             interpolation=InterpolationMode.BICUBIC,
             antialias=True,
         )
         right_eye = TF.resize(
             right_eye,
-            (right_eye.shape[1], right_eye.shape[2] // 2),
+            (right_eye.shape[-2], right_eye.shape[-1] // 2),
             interpolation=InterpolationMode.BICUBIC,
             antialias=True,
         )
     elif args.half_tb:
         left_eye = TF.resize(
             left_eye,
-            (left_eye.shape[1] // 2, left_eye.shape[2]),
+            (left_eye.shape[-2] // 2, left_eye.shape[-1]),
             interpolation=InterpolationMode.BICUBIC,
             antialias=True,
         )
         right_eye = TF.resize(
             right_eye,
-            (right_eye.shape[1] // 2, right_eye.shape[2]),
+            (right_eye.shape[-2] // 2, right_eye.shape[-1]),
             interpolation=InterpolationMode.BICUBIC,
             antialias=True,
         )
@@ -734,18 +754,18 @@ def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=No
         sbs = apply_anaglyph_redcyan(left_eye, right_eye, args.anaglyph)
     elif args.tb or args.half_tb:
         # TopBottom
-        sbs = torch.cat([left_eye, right_eye], dim=1)
-        sbs = torch.clamp(sbs, 0.0, 1.0)
+        sbs = torch.cat([left_eye, right_eye], dim=-2)
+        sbs.clamp_(0.0, 1.0)
     elif args.cross_eyed:
         # Reverse SideBySide
-        sbs = torch.cat([right_eye, left_eye], dim=2)
-        sbs = torch.clamp(sbs, 0.0, 1.0)
+        sbs = torch.cat([right_eye, left_eye], dim=-1)
+        sbs.clamp_(0.0, 1.0)
     else:
         # SideBySide or RGBD
-        sbs = torch.cat([left_eye, right_eye], dim=2)
-        sbs = torch.clamp(sbs, 0.0, 1.0)
+        sbs = torch.cat([left_eye, right_eye], dim=-1)
+        sbs.clamp_(0.0, 1.0)
 
-    h, w = sbs.shape[1:]
+    h, w = sbs.shape[-2:]
     new_w, new_h = w, h
     if args.max_output_height is not None and new_h > args.max_output_height:
         if args.keep_aspect_ratio:
@@ -759,15 +779,15 @@ def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=No
         new_h -= new_h % 2
         new_w -= new_w % 2
         sbs = TF.resize(sbs, (new_h, new_w), interpolation=InterpolationMode.BICUBIC, antialias=True)
-        sbs = torch.clamp(sbs, 0, 1)
+        sbs.clamp_(0, 1)
 
     if left_alpha is not None and right_alpha is not None and not args.anaglyph:
-        if left_alpha.shape[0] > 1:
-            left_alpha = left_alpha.mean(dim=0, keepdim=True)
-            right_alpha = right_alpha.mean(dim=0, keepdim=True)
+        if left_alpha.shape[-3] > 1:
+            left_alpha = left_alpha.mean(dim=-3, keepdim=True)
+            right_alpha = right_alpha.mean(dim=-3, keepdim=True)
         sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
         if enable_alpha:
-            sbs = torch.cat([sbs, sbs_alpha], dim=0)
+            sbs = torch.cat([sbs, sbs_alpha], dim=-3)
         else:
             sbs = apply_alpha_fill(sbs, sbs_alpha, color=GREEN_FILL_COLOR)
 
