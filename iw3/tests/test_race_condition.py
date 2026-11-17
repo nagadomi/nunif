@@ -7,7 +7,7 @@ from nunif.cli.diff_video import compare_videos
 from tests.helpers.race_condition_data import ensure_race_condition_data
 from tests.helpers.runner import run
 
-COMMON_REF_ARGS = ["--low-vram", "--scene-detect", "--ema-normalize", "--ema-buffer", "30", "-y"]
+COMMON_REF_ARGS = ["--low-vram", "--scene-detect", "--ema-normalize", "--ema-buffer", "30", "--crf", "4", "-y"]
 COMMON_TEST_ARGS = [
     "--batch-size",
     "4",
@@ -18,6 +18,8 @@ COMMON_TEST_ARGS = [
     "--ema-normalize",
     "--ema-buffer",
     "30",
+    "--crf",
+    "4",
     "-y",
 ]
 
