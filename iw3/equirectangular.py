@@ -9,7 +9,7 @@ from nunif.device import device_is_mps
 # to avoid repeated trigonometric (tan/cos) and meshgrid allocations on every frame.
 _GRID_CACHE: dict[
     tuple[int, int, int, int, torch.device, torch.dtype],
-    tuple[torch.Tensor, int, int, int, int, int, int, int],
+    tuple[torch.Tensor, int, int, int, int, int, int],
 ] = {}
 
 
@@ -27,7 +27,7 @@ def get_projection_grid_and_bounds(
     device: torch.device,
     dtype: torch.dtype,
     output_size: tuple[int, int] | None = None,
-) -> tuple[torch.Tensor, int, int, int, int, int, int, int]:
+) -> tuple[torch.Tensor, int, int, int, int, int, int]:
     padded_h, padded_w = resolve_equirectangular_size(h, w)
     out_h, out_w = output_size if output_size is not None else (padded_h, padded_w)
     key = (h, w, out_h, out_w, device, dtype)
@@ -67,8 +67,7 @@ def get_projection_grid_and_bounds(
 
     # When 2x supersampled pixel count does not exceed the original padded resolution,
     # project the active bounding box at 2x resolution and downsample with antialias=True.
-    ss = 2 if (out_h * out_w * 4 <= padded_h * padded_w) else 1
-    if ss == 2:
+    if out_h * out_w * 4 <= padded_h * padded_w:
         x_full = torch.linspace(-1, 1, out_w * 2, device=device, dtype=dtype)
         y_full = torch.linspace(-1, 1, out_h * 2, device=device, dtype=dtype)
         y, x = torch.meshgrid(y_full[y0 * 2 : y1 * 2], x_full[x0 * 2 : x1 * 2], indexing="ij")
@@ -86,7 +85,7 @@ def get_projection_grid_and_bounds(
     if len(_GRID_CACHE) >= 8:
         _GRID_CACHE.clear()
 
-    result = (grid, y0, y1, x0, x1, ss, out_h, out_w)
+    result = (grid, y0, y1, x0, x1, out_h, out_w)
     _GRID_CACHE[key] = result
     return result
 
@@ -100,7 +99,7 @@ def equirectangular_projection(
         c = c.to(device)
 
     h, w = c.shape[-2:]
-    grid, y0, y1, x0, x1, ss, out_h, out_w = get_projection_grid_and_bounds(
+    grid, y0, y1, x0, x1, out_h, out_w = get_projection_grid_and_bounds(
         h, w, c.device, c.dtype, output_size=output_size
     )
 
@@ -116,7 +115,7 @@ def equirectangular_projection(
 
     grid_input = grid if c.shape[0] == 1 else grid.expand(c.shape[0], -1, -1, -1)
     crop = F.grid_sample(c, grid_input, mode=mode, padding_mode="zeros", align_corners=True)
-    if ss > 1:
+    if crop.shape[-2:] != (y1 - y0, x1 - x0):
         crop = F.interpolate(
             crop,
             size=(y1 - y0, x1 - x0),
