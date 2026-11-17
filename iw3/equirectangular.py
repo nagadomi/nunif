@@ -65,10 +65,9 @@ def get_projection_grid_and_bounds(
         elif y0 > 0:
             y0 -= 1
 
-    # When downscaling to output_size < (padded_h, padded_w), project the active
-    # bounding box at 2x resolution and downsample with antialias=True, matching
-    # the original master branch quality at 6x lower pixel count.
-    ss = 2 if (out_h < padded_h or out_w < padded_w) else 1
+    # When 2x supersampled pixel count does not exceed the original padded resolution,
+    # project the active bounding box at 2x resolution and downsample with antialias=True.
+    ss = 2 if (out_h * out_w * 4 <= padded_h * padded_w) else 1
     if ss == 2:
         x_full = torch.linspace(-1, 1, out_w * 2, device=device, dtype=dtype)
         y_full = torch.linspace(-1, 1, out_h * 2, device=device, dtype=dtype)

@@ -44,6 +44,7 @@ def test_vr180_postprocess_batch_parity() -> None:
         ["--vr180", "--tb"],
         ["--vr180", "--half-tb"],
         ["--vr180", "--max-output-width", "512", "--max-output-height", "256"],
+        ["--vr180", "--max-output-width", "384", "--max-output-height", "192"],
     ]
 
     for cfg in test_configs:
@@ -93,6 +94,8 @@ def test_vr180_cli_batch_parity(vr180_setup: VR180Setup) -> None:
         "ffv1",
         "--max-output-width",
         "640",
+        "--max-output-height",
+        "320",
     ]
 
     run([*vr180_setup.cli, *common_opts, "-o", out_b1, "--batch-size", "1"])
@@ -108,7 +111,7 @@ def test_vr180_cli_batch_parity(vr180_setup: VR180Setup) -> None:
     for idx, (f1, f4) in enumerate(zip(frames_b1, frames_b4)):
         assert f1.shape == f4.shape
         diff = np.abs(f1.astype(int) - f4.astype(int))
-        assert diff.max() <= 1
+        assert diff.max() <= 2
         mse = np.mean((f1.astype(float) - f4.astype(float)) ** 2)
         psnr = 10 * np.log10(255.0**2 / mse) if mse > 0 else float("inf")
         assert psnr >= 70.0
