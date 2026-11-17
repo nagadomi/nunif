@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
-from nunif.modules.init import basic_module_init
-from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.init import basic_module_init
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive, replication_pad2d_naive
 
 
 class WABlock(nn.Module):
@@ -17,7 +18,8 @@ class WABlock(nn.Module):
             nn.GELU(),
             ReplicationPad2dNaive((1, 1, 1, 1), detach=True),
             nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=0),
-            nn.LeakyReLU(0.1, inplace=True))
+            nn.LeakyReLU(0.1, inplace=True),
+        )
         self.bias = WindowScoreBias(window_size)
 
     def forward(self, x):
@@ -34,20 +36,21 @@ class DepthAA(I2IBaseModel):
         super(DepthAA, self).__init__(locals(), scale=1, offset=0, in_channels=1, blend_size=0)
         C = 32
         self.proj_in = nn.Conv2d(4, C, kernel_size=1, stride=1, padding=0)
-        self.blocks = nn.ModuleList([
-            WABlock(C, window_size=8, shift=True),
-            WABlock(C, window_size=8, shift=False),
-            WABlock(C, window_size=8, shift=True),
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                WABlock(C, window_size=8, shift=True),
+                WABlock(C, window_size=8, shift=False),
+                WABlock(C, window_size=8, shift=True),
+            ]
+        )
         self.proj_out = nn.Conv2d(C, 4, kernel_size=1, stride=1, padding=0)
         basic_module_init(self.proj_in)
         nn.init.constant_(self.proj_out.weight, 0)
 
     @torch.inference_mode()
-    def infer(self, x):
-        # TODO: not tested
+    def infer(self, x: torch.Tensor) -> torch.Tensor:
         min_value, max_value = x.amin(), x.amax()
-        scale = (max_value - min_value)
+        scale = max_value - min_value
         x = (x - min_value) / scale
         x = torch.nan_to_num(x)
         x = self.forward(x, clamp=False)
@@ -59,8 +62,8 @@ class DepthAA(I2IBaseModel):
     def forward(self, x, clamp=None):
         src = x
         input_height, input_width = x.shape[2:]
-        pad_w = (16 - input_width % 16)
-        pad_h = (16 - input_height % 16)
+        pad_w = 16 - input_width % 16
+        pad_h = 16 - input_height % 16
         pad_w1 = pad_w // 2
         pad_w2 = pad_w - pad_w1
         pad_h1 = pad_h // 2
@@ -93,8 +96,10 @@ class DepthAA(I2IBaseModel):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 100
