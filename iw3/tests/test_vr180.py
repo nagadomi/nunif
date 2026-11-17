@@ -4,9 +4,7 @@ from typing import NamedTuple
 import av
 import numpy as np
 import pytest
-import torch
 
-from iw3.utils import create_parser, postprocess_image, set_state_args
 from tests.helpers.runner import run
 from tests.helpers.smoke_data import ensure_smoke_data
 
@@ -28,56 +26,6 @@ def vr180_setup(tmp_path_factory: pytest.TempPathFactory) -> VR180Setup:
         output_dir=output_dir,
         cli=["python", "-m", "iw3.cli", "-y", "-o", output_dir],
     )
-
-
-def test_vr180_postprocess_batch_parity() -> None:
-    torch.manual_seed(42)
-    b, c, h, w = 4, 3, 256, 256
-    left_batch = torch.rand(b, c, h, w)
-    right_batch = torch.rand(b, c, h, w)
-    left_alpha = torch.rand(b, 1, h, w)
-    right_alpha = torch.rand(b, 1, h, w)
-
-    test_configs = [
-        ["--vr180"],
-        ["--vr180", "--half-sbs"],
-        ["--vr180", "--tb"],
-        ["--vr180", "--half-tb"],
-        ["--vr180", "--max-output-width", "512", "--max-output-height", "256"],
-        ["--vr180", "--max-output-width", "384", "--max-output-height", "192"],
-    ]
-
-    for cfg in test_configs:
-        args = set_state_args(create_parser().parse_args(["-i", "dummy", "-o", "dummy", *cfg]))
-
-        # Test RGB batch parity
-        batch_out = postprocess_image(left_batch, right_batch, args)
-        single_out = [postprocess_image(left_batch[i], right_batch[i], args) for i in range(b)]
-        assert len(batch_out) == b
-        for i in range(b):
-            assert torch.equal(batch_out[i], single_out[i])
-
-        # Test RGBA (with alpha channels) batch parity
-        batch_out_rgba = postprocess_image(
-            left_batch,
-            right_batch,
-            args,
-            left_alpha=left_alpha,
-            right_alpha=right_alpha,
-        )
-        single_out_rgba = [
-            postprocess_image(
-                left_batch[i],
-                right_batch[i],
-                args,
-                left_alpha=left_alpha[i],
-                right_alpha=right_alpha[i],
-            )
-            for i in range(b)
-        ]
-        assert len(batch_out_rgba) == b
-        for i in range(b):
-            assert torch.equal(batch_out_rgba[i], single_out_rgba[i])
 
 
 def test_vr180_cli_batch_parity(vr180_setup: VR180Setup) -> None:

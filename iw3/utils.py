@@ -689,21 +689,7 @@ def apply_stereo(x, depth, alpha, args, side_model, reset_pts=None):
 
 
 def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=None, enable_alpha=True):
-    # Support both 3D (C, H, W) and 4D (B, C, H, W)
-    is_batch = left_eye.ndim == 4
-    if is_batch and (args.anaglyph is not None or args.vr180):
-        return [
-            postprocess_image(
-                left_eye[i],
-                right_eye[i],
-                args,
-                left_alpha=left_alpha[i] if left_alpha is not None else None,
-                right_alpha=right_alpha[i] if right_alpha is not None else None,
-                enable_alpha=enable_alpha,
-            )
-            for i in range(left_eye.shape[0])
-        ]
-
+    # CHW
     ipd_pad = int(abs(args.ipd_offset) * 0.01 * max(left_eye.shape[-2:]))
     ipd_pad -= ipd_pad % 2
     if ipd_pad > 0 and not (args.rgbd or args.half_rgbd):
@@ -793,16 +779,15 @@ def postprocess_image(left_eye, right_eye, args, left_alpha=None, right_alpha=No
         new_h -= new_h % 2
         new_w -= new_w % 2
         sbs = TF.resize(sbs, (new_h, new_w), interpolation=InterpolationMode.BICUBIC, antialias=True)
-        sbs = torch.clamp(sbs, 0, 1)
+        sbs.clamp_(0, 1)
 
     if left_alpha is not None and right_alpha is not None and not args.anaglyph:
-        c_dim = 1 if is_batch else 0
-        if left_alpha.shape[c_dim] > 1:
-            left_alpha = left_alpha.mean(dim=c_dim, keepdim=True)
-            right_alpha = right_alpha.mean(dim=c_dim, keepdim=True)
+        if left_alpha.shape[-3] > 1:
+            left_alpha = left_alpha.mean(dim=-3, keepdim=True)
+            right_alpha = right_alpha.mean(dim=-3, keepdim=True)
         sbs_alpha = postprocess_image(left_alpha, right_alpha, args)
         if enable_alpha:
-            sbs = torch.cat([sbs, sbs_alpha], dim=c_dim)
+            sbs = torch.cat([sbs, sbs_alpha], dim=-3)
         else:
             sbs = apply_alpha_fill(sbs, sbs_alpha, color=GREEN_FILL_COLOR)
 
@@ -1225,15 +1210,21 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     def _postprocess_stereo_frames(left_eyes, right_eyes, left_alphas=None, right_alphas=None):
         if left_eyes is None:
             return []
-        sbs_batch = postprocess_image(
-            left_eyes,
-            right_eyes,
-            args,
-            left_alpha=left_alphas,
-            right_alpha=right_alphas,
-            enable_alpha=enable_alpha,
-        )
-        return [frame for frame in sbs_batch]
+        frames = []
+        for i in range(left_eyes.shape[0]):
+            left_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
+            right_alpha = right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
+            frames.append(
+                postprocess_image(
+                    left_eyes[i],
+                    right_eyes[i],
+                    args,
+                    left_alpha=left_alpha,
+                    right_alpha=right_alpha,
+                    enable_alpha=enable_alpha,
+                )
+            )
+        return frames
 
     def _postprocess_chunk(depths, device, dequeue_stream):
         if isinstance(depths, list):
@@ -2366,17 +2357,17 @@ def process_config_video(config, args, side_model):
         )
 
         if left_eyes is not None:
-            enable_alpha = VU.pix_fmt_has_alpha(args.pix_fmt)
-            sbs_batch = postprocess_image(
-                left_eyes,
-                right_eyes,
-                args,
-                left_alpha=left_alphas,
-                right_alpha=right_alphas,
-                enable_alpha=enable_alpha,
-            )
-            for sbs_frame in sbs_batch:
-                yield sbs_frame
+            for i in range(left_eyes.shape[0]):
+                left_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
+                right_alpha = right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
+                yield postprocess_image(
+                    left_eyes[i],
+                    right_eyes[i],
+                    args,
+                    left_alpha=left_alpha,
+                    right_alpha=right_alpha,
+                    enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
+                )
 
     minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
 
@@ -2418,17 +2409,17 @@ def process_config_video(config, args, side_model):
                 else:
                     left_eyes, right_eyes = ret
                     left_alphas = right_alphas = None
-                enable_alpha = VU.pix_fmt_has_alpha(args.pix_fmt)
-                sbs_batch = postprocess_image(
-                    left_eyes,
-                    right_eyes,
-                    args,
-                    left_alpha=left_alphas,
-                    right_alpha=right_alphas,
-                    enable_alpha=enable_alpha,
-                )
-                for sbs_frame in sbs_batch:
-                    yield sbs_frame
+                for i in range(left_eyes.shape[0]):
+                    l_alpha = left_alphas[i] if left_alphas is not None and i < left_alphas.shape[0] else None
+                    r_alpha = right_alphas[i] if right_alphas is not None and i < right_alphas.shape[0] else None
+                    yield postprocess_image(
+                        left_eyes[i],
+                        right_eyes[i],
+                        args,
+                        left_alpha=l_alpha,
+                        right_alpha=r_alpha,
+                        enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
+                    )
 
     video_config = VU.VideoOutputConfig(
         fps=config.fps,  # use config.fps, ignore args.max_fps
