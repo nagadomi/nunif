@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..device import IS_ROCM
 from .attention_bias import (
     WindowDistanceScoreBias,
     WindowRelativeScoreBias,
@@ -90,7 +91,10 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, rope=None, dropout_p=0.0, is_
     if rope is not None:
         q, k = rope(q, k)
 
-    use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
+    if IS_ROCM:
+        use_flash = B * num_heads <= 65535  # avoid 16-bit grid dimension overflow on ROCm
+    else:
+        use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
     with use_flash_attention(use_flash):
         x = F.scaled_dot_product_attention(
             q,
