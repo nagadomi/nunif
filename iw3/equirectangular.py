@@ -92,33 +92,6 @@ def get_projection_grid_and_bounds(
     return result
 
 
-def get_projection_grid(
-    h: int,
-    w: int,
-    device: torch.device,
-    dtype: torch.dtype,
-    output_size: tuple[int, int] | None = None,
-) -> torch.Tensor:
-    padded_h, padded_w = resolve_equirectangular_size(h, w)
-    out_h, out_w = output_size if output_size is not None else (padded_h, padded_w)
-    max_edge = max(h, w)
-    default_size = max_edge + max_edge // 2
-    scale_x = (padded_w - 1) / (w - 1) if w > 1 else 1.0
-    scale_y = (padded_h - 1) / (h - 1) if h > 1 else 1.0
-
-    y, x = torch.meshgrid(
-        torch.linspace(-1, 1, out_h, device=device, dtype=dtype),
-        torch.linspace(-1, 1, out_w, device=device, dtype=dtype),
-        indexing="ij",
-    )
-
-    azimuth = x * (math.pi * 0.5)
-    elevation = y * (math.pi * 0.5)
-    mesh_x = ((max_edge / default_size) * scale_x) * torch.tan(azimuth)
-    mesh_y = ((max_edge / default_size) * scale_y) * (torch.tan(elevation) / torch.cos(azimuth))
-    return torch.stack((mesh_x, mesh_y), 2).unsqueeze(0)
-
-
 def equirectangular_projection(
     c: torch.Tensor,
     device: str | torch.device | None = None,
