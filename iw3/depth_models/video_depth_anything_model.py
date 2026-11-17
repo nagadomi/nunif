@@ -443,11 +443,13 @@ class VideoDepthAnythingModel(BaseDepthModel):
             self.model.pretrained.get_intermediate_layers = compile_function(
                 self.model.pretrained.get_intermediate_layers, device=self.device
             )
+        self.compile_depth_aa()
 
     def clear_compiled_model(self):
         if self.model_backup is not None:
             self.model.head, self.model.pretrained.get_intermediate_layers = self.model_backup
             self.model_backup = None
+        self.clear_compiled_depth_aa()
 
 
 def _test():

@@ -12,7 +12,7 @@ from torchvision.transforms import functional as TF
 
 from nunif.device import create_device
 from nunif.models.data_parallel import DeviceSwitchInference
-from nunif.models.utils import compile_model
+from nunif.models.utils import compile_function, compile_model
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 
 from .depth_scaler import EMAMinMaxScaler
@@ -150,7 +150,8 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.device = None
         self.model = None
         self.model_backup = None  # for compile
-        self.depth_aa_backup = None
+        self.depth_aa = None
+        self._depth_aa_infer_backup = None
         self.model_type = model_type
         self.scaler = self.create_depth_scaler()
         self.limit_resolution = False
@@ -267,21 +268,28 @@ class BaseDepthModel(metaclass=ABCMeta):
     def get_model(self):
         return self.model
 
+    def compile_depth_aa(self) -> None:
+        if self._depth_aa_infer_backup is None and self.depth_aa is not None:
+            self._depth_aa_infer_backup = self.depth_aa.infer
+            self.depth_aa.infer = compile_function(self.depth_aa.infer, device=self.device)
+
+    def clear_compiled_depth_aa(self) -> None:
+        if self._depth_aa_infer_backup is not None:
+            if self.depth_aa is not None:
+                self.depth_aa.infer = self._depth_aa_infer_backup
+            self._depth_aa_infer_backup = None
+
     def compile(self):
         if self.model_backup is None and not isinstance(self.model, DeviceSwitchInference):
             self.model_backup = self.model
             self.model = compile_model(self.model)
-        if self.depth_aa_backup is None and getattr(self, "depth_aa", None) is not None:
-            self.depth_aa_backup = self.depth_aa
-            self.depth_aa = compile_model(self.depth_aa)
+        self.compile_depth_aa()
 
     def clear_compiled_model(self):
         if self.model_backup is not None:
             self.model = self.model_backup
             self.model_backup = None
-        if self.depth_aa_backup is not None:
-            self.depth_aa = self.depth_aa_backup
-            self.depth_aa_backup = None
+        self.clear_compiled_depth_aa()
 
     @abstractmethod
     def infer(
