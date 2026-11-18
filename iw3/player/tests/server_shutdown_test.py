@@ -2,11 +2,14 @@ import argparse
 import asyncio
 import gc
 import socket
+import ssl
 import threading
 import time
 import warnings
 
-import httpx
+import h2.config
+import h2.connection
+import h2.events
 import pytest
 
 from ..app import app
@@ -78,47 +81,96 @@ def _setup_test_server(tmp_path, use_tls: bool = True):
         graceful_timeout=0.5,
     )
 
-    scheme = "https" if use_tls else "http"
-    base_url = f"{scheme}://127.0.0.1:{port}"
-    return args, state, config, hub, service, stop_event, base_url
+    return args, state, config, hub, service, stop_event, port
 
 
-async def _wait_until_ready(base_url: str) -> None:
-    async with httpx.AsyncClient(verify=False, http2=True) as client:
-        for _ in range(50):
-            try:
-                res = await client.get(f"{base_url}/api/config")
-                if res.status_code == 200:
-                    return
-            except httpx.HTTPError:
-                await asyncio.sleep(0.05)
+async def _connect_h2(port: int) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    ssl_ctx.set_alpn_protocols(["h2"])
+
+    for _ in range(50):
+        try:
+            return await asyncio.open_connection("127.0.0.1", port, ssl=ssl_ctx)
+        except OSError:
+            await asyncio.sleep(0.05)
     raise AssertionError("Server did not become ready in time")
+
+
+async def _read_until_marker(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    conn: h2.connection.H2Connection,
+    marker: bytes,
+) -> tuple[int | None, bytes]:
+    status_code: int | None = None
+    body = bytearray()
+    while marker not in body:
+        data = await reader.read(65535)
+        if not data:
+            break
+        for event in conn.receive_data(data):
+            if isinstance(event, h2.events.ResponseReceived):
+                for name, value in event.headers:
+                    if name == b":status":
+                        status_code = int(value)
+            elif isinstance(event, h2.events.DataReceived):
+                body.extend(event.data)
+                conn.acknowledge_received_data(event.flow_controlled_length, event.stream_id)
+        pending_send = conn.data_to_send()
+        if pending_send:
+            writer.write(pending_send)
+            await writer.drain()
+    return status_code, bytes(body)
 
 
 @pytest.mark.parametrize("trigger_mode", ["stop_event", "cancel"])
 def test_serve_with_watchdog_graceful_shutdown_while_streaming(tmp_path, trigger_mode: str):
     async def _run() -> None:
-        args, state, config, hub, service, stop_event, base_url = _setup_test_server(tmp_path, use_tls=True)
+        args, state, config, hub, service, stop_event, port = _setup_test_server(tmp_path, use_tls=True)
         prev_state = getattr(app.state, "server_state", None)
         app.state.server_state = state
         shutdown_event = asyncio.Event()
 
         server_task = asyncio.create_task(serve_with_watchdog(args, config, shutdown_event))
         try:
-            await _wait_until_ready(base_url)
+            reader, writer = await _connect_h2(port)
+            try:
+                conn = h2.connection.H2Connection(config=h2.config.H2Configuration(client_side=True))
+                conn.initiate_connection()
+                stream_id = conn.get_next_available_stream_id()
+                conn.send_headers(
+                    stream_id,
+                    [
+                        (":method", "GET"),
+                        (":path", "/api/stream"),
+                        (":authority", f"127.0.0.1:{port}"),
+                        (":scheme", "https"),
+                    ],
+                    end_stream=True,
+                )
+                writer.write(conn.data_to_send())
+                await writer.drain()
 
-            async with httpx.AsyncClient(verify=False, http2=True) as client:
-                async with client.stream("GET", f"{base_url}/api/stream") as response:
-                    assert response.status_code == 200
-                    chunk_iter = response.aiter_bytes()
-                    first_chunk = await asyncio.wait_for(anext(chunk_iter), timeout=3.0)
-                    assert b"frame0" in first_chunk
+                status_code, first_chunk = await asyncio.wait_for(
+                    _read_until_marker(reader, writer, conn, b"frame0"),
+                    timeout=3.0,
+                )
+                assert status_code == 200
+                assert b"frame0" in first_chunk
 
-                    if trigger_mode == "stop_event":
-                        stop_event.set()
-                    else:
-                        server_task.cancel()
-                    await asyncio.wait_for(server_task, timeout=5.0)
+                if trigger_mode == "stop_event":
+                    stop_event.set()
+                else:
+                    server_task.cancel()
+                await asyncio.wait_for(server_task, timeout=5.0)
+            finally:
+                writer.close()
+                try:
+                    await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
+                except Exception:
+                    pass
 
             assert hub.shutdown_event.is_set()
             assert service.stop_called
