@@ -331,9 +331,10 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_width.SetToolTip(T("Only used for row_flow_v3 and row_flow_v2"))
 
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=self.get_depth_models(), name="cbo_depth_model")
+        depth_models = self.get_depth_models()
+        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=depth_models, name="cbo_depth_model")
         self.cbo_depth_model.SetEditable(False)
-        self.cbo_depth_model.SetSelection(3)
+        self.cbo_depth_model.SetSelection(depth_models.index("Any_V3_Mono"))
 
         self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
         self.cbo_resolution = EditableComboBox(self.grp_stereo, choices=["Default", "512"], name="cbo_zoed_resolution")
