@@ -1647,7 +1647,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             use_16bit=use_16bit,
         )
         try:
-            with depth_model.compile_context(enabled=args.compile):
+            with (
+                depth_model.compile_context(enabled=args.compile),
+                try_compile_context(side_model, enabled=args.compile),
+            ):
                 VU.process_video(
                     input_filename,
                     output_filename,
