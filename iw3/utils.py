@@ -9,6 +9,7 @@ import warnings
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from os import path
+from typing import Any
 
 import av
 import numpy as np
@@ -1460,6 +1461,17 @@ def try_compile_context(side_model, enabled):
         return contextlib.nullcontext()
 
 
+def try_compile_side_model(side_model: Any, args: Any) -> Any:
+    if (
+        args.compile
+        and side_model is not None
+        and not isinstance(side_model, DeviceSwitchInference)
+        and not hasattr(side_model, "compile_context")
+    ):
+        return compile_model(side_model, device=args.state["device"])
+    return side_model
+
+
 def try_load_scene_cache(video_path, args):
     if args.scene_cache_file:
         segment_pts = SceneBoundaryCache.try_load_cache_with_filename(
@@ -1503,13 +1515,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
 
-    if (
-        args.compile
-        and side_model is not None
-        and not isinstance(side_model, DeviceSwitchInference)
-        and not hasattr(side_model, "compile_context")
-    ):
-        side_model = compile_model(side_model, device=args.state["device"])
+    side_model = try_compile_side_model(side_model, args)
 
     output_parent_dir = path.basename(output_path)
     input_parent_dir = path.basename(path.dirname(input_filename))
@@ -2312,6 +2318,7 @@ def process_config_video(config, args, side_model):
         side_model.reset()
     if args.state["convergence_model"] is not None:
         args.state["convergence_model"].reset(enable_ema=True)
+    side_model = try_compile_side_model(side_model, args)
 
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
@@ -2454,19 +2461,20 @@ def process_config_video(config, args, side_model):
                 # when config.mapper is not defined, use args.mapper
                 # TODO: It can be still disputable
                 pass
-        VU.generate_video(
-            output_filename,
-            generator,
-            config=video_config,
-            audio_file=audio_file,
-            title=path.basename(base_dir),
-            total_frames=len(rgb_files),
-            stop_event=args.state["stop_event"],
-            suspend_event=args.state["suspend_event"],
-            tqdm_fn=args.state["tqdm_fn"],
-            device=args.state["device"],
-            vaapi_device=args.vaapi_device,
-        )
+        with try_compile_context(side_model, enabled=args.compile):
+            VU.generate_video(
+                output_filename,
+                generator,
+                config=video_config,
+                audio_file=audio_file,
+                title=path.basename(base_dir),
+                total_frames=len(rgb_files),
+                stop_event=args.state["stop_event"],
+                suspend_event=args.state["suspend_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+                device=args.state["device"],
+                vaapi_device=args.vaapi_device,
+            )
     finally:
         args.mapper = original_mapper
 
