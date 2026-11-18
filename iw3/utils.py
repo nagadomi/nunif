@@ -1226,6 +1226,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             )
         return frames
 
+    @torch.inference_mode()
     def _postprocess_chunk(depths, device, dequeue_stream):
         if isinstance(depths, list):
             for d in depths:
@@ -1303,7 +1304,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 yield from batch_frames
 
             if flush and hasattr(side_model, "flush"):
-                with stream_ctx, dequeue_stream:
+                with torch.inference_mode(), stream_ctx, dequeue_stream:
                     ret = side_model.flush(enable_amp=not args.disable_amp)
                     if len(ret) == 4:
                         left_eyes, right_eyes, left_alphas, right_alphas = ret
