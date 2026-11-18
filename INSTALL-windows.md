@@ -80,8 +80,10 @@ See also [waifu2x README.md](waifu2x/README.md)
 
 ### iw3
 
+Sync torch.hub repositories (pre-trained models are downloaded automatically on first use):
+
 ```
-python -m iw3.download_models
+python -m iw3.update_hub
 ```
 
 See also [iw3 README.md](iw3/README.md).
