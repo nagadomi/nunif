@@ -1187,6 +1187,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     device_streams_lock = threading.Lock()
     src_queue = []
     mask_queue = []
+    minibatch_size = max(args.batch_size // 2, 1) if args.tta else args.batch_size
     frame_cpu_offload = depth_model.is_buffered() and args.state["device"].type not in {"cpu", "mps"}
     offload_resource_manager = None
     use_16bit = VU.pix_fmt_requires_16bit(args.pix_fmt)
@@ -1295,7 +1296,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
                 with stream_ctx:
                     dequeue_stream.wait_event(enqueue_event)
 
-            for depths in chunks(depth_list, args.batch_size):
+            for depths in chunks(depth_list, minibatch_size):
                 with stream_ctx, dequeue_stream:
                     batch_frames = _postprocess_chunk(depths, device, dequeue_stream)
                 dequeue_stream.synchronize()
@@ -1436,7 +1437,7 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
             device=device,
             enqueue_event=enqueue_event,
         )
-        if flush or len(depth_list) > args.batch_size or any(t in segment_pts for t in pts):
+        if flush or len(depth_list) > minibatch_size or any(t in segment_pts for t in pts):
             # Return a generator directly to avoid out-of-memory errors during flush / scene boundary.
             return results
         return [frame for frame in results]
@@ -1631,7 +1632,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
             )
     else:
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
-        minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
+        minibatch_size = max(args.batch_size // 2, 1) if args.tta else args.batch_size
 
         frame_callback, preprocess_callback = bind_batch_frame_callback(
             depth_model=depth_model, side_model=side_model, segment_pts=segment_pts, args=args
@@ -2373,7 +2374,7 @@ def process_config_video(config, args, side_model):
                     enable_alpha=VU.pix_fmt_has_alpha(args.pix_fmt),
                 )
 
-    minibatch_size = args.batch_size // 2 or 1 if args.tta else args.batch_size
+    minibatch_size = max(args.batch_size // 2, 1) if args.tta else args.batch_size
 
     def generator():
         rgb_batch = []
