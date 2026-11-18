@@ -1454,22 +1454,16 @@ def bind_batch_frame_callback(depth_model, side_model, segment_pts, args):
     return _cuda_stream_wrapper, _preprocess
 
 
-def try_compile_context(side_model, enabled):
-    if enabled and side_model is not None and hasattr(side_model, "compile_context"):
-        return side_model.compile_context()
+@contextlib.contextmanager
+def compile_side_model_context(side_model: Any, args: Any) -> Any:
+    if args.compile and side_model is not None and not isinstance(side_model, DeviceSwitchInference):
+        if hasattr(side_model, "compile_context"):
+            with side_model.compile_context():
+                yield side_model
+        else:
+            yield compile_model(side_model, device=args.state["device"])
     else:
-        return contextlib.nullcontext()
-
-
-def try_compile_side_model(side_model: Any, args: Any) -> Any:
-    if (
-        args.compile
-        and side_model is not None
-        and not isinstance(side_model, DeviceSwitchInference)
-        and not hasattr(side_model, "compile_context")
-    ):
-        return compile_model(side_model, device=args.state["device"])
-    return side_model
+        yield side_model
 
 
 def try_load_scene_cache(video_path, args):
@@ -1514,8 +1508,6 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
     ema_normalize = args.ema_normalize and args.max_fps >= 15
     if ema_normalize:
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
-
-    side_model = try_compile_side_model(side_model, args)
 
     output_parent_dir = path.basename(output_path)
     input_parent_dir = path.basename(path.dirname(input_filename))
@@ -1613,7 +1605,10 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         )
 
     if args.low_vram:
-        with depth_model.compile_context(enabled=args.compile), try_compile_context(side_model, enabled=args.compile):
+        with (
+            depth_model.compile_context(enabled=args.compile),
+            compile_side_model_context(side_model, args) as side_model,
+        ):
             VU.process_video(
                 input_filename,
                 output_filename,
@@ -1640,25 +1635,25 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         extra_queue = 1 if len(args.state["devices"]) == 1 else 0
         minibatch_size = max(args.batch_size // 2, 1) if args.tta else args.batch_size
 
-        frame_callback, preprocess_callback = bind_batch_frame_callback(
-            depth_model=depth_model, side_model=side_model, segment_pts=segment_pts, args=args
-        )
-        frame_callback = VU.FrameCallbackPool(
-            frame_callback=frame_callback,
-            preprocess_callback=preprocess_callback,
-            batch_size=minibatch_size,
-            device=args.state["devices"],
-            max_workers=args.max_workers,
-            max_batch_queue=args.max_workers + extra_queue,
-            require_pts=True,
-            require_flush=True,
-            use_16bit=use_16bit,
-        )
-        try:
-            with (
-                depth_model.compile_context(enabled=args.compile),
-                try_compile_context(side_model, enabled=args.compile),
-            ):
+        with (
+            depth_model.compile_context(enabled=args.compile),
+            compile_side_model_context(side_model, args) as side_model,
+        ):
+            frame_callback, preprocess_callback = bind_batch_frame_callback(
+                depth_model=depth_model, side_model=side_model, segment_pts=segment_pts, args=args
+            )
+            frame_callback = VU.FrameCallbackPool(
+                frame_callback=frame_callback,
+                preprocess_callback=preprocess_callback,
+                batch_size=minibatch_size,
+                device=args.state["devices"],
+                max_workers=args.max_workers,
+                max_batch_queue=args.max_workers + extra_queue,
+                require_pts=True,
+                require_flush=True,
+                use_16bit=use_16bit,
+            )
+            try:
                 VU.process_video(
                     input_filename,
                     output_filename,
@@ -1676,8 +1671,8 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
                     disable_software_fallback=args.disable_software_fallback,
                     vaapi_device=args.vaapi_device,
                 )
-        finally:
-            frame_callback.shutdown()
+            finally:
+                frame_callback.shutdown()
 
 
 def process_video_keyframes(input_filename, output_path, args, depth_model, side_model):
@@ -2318,7 +2313,6 @@ def process_config_video(config, args, side_model):
         side_model.reset()
     if args.state["convergence_model"] is not None:
         args.state["convergence_model"].reset(enable_ema=True)
-    side_model = try_compile_side_model(side_model, args)
 
     if is_output_dir(args.output):
         os.makedirs(args.output, exist_ok=True)
@@ -2461,7 +2455,7 @@ def process_config_video(config, args, side_model):
                 # when config.mapper is not defined, use args.mapper
                 # TODO: It can be still disputable
                 pass
-        with try_compile_context(side_model, enabled=args.compile):
+        with compile_side_model_context(side_model, args) as side_model:
             VU.generate_video(
                 output_filename,
                 generator,
