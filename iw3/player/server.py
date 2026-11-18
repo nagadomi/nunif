@@ -221,7 +221,7 @@ def create_parser(enable_stream: bool = False) -> argparse.ArgumentParser:
     return _add_player_args(parser)
 
 
-def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_model=None):
+def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, tqdm_fn=None, depth_model=None):
     if getattr(args, "enable_stream", False):
         from ..desktop.utils import set_state_args as set_desktop_state_args
 
@@ -230,12 +230,14 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
             args_lock=args_lock,
             stop_event=stop_event,
             fps_event=fps_event,
+            tqdm_fn=tqdm_fn,
             depth_model=depth_model,
         )
     else:
         args.state = {
             "stop_event": stop_event,
             "fps_event": fps_event,
+            "tqdm_fn": tqdm_fn,
             "args_lock": args_lock,
         }
 
@@ -428,10 +430,22 @@ def server_main(args, init_wxapp=True):
             args_lock=existing_state.get("args_lock"),
             stop_event=existing_state.get("stop_event"),
             fps_event=existing_state.get("fps_event"),
+            tqdm_fn=existing_state.get("tqdm_fn"),
             depth_model=existing_state.get("depth_model"),
         )
 
     validate_bind_address_and_auth(args)
+
+    if enable_stream:
+        depth_model = args.state.get("depth_model")
+        if depth_model is not None and not depth_model.loaded():
+            ok = depth_model.download(
+                args.depth_model,
+                stop_event=args.state.get("stop_event"),
+                tqdm_fn=args.state.get("tqdm_fn"),
+            )
+            if not ok:
+                return args
 
     init_video_hwaccel()
     if enable_stream and getattr(args, "stream_hub", None) is None:

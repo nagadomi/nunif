@@ -31,6 +31,16 @@ MODEL_FILES = {
     "VDA_Metric_B": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitb.pth"),
     "VDA_Metric_L": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
 }
+MODEL_URLS = {
+    "VDA_S": (
+        "https://huggingface.co/depth-anything/Video-Depth-Anything-Small/resolve/main/"
+        "video_depth_anything_vits.pth?download=true"
+    ),
+    "VDA_Metric_S": (
+        "https://huggingface.co/depth-anything/Metric-Video-Depth-Anything-Small/resolve/main/"
+        "metric_video_depth_anything_vits.pth?download=true"
+    ),
+}
 METRIC_PADDING = 14
 AA_SUPPORT_MODELS = {
     "VDA_S",
@@ -418,6 +428,10 @@ class VideoDepthAnythingModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     def is_metric(self):
         if not self.metric_depth:

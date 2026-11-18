@@ -208,7 +208,7 @@ def create_parser():
     return parser
 
 
-def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_model=None):
+def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, tqdm_fn=None, depth_model=None):
     user_video_codec = getattr(args, "video_codec", None)
     if getattr(args, "gpu_jpeg", False):
         warnings.warn("--gpu-jpeg is deprecated. Use --video-codec jpeg-gpu instead")
@@ -217,7 +217,7 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, depth_
     elif user_video_codec is None:
         args.video_codec = get_default_stream_video_codec()
 
-    IW3U.set_state_args(args, stop_event=stop_event, depth_model=depth_model)
+    IW3U.set_state_args(args, stop_event=stop_event, tqdm_fn=tqdm_fn, depth_model=depth_model)
     args.video_codec = normalize_video_codec(getattr(args, "video_codec", None))
     args.state["fps_event"] = fps_event
     args.state["args_lock"] = args_lock if args_lock is not None else threading.Lock()
@@ -543,7 +543,7 @@ def init_desktop_pipeline(
     init_wxapp: bool = False,
     stop_event: threading.Event | None = None,
     obs_restore_token: str | None = None,
-) -> SimpleNamespace:
+) -> SimpleNamespace | None:
     init_num_threads(args.gpu[0])
     ensure_default_stereo_format(args)
     screenshot_factory = validate_screenshot_args(args)
@@ -584,7 +584,17 @@ def init_desktop_pipeline(
             screen_width, screen_height = size_list[args.monitor_index]
 
         if not depth_model.loaded():
-            depth_model.load(gpu=args.gpu, resolution=args.resolution, limit_resolution=args.limit_resolution)
+            depth_model.load(
+                gpu=args.gpu,
+                resolution=args.resolution,
+                limit_resolution=args.limit_resolution,
+                stop_event=effective_stop_event,
+                tqdm_fn=args.state.get("tqdm_fn"),
+            )
+            if (effective_stop_event is not None and effective_stop_event.is_set()) or not depth_model.loaded():
+                if screenshot_thread is not None:
+                    screenshot_thread.stop()
+                return None
 
         # Use Flicker Reduction to prevent 3D sickness
         depth_model.enable_ema(args.ema_decay, buffer_size=1)
@@ -774,6 +784,8 @@ def iw3_desktop_main(args, init_wxapp=True):
     server = None
     try:
         pipeline = init_desktop_pipeline(args, init_wxapp=init_wxapp)
+        if pipeline is None:
+            return args
         lock = threading.Lock()
 
         if not args.local_viewer:

@@ -1433,11 +1433,18 @@ class MainFrame(wx.Frame):
     def on_exit_worker(self, result):
         try:
             args = result.get()
-            self.depth_model = args.state["depth_model"]
-            self.depth_model_type = args.depth_model
-            self.depth_model_device_id = args.gpu
-            self.depth_model_height = args.resolution
-            self.depth_model_limit_resolution = args.limit_resolution
+            if args.state["depth_model"].loaded():
+                self.depth_model = args.state["depth_model"]
+                self.depth_model_type = args.depth_model
+                self.depth_model_device_id = args.gpu
+                self.depth_model_height = args.resolution
+                self.depth_model_limit_resolution = args.limit_resolution
+            else:
+                self.depth_model = None
+                self.depth_model_type = None
+                self.depth_model_device_id = None
+                self.depth_model_height = None
+                self.depth_model_limit_resolution = None
 
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
@@ -1484,8 +1491,12 @@ class MainFrame(wx.Frame):
             else:
                 self.prg_tqdm.SetRange(1)
             self.prg_tqdm.SetValue(0)
-            self.fps_tracker.reset(start_pos=0)
-            self.SetStatusText(f"{0}/{value} {desc}")
+            unit = getattr(event, "unit", "FPS")
+            self.fps_tracker.reset(start_pos=0, unit=unit)
+            if unit == "KiB":
+                self.SetStatusText(f"0.0/{value / 1024.0:.1f} MiB {desc}")
+            else:
+                self.SetStatusText(f"{0}/{value} {desc}")
         elif type == 1:
             # update
             if self.prg_tqdm.GetValue() + value <= self.prg_tqdm.GetRange():

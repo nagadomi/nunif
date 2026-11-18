@@ -20,6 +20,13 @@ MODEL_FILES = {
     "ZoeD_Any_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_metric_depth_indoor.pt"),
     "ZoeD_Any_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_metric_depth_outdoor.pt"),
 }
+MODEL_URLS = {
+    "ZoeD_N": "https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt",
+    "ZoeD_K": "https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_K.pt",
+    "ZoeD_NK": "https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_NK.pt",
+    "ZoeD_Any_N": "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints_metric_depth/depth_anything_metric_depth_indoor.pt?download=true",
+    "ZoeD_Any_K": "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints_metric_depth/depth_anything_metric_depth_outdoor.pt?download=true",
+}
 DEPTH_ANYTHING_MODELS = {"ZoeD_Any_N": "indoor", "ZoeD_Any_K": "outdoor"}
 
 
@@ -281,6 +288,10 @@ class ZoeDepthModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     @classmethod
     def is_limit_resolution_supported(cls, model_type: str) -> bool:

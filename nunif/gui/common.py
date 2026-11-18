@@ -16,11 +16,12 @@ EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
 
 
 class TQDMEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, type=None, value=None, desc=None):
+    def __init__(self, etype, eid, type=None, value=None, desc=None, unit: str = "FPS"):
         super(TQDMEvent, self).__init__(etype, eid)
         self.type = type
         self.value = value
         self.desc = desc
+        self.unit = unit
 
     def GetValue(self):
         return (self.type, self.value, self.desc)
@@ -31,13 +32,26 @@ class TQDMGUI:
         self.parent = parent
         total = kwargs["total"]
         self.desc = kwargs.get("desc", "")
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 0, total, self.desc))
+        if kwargs.get("unit") == "iB":
+            self._byte_scale = 1024
+            self._unit = "KiB"
+            total = max(1, total // 1024) if total > 0 else 0
+        else:
+            self._byte_scale = 1
+            self._unit = "FPS"
+        self._remainder = 0
+        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 0, total, self.desc, unit=self._unit))
 
     def update(self, n=1):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, n, self.desc))
+        if self._byte_scale > 1:
+            scaled, self._remainder = divmod(self._remainder + n, self._byte_scale)
+            if scaled > 0:
+                wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, scaled, self.desc, unit=self._unit))
+        else:
+            wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 1, n, self.desc, unit=self._unit))
 
     def close(self):
-        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0, self.desc))
+        wx.PostEvent(self.parent, TQDMEvent(myEVT_TQDM, -1, 2, 0, self.desc, unit=self._unit))
 
 
 class FPSTracker:
@@ -59,9 +73,12 @@ class FPSTracker:
         self.suspend_pos: int = 0
         self.last_status_time: float = 0.0
         self.smoothed_fps: float | None = None
+        self.unit: str = "FPS"
 
-    def reset(self, start_pos: int = 0) -> None:
+    def reset(self, start_pos: int = 0, unit: str | None = None) -> None:
         self.suspend_pos = start_pos
+        if unit is not None:
+            self.unit = unit
         self.history.clear()
         self.last_status_time = 0.0
         self.smoothed_fps = None
@@ -114,6 +131,11 @@ class FPSTracker:
 
             remaining_time = int((end_pos - pos) / self.smoothed_fps)
             t = self.format_time(remaining_time)
+            if self.unit == "KiB":
+                pos_mib = pos / 1024.0
+                end_mib = end_pos / 1024.0
+                speed_mib = self.smoothed_fps / 1024.0
+                return f"{pos_mib:.1f}/{end_mib:.1f} MiB [ {t}, {speed_mib:.2f}MiB/s ] {desc}"
             return f"{pos}/{end_pos} [ {t}, {self.smoothed_fps:.2f}FPS ] {desc}"
 
         return None

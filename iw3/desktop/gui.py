@@ -1,12 +1,13 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
-import sys
-import os
-import time
+import functools
 import math
-from os import path
-import traceback
+import os
+import sys
 import threading
+import time
+import traceback
+from os import path
 import wx
 from wx.lib.delayedresult import startWorker
 import wx.lib.agw.persist as persist
@@ -18,9 +19,12 @@ from nunif.initializer import gc_collect
 from nunif.utils.filename import sanitize_filename
 from nunif.utils.home_dir import ensure_home_dir
 from nunif.gui import (
-    IpAddrCtrl,
+    EVT_TQDM,
+    TQDMGUI,
     EditableComboBox,
     EditableComboBoxPersistentHandler,
+    FPSTracker,
+    IpAddrCtrl,
     persistent_manager_register_all,
     persistent_manager_unregister_all,
     persistent_manager_restore_all,
@@ -106,6 +110,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             style=(wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX),
         )
         self.stop_event = threading.Event()
+        self.fps_tracker = FPSTracker(update_interval=0.5)
+        self._tqdm_pos = 0
+        self._tqdm_total = 1
         self.depth_model = None
         self.depth_model_type = None
         self.depth_model_device_id = None
@@ -383,6 +390,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.btn_cancel.Bind(wx.EVT_BUTTON, self.on_click_btn_cancel)
 
         self.Bind(EVT_FPS, self.on_fps)
+        self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
         # Fix Frame and Panel background colors are different in windows
@@ -593,6 +601,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             args_lock=self.args_lock,
             fps_event=FPSGUI(self),
             stop_event=self.stop_event,
+            tqdm_fn=functools.partial(TQDMGUI, self),
             depth_model=self.depth_model,
         )
         return args
@@ -610,6 +619,29 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             self.txt_url.SetValue(url)
         if self.args is not None:
             self._apply_args_to_adj_controls(self.args)
+
+    def on_tqdm(self, event):
+        type, value, desc = event.GetValue()
+        desc = desc if desc else ""
+        if type == 0:
+            self._tqdm_total = value if 0 < value else 1
+            self._tqdm_pos = 0
+            unit = getattr(event, "unit", "FPS")
+            self.fps_tracker.reset(start_pos=0, unit=unit)
+            if unit == "KiB":
+                self.SetStatusText(f"0.0/{value / 1024.0:.1f} MiB {desc}")
+            else:
+                self.SetStatusText(f"{0}/{value} {desc}")
+        elif type == 1:
+            self._tqdm_pos += value
+            if self._tqdm_pos > self._tqdm_total:
+                self._tqdm_total = self._tqdm_pos
+            status_text = self.fps_tracker.update(self._tqdm_pos, self._tqdm_total, desc)
+            if status_text is not None:
+                self.SetStatusText(status_text)
+        elif type == 2:
+            if not self.stop_event.is_set() and self.args is not None:
+                self.SetStatusText(f"Loading {self.args.depth_model}...")
 
     def on_click_btn_start(self, event):
         self.args = self.parse_args()

@@ -1,5 +1,6 @@
 import nunif.pythonw_fix  # noqa
 import nunif.gui.subprocess_patch  # noqa
+import functools
 import os
 import sys
 import threading
@@ -16,7 +17,10 @@ from wx.lib.intctrl import IntCtrl
 
 from iw3.locales import LOCALES, load_language_setting, save_language_setting
 from nunif.gui import (
+    EVT_TQDM,
+    TQDMGUI,
     EditableComboBoxPersistentHandler,
+    FPSTracker,
     IpAddrCtrl,
     apply_dark_mode,
     get_default_locale,
@@ -103,6 +107,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             style=wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX,
         )
         self.stop_event = threading.Event()
+        self.fps_tracker = FPSTracker(update_interval=0.5)
+        self._tqdm_pos = 0
+        self._tqdm_total = 1
         self.depth_model = None
         self.depth_model_type = None
         self.depth_model_device_id = None
@@ -272,6 +279,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.btn_stop.Bind(wx.EVT_BUTTON, self.on_stop)
 
         self.Bind(EVT_FPS, self.on_fps)
+        self.Bind(EVT_TQDM, self.on_tqdm)
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
         self.load_settings()
@@ -477,6 +485,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             args_lock=self.args_lock,
             fps_event=FPSGUI(self),
             stop_event=self.stop_event,
+            tqdm_fn=functools.partial(TQDMGUI, self),
             depth_model=self.depth_model,
         )
         return args
@@ -525,6 +534,29 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         elif screen_size is None and url is None and self.processing:
             self.SetStatusText(T("Running"))
 
+    def on_tqdm(self, event):
+        type, value, desc = event.GetValue()
+        desc = desc if desc else ""
+        if type == 0:
+            self._tqdm_total = value if 0 < value else 1
+            self._tqdm_pos = 0
+            unit = getattr(event, "unit", "FPS")
+            self.fps_tracker.reset(start_pos=0, unit=unit)
+            if unit == "KiB":
+                self.SetStatusText(f"0.0/{value / 1024.0:.1f} MiB {desc}")
+            else:
+                self.SetStatusText(f"{0}/{value} {desc}")
+        elif type == 1:
+            self._tqdm_pos += value
+            if self._tqdm_pos > self._tqdm_total:
+                self._tqdm_total = self._tqdm_pos
+            status_text = self.fps_tracker.update(self._tqdm_pos, self._tqdm_total, desc)
+            if status_text is not None:
+                self.SetStatusText(status_text)
+        elif type == 2:
+            if not self.stop_event.is_set() and self.processing:
+                self.SetStatusText(T("Running"))
+
     def on_start(self, event):
         self.args = self.parse_args()
         if self.args is None:
@@ -548,7 +580,12 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             self.txt_url.SetValue(url)
             self.btn_url.Enable()
 
-        self.SetStatusText(T("Running"))
+        if getattr(self.args, "enable_stream", False) and not self._BaseDepthModel.has_model_checkpoint_file(
+            self.args.depth_model
+        ):
+            self.SetStatusText(f"Downloading {self.args.depth_model}...")
+        else:
+            self.SetStatusText(T("Running"))
         self.processing = True
         startWorker(self.on_exit_worker, backend_main, wargs=(self.args, False))
 

@@ -20,6 +20,10 @@ MODEL_FILES = {
     "DepthPro": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
     "DepthPro_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
 }
+MODEL_URLS = {
+    "DepthPro": "https://ml-site.cdn-apple.com/models/depth-pro/depth_pro.pt",
+    "DepthPro_S": "https://ml-site.cdn-apple.com/models/depth-pro/depth_pro.pt",
+}
 
 
 def batch_preprocess(x, img_size=1536, padding=False):
@@ -242,6 +246,10 @@ class DepthProModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     @classmethod
     def is_resolution_change_supported(cls, model_type: str) -> bool:

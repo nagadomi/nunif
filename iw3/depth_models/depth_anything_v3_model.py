@@ -21,6 +21,10 @@ MODEL_FILES = {
     "Any_V3_Mono": path.join(HUB_MODEL_DIR, "checkpoints", "da3mono-large.safetensors"),
     "Any_V3_Mono_01": path.join(HUB_MODEL_DIR, "checkpoints", "da3mono-large.safetensors"),
 }
+MODEL_URLS = {
+    "Any_V3_Mono": "https://huggingface.co/depth-anything/DA3MONO-LARGE/resolve/main/model.safetensors?download=true",
+    "Any_V3_Mono_01": "https://huggingface.co/depth-anything/DA3MONO-LARGE/resolve/main/model.safetensors?download=true",
+}
 AA_SUPPORTED_MODELS = {
     "Any_V3_Mono",
     "Any_V3_Mono_01",
@@ -230,6 +234,10 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     def is_metric(self):
         return False

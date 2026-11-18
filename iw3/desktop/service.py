@@ -141,6 +141,8 @@ class DesktopStreamService:
                 stop_event=stop_event,
                 obs_restore_token=self._obs_restore_token,
             )
+            if pipeline is None:
+                return
             if getattr(self.args, "screenshot", None) == "obs":
                 self._obs_restore_token = getattr(pipeline.screenshot_thread, "restore_token", None)
             self.stream_hub.clear_frames(stop_clients=False)

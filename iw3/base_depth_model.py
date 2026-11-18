@@ -1,7 +1,9 @@
 import contextlib
 import os
 import pickle
+import threading
 from abc import ABCMeta, abstractmethod
+from typing import Any
 
 import numpy as np
 import torch
@@ -13,6 +15,7 @@ from torchvision.transforms import functional as TF
 from nunif.device import create_device
 from nunif.models.data_parallel import DeviceSwitchInference
 from nunif.models.utils import compile_function, compile_model
+from nunif.utils.downloader import CheckpointDownloader
 from nunif.utils.ui import HiddenPrints, TorchHubDir
 
 from .depth_scaler import EMAMinMaxScaler
@@ -194,6 +197,26 @@ class BaseDepthModel(metaclass=ABCMeta):
     def get_model_path(cls, model_type):
         pass
 
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return None
+
+    @classmethod
+    def download(
+        cls,
+        model_type: str,
+        stop_event: threading.Event | None = None,
+        tqdm_fn: Any = None,
+    ) -> bool:
+        if cls.has_checkpoint_file(model_type):
+            return True
+        url = cls.get_model_url(model_type)
+        if url is None:
+            return True
+        dst_path = cls.get_model_path(model_type)
+        downloader = CheckpointDownloader(url=url, dst_path=dst_path, name=f"Downloading {model_type}")
+        return downloader.run(stop_event=stop_event, tqdm_fn=tqdm_fn)
+
     @abstractmethod
     def is_metric(self):
         pass
@@ -229,18 +252,31 @@ class BaseDepthModel(metaclass=ABCMeta):
     def load_model(self, model_type, resolution, device):
         pass
 
-    def load(self, gpu=0, resolution=None, limit_resolution=False, **kwargs):
+    def load(
+        self,
+        gpu=0,
+        resolution=None,
+        limit_resolution=False,
+        stop_event: threading.Event | None = None,
+        tqdm_fn: Any = None,
+        **kwargs,
+    ):
+        if not self.download(self.model_type, stop_event=stop_event, tqdm_fn=tqdm_fn):
+            return self
+
         self.device = create_device(gpu)
         self.limit_resolution = limit_resolution
 
         with HiddenPrints(), TorchHubDir(HUB_MODEL_DIR):
             try:
                 self.model = self.load_model(self.model_type, resolution=resolution, device=self.device, **kwargs)
-            except (RuntimeError, pickle.PickleError) as e:
+            except Exception as e:
                 if isinstance(e, RuntimeError):
                     do_handle = "PytorchStreamReader" in repr(e)
-                else:
+                elif isinstance(e, pickle.PickleError) or e.__class__.__name__ == "SafetensorError":
                     do_handle = True
+                else:
+                    do_handle = False
                 if do_handle:
                     try:
                         # delete corrupted file

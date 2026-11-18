@@ -56,6 +56,43 @@ MODEL_FILES = {
     "Ultimate_DAV2_S": path.join(HUB_MODEL_DIR, "checkpoints", "ultimate_dav2_vits_INet_quality.safetensors"),
     "Ultimate_DAV2_B": path.join(HUB_MODEL_DIR, "checkpoints", "ultimate_dav2_vitB_INet_quality.safetensors"),
 }
+MODEL_URLS = {
+    "Any_S": (
+        "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/"
+        "checkpoints/depth_anything_vits14.pth?download=true"
+    ),
+    "Any_B": (
+        "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/"
+        "checkpoints/depth_anything_vitb14.pth?download=true"
+    ),
+    "Any_L": (
+        "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/"
+        "checkpoints/depth_anything_vitl14.pth?download=true"
+    ),
+    "Any_V2_S": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/"
+        "depth_anything_v2_vits.pth?download=true"
+    ),
+    "Any_V2_N_S": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Small/resolve/main/"
+        "depth_anything_v2_metric_hypersim_vits.pth?download=true"
+    ),
+    "Any_V2_N_B": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Base/resolve/main/"
+        "depth_anything_v2_metric_hypersim_vitb.pth?download=true"
+    ),
+    "Any_V2_K_S": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Small/resolve/main/"
+        "depth_anything_v2_metric_vkitti_vits.pth?download=true"
+    ),
+    "Any_V2_K_B": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Base/resolve/main/"
+        "depth_anything_v2_metric_vkitti_vitb.pth?download=true"
+    ),
+    "Distill_Any_S": (
+        "https://huggingface.co/xingyang1/Distill-Any-Depth/resolve/main/small/model.safetensors?download=true"
+    ),
+}
 AA_SUPPORTED_MODELS = {
     "Any_V2_S",
     "Any_V2_B",
@@ -369,6 +406,10 @@ class DepthAnythingModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     def is_metric(self):
         if self.model is not None:

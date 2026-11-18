@@ -3141,7 +3141,15 @@ def iw3_main(args):
 
     if not is_yaml(args.input):
         if not depth_model.loaded():
-            depth_model.load(gpu=args.gpu, resolution=args.resolution, limit_resolution=args.limit_resolution)
+            depth_model.load(
+                gpu=args.gpu,
+                resolution=args.resolution,
+                limit_resolution=args.limit_resolution,
+                stop_event=args.state["stop_event"],
+                tqdm_fn=args.state["tqdm_fn"],
+            )
+            if args.state["stop_event"] is not None and args.state["stop_event"].is_set():
+                return args
 
         is_metric = depth_model.is_metric()
         args.mapper = resolve_mapper_name(
