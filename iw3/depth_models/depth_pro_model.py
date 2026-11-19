@@ -205,21 +205,20 @@ class DepthProModel(BaseDepthModel):
         alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        if not torch.is_tensor(x):
-            x = TF.to_tensor(x).to(self.device)
-        assert torch.is_tensor(x)
-        return batch_infer(
+        x_in, alpha_in, is_batch, orig_batch_size = self._prepare_infer_input(x, alpha=alpha)
+        out = batch_infer(
             self.model,
-            x,
+            x_in,
             flip_aug=tta,
             low_vram=low_vram,
             enable_amp=enable_amp,
-            output_device=x.device,
-            device=x.device,
+            output_device=x_in.device,
+            device=x_in.device,
             edge_dilation=edge_dilation,
             force_disparity=self.force_disparity,
-            alpha=alpha,
+            alpha=alpha_in,
         )
+        return self._restore_infer_output(out, is_batch=is_batch, orig_batch_size=orig_batch_size)
 
     order: int = 20
 

@@ -1636,7 +1636,7 @@ def process_video_full(input_filename, output_path, args, depth_model, side_mode
         minibatch_size = max(args.batch_size // 2, 1) if args.tta else args.batch_size
 
         with (
-            depth_model.compile_context(enabled=args.compile),
+            depth_model.compile_context(enabled=args.compile, force_batch_size=minibatch_size),
             compile_side_model_context(side_model, args) as side_model,
         ):
             frame_callback, preprocess_callback = bind_batch_frame_callback(
@@ -2275,7 +2275,11 @@ def export_video(input_filename, output_dir, args, title=None):
         depth_model.enable_ema(decay=args.ema_decay, buffer_size=args.ema_buffer)
 
     max_workers = max(args.max_workers, 8)
-    with depth_model.compile_context(enabled=args.compile), PoolExecutor(max_workers=max_workers) as pool:
+    export_batch_size = 1 if args.low_vram else args.batch_size
+    with (
+        depth_model.compile_context(enabled=args.compile, force_batch_size=export_batch_size),
+        PoolExecutor(max_workers=max_workers) as pool,
+    ):
         frame_callback = bind_export_single_frame_callback(
             depth_model=depth_model,
             segment_pts=segment_pts,

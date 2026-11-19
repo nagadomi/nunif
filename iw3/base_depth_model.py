@@ -3,7 +3,7 @@ import os
 import pickle
 import threading
 from abc import ABCMeta, abstractmethod
-from typing import Any
+from typing import Any, overload
 
 import numpy as np
 import torch
@@ -22,15 +22,42 @@ from .depth_scaler import EMAMinMaxScaler
 from .hub_dir import HUB_MODEL_DIR
 
 
-class _CompileContext:
-    def __init__(self, base_model):
+class _ForceBatchSizeContext:
+    def __init__(self, base_model: "BaseDepthModel", batch_size: int | None):
+        if batch_size is not None:
+            assert batch_size > 0
         self.base_model = base_model
+        self.batch_size = batch_size
+        self.prev_batch_size: int | None = None
 
     def __enter__(self):
-        self.base_model.compile()
+        self.prev_batch_size = self.base_model._force_batch_size
+        self.base_model._force_batch_size = self.batch_size
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.base_model._force_batch_size = self.prev_batch_size
+        return False
+
+
+class _CompileContext:
+    def __init__(self, base_model: "BaseDepthModel", force_batch_size: int | None = None):
+        self.base_model = base_model
+        self.force_batch_size_ctx = (
+            _ForceBatchSizeContext(base_model, force_batch_size)
+            if force_batch_size is not None and not isinstance(base_model.model, DeviceSwitchInference)
+            else None
+        )
+
+    def __enter__(self):
+        self.base_model.compile()
+        if self.force_batch_size_ctx is not None:
+            self.force_batch_size_ctx.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.force_batch_size_ctx is not None:
+            self.force_batch_size_ctx.__exit__(exc_type, exc_val, exc_tb)
         self.base_model.clear_compiled_model()
         return False
 
@@ -158,14 +185,18 @@ class BaseDepthModel(metaclass=ABCMeta):
         self.model_type = model_type
         self.scaler = self.create_depth_scaler()
         self.limit_resolution = False
+        self._force_batch_size: int | None = None
 
     def create_depth_scaler(self):
         # This can be overridden
         return EMAMinMaxScaler(decay=0, buffer_size=1)
 
-    def compile_context(self, enabled=True):
+    def force_batch_size(self, batch_size: int | None) -> _ForceBatchSizeContext:
+        return _ForceBatchSizeContext(self, batch_size)
+
+    def compile_context(self, enabled: bool = True, force_batch_size: int | None = None):
         if enabled:
-            return _CompileContext(self)
+            return _CompileContext(self, force_batch_size=force_batch_size)
         else:
             return contextlib.nullcontext()
 
@@ -340,6 +371,86 @@ class BaseDepthModel(metaclass=ABCMeta):
         **kwargs,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         pass
+
+    @overload
+    def _prepare_infer_input(
+        self,
+        x: torch.Tensor | Image.Image,
+        alpha: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, bool, int]: ...
+
+    @overload
+    def _prepare_infer_input(
+        self,
+        x: torch.Tensor | Image.Image,
+        alpha: list[torch.Tensor | None],
+    ) -> tuple[torch.Tensor, list[torch.Tensor | None], bool, int]: ...
+
+    def _prepare_infer_input(
+        self,
+        x: torch.Tensor | Image.Image,
+        alpha: torch.Tensor | list[torch.Tensor | None] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | list[torch.Tensor | None] | None, bool, int]:
+        if not torch.is_tensor(x):
+            x = TF.to_tensor(x).to(self.device)
+        assert torch.is_tensor(x)
+
+        is_batch = x.ndim == 4
+        if x.ndim == 3:
+            x = x.unsqueeze(0)
+        assert x.ndim == 4
+
+        orig_batch_size = x.shape[0]
+        assert orig_batch_size > 0
+        target_batch_size = self._force_batch_size
+        if target_batch_size is not None and not self.is_streaming():
+            assert target_batch_size > 0
+            assert orig_batch_size <= target_batch_size
+            if orig_batch_size < target_batch_size:
+                pad_n = target_batch_size - orig_batch_size
+                # Preserve x.is_inference() to avoid DispatchKeySet recompilation in torch.compile
+                with torch.inference_mode(x.is_inference()), torch.no_grad():
+                    x = torch.cat([x, x[-1:].expand(pad_n, *x.shape[1:])], dim=0)
+                if alpha is not None:
+                    if isinstance(alpha, list):
+                        assert len(alpha) == orig_batch_size
+                        alpha = alpha + [alpha[-1]] * pad_n
+                    elif torch.is_tensor(alpha):
+                        if alpha.ndim == 3:
+                            alpha = alpha.unsqueeze(0)
+                        assert alpha.shape[0] == orig_batch_size
+                        with torch.inference_mode(alpha.is_inference()), torch.no_grad():
+                            alpha = torch.cat([alpha, alpha[-1:].expand(pad_n, *alpha.shape[1:])], dim=0)
+
+        return x, alpha, is_batch, orig_batch_size
+
+    @overload
+    @staticmethod
+    def _restore_infer_output(out: torch.Tensor, is_batch: bool, orig_batch_size: int) -> torch.Tensor: ...
+
+    @overload
+    @staticmethod
+    def _restore_infer_output(
+        out: tuple[torch.Tensor, torch.Tensor], is_batch: bool, orig_batch_size: int
+    ) -> tuple[torch.Tensor, torch.Tensor]: ...
+
+    @staticmethod
+    def _restore_infer_output(
+        out: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        is_batch: bool,
+        orig_batch_size: int,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        def _restore_tensor(t: torch.Tensor) -> torch.Tensor:
+            if t.shape[0] > orig_batch_size:
+                t = t[:orig_batch_size]
+            if not is_batch:
+                assert t.shape[0] == 1
+                t = t.squeeze(0)
+            return t
+
+        if isinstance(out, tuple):
+            return tuple(_restore_tensor(t) for t in out)  # type: ignore[return-value]
+        return _restore_tensor(out)
 
     @staticmethod
     def apply_alpha_mask(
