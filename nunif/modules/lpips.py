@@ -73,17 +73,59 @@ class LPIPSFix(lpips.LPIPS):
 MODEL_PATH = path.join(path.dirname(__file__), "_lpips_2.pth")
 
 
+def _create_lpips_vgg() -> LPIPSFix:
+    model = lpips.LPIPS(net="vgg", model_path=MODEL_PATH).eval()
+    # This needed because LPIPS has duplicate parameter references problem
+    model.requires_grad_(False)
+    # Override forward method
+    model.__class__ = LPIPSFix
+    return model  # type: ignore[return-value]
+
+
+class LPIPSLoss(nn.Module):
+    """Standalone LPIPS perceptual loss without a base pixel loss."""
+
+    def __init__(
+        self,
+        std_mask: bool = False,
+        normalize: bool = True,
+        reduction: str = "mean",
+    ) -> None:
+        super().__init__()
+        assert reduction in {"mean", "sum", "none"}
+        self.std_mask = std_mask
+        self.normalize = normalize
+        self.reduction = reduction
+        self.lpips = _create_lpips_vgg()
+
+    def train(self, mode: bool = True) -> "LPIPSLoss":
+        super().train(mode)
+        self.lpips.train(False)
+        self.lpips.requires_grad_(False)
+        return self
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        pad = get_pad_size(input, 16, random_shift=False)
+        if any(pad):
+            input = reflection_pad2d_naive(input, pad, detach=True)
+            target = reflection_pad2d_naive(target, pad, detach=True)
+        if self.std_mask:
+            input = local_std_mask(input, target)
+        loss = self.lpips(input, target, normalize=self.normalize).view(-1)
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        return loss
+
+
 class LPIPSWith(nn.Module):
     def __init__(self, base_loss, weight=1.0, std_mask=False):
         super().__init__()
         self.base_loss = base_loss
         self.weight = weight
         self.std_mask = std_mask
-        self.lpips = lpips.LPIPS(net="vgg", model_path=MODEL_PATH).eval()
-        # This needed because LPIPS has duplicate parameter references problem
-        self.lpips.requires_grad_(False)
-        # Override foward method
-        self.lpips.__class__ = LPIPSFix
+        self.lpips = _create_lpips_vgg()
 
     def train(self, mode=True):
         super().train(mode)
