@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .compile_wrapper import conditional_compile
-from .local_std_mask import local_std_mask
 from .pad import get_crop_size, get_pad_size
 from .reflection_pad2d import reflection_pad2d_naive
 
@@ -87,13 +86,11 @@ class LPIPSLoss(nn.Module):
 
     def __init__(
         self,
-        std_mask: bool = False,
         normalize: bool = True,
         reduction: str = "mean",
     ) -> None:
         super().__init__()
         assert reduction in {"mean", "sum", "none"}
-        self.std_mask = std_mask
         self.normalize = normalize
         self.reduction = reduction
         self.lpips = _create_lpips_vgg()
@@ -109,8 +106,6 @@ class LPIPSLoss(nn.Module):
         if any(pad):
             input = reflection_pad2d_naive(input, pad, detach=True)
             target = reflection_pad2d_naive(target, pad, detach=True)
-        if self.std_mask:
-            input = local_std_mask(input, target)
         loss = self.lpips(input, target, normalize=self.normalize).view(-1)
         if self.reduction == "mean":
             return loss.mean()
@@ -120,11 +115,10 @@ class LPIPSLoss(nn.Module):
 
 
 class LPIPSWith(nn.Module):
-    def __init__(self, base_loss, weight=1.0, std_mask=False):
+    def __init__(self, base_loss, weight=1.0):
         super().__init__()
         self.base_loss = base_loss
         self.weight = weight
-        self.std_mask = std_mask
         self.lpips = _create_lpips_vgg()
 
     def train(self, mode=True):
@@ -137,10 +131,7 @@ class LPIPSWith(nn.Module):
         input = reflection_pad2d_naive(input, pad, detach=True)
         target = reflection_pad2d_naive(target, pad, detach=True)
         base_loss = self.base_loss(input, target)
-        if self.std_mask:
-            lpips_loss = self.lpips(local_std_mask(input, target), target, normalize=True).mean()
-        else:
-            lpips_loss = self.lpips(input, target, normalize=True).mean()
+        lpips_loss = self.lpips(input, target, normalize=True).mean()
         return base_loss + lpips_loss * self.weight
 
 

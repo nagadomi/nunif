@@ -103,7 +103,6 @@ LOSS_FUNCTIONS = {
     ),
     # weight=0.1, gradient norm is about the same as L1Loss.
     "l1lpips": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4),
-    "l1lpips_std_mask": lambda: LPIPSWith(ClampLoss(torch.nn.L1Loss()), weight=0.4, std_mask=True),
     "l1lpips_dct24": lambda: LPIPSWith(
         WeightedLoss(
             (ClampLoss(torch.nn.L1Loss()), DCTLoss(window_size=24, clamp=True, random_rotate=False, overlap=True)),
