@@ -20,10 +20,14 @@ from .dit import DiT
 
 
 @torch.inference_mode()
-def sample(model: nn.Module, x: torch.Tensor, steps: int = 25) -> torch.Tensor:
+def sample(model: nn.Module, x: torch.Tensor, steps: int = 25, shift: float = 1.0) -> torch.Tensor:
+    assert shift > 0.0
+
     B = x.shape[0]
-    # linear timestep (euler simple)
+    # timestep (euler shift)
     t_steps = torch.linspace(0.0, 1.0, steps + 1, device=x.device)
+    t_steps = t_steps / (t_steps + shift * (1.0 - t_steps))
+
     for i in range(steps):
         # step size
         t = t_steps[i]

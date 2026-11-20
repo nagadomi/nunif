@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("-o", "--output", type=str, required=True, help="output image path")
     parser.add_argument("--num-samples", type=int, default=16, help="number of samples to generate")
     parser.add_argument("--steps", type=int, default=25, help="sampling steps")
+    parser.add_argument("--shift", type=float, default=1.0, help="shift sampling parameter")
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--batch-size", type=int, default=16, help="batch size for sampling")
     parser.add_argument("--nrow", type=int, default=None, help="grid column count (default: min(num_samples, 8))")
@@ -58,7 +59,7 @@ def main() -> None:
         cur_batch = min(args.batch_size, args.num_samples - i)
         x = torch.randn((cur_batch, 3, IMAGE_SIZE, IMAGE_SIZE), generator=rng, device=device)
         with torch.inference_mode(), autocast(device):
-            out = sample(model, x, steps=args.steps)
+            out = sample(model, x, steps=args.steps, shift=args.shift)
         all_outputs.append(out.cpu())
 
     outputs = torch.cat(all_outputs, dim=0)
