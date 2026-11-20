@@ -216,7 +216,7 @@ class MHA(nn.Module):
             self.num_heads,
             attn_mask=attn_mask,
             rope=rope,
-            dropout_p=dropout_p,
+            dropout_p=dropout_p if self.training else 0.0,
             is_causal=is_causal,
             num_kv_heads=self.num_kv_heads,
         )
@@ -649,7 +649,15 @@ class CrossMHA(nn.Module):
         assert q.shape == kv.shape
         q = self.q_proj(q)
         k, v = self.kv_proj(kv).split(self.qkv_dim * self.num_heads, dim=-1)
-        x = sliced_sdp(q, k, v, self.num_heads, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal)
+        x = sliced_sdp(
+            q,
+            k,
+            v,
+            self.num_heads,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p if self.training else 0.0,
+            is_causal=is_causal,
+        )
         x = self.head_proj(x)
         return x
 

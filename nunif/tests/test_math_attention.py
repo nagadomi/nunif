@@ -160,3 +160,19 @@ def test_mha_and_window_mha2d_v2_math_attention_jvp_and_backward(device: torch.d
     assert torch.isfinite(w_out).all()
     assert torch.isfinite(w_dout).all()
     assert torch.isfinite(img.grad).all()
+
+
+def test_mha_eval_disables_dropout() -> None:
+    torch.manual_seed(0)
+    mha = MHA(embed_dim=64, num_heads=4)
+    mha.eval()
+    x = torch.randn(2, 8, 64)
+
+    with torch.no_grad():
+        with use_math_attention(True):
+            out1 = mha(x, dropout_p=0.5)
+            out2 = mha(x, dropout_p=0.5)
+            out_zero = mha(x, dropout_p=0.0)
+
+    torch.testing.assert_close(out1, out2)
+    torch.testing.assert_close(out1, out_zero)
