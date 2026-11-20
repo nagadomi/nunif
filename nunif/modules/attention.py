@@ -1,4 +1,7 @@
-from contextlib import nullcontext
+import math
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 
 import torch
 import torch.nn as nn
@@ -38,6 +41,27 @@ except ModuleNotFoundError:
         return torch.backends.cuda.sdp_kernel(enable_flash=flag, enable_math=True, enable_mem_efficient=flag)
 
 
+_math_attention_state = threading.local()
+
+
+def set_math_attention(enabled: bool = True) -> None:
+    _math_attention_state.enabled = bool(enabled)
+
+
+def get_math_attention() -> bool:
+    return bool(getattr(_math_attention_state, "enabled", False))
+
+
+@contextmanager
+def use_math_attention(enabled: bool = True) -> Iterator[None]:
+    prev = get_math_attention()
+    set_math_attention(enabled)
+    try:
+        yield
+    finally:
+        set_math_attention(prev)
+
+
 class SEBlock(nn.Module):
     """from Squeeze-and-Excitation Networks"""
 
@@ -70,6 +94,31 @@ class SEBlockNHWC(nn.Module):
         return x * z
 
 
+def _manual_sdp(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mask: torch.Tensor | None = None,
+    dropout_p: float = 0.0,
+    is_causal: bool = False,
+) -> torch.Tensor:
+    scale = 1.0 / math.sqrt(q.shape[-1])
+    attn = torch.matmul(q, k.transpose(-2, -1)) * scale
+    if is_causal:
+        qn, kn = q.shape[-2], k.shape[-2]
+        causal_mask = torch.ones((qn, kn), device=q.device, dtype=torch.bool).tril(diagonal=kn - qn)
+        attn = attn.masked_fill(~causal_mask, float("-inf"))
+    if attn_mask is not None:
+        if attn_mask.dtype == torch.bool:
+            attn = attn.masked_fill(~attn_mask, float("-inf"))
+        else:
+            attn = attn + attn_mask
+    attn = F.softmax(attn.float(), dim=-1).to(q.dtype)
+    if dropout_p > 0.0:
+        attn = F.dropout(attn, p=dropout_p)
+    return torch.matmul(attn, v)
+
+
 def sliced_sdp(q, k, v, num_heads, attn_mask=None, rope=None, dropout_p=0.0, is_causal=False, num_kv_heads=None):
     B, QN, _ = q.shape  # batch, sequence, feature
     KN = k.shape[1]
@@ -90,17 +139,31 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, rope=None, dropout_p=0.0, is_
     if rope is not None:
         q, k = rope(q, k)
 
-    use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
-    with use_flash_attention(use_flash):
-        x = F.scaled_dot_product_attention(
+    if get_math_attention():
+        if num_heads != num_kv_heads:
+            repeat_factor = num_heads // num_kv_heads
+            k = k.repeat_interleave(repeat_factor, dim=1)
+            v = v.repeat_interleave(repeat_factor, dim=1)
+        x = _manual_sdp(
             q,
             k,
             v,
             attn_mask=attn_mask,
             dropout_p=dropout_p,
             is_causal=is_causal,
-            enable_gqa=num_heads != num_kv_heads,
         )
+    else:
+        use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
+        with use_flash_attention(use_flash):
+            x = F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=attn_mask,
+                dropout_p=dropout_p,
+                is_causal=is_causal,
+                enable_gqa=num_heads != num_kv_heads,
+            )
     # B, N, (H, C // H)
     return x.permute(0, 2, 1, 3).reshape(B, QN, q_dim * num_heads)
 
