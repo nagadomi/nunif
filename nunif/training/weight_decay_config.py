@@ -1,110 +1,177 @@
-# Adapted from nanoGPT: https://github.com/karpathy/nanoGPT/blob/master/model.py
-# MIT License: Copyright (c) 2022 Andrej Karpathy
-#
-# Adding modules used in this repo by nagadomi
+from collections.abc import Iterator
+from typing import Any
+
 import torch
-from torchvision.models.swin_transformer import ShiftedWindowAttention, ShiftedWindowAttentionV2
+import torch.nn as nn
+from torch.nn.utils.parametrize import ParametrizationList
+from torchvision.models.swin_transformer import ShiftedWindowAttention
 
-from ..modules.fusion import AdaptiveWeight, AdaptiveWeightedAdd, Lerp
-from ..modules.norm import LayerNormNoBias2d, ReparamBatchNorm2d, RMSNorm1, RMSNorm2d
+from ..modules.fusion import AdaptiveWeight, Lerp
+from ..modules.norm import GroupNormNoBias, ReparamBatchNorm2d, RMSNorm1, RMSNorm2d
+
+# RMSNorm1 is a subclass of nn.RMSNorm (0-centered), so DECAY_WEIGHT_MODULES
+# must be checked before NO_DECAY_WEIGHT_MODULES.
+DECAY_WEIGHT_MODULES: tuple[type[nn.Module], ...] = (
+    nn.Linear,
+    nn.Bilinear,
+    nn.Conv1d,
+    nn.Conv2d,
+    nn.Conv3d,
+    nn.ConvTranspose1d,
+    nn.ConvTranspose2d,
+    nn.ConvTranspose3d,
+    RMSNorm1,
+    RMSNorm2d,
+)
+
+NO_DECAY_WEIGHT_MODULES: tuple[type[nn.Module], ...] = (
+    nn.LayerNorm,
+    nn.BatchNorm1d,
+    nn.BatchNorm2d,
+    nn.BatchNorm3d,
+    nn.SyncBatchNorm,
+    nn.InstanceNorm1d,
+    nn.InstanceNorm2d,
+    nn.InstanceNorm3d,
+    nn.GroupNorm,
+    nn.RMSNorm,
+    nn.Embedding,
+    nn.EmbeddingBag,
+    nn.PReLU,
+    GroupNormNoBias,
+    ReparamBatchNorm2d,
+    Lerp,
+    AdaptiveWeight,
+)
+
+_MHA_DECAY_PARAMS = frozenset({"q_proj_weight", "k_proj_weight", "v_proj_weight", "in_proj_weight"})
+_MHA_NO_DECAY_PARAMS = frozenset({"bias_k", "bias_v"})
+_SWA_NO_DECAY_PARAMS = frozenset({"logit_scale", "relative_position_bias_table"})
 
 
-def configure_optim_groups(model, weight_decay=0.01):
+def iter_named_trainable_parameters(
+    model: nn.Module,
+    *,
+    deduplicate: bool = True,
+) -> Iterator[tuple[nn.Module, str, str, nn.Parameter]]:
+    """Yield (owning_module, local_param_name, full_param_name, param) for trainable parameters."""
+    seen: set[int] = set()
+    for module_name, module in model.named_modules():
+        for param_name, param in module.named_parameters(recurse=False):
+            if not param.requires_grad:
+                continue
+            if deduplicate:
+                param_id = id(param)
+                if param_id in seen:
+                    continue
+                seen.add(param_id)
+            full_name = f"{module_name}.{param_name}" if module_name else param_name
+            yield module, param_name, full_name, param
+
+
+def should_apply_weight_decay(module: nn.Module, param_name: str) -> bool | None:
+    """Return True for decay, False for no decay, or None if unclassified.
+
+    A module may define ``weight_decay_config(param_name: str) -> bool | None`` to
+    override classification for its own direct parameters (local names only; it does
+    not apply to child modules). Returning ``None`` falls back to the default rules.
+    Parametrized weights owned by ``ParametrizationList`` (e.g. ``spectral_norm``)
+    are unconditionally excluded from weight decay.
     """
-    This long function is unfortunately doing something very simple and is being very defensive:
-    We are separating out all parameters of the model into two buckets: those that will experience
-    weight decay for regularization and those that won't (biases, and layernorm/embedding weights).
-    We are then returning the PyTorch optimizer object.
-    """
+    weight_decay_config = getattr(module, "weight_decay_config", None)
+    if callable(weight_decay_config):
+        ret = weight_decay_config(param_name)
+        if ret is not None:
+            if not isinstance(ret, bool):
+                raise TypeError(
+                    f"{module.__class__.__name__}.weight_decay_config({param_name!r}) "
+                    f"must return bool or None, got {type(ret).__name__}"
+                )
+            return ret
 
-    # separate out all parameters to those that will and won't experience regularizing weight decay
-    decay = set()
-    no_decay = set()
-    whitelist_weight_modules = (
-        torch.nn.Linear,
-        torch.nn.Conv3d,
-        torch.nn.Conv2d,
-        torch.nn.Conv1d,
-        torch.nn.ConvTranspose2d,
-        RMSNorm1,  # 0-centered
-        RMSNorm2d,
+    if isinstance(module, ParametrizationList):
+        return False
+
+    if param_name.endswith("bias"):
+        return False
+
+    if isinstance(module, nn.MultiheadAttention):
+        if param_name in _MHA_DECAY_PARAMS:
+            return True
+        if param_name in _MHA_NO_DECAY_PARAMS:
+            return False
+
+    if isinstance(module, ShiftedWindowAttention) and param_name in _SWA_NO_DECAY_PARAMS:
+        return False
+
+    if isinstance(module, (nn.RNNBase, nn.RNNCellBase)):
+        if param_name.startswith("weight_"):
+            return True
+        if param_name.startswith("bias_"):
+            return False
+
+    if param_name == "weight":
+        if isinstance(module, DECAY_WEIGHT_MODULES):
+            return True
+        if isinstance(module, NO_DECAY_WEIGHT_MODULES):
+            return False
+
+    return None
+
+
+def split_weight_decay_params(model: nn.Module) -> tuple[list[nn.Parameter], list[nn.Parameter]]:
+    """Split trainable parameters of a model into (decay_params, no_decay_params) sorted by full name."""
+    decisions: dict[int, tuple[bool, str, nn.Parameter]] = {}
+    unclassified: list[str] = []
+    conflicts: list[str] = []
+
+    for module, param_name, full_name, param in iter_named_trainable_parameters(model, deduplicate=False):
+        decision = should_apply_weight_decay(module, param_name)
+        if decision is None:
+            unclassified.append(f"{full_name} ({module.__class__.__name__}, shape={tuple(param.shape)})")
+            continue
+
+        param_id = id(param)
+        prev = decisions.get(param_id)
+        if prev is None:
+            decisions[param_id] = (decision, full_name, param)
+        elif prev[0] != decision:
+            conflicts.append(f"{prev[1]} (decay={prev[0]}) vs {full_name} (decay={decision})")
+        elif full_name < prev[1]:
+            decisions[param_id] = (decision, full_name, param)
+
+    if unclassified:
+        raise ValueError("Unclassified parameters for weight decay: " + ", ".join(unclassified))
+    if conflicts:
+        raise ValueError("Conflicting weight decay decisions for tied parameters: " + ", ".join(conflicts))
+
+    decay_named = sorted(
+        ((name, param) for decision, name, param in decisions.values() if decision),
+        key=lambda item: item[0],
     )
-    blacklist_weight_modules = (
-        torch.nn.LayerNorm,
-        torch.nn.Embedding,
-        torch.nn.BatchNorm2d,
-        torch.nn.BatchNorm1d,
-        torch.nn.GroupNorm,
-        torch.nn.RMSNorm,
-        LayerNormNoBias2d,
-        Lerp,
-        AdaptiveWeight,
-        AdaptiveWeightedAdd,
-        ReparamBatchNorm2d,
+    no_decay_named = sorted(
+        ((name, param) for decision, name, param in decisions.values() if not decision),
+        key=lambda item: item[0],
     )
-    for mn, m in model.named_modules():
-        for pn, p in m.named_parameters():
-            fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
+    return [param for _, param in decay_named], [param for _, param in no_decay_named]
 
-            # random note: because named_modules and named_parameters are recursive
-            # we will see the same tensors p many many times. but doing it this way
-            # allows us to know which parent module any tensor p belongs to...
-            if not p.requires_grad:
-                # no grad
-                no_decay.add(fpn)
-            elif pn.endswith("bias"):
-                # all biases will not be decayed
-                no_decay.add(fpn)
-            elif pn.endswith("weight") and isinstance(m, whitelist_weight_modules):
-                # weights of whitelist modules will be weight decayed
-                decay.add(fpn)
-            elif pn.endswith("weight") and isinstance(m, blacklist_weight_modules):
-                # weights of blacklist modules will NOT be weight decayed
-                no_decay.add(fpn)
-            elif isinstance(m, torch.nn.MultiheadAttention):
-                param_name = pn.split(".")[-1]
-                if param_name in {"q_proj_weight", "k_proj_weight", "v_proj_weight", "in_proj_weight"}:
-                    decay.add(fpn)
-                else:
-                    pass
-            elif isinstance(m, ShiftedWindowAttentionV2):
-                if pn.endswith("logit_scale"):
-                    no_decay.add(fpn)
-            elif isinstance(m, ShiftedWindowAttention):
-                if pn.endswith("relative_position_bias_table"):
-                    no_decay.add(fpn)
-            elif m.__class__.__name__ in {"ParametrizedConv2d", "ParametrizedLinear", "ParametrizedConvTranspose2d"}:
-                no_decay.add(fpn)
-            elif hasattr(m, "weight_decay_config"):
-                ret = m.weight_decay_config(pn)
-                if ret is None:
-                    pass
-                else:
-                    if ret:
-                        decay.add(fpn)
-                    else:
-                        no_decay.add(fpn)
-            else:
-                pass
 
-    # validate that we considered every parameter
-    param_dict = {pn: p for pn, p in model.named_parameters()}
-    inter_params = decay & no_decay
-    union_params = decay | no_decay
-    assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
-    assert len(param_dict.keys() - union_params) == 0, (
-        "parameters %s were not separated into either decay/no_decay set!" % (str(param_dict.keys() - union_params),)
-    )
-
-    # create the pytorch optimizer object
-    optim_groups = [
-        {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": weight_decay},
-        {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
-    ]
+def configure_optim_groups(model: nn.Module, weight_decay: float = 0.01) -> list[dict[str, Any]]:
+    decay_params, no_decay_params = split_weight_decay_params(model)
+    optim_groups: list[dict[str, Any]] = []
+    if decay_params:
+        optim_groups.append({"params": decay_params, "weight_decay": weight_decay})
+    if no_decay_params:
+        optim_groups.append({"params": no_decay_params, "weight_decay": 0.0})
     return optim_groups
 
 
-def configure_adamw(model, lr=0.001, betas=(0.9, 0.999), weight_decay=0.01, fused=None):
+def configure_adamw(
+    model: nn.Module,
+    lr: float = 0.001,
+    betas: tuple[float, float] = (0.9, 0.999),
+    weight_decay: float = 0.01,
+    fused: bool | None = None,
+) -> torch.optim.AdamW:
     optim_groups = configure_optim_groups(model, weight_decay=weight_decay)
-    optimizer = torch.optim.AdamW(optim_groups, lr=lr, betas=betas, fused=fused)
-    return optimizer
+    return torch.optim.AdamW(optim_groups, lr=lr, betas=betas, weight_decay=0.0, fused=fused)

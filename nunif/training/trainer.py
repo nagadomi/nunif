@@ -195,15 +195,13 @@ class Trainer(ABC):
 
         if optimizer_type == "adam":
             return optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, 0.999))
-        elif optimizer_type == "adamw":
-            return configure_adamw(model, lr=lr, weight_decay=weight_decay, betas=(adam_beta1, 0.999))
-        elif optimizer_type == "adamw_fused":
+        elif optimizer_type in {"adamw", "adamw_fused"}:
             return configure_adamw(
                 model,
                 lr=lr,
                 weight_decay=weight_decay,
                 betas=(adam_beta1, 0.999),
-                fused=True,
+                fused=True if optimizer_type == "adamw_fused" else None,
             )
         elif optimizer_type == "sgd":
             return optim.SGD(model.parameters(), lr=lr, momentum=self.args.momentum, weight_decay=weight_decay)
@@ -227,8 +225,8 @@ class Trainer(ABC):
                 optim_groups,
                 lr=lr,
                 betas=(adam_beta1, 0.999),
+                weight_decay=0.0,
                 warmup_steps=self.args.warmup_epoch * num_samples // (self.args.batch_size * self.args.backward_step),
-                weight_decay=weight_decay,
                 **kwargs,
             )
             return optimizer

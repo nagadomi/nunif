@@ -10,7 +10,7 @@ class CosineAnnealingWarmRestartsWithFixedWeightDecay(CosineAnnealingWarmRestart
     # ```
     def __init__(self, optimizer, T_0, T_mult=1, eta_min=0, last_epoch=-1):
         for group in optimizer.param_groups:
-            if group.get("weight_decay", 0) > 0 and "initial_weight_decay" not in group:
+            if group.get("weight_decay", 0) > 0 and "_initial_weight_decay" not in group:
                 group["_initial_weight_decay"] = group["weight_decay"]
         super().__init__(optimizer, T_0, T_mult, eta_min, last_epoch)
 
