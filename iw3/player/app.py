@@ -17,6 +17,7 @@ from iw3.desktop.video_stream_encoder import resolve_stream_video_codec
 
 from .dir_config import PUBLIC_DIR
 from .media_library import MediaLibrary
+from .origin_check import is_same_origin_request
 from .schema import MediaItem, StreamSettingsUpdate
 from .server_state import ServerState
 
@@ -40,6 +41,23 @@ async def authenticate(conn: HTTPConnection, credentials: Optional[HTTPBasicCred
         detail="Incorrect username or password",
         headers={"WWW-Authenticate": "Basic"},
     )
+
+
+def _is_same_origin_connection(conn: HTTPConnection) -> bool:
+    return is_same_origin_request(
+        origin=conn.headers.get("origin"),
+        sec_fetch_site=conn.headers.get("sec-fetch-site"),
+        host=conn.headers.get("host"),
+        scheme=conn.url.scheme,
+    )
+
+
+async def verify_same_origin(conn: HTTPConnection) -> None:
+    if not _is_same_origin_connection(conn):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cross-origin request forbidden",
+        )
 
 
 @asynccontextmanager
@@ -145,7 +163,7 @@ async def serve_subtitles(
     return library.get_subtitles(path, if_none_match=request.headers.get("if-none-match"))
 
 
-@app.post("/api/cache/clear")
+@app.post("/api/cache/clear", dependencies=[Depends(verify_same_origin)])
 async def clear_cache(state: ServerState = Depends(get_state)):
     try:
         if state.cache_db is not None:
@@ -189,7 +207,7 @@ async def get_stream_info(stream_hub=Depends(get_stream_hub)):
     return stream_hub.get_stream_info()
 
 
-@app.post("/api/stream/start")
+@app.post("/api/stream/start", dependencies=[Depends(verify_same_origin)])
 async def start_desktop_stream(
     state: ServerState = Depends(get_state),
     stream_hub=Depends(get_stream_hub),
@@ -198,7 +216,7 @@ async def start_desktop_stream(
     return stream_hub.get_stream_info()
 
 
-@app.post("/api/stream/stop")
+@app.post("/api/stream/stop", dependencies=[Depends(verify_same_origin)])
 async def stop_desktop_stream(
     state: ServerState = Depends(get_state),
     _stream_hub=Depends(get_stream_hub),
@@ -221,7 +239,7 @@ async def get_stream_settings(
     return service.get_settings()
 
 
-@app.post("/api/stream/settings")
+@app.post("/api/stream/settings", dependencies=[Depends(verify_same_origin)])
 async def update_stream_settings(
     payload: StreamSettingsUpdate,
     state: ServerState = Depends(get_state),
@@ -234,7 +252,7 @@ async def update_stream_settings(
     return service.update_settings(updates)
 
 
-@app.get("/api/stream")
+@app.get("/api/stream", dependencies=[Depends(verify_same_origin)])
 async def serve_desktop_stream(
     state: ServerState = Depends(get_state),
     stream_hub=Depends(get_stream_hub),
@@ -276,6 +294,10 @@ def _can_accept_ws_codecs(stream_hub, requested_codecs: list[str]) -> bool:
 
 @app.websocket("/api/stream/ws")
 async def serve_desktop_stream_ws(websocket: WebSocket):
+    if not _is_same_origin_connection(websocket):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     state: ServerState = websocket.app.state.server_state
     stream_hub = getattr(state, "stream_hub", None)
     await websocket.accept()

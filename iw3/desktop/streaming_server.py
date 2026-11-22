@@ -181,6 +181,10 @@ class StreamingServer:
         start_response(STATUS_OK, [("Content-type", "text/html; charset=utf-8")])
         return [page_data]
 
+    def send_403(self, start_response):
+        start_response("403 Forbidden", [("Content-Type", "text/plain")])
+        return [b"403 Forbidden"]
+
     def send_404(self, start_response):
         start_response("404 Not Found", [("Content-Type", "text/plain")])
         return [b"404 Not Found"]
@@ -203,6 +207,20 @@ class StreamingServer:
                     [("WWW-Authenticate", "Basic charset=utf-8"), ("Content-Type", "text/plain; charset=utf-8")],
                 )
                 return [b"Authorization Required"]
+
+        if uri in (self.stream_uri, "/process_token"):
+            origin = environ.get("HTTP_ORIGIN")
+            sec_fetch_site = environ.get("HTTP_SEC_FETCH_SITE")
+            if origin is not None or sec_fetch_site is not None:
+                from ..player.origin_check import is_same_origin_request
+
+                if not is_same_origin_request(
+                    origin=origin,
+                    sec_fetch_site=sec_fetch_site,
+                    host=environ.get("HTTP_HOST"),
+                    scheme=environ.get("wsgi.url_scheme", "http"),
+                ):
+                    return self.send_403(start_response)
 
         if uri == "/":
             return self.send_index(start_response)
