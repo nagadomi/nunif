@@ -209,6 +209,12 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> PlainT
     return PlainTextResponse(content=str(exc.detail), status_code=exc.status_code)
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:
+    logger.exception(f"Unhandled exception on {request.method} {request.url.path}: {exc}")
+    return PlainTextResponse(content="Internal Server Error", status_code=500)
+
+
 def load_or_create_cookie_secret(secret_file: str = COOKIE_SECRET_FILE) -> bytes:
     lock = filelock.FileLock(secret_file + ".lock")
     with lock:
@@ -1021,9 +1027,11 @@ def create_hypercorn_config(bind_addr: str, port: int, debug: bool = False) -> C
     config.keep_alive_timeout = 120
     config.graceful_timeout = 1.0
     config.include_server_header = False
-    if not debug:
+    config.errorlog = "-"
+    if debug:
+        config.accesslog = "-"
+    else:
         config.accesslog = None
-        config.errorlog = None
     return config
 
 
