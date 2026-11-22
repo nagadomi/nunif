@@ -26,6 +26,7 @@ simpleeval
 fastapi
 hypercorn
 python-multipart
+jinja2
 pysubs2
 pyopenssl==25.3.0
 

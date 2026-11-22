@@ -137,11 +137,11 @@
         </div>
         <div id="turnstile_container">
         </div>
-        % if button_convert:
+        {% if button_convert %}
           <input id="submit-button" type="submit" class="button" value="{{button_convert}}">
-        % else:
+        {% else %}
           <input id="submit-button" type="submit" class="button">
-        % end
+        {% endif %}
       </form>
     </div>
   </body>
