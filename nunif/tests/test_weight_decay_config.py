@@ -160,23 +160,40 @@ def test_attention_modules() -> None:
     assert id(swa_v2.logit_scale) in no_decay_ids
 
 
-def test_custom_weight_decay_config_hook_does_not_leak_to_children() -> None:
+def test_custom_weight_decay_config_hook_ancestor_resolution_and_precedence() -> None:
+    class ChildWithHook(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fc = nn.Linear(4, 4)
+
+        def weight_decay_config(self, pn: str) -> bool | None:
+            if pn == "fc.weight":
+                return True
+            return None
+
     class ParentWithHook(nn.Module):
         def __init__(self) -> None:
             super().__init__()
             self.scale = nn.Parameter(torch.ones(1))
             self.extra = nn.Parameter(torch.ones(2, 2))
             self.linear = nn.Linear(4, 4)
+            self.to_image = nn.Conv2d(4, 3, 1, 1)
+            self.child = ChildWithHook()
 
         def weight_decay_config(self, pn: str) -> bool | None:
             if pn == "scale":
                 return False
             if pn == "extra":
                 return True
+            if pn.startswith("to_image."):
+                return False
+            if pn.startswith("child."):
+                # Overridden by ChildWithHook for child.fc.weight
+                return False
             return None
 
     model = ParentWithHook()
-    decay, no_decay = split_weight_decay_params(model)
+    decay, no_decay = split_weight_decay_params(nn.DataParallel(model))
     decay_ids = _param_ids(decay)
     no_decay_ids = _param_ids(no_decay)
 
@@ -184,6 +201,10 @@ def test_custom_weight_decay_config_hook_does_not_leak_to_children() -> None:
     assert id(model.extra) in decay_ids
     assert id(model.linear.weight) in decay_ids
     assert id(model.linear.bias) in no_decay_ids
+    assert id(model.to_image.weight) in no_decay_ids
+    assert id(model.to_image.bias) in no_decay_ids
+    assert id(model.child.fc.weight) in decay_ids
+    assert id(model.child.fc.bias) in no_decay_ids
 
 
 def test_custom_weight_decay_config_hook_overrides_defaults_and_validates_type() -> None:

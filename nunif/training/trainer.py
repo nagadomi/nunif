@@ -19,7 +19,7 @@ from .cosine_wd import (
     CosineAnnealingWarmRestartsWithFixedWeightDecay,
     CosineAnnealingWarmRestartsWithScheduledWeightDecay,
 )
-from .weight_decay_config import configure_adamw, configure_optim_groups
+from .weight_decay_config import configure_adamw, configure_muon, configure_optim_groups
 
 try:
     import schedulefree
@@ -202,6 +202,16 @@ class Trainer(ABC):
                 weight_decay=weight_decay,
                 betas=(adam_beta1, 0.999),
                 fused=True if optimizer_type == "adamw_fused" else None,
+            )
+        elif optimizer_type in {"muon", "muon_fused"}:
+            return configure_muon(
+                model,
+                lr=lr,
+                weight_decay=weight_decay,
+                momentum=getattr(self.args, "muon_momentum", 0.95),
+                adjust_lr_fn=getattr(self.args, "muon_adjust_lr_fn", "match_rms_adamw"),
+                betas=(adam_beta1, 0.999),
+                fused=True if optimizer_type == "muon_fused" else None,
             )
         elif optimizer_type == "sgd":
             return optim.SGD(model.parameters(), lr=lr, momentum=self.args.momentum, weight_decay=weight_decay)
@@ -394,6 +404,8 @@ def create_trainer_default_parser():
             "adam",
             "adamw",
             "adamw_fused",
+            "muon",
+            "muon_fused",
             "sgd",
             "lion",
             "sgd_schedulefree",
@@ -403,12 +415,22 @@ def create_trainer_default_parser():
         default="adam",
         help="optimizer",
     )
-    parser.add_argument("--weight-decay", type=float, default=1e-4, help="weight decay coefficient for adamw, sgd")
+    parser.add_argument(
+        "--weight-decay", type=float, default=1e-4, help="weight decay coefficient for adamw, muon, sgd"
+    )
     parser.add_argument(
         "--weight-decay-end", type=float, default=0.05, help="max weight decay coefficient for cosine_wd"
     )
     parser.add_argument("--adam-beta1", type=float, default=0.9, help="beta1 hyperparameter for adam/adamw")
     parser.add_argument("--momentum", type=float, default=0.9, help="momentum for sgd")
+    parser.add_argument("--muon-momentum", type=float, default=0.95, help="momentum for muon")
+    parser.add_argument(
+        "--muon-adjust-lr-fn",
+        type=str,
+        choices=["match_rms_adamw", "original", "spectral_unclamped"],
+        default="match_rms_adamw",
+        help="adjust_lr_fn for muon",
+    )
     parser.add_argument(
         "--num-workers", type=int, default=num_workers, help="number of worker processes for data loader"
     )
