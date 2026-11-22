@@ -321,7 +321,7 @@ def setup():
     gc_collect()
 
     cache = Cache(args.cache_dir, size_limit=args.cache_size_limit * 1073741824)
-    cache_gc = CacheGC(cache, args.cache_ttl * 60)
+    cache_gc = CacheGC(cache, 60)
     config = ConfigParser()
     if args.config:
         config.read(args.config)
