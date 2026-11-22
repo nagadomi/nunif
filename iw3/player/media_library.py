@@ -126,14 +126,13 @@ class MediaLibrary:
             cache_key=cache_key,
         )
         if stereo_fmt is None and predict_if_unknown:
-            with z.open(info) as f:
-                data = f.read()
-                stereo_fmt = detect_image_format(
-                    io.BytesIO(data),
-                    path_or_candidates=candidates,
-                    cache_db=self.state.cache_db,
-                    cache_key=cache_key,
-                )
+            data = self._read_zip_entry_bytes(z, info)
+            stereo_fmt = detect_image_format(
+                io.BytesIO(data),
+                path_or_candidates=candidates,
+                cache_db=self.state.cache_db,
+                cache_key=cache_key,
+            )
         return stereo_fmt
 
     def _build_fs_item(
@@ -282,25 +281,42 @@ class MediaLibrary:
                 raise HTTPException(status_code=500, detail="Internal server error")
         return sorted(items, key=lambda x: (x["type"] != "directory", x["name"]))
 
+    @staticmethod
+    def _read_zip_entry_bytes(
+        z: zipfile.ZipFile,
+        info: zipfile.ZipInfo,
+    ) -> bytes:
+        if info.is_dir():
+            raise HTTPException(status_code=404, detail="File not found in archive")
+        with z.open(info) as f:
+            return f.read()
+
+    def _read_zip_image_bytes(self, abs_zip_path: str, internal_path: str) -> bytes:
+        try:
+            with zipfile.ZipFile(abs_zip_path, "r") as z:
+                info = z.getinfo(internal_path)
+                return self._read_zip_entry_bytes(z, info)
+        except HTTPException:
+            raise
+        except KeyError:
+            raise HTTPException(status_code=404, detail="File not found in archive")
+        except Exception as e:
+            print(f"Archive read error: {e}", file=sys.stderr)
+            raise HTTPException(status_code=500, detail="Internal server error")
+
     def get_file_response(self, path: str) -> Response:
         zip_rel, internal_path = self.split_zip_path(path.lstrip("/"))
         if internal_path:
-            abs_zip_path = self._resolve_zip_path(zip_rel)
-            try:
-                with zipfile.ZipFile(abs_zip_path, "r") as z:
-                    with z.open(internal_path) as f:
-                        data = f.read()
-                        ext = os.path.splitext(internal_path)[1].lower()
-                        mimetype = IMAGE_MIME_TYPES.get(ext, "image/jpeg")
-                        return Response(content=data, media_type=mimetype)
-            except KeyError:
+            ext = os.path.splitext(internal_path)[1].lower()
+            if ext not in IMAGE_EXTENSIONS:
                 raise HTTPException(status_code=404, detail="File not found in archive")
-            except Exception as e:
-                print(f"Archive extraction error: {e}", file=sys.stderr)
-                raise HTTPException(status_code=500, detail="Internal server error")
+            abs_zip_path = self._resolve_zip_path(zip_rel)
+            data = self._read_zip_image_bytes(abs_zip_path, internal_path)
+            mimetype = IMAGE_MIME_TYPES.get(ext, "image/jpeg")
+            return Response(content=data, media_type=mimetype)
         else:
             abs_path = self._resolve_fs_path(path)
-            if not os.path.isfile(abs_path):
+            if not os.path.isfile(abs_path) or self._get_item_type(abs_path) not in {"image", "video"}:
                 raise HTTPException(status_code=404, detail="File not found")
             return FileResponse(abs_path)
 
@@ -325,18 +341,13 @@ class MediaLibrary:
             return Response(status_code=304)
 
         if internal_path:
+            ext = os.path.splitext(internal_path)[1].lower()
+            if ext not in IMAGE_EXTENSIONS:
+                raise HTTPException(status_code=404, detail="File not found in archive")
             abs_zip_path = self._resolve_zip_path(zip_rel)
             zip_bytes: Optional[bytes] = None
             if self.state.cache_db.get(etag) is None:
-                try:
-                    with zipfile.ZipFile(abs_zip_path, "r") as z:
-                        with z.open(internal_path) as f:
-                            zip_bytes = f.read()
-                except KeyError:
-                    raise HTTPException(status_code=404, detail="File not found in archive")
-                except Exception as e:
-                    print(f"Archive read error: {e}", file=sys.stderr)
-                    raise HTTPException(status_code=500, detail="Internal server error")
+                zip_bytes = self._read_zip_image_bytes(abs_zip_path, internal_path)
 
             candidates = [
                 os.path.basename(internal_path),
@@ -353,6 +364,8 @@ class MediaLibrary:
             )
         else:
             abs_path = self._resolve_fs_path(norm_path)
+            if not os.path.isfile(abs_path) or self._get_item_type(abs_path) not in {"image", "video"}:
+                raise HTTPException(status_code=404, detail="File not found")
             ext = os.path.splitext(abs_path)[1].lower()
             return get_thumbnail_response(
                 cache_db=self.state.cache_db,
