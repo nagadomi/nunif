@@ -25,6 +25,7 @@ simpleeval
 # iw3-player
 fastapi
 hypercorn
+python-multipart
 pysubs2
 pyopenssl==25.3.0
 
