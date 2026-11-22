@@ -2,9 +2,6 @@ name: Build Python dev files for Windows
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - python_dev
 
 permissions:
   contents: write
