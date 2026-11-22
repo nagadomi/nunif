@@ -1,4 +1,5 @@
 # Pixel Mean Flow (x-prediction)
+# Reference: https://github.com/Lyy-iiis/pMF
 import os
 
 os.environ["NUNIF_TRAIN"] = "1"
@@ -22,20 +23,30 @@ from .celeba_dataset import IMAGE_SIZE, CelebADataset
 from .dit_pmf import DiTPMF
 
 
-def predict_u(model: DiTPMF, x_t: torch.Tensor, t: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
-    x_u = model.forward_u(x_t, t, h)
+def unwrap_ema(model: nn.Module) -> DiTPMF:
+    if isinstance(model, DiTPMF):
+        return model
+    mod = getattr(model, "module", None)
+    assert isinstance(mod, DiTPMF)
+    return mod
+
+
+def predict_u(model: nn.Module, x_t: torch.Tensor, t: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+    dit_model = unwrap_ema(model)
+    x_u = dit_model.forward_u(x_t, t, h)
     denom = t.view(-1, 1, 1, 1).clamp(min=0.05)
     return (x_t - x_u) / denom
 
 
-def _predict_v_tangent(model: DiTPMF, x_t: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-    x_v = model.forward_v(x_t, t)
+def _predict_v_tangent(model: nn.Module, x_t: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    dit_model = unwrap_ema(model)
+    x_v = dit_model.forward_v(x_t, t)
     denom = t.view(-1, 1, 1, 1).clamp(min=0.05)
     return (x_t - x_v) / denom
 
 
 @torch.inference_mode()
-def sample(model: DiTPMF, x: torch.Tensor, steps: int = 1, shift: float = 1.0) -> torch.Tensor:
+def sample(model: nn.Module, x: torch.Tensor, steps: int = 1, shift: float = 1.0) -> torch.Tensor:
     assert steps >= 1
     assert shift > 0.0
 
@@ -134,7 +145,7 @@ class PMFEnv(I2IEnv):
 
     def _compute_step_losses(
         self,
-        model: DiTPMF,
+        model: nn.Module,
         x: torch.Tensor,
         generator: torch.Generator | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -212,11 +223,9 @@ class PMFEnv(I2IEnv):
         super().eval_begin()
 
     def eval_step(self, data: tuple[torch.Tensor, ...]) -> None:
-        assert not self.trainer.args.ema_model, "EMA is not supported in PMFEnv"
         x, *_ = data
         x = self.to_device(x)
         model = self.get_eval_model()
-        assert isinstance(model, DiTPMF)
         with self.autocast():
             _, metric_u, metric_v, metric_lpips = self._compute_step_losses(model, x, generator=self.eval_rng)
         self._accumulate_metrics(metric_u, metric_v, metric_lpips)
@@ -232,9 +241,7 @@ class PMFEnv(I2IEnv):
             print(f"loss: {mean_loss:.6f} (u: {mean_u:.6f}, v: {mean_v:.6f})", file=file)
 
     def eval_end(self, file: TextIO = sys.stdout) -> float | torch.Tensor:
-        assert not self.trainer.args.ema_model, "EMA is not supported in PMFEnv"
         model = self.get_eval_model()
-        assert isinstance(model, DiTPMF)
         self.eval_rng.manual_seed(42)
         with self.autocast():
             outputs = sample(
@@ -249,9 +256,6 @@ class PMFEnv(I2IEnv):
 
 
 class PMFTrainer(Trainer):
-    def setup(self) -> None:
-        assert not self.args.ema_model, "EMA is not supported in PMFTrainer"
-
     def create_dataloader(self, type: str) -> torch.utils.data.DataLoader:
         assert type in {"train", "eval"}
         if type == "train":
@@ -308,13 +312,16 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--perceptual-max-t", type=float, default=0.8)
     parser.add_argument("--sample-steps", type=int, default=1)
     parser.set_defaults(
-        batch_size=32,
         num_workers=8,
+        batch_size=32,
         max_epoch=400,
-        learning_rate=0.001,
-        optimizer="adamw_schedulefree",
-        warmup_epoch=1,
         eval_step=4,
+        optimizer="muon_fused",
+        learning_rate=0.0001,
+        scheduler="step",
+        ema_model=True,
+        ema_decay=0.995,
+        ema_step=8,
         amp_float="bfloat16",
     )
     return parser

@@ -89,6 +89,15 @@ class DiTPMF(Model):
         feat, time_emb = self._encode_backbone(x, t, torch.zeros_like(t))
         return self._run_head(feat, time_emb, self.v_heads, self.v_last_layer)
 
+    def muon_config(self, pn: str):
+        # if pn.startswith("in_proj."):
+        #     return False
+        # if pn.startswith("t_mlp."):
+        #     return False
+        # if pn.startswith("h_mlp."):
+        #     return False
+        return None
+
 
 def _test_model() -> None:
     from nunif.modules.attention import use_math_attention

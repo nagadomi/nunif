@@ -107,6 +107,11 @@ class LastLayer(nn.Module):
         x = self.proj(x)
         return x
 
+    def muon_config(self, pn: str):
+        # if pn.startswith("proj."):
+        #     return False
+        return None
+
 
 class Blocks(nn.Module):
     def __init__(self, in_channels, num_heads, num_layers, time_dim, mlp_ratio=3):
@@ -160,6 +165,13 @@ class DiT(Model):
         x = F.pixel_shuffle(x, DOWNSAMPLING_FACTOR)
 
         return x
+
+    def muon_config(self, pn: str):
+        # if pn.startswith("in_proj."):
+        #     return False
+        # if pn.startswith("time_mlp."):
+        #     return False
+        return None
 
 
 def _test_model():
