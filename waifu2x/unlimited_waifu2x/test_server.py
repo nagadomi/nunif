@@ -2,38 +2,60 @@
 # View at http://localhost:8812/
 # Do not use this server in product environments.
 import argparse
+import asyncio
 from os import path
 
-import bottle
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
 
-parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument(
-    "--cors",
-    action="store_true",
-    help=(
-        "Add CORS header for testing wasm multi-threading."
-        " google-chrome does not work for security reasons (localhost CORS), use firefox"
-    ),
-)
-parser.add_argument("--bind-addr", type=str, default="127.0.0.1", help="0.0.0.0 for global, 127.0.0.1 for local")
-args = parser.parse_args()
 ROOT_DIR = path.abspath(path.join(path.dirname(__file__), "public_html"))
+app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+cors_enabled = False
 
 
-@bottle.get("/<url:re:.*>")
-def static_file(url):
+@app.get("/{url:path}")
+async def static_file(url: str) -> FileResponse:
+    """Serve static files from public_html with optional cross-origin isolation headers."""
     if not url:
         url = "index.html"
-    response = bottle.static_file(url, root=ROOT_DIR)
-    if args.cors:
-        response.set_header("Cross-Origin-Resource-Policy", "cross-origin")
-        response.set_header("Cross-Origin-Embedder-Policy", "require-corp")
-        response.set_header("Cross-Origin-Opener-Policy", "same-origin")
+    abs_root = path.realpath(ROOT_DIR)
+    abs_path = path.realpath(path.join(abs_root, url.lstrip("/")))
+    if path.commonpath([abs_root, abs_path]) != abs_root or not path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    response = FileResponse(abs_path)
+    if cors_enabled:
+        response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+        response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     return response
 
 
-def main():
-    bottle.run(host=args.bind_addr, port=8812, backend="waitress", debug=True)
+def main() -> None:
+    """Parse CLI arguments and run the Hypercorn test server."""
+    global cors_enabled
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        "--cors",
+        action="store_true",
+        help=(
+            "Add CORS header for testing wasm multi-threading."
+            " google-chrome does not work for security reasons (localhost CORS), use firefox"
+        ),
+    )
+    parser.add_argument("--bind-addr", type=str, default="127.0.0.1", help="0.0.0.0 for global, 127.0.0.1 for local")
+    parser.add_argument("--port", type=int, default=8812, help="HTTP port number")
+    args = parser.parse_args()
+    cors_enabled = args.cors
+
+    config = Config()
+    config.bind = [f"{args.bind_addr}:{args.port}"]
+    try:
+        asyncio.run(serve(app, config))  # type: ignore[arg-type]
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
