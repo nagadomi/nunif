@@ -7,8 +7,6 @@
 requests
 tqdm
 scipy
-waitress
-bottle==0.12.25
 diskcache
 psutil
 pyyaml
