@@ -646,7 +646,6 @@ def init_desktop_pipeline(
                 crop_right=args.crop_right,
                 crop_bottom=args.crop_bottom,
                 draw_cursor_enabled=not args.disable_draw_cursor,
-                restore_token=obs_restore_token,
             )
 
         if args.compile:
