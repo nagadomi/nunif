@@ -1,4 +1,3 @@
-from packaging import version as packaging_version
 import torch
 from datetime import datetime, timezone
 from collections import OrderedDict
@@ -7,9 +6,6 @@ from . register import create_model
 from . model import Model
 from .. logger import logger
 from .. device import create_device, autocast
-
-
-PYTORCH2 = packaging_version.parse(torch.__version__).major >= 2
 
 
 def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
@@ -40,10 +36,7 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
 
 
 def load_model(model_path, model=None, device_ids=None,
-               strict=True, map_location="cpu", weights_only=False):
-    if not PYTORCH2:
-        # Disabled due to https://github.com/pytorch/pytorch/issues/94670
-        weights_only = False
+               strict=True, map_location="cpu", weights_only=True):
     if "mps" in str(map_location):
         map_location = "cpu"
     if model_path.startswith("http://") or model_path.startswith("https://"):

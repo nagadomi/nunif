@@ -16,7 +16,7 @@ def main():
     for checkpoint_file in sorted(args.input):
         print("----")
         print(checkpoint_file)
-        meta = torch.load(checkpoint_file)
+        meta = torch.load(checkpoint_file, map_location="cpu", weights_only=True)
         meta = {k: meta.get(k, None) for k in ("name", "updated_at", "last_epoch", "train_kwargs")}
         pprint(meta, width=80, sort_dicts=False)
 
