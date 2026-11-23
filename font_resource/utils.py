@@ -2,7 +2,8 @@ from os import path
 
 from nunif.logger import logger
 
-from .metadata import FONT_MAP, VALIDATE_FONT_SIZE, FontInfo
+from .font_map import FONT_MAP
+from .metadata import VALIDATE_FONT_SIZE, FontInfo
 
 FONT_DIR = path.join(path.dirname(__file__), "fonts")
 

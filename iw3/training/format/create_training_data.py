@@ -123,7 +123,7 @@ def main(args: argparse.Namespace) -> None:
 
                 with torch.inference_mode():
                     depth = model.infer(im, enable_amp=True)
-                    assert depth is not None
+                    assert isinstance(depth, torch.Tensor)
                     if depth.shape[-2:] != (im.height, im.width):
                         depth = F.interpolate(
                             depth.unsqueeze(0),
