@@ -26,7 +26,7 @@ hypercorn
 python-multipart
 jinja2
 pysubs2
-pyopenssl==25.3.0
+cryptography
 
 # depthpro da3
 pillow_heif
