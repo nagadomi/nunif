@@ -75,7 +75,6 @@ def web_env(tmp_path_factory: pytest.TempPathFactory) -> Generator[dict[str, Any
         batch_size=1,
         tta=False,
         disable_amp=True,
-        image_lib="pil",
         cache_ttl=1,
         enable_recaptcha=False,
         enable_turnstile=False,
