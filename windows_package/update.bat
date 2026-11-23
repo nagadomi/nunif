@@ -54,6 +54,10 @@ copy /y "%NUNIF_DIR%\windows_package\update-installer.bat" "%~dp0\update-install
 echo Installing Python Packages...
 python -m pip install --no-cache-dir --upgrade pip
 if %ERRORLEVEL% neq 0 goto :on_error
+if exist "%NUNIF_DIR%\uninstall-packages.txt" (
+  python -m pip uninstall -qq -y -r "%NUNIF_DIR%\uninstall-packages.txt"
+  if !ERRORLEVEL! neq 0 goto :on_error
+)
 python -m pip install --no-cache-dir --upgrade -r "%NUNIF_DIR%\requirements-torch.txt"
 if %ERRORLEVEL% neq 0 goto :on_error
 python -m pip install --no-cache-dir --upgrade -r "%NUNIF_DIR%\requirements.txt"

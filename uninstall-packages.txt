@@ -1,0 +1,4 @@
+# Deprecated packages to uninstall on update
+pyopenssl
+bottle
+waitress
