@@ -828,7 +828,7 @@ def run_api_sync(request: Request, form: Any) -> tuple[bytes, str, str]:
 async def api(request: Request) -> Response:
     # {'url': 'https://ja.wikipedia.org/static/images/icons/wikipedia.png',
     #  'style': 'photo', 'noise': '1', 'scale': '2', 'recap': 'xxxxx'}
-    form = await request.form()
+    form = await request.form(max_files=1)
     try:
         image_data, image_format, output_filename = await anyio.to_thread.run_sync(run_api_sync, request, form)
     finally:
