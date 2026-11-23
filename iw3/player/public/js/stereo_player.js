@@ -23,7 +23,12 @@ class StereoPlayer extends THREE.Group {
 
         storage.setDebugLog(debugLogInstance);
 
+        this.isARMode = false;
         this.scene.background = new THREE.Color(0x000000);
+        this.appConfig = { mode: 'player', features: { file_library: true, desktop_stream: false } };
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+        this.configReady = this._fetchAppConfig();
 
         // Managers
         this.galleryManager = new GalleryManager(debugLogInstance);
@@ -47,6 +52,14 @@ class StereoPlayer extends THREE.Group {
         this.playbackController.addEventListener('video-destroyed', () => {
             if (this.planeScreen) this.planeScreen.resetTexture();
             if (this.domeScreen) this.domeScreen.resetTexture();
+        });
+        this.playbackController.addEventListener('stream-updated', (e) => {
+            this.onStreamUpdated(e.detail);
+        });
+        this.playbackController.addEventListener('stream-auth-required', () => {
+            if (!this.renderer.xr.isPresenting) {
+                window.location.reload();
+            }
         });
 
         // Screen & Subtitle
@@ -105,15 +118,55 @@ class StereoPlayer extends THREE.Group {
         this._tempPosR = new THREE.Vector3();
         this._headWorldPos = new THREE.Vector3();
 
+        this.rotation.order = 'YXZ';
+        this.trackDevice = DEFAULTS.screen_track_device;
+        this._resetScreenFrames = 5;
+        this._resetScreenYaw = false;
+
         this.setupXRSessionEvents();
         
         // Initial state for non-XR mode
         this.activeScreen.updateEyeVisibility(false);
         this.activeScreen.clearScreen();
 
-        this.galleryManager.fetchDirectory('/').then(() => {
-            this.debugLogInstance.log(`${this.galleryManager.playbackGallery.length} items found`);
-        });
+        this.initModeAsync();
+    }
+
+    async _fetchAppConfig() {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const res = await fetch('/api/config', { cache: 'no-store', credentials: 'same-origin' });
+                if (res.ok) {
+                    this.appConfig = await res.json();
+                    return this.appConfig;
+                }
+                if (res.status === 401 && !this.renderer.xr.isPresenting) {
+                    window.location.reload();
+                    return this.appConfig;
+                }
+            } catch {
+                // Retry while server is starting up
+            }
+            if (attempt < 2) {
+                await new Promise((r) => setTimeout(r, 500));
+            }
+        }
+        return this.appConfig;
+    }
+
+    async initModeAsync() {
+        const config = await this.configReady;
+        if (this.uiManager?.ready) {
+            await this.uiManager.ready;
+        }
+        this.uiManager.setAppConfig(config);
+        if (config.mode === 'desktop') {
+            await this.loadStream();
+        } else {
+            this.galleryManager.fetchDirectory('/').then(() => {
+                this.debugLogInstance.log(`${this.galleryManager.playbackGallery.length} items found`);
+            });
+        }
     }
 
     setBackgroundLevel(val) {
@@ -145,10 +198,12 @@ class StereoPlayer extends THREE.Group {
             const settingOn = this.uiManager.settingsManager.get('render_xr_layers');
             const bindingExists = !!window.XRMediaBinding;
             const hasVideo = !!this.videoElement;
+            const session = this.renderer.xr.getSession();
+            const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
 
-            const useXRLayers = isDome && isPresenting && settingOn && bindingExists && hasVideo;
+            const useXRLayers = isDome && isPresenting && settingOn && bindingExists && sessionHasLayers && hasVideo;
             
-            this.debugLogInstance.log(`[XR-Layers] Evaluated: ${useXRLayers} (dome=${isDome}, vr=${isPresenting}, set=${settingOn}, bind=${bindingExists}, vid=${hasVideo})`);
+            this.debugLogInstance.log(`[XR-Layers] Evaluated: ${useXRLayers} (dome=${isDome}, vr=${isPresenting}, set=${settingOn}, bind=${bindingExists}, layers=${sessionHasLayers}, vid=${hasVideo})`);
 
             let nextScreen;
             if (useXRLayers) {
@@ -162,6 +217,9 @@ class StereoPlayer extends THREE.Group {
             const prevScreen = this.activeScreen;
 
             if (nextScreen !== prevScreen) {
+                if (!useXRLayers && this.isXRLayersActive) {
+                    this.teardownXRLayers();
+                }
                 prevScreen.visible = false;
                 this.activeScreen = nextScreen;
                 this.setAxesGuideVisible(false);
@@ -193,6 +251,9 @@ class StereoPlayer extends THREE.Group {
                 this.debugLogInstance.log(`[XR-Layers] Branch -> teardown (use=${useXRLayers}, vid=${!!this.videoElement})`);
                 this.teardownXRLayers();
             }
+
+            this.updateMatrixWorld(true);
+            this.activeScreen.updatePositions();
         } catch (e) {
             this.debugLogInstance.log(`[XR-Layers] FATAL ERROR: ${e.message}`);
             console.error(e);
@@ -228,6 +289,9 @@ class StereoPlayer extends THREE.Group {
     async loadMedia(index, forcedFormat = null) {
         const file = this.galleryManager.playbackGallery[index];
         if (!file) return;
+
+        this.streamItem = null;
+        this.streamFormatOverride = null;
 
         // IMMEDIATELY stop periodic saves to avoid race conditions during async operations
         const wasPlaying = this.isPlaying;
@@ -281,7 +345,9 @@ class StereoPlayer extends THREE.Group {
         const isPresenting = this.renderer.xr.isPresenting;
         const settingOn = this.uiManager.settingsManager.get('render_xr_layers');
         const bindingExists = !!window.XRMediaBinding;
-        const useXRLayers = isDome && isPresenting && settingOn && bindingExists;
+        const session = this.renderer.xr.getSession();
+        const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
+        const useXRLayers = isDome && isPresenting && settingOn && bindingExists && sessionHasLayers;
 
         const options = {
             forcedFormat,
@@ -334,6 +400,198 @@ class StereoPlayer extends THREE.Group {
         storage.set('recent_file_name', file.name);
         this.uiManager.hideRecentButton();
         this.uiManager.syncUI(true);
+    }
+
+    async loadStream(forcedFormat = null) {
+        if (this.uiManager?.ready) {
+            await this.uiManager.ready;
+        }
+
+        if (!forcedFormat) {
+            const oldFile = this.galleryManager.getCurrentItem();
+            const oldVideoTime = (this.videoElement && !isNaN(this.videoElement.currentTime))
+                ? this.videoElement.currentTime
+                : null;
+            this.uiManager.updateSubtitleText("");
+            this.uiManager.availableSubtitles = [];
+            this.uiManager.currentSubtitleIndex = -1;
+            if (oldFile && oldVideoTime !== null) {
+                await this.uiManager.settingsManager.updateFileState({ playback_time: oldVideoTime }, oldFile);
+            }
+            this.playbackController.destroyVideo();
+            this.galleryManager.setPlayingItem(-1);
+            if (this.appConfig?.mode !== 'desktop') {
+                this.uiManager.showNotification('Starting Desktop Stream...', 10000);
+            }
+        }
+
+        const infoEndpoint = forcedFormat ? '/api/stream/info' : '/api/stream/start';
+        const infoMethod = forcedFormat ? 'GET' : 'POST';
+        let info = null;
+        let errorDetail = null;
+        while (!info) {
+            try {
+                const res = await fetch(infoEndpoint, {
+                    method: infoMethod,
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                });
+                if (res.ok) {
+                    info = await res.json();
+                    break;
+                }
+                if (res.status === 401 && !this.renderer.xr.isPresenting) {
+                    window.location.reload();
+                    return false;
+                }
+                try {
+                    const errData = await res.json();
+                    if (errData?.detail) errorDetail = errData.detail;
+                } catch {
+                    // ignore non-json error body
+                }
+                this.debugLogInstance.log(`[WARN] Stream info returned HTTP ${res.status}`);
+            } catch (e) {
+                this.debugLogInstance.log(`[WARN] Failed to fetch stream info: ${e.message}`);
+            }
+
+            if (forcedFormat && this.streamItem?.stream_info) {
+                info = this.streamItem.stream_info;
+                break;
+            }
+            if (this.appConfig?.mode !== 'desktop') {
+                this.uiManager.showNotification(
+                    errorDetail ? `Stream unavailable: ${errorDetail}` : 'Stream unavailable',
+                    3000
+                );
+                this.uiManager.syncUI(true);
+                return false;
+            }
+            await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        if (this.appConfig?.mode !== 'desktop' && !forcedFormat) {
+            this.uiManager.hideNotification();
+        }
+
+        const streamFormat = info.stereo_format || STEREO_FORMATS.SBS_HALF;
+        const streamName = this._formatStreamName(info.width, info.height, null);
+
+        const streamItem = {
+            path: '__desktop_stream__',
+            name: streamName,
+            type: 'stream',
+            mtime: 0,
+            stereo_format: streamFormat,
+            stream_uri: info.stream_uri || '/api/stream',
+            stream_info: info,
+        };
+        this.streamItem = streamItem;
+
+        this.uiManager.updateSubtitleText("");
+        this.uiManager.availableSubtitles = [];
+        this.uiManager.currentSubtitleIndex = -1;
+
+        await this.uiManager.settingsManager.loadForFile(streamItem);
+        if (this.uiManager.settingsManager.getFileState('stereo_format') !== null) {
+            await this.uiManager.settingsManager.updateFileState({ stereo_format: undefined });
+        }
+        this.streamFormatOverride = forcedFormat || null;
+
+        const finalFormat = this.streamFormatOverride || streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
+        await this.switchScreen(finalFormat);
+        await this.uiManager.settingsManager.applyForLoadedFile(this.activeScreen.screenType);
+        this.teardownXRLayers();
+
+        this.debugLogInstance.log(`Loading stream: ${streamName} (${finalFormat})`);
+        const result = await this.playbackController.load(streamItem, {
+            forcedFormat,
+            targetFormat: finalFormat,
+        });
+        if (!result.success) {
+            if (!result.cancelled) {
+                this.streamItem = null;
+                this.streamFormatOverride = null;
+                this.activeScreen.clearScreen();
+            }
+            this.uiManager.syncUI(true);
+            return false;
+        }
+
+        const { detail } = result;
+        const activeWidth = this.playbackController.desktopStream?.width || info.width || 0;
+        const activeHeight = this.playbackController.desktopStream?.height || info.height || 0;
+        const activeCodec = this.playbackController.streamCodecName || null;
+        streamItem.name = this._formatStreamName(activeWidth, activeHeight, activeCodec);
+        this.activeScreen.updateTexture(detail.texture, detail.aspectRatio, detail.format);
+        this.uiManager?.streamSettings?.fetchSettings?.();
+        this.uiManager.syncUI(true);
+        return true;
+    }
+
+    _formatStreamName(width, height, codecName) {
+        const hasDims = Boolean(width && height);
+        if (hasDims && codecName) {
+            return `Desktop (${width}x${height}, ${codecName})`;
+        }
+        if (hasDims) {
+            return `Desktop (${width}x${height})`;
+        }
+        if (codecName) {
+            return `Desktop (${codecName})`;
+        }
+        return 'Desktop Stream';
+    }
+
+    async stopStream() {
+        this.playbackController.destroyStream(true);
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+        this.activeScreen.clearScreen();
+        if (this.uiManager?.activeSubMenu === this.uiManager?.streamSettings) {
+            this.uiManager.switchSubMenu(null);
+        }
+        this.uiManager.syncUI(true);
+    }
+
+    async onStreamUpdated(info) {
+        if (!info || !this.streamItem) return;
+        try {
+            const prevBackendFormat = this.streamItem.stereo_format;
+            if (info.tokenChanged || (info.stereo_format && info.stereo_format !== prevBackendFormat)) {
+                this.streamFormatOverride = null;
+            }
+
+            this.streamItem.stream_info = { ...this.streamItem.stream_info, ...info };
+            if (info.stereo_format) {
+                this.streamItem.stereo_format = info.stereo_format;
+            }
+            const streamWidth = info.width || this.playbackController.desktopStream?.width || this.streamItem.stream_info?.width || 0;
+            const streamHeight = info.height || this.playbackController.desktopStream?.height || this.streamItem.stream_info?.height || 0;
+            const streamCodec = this.playbackController.streamCodecName || info.active_video_codec || null;
+            this.streamItem.name = this._formatStreamName(streamWidth, streamHeight, streamCodec);
+
+            const finalFormat = this.streamFormatOverride || this.streamItem.stereo_format || STEREO_FORMATS.SBS_HALF;
+            if (finalFormat !== this.activeScreen.currentStereoFormat) {
+                await this.switchScreen(finalFormat);
+                await this.uiManager.settingsManager.applyForLoadedFile(this.activeScreen.screenType);
+            }
+
+            const aspectRatio = (info.width && info.height)
+                ? (info.width / info.height)
+                : (this.playbackController.desktopStream?.aspectRatio || this.activeScreen.aspectRatio);
+            const tex = this.playbackController.streamTexture;
+            if (tex) {
+                this.activeScreen.updateTexture(tex, aspectRatio, finalFormat);
+            }
+            this.uiManager?.streamSettings?.fetchSettings?.();
+            this.uiManager.syncUI(true);
+        } catch (e) {
+            this.debugLogInstance?.log(`[ERROR] Stream update failed: ${e.message}`);
+            if (!this.renderer.xr.isPresenting) {
+                window.location.reload();
+            }
+        }
     }
 
     async loadSubtitles(path) {
@@ -413,16 +671,73 @@ class StereoPlayer extends THREE.Group {
     }
 
     loadNextImage(direction) {
+        if (this.playbackController.isStreamActive) return;
         const next = this.galleryManager.getNextIndex(direction);
         if (next !== -1) this.loadMedia(next);
     }
 
+    setARMode(isAR) {
+        if (this.isARMode === isAR) return;
+        this.isARMode = isAR;
+        if (this.debugLogInstance) {
+            this.debugLogInstance.log(`[XR] setARMode: ${isAR}`);
+        }
+        this.environmentManager.setARMode(isAR);
+        this.planeScreen?.setARMode?.(isAR);
+        this.domeScreen?.setARMode?.(isAR);
+        if (this.uiManager) {
+            this.uiManager.isARMode = isAR;
+            this.uiManager.syncUI(true);
+        }
+    }
+
+    resetScreenPosition(options = false) {
+        const resetYaw = typeof options === 'boolean' ? options : !!options?.resetYaw;
+        if (this.camera) {
+            this.position.copy(this.camera.position);
+            if (resetYaw) {
+                const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+                this.rotation.y = euler.y;
+            }
+        }
+        this._resetScreenFrames = 5;
+        this._resetScreenYaw = resetYaw;
+    }
+
+    resetScreenTransform() {
+        this.resetScreenPosition(true);
+    }
+
+    setTrackDevice(track) {
+        this.trackDevice = !!track;
+        if (this.trackDevice) {
+            this.resetScreenPosition();
+        }
+    }
+
     setupXRSessionEvents() {
         this.renderer.xr.addEventListener('sessionstart', () => {
+            const blendMode = this.renderer.xr.getEnvironmentBlendMode?.() ?? this.renderer.xr.getSession()?.environmentBlendMode;
+            if (blendMode) {
+                this.setARMode(blendMode === 'alpha-blend' || blendMode === 'additive');
+            }
             this.activeScreen.updateEyeVisibility(true);
             this.subtitleWindow.updateEyeVisibility(true);
+            this.resetScreenTransform();
+
+            const refSpace = this.renderer.xr.getReferenceSpace?.();
+            if (refSpace) {
+                refSpace.addEventListener('reset', () => {
+                    this.rotation.y = 0;
+                    this.resetScreenTransform();
+                    if (this.debugLogInstance) {
+                        this.debugLogInstance.log('[XR] Reference space reset detected, reset screen transform');
+                    }
+                });
+            }
         });
         this.renderer.xr.addEventListener('sessionend', async () => {
+            this.setARMode(false);
             this.activeScreen.updateEyeVisibility(false);
             this.subtitleWindow.updateEyeVisibility(false);
             await this.uiManager.saveSettings();
@@ -529,8 +844,35 @@ class StereoPlayer extends THREE.Group {
                 setTimeout(() => { if (this.renderer.xr.isPresenting) this.uiManager.showMainMenu(); }, 500);
             }
         } else if (!this.renderer.xr.isPresenting && this.isXRActive) this.isXRActive = false;
+
+        if (this.renderer.xr.isPresenting) {
+            const blendMode = this.renderer.xr.getEnvironmentBlendMode?.() ?? this.renderer.xr.getSession()?.environmentBlendMode;
+            if (blendMode) {
+                const isAR = (blendMode === 'alpha-blend' || blendMode === 'additive');
+                if (this.isARMode !== isAR) {
+                    this.setARMode(isAR);
+                }
+            }
+        }
         
-        this.position.copy(this.camera.position);
+        const isDome = this.activeScreen && (this.activeScreen.screenType === 'dome' || this.activeScreen.screenType === 'dome_xr');
+        
+        if (isDome || this.trackDevice || this._resetScreenFrames > 0) {
+            this.position.copy(this.camera.position);
+        }
+        if (this._resetScreenFrames > 0) {
+            if (this._resetScreenYaw && this.camera) {
+                const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+                this.rotation.y = euler.y;
+            }
+            if (this._resetScreenFrames > 0) {
+                this._resetScreenFrames--;
+                if (this._resetScreenFrames === 0) {
+                    this._resetScreenYaw = false;
+                }
+            }
+        }
+        this.updateMatrixWorld(true);
         this.environmentManager.update(delta);
         
         if (this.useEyeTracking) {
@@ -569,8 +911,23 @@ class StereoPlayer extends THREE.Group {
         // This avoids interleaved texture uploads during transparent/MSAA draws in WebXR multiview,
         // preventing screen and GUI element flickering on Meta Quest / Chromium (Three.js #33458 / #32151).
         const videoTex = this.videoTexture;
-        if (videoTex && this.videoElement && this.videoElement.readyState >= 2) {
+        const videoElem = this.videoElement;
+        if (videoTex && videoElem && videoElem.readyState >= 2) {
+            if (this.isPlaying) {
+                videoTex.needsUpdate = true;
+            }
             this.renderer.initTexture(videoTex);
+        }
+
+        const streamTex = this.playbackController.streamTexture;
+        if (streamTex) {
+            this.playbackController.consumeNewStreamFrame();
+            const hasValidStreamImage = streamTex.isVideoFrameTexture
+                ? (typeof VideoFrame !== "undefined" && streamTex.image instanceof VideoFrame)
+                : Boolean(streamTex.image);
+            if (hasValidStreamImage) {
+                this.renderer.initTexture(streamTex);
+            }
         }
     }
 

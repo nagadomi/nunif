@@ -11,6 +11,7 @@ class EnvironmentManager extends THREE.Group {
 
         this.currentEnvironment = "None"; // Skybox (Texture)
         this.currentModelName = "None";   // 3D Model
+        this.currentTexture = null;
 
         this.currentRotation = DEFAULTS.environment_rotation;
         this.currentTilt = DEFAULTS.environment_tilt;
@@ -45,6 +46,16 @@ class EnvironmentManager extends THREE.Group {
         this._isModelLoading = false;
         this.isBackgroundLocked = false;
 
+        // AR Mode state and dedicated lighting
+        this.isARMode = false;
+        this.arAmbientLight = new THREE.AmbientLight(0xffffff, 1.2);
+        this.arDirectionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        this.arDirectionalLight.position.set(1, 2, 1);
+        this.arAmbientLight.visible = false;
+        this.arDirectionalLight.visible = false;
+        this.add(this.arAmbientLight);
+        this.add(this.arDirectionalLight);
+
         // Ambient Light (synchronized with background color)
         this.ambientLight = new THREE.AmbientLight(0xffffff, 0.0);
         this.add(this.ambientLight);
@@ -68,9 +79,30 @@ class EnvironmentManager extends THREE.Group {
 
     setBackgroundLevel(val) {
         this.backgroundLevel = val;
-        if (!this.isBackgroundLocked) {
+        if (!this.isBackgroundLocked && !this.isARMode) {
             this.updateEnvironmentState();
         }
+    }
+
+    setBackgroundLocked(locked) {
+        if (this.isBackgroundLocked === locked) return;
+        this.isBackgroundLocked = locked;
+        this.updateEnvironmentState();
+    }
+
+    setARMode(enabled) {
+        if (this.isARMode === enabled) return;
+        this.isARMode = enabled;
+
+        if (this.isARMode) {
+            this.arAmbientLight.visible = true;
+            this.arDirectionalLight.visible = true;
+            this.ambientLight.intensity = 0;
+        } else {
+            this.arAmbientLight.visible = false;
+            this.arDirectionalLight.visible = false;
+        }
+        this.updateEnvironmentState();
     }
 
     setRotation(degrees) {
@@ -105,7 +137,13 @@ class EnvironmentManager extends THREE.Group {
 
     async loadSkybox(filename) {
         if (this.isBackgroundLocked) return;
-        if (filename === this.currentEnvironment && this._pendingTexture === undefined) return;
+        if (filename === this.currentEnvironment && this._pendingTexture === undefined) {
+            if (filename !== "None" && !this.currentTexture && !this._isSkyboxLoading) {
+                // Texture missing, reload
+            } else {
+                return;
+            }
+        }
         if (this._isSkyboxLoading && filename === this._loadingSkyboxName) return;
         this._isSkyboxLoading = true;
         this.fadePhase = 'out';
@@ -251,27 +289,18 @@ class EnvironmentManager extends THREE.Group {
         // Handle Texture Change
         // undefined means no change requested, null means 'None' selected
         if (this._pendingTexture !== undefined) {
-            if (this.scene.background && this.scene.background instanceof THREE.Texture) {
+            const nextTex = this._pendingTexture ?? null;
+            if (this.currentTexture && this.currentTexture !== nextTex) {
+                const oldTex = this.currentTexture;
+                setTimeout(() => oldTex.dispose(), 2000);
+            } else if (this.scene.background && this.scene.background instanceof THREE.Texture && this.scene.background !== nextTex) {
                 const oldTex = this.scene.background;
                 setTimeout(() => oldTex.dispose(), 2000);
             }
-            if (this.scene.environment && this.scene.environment instanceof THREE.Texture && this.scene.environment !== this.scene.background) {
-                const oldEnv = this.scene.environment;
-                setTimeout(() => oldEnv.dispose(), 2000);
-            }
-            
-            if (this.isBackgroundLocked) {
-                this.scene.background = null;
-                this.scene.environment = null;
-            } else if (this._pendingTexture) {
-                this.scene.background = this._pendingTexture;
-                this.scene.environment = this._pendingTexture; // Share reference
-            } else {
-                this.scene.background = null; 
-                this.scene.environment = null;
-            }
+            this.currentTexture = nextTex;
             this.currentEnvironment = this._loadingSkyboxName;
             this._pendingTexture = undefined;
+            this.updateEnvironmentState();
         }
 
         // Handle Model Change
@@ -321,14 +350,28 @@ class EnvironmentManager extends THREE.Group {
         this.scene.backgroundIntensity = totalIntensity;
         this.scene.environmentIntensity = totalIntensity;
 
-        // Handle Background and Ambient Light based on ACTUAL scene background state
+        // Handle Background and Ambient Light
         const ambientIntensityMultiplier = 1.0;
 
-        if (!this.isBackgroundLocked && (this.scene.background instanceof THREE.Color || this.scene.background === null)) {
+        if (this.isARMode || this.isBackgroundLocked) {
+            this.scene.background = null;
+            this.scene.environment = null;
+            this.ambientLight.intensity = 0;
+        } else if (this.currentTexture) {
+            if (this.scene.background !== this.currentTexture) {
+                this.scene.background = this.currentTexture;
+            }
+            if (this.scene.environment !== this.currentTexture) {
+                this.scene.environment = this.currentTexture;
+            }
+            // Ensure ambient light is off when skybox is dominant
+            this.ambientLight.intensity = 0;
+        } else {
             // Handle Solid Background (or null which we treat as black/color transition)
             if (!(this.scene.background instanceof THREE.Color)) {
                 this.scene.background = new THREE.Color(0x000000);
             }
+            this.scene.environment = null;
 
             this._targetColor.set(COLORS.bgTarget);
             this._bgColor.copy(this._blackColor).lerp(this._targetColor, this.backgroundLevel);
@@ -341,10 +384,6 @@ class EnvironmentManager extends THREE.Group {
             this.ambientLight.color.copy(this._targetColor);
             this.ambientLight.intensity = Math.max(DEFAULTS.environment_ambient_min * easedFade, 
                                                   this.backgroundLevel * ambientIntensityMultiplier * easedFade);
-        } else {
-            // Background is a Texture (Skybox)
-            // Ensure ambient light is off when skybox is dominant
-            this.ambientLight.intensity = 0;
         }
 
         // Model visibility (only affects opacity during transition)
@@ -384,12 +423,22 @@ class EnvironmentManager extends THREE.Group {
     }
 
     dispose() {
-        if (this.scene.background && this.scene.background instanceof THREE.Texture) {
+        const disposed = new Set();
+        if (this.currentTexture) {
+            disposed.add(this.currentTexture);
+            this.currentTexture.dispose();
+            this.currentTexture = null;
+        }
+        if (this.scene.background instanceof THREE.Texture && !disposed.has(this.scene.background)) {
+            disposed.add(this.scene.background);
             this.scene.background.dispose();
         }
-        if (this.scene.environment) {
+        this.scene.background = null;
+        if (this.scene.environment instanceof THREE.Texture && !disposed.has(this.scene.environment)) {
+            disposed.add(this.scene.environment);
             this.scene.environment.dispose();
         }
+        this.scene.environment = null;
         if (this.currentModel) {
             this.remove(this.currentModel);
         }

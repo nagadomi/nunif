@@ -1,17 +1,21 @@
 import argparse
+import math
 import os
+import shutil
 import sys
 from collections.abc import Mapping
 from typing import NamedTuple, cast
 
 import av
 import av.audio.stream
+import av.container
 import av.video.codeccontext
 import av.video.stream
+import numpy as np
 from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
 from PIL import Image
 
-from nunif.utils.video import to_ndarray
+from nunif.utils.video import has_vp9, to_ndarray
 
 COLORSPACE_MAP: Mapping[str, Colorspace] = {
     "bt709": Colorspace.ITU709,
@@ -56,7 +60,7 @@ VIDEO_TARGETS: list[VideoTarget] = [
         primaries="bt709",
         trc="bt709",
         color_range="tv",
-        input_filter="gradients=size=640x360:rate=30:n=8:seed=1",
+        input_filter="testsrc2=size=640x360:rate=30",
         width=640,
         height=360,
     ),
@@ -72,7 +76,7 @@ for _pix_fmt in ("yuv444p", "yuv422p", "gbrp"):
             primaries="bt709",
             trc="bt709",
             color_range="tv",
-            input_filter="gradients=size=640x360:rate=30:n=8:seed=1",
+            input_filter="testsrc2=size=640x360:rate=30",
             width=640,
             height=360,
         )
@@ -86,7 +90,7 @@ for _pix_fmt in ("yuv444p", "yuv422p", "gbrp"):
             primaries="bt709",
             trc="bt709",
             color_range="tv",
-            input_filter="gradients=size=640x360:rate=30:n=8:seed=1",
+            input_filter="testsrc2=size=640x360:rate=30",
             width=640,
             height=360,
         )
@@ -101,11 +105,61 @@ VIDEO_TARGETS.append(
         primaries="bt2020",
         trc="smpte2084",
         color_range="tv",
-        input_filter="gradients=size=1280x720:rate=30:n=8:seed=1",
+        input_filter="testsrc2=size=1280x720:rate=30",
         width=1280,
         height=720,
     )
 )
+
+
+def apply_color_metadata(
+    v_ctx: av.video.codeccontext.VideoCodecContext,
+    colorspace: str,
+    primaries: str,
+    trc: str,
+    color_range: str,
+    is_rgb: bool = False,
+) -> None:
+    if is_rgb:
+        v_ctx.colorspace = 0
+        v_ctx.color_range = ColorRange.JPEG
+    else:
+        if colorspace in COLORSPACE_MAP:
+            v_ctx.colorspace = COLORSPACE_MAP[colorspace]
+        if color_range in RANGE_MAP:
+            v_ctx.color_range = RANGE_MAP[color_range]
+
+    if primaries in PRIMARIES_MAP:
+        v_ctx.color_primaries = PRIMARIES_MAP[primaries]
+    if trc in TRC_MAP:
+        v_ctx.color_trc = TRC_MAP[trc]
+
+
+def add_sine_audio_stream(
+    out_container: av.container.OutputContainer, sample_rate: int = 44100
+) -> av.audio.stream.AudioStream:
+    a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=sample_rate))
+    a_stream.format = "fltp"
+    a_stream.layout = "mono"
+    return a_stream
+
+
+def mux_sine_audio(
+    out_container: av.container.OutputContainer,
+    a_stream: av.audio.stream.AudioStream,
+    duration: float,
+    sample_rate: int = 44100,
+) -> None:
+    resampler = av.AudioResampler(format="fltp", layout="mono", rate=sample_rate)
+    with av.open(f"sine=frequency=1000:duration={duration}:sample_rate={sample_rate}", format="lavfi") as a_in:
+        for audio_frame in a_in.decode(audio=0):
+            a_f = cast(av.AudioFrame, audio_frame)
+            for rf in resampler.resample(a_f):
+                for packet in a_stream.encode(rf):
+                    out_container.mux(packet)
+
+    for packet in a_stream.encode(None):
+        out_container.mux(packet)
 
 
 def generate_video(
@@ -162,7 +216,6 @@ def generate_video(
 
     with (
         av.open(filter_chain, format="lavfi") as v_in,
-        av.open(f"sine=frequency=1000:duration={duration}:sample_rate=44100", format="lavfi") as a_in,
         av.open(output_path, mode="w", format="matroska") as out_container,
     ):
         v_stream = cast(av.video.stream.VideoStream, out_container.add_stream(vcodec, rate=fps))
@@ -173,25 +226,16 @@ def generate_video(
         v_stream.options = dict(options)
 
         v_ctx = cast(av.video.codeccontext.VideoCodecContext, v_stream.codec_context)
-        if is_rgb:
-            v_ctx.colorspace = 0
-            v_ctx.color_range = ColorRange.JPEG
-        else:
-            if target.colorspace in COLORSPACE_MAP:
-                v_ctx.colorspace = COLORSPACE_MAP[target.colorspace]
-            if target.color_range in RANGE_MAP:
-                v_ctx.color_range = RANGE_MAP[target.color_range]
+        apply_color_metadata(
+            v_ctx,
+            colorspace=target.colorspace,
+            primaries=target.primaries,
+            trc=target.trc,
+            color_range=target.color_range,
+            is_rgb=is_rgb,
+        )
 
-        if target.primaries in PRIMARIES_MAP:
-            v_ctx.color_primaries = PRIMARIES_MAP[target.primaries]
-        if target.trc in TRC_MAP:
-            v_ctx.color_trc = TRC_MAP[target.trc]
-
-        a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=44100))
-        a_stream.format = "fltp"
-        a_stream.layout = "mono"
-        resampler = av.AudioResampler(format="fltp", layout="mono", rate=44100)
-
+        a_stream = add_sine_audio_stream(out_container)
         max_frames = int(duration * fps)
 
         # Encode video frames
@@ -212,15 +256,7 @@ def generate_video(
         for packet in v_stream.encode(None):
             out_container.mux(packet)
 
-        # Encode audio frames
-        for audio_frame in a_in.decode(audio=0):
-            a_f = cast(av.AudioFrame, audio_frame)
-            for rf in resampler.resample(a_f):
-                for packet in a_stream.encode(rf):
-                    out_container.mux(packet)
-
-        for packet in a_stream.encode(None):
-            out_container.mux(packet)
+        mux_sine_audio(out_container, a_stream, duration)
 
 
 def generate_image_from_video(video_path: str, image_path: str) -> None:
@@ -232,6 +268,47 @@ def generate_image_from_video(video_path: str, image_path: str) -> None:
             img: Image.Image = Image.fromarray(nd)
             img.save(image_path)
             break
+
+
+def generate_rgba_video(
+    image_path: str,
+    output_path: str,
+    codec: str = "ffv1",
+    duration: float = 1.1,
+    fps: int = 30,
+) -> None:
+    print(f"Generating [{codec}]: {os.path.basename(output_path)}")
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    with Image.open(image_path) as src_img:
+        src_rgba = src_img.convert("RGBA")
+        w, h = src_rgba.size
+
+    max_frames = int(duration * fps)
+    with av.open(output_path, mode="w", format="matroska") as out_container:
+        vcodec = "libvpx-vp9" if codec == "libvpx-vp9" else "ffv1"
+        v_stream = cast(av.video.stream.VideoStream, out_container.add_stream(vcodec, rate=fps))
+        v_stream.width = w
+        v_stream.height = h
+        v_stream.pix_fmt = "yuva420p"
+        if vcodec == "libvpx-vp9":
+            v_stream.options = {"crf": "20", "b": "0", "row-mt": "1", "auto-alt-ref": "0", "alpha_mode": "1"}
+
+        a_stream = add_sine_audio_stream(out_container)
+
+        for i in range(max_frames):
+            shift = int(round(16 * math.sin(2 * math.pi * i / max_frames)))
+            canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            canvas.paste(src_rgba, (shift, 0))
+            frame = av.VideoFrame.from_ndarray(np.array(canvas), format="rgba")
+            f_fmt = frame.reformat(format="yuva420p")
+            f_fmt.pts = i
+            for packet in v_stream.encode(f_fmt):
+                out_container.mux(packet)
+
+        for packet in v_stream.encode(None):
+            out_container.mux(packet)
+
+        mux_sine_audio(out_container, a_stream, duration)
 
 
 def colorspace_to_str(val: int | None) -> str:
@@ -388,6 +465,20 @@ def ensure_smoke_data(base_dir: str = "tmp/smoke", duration: float = 1.1, force:
     if force or not os.path.exists(png_path):
         generate_image_from_video(sd_path, png_path)
 
+    rgba_src = os.path.join(os.path.dirname(__file__), "..", "images", "dog_448_rgba.png")
+    rgba_path = os.path.join(base_dir, "dog_448_rgba.png")
+    if (force or not os.path.exists(rgba_path)) and os.path.exists(rgba_src):
+        shutil.copyfile(rgba_src, rgba_path)
+
+    rgba_video_path = os.path.join(base_dir, "rgba.mkv")
+    if (force or not os.path.exists(rgba_video_path)) and os.path.exists(rgba_src):
+        generate_rgba_video(rgba_src, rgba_video_path, codec="ffv1", duration=duration)
+
+    if has_vp9():
+        rgba_vp9_path = os.path.join(base_dir, "rgba_vp9.mkv")
+        if (force or not os.path.exists(rgba_vp9_path)) and os.path.exists(rgba_src):
+            generate_rgba_video(rgba_src, rgba_vp9_path, codec="libvpx-vp9", duration=duration)
+
 
 def verify_all_smoke_data(base_dir: str = "tmp/smoke") -> bool:
     failed = False
@@ -399,6 +490,44 @@ def verify_all_smoke_data(base_dir: str = "tmp/smoke") -> bool:
     png_path = os.path.join(base_dir, "sd.png")
     if not verify_image(png_path, "PNG", (640, 360), "RGB"):
         failed = True
+
+    rgba_path = os.path.join(base_dir, "dog_448_rgba.png")
+    if not verify_image(rgba_path, "PNG", (448, 448), "RGBA"):
+        failed = True
+
+    rgba_video_path = os.path.join(base_dir, "rgba.mkv")
+    if os.path.exists(rgba_video_path):
+        with av.open(rgba_video_path) as container:
+            if not container.streams.video:
+                print(f"[FAIL] {os.path.basename(rgba_video_path)}: No video stream")
+                failed = True
+            else:
+                vs = container.streams.video[0]
+                if vs.codec_context.name != "ffv1" or vs.pix_fmt != "yuva420p":
+                    print(
+                        f"[FAIL] {os.path.basename(rgba_video_path)}: "
+                        f"Unexpected codec/pix_fmt ({vs.codec_context.name}, {vs.pix_fmt})"
+                    )
+                    failed = True
+                else:
+                    print(f"[PASS] {os.path.basename(rgba_video_path)}: ffv1 yuva420p")
+
+    rgba_vp9_path = os.path.join(base_dir, "rgba_vp9.mkv")
+    if os.path.exists(rgba_vp9_path):
+        with av.open(rgba_vp9_path) as container:
+            if not container.streams.video:
+                print(f"[FAIL] {os.path.basename(rgba_vp9_path)}: No video stream")
+                failed = True
+            else:
+                vs = container.streams.video[0]
+                if vs.codec_context.name != "vp9" or vs.metadata.get("alpha_mode") != "1":
+                    print(
+                        f"[FAIL] {os.path.basename(rgba_vp9_path)}: "
+                        f"Unexpected codec/alpha_mode ({vs.codec_context.name}, {vs.metadata.get('alpha_mode')})"
+                    )
+                    failed = True
+                else:
+                    print(f"[PASS] {os.path.basename(rgba_vp9_path)}: libvpx-vp9 yuva420p")
 
     return not failed
 

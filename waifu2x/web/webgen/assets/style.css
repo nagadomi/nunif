@@ -1,3 +1,16 @@
+html {
+    line-height: 1.15;
+    -webkit-text-size-adjust: 100%;
+}
+img {
+    border-style: none;
+}
+button, input {
+    font-family: inherit;
+    font-size: 100%;
+    line-height: 1.15;
+    margin: 0;
+}
 button::-moz-focus-inner,
 input[type="reset"]::-moz-focus-inner,
  input[type="button"]::-moz-focus-inner,

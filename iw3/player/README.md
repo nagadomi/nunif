@@ -22,7 +22,7 @@ Viewing photos at a realistic scale significantly enhances immersion and brings 
 - **Videos**: `.mp4`, `.mkv`, `.webm`.
 - **Archives**: `.zip`
 
-Supported video formats depend on the browser. The Meta Quest 2 browser supports all combinations of mp4, mkv, h264, and h265 commonly used in iw3. The PC version of Google Chrome does not support h265.
+Supported video formats depend on the browser. The Meta Quest 2 browser supports all combinations of mp4, mkv, h264, and h265 commonly used in iw3. The PC version of Google Chrome does not support h265. In Wolvic (Firefox-based browser), h264 plays smoothly, but hevc (h265) is not hardware-accelerated and plays very slowly.
 On Meta Quest 2, 4K videos played smoothly.
 
 The player supports both embedded subtitle streams and external files (`.srt` / `.vtt`). External files named identically to the video will be prioritized. Embedded subtitles are automatically converted to `.vtt` by the backend for seamless streaming.
@@ -59,6 +59,7 @@ python -m iw3.player --root /path/to/your/media
 - `--bind-addr IP`: IP address (default: local IP address)
 - `--user USER` / `--password PASS`: Username and password for authentication
 - `--clear-cache`: Clear thumbnail cache on startup
+- `--enable-stream`: Enable real-time PC desktop 3D streaming (`iw3-desktop` options such as `--screenshot`, `--stream-fps`, and `--stream-height` are also available; see [iw3-desktop documentation](../docs/desktop.md))
 
 Once the server is running, access the URL displayed in the terminal or GUI (e.g., `https://[IP address]:1304`) using the browser on your VR device.
 
@@ -74,6 +75,21 @@ During your first visit, your browser will display a security warning (e.g., "Yo
 **Tip:** Bookmarking this page will allow you to skip this warning in the future. 
 
 While browsers typically discourage trusting local servers in this manner, it is a necessary workaround for local WebXR development.
+
+## Desktop Streaming and Audio Output
+
+When `--enable-stream` is enabled (or enabled from the GUI), you can stream your PC desktop in 3D inside `iw3-player`.
+
+Audio behavior differs between **local video file playback** and **desktop streaming**, and also between **standalone VR browsers** and **PCVR**:
+
+- **Local Video Playback (HTML5 `<video>`)**:
+  - Audio is decoded and played by the browser.
+  - **Standalone VR Browser (e.g., Meta Quest Browser)**: Audio is played directly on the VR headset.
+  - **PCVR (e.g., SteamVR via a PC browser)**: Audio is played through the PC's audio output, which PCVR environments such as SteamVR normally route to the VR headset automatically.
+- **Desktop Streaming (`--enable-stream`)**:
+  - Desktop streaming transmits video frames only (MJPEG without an audio track) and does not stream audio over the network.
+  - **Standalone VR Browser (e.g., Meta Quest Browser)**: Audio is **not** sent to the VR headset; it continues to play from the **PC's speakers or headphones**. PC control also requires the PC's keyboard and mouse.
+  - **PCVR (e.g., SteamVR via a PC browser)**: Because the PCVR environment (such as SteamVR) routes the PC's audio output to the VR headset, **desktop audio is still heard on the VR headset** without extra setup (unless configured to output to PC speakers/headphones).
 
 ## UI and Controls
 
@@ -115,6 +131,7 @@ This is the most frequently used menu, allowing you to fine-tune the screen's sh
 
 | Item | Shortcut | Description |
 | :--- | :--- | :--- |
+| `Follow Device` | - | Toggle screen position tracking with the headset (OFF: world-locked, ON: follow head movement). When OFF, click the reset button next to it to recenter screen position and yaw |
 | `Screen Size` | `[Grip + Stick X]` | Physical size of the virtual screen (1m to 16m) |
 | `Tilt` | `[Long-press Trigger + Tilt]` | Vertical tilt of the screen (Roll/Tilt in VR180) |
 | `Distance` | `[Stick Y]` | Distance from the viewer (Zoom) |
@@ -141,10 +158,16 @@ Using `haldclut2cube.py`, you can convert the effect applied to [Identity HaldCL
 
 #### Env Settings (Environment)
 
-Customize your virtual theater. While not strictly necessary for viewing, watching media under a high-fidelity sky can greatly improve the experience.
+Customize your virtual theater and background transparency. While not strictly necessary for viewing, watching media under a high-fidelity sky can greatly improve the experience.
 
 - **Skybox**: Set a 360-degree background image and adjust its orientation, tilt, and brightness.
 - **3D Model**: Load a 3D scene model (e.g., a floor or room), with adjustable size and ground height.
+- **Transparent by Color**: Chroma key transparency for green screen or blue screen video/image backgrounds, revealing the virtual environment or AR passthrough world behind it.
+  - `Key Color`: Select the background color to key out (`Green` or `Blue`).
+  - `Threshold`: Tolerance range for color matching.
+  - `Smoothness`: Smooths and softens the transparency edges around the subject.
+  - `Despill`: Suppresses green/blue light reflection on the subject's contours.
+  - *Note: In VR180 mode, enabling background transparency automatically renders the back half transparent as well.*
 
 Custom backgrounds (`.hdr` or `.exr`) and models (`.glb`) can be added to the `public/environments/` directory. High-quality HDRI and IBL assets are available at [Poly Haven](https://polyhaven.com/) and [ambientCG](https://ambientcg.com/). Scenes created in Blender can be exported as `.glb` (supporting Draco compression and animations) for use here.
 
@@ -296,6 +319,6 @@ The output file will be generated in `public/lib`.
 
 ### Dependency on `nunif`
 
-The core backend (CLI) and frontend do not strictly depend on the `nunif` framework. They can operate standalone by configuring `dir_config.py`. 
+Except for `--enable-stream`, the core backend (CLI) and frontend do not strictly depend on the `nunif` framework. They can operate standalone by configuring `dir_config.py`. 
 
-However, the GUI and certain other utility scripts are integrated with and dependent on `nunif`.
+However, `--enable-stream`, the GUI, and certain other utility scripts are integrated with and dependent on `nunif`.

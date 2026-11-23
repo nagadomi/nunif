@@ -1,9 +1,10 @@
 import torch
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model
+from nunif.models.utils import compile_model
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.utils.u2netp import U2NETP
-from nunif.models.utils import compile_model
 
 
 @register_model
@@ -29,8 +30,8 @@ class SODV1(I2IBaseModel):
 
     @staticmethod
     def to_feature(depth):
-        depth_sqrt = depth ** 0.5
-        depth_pow = depth ** 2
+        depth_sqrt = depth**0.5
+        depth_pow = depth**2
         x = torch.cat([depth, depth_sqrt, depth_pow], dim=1)
         return x
 
@@ -58,8 +59,10 @@ class SODV1(I2IBaseModel):
 
 def _bench(name, batch_size=8, do_compile=False):
     print(name, f"batch_size={batch_size}", f"compile={do_compile}")
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     N = 100
     B = batch_size

@@ -89,12 +89,11 @@ class FrameCallbackPool:
             frames = self.postprocess_callback(frames)
 
         if frames is None:
-            return
+            return None
         elif isinstance(frames, GeneratorType):
-            yield from frames
+            return frames
         else:
-            for frame in frames:
-                yield frame
+            return [frame for frame in frames]
 
     def submit(self, *args):
         if self.preprocess_callback is not None:
@@ -149,11 +148,11 @@ class FrameCallbackPool:
                 self.futures.append(future)
             if len(self.batch_queue) >= self.max_batch_queue and self.futures:
                 future = self.futures.pop(0)
-                return [frame for frame in self.get_results(future)]
+                return self.get_results(future)
         if self.futures:
             if self.futures[0].done():
                 future = self.futures.pop(0)
-                return [frame for frame in self.get_results(future)]
+                return self.get_results(future)
         return None
 
     def finish(self):
@@ -172,14 +171,17 @@ class FrameCallbackPool:
                 self.futures.append(future)
             else:
                 future = self.futures.pop(0)
-                yield from self.get_results(future)
+                if (results := self.get_results(future)) is not None:
+                    yield from results
         while len(self.futures) > 0:
             future = self.futures.pop(0)
-            yield from self.get_results(future)
+            if (results := self.get_results(future)) is not None:
+                yield from results
 
         if self.require_flush:
             future = self.submit(*self.make_args(None, None, True))
-            yield from self.get_results(future)
+            if (results := self.get_results(future)) is not None:
+                yield from results
 
     def shutdown(self):
         pool = self.thread_pool

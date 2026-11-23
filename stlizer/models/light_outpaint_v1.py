@@ -2,11 +2,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
-from nunif.modules.init import basic_module_init
-from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.init import basic_module_init
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive, replication_pad2d_naive
 
 
 class PoolBlock(nn.Module):
@@ -17,8 +18,7 @@ class PoolBlock(nn.Module):
             nn.Conv2d(in_channels, in_channels * 2, kernel_size=1, stride=1, padding=0),
             nn.LeakyReLU(0.2, inplace=True),
             ReplicationPad2dNaive((1, 1, 1, 1)),
-            nn.Conv2d(in_channels * 2, in_channels * 2,
-                      kernel_size=3, stride=1, padding=0, groups=in_channels * 2),
+            nn.Conv2d(in_channels * 2, in_channels * 2, kernel_size=3, stride=1, padding=0, groups=in_channels * 2),
             nn.GLU(dim=1),
             nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0),
         )
@@ -188,7 +188,7 @@ class LightOutpaintV1(I2IBaseModel):
             mask = F.interpolate(mask.to(x.dtype), (new_height, new_width), mode="bilinear", align_corners=False)
             # dilate mask border
             mask = F.max_pool2d(mask, kernel_size=3, stride=1, padding=1)
-            mask = (mask > 0.5)
+            mask = mask > 0.5
             mask3 = mask.expand_as(x)
             x[mask3] = 0
         else:
@@ -207,8 +207,10 @@ class LightOutpaintV1(I2IBaseModel):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     do_compile = False
     N = 20

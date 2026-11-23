@@ -14,7 +14,13 @@ from .metadata import (
     VideoMetadata,
     get_rgb_pix_fmt,
 )
-from .utils import av_rational_to_fraction, is_discrete_device, is_nvidia_gpu
+from .utils import (
+    av_rational_to_fraction,
+    is_discrete_device,
+    is_nvidia_gpu,
+    pix_fmt_has_alpha,
+    pix_fmt_requires_16bit,
+)
 
 
 class ColorTransform:
@@ -335,9 +341,23 @@ class ColorTransform:
                 [-kr / (2.0 * (1.0 - kb)), -kg / (2.0 * (1.0 - kb)), 0.5],
                 [0.5, -kg / (2.0 * (1.0 - kr)), -kb / (2.0 * (1.0 - kr))],
             ]
-            weight_r2y = torch.tensor(m, device=device, dtype=dtype).view(3, 3, 1, 1)
-            ColorTransform._MATRIX_CACHE[key] = weight_r2y
-            return weight_r2y
+            matrix = torch.tensor(m, device=device, dtype=dtype)
+            if color_range is None:
+                weight_r2y = matrix.view(3, 3, 1, 1)
+                ColorTransform._MATRIX_CACHE[key] = weight_r2y
+                return weight_r2y
+
+            if color_range == ColorRange.JPEG:
+                gains = torch.tensor([1.0, 1.0, 1.0], device=device, dtype=dtype)
+                bias = torch.tensor([0.0, 0.5, 0.5], device=device, dtype=dtype)
+            else:
+                gains = torch.tensor([219.0 / 255.0, 224.0 / 255.0, 224.0 / 255.0], device=device, dtype=dtype)
+                bias = torch.tensor([16.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0], device=device, dtype=dtype)
+
+            weight_r2y = (matrix * gains.unsqueeze(1)).view(3, 3, 1, 1)
+            res_r2y = (weight_r2y, bias)
+            ColorTransform._MATRIX_CACHE[key] = res_r2y
+            return res_r2y
 
     @staticmethod
     def yuv_to_rgb(
@@ -376,39 +396,28 @@ class ColorTransform:
         out_format: str | None = "yuv444p",
         mode: str = "bilinear",
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        weight = ColorTransform._get_matrix(colorspace, rgb.device, rgb.dtype, "rgb2yuv")
-        assert isinstance(weight, torch.Tensor)
-        yuv_n = F.conv2d(rgb, weight)
-
-        y_n, u_n, v_n = yuv_n[:, 0:1], yuv_n[:, 1:2], yuv_n[:, 2:3]
-
-        y: torch.Tensor
-        u: torch.Tensor
-        v: torch.Tensor
-        if color_range == ColorRange.JPEG:
-            y, u, v = y_n, u_n + 0.5, v_n + 0.5
-        else:
-            y = (y_n * 219.0 + 16.0) / 255.0
-            u = (u_n * 224.0 + 128.0) / 255.0
-            v = (v_n * 224.0 + 128.0) / 255.0
+        res = ColorTransform._get_matrix(colorspace, rgb.device, rgb.dtype, "rgb2yuv", color_range=color_range)
+        assert isinstance(res, tuple)
+        weight, bias = res
+        yuv = F.conv2d(rgb, weight=weight, bias=bias)
+        y = yuv[:, 0:1]
+        uv = yuv[:, 1:3]
 
         if out_format:
             h, w = y.shape[-2:]
+            uv_size: Tuple[int, int] | None = None
             if out_format in {"yuv420p", "yuvj420p", "yuv420p10le", "nv12", "p010le"}:
-                if mode == "nearest":
-                    u = F.interpolate(u, size=(h // 2, w // 2), mode="nearest")
-                    v = F.interpolate(v, size=(h // 2, w // 2), mode="nearest")
-                else:
-                    u = F.interpolate(u, size=(h // 2, w // 2), mode="bilinear", align_corners=False)
-                    v = F.interpolate(v, size=(h // 2, w // 2), mode="bilinear", align_corners=False)
+                uv_size = (h // 2, w // 2)
             elif out_format in {"yuv422p", "yuvj422p", "yuv422p10le"}:
+                uv_size = (h, w // 2)
+            if uv_size is not None:
                 if mode == "nearest":
-                    u = F.interpolate(u, size=(h, w // 2), mode="nearest")
-                    v = F.interpolate(v, size=(h, w // 2), mode="nearest")
+                    uv = F.interpolate(uv, size=uv_size, mode="nearest")
                 else:
-                    u = F.interpolate(u, size=(h, w // 2), mode="bilinear", align_corners=False)
-                    v = F.interpolate(v, size=(h, w // 2), mode="bilinear", align_corners=False)
+                    uv = F.interpolate(uv, size=uv_size, mode="bilinear", align_corners=False)
 
+        u = uv[:, 0:1]
+        v = uv[:, 1:2]
         return y, u, v
 
     @staticmethod
@@ -417,22 +426,29 @@ class ColorTransform:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Convert float Y, U, V tensors to output format planes (tensors)."""
         if out_format == "nv12":
-            # Y: [0, 1] -> uint8 [0, 255]
-            y_out = (y * 255.0 + 0.5).clamp(0, 255).to(torch.uint8)
-            # UV: Interleave U and V
-            # u, v are (B, 1, H/2, w/2)
-            uv_out = torch.stack([u, v], dim=-1)  # (B, 1, H/2, W/2, 2)
-            uv_out = (uv_out * 255.0 + 0.5).clamp(0, 255).to(torch.uint8)
-            return y_out.squeeze(0).squeeze(0), uv_out.squeeze(0).squeeze(0)
+            dtype = torch.uint8
+            max_val = 255.0
+            align_elems = 512
         elif out_format == "p010le":
-            # Y: [0, 1] -> uint16 [0, 1023 << 6]
             # 1023 << 6 = 65472
-            y_out = (y * 65472.0 + 0.5).clamp(0, 65472).to(torch.uint16)
-            # UV: Interleave U and V
-            uv_out = torch.stack([u, v], dim=-1)  # (B, 1, H/2, W/2, 2)
-            uv_out = (uv_out * 65472.0 + 0.5).clamp(0, 65472).to(torch.uint16)
-            return y_out.squeeze(0).squeeze(0), uv_out.squeeze(0).squeeze(0)
-        raise ValueError(f"Unsupported output format for to_yuv_planes: {out_format}")
+            dtype = torch.uint16
+            max_val = 65472.0
+            align_elems = 256
+        else:
+            raise ValueError(f"Unsupported output format for to_yuv_planes: {out_format}")
+
+        # Pack Y and UV into one contiguous pitch-aligned allocation so FFmpeg NVENC
+        # (AV_PIX_FMT_CUDA) finds UV immediately after Y at data[0] + linesize[0] * height.
+        h, w = int(y.shape[-2]), int(y.shape[-1])
+        stride_w = ((w + align_elems - 1) // align_elems) * align_elems
+        buf = torch.empty((h + h // 2, stride_w), dtype=dtype, device=y.device)
+        y_out = buf[:h, :w]
+        uv_out = buf[h:, :w]
+
+        y_out.copy_((y.squeeze(0).squeeze(0) * max_val + 0.5).clamp_(0.0, max_val).to(dtype))
+        uv_interleaved = torch.stack([u.squeeze(0).squeeze(0), v.squeeze(0).squeeze(0)], dim=-1)
+        uv_out.view(h // 2, w // 2, 2).copy_((uv_interleaved * max_val + 0.5).clamp_(0.0, max_val).to(dtype))
+        return y_out, uv_out
 
 
 class TensorFrame:
@@ -496,23 +512,6 @@ class TensorFrame:
         else:
             assert self.planes.ndim == 4 and self.planes.shape[0] == 1
             return self.planes.squeeze(0)
-
-
-def pix_fmt_requires_16bit(pix_fmt: str) -> bool:
-    return pix_fmt in {
-        "yuv420p10le",
-        "p010le",
-        "yuv422p10le",
-        "yuv444p10le",
-        "yuv420p12le",
-        "yuv422p12le",
-        "yuv444p12le",
-        "yuv444p16le",
-        "gbrp16le",
-        "gbrp12le",
-        "gbrp10le",
-        "rgb48le",
-    }
 
 
 class InputTransform:
@@ -584,11 +583,7 @@ class InputTransform:
         )
 
     def to_tensor_av(self, frame: av.VideoFrame) -> TensorFrame:
-        has_alpha = (
-            getattr(frame.format, "has_alpha", False)
-            or "a" in frame.format.name.lower()
-            or len(frame.format.components) == 4
-        )
+        has_alpha = pix_fmt_has_alpha(frame.format)
         target_format = self.rgb_format
         if has_alpha:
             target_format = (
@@ -736,16 +731,19 @@ class OutputTransform:
 
         return self.from_ndarray(x_nd)
 
-    def is_dlpack_supported(self, x) -> bool:
+    def is_dlpack_supported(self, x: torch.Tensor) -> bool:
         # Abort GPU acceleration path if the tensor has an alpha channel
         has_alpha = (x.shape[0] == 4) if x.dim() == 3 else (x.shape[1] == 4)
         if has_alpha:
             return False
 
-        return (
-            is_nvidia_gpu(x.device)  # TODO: Remove this condition for xpu/mps
-            and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuvj420p", "yuv420p10le"}
-        )
+        return x.device.type in {"cuda", "xpu", "mps"} and self.dst_pix_fmt in {
+            "nv12",
+            "p010le",
+            "yuv420p",
+            "yuvj420p",
+            "yuv420p10le",
+        }
 
     def is_cuda_dlpack_supported(self, x: torch.Tensor) -> bool:
         return (
@@ -847,7 +845,7 @@ def to_ndarray(frame: av.VideoFrame) -> np.ndarray:
     from .utils import RGB_8BIT, RGB_16BIT
 
     use_16bit = frame.format.components[0].bits > 8
-    has_alpha = getattr(frame.format, "has_alpha", False) or "a" in frame.format.name.lower()
+    has_alpha = pix_fmt_has_alpha(frame.format)
 
     if has_alpha:
         format = "rgba64le" if use_16bit else "rgba"
@@ -1025,6 +1023,38 @@ def configure_video_codec(config: Any) -> None:
             config.pix_fmt = "nv12"
         elif pix_fmt == "yuv420p10le":
             config.pix_fmt = "p010le"
+
+    # AMF (AMD) hardware encoder mappings
+    # AMF encoders accept nv12, yuv420p, p010le and packed RGB (rgb0/bgr0/bgra/rgba);
+    # no yuv444p, no rgb24, no 16-bit. Alpha is dropped (no encoder support).
+    if codec in {"h264_amf", "hevc_amf", "av1_amf"}:
+        if codec == "h264_amf" and pix_fmt in {
+            "yuv420p10le",
+            "p010le",
+            "gbrp10le",
+            "gbrp16le",
+            "gbrap10le",
+            "gbrap16le",
+        }:
+            # h264_amf does not support 10-bit pixel formats
+            config.pix_fmt = "nv12"
+        elif pix_fmt in {"yuv420p", "yuv444p", "yuva420p"}:
+            config.pix_fmt = "nv12"
+        elif pix_fmt == "yuv420p10le":
+            config.pix_fmt = "p010le"
+        elif codec in {"hevc_amf", "av1_amf"} and pix_fmt in {"gbrp10le", "gbrp16le", "gbrap10le", "gbrap16le"}:
+            config.pix_fmt = "p010le"
+        elif pix_fmt in {"rgb24", "rgba", "gbrp", "gbrap"}:
+            # packed RGB is the only RGB input AMF encoders accept
+            config.pix_fmt = "rgb0"
+
+    # VAAPI hardware encoder mappings
+    if codec in {"h264_vaapi", "hevc_vaapi", "av1_vaapi"}:
+        if pix_fmt == "yuv420p10le":
+            config.pix_fmt = "p010le"
+        elif pix_fmt == "rgb24":
+            # VAAPI hwupload has no rgb24 input; bgr0 is the packed RGB format it accepts
+            config.pix_fmt = "bgr0"
 
 
 def _test_configure() -> None:

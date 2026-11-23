@@ -1,8 +1,9 @@
-import torch
-from torchvision.models.vgg import vgg11_bn, VGG11_BN_Weights
-from torchvision.models.swin_transformer import swin_t, Swin_T_Weights
-from nunif.models import SoftmaxBaseModel, register_model
 import torch.nn.functional as F
+from torchvision.models.swin_transformer import Swin_T_Weights, swin_t
+from torchvision.models.vgg import VGG11_BN_Weights, vgg11_bn
+
+from nunif.models import SoftmaxBaseModel, register_model
+
 from ..class_names import CLASS_NAMES
 
 
@@ -23,7 +24,6 @@ class VGG11BN(SoftmaxBaseModel):
             return F.log_softmax(z, dim=1)
         else:
             return F.softmax(z, dim=1)
-
 
 
 @register_model

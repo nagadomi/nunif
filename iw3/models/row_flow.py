@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model
 
 
@@ -27,14 +28,26 @@ class RowFlow(I2IBaseModel):
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d,)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        rgb = x[:, 0:3, :, ]
-        grid = x[:, 6:8, :, ]
-        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        rgb = x[
+            :,
+            0:3,
+            :,
+        ]
+        grid = x[
+            :,
+            6:8,
+            :,
+        ]
+        x = x[
+            :,
+            3:6,
+            :,
+        ]  # depth + diverdence feature + convergence
         delta = self.conv(x) * self.delta_scale
         delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
         grid = grid + delta
@@ -44,12 +57,14 @@ class RowFlow(I2IBaseModel):
         if self.training:
             return z
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     model = create_model(name).to(device).eval()
     x = torch.zeros((4, 8, 256, 256)).to(device)

@@ -5,6 +5,7 @@ set NUNIF_DIR=%ROOT_DIR%nunif
 set PYTHON_DIR=%ROOT_DIR%python
 set MINGIT_DIR=%ROOT_DIR%git
 set PATH=C:\Windows\system32;C:\Windows;C:\WINDOWS\System32\WindowsPowerShell\v1.0;%PYTHON_DIR%;%PYTHON_DIR%\Scripts;%MINGIT_DIR%\cmd
+set PSModulePath=C:\WINDOWS\System32\WindowsPowerShell\v1.0\Modules
 
 @rem clear python related variables
 set PYTHONHOME=

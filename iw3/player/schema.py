@@ -18,3 +18,10 @@ class MediaItem(BaseModel):
     size: Optional[int] = None
     mtime: int
     stereo_format: Optional[str] = None
+
+
+class StreamSettingsUpdate(BaseModel):
+    divergence: Optional[float] = None
+    convergence: Optional[float] = None
+    foreground_scale: Optional[float] = None
+    edge_dilation: Optional[int] = None

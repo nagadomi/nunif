@@ -477,6 +477,7 @@ class ScreenshotProcess(threading.Thread):
         crop_right=0,
         crop_bottom=0,
         draw_cursor_enabled=True,
+        **_ignore_unsupported_kwargs,
     ):
         super().__init__(daemon=True)
         self.backend = backend

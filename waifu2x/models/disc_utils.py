@@ -1,7 +1,8 @@
 import torch
 import torch.nn.functional as F
+
 from nunif.models import Model
-from nunif.modules.pad import get_crop_size, get_pad_size, get_fit_pad_size
+from nunif.modules.pad import get_crop_size, get_fit_pad_size, get_pad_size
 from nunif.modules.reflection_pad2d import reflection_pad2d_naive
 
 
@@ -12,7 +13,7 @@ class Discriminator(Model):
 
 
 def normalize(x):
-    return x * 2. - 1.
+    return x * 2.0 - 1.0
 
 
 def to_y(rgb):
@@ -84,8 +85,9 @@ def apply_project(x, cond):
 
 
 def bench(name, compile=False):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
 
     N = 20
     B = 4

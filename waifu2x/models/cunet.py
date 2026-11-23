@@ -1,10 +1,12 @@
 # Cascaded U-Net
+import copy
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model
 from nunif.modules import SEBlock
-import copy
 
 
 class UNetConv(nn.Module):
@@ -44,7 +46,7 @@ class UNet1(nn.Module):
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
@@ -60,7 +62,7 @@ class UNet1(nn.Module):
         x2 = self.conv2_up(x2)
         x2 = F.leaky_relu(x2, 0.1, inplace=True)
 
-        x1 = F.pad(x1, (-4, -4, -4, -4), mode='constant')
+        x1 = F.pad(x1, (-4, -4, -4, -4), mode="constant")
         x3 = self.conv3(x1 + x2)
         x3 = F.leaky_relu(x3, 0.1, inplace=True)
         z = self.conv_bottom(x3)
@@ -88,7 +90,7 @@ class UNet2(nn.Module):
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
@@ -108,12 +110,12 @@ class UNet2(nn.Module):
         x3 = self.conv3_up(x3)
         x3 = F.leaky_relu(x3, 0.1, inplace=True)
 
-        x2 = F.pad(x2, (-4, -4, -4, -4), mode='constant')
+        x2 = F.pad(x2, (-4, -4, -4, -4), mode="constant")
         x4 = self.conv4(x2 + x3)
         x4 = self.conv4_up(x4)
         x4 = F.leaky_relu(x4, 0.1, inplace=True)
 
-        x1 = F.pad(x1, (-16, -16, -16, -16), mode='constant')
+        x1 = F.pad(x1, (-16, -16, -16, -16), mode="constant")
         x5 = self.conv5(x1 + x4)
         x5 = F.leaky_relu(x5, 0.1, inplace=True)
 
@@ -149,9 +151,9 @@ class UpCUNet(I2IBaseModel):
     def _forward(self, x):
         z1 = self.unet1(x)
         if not self.no_clip:
-            z1 = torch.clamp(z1, 0., 1.)
+            z1 = torch.clamp(z1, 0.0, 1.0)
         z2 = self.unet2(z1)
-        z1 = F.pad(z1, (-20, -20, -20, -20), mode='constant')
+        z1 = F.pad(z1, (-20, -20, -20, -20), mode="constant")
         z = z1 + z2
         return z, z1
 
@@ -160,7 +162,7 @@ class UpCUNet(I2IBaseModel):
         if self.training:
             return (z, z1)
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def to_inference_model(self):
         net = copy.deepcopy(self)
@@ -183,9 +185,9 @@ class CUNet(I2IBaseModel):
     def _forward(self, x):
         z1 = self.unet1(x)
         if not self.no_clip:
-            z1 = torch.clamp(z1, 0., 1.)
+            z1 = torch.clamp(z1, 0.0, 1.0)
         z2 = self.unet2(z1)
-        z1 = F.pad(z1, (-20, -20, -20, -20), mode='constant')
+        z1 = F.pad(z1, (-20, -20, -20, -20), mode="constant")
         z = z1 + z2
         return z, z1
 
@@ -194,7 +196,7 @@ class CUNet(I2IBaseModel):
         if self.training:
             return (z, z1)
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def to_inference_model(self):
         net = copy.deepcopy(self)
@@ -209,13 +211,13 @@ class CUNet(I2IBaseModel):
 class CUNetJIT(UpCUNet):
     def forward(self, x):
         z, _ = self._forward(x)
-        return torch.clamp(z, 0., 1.)
+        return torch.clamp(z, 0.0, 1.0)
 
 
 class UpCUNetJIT(UpCUNet):
     def forward(self, x):
         z, _ = self._forward(x)
-        return torch.clamp(z, 0., 1.)
+        return torch.clamp(z, 0.0, 1.0)
 
 
 if __name__ == "__main__":

@@ -1,14 +1,17 @@
 import copy
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model, register_model_factory
-from nunif.modules.attention import WindowMHA2d, WindowScoreBias
-from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive, replication_pad2d_naive
-from nunif.modules.init import icnr_init, basic_module_init
-from nunif.modules.compile_wrapper import conditional_compile
-from nunif.modules.norm import FastLayerNorm
 from nunif.modules.antialiased_bicubic import AntialiasedBicubic
+from nunif.modules.attention import WindowMHA2d, WindowScoreBias
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.init import basic_module_init, icnr_init
+from nunif.modules.norm import FastLayerNorm
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive as ReplicationPad2dNaive
+from nunif.modules.replication_pad2d import replication_pad2d_naive
 
 
 class GLUConvMLP(nn.Module):
@@ -65,16 +68,25 @@ class MLP(nn.Module):
 
 
 class WACBlock(nn.Module):
-    """ Window MHA + Multi Layer Conv2d
-    """
-    def __init__(self, in_channels, num_heads=4, qkv_dim=None, window_size=8, mlp_ratio=2,
-                 padding=True, conv_mlp=True, shift=False):
+    """Window MHA + Multi Layer Conv2d"""
+
+    def __init__(
+        self,
+        in_channels,
+        num_heads=4,
+        qkv_dim=None,
+        window_size=8,
+        mlp_ratio=2,
+        padding=True,
+        conv_mlp=True,
+        shift=False,
+    ):
         super(WACBlock, self).__init__()
-        self.window_size = (window_size if isinstance(window_size, (tuple, list))
-                            else (window_size, window_size))
+        self.window_size = window_size if isinstance(window_size, (tuple, list)) else (window_size, window_size)
         self.padding = padding
-        self.mha = WindowMHA2d(in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size,
-                               shift=shift, shift_mask_token=False)
+        self.mha = WindowMHA2d(
+            in_channels, num_heads, qkv_dim=qkv_dim, window_size=window_size, shift=shift, shift_mask_token=False
+        )
         self.relative_bias = WindowScoreBias(self.window_size)
         self.norm = FastLayerNorm(in_channels, bias=False)
         if conv_mlp:
@@ -96,8 +108,18 @@ class WACBlock(nn.Module):
 
 
 class WACBlocks(nn.Module):
-    def __init__(self, in_channels, num_heads=4, qkv_dim=None,
-                 window_size=8, mlp_ratio=2, num_layers=2, padding=True, conv_mlp=True, shift=None):
+    def __init__(
+        self,
+        in_channels,
+        num_heads=4,
+        qkv_dim=None,
+        window_size=8,
+        mlp_ratio=2,
+        num_layers=2,
+        padding=True,
+        conv_mlp=True,
+        shift=None,
+    ):
         super(WACBlocks, self).__init__()
         if isinstance(window_size, int):
             window_size = [window_size] * num_layers
@@ -109,10 +131,20 @@ class WACBlocks(nn.Module):
             shift = [i % 2 == 1 for i in range(num_layers)]
 
         self.blocks = nn.Sequential(
-            *[WACBlock(in_channels, window_size=window_size[i],
-                       num_heads=num_heads, qkv_dim=qkv_dim, mlp_ratio=mlp_ratio,
-                       padding=padding[i], conv_mlp=conv_mlp[i], shift=shift[i])
-              for i in range(num_layers)])
+            *[
+                WACBlock(
+                    in_channels,
+                    window_size=window_size[i],
+                    num_heads=num_heads,
+                    qkv_dim=qkv_dim,
+                    mlp_ratio=mlp_ratio,
+                    padding=padding[i],
+                    conv_mlp=conv_mlp[i],
+                    shift=shift[i],
+                )
+                for i in range(num_layers)
+            ]
+        )
 
     def forward(self, x):
         return self.blocks(x)
@@ -123,7 +155,8 @@ class IR(nn.Module):
         super().__init__()
         self.path1 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels // 2, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(0.2, inplace=True))
+            nn.LeakyReLU(0.2, inplace=True),
+        )
         self.path2 = nn.Sequential(
             nn.PixelUnshuffle(2),
             nn.Conv2d(in_channels * 4, out_channels // 2 * 4, kernel_size=1, stride=1, padding=0),
@@ -198,7 +231,7 @@ class ToImage(nn.Module):
     def __init__(self, in_channels, out_channels, scale_factor):
         super().__init__()
         self.scale_factor = scale_factor
-        self.proj = nn.Conv2d(in_channels, out_channels * scale_factor ** 2, kernel_size=1, stride=1, padding=0)
+        self.proj = nn.Conv2d(in_channels, out_channels * scale_factor**2, kernel_size=1, stride=1, padding=0)
         icnr_init(self.proj, scale_factor=scale_factor)
 
     @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
@@ -215,8 +248,9 @@ class SourceResidual(nn.Module):
         assert out_channels == 3
         super().__init__()
         self.scale_factor = scale_factor
-        self.resampling = nn.Conv2d(source_channels, out_channels * scale_factor ** 2,
-                                    kernel_size=3, stride=1, padding=0, bias=False)
+        self.resampling = nn.Conv2d(
+            source_channels, out_channels * scale_factor**2, kernel_size=3, stride=1, padding=0, bias=False
+        )
         # weight for main net
         self.scale_bias = nn.Parameter(torch.zeros((1,), dtype=torch.float32))
         self.nearest_neighbor_init(self.resampling, scale_factor=scale_factor)
@@ -226,8 +260,8 @@ class SourceResidual(nn.Module):
         with torch.no_grad():
             OUT, IN, H, W = m.weight.data.shape
             center = (H - 1) // 2
-            assert OUT % (scale_factor ** 2) == 0
-            weight = torch.zeros((OUT // (scale_factor ** 2), IN, H, W))
+            assert OUT % (scale_factor**2) == 0
+            weight = torch.zeros((OUT // (scale_factor**2), IN, H, W))
             weight[0, 0, center, center] = 1.0
             weight[1, 1, center, center] = 1.0
             weight[2, 2, center, center] = 1.0
@@ -264,10 +298,18 @@ def get_shift_config(num_layers, last=False):
 
 
 class SwinUNetV2Base(nn.Module):
-    def __init__(self, in_channels, out_channels, base_dim=96,
-                 lv1_mlp_ratio=2, lv2_mlp_ratio=1, lv2_ratio=4,
-                 first_layers=2, last_layers=3,
-                 scale_factor=2):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        base_dim=96,
+        lv1_mlp_ratio=2,
+        lv2_mlp_ratio=1,
+        lv2_ratio=4,
+        first_layers=2,
+        last_layers=3,
+        scale_factor=2,
+    ):
         super(SwinUNetV2Base, self).__init__()
         assert scale_factor in {1, 2, 4}
         self.scale_factor = scale_factor
@@ -282,19 +324,29 @@ class SwinUNetV2Base(nn.Module):
         self.patch = nn.Conv2d(32, C, kernel_size=3, stride=1, padding=0)
 
         # encoder
-        self.wac1 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=[8, 6], num_heads=HEADS, num_layers=first_layers,
-                              shift=get_shift_config(first_layers))
+        self.wac1 = WACBlocks(
+            C,
+            mlp_ratio=lv1_mlp_ratio,
+            window_size=[8, 6],
+            num_heads=HEADS,
+            num_layers=first_layers,
+            shift=get_shift_config(first_layers),
+        )
         self.down1 = PatchDown(C, C2, residual=True)
-        self.wac2 = WACBlocks(C2, mlp_ratio=lv2_mlp_ratio,
-                              window_size=8, num_heads=HEADS2, num_layers=4,
-                              shift=get_shift_config(4))
+        self.wac2 = WACBlocks(
+            C2, mlp_ratio=lv2_mlp_ratio, window_size=8, num_heads=HEADS2, num_layers=4, shift=get_shift_config(4)
+        )
         # decoder
         self.up1 = PatchUp(C2, C, residual=True)
-        self.wac3 = WACBlocks(C, mlp_ratio=lv1_mlp_ratio,
-                              window_size=8, num_heads=HEADS, num_layers=last_layers,
-                              conv_mlp=[True] * (last_layers - 1) + [False],
-                              shift=get_shift_config(last_layers))
+        self.wac3 = WACBlocks(
+            C,
+            mlp_ratio=lv1_mlp_ratio,
+            window_size=8,
+            num_heads=HEADS,
+            num_layers=last_layers,
+            conv_mlp=[True] * (last_layers - 1) + [False],
+            shift=get_shift_config(last_layers),
+        )
         self.to_residual_image = ToImage(C, out_channels, scale_factor=scale_factor)
         self.to_image = SourceResidual(out_channels, scale_factor=scale_factor)
 
@@ -365,9 +417,7 @@ class SwinUNetV2Base(nn.Module):
 
 
 def tile_size_validator(size):
-    return (size > 16 and
-            (size - 16) % 12 == 0 and
-            (size - 16) % 16 == 0)
+    return size > 16 and (size - 16) % 12 == 0 and (size - 16) % 16 == 0
 
 
 @register_model
@@ -375,24 +425,38 @@ class SwinUNet1xV2(I2IBaseModel):
     name = "waifu2x.swin_unet_v2_1x"
     name_alias = ("waifu2x.winc_unet_1x", "waifu2x.swin_unet_1x_v2")
 
-    def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=64, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
-                 first_layers=2, last_layers=3,
-                 **kwargs):
+    def __init__(
+        self,
+        in_channels=3,
+        out_channels=3,
+        base_dim=64,
+        lv1_mlp_ratio=2,
+        lv2_mlp_ratio=2,
+        lv2_ratio=2,
+        first_layers=2,
+        last_layers=3,
+        **kwargs,
+    ):
         super(SwinUNet1xV2, self).__init__(locals(), scale=1, offset=9, in_channels=in_channels, blend_size=4)
         self.register_tile_size_validator(tile_size_validator)
-        self.unet = SwinUNetV2Base(in_channels, out_channels,
-                                   base_dim=base_dim,
-                                   lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                   first_layers=first_layers, last_layers=last_layers,
-                                   scale_factor=1)
+        self.unet = SwinUNetV2Base(
+            in_channels,
+            out_channels,
+            base_dim=base_dim,
+            lv1_mlp_ratio=lv1_mlp_ratio,
+            lv2_mlp_ratio=lv2_mlp_ratio,
+            lv2_ratio=lv2_ratio,
+            first_layers=first_layers,
+            last_layers=last_layers,
+            scale_factor=1,
+        )
 
     def forward(self, x):
         z = self.unet(x)
         if self.training:
             return z
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def set_tile_mode(self):
         self.unet.set_tile_mode()
@@ -406,22 +470,27 @@ class SwinUNet2xV2(I2IBaseModel):
     name = "waifu2x.swin_unet_v2_2x"
     name_alias = ("waifu2x.winc_unet_2x",)
 
-    def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
-                 **kwargs):
+    def __init__(
+        self, in_channels=3, out_channels=3, base_dim=96, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2, **kwargs
+    ):
         super(SwinUNet2xV2, self).__init__(locals(), scale=2, offset=18, in_channels=in_channels, blend_size=8)
         self.register_tile_size_validator(tile_size_validator)
-        self.unet = SwinUNetV2Base(in_channels, out_channels,
-                                   base_dim=base_dim,
-                                   lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                   scale_factor=2)
+        self.unet = SwinUNetV2Base(
+            in_channels,
+            out_channels,
+            base_dim=base_dim,
+            lv1_mlp_ratio=lv1_mlp_ratio,
+            lv2_mlp_ratio=lv2_mlp_ratio,
+            lv2_ratio=lv2_ratio,
+            scale_factor=2,
+        )
 
     def forward(self, x):
         z = self.unet(x)
         if self.training:
             return z
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def set_tile_mode(self):
         self.unet.set_tile_mode()
@@ -435,17 +504,22 @@ class SwinUNet4xV2(I2IBaseModel):
     name = "waifu2x.swin_unet_v2_4x"
     name_alias = ("waifu2x.winc_unet_4x",)
 
-    def __init__(self, in_channels=3, out_channels=3,
-                 base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2,
-                 **kwargs):
+    def __init__(
+        self, in_channels=3, out_channels=3, base_dim=128, lv1_mlp_ratio=2, lv2_mlp_ratio=2, lv2_ratio=2, **kwargs
+    ):
         super(SwinUNet4xV2, self).__init__(locals(), scale=4, offset=36, in_channels=in_channels, blend_size=16)
         self.register_tile_size_validator(tile_size_validator)
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.unet = SwinUNetV2Base(in_channels, out_channels=out_channels,
-                                   base_dim=base_dim,
-                                   lv1_mlp_ratio=lv1_mlp_ratio, lv2_mlp_ratio=lv2_mlp_ratio, lv2_ratio=lv2_ratio,
-                                   scale_factor=4)
+        self.unet = SwinUNetV2Base(
+            in_channels,
+            out_channels=out_channels,
+            base_dim=base_dim,
+            lv1_mlp_ratio=lv1_mlp_ratio,
+            lv2_mlp_ratio=lv2_mlp_ratio,
+            lv2_ratio=lv2_ratio,
+            scale_factor=4,
+        )
 
     def forward(self, x):
         z = self.unet(x)
@@ -453,7 +527,7 @@ class SwinUNet4xV2(I2IBaseModel):
         if self.training:
             return z
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def set_tile_mode(self):
         self.unet.set_tile_mode()
@@ -463,13 +537,15 @@ class SwinUNet4xV2(I2IBaseModel):
 
     def to_2x(self, shared=True):
         unet = self.unet if shared else copy.deepcopy(self.unet)
-        return SwinUNetV2Downscaled(unet, downscale_factor=2,
-                                    in_channels=self.i2i_in_channels, out_channels=self.out_channels)
+        return SwinUNetV2Downscaled(
+            unet, downscale_factor=2, in_channels=self.i2i_in_channels, out_channels=self.out_channels
+        )
 
     def to_1x(self, shared=True):
         unet = self.unet if shared else copy.deepcopy(self.unet)
-        return SwinUNetV2Downscaled(unet=unet, downscale_factor=4,
-                                    in_channels=self.i2i_in_channels, out_channels=self.out_channels)
+        return SwinUNetV2Downscaled(
+            unet=unet, downscale_factor=4, in_channels=self.i2i_in_channels, out_channels=self.out_channels
+        )
 
 
 def resize(x, downscale_factor, mode, align_corners, antialias):
@@ -494,9 +570,13 @@ class SwinUNetV2Downscaled(I2IBaseModel):
         scale = 4 // downscale_factor
         blend_size = 4 * downscale_factor
         self.antialias = True
-        super().__init__(dict(in_channels=in_channels, out_channels=out_channels,
-                              downscale_factor=downscale_factor),
-                         scale=scale, offset=offset, in_channels=in_channels, blend_size=blend_size)
+        super().__init__(
+            dict(in_channels=in_channels, out_channels=out_channels, downscale_factor=downscale_factor),
+            scale=scale,
+            offset=offset,
+            in_channels=in_channels,
+            blend_size=blend_size,
+        )
         self.register_tile_size_validator(tile_size_validator)
         self.unet = unet
         self.mode = "bicubic"
@@ -506,33 +586,41 @@ class SwinUNetV2Downscaled(I2IBaseModel):
     def forward(self, x):
         z = self.unet(x)
         if self.training:
-            z = resize(z, downscale_factor=self.downscale_factor,
-                       mode=self.mode, align_corners=False, antialias=self.antialias)
+            z = resize(
+                z, downscale_factor=self.downscale_factor, mode=self.mode, align_corners=False, antialias=self.antialias
+            )
             return z
         else:
-            z = torch.clamp(z, 0., 1.)
-            z = resize(z, downscale_factor=self.downscale_factor,
-                       mode=self.mode, align_corners=False, antialias=self.antialias)
-            z = torch.clamp(z, 0., 1.)
+            z = torch.clamp(z, 0.0, 1.0)
+            z = resize(
+                z, downscale_factor=self.downscale_factor, mode=self.mode, align_corners=False, antialias=self.antialias
+            )
+            z = torch.clamp(z, 0.0, 1.0)
             return z
 
     @staticmethod
     def from_4x(unet_4x, downscale_factor):
-        net = SwinUNetV2Downscaled(unet=copy.deepcopy(unet_4x.unet),
-                                   downscale_factor=downscale_factor,
-                                   in_channels=unet_4x.unet.in_channels,
-                                   out_channels=unet_4x.unet.out_channels)
+        net = SwinUNetV2Downscaled(
+            unet=copy.deepcopy(unet_4x.unet),
+            downscale_factor=downscale_factor,
+            in_channels=unet_4x.unet.in_channels,
+            out_channels=unet_4x.unet.out_channels,
+        )
         return net
 
 
 register_model_factory(
     "waifu2x.swin_unet_v2_1xs",
-    lambda **kwargs: SwinUNet1xV2(base_dim=32, first_layers=1, last_layers=1, lv1_mlp_ratio=1, lv2_mlp_ratio=1, **kwargs))
+    lambda **kwargs: SwinUNet1xV2(
+        base_dim=32, first_layers=1, last_layers=1, lv1_mlp_ratio=1, lv2_mlp_ratio=1, **kwargs
+    ),
+)
 
 
 def _bench(name, compile):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
 
     N = 100
     B = 4

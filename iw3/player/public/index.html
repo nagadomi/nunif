@@ -53,6 +53,26 @@
             flex-shrink: 0;
             stroke: currentColor;
         }
+
+        #xrButtons {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            z-index: 999;
+        }
+
+        #xrButtons button,
+        #xrButtons a {
+            position: static !important;
+            left: auto !important;
+            bottom: auto !important;
+            transform: none !important;
+            width: auto !important;
+            min-width: 100px !important;
+        }
     </style>
 
     <script type="importmap">
@@ -60,6 +80,7 @@
         "imports": {
             "three": "/lib/vendor.bundle.js",
             "three/examples/jsm/webxr/VRButton.js": "/lib/vendor.bundle.js",
+            "three/examples/jsm/webxr/ARButton.js": "/lib/vendor.bundle.js",
             "three/examples/jsm/webxr/XRControllerModelFactory.js": "/lib/vendor.bundle.js",
             "@pmndrs/uikit": "/lib/vendor.bundle.js",
             "@pmndrs/pointer-events": "/lib/vendor.bundle.js"

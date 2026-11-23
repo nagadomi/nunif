@@ -10,11 +10,10 @@
 import torch
 from PIL import Image
 
-model = torch.hub.load("nagadomi/nunif:master", "waifu2x",
-                       method="scale", noise_level=3, trust_repo=True).to("cuda")
+model = torch.hub.load("nagadomi/nunif:master", "waifu2x", method="scale", noise_level=3, trust_repo=True).to("cuda")
 input_image = Image.open("input.jpg")
 result = model.infer(input_image)
-result.show() # result is PIL.Image.Image
+result.show()  # result is PIL.Image.Image
 ```
 
 1. loading model with `torch.hub.load()`
@@ -50,10 +49,9 @@ import threading
 
 lock = threading.Lock()
 im = Image.open("input.jpg")
-model = torch.hub.load("nagadomi/nunif:master", "waifu2x",
-                       model_type="art_scan", trust_repo=True).to("cuda")
+model = torch.hub.load("nagadomi/nunif:master", "waifu2x", model_type="art_scan", trust_repo=True).to("cuda")
 for noise_level in (-1, 0, 1, 2, 3):
-    with lock: # Note model.set_mode -> model.infer block is not thread-safe
+    with lock:  # Note model.set_mode -> model.infer block is not thread-safe
         # Select method and noise_level
         model.set_mode("scale", noise_level)
         out = model.infer(im)

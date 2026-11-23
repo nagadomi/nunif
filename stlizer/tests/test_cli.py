@@ -11,3 +11,11 @@ def test_cli(tmp_path: Path) -> None:
     test_video = os.path.join(smoke_dir, "sd.mkv")
     out_video = str(tmp_path / "out.mkv")
     run(["python", "-m", "stlizer", "-i", test_video, "-o", out_video])
+
+
+def test_cli_rgba(tmp_path: Path) -> None:
+    smoke_dir = str(tmp_path / "smoke")
+    ensure_smoke_data(smoke_dir)
+    test_video = os.path.join(smoke_dir, "rgba.mkv")
+    out_video = str(tmp_path / "out_rgba.mkv")
+    run(["python", "-m", "stlizer", "-i", test_video, "-o", out_video])

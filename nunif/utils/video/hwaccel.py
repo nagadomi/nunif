@@ -3,7 +3,7 @@ from typing import List, Set
 import torch
 from av.codec.hwaccel import HWAccel, hwdevices_available
 
-from .utils import is_nvidia_gpu
+from .utils import DEFAULT_VAAPI_DEVICE, is_nvidia_gpu
 
 
 def get_supported_hwdevices() -> List[str]:
@@ -29,6 +29,7 @@ def create_hwaccel(
     device: str | None,
     device_id: int | None = 0,
     disable_software_fallback: bool = False,
+    vaapi_device: str | None = None,
 ) -> HWAccel | None:
     if device is None:
         return None
@@ -57,6 +58,14 @@ def create_hwaccel(
             device=device_id,
             is_hw_owned=False,
             options={"primary_ctx": "1"},
+            allow_software_fallback=allow_software_fallback,
+        )
+    elif device == "vaapi":
+        vaapi_device = vaapi_device or DEFAULT_VAAPI_DEVICE
+        return HWAccel(
+            device_type="vaapi",
+            device=vaapi_device,
+            is_hw_owned=False,
             allow_software_fallback=allow_software_fallback,
         )
     else:

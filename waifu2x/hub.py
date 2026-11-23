@@ -110,18 +110,15 @@ class Waifu2xImageModel:
 
     def infer_pil(self, pil_image, tta=False, output_type="pil", **kwargs):
         if self.keep_alpha:
-            rgb, alpha = pil_io.to_tensor(pil_image, return_alpha=self.keep_alpha)
+            rgb, alpha = pil_io.to_tensor(pil_image, return_alpha=self.keep_alpha, device=self.device)
         else:
-            rgb = pil_io.to_tensor(pil_image, return_alpha=self.keep_alpha)
+            rgb = pil_io.to_tensor(pil_image, return_alpha=self.keep_alpha, device=self.device)
             alpha = None
 
-        rgb = rgb.to(self.device)
         if self.is_half:
             rgb = rgb.half()
-        if alpha is not None:
-            alpha = alpha.to(self.device)
-            if self.is_half:
-                alpha = alpha.half()
+        if alpha is not None and self.is_half:
+            alpha = alpha.half()
 
         return self.infer_tensor(rgb, alpha, tta=tta, output_type=output_type, **kwargs)
 
@@ -142,6 +139,7 @@ class Waifu2xImageModel:
                 batch_size=self.batch_size,
                 tta=tta,
                 enable_amp=self.amp,
+                output_device="cpu" if output_type == "tensor" else self.device,
             )
         if output_type == "tensor":
             return (rgb, alpha)

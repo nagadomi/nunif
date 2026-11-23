@@ -1,16 +1,14 @@
 import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from nunif.models import I2IBaseModel, register_model, register_model_factory
 from nunif.modules.attention import WindowMHA2d, WindowScoreBias
-from nunif.modules.replication_pad2d import (
-    ReplicationPad2dNaive,
-    replication_pad2d
-)
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
-
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive, replication_pad2d
 
 OFFSET = 32
 
@@ -102,8 +100,8 @@ class MLBW(I2IBaseModel):
         x = self.lv1_out(x + x1)
         x = F.pad(x, (-pad_w1, -pad_w2, -pad_h1, -pad_h2), mode="constant")
         if self.hole_mask:
-            delta, layer_weight = x[:, :self.num_layers * 2].chunk(2, dim=1)
-            hole_mask_logits = x[:, self.num_layers * 2:]
+            delta, layer_weight = x[:, : self.num_layers * 2].chunk(2, dim=1)
+            hole_mask_logits = x[:, self.num_layers * 2 :]
         else:
             delta, layer_weight = x.chunk(2, dim=1)
             hole_mask_logits = None
@@ -127,9 +125,21 @@ class MLBW(I2IBaseModel):
         return z.to(output_dtye)
 
     def _forward_default_composite(self, x):
-        rgb = x[:, 0:3, :, ]
-        grid = x[:, 6:8, :, ]
-        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        rgb = x[
+            :,
+            0:3,
+            :,
+        ]
+        grid = x[
+            :,
+            6:8,
+            :,
+        ]
+        x = x[
+            :,
+            3:6,
+            :,
+        ]  # depth + diverdence feature + convergence
         delta, layer_weight, _ = self._forward(x)
         delta = delta.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
@@ -137,8 +147,8 @@ class MLBW(I2IBaseModel):
         # composite
         z = torch.zeros_like(rgb)
         for i in range(delta.shape[1]):
-            d = delta[:, i:i + 1, :, :]
-            w = layer_weight[:, i:i + 1, :, :]
+            d = delta[:, i : i + 1, :, :]
+            w = layer_weight[:, i : i + 1, :, :]
             z = z + self._warp(rgb, grid, d, delta_scale) * w
         z = F.pad(z, (-OFFSET,) * 4)
         return z, grid, delta, layer_weight
@@ -150,12 +160,24 @@ class MLBW(I2IBaseModel):
             grid = (grid[:, 0:1, :, :] / delta_scale).detach()
             return z, grid + delta, layer_weight
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def _forward_hole_mask_composite(self, x):
-        rgb = x[:, 0:3, :, ]
-        grid = x[:, 6:8, :, ]
-        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        rgb = x[
+            :,
+            0:3,
+            :,
+        ]
+        grid = x[
+            :,
+            6:8,
+            :,
+        ]
+        x = x[
+            :,
+            3:6,
+            :,
+        ]  # depth + diverdence feature + convergence
         delta, layer_weight, hole_mask_logits = self._forward(x)
         delta = delta.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
@@ -163,8 +185,8 @@ class MLBW(I2IBaseModel):
         # composite
         z = torch.zeros_like(rgb)
         for i in range(delta.shape[1]):
-            d = delta[:, i:i + 1, :, :]
-            w = layer_weight[:, i:i + 1, :, :]
+            d = delta[:, i : i + 1, :, :]
+            w = layer_weight[:, i : i + 1, :, :]
             z = z + self._warp(rgb, grid, d, delta_scale) * w
         z = F.pad(z, (-OFFSET,) * 4)
         hole_mask_logits = F.pad(hole_mask_logits, (-OFFSET,) * 4)
@@ -178,13 +200,29 @@ class MLBW(I2IBaseModel):
             return z, grid + delta, layer_weight, hole_mask_logits
         else:
             hole_mask_logits = hole_mask_logits.to(torch.float32)
-            return torch.clamp(z, 0., 1.), torch.sigmoid(hole_mask_logits)
+            return torch.clamp(z, 0.0, 1.0), torch.sigmoid(hole_mask_logits)
 
     def _forward_cycle_composite(self, x):
-        rgb = x[:, 0:3, :, ]
-        depth = x[:, 3:4, :, ]
-        grid = x[:, 6:8, :, ]
-        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        rgb = x[
+            :,
+            0:3,
+            :,
+        ]
+        depth = x[
+            :,
+            3:4,
+            :,
+        ]
+        grid = x[
+            :,
+            6:8,
+            :,
+        ]
+        x = x[
+            :,
+            3:6,
+            :,
+        ]  # depth + diverdence feature + convergence
         delta1, layer_weight1, _ = self._forward(x)
         delta1 = delta1.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
@@ -195,8 +233,8 @@ class MLBW(I2IBaseModel):
         warp_rgb = torch.zeros_like(rgb)
         warp_depth = torch.zeros_like(depth)
         for i in range(delta1.shape[1]):
-            d = delta1[:, i:i + 1, :, :]
-            w = layer_weight1[:, i:i + 1, :, :]
+            d = delta1[:, i : i + 1, :, :]
+            w = layer_weight1[:, i : i + 1, :, :]
             warp_rgb = warp_rgb + self._warp(rgb, grid, d, delta_scale) * w
             warp_depth = warp_depth + self._warp(depth, grid, d, delta_scale) * w
 
@@ -209,8 +247,8 @@ class MLBW(I2IBaseModel):
 
         reverse_warp_rgb = torch.zeros_like(warp_rgb)
         for i in range(delta2.shape[1]):
-            d = delta2[:, i:i + 1, :, :]
-            w = layer_weight2[:, i:i + 1, :, :]
+            d = delta2[:, i : i + 1, :, :]
+            w = layer_weight2[:, i : i + 1, :, :]
             reverse_warp_rgb = reverse_warp_rgb + self._warp(warp_rgb_flip, grid, d, delta_scale) * w
 
         reverse_warp_rgb = torch.flip(reverse_warp_rgb, dims=[-1])
@@ -227,7 +265,7 @@ class MLBW(I2IBaseModel):
             grid = (grid[:, 0:1, :, :] / delta_scale).detach()
             return z1, z2, grid + delta1, grid + delta2, x
         else:
-            return torch.clamp(z1, 0., 1.), torch.clamp(z2, 0., 1.), x
+            return torch.clamp(z1, 0.0, 1.0), torch.clamp(z2, 0.0, 1.0), x
 
     def _forward_delta_only(self, x):
         assert not self.training
@@ -251,36 +289,20 @@ class MLBW(I2IBaseModel):
             return self._forward_delta_only(x)
 
 
-register_model_factory(
-    "sbs.mlbw_l2",
-    lambda **kwargs: MLBW(num_layers=2, base_dim=32, **kwargs)
-)
-register_model_factory(
-    "sbs.mlbw_l4",
-    lambda **kwargs: MLBW(num_layers=4, base_dim=32, **kwargs)
-)
-register_model_factory(
-    "sbs.mlbw_l2s",
-    lambda **kwargs: MLBW(num_layers=2, base_dim=32, small=True, **kwargs)
-)
-register_model_factory(
-    "sbs.mlbw_l4s",
-    lambda **kwargs: MLBW(num_layers=4, base_dim=32, small=True, **kwargs)
-)
+register_model_factory("sbs.mlbw_l2", lambda **kwargs: MLBW(num_layers=2, base_dim=32, **kwargs))
+register_model_factory("sbs.mlbw_l4", lambda **kwargs: MLBW(num_layers=4, base_dim=32, **kwargs))
+register_model_factory("sbs.mlbw_l2s", lambda **kwargs: MLBW(num_layers=2, base_dim=32, small=True, **kwargs))
+register_model_factory("sbs.mlbw_l4s", lambda **kwargs: MLBW(num_layers=4, base_dim=32, small=True, **kwargs))
 
-register_model_factory(
-    "sbs.cycle_mlbw_l2",
-    lambda **kwargs: MLBW(num_layers=2, base_dim=32, cycle=True, **kwargs)
-)
-register_model_factory(
-    "sbs.mask_mlbw_l2",
-    lambda **kwargs: MLBW(num_layers=2, base_dim=32, hole_mask=True, **kwargs)
-)
+register_model_factory("sbs.cycle_mlbw_l2", lambda **kwargs: MLBW(num_layers=2, base_dim=32, cycle=True, **kwargs))
+register_model_factory("sbs.mask_mlbw_l2", lambda **kwargs: MLBW(num_layers=2, base_dim=32, hole_mask=True, **kwargs))
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     B = 4
     N = 100

@@ -1,33 +1,21 @@
 import argparse
+import math
 import os
-from collections.abc import Mapping
 from typing import cast
 
 import av
-import av.audio.stream
 import av.video.codeccontext
 import av.video.stream
-from av.video.reformatter import ColorPrimaries, ColorRange, Colorspace, ColorTrc
+import numpy as np
+from av.video.reformatter import ColorRange, Colorspace
+from PIL import Image
 
-COLORSPACE_MAP: Mapping[str, Colorspace] = {
-    "bt709": Colorspace.ITU709,
-    "bt2020nc": Colorspace.BT2020,
-}
-
-PRIMARIES_MAP: Mapping[str, ColorPrimaries] = {
-    "bt709": ColorPrimaries.BT709,
-    "bt2020": ColorPrimaries.BT2020,
-}
-
-TRC_MAP: Mapping[str, ColorTrc] = {
-    "bt709": ColorTrc.BT709,
-    "smpte2084": ColorTrc.SMPTE2084,
-}
-
-RANGE_MAP: Mapping[str, ColorRange] = {
-    "tv": ColorRange.MPEG,
-    "pc": ColorRange.JPEG,
-}
+from tests.helpers.smoke_data import (
+    add_sine_audio_stream,
+    apply_color_metadata,
+    generate_rgba_video,
+    mux_sine_audio,
+)
 
 
 def generate_concatenated_video(
@@ -58,15 +46,9 @@ def generate_concatenated_video(
     print(f"Generating [{codec_name}]: {os.path.basename(output_path)}")
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    with (
-        av.open(f"sine=frequency=1000:duration={total_duration}:sample_rate=44100", format="lavfi") as a_in,
-        av.open(output_path, mode="w", format="matroska") as out_container,
-    ):
+    with av.open(output_path, mode="w", format="matroska") as out_container:
         v_stream: av.video.stream.VideoStream | None = None
-        a_stream = cast(av.audio.stream.AudioStream, out_container.add_stream("aac", rate=44100))
-        a_stream.format = "fltp"
-        a_stream.layout = "mono"
-        resampler = av.AudioResampler(format="fltp", layout="mono", rate=44100)
+        a_stream = add_sine_audio_stream(out_container)
         global_frame_idx = 0
 
         for scene_idx, flt in enumerate(scene_filters):
@@ -81,14 +63,7 @@ def generate_concatenated_video(
                     v_stream.options = dict(options)
 
                     v_ctx = cast(av.video.codeccontext.VideoCodecContext, v_stream.codec_context)
-                    if colorspace in COLORSPACE_MAP:
-                        v_ctx.colorspace = COLORSPACE_MAP[colorspace]
-                    if color_range in RANGE_MAP:
-                        v_ctx.color_range = RANGE_MAP[color_range]
-                    if primaries in PRIMARIES_MAP:
-                        v_ctx.color_primaries = PRIMARIES_MAP[primaries]
-                    if trc in TRC_MAP:
-                        v_ctx.color_trc = TRC_MAP[trc]
+                    apply_color_metadata(v_ctx, colorspace, primaries, trc, color_range)
 
                     # write first frame
                     f_fmt = first_frame.reformat(format=pix_fmt)
@@ -115,15 +90,61 @@ def generate_concatenated_video(
         for packet in v_stream.encode(None):
             out_container.mux(packet)
 
-        # Audio stream
-        for audio_frame in a_in.decode(audio=0):
-            a_f = cast(av.AudioFrame, audio_frame)
-            for rf in resampler.resample(a_f):
-                for packet in a_stream.encode(rf):
-                    out_container.mux(packet)
+        mux_sine_audio(out_container, a_stream, total_duration)
 
-        for packet in a_stream.encode(None):
+
+def generate_image_scenes_video(
+    image_paths: list[str],
+    output_path: str,
+    width: int = 640,
+    height: int = 360,
+    scene_duration: float = 1.0,
+    fps: int = 30,
+) -> None:
+    total_duration = scene_duration * len(image_paths)
+    frames_per_scene = int(scene_duration * fps)
+
+    print(f"Generating [h264]: {os.path.basename(output_path)}")
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+    with av.open(output_path, mode="w", format="matroska") as out_container:
+        v_stream = cast(av.video.stream.VideoStream, out_container.add_stream("libx264", rate=fps))
+        v_stream.width = width
+        v_stream.height = height
+        v_stream.pix_fmt = "yuv420p"
+        v_stream.options = {"crf": "16", "preset": "superfast"}
+
+        v_ctx = cast(av.video.codeccontext.VideoCodecContext, v_stream.codec_context)
+        apply_color_metadata(v_ctx, colorspace="bt709", primaries="bt709", trc="bt709", color_range="tv")
+
+        a_stream = add_sine_audio_stream(out_container)
+        canvas_w = width + 80
+        canvas_h = height + 80
+        global_frame_idx = 0
+
+        for image_path in image_paths:
+            with Image.open(image_path) as img:
+                resized = img.convert("RGB").resize((canvas_w, canvas_h), Image.Resampling.BICUBIC)
+            for i in range(frames_per_scene):
+                t = i / max(1, frames_per_scene - 1)
+                x0 = int(round((canvas_w - width) * t))
+                y0 = int(round((canvas_h - height) * 0.5 + 20 * math.sin(2 * math.pi * t)))
+                crop = resized.crop((x0, y0, x0 + width, y0 + height))
+                frame = av.VideoFrame.from_ndarray(np.array(crop), format="rgb24")
+                f_fmt = frame.reformat(
+                    format="yuv420p",
+                    dst_colorspace=Colorspace.ITU709,
+                    dst_color_range=ColorRange.MPEG,
+                )
+                f_fmt.pts = global_frame_idx
+                for packet in v_stream.encode(f_fmt):
+                    out_container.mux(packet)
+                global_frame_idx += 1
+
+        for packet in v_stream.encode(None):
             out_container.mux(packet)
+
+        mux_sine_audio(out_container, a_stream, total_duration)
 
 
 def copy_video_only(input_path: str, output_path: str) -> None:
@@ -147,29 +168,26 @@ def ensure_race_condition_data(
     scene_duration: float = 1.0,
     force: bool = False,
 ) -> None:
+    images_dir = os.path.join(os.path.dirname(__file__), "..", "images")
     sd_path = os.path.join(base_dir, "sd.mkv")
     if force or not os.path.exists(sd_path):
-        scenes_sd = [
-            "gradients=size=640x360:rate=30:n=8:seed=1,setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
-            "smptebars=size=640x360:rate=30,setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
-            "mandelbrot=size=640x360:rate=30,setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+        sd_images = [
+            os.path.join(images_dir, "dog_448.png"),
+            os.path.join(images_dir, "lighthouse_448.png"),
+            os.path.join(images_dir, "bottle_448.png"),
         ]
-        generate_concatenated_video(
-            codec_name="h264",
+        generate_image_scenes_video(
+            image_paths=sd_images,
             output_path=sd_path,
-            pix_fmt="yuv420p",
-            colorspace="bt709",
-            primaries="bt709",
-            trc="bt709",
-            color_range="tv",
-            scene_filters=scenes_sd,
+            width=640,
+            height=360,
             scene_duration=scene_duration,
         )
 
     hdr_path = os.path.join(base_dir, "hdr.mkv")
     if force or not os.path.exists(hdr_path):
         scenes_hdr = [
-            "gradients=size=1280x720:rate=30:n=8:seed=1,setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084:range=tv",
+            "testsrc2=size=1280x720:rate=30,setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084:range=tv",
             "smptebars=size=1280x720:rate=30,setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084:range=tv",
             "mandelbrot=size=1280x720:rate=30,setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084:range=tv",
         ]
@@ -192,6 +210,12 @@ def ensure_race_condition_data(
     hdr_noaudio_path = os.path.join(base_dir, "hdr_noaudio.mkv")
     if force or not os.path.exists(hdr_noaudio_path):
         copy_video_only(hdr_path, hdr_noaudio_path)
+
+    rgba_path = os.path.join(base_dir, "rgba.mkv")
+    if force or not os.path.exists(rgba_path):
+        rgba_src = os.path.join(images_dir, "dog_448_rgba.png")
+        if os.path.exists(rgba_src):
+            generate_rgba_video(rgba_src, rgba_path, codec="ffv1", duration=scene_duration * 3)
 
 
 def main() -> None:

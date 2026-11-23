@@ -95,7 +95,7 @@ def predict_storage(dtype, int_type="short"):
     return storage
 
 
-def to_tensor(im, return_alpha=False, dtype=torch.float32):
+def to_tensor(im, return_alpha=False, dtype=torch.float32, device="cpu"):
     if im.type in {RGB_TYPE, RGBA_TYPE}:
         channel_map = "RGB"
     elif im.type in {GRAYSCALE_TYPE, GRAYSCALE_ALPHA_TYPE}:
@@ -107,12 +107,12 @@ def to_tensor(im, return_alpha=False, dtype=torch.float32):
     w, h = im.size
     ch = len(channel_map)
     data = im.export_pixels(0, 0, w, h, channel_map=channel_map, storage=storage)
-    x = torch.tensor(data, dtype=dtype).view(h, w, ch).permute(2, 0, 1).contiguous()
+    x = torch.tensor(data, dtype=dtype, device=device).view(h, w, ch).permute(2, 0, 1).contiguous()
     del data
     if return_alpha:
         if im.alpha_channel:
             data = im.export_pixels(0, 0, w, h, channel_map="A", storage=storage)
-            alpha = torch.tensor(data, dtype=dtype).view(h, w, 1).permute(2, 0, 1).contiguous()
+            alpha = torch.tensor(data, dtype=dtype, device=device).view(h, w, 1).permute(2, 0, 1).contiguous()
             del data
         else:
             alpha = None
@@ -129,13 +129,13 @@ def to_image(x, alpha=None, depth=8):
     assert ch in {1, 3}
     if ch == 1:
         if alpha is not None:
-            x = torch.cat((x, alpha), dim=0)
+            x = torch.cat((x, alpha.to(x.device)), dim=0)
             channel_map = "IA"
         else:
             channel_map = "I"
     else:
         if alpha is not None:
-            x = torch.cat((x, alpha), dim=0)
+            x = torch.cat((x, alpha.to(x.device)), dim=0)
             channel_map = "RGBA"
         else:
             channel_map = "RGB"
@@ -146,7 +146,7 @@ def to_image(x, alpha=None, depth=8):
     else:
         storage = predict_storage(x.dtype, int_type="long")
 
-    return Image.from_array(x.permute(1, 2, 0).numpy(), channel_map=channel_map, storage=storage)
+    return Image.from_array(x.permute(1, 2, 0).contiguous().cpu().numpy(), channel_map=channel_map, storage=storage)
 
 
 def restore(im, meta):

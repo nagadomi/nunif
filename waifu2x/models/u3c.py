@@ -1,24 +1,26 @@
 # u3c discriminator for art_scan
 import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nunif.models import register_model
-from nunif.modules.pad import get_pad_size
-from nunif.modules.replication_pad2d import ReplicationPad2dNaive
-from nunif.modules.attention import SEBlock, WindowCrossMHA2d, WindowScoreBias
-from nunif.modules.res_block import ResBlockSNLReLU, ResBlockGNLReLU
 from torch.nn.utils.parametrizations import spectral_norm
-from nunif.modules.compile_wrapper import conditional_compile
-from nunif.modules.init import basic_module_init, icnr_init
+
+from nunif.models import register_model
+from nunif.modules.attention import SEBlock, WindowCrossMHA2d, WindowScoreBias
 from nunif.modules.avg_pool2d import ConvAvgPool2d
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.init import basic_module_init
+from nunif.modules.pad import get_pad_size
+from nunif.modules.res_block import ResBlockGNLReLU, ResBlockSNLReLU
+
 from .disc_utils import (
     Discriminator,
-    normalize,
-    modpad,
-    fit_to_size,
-    to_y,
     bench,
+    fit_to_size,
+    modpad,
+    normalize,
+    to_y,
 )
 
 
@@ -33,21 +35,24 @@ class ImageToConditionPatch8(nn.Module):
             SEBlock(embed_dim, bias=True),
             ResBlockGNLReLU(embed_dim, embed_dim, bias=False, padding_mode="replicate"),
         )
-        self.fc = nn.ModuleList([
-            nn.Sequential(
-                spectral_norm(nn.Conv2d(embed_dim, embed_dim, kernel_size=1, stride=1, padding=0, bias=False)),
-                nn.LeakyReLU(0.2, inplace=True),
-                spectral_norm(nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0)),
-            )
-            for out_channels in outputs
-        ])
+        self.fc = nn.ModuleList(
+            [
+                nn.Sequential(
+                    spectral_norm(nn.Conv2d(embed_dim, embed_dim, kernel_size=1, stride=1, padding=0, bias=False)),
+                    nn.LeakyReLU(0.2, inplace=True),
+                    spectral_norm(nn.Conv2d(embed_dim, out_channels, kernel_size=1, stride=1, padding=0)),
+                )
+                for out_channels in outputs
+            ]
+        )
         basic_module_init(self)
 
     @conditional_compile("NUNIF_TRAIN")
     def forward(self, x):
         x = normalize(x)
-        x = F.interpolate(x, size=(x.shape[-2] // 4, x.shape[-1] // 4),
-                          mode="bilinear", antialias=True, align_corners=False)
+        x = F.interpolate(
+            x, size=(x.shape[-2] // 4, x.shape[-1] // 4), mode="bilinear", antialias=True, align_corners=False
+        )
         x = self.features(x)
         outputs = []
         for fc in self.fc:
@@ -71,13 +76,16 @@ class ImageToCondition(nn.Module):
             nn.AdaptiveAvgPool2d((4, 4)),
         )
         self.aggregate = spectral_norm(nn.Linear(embed_dim * 16, embed_dim, bias=False))
-        self.fc = nn.ModuleList([
-            nn.Sequential(
-                spectral_norm(nn.Linear(embed_dim, embed_dim, bias=False)),
-                nn.ReLU(inplace=True),
-                spectral_norm(nn.Linear(embed_dim, out_channels, bias=False))
-            )
-            for out_channels in outputs])
+        self.fc = nn.ModuleList(
+            [
+                nn.Sequential(
+                    spectral_norm(nn.Linear(embed_dim, embed_dim, bias=False)),
+                    nn.ReLU(inplace=True),
+                    spectral_norm(nn.Linear(embed_dim, out_channels, bias=False)),
+                )
+                for out_channels in outputs
+            ]
+        )
         basic_module_init(self)
 
     @conditional_compile("NUNIF_DISC_COMPILE")
@@ -100,11 +108,18 @@ class PoolFormerBlock(nn.Module):
         self.mlp = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(in_channels, in_channels, kernel_size=conv_kernel_size, stride=1,
-                      padding=(conv_kernel_size - 1) // 2, bias=False),
+            nn.Conv2d(
+                in_channels,
+                in_channels,
+                kernel_size=conv_kernel_size,
+                stride=1,
+                padding=(conv_kernel_size - 1) // 2,
+                bias=False,
+            ),
         )
-        self.avg_pool2d = ConvAvgPool2d(in_channels, kernel_size=kernel_size, stride=1,
-                                        padding=(kernel_size - 1) // 2, count_include_pad=False)
+        self.avg_pool2d = ConvAvgPool2d(
+            in_channels, kernel_size=kernel_size, stride=1, padding=(kernel_size - 1) // 2, count_include_pad=False
+        )
         self.norm1 = nn.GroupNorm(groups, in_channels)
         self.norm2 = nn.GroupNorm(groups, in_channels)
         self.kernel_size = kernel_size
@@ -197,12 +212,14 @@ class U3ConditionalDiscriminator(Discriminator):
         )
         basic_module_init(self)
         self.to_cond = ImageToConditionPatch8(64, [C4])
-        #self.cross_attention = CrossAttention(C4)
+        # self.cross_attention = CrossAttention(C4)
         self.request_false_condition = True
 
     def _debug_save_cond(self, x, c):
         import os
+
         import torchvision.transforms.functional as TF
+
         save_dir = "./tmp/_gan_cond"
         os.makedirs(save_dir, exist_ok=True)
         self._save_count = getattr(self, "_save_count", 0) + 1
@@ -252,10 +269,9 @@ class U3CEnsembleConditionalDiscriminator(Discriminator):
         self.indexes = [0, 1, 2]
         self.index = 0
 
-        self.u3c = nn.ModuleList([
-            U3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels)
-            for i in range(N)
-        ])
+        self.u3c = nn.ModuleList(
+            [U3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels) for i in range(N)]
+        )
 
     def round(self):
         # called from the trainer at every iteration.

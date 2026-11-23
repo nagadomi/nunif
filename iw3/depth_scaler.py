@@ -7,27 +7,24 @@ def minmax_normalize(frame, min_value, max_value):
         max_value = max_value.to(frame.device)
 
     scale = max_value - min_value
-    if scale > 0:
-        frame = (frame - min_value) / scale
-        frame = frame.clamp(0.0, 1.0)
+    if torch.is_tensor(scale):
+        frame = torch.where(scale > 0, (frame - min_value) / scale.clamp(min=1e-6), frame)
+        return frame.clamp(0.0, 1.0)
     else:
-        # all zero
-        frame = frame.clamp(0.0, 1.0)
-
-    return frame
+        if scale > 0:
+            frame = (frame - min_value) / scale
+        return frame.clamp(0.0, 1.0)
 
 
 def max_normalize(frame, min_value, max_value):
     if torch.is_tensor(max_value):
         max_value = max_value.to(frame.device)
-    if max_value > 0:
-        frame = frame / max_value
-        frame = frame.clamp(0.0, 1.0)
+        frame = torch.where(max_value > 0, frame / max_value.clamp(min=1e-6), frame)
+        return frame.clamp(0.0, 1.0)
     else:
-        # all zero
-        frame = frame.clamp(0.0, 1.0)
-
-    return frame
+        if max_value > 0:
+            frame = frame / max_value
+        return frame.clamp(0.0, 1.0)
 
 
 class MinMaxBuffer:

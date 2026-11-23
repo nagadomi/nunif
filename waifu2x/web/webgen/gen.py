@@ -2,9 +2,10 @@ import argparse
 import os
 import shutil
 from os import path
+from typing import Any
 
-import bottle
 import yaml
+from jinja2 import Environment, FileSystemLoader
 
 from ..public_dir import PUBLIC_DIR
 
@@ -16,7 +17,7 @@ def load_locales(lang_dir):
             continue
         lang = path.splitext(ent)[0]
         with open(path.join(lang_dir, ent), mode="r", encoding="utf-8") as f:
-            locales[lang] = yaml.load(f.read(), Loader=yaml.FullLoader)
+            locales[lang] = yaml.safe_load(f.read())
 
     return locales
 
@@ -27,9 +28,17 @@ def merge_locale(default_locale, locale):
     return t
 
 
-def render(template_file, lang, locale):
-    with open(template_file, mode="r", encoding="utf-8") as f:
-        return bottle.template(f.read(), lang=lang, **locale)
+def render(template_file: str, lang: str, locale: dict[str, Any]) -> str:
+    """Render a Jinja2 template file with language context."""
+    env = Environment(
+        loader=FileSystemLoader(path.dirname(template_file)),
+        autoescape=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+    template = env.get_template(path.basename(template_file))
+    return template.render(lang=lang, **locale)
 
 
 def main():

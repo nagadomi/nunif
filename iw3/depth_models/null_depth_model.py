@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
-from torchvision.transforms import functional as TF
 
 from ..base_depth_model import BaseDepthModel
 from ..dilation import dilate_edge, edge_dilation_is_enabled
@@ -40,29 +39,23 @@ class NullDepthModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        if isinstance(x, torch.Tensor):
-            x_tensor: torch.Tensor = x
-        else:
-            x_tensor = TF.to_tensor(x)
-        batch = True
-        if x_tensor.ndim == 3:
-            batch = False
-            x_tensor = x_tensor.unsqueeze(0)
+        x_tensor, alpha_in, is_batch, orig_batch_size = self._prepare_infer_input(x, alpha=alpha)
 
         if tta:
             x_out = (self.model(x_tensor) + self.model(x_tensor)) * 0.5
         else:
             x_out = self.model(x_tensor)
 
+        if alpha_in is not None:
+            x_out = self.apply_alpha_mask(x_out, alpha_in, is_metric=False)
+
         if edge_dilation_is_enabled(edge_dilation):
             x_out = dilate_edge(x_out, edge_dilation)
 
-        if not batch:
-            x_out = x_out.squeeze(0)
-
-        return x_out
+        return self._restore_infer_output(x_out, is_batch=is_batch, orig_batch_size=orig_batch_size)
 
     order: int = 999
 

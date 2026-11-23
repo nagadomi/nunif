@@ -10,6 +10,7 @@ from nunif.models.utils import compile_function, compile_model
 
 from ..base_depth_model import HUB_MODEL_DIR, BaseDepthModel
 from ..models import DepthAA
+from .video_depth_anything_model import MODEL_URLS as VDA_MODEL_URLS
 from .video_depth_anything_model import batch_preprocess, postprocess
 
 NAME_MAP = {
@@ -27,6 +28,10 @@ MODEL_FILES = {
     "VDA_Stream_Metric_S": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vits.pth"),
     "VDA_Stream_Metric_B": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitb.pth"),
     "VDA_Stream_Metric_L": path.join(HUB_MODEL_DIR, "checkpoints", "metric_video_depth_anything_vitl.pth"),
+}
+MODEL_URLS = {
+    "VDA_Stream_S": VDA_MODEL_URLS["VDA_S"],
+    "VDA_Stream_Metric_S": VDA_MODEL_URLS["VDA_Metric_S"],
 }
 AA_SUPPORT_MODELS = {
     "VDA_Stream_S",
@@ -98,6 +103,7 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         if isinstance(x, torch.Tensor):
@@ -132,6 +138,7 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
             metric_depth=self.metric_depth,
             force_disparity=self.force_disparity,
             enable_amp=enable_amp,
+            alpha=alpha,
         )
         if not batch:
             depth = depth.squeeze(0)
@@ -174,6 +181,10 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
 
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
+
     def is_metric(self):
         if not self.metric_depth:
             return False
@@ -198,11 +209,13 @@ class VideoDepthAnythingStreamingModel(BaseDepthModel):
             self.model.pretrained.get_intermediate_layers = compile_function(
                 self.model.pretrained.get_intermediate_layers, device=self.device
             )
+        self.compile_depth_aa()
 
     def clear_compiled_model(self):
         if self.model_backup is not None:
             self.model.head, self.model.pretrained.get_intermediate_layers = self.model_backup
             self.model_backup = None
+        self.clear_compiled_depth_aa()
 
 
 def _test():

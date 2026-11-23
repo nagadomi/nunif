@@ -1,5 +1,11 @@
 import * as THREE from "three";
 import { STEREO_FORMATS, PREFETCH_CONFIG } from "./constants.js";
+import { MjpegStream } from "./mjpeg_stream.js";
+import {
+    WebCodecsStream,
+    getRequestedVideoCodecOverride,
+    probeSupportedStreamCodecs,
+} from "./webcodecs_stream.js";
 
 /**
  * Controller responsible for media resource management (images & videos),
@@ -17,12 +23,28 @@ class PlaybackController extends EventTarget {
         
         this.videoElement = null;
         this.videoTexture = null;
+        this.desktopStream = null;
         this.currentLoadId = 0;
         this.isXRLayersActive = false;
         this.xrBinding = null;
     }
 
+    get streamTexture() {
+        return this.desktopStream ? this.desktopStream.texture : null;
+    }
+
+    get streamCodecName() {
+        return this.desktopStream ? (this.desktopStream.codecName || null) : null;
+    }
+
+    get isStreamActive() {
+        return !!(this.desktopStream && this.desktopStream.isActive);
+    }
+
     get isPlaying() {
+        if (this.isStreamActive) {
+            return !this.desktopStream.isPaused;
+        }
         return !!(this.videoElement && !this.videoElement.paused);
     }
 
@@ -35,6 +57,10 @@ class PlaybackController extends EventTarget {
     }
 
     play() {
+        if (this.isStreamActive) {
+            this.desktopStream.play();
+            return;
+        }
         if (this.videoElement) {
             const playPromise = this.videoElement.play();
             if (playPromise !== undefined) {
@@ -46,18 +72,177 @@ class PlaybackController extends EventTarget {
     }
 
     pause() {
+        if (this.isStreamActive) {
+            this.desktopStream.pause();
+            return;
+        }
         if (this.videoElement) {
             this.videoElement.pause();
         }
     }
 
     togglePlayPause() {
+        if (this.isStreamActive) {
+            this.desktopStream.togglePause();
+            return;
+        }
         if (!this.videoElement) return;
         if (this.isPlaying) {
             this.pause();
         } else {
             this.play();
         }
+    }
+
+    consumeNewStreamFrame() {
+        return this.desktopStream ? this.desktopStream.consumeNewFrame() : false;
+    }
+
+    destroyStream(notifyServer = false) {
+        if (this.desktopStream) {
+            this.desktopStream.stop();
+            this.desktopStream = null;
+            this.dispatchEvent(new CustomEvent('video-destroyed'));
+            if (notifyServer) {
+                fetch('/api/stream/stop', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+            }
+        }
+    }
+
+    _bindStreamEvents(stream, item) {
+        stream.addEventListener('play-state-change', (e) => {
+            if (this.desktopStream === stream) {
+                this.dispatchEvent(new CustomEvent('play-state-change', { detail: e.detail }));
+            }
+        });
+        stream.addEventListener('stream-updated', (e) => {
+            if (this.desktopStream === stream) {
+                this.dispatchEvent(new CustomEvent('stream-updated', { detail: e.detail }));
+            }
+        });
+        stream.addEventListener('auth-required', () => {
+            if (this.desktopStream === stream) {
+                this.dispatchEvent(new CustomEvent('stream-auth-required'));
+            }
+        });
+        stream.addEventListener('fallback-mjpeg', async () => {
+            if (this.desktopStream !== stream) return;
+            const loadId = this.currentLoadId;
+            const streamUrl = item.stream_uri || '/api/stream';
+            const fallbackStream = new MjpegStream(streamUrl, '/api/stream/info', this.debugLogInstance);
+            this._bindStreamEvents(fallbackStream, item);
+            this.desktopStream = fallbackStream;
+            const res = await fallbackStream.start(item.stream_info || null);
+            if (this.currentLoadId !== loadId || this.desktopStream !== fallbackStream || res?.cancelled) {
+                if (this.desktopStream === fallbackStream && this.currentLoadId !== loadId) {
+                    this.destroyStream();
+                }
+                return;
+            }
+            fallbackStream.texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+            this.dispatchEvent(
+                new CustomEvent('stream-updated', {
+                    detail: {
+                        ...(item.stream_info || {}),
+                        width: fallbackStream.width,
+                        height: fallbackStream.height,
+                        stereo_format: fallbackStream.stereoFormat,
+                        stream_token: fallbackStream.streamToken,
+                        active_video_codec: fallbackStream.codecName,
+                        tokenChanged: false,
+                    },
+                })
+            );
+        });
+    }
+
+    async _startDesktopStream(item, loadId, finalFormat) {
+        const info = item.stream_info || {};
+        const urlOverride = getRequestedVideoCodecOverride();
+        const serverVideoCodec = (info.video_codec || '').toLowerCase();
+        const isServerJpeg = serverVideoCodec === 'jpeg' || serverVideoCodec === 'jpeg-gpu' || serverVideoCodec === 'mjpeg';
+        const serverFamilies = Array.isArray(info.available_stream_codecs)
+            ? info.available_stream_codecs.map((c) => c.toLowerCase())
+            : ['h264'];
+
+        let candidateFamilies = serverFamilies;
+        if (urlOverride === 'h264' || urlOverride === 'hevc') {
+            candidateFamilies = serverFamilies.filter((c) => c === urlOverride);
+        }
+
+        let requestedCodecs = [];
+        if (urlOverride !== 'jpeg' && !isServerJpeg && candidateFamilies.length > 0 && info.ws_uri !== null) {
+            requestedCodecs = await probeSupportedStreamCodecs(
+                candidateFamilies,
+                info.width || 1920,
+                info.height || 1080
+            );
+        }
+
+        if (this.currentLoadId !== loadId) {
+            return { success: false, cancelled: true };
+        }
+
+        if (requestedCodecs.length > 0) {
+            const wsStream = new WebCodecsStream(
+                info.ws_uri || '/api/stream/ws',
+                '/api/stream/info',
+                requestedCodecs,
+                this.debugLogInstance
+            );
+            this.desktopStream = wsStream;
+            this._bindStreamEvents(wsStream, item);
+            const startResult = await wsStream.start(info);
+            if (this.currentLoadId !== loadId || this.desktopStream !== wsStream) {
+                if (this.desktopStream === wsStream && this.currentLoadId !== loadId) {
+                    this.destroyStream();
+                }
+                return { success: false, cancelled: true };
+            }
+            if (!startResult?.cancelled && !startResult?.fallback) {
+                wsStream.texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+                const detail = {
+                    item,
+                    texture: wsStream.texture,
+                    isVideo: false,
+                    isStream: true,
+                    aspectRatio: wsStream.aspectRatio,
+                    format: finalFormat,
+                    isXRActive: false
+                };
+                this.dispatchEvent(new CustomEvent('media-loaded', { detail }));
+                return { success: true, detail };
+            }
+            if (startResult?.cancelled && !startResult?.fallback) {
+                return { success: false, cancelled: true };
+            }
+        }
+
+        const streamUrl = item.stream_uri || '/api/stream';
+        const mjpegStream = new MjpegStream(streamUrl, '/api/stream/info', this.debugLogInstance);
+        this.desktopStream = mjpegStream;
+        this._bindStreamEvents(mjpegStream, item);
+
+        const startResult = await mjpegStream.start(info);
+        if (this.currentLoadId !== loadId || this.desktopStream !== mjpegStream || startResult?.cancelled) {
+            if (this.desktopStream === mjpegStream && this.currentLoadId !== loadId) {
+                this.destroyStream();
+            }
+            return { success: false, cancelled: true };
+        }
+
+        mjpegStream.texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        const detail = {
+            item,
+            texture: mjpegStream.texture,
+            isVideo: false,
+            isStream: true,
+            aspectRatio: mjpegStream.aspectRatio,
+            format: finalFormat,
+            isXRActive: false
+        };
+        this.dispatchEvent(new CustomEvent('media-loaded', { detail }));
+        return { success: true, detail };
     }
 
     seek(time) {
@@ -149,8 +334,29 @@ class PlaybackController extends EventTarget {
             const url = `/api/media?path=${encodeURIComponent(item.path)}`;
             const finalFormat = targetFormat || item.stereo_format || STEREO_FORMATS.SBS_FULL;
 
-            if (item.type === 'video') {
+            if (item.type === 'stream') {
+                if (forcedFormat && this.desktopStream && this.desktopStream.isActive) {
+                    const detail = {
+                        item,
+                        texture: this.desktopStream.texture,
+                        isVideo: false,
+                        isStream: true,
+                        aspectRatio: this.desktopStream.aspectRatio,
+                        format: finalFormat,
+                        isXRActive: false
+                    };
+                    this.dispatchEvent(new CustomEvent('media-loaded', { detail }));
+                    resolve({ success: true, detail });
+                    return;
+                }
+
+                this.destroyVideo();
+                this.destroyStream();
+
+                this._startDesktopStream(item, loadId, finalFormat).then(resolve);
+            } else if (item.type === 'video') {
                 if (!(forcedFormat && this.videoElement)) {
+                    this.destroyStream(true);
                     this.destroyVideo();
                     this.videoElement = document.createElement('video');
                     this.videoElement.crossOrigin = "anonymous";
@@ -309,6 +515,7 @@ class PlaybackController extends EventTarget {
                 }
             } else {
                 // Image Loading
+                this.destroyStream(true);
                 this.destroyVideo();
 
                 // Check texture cache
@@ -426,8 +633,9 @@ class PlaybackController extends EventTarget {
     async setupXRLayers(domeXRScreen, environmentManager) {
         this.debugLogInstance?.log("[XR-Layers] setupXRLayers() called");
         const session = this.renderer.xr.getSession();
-        if (!session || !this.videoElement || !window.XRMediaBinding) {
-            this.debugLogInstance?.log(`[XR-Layers] Skip: session=${!!session}, video=${!!this.videoElement}, binding=${!!window.XRMediaBinding}`);
+        const sessionHasLayers = session?.enabledFeatures ? session.enabledFeatures.includes('layers') : false;
+        if (!session || !this.videoElement || !window.XRMediaBinding || !sessionHasLayers) {
+            this.debugLogInstance?.log(`[XR-Layers] Skip: session=${!!session}, video=${!!this.videoElement}, binding=${!!window.XRMediaBinding}, layers=${sessionHasLayers}`);
             return;
         }
 
@@ -444,9 +652,12 @@ class PlaybackController extends EventTarget {
                         layers: [domeXRScreen.xrLayer, baseLayer]
                     });
 
-                    this.scene.background = null;
+                    if (environmentManager) {
+                        environmentManager.setBackgroundLocked(true);
+                    } else {
+                        this.scene.background = null;
+                    }
                     this.renderer.setClearAlpha(0);
-                    if (environmentManager) environmentManager.isBackgroundLocked = true;
 
                     this.isXRLayersActive = true;
                     this.debugLogInstance?.log("[XR-Layers] Composition Active with Three.js baseLayer");
@@ -474,8 +685,11 @@ class PlaybackController extends EventTarget {
             this.debugLogInstance?.log(`[XR-Layers] Teardown Session Error: ${e.message}`);
         }
 
-        if (environmentManager) environmentManager.isBackgroundLocked = false;
-        this.scene.background = new THREE.Color(0x000000);
+        if (environmentManager) {
+            environmentManager.setBackgroundLocked(false);
+        } else {
+            this.scene.background = new THREE.Color(0x000000);
+        }
         this.renderer.setClearAlpha(1);
 
         if (domeXRScreen) {

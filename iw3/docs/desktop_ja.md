@@ -4,7 +4,10 @@
 
 `iw3-desktop`は、PCのデスクトップ画面をリアルタイムで3D変換し、WiFi経由でストリーミング配信するツールです。Meta QuestなどのVRデバイスのブラウザからサイドバイサイド3Dとして視聴できます。
 
-PC上に表示されるあらゆる画像や動画をリアルタイムでVR空間で視聴することが可能です。PCの操作には、引き続きPCのキーボードとマウスを使用し、音声もPCから出力されます。VRデバイスはディスプレイとして機能します。
+PC上に表示されるあらゆる画像や動画をリアルタイムでVR空間で視聴することが可能です。なお、`iw3-desktop` 自体は映像のみを配信する（音声配信やリモート操作機能は持たない）ため、視聴環境によって入力と音声の扱いが異なります。
+
+*   **スタンドアロン VR ブラウザ（Meta Quest Browser など）**: PCの操作には引き続きPCのキーボードとマウスを使用し、音声もPC側（スピーカー／ヘッドホン）から出力されます。VRデバイスはディスプレイとして機能します。
+*   **PCVR（SteamVR や、VRデスクトップソフトウェア経由のローカルビューワー利用時など）**: 音声はPC側のオーディオ出力設定に従います。SteamVRなどのPCVR環境では通常、PCの音声出力が自動的にVRヘッドセット側へ転送されます（設定によりPC側のスピーカー／ヘッドホンを使うことも可能です）。操作方法は使用するPCVR環境やVRデスクトップソフトウェアの機能に依存します。
 
 GUIウィンドウやテキストの深度推定結果は完全ではないため、3D酔いに注意が必要です。本ツールは、基本的に画像や動画を全画面再生する用途を想定しています。
 
@@ -13,18 +16,13 @@ Webストリーミングに加えて、ローカルビューワーとしての�
 ## 既知の問題
 
 *   Meta QuestおよびPICO 4での動作は確認済みですが、VisionProでは動作しません。
-*   Linuxは表示サーバーによって画面取得の方法が変わります。
-    *   **Wayland / KDE Plasma**: `--screenshot kwcapture` を使用してください（下記「画面取得方法」）。
-        まず `pip install kwcapture` でのインストールが必要です（オプション依存であり、
-        `requirements-gui.txt`には含まれません）。Waylandのデスクトップをキャプチャできる唯一の方法で、
-        速度も高速です (1440pで約40 fps実測)。そのためKDEではX11は必須ではありません。
-    *   **その他のコンポジターのWayland** (GNOME, wlroots等): 対応方法はありません。
-        XWayland経由の取得になるためパフォーマンスが著しく低下します。
-    *   **X11**: `mss`が動作しますのでこちらの利用を推奨します。
+*   Linuxでは表示サーバーによって画面取得方法を選択する必要があります（下記「画面取得方法」参照）。
+    *   **Wayland**: `--screenshot obs` または `--screenshot kwcapture` (KDE Plasmaのみ) を使用します。
+    *   **X11**: `--screenshot mss` を使用します。
 
 ## セキュリティに関する注意
 
-`iw3-desktop`は、デフォルトでパスワードなしのHTTPサーバーを起動します。同一ネットワーク内の他のPCからアクセスされる可能性があるため、ご注意ください。
+`iw3-desktop`は、デフォルトでパスワードなしのHTTPSサーバー（`--legacy-stream`使用時はHTTPサーバー）を起動します。同一ネットワーク内の他のPCからアクセスされる可能性があるため、ご注意ください。
 
 ベーシック認証のパスワードは`--password`オプションで設定できます。
 
@@ -52,14 +50,14 @@ python -m iw3.desktop
 サーバーが正常に起動すると、以下のようなメッセージが表示されます。
 
 ```
-Open http://192.168.11.6:1303
+Open https://192.168.11.6:1303
 Estimated FPS = 30.24, Streaming FPS = 0.00
 ```
-(`192.168.11.6`のアドレスは、ネットワーク環境によって異なります。)
+(`192.168.11.6`のアドレスは、ネットワーク環境によって異なります。`--legacy-stream`を指定した場合は `http://` のURLが表示されます。)
 
 ファイアウォールのダイアログが表示された場合は、アクセスを許可してください。
 
-PCのブラウザで表示されたURLを開き、動画が再生されることを確認してください。ウェブページはGoogle ChromeとMeta Quest 2 Browserで動作確認済みです。Firefoxでは動作しません。
+PCのブラウザまたはVRデバイスのブラウザで表示されたURLを開き、ストリームが再生されることを確認してください。
 
 LAN内のPCアドレスが正しく検出されない場合は、`--bind-addr`オプションでIPアドレスを指定できます。
 
@@ -67,12 +65,42 @@ LAN内のPCアドレスが正しく検出されない場合は、`--bind-addr`�
 python -m iw3.desktop --bind-addr 192.168.1.2
 ```
 
-## Meta Questでの視聴方法
+## VRデバイスでの視聴方法
 
-Meta Quest 2での動作を確認しています。以下の手順で3D動画を再生できます。
+### WebXR（デフォルト: `Web Streaming`）
+
+デフォルトでは、HTTPS 経由で WebXR プレイヤー（`iw3-player`）を使用して再生します。
+
+#### SSL 警告について
+
+WebXR の必須要件である HTTPS 通信を実現するため、サーバー起動時に自己署名証明書を生成します。
+そのため初回アクセス時に「保護されていない通信」等の警告が表示されますが、以下の手順で続行できます：
+
+1.  「詳細設定」をクリック
+2.  「[IPアドレス] にアクセスする」を選択
+
+**ヒント:** このページをお気に入りに登録しておくことで、次回以降の警告をスキップできます。
+
+#### 再生手順
+
+1.  VRデバイスのブラウザ（または PCVR 用の WebXR 対応 PC ブラウザ）を起動し、表示された `https://...` の URL にアクセスします。
+2.  SSL 警告が表示された場合は上記の手順でスキップします。
+3.  ストリームの再生が始まったら、**Enter VR** をクリックして WebXR モードに入ります。
+
+WebXR プレイヤーの操作方法や画面設定については、[iw3-player のドキュメント](../player/README_ja.md) を参照してください。
+
+### Web Streaming (Legacy)（`--legacy-stream`）
+
+WebXR ではなく、VR ブラウザ組み込みの HTML5 `<video>` 3D 表示機能を使用したい場合は、GUI で **`Web Streaming (Legacy)`** を選択するか、CLI で `--legacy-stream` オプションを指定してください。
+
+```bash
+python -m iw3.desktop --legacy-stream
+```
+
+Meta Quest 2 Browser および Google Chrome での動作を確認しています（Firefox では動作しません）。Meta Quest では以下の手順で3D動画を再生できます。
 
 1.  `Browser`を起動します。
-2.  サーバーのURLを入力します。
+2.  `http://...` のサーバーURLを入力します。
 3.  (オプション) URLをお気に入りに登録します。
 4.  動画を再生します。
 5.  Browser右上のアイコンから**ブラウザ**を全画面表示にします。
@@ -99,7 +127,7 @@ python -m iw3.desktop --full-sbs
 
 ### 解像度 (動画解像度)
 
-`--stream-height`オプションで画面の垂直方向の解像度を指定できます。デフォルトは1080pxです。
+`--stream-height`オプションで画面の垂直方向の上限解像度を指定できます。デフォルトは`1080`pxです（GUIでは`2160`・`1080`・`720`を選択できます）。指定値以下の解像度の画面はリサイズされずにそのまま配信されます。
 
 ```bash
 python -m iw3.desktop --stream-height 720
@@ -115,11 +143,37 @@ python -m iw3.desktop --stream-fps 30
 
 `Estimated FPS`が指定されたFPSよりも著しく低い場合、PCの性能が指定されたFPSの処理に追いついていないことを意味します。
 
-`--batch-size 1`での処理のため、FPSは動画変換時よりもかなり低くなります。また、ブラウザの制限により、`Streaming FPS = 30`を超えるFPSは達成できない可能性があります。
+`--batch-size 1`での処理のため、FPSは動画変換時よりもかなり低くなります。
 
-### MJPEG 設定
+### 動画コーデック・画質設定
 
-`--stream-quality`オプションでJPEGの品質を指定できます（0-100）。
+デフォルトの `Web Streaming`（WebXR）では、H.264 / HEVC 動画コーデックによる低遅延・省帯域配信と、MJPEG（`jpeg` / `jpeg-gpu`）の両方を利用できます。`--video-codec`（または GUI の `Video Codec`）でエンコーダを指定します（デフォルトは `libx264`、LGPL 環境では `libopenh264`）。
+
+```bash
+python -m iw3.desktop --video-codec h264_nvenc
+```
+
+*   **利用可能な主なコーデック**: `libx264`, `libopenh264`, `h264_nvenc`, `hevc_nvenc`, `h264_vaapi`, `hevc_vaapi`, `h264_qsv`, `hevc_qsv`, `h264_amf`, `hevc_amf`, `libx265`, `jpeg`, `jpeg-gpu`
+*   **推奨コーデック (H.264 推奨)**: Meta Quest のブラウザは H.265 (HEVC) のデコードに対応していますが、一般的な PC (PCVR) のブラウザは H.264 にしか対応していないことが多く、`hevc_nvenc` 等を使うと MJPEG にフォールバックされる場合があります。幅 4096 px を超える解像度が必要なケースを除き、**基本的には H.264（`h264_nvenc` や `libx264` 等）の利用をおすすめします**。
+*   **自動フォールバック**: 指定したコーデックに PC 側または視聴側のブラウザが対応していない場合は、自動的に MJPEG 配信へフォールバックします。実際に動作しているコーデックはプレイヤー画面上のファイル名表示（例: `Desktop (1920x1080, hevc_nvenc)` / `Desktop (1920x1080, mjpeg)`）で確認できます。
+*   **`Web Streaming (Legacy)`**: Legacy モードは MJPEG のみ対応しているため、GUI 上では `jpeg` / `jpeg-gpu` のみが選択できます。
+
+#### 解像度・3D形式ごとの H.264 / HEVC 対応目安
+
+H.264 ハードウェアエンコーダ（`h264_nvenc` など）や多くの端末の H.264 デコーダは幅・高さ **4096 px** までが上限となるため、横幅が 4096 px を超える Full SBS（`2560x1080` の Full SBS や 4K Full SBS 等）を動画配信する場合は **HEVC**（`hevc_nvenc` など）が必要です。
+
+| 入力画面 / 3D 形式 | 配信映像サイズ | H.264 (`h264_nvenc` 等) | HEVC (`hevc_nvenc` 等) |
+| --- | --- | --- | --- |
+| `1920x1080` Half SBS | `1920x1080` | 対応 | 対応 |
+| `1920x1080` Full SBS | `3840x1080` | 対応 | 対応 |
+| `2560x1080` Half SBS | `2560x1080` | 対応 | 対応 |
+| `2560x1080` Full SBS | `5120x1080` | 非対応 (4096 px 超) | 対応 |
+| 4K (`3840x2160`) Half SBS | `3840x2160` | 対応 | 対応 |
+| 4K (`3840x2160`) Full SBS | `7680x2160` | 非対応 (4096 px 超) | 対応 (※視聴端末のデコード上限により MJPEG へフォールバックする場合あり) |
+
+#### 画質（`--stream-quality`）
+
+`--stream-quality`オプションで動画コーデック・JPEG の品質を指定できます（1-100）。
 
 ```bash
 python -m iw3.desktop --stream-quality 80
@@ -128,43 +182,27 @@ python -m iw3.desktop --stream-quality 80
 
 ### 画面取得方法
 
-`--screenshot` で画面取得方法を選択します。GUIでは`Screenshot`ボックスに同じ一覧があり、
-セッションに合ったものが最初から選択されています。
+`--screenshot` で画面取得バックエンドを選択します。
 
 | 方法 | 対応環境 | モニター/ウィンドウ指定 | 説明 |
 | --- | --- | --- | --- |
-| `pil` | 全OS | 不可 | `PIL.ImageGrab`。互換性のための既定値。Waylandでは**XWayland**画面を撮影するため、Waylandネイティブのウィンドウは黒く写ります |
-| `mss` | Windows, X11, macOS | モニター (ウィンドウ: Windows/X11) | Waylandでは使用不可 |
-| `wc_mp` | Windows | モニター + ウィンドウ | `windows_capture`。別プロセスで動作 |
-| `wc_cuda` | Windows + NVIDIA | モニター + ウィンドウ | `wc_cuda`。Windowsでは最速 |
-| `kwcapture` | Linux **Wayland (KDE Plasma)** | モニター + ウィンドウ | [kwcapture](https://pypi.org/project/kwcapture/)がKWin (`org.kde.KWin.ScreenShot2`) に合成後のフレームを要求します。デバイス解像度、ポータル不要、XWayland経由ではない |
+| `pil` | 全OS | 不可 | `PIL.ImageGrab`。WaylandではXWayland経由 |
+| `mss` | Windows, X11, macOS | モニター (ウィンドウ: Windows/X11) | LinuxはX11のみ対応 |
+| `wc_mp` | Windows | モニター + ウィンドウ | `windows_capture` (別プロセス) |
+| `wc_cuda` | Windows + NVIDIA | モニター + ウィンドウ | `wc_cuda` |
+| `obs` | Linux Wayland | デスクトップポータル経由 (全画面またはウィンドウ) | `libobs` (`linux-pipewire` プラグイン、別プロセス) |
+| `kwcapture` | Linux Wayland (KDE Plasma) | モニター + ウィンドウ | [kwcapture](https://pypi.org/project/kwcapture/) (`org.kde.KWin.ScreenShot2`)。KDE上でポータルダイアログを介さず直接ウィンドウ/モニターを指定可能 |
 
-```bash
-pip install kwcapture            # オプション依存 (requirements-gui.txt には含まれません)
-python -m iw3.desktop --screenshot kwcapture --monitor-index 0
-python -m iw3.desktop --screenshot kwcapture --window-name "Some Game"
-```
+#### Linux Wayland (`obs` / `kwcapture`)
 
-`kwcapture` は意図的にオプションとしています。対応するコンポジター (KWin) が限定的なため、
-依存パッケージとしては自動インストールされず、利用するかどうかをユーザーが判断します。
-未インストールの場合はGUIの`Screenshot`一覧に`kwcapture`が表示されず、
-`--screenshot kwcapture` は `kwcapture is not installed (pip install kwcapture)`
-というエラーになります。KDE Plasma/Waylandでは、残りの方法がXWayland経由になってしまうため、
-起動時にインストールコマンドを示す警告が表示されます。
-
-初回実行時に、KWinがキャプチャヘルパーを許可するためのKDEデスクトップエントリーが
-インストールされます (kwcapture が自動的に行います)。既に表示されているウィンドウが一覧に
-出ない場合や画面が黒く写る場合は、この許可が最初の確認項目です
-(`python -m kwcapture doctor`)。
-
-Wayland利用時の注意:
-
-*   サイズは**デバイスピクセル**です。125 %に拡大表示したディスプレイでは、2560論理pxのデスクトップが
-    3200 pxとして取得されます。
-*   `--window-name` はウィンドウタイトル (KWinのキャプション) で一致させます。ストリーミング中に
-    ウィンドウをリサイズ・最大化しても問題ありません。新しいサイズのフレームがそのまま送られます。
-*   マウスカーソルはコンポジターが描画するため、他方法で画像上に描かれる印は不要です。
-    `--disable-draw-cursor` で完全に無効化できます。
+*   **`obs`**: `libobs` の `linux-pipewire` プラグインと `xdg-desktop-portal` を使用します。画面またはウィンドウの選択は起動時のシステムのポータルダイアログで行います。
+    *   必要なライブラリ: `libobs`, `obs-plugins` (`linux-pipewire.so`), `libglib-2.0`, `libwayland-client` (例: Ubuntu では `sudo apt install obs-plugins`)。※ Flatpak や Snap 版の OBS は検出されません。
+*   **`kwcapture`**: KWinの `ScreenShot2` D-Busインターフェースを使用します (KDE Plasma専用)。
+    *   必要なパッケージ: `pip install kwcapture`
+    *   初回実行時にKWinがキャプチャヘルパーを承認するためのKDEデスクトップエントリーが自動作成されます。ウィンドウ一覧に出ない場合や画面が真っ暗な場合は `python -m kwcapture doctor` で確認できます。
+    *   サイズは**デバイスピクセル**（物理ピクセル）です（例: 125%拡大の2560論理pxは3200pxとして取得されます）。
+    *   `--window-name` はウィンドウタイトル (KWinのキャプション) に一致し、配信中のウィンドウのリサイズや最大化にも自動追従します。
+    *   マウスカーソルはコンポジターによって合成されるため、他バックエンドのような追加のカーソル描画は不要です (`--disable-draw-cursor` で非表示可能)。
 
 ### ステレオ設定
 
@@ -205,6 +243,9 @@ python -m iw3.desktop --user admin --password 1234
 ### ローカルビューワー
 
 `--local-viewer`オプションを指定します。
+
+- `--uncap-fps`: ディスプレイのリフレッシュレート上限を超えて描画します。
+- `--fit-window`: アスペクト比を無視してビューワーウィンドウ全体に画面を引き伸ばしてフィットさせます。
 
 CLIから指定した場合でもGUIウィンドウが表示されるため、wxpythonとOpenGLが必要です（`requirements-gui.txt`からインストールされます）。
 

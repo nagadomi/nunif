@@ -163,6 +163,10 @@ HWAccel (`--hwaccel`) specifies which hardware decoder to use.
 
 When `Software Fallback` is enabled (when `--disable-software-fallback` is not specified), unsupported formats will fall back to the software decoder.
 
+`h264_amf`, `hevc_amf` are AMD hardware encoders. AMF support requires an AMD GPU with AMF support and a recent AMD Adrenalin driver. Recent PyAV wheels bundle an FFmpeg build that includes AMF; older PyAV wheels do not include it, in that case install PyAV built against an FFmpeg with `--enable-amf`. `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` are prebuilt into the standard wheel.
+
+`h264_vaapi`, `hevc_vaapi`, `av1_vaapi` are the VA-API hardware encoders (Linux, also Windows with an Intel GPU). They require PyAV built against an FFmpeg with `--enable-vaapi`; the prebuilt PyPI wheels do not include VA-API. The render node defaults to `/dev/dri/renderD128`; override with `--vaapi-device <path>`.
+
 #### Level option for H.265
 
 `auto` is recommended.
@@ -195,6 +199,26 @@ If you want to output an HDR source as SDR, please use the following settings.
 |Colorspace  | bt709 (recommended) or bt601
 
 Tone mapping will be applied when the source video is HDR.
+
+
+## Alpha Channel (Transparent Video & Image) Support
+
+iw3 supports both input and output for media with an alpha channel (transparent background).
+
+### Output Formats for Transparent Video
+
+To output transparent 3D video, choose one of the following container, codec, and pixel format combinations:
+
+- **WebM / MKV (VP9 Alpha)**: `--video-format webm` (or `mkv`) `--video-codec libvpx-vp9 --pix-fmt yuva420p`
+- **MKV (FFV1 Lossless)**: `--video-format mkv --video-codec ffv1 --pix-fmt yuva420p`
+
+For images, `--format png` or `--format webp` supports transparency.
+
+### Green Screen Fallback for Non-Alpha Formats
+
+When the input media has an alpha channel, or when using a matting depth model:
+- If the output format does not support transparency (e.g. standard `mp4` with `yuv420p`, or `jpeg` for images), the transparent background is automatically filled with **pure green (`#00FF00`)** instead of an alpha channel. This can be used for chroma key compositing in video editing software.
+
 
 ## About VR Player
 
@@ -403,6 +427,12 @@ Install NVIDIA Driver 570 or newer.
 
 It's also important to note that hardware encoders have resolution limitations, and exceeding those limits can cause encoding to fail with an error.  
 It depends on the GPU generation, but in most cases, the limits are 4096 for `h264_nvenc` and 8192 for `hevc_nvenc`.
+
+### AMF(`h264_amf`, `hevc_amf`) does not work
+
+`h264_amf` and `hevc_amf` require an AMD GPU with AMF support and a recent AMD Adrenalin driver.  
+The codec only appears in the dropdown when the bundled PyAV reports the encoder as available; otherwise it is hidden.  
+If the encoder is missing, the installed PyAV bundles an FFmpeg without AMF; install a PyAV build that includes AMF support.
 
 ### How to convert rotated(height width swapped) video correctly
 

@@ -21,6 +21,10 @@ MODEL_FILES = {
     "Any_V3_Mono": path.join(HUB_MODEL_DIR, "checkpoints", "da3mono-large.safetensors"),
     "Any_V3_Mono_01": path.join(HUB_MODEL_DIR, "checkpoints", "da3mono-large.safetensors"),
 }
+MODEL_URLS = {
+    "Any_V3_Mono": "https://huggingface.co/depth-anything/DA3MONO-LARGE/resolve/main/model.safetensors?download=true",
+    "Any_V3_Mono_01": "https://huggingface.co/depth-anything/DA3MONO-LARGE/resolve/main/model.safetensors?download=true",
+}
 AA_SUPPORTED_MODELS = {
     "Any_V3_Mono",
     "Any_V3_Mono_01",
@@ -36,27 +40,25 @@ def _forward(model, x, enable_amp, sky_thresh=0.3, raw_output=False):
     depths = out["depth"]
     sky_masks = out["sky"] > sky_thresh
     sky_weights = (out["sky"].clamp(sky_thresh, 1.0) - sky_thresh) / (1.0 - sky_thresh)
-    disparity_maps = []
-    for depth, sky_mask, sky_weight in zip(depths, sky_masks, sky_weights):
-        # TODO: improve this
-        if not raw_output:
-            non_sky_pixels = sky_mask.numel() - sky_mask.sum()
-            if non_sky_pixels < 10:
-                # all sky
-                depth = torch.zeros_like(depth)
+
+    if not raw_output:
+        num_pixels = sky_masks.shape[-2] * sky_masks.shape[-1]
+        non_sky_pixels = num_pixels - sky_masks.sum(dim=(-2, -1), keepdim=True)
+        # TODO: This value should ideally be adjustable via the foreground scale option,
+        #       but currently it is not possible.
+        shift = 0.2
+        inv_depth = (1.0 / (depths + shift)) * (1.0 - sky_weights)
+        out = torch.where(non_sky_pixels < 10, torch.zeros_like(depths), inv_depth)
+    else:
+        disparity_maps = []
+        for depth, sky_mask, sky_weight in zip(depths, sky_masks, sky_weights):
+            if (~sky_mask).any():
+                max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
             else:
-                # TODO: This value should ideally be adjustable via the foreground scale option,
-                #       but currently it is not possible.
-                shift = 0.2
-                depth = 1.0 / (depth + shift)
-                depth = depth * (1 - sky_weight)
-        else:
-            max_rel_dist = torch.quantile(depth[~sky_mask], 0.99)
-            depth = (depth * (1 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
-
-        disparity_maps.append(depth)
-
-    out = torch.stack(disparity_maps)
+                max_rel_dist = depth.amax()
+            depth = (depth * (1.0 - sky_weight) + sky_weight * max_rel_dist).clamp(max=max_rel_dist)
+            disparity_maps.append(depth)
+        out = torch.stack(disparity_maps)
 
     return out
 
@@ -74,6 +76,7 @@ def batch_infer(
     depth_aa=None,
     limit_resolution=False,
     raw_output=False,
+    alpha=None,
     **kwargs,
 ):
     device = device if device is not None else model.device
@@ -102,6 +105,10 @@ def batch_infer(
             x = torch.flip(x_org, dims=[3])
             out2 = _forward(model, x, enable_amp, raw_output=raw_output)
             out = torch.cat([out, out2], dim=0)
+
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, flip_aug=flip_aug, is_metric=raw_output)
+
     if depth_aa is not None:
         out = depth_aa.infer(out)
 
@@ -112,13 +119,8 @@ def batch_infer(
             out = -dilate_edge(-out, edge_dilation)
 
     if flip_aug:
-        if batch:
-            n = out.shape[0] // 2
-            z = torch.empty((n, *out.shape[1:]), device=out.device)
-            for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 0.5
-        else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 0.5
+        n = out.shape[0] // 2
+        z = (out[:n] + torch.flip(out[n:], dims=[3])) * 0.5
     else:
         z = out
     if not batch:
@@ -186,24 +188,25 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        if not torch.is_tensor(x):
-            x = TF.to_tensor(x).to(self.device)
-        assert torch.is_tensor(x)
-        return batch_infer(
+        x_in, alpha_in, is_batch, orig_batch_size = self._prepare_infer_input(x, alpha=alpha)
+        out = batch_infer(
             self.model,
-            x,
+            x_in,
             flip_aug=tta,
             low_vram=low_vram,
             enable_amp=enable_amp,
-            output_device=x.device,
-            device=x.device,
+            output_device=x_in.device,
+            device=x_in.device,
             edge_dilation=edge_dilation,
             depth_aa=self.depth_aa if depth_aa else None,
             raw_output=self.raw_output,
             limit_resolution=self.limit_resolution,
+            alpha=alpha_in,
         )
+        return self._restore_infer_output(out, is_batch=is_batch, orig_batch_size=orig_batch_size)
 
     order: int = 40
 
@@ -231,6 +234,10 @@ class DepthAnythingV3MonoModel(BaseDepthModel):
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
 
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
+
     def is_metric(self):
         return False
 
@@ -252,7 +259,6 @@ def _bench(resolution=504, do_compile=False):
     import time
 
     gc.collect()
-    torch._dynamo.reset()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
 

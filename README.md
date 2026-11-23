@@ -77,12 +77,6 @@ We usually support the latest version. If there are bugs or compatibility issues
 
 Optional dependencies (not installed from the requirements files; install them only if you need the feature):
 
-- [kwcapture](https://pypi.org/project/kwcapture/) — `pip install kwcapture`  
-  Screen capture for [iw3-desktop](./iw3/docs/desktop.md) on Linux **Wayland (KDE Plasma)**
-  (`--screenshot kwcapture`). It asks KWin for the composited desktop image, which no other
-  capture method here can do on Wayland. A warning is printed at startup when a KDE
-  Plasma/Wayland session is running without it.
-
 - [INSTALL-ubuntu](INSTALL-ubuntu.md)
 - [INSTALL-windows](INSTALL-windows.md)
 - [INSTALL-macos](INSTALL-macos.md)
@@ -103,6 +97,6 @@ The `~` character at the beginning of a path string is expanded to the home dire
 Note that if you distribute binary builds, it is possible that it will be GPL.
 
 This is due to PyAV(av) wheel package containing the GPL version of ffmpeg library.
-You can build PyAV with the LGPL version of ffmpeg library.
+[You can build PyAV with the LGPL version of ffmpeg library](INSTALL-ubuntu.md#building-pyav-from-source).
 
 If you load this repository with torch.hub.load for waifu2x Python API etc, this problem does not exist because PyAV is not a dependent package.

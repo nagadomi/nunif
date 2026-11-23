@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
-from torch.nn.parallel import gather, replicate, parallel_apply
+from torch.nn.parallel import gather, parallel_apply, replicate
 from torch.nn.parallel.scatter_gather import scatter_kwargs
-from .. device import create_device
+
+from ..device import create_device
 
 
-class DataParallelInference():
+class DataParallelInference:
     def __init__(self, module, device_ids=None, output_device=None, dim=0):
         self.dim = dim
         self.device_ids = device_ids or list(range(torch.cuda.device_count()))
@@ -26,8 +27,8 @@ class DataParallelInference():
         # if len(self.device_ids) == 1:
         #    return self.module(*inputs[0], **module_kwargs[0])
 
-        used_device_ids = self.device_ids[:len(inputs)]
-        replicas = self.replicas[:len(inputs)]
+        used_device_ids = self.device_ids[: len(inputs)]
+        replicas = self.replicas[: len(inputs)]
         outputs = parallel_apply(replicas, inputs, module_kwargs, used_device_ids)
         return gather(outputs, self.output_device, self.dim)
 

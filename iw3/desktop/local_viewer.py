@@ -164,7 +164,15 @@ class _CUDART:
 
 class GLCanvas(glcanvas.GLCanvas):
     def __init__(
-        self, parent, width, height, use_cuda=False, device_id=0, uncap_fps=False, polling_interval=POLLING_INTERVAL
+        self,
+        parent,
+        width,
+        height,
+        use_cuda=False,
+        device_id=0,
+        uncap_fps=False,
+        polling_interval=POLLING_INTERVAL,
+        fit_window=False,
     ):
         attribs = [
             glcanvas.WX_GL_RGBA,
@@ -185,6 +193,7 @@ class GLCanvas(glcanvas.GLCanvas):
         self.use_cuda = use_cuda
         self.device_id = device_id
         self.polling_interval = polling_interval
+        self.fit_window = fit_window
         self.cuda_resource = None
         self._cudart = None
 
@@ -377,13 +386,17 @@ class GLCanvas(glcanvas.GLCanvas):
         GL.glEnable(GL.GL_TEXTURE_2D)
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.tex_id)
 
-        scale = min(W / self.tex_w, H / self.tex_h)
-        draw_w = self.tex_w * scale
-        draw_h = self.tex_h * scale
-        x0 = (W - draw_w) / 2
-        y0 = (H - draw_h) / 2
-        x1 = x0 + draw_w
-        y1 = y0 + draw_h
+        if self.fit_window:
+            x0, y0 = 0, 0
+            x1, y1 = W, H
+        else:
+            scale = min(W / self.tex_w, H / self.tex_h)
+            draw_w = self.tex_w * scale
+            draw_h = self.tex_h * scale
+            x0 = (W - draw_w) / 2
+            y0 = (H - draw_h) / 2
+            x1 = x0 + draw_w
+            y1 = y0 + draw_h
 
         GL.glBegin(GL.GL_QUADS)
 
@@ -466,6 +479,7 @@ class LocalViewerWindow(wx.Frame):
         device_id=0,
         uncap_fps=False,
         polling_interval=POLLING_INTERVAL,
+        fit_window=False,
     ):
         super().__init__(
             None, title="iw3-desktop: Local Viewer", size=size, style=wx.DEFAULT_FRAME_STYLE | wx.CLIP_CHILDREN
@@ -478,6 +492,7 @@ class LocalViewerWindow(wx.Frame):
             device_id=device_id,
             uncap_fps=uncap_fps,
             polling_interval=polling_interval,
+            fit_window=fit_window,
         )
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
@@ -524,6 +539,7 @@ class LocalViewer:
         device_id=0,
         uncap_fps=False,
         polling_interval=POLLING_INTERVAL,
+        fit_window=False,
         **_unsupported_kwargs,
     ):
         self.width = width
@@ -537,6 +553,7 @@ class LocalViewer:
         self.device_id = device_id
         self.uncap_fps = uncap_fps
         self.polling_interval = polling_interval
+        self.fit_window = fit_window
 
     def stop(self):
         with self.op_lock:
@@ -556,6 +573,7 @@ class LocalViewer:
                     device_id=self.device_id,
                     uncap_fps=self.uncap_fps,
                     polling_interval=self.polling_interval,
+                    fit_window=self.fit_window,
                 )
                 self.window.Show()
                 self.initialized = True
@@ -671,6 +689,7 @@ def _test():
     parser.add_argument("--cuda", action="store_true", help="use cudaMemcpy")
     parser.add_argument("--size", choices=["hd", "4k", "8k"], default="4k", help="frame size")
     parser.add_argument("--fps", type=int, default=2000, help="frame interval")
+    parser.add_argument("--fit-window", action="store_true", help="fit window")
     args = parser.parse_args()
 
     # 4K(SBS)
@@ -686,7 +705,9 @@ def _test():
 
     def main():
         lock = threading.RLock()
-        server = LocalViewer(lock, width=W, height=H, use_cuda=args.cuda, uncap_fps=True, polling_interval=0)
+        server = LocalViewer(
+            lock, width=W, height=H, use_cuda=args.cuda, uncap_fps=True, polling_interval=0, fit_window=args.fit_window
+        )
         server.start()
         time.sleep(2)
         frames = torch.rand(4, 3, H, W).cuda()

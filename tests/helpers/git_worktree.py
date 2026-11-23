@@ -23,6 +23,7 @@ def git_worktree(commit_ref: str, cwd: str = PROJECT_DIR) -> Generator[str, None
         raise ValueError(f"Invalid git reference or commit hash: {commit_ref}")
 
     temp_dir = tempfile.mkdtemp(prefix=f"nunif_worktree_{commit_ref.replace('/', '_')}_")
+    iw3_debug = os.environ.pop("IW3_DEBUG", None)
     try:
         subprocess.run(
             ["git", "worktree", "add", "--detach", temp_dir, commit_ref],
@@ -32,6 +33,8 @@ def git_worktree(commit_ref: str, cwd: str = PROJECT_DIR) -> Generator[str, None
         )
         yield os.path.abspath(temp_dir)
     finally:
+        if iw3_debug is not None:
+            os.environ["IW3_DEBUG"] = iw3_debug
         subprocess.run(
             ["git", "worktree", "remove", "--force", temp_dir],
             cwd=cwd,

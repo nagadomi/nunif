@@ -14,13 +14,10 @@
 - **Module Execution**:
   - Always run CLI and GUI tools as modules from the project root (e.g., `python -m iw3.cli`, `python -m iw3.gui`, `python -m waifu2x.cli`). Do NOT invoke scripts directly by file path (e.g., `python iw3/cli.py`), which causes relative import errors.
 
-## Forbidden Actions / Directory Restrictions
+## Directory Restrictions
 
-- **Never access, search, or scan outside the project directory**:
-  - All operations (reading, editing, file searching with `find`/`grep`, etc.) must be strictly confined within the project root.
-  - Never inspect or traverse outside the project directory, including parent directories (`..`), the user home directory (`~`, `$HOME`), `/tmp`, or other projects.
 - **Never list, find, or recursively scan restricted directories**:
-  - Do NOT run directory listing (`ls`, `dir`), recursive search (`find`, glob, `grep -r`), or tree exploration on `tmp/`, `data/`, `models/`, or any pretrained model directories (e.g., `*pretrained_models/`).
+  - Do NOT run directory listing (`ls`, `dir`), recursive search (`find`, glob, `grep -r`), or tree exploration on `tmp/`, `data/`, or `models/`.
   - **Reason**: These directories may contain private filenames or massive image datasets (over 10 million files), leading to context overflows, performance degradation, and privacy leaks.
   - Accessing a specific, known file path directly is permitted when required, but exploratory listing or searching within these directories is strictly prohibited.
 

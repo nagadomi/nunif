@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
+
 from nunif.models import I2IBaseModel, register_model
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init
-
 
 FEAT_DIM = 64
 
@@ -77,8 +77,10 @@ class DA3MonoDisparity(I2IBaseModel):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 1000

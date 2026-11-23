@@ -13,7 +13,9 @@ tmp
 *.tar.gz
 *.tar
 *.zip
+*.ttf
 *.xcf
+/reports
 /data
 !/data/.keep
 /models
@@ -41,6 +43,8 @@ tmp
 /windows_package/git
 /windows_package/nunif
 /iw3/pretrained_models
+/iw3/depth_models/_*
+!/iw3/depth_models/__init__.py
 /iw3/inpaint_models.yml
 
 /iw3/player/public/lib
@@ -51,7 +55,7 @@ tmp
 /iw3/player/package-lock.json
 /iw3/player/node_modules
 /iw3/player/version
-/iw3/player/sync_dev_repo.sh
+/iw3/player/release
 
 /stlizer/pretrained_models/hub
 /cliqa/pretrained_models

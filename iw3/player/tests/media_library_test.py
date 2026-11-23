@@ -1,4 +1,5 @@
 import os
+import sys
 import zipfile
 from types import SimpleNamespace
 
@@ -43,8 +44,9 @@ def test_safe_join_traversal(mock_server_state):
 
     # Valid subpaths (with or without leading slash)
     assert lib.safe_join("") == root
-    assert lib.safe_join("photos/pic.jpg") == os.path.join(root, "photos/pic.jpg")
-    assert lib.safe_join("/photos/pic.jpg") == os.path.join(root, "photos/pic.jpg")
+    expected = os.path.join(root, "photos", "pic.jpg")
+    assert lib.safe_join("photos/pic.jpg") == expected
+    assert lib.safe_join("/photos/pic.jpg") == expected
 
     # Directory traversal attempts should return None
     assert lib.safe_join("../secret.txt") is None
@@ -214,6 +216,15 @@ def test_get_file_info(mock_server_state):
     assert excinfo.value.status_code == 404
 
 
+def _create_dir_link(src: str, dst: str) -> None:
+    if sys.platform == "win32":
+        import _winapi
+
+        _winapi.CreateJunction(os.path.abspath(src), os.path.abspath(dst))
+    else:
+        os.symlink(src, dst, target_is_directory=True)
+
+
 def test_list_files_broken_symlinks(mock_server_state):
     lib = MediaLibrary(mock_server_state)
     media_root = mock_server_state.image_root
@@ -225,32 +236,56 @@ def test_list_files_broken_symlinks(mock_server_state):
     valid_dir = os.path.join(media_root, "valid_folder")
     os.makedirs(valid_dir, exist_ok=True)
 
-    # Create broken symlinks
-    broken_file_link = os.path.join(media_root, "broken_file.png")
-    os.symlink(os.path.join(media_root, "nonexistent.png"), broken_file_link)
-
+    # Create directory links (using NTFS junction on Windows)
+    can_link_dir = True
+    broken_dir_target = os.path.join(media_root, "temp_broken_target")
+    os.makedirs(broken_dir_target, exist_ok=True)
     broken_dir_link = os.path.join(media_root, "broken_dir")
-    os.symlink(os.path.join(media_root, "nonexistent_dir"), broken_dir_link)
-
-    # Create valid symlinks
-    valid_file_link = os.path.join(media_root, "valid_symlink.png")
-    os.symlink(valid_file, valid_file_link)
-
     valid_dir_link = os.path.join(media_root, "valid_dir_symlink")
-    os.symlink(valid_dir, valid_dir_link)
+    try:
+        _create_dir_link(broken_dir_target, broken_dir_link)
+        _create_dir_link(valid_dir, valid_dir_link)
+    except OSError:
+        can_link_dir = False
+    finally:
+        if os.path.isdir(broken_dir_target):
+            os.rmdir(broken_dir_target)
 
-    items = lib.list_files("/")
-    names = [item["name"] for item in items]
+    # Try creating file symlinks (requires elevated privileges on Windows)
+    can_symlink_file = True
+    broken_file_link = os.path.join(media_root, "broken_file.png")
+    valid_file_link = os.path.join(media_root, "valid_symlink.png")
+    try:
+        os.symlink(os.path.join(media_root, "nonexistent.png"), broken_file_link)
+        os.symlink(valid_file, valid_file_link)
+    except OSError:
+        can_symlink_file = False
 
-    # Broken symlinks should be skipped without raising exceptions
-    assert "broken_file.png" not in names
-    assert "broken_dir" not in names
+    try:
+        if not can_link_dir and not can_symlink_file:
+            pytest.skip("Creating symlinks/junctions is not permitted in this environment")
 
-    # Valid targets and valid symlinks should remain
-    assert "valid_folder" in names
-    assert "valid_dir_symlink" in names
-    assert "valid.png" in names
-    assert "valid_symlink.png" in names
+        items = lib.list_files("/")
+        names = [item["name"] for item in items]
+
+        # Broken links should be skipped without raising exceptions
+        assert "valid_folder" in names
+        assert "valid.png" in names
+
+        if can_link_dir:
+            assert "broken_dir" not in names
+            assert "valid_dir_symlink" in names
+
+        if can_symlink_file:
+            assert "broken_file.png" not in names
+            assert "valid_symlink.png" in names
+    finally:
+        for link in (broken_dir_link, valid_dir_link, broken_file_link, valid_file_link):
+            if os.path.lexists(link):
+                try:
+                    os.unlink(link)
+                except OSError:
+                    pass
 
 
 def test_zip_archive_media_and_thumbnail(mock_server_state):

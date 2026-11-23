@@ -174,6 +174,8 @@ def pass1(args):
     resize_scale = [1.0]
 
     def keypoint_callback(x, pts):
+        if x.shape[-3] == 4:
+            x = x[:, :3] if x.ndim == 4 else x[:3]
         with torch.inference_mode(), torch.autocast(device_type=device.type):
             x, resize_scale[0] = resize(x, args.resolution)
             center[0] = [x.shape[3] / 2, x.shape[2] / 2]
@@ -402,6 +404,8 @@ def pass4(output_path, shift_x_fix, shift_y_fix, angle_fix, transforms, scene_we
     buffer = [None]
 
     def stabilizer_callback(x):
+        if x.shape[-3] == 4:
+            x = x[:, :3] if x.ndim == 4 else x[:3]
         B = x.shape[0]
         i = index[0]
         index[0] += x.shape[0]

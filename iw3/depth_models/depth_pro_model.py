@@ -20,6 +20,10 @@ MODEL_FILES = {
     "DepthPro": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
     "DepthPro_S": path.join(HUB_MODEL_DIR, "checkpoints", "depth_pro.pt"),
 }
+MODEL_URLS = {
+    "DepthPro": "https://ml-site.cdn-apple.com/models/depth-pro/depth_pro.pt",
+    "DepthPro_S": "https://ml-site.cdn-apple.com/models/depth-pro/depth_pro.pt",
+}
 
 
 def batch_preprocess(x, img_size=1536, padding=False):
@@ -82,6 +86,7 @@ def batch_infer(
     device=None,
     edge_dilation=2,
     force_disparity=False,
+    alpha=None,
     **kwargs,
 ):
     device = device if device is not None else model.device
@@ -115,6 +120,9 @@ def batch_infer(
     if unpad > 0:
         out = out[:, :, unpad:-unpad, unpad:-unpad]
 
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, flip_aug=flip_aug, is_metric=not force_disparity)
+
     if edge_dilation_is_enabled(edge_dilation):
         if force_disparity:
             out = dilate_edge(out, edge_dilation)
@@ -125,13 +133,8 @@ def batch_infer(
         out = -out
 
     if flip_aug:
-        if batch:
-            n = out.shape[0] // 2
-            z = torch.empty((n, *out.shape[1:]), device=out.device)
-            for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 0.5
-        else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 0.5
+        n = out.shape[0] // 2
+        z = (out[:n] + torch.flip(out[n:], dims=[3])) * 0.5
     else:
         z = out
     if not batch:
@@ -199,22 +202,23 @@ class DepthProModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        if not torch.is_tensor(x):
-            x = TF.to_tensor(x).to(self.device)
-        assert torch.is_tensor(x)
-        return batch_infer(
+        x_in, alpha_in, is_batch, orig_batch_size = self._prepare_infer_input(x, alpha=alpha)
+        out = batch_infer(
             self.model,
-            x,
+            x_in,
             flip_aug=tta,
             low_vram=low_vram,
             enable_amp=enable_amp,
-            output_device=x.device,
-            device=x.device,
+            output_device=x_in.device,
+            device=x_in.device,
             edge_dilation=edge_dilation,
             force_disparity=self.force_disparity,
+            alpha=alpha_in,
         )
+        return self._restore_infer_output(out, is_batch=is_batch, orig_batch_size=orig_batch_size)
 
     order: int = 20
 
@@ -241,6 +245,10 @@ class DepthProModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     @classmethod
     def is_resolution_change_supported(cls, model_type: str) -> bool:

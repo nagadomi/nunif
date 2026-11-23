@@ -69,17 +69,94 @@ class ScreenSettingsMenu {
             this.formatButtons[f.id] = { container: btn, setSelected };
         });
 
+        // Track Device Position Toggle & Reset
+        const trackDeviceRow = new Container({
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            width: '100%',
+            height: 44,
+            marginBottom: 8
+        });
+        this.trackDeviceLabel = new Text({ text: "Follow Device", fontSize: 18, color: COLORS.textDim });
+        trackDeviceRow.add(this.trackDeviceLabel);
+
+        const trackDeviceRightGroup = new Container({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8
+        });
+        trackDeviceRow.add(trackDeviceRightGroup);
+
+        this.trackDeviceResetBtn = UIUtils.createButton(
+            'icons/restore.svg',
+            () => {
+                this.uiManager.stereoPlayer.resetScreenTransform();
+            },
+            this.uiManager,
+            22,
+            44
+        );
+        trackDeviceRightGroup.add(this.trackDeviceResetBtn.container);
+
+        this.trackDeviceCheckbox = UIUtils.createButton(
+            'icons/square.svg',
+            () => {
+                const current = this.uiManager.settingsManager.get('screen_track_device');
+                this.uiManager.onSliderChange('screen_track_device', !current);
+            },
+            this.uiManager,
+            22,
+            44
+        );
+        trackDeviceRightGroup.add(this.trackDeviceCheckbox.container);
+
+        this.setTrackDeviceChecked = (val) => {
+            if (this.trackDeviceCheckbox._lastVal === val) return;
+            this.trackDeviceCheckbox._lastVal = val;
+            this.trackDeviceCheckbox.image.setProperties({
+                src: val ? 'icons/square-check.svg' : 'icons/square.svg',
+                color: val ? COLORS.text : COLORS.hover
+            });
+            this.trackDeviceCheckbox.setSelected(val);
+        };
+
+        this.container.add(trackDeviceRow);
+        this.trackDeviceRow = trackDeviceRow;
+
         this.sliders = UIUtils.createSlidersForKeys(this.container, SCREEN_SLIDER_KEYS, this.uiManager);
     }
 
     async reset() {
         await this.uiManager.settingsManager.resetGroup('screen');
+        this.uiManager.stereoPlayer.resetScreenTransform();
     }
 
     sync() {
         const trackWidth = 332, thumbWidth = 24;
         const activeScreen = this.uiManager.activeScreen;
         const screenType = activeScreen.screenType;
+        const isDome = screenType === 'dome' || screenType === 'dome_xr';
+
+        const isTrackDevice = !!this.uiManager.settingsManager.get('screen_track_device');
+        this.setTrackDeviceChecked(isTrackDevice);
+
+        if (this.trackDeviceResetBtn._lastDisplay !== 'flex') {
+            this.trackDeviceResetBtn.container.setProperties({ display: 'flex' });
+            this.trackDeviceResetBtn._lastDisplay = 'flex';
+        }
+
+        const checkboxDisplay = isDome ? 'none' : 'flex';
+        if (this.trackDeviceCheckbox._lastDisplay !== checkboxDisplay) {
+            this.trackDeviceCheckbox.container.setProperties({ display: checkboxDisplay });
+            this.trackDeviceCheckbox._lastDisplay = checkboxDisplay;
+        }
+
+        const labelText = isDome ? "Recenter Screen" : "Follow Device";
+        if (this.trackDeviceLabel._lastText !== labelText) {
+            this.trackDeviceLabel.setProperties({ text: labelText });
+            this.trackDeviceLabel._lastText = labelText;
+        }
 
         for (const id in this.sliders) {
             const sl = this.sliders[id];
@@ -88,7 +165,7 @@ class ScreenSettingsMenu {
             let isSupported = activeScreen.supportedSettings.includes(id);
             if (id === 'screen_bg_color' && isSupported) {
                 const isSkyboxNone = this.uiManager.skyboxes[this.uiManager.currentSkyboxIndex] === "None";
-                if (!isSkyboxNone) {
+                if (this.uiManager.isARMode || !isSkyboxNone) {
                     isSupported = false;
                 }
             }

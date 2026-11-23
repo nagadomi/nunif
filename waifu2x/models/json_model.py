@@ -1,6 +1,8 @@
 import json
+
 import torch
 import torch.nn as nn
+
 from nunif.logger import logger
 
 
@@ -10,12 +12,10 @@ def load_state_from_waifu2x_json(model, json_file, skip_upsample_weight=False):
         params = json.load(f)
     param_index = 0
     for m in model.modules():
-        if (isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear)):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
             param = params[param_index]
             param_index += 1
-            if (skip_upsample_weight and
-                ("SpatialFullConvolution" in param["class_name"]) and
-                    ("weight" in param)):
+            if skip_upsample_weight and ("SpatialFullConvolution" in param["class_name"]) and ("weight" in param):
                 w = torch.FloatTensor(param["weight"])
                 if len(w.shape) == 4 and w.shape[2] == 2 and w.shape[2] == 2:
                     logger.debug(f"skip : {param['class_name']}{w.shape}")

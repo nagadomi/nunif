@@ -6,7 +6,10 @@
 
 `iw3-desktop` is a tool that converts your PC desktop screen into 3D in real-time and streams it over Wi-Fi. It can be viewed as side-by-side 3D from the browser on VR devices like Meta Quest.
 
-You can watch any image and video displayed on your PC in real-time within a VR space. To control the PC, you will continue to use the PC's keyboard and mouse, and audio will also be output from the PC. The VR device functions solely as a display.
+You can watch any image and video displayed on your PC in real-time within a VR space. Note that `iw3-desktop` itself streams video only (without audio or remote input):
+
+*   **Standalone VR Browser (e.g., Meta Quest Browser)**: To control the PC, you continue to use the PC's keyboard and mouse, and audio is output from the PC (speakers/headphones). The VR device functions solely as a display.
+*   **PCVR (e.g., SteamVR / Local Viewer with VR desktop software)**: Audio is output through the PC's configured audio device. In PCVR environments such as SteamVR, PC audio is normally routed to the VR headset automatically (unless configured to use PC speakers/headphones). Input/control behavior depends on the PCVR environment or VR desktop software being used.
 
 Please be aware of 3D sickness, as the depth estimation results for GUI windows and text may not be perfect. This tool is primarily intended for full-screen playback of images and videos.
 
@@ -15,18 +18,13 @@ In addition to web streaming, it also supports local viewer window display. This
 ## Known Issues
 
 *   Confirmed to work with Meta Quest and PICO 4, but not with VisionPro.
-*   On Linux, screen capture depends on the display server:
-    *   **Wayland / KDE Plasma**: use `--screenshot kwcapture` (see `Screenshot Method` below).
-        Install it with `pip install kwcapture` first: it is an optional dependency, not part of
-        `requirements-gui.txt`. It is the only method here that can capture a Wayland desktop, and
-        it is fast (~40 fps at 1440p measured), so X11 is no longer required on KDE.
-    *   **Wayland on other compositors** (GNOME, wlroots, ...): no working method yet.
-        Performance is significantly degraded because the capture goes through XWayland.
-    *   **X11**: `mss` works well and is the recommended method.
+*   On Linux, screen capture depends on the display server (see `Screenshot Method` below):
+    *   **Wayland**: Use `--screenshot obs` or `--screenshot kwcapture` (KDE Plasma only).
+    *   **X11**: Use `--screenshot mss`.
 
 ## Security Notice
 
-`iw3-desktop` starts an HTTP server without a password by default. Please be aware that other PCs within the same network may be able to access it.
+`iw3-desktop` starts an HTTPS server (or HTTP when using `--legacy-stream`) without a password by default. Please be aware that other PCs within the same network may be able to access it.
 
 You can set a password for Basic Authentication using the `--password` option.
 
@@ -54,14 +52,14 @@ python -m iw3.desktop
 If the server starts successfully, a message like the following will be displayed:
 
 ```
-Open http://192.168.11.6:1303
+Open https://192.168.11.6:1303
 Estimated FPS = 30.24, Streaming FPS = 0.00
 ```
-(The `192.168.11.6` address will vary depending on your network environment.)
+(The `192.168.11.6` address will vary depending on your network environment. When `--legacy-stream` is specified, an `http://` URL is displayed.)
 
 If a Firewall dialog appears, please allow access.
 
-Open the displayed URL in your PC browser and check if the video can be played. The web page has been confirmed to work with Google Chrome and Meta Quest 2 Browser. It does not work on Firefox.
+Open the displayed URL in your PC browser or VR device browser and check if the stream can be played.
 
 If the PC's IP address is not detected correctly within the LAN, you can specify the IP address with the `--bind-addr` option:
 
@@ -69,12 +67,42 @@ If the PC's IP address is not detected correctly within the LAN, you can specify
 python -m iw3.desktop --bind-addr 192.168.1.2
 ```
 
-## How to View on Meta Quest
+## How to View on VR Devices
 
-Confirmed to work with Meta Quest 2. You can play 3D videos by following these steps:
+### WebXR (Default: `Web Streaming`)
+
+By default, `iw3-desktop` uses the WebXR player (`iw3-player`) over HTTPS.
+
+#### About SSL Warnings
+
+To meet WebXR's mandatory HTTPS requirement, the server generates a self-signed certificate on startup.
+During your first visit, your browser will display a security warning (e.g., "Your connection is not private"). To proceed:
+
+1.  Click **"Advanced"**.
+2.  Select **"Proceed to [IP address]"**.
+
+**Tip:** Bookmarking this page will allow you to skip this warning in the future.
+
+#### Playback Steps
+
+1.  Launch the browser on your VR device (or a WebXR-compatible PC browser for PCVR) and open the `https://...` URL.
+2.  Skip the SSL warning if it appears.
+3.  Wait for the stream to start, then click **Enter VR** to enter WebXR mode.
+
+For WebXR player controls and screen settings, see the [iw3-player documentation](../player/README.md).
+
+### Web Streaming (Legacy) (`--legacy-stream`)
+
+If you prefer to use the VR browser's built-in HTML5 `<video>` 3D display mode (instead of WebXR), select **`Web Streaming (Legacy)`** in the GUI or pass the `--legacy-stream` option in the CLI:
+
+```bash
+python -m iw3.desktop --legacy-stream
+```
+
+Confirmed to work with Meta Quest 2 Browser and Google Chrome (does not work on Firefox). On Meta Quest, you can play 3D video by following these steps:
 
 1.  Launch `Browser`.
-2.  Enter the server URL.
+2.  Enter the `http://...` server URL.
 3.  (Optional) Add the URL to favorites.
 4.  Play the video.
 5.  Make the **Browser** full screen using the icon in the top right corner of the Browser.
@@ -101,7 +129,7 @@ The default is Half SBS. Meta Quest's browser only supports Half SBS.
 
 ### Resolution (Video Resolution)
 
-You can specify the vertical resolution of the screen with the `--stream-height` option. The default is 1080px.
+You can specify the maximum vertical resolution of the screen with the `--stream-height` option. The default is 1080px (`2160`, `1080`, and `720` are selectable in the GUI). Screens with height less than or equal to this value are streamed without resizing.
 
 ```bash
 python -m iw3.desktop --stream-height 720
@@ -117,11 +145,37 @@ python -m iw3.desktop --stream-fps 30
 
 If the `Estimated FPS` is significantly lower than the specified FPS, it means that the PC's performance is not sufficient to process the specified FPS.
 
-Due to `--batch-size 1` processing, the FPS will be considerably lower than during video conversion. Also, due to browser limitations, it may not be possible to achieve an FPS higher than `Streaming FPS = 30`.
+Due to `--batch-size 1` processing, the FPS will be considerably lower than during video conversion.
 
-### MJPEG Settings
+### Video Codec & Quality Settings
 
-You can specify the JPEG quality with the `--stream-quality` option (0-100).
+The default `Web Streaming` (WebXR) mode supports low-latency H.264 / HEVC video streaming as well as MJPEG (`jpeg` / `jpeg-gpu`). Select the encoder with `--video-codec` (or `Video Codec` in the GUI; default is `libx264`, or `libopenh264` in LGPL builds).
+
+```bash
+python -m iw3.desktop --video-codec h264_nvenc
+```
+
+*   **Supported codecs**: `libx264`, `libopenh264`, `h264_nvenc`, `hevc_nvenc`, `h264_vaapi`, `hevc_vaapi`, `h264_qsv`, `hevc_qsv`, `h264_amf`, `hevc_amf`, `libx265`, `jpeg`, `jpeg-gpu`
+*   **Recommended codec (H.264)**: While the Meta Quest browser supports H.265 (HEVC) decoding, typical PC (PCVR) browsers often only support H.264 for WebCodecs and may fall back to MJPEG when using `hevc_nvenc` / HEVC. Unless you specifically need > 4096 px width, **H.264 (`h264_nvenc`, `libx264`, etc.) is generally recommended**.
+*   **Automatic fallback**: If the PC encoder fails or the client browser/device does not support the selected video codec, playback automatically falls back to MJPEG. You can see the active codec next to the name in the player (e.g., `Desktop (1920x1080, hevc_nvenc)` or `Desktop (1920x1080, mjpeg)`).
+*   **`Web Streaming (Legacy)`**: Legacy mode only supports MJPEG, so only `jpeg` / `jpeg-gpu` are selectable in the GUI.
+
+#### Resolution Compatibility (H.264 vs HEVC)
+
+H.264 hardware encoders (such as `h264_nvenc`) and typical H.264 decoders are limited to **4096 px** in width/height. When streaming wide Full SBS formats exceeding 4096 px (such as `2560x1080` Full SBS or 4K Full SBS), **HEVC** (`hevc_nvenc`, etc.) is required:
+
+| Screen / Stereo Mode | Stream Resolution | H.264 (`h264_nvenc`, etc.) | HEVC (`hevc_nvenc`, etc.) |
+| --- | --- | --- | --- |
+| `1920x1080` Half SBS | `1920x1080` | Supported | Supported |
+| `1920x1080` Full SBS | `3840x1080` | Supported | Supported |
+| `2560x1080` Half SBS | `2560x1080` | Supported | Supported |
+| `2560x1080` Full SBS | `5120x1080` | Not supported (> 4096 px) | Supported |
+| 4K (`3840x2160`) Half SBS | `3840x2160` | Supported | Supported |
+| 4K (`3840x2160`) Full SBS | `7680x2160` | Not supported (> 4096 px) | Supported (falls back to MJPEG if client decoder limit is exceeded) |
+
+#### Stream Quality (`--stream-quality`)
+
+You can specify the video/JPEG quality with the `--stream-quality` option (1-100).
 
 ```bash
 python -m iw3.desktop --stream-quality 80
@@ -130,45 +184,27 @@ The default is 90. Specifying a lower value reduces network traffic.
 
 ### Screenshot Method (Screen Capture)
 
-`--screenshot` selects how the desktop is grabbed. The GUI has the same list in the
-`Screenshot` box, and already picks the right default for your session.
+`--screenshot` selects the screen capture backend.
 
 | method | platform | monitor / window selection | notes |
 | --- | --- | --- | --- |
-| `pil` | all | no | `PIL.ImageGrab`. Default for compatibility. On Wayland it captures the **XWayland** screen, which is black for native Wayland windows |
-| `mss` | Windows, X11, macOS | monitor (window: Windows/X11) | refused on Wayland |
-| `wc_mp` | Windows | monitor + window | `windows_capture`, runs in a separate process |
-| `wc_cuda` | Windows + NVIDIA | monitor + window | `wc_cuda`, fastest on Windows |
-| `kwcapture` | Linux **Wayland (KDE Plasma)** | monitor + window | [kwcapture](https://pypi.org/project/kwcapture/) asks KWin (`org.kde.KWin.ScreenShot2`) for the composited frame: device resolution, no portal, no XWayland |
+| `pil` | all | no | `PIL.ImageGrab`. Uses XWayland on Wayland |
+| `mss` | Windows, X11, macOS | monitor (window: Windows/X11) | X11 only on Linux |
+| `wc_mp` | Windows | monitor + window | `windows_capture` (separate process) |
+| `wc_cuda` | Windows + NVIDIA | monitor + window | `wc_cuda` |
+| `obs` | Linux Wayland | via Desktop Portal (screen or window) | `libobs` (`linux-pipewire` plugin, separate process) |
+| `kwcapture` | Linux Wayland (KDE Plasma) | monitor + window | [kwcapture](https://pypi.org/project/kwcapture/) (`org.kde.KWin.ScreenShot2`). Direct window/monitor selection without portal on KDE |
 
-```bash
-pip install kwcapture            # optional dependency: not in requirements-gui.txt
-python -m iw3.desktop --screenshot kwcapture --monitor-index 0
-python -m iw3.desktop --screenshot kwcapture --window-name "Some Game"
-```
+#### Linux Wayland (`obs` / `kwcapture`)
 
-`kwcapture` is optional on purpose: it works on one compositor (KWin) only, so it is not
-installed automatically and every user decides whether to have it. Without it, the `kwcapture`
-entry simply does not appear in the GUI `Screenshot` box and `--screenshot kwcapture` answers
-`kwcapture is not installed (pip install kwcapture)`. On a KDE Plasma/Wayland session a warning
-with the install command is printed at startup, because the methods left over see only the
-XWayland screen.
-
-The first run installs a small KDE desktop entry so KWin authorises the capture helper
-(kwcapture does this by itself); if a window you know is open does not appear in the list,
-or the frame comes back black, that authorisation is the first thing to check
-(`python -m kwcapture doctor`).
-
-Notes for Wayland users:
-
-*   Sizes are **device pixels**. On a display scaled to 125 % a desktop that measures
-    2560 logical px is captured as 3200 px, so `--stream-height` behaves as you would
-    expect but the pixel numbers you see are the physical ones.
-*   `--window-name` matches the window title (KWin's caption). Resizing or maximizing the
-    window while streaming is fine: frames simply come back at the new size.
-*   The mouse pointer is drawn by the compositor (`cursor` capture), so the marker that the
-    other backends paint over the image is not needed; `--disable-draw-cursor` turns it off
-    entirely.
+*   **`obs`**: Uses `libobs` and the `linux-pipewire` plugin via `xdg-desktop-portal`. Monitor or window selection is handled by the system portal dialog at startup.
+    *   Required libraries: `libobs`, `obs-plugins` (`linux-pipewire.so`), `libglib-2.0`, `libwayland-client` (e.g. `sudo apt install obs-plugins` on Ubuntu). Note: Flatpak and Snap installations of OBS are not detected.
+*   **`kwcapture`**: Uses KWin's `ScreenShot2` D-Bus interface (KDE Plasma only).
+    *   Required package: `pip install kwcapture`
+    *   The first run installs a small KDE desktop entry so KWin authorizes the capture helper. If a window is missing or the frame is black, check authorization with `python -m kwcapture doctor`.
+    *   Sizes are **device** pixels (e.g. on a display scaled to 125%, a 2560 logical px desktop arrives as 3200 px).
+    *   `--window-name` matches KWin's window title (caption); dynamic window resizing and maximizing during streaming are supported.
+    *   The cursor is composited by KWin, so the extra cursor marker drawn by other backends is not needed (`--disable-draw-cursor` disables it).
 
 ### Stereo Settings
 
@@ -209,6 +245,9 @@ python -m iw3.desktop --user admin --password 1234
 ### Local Viewer
 
 Specify the `--local-viewer` option.
+
+- `--uncap-fps`: Allows Local Viewer to render at frame rates beyond the display's refresh rate.
+- `--fit-window`: Stretches the image to fit the viewer window ignoring aspect ratio.
 
 Even if specified from the CLI, a GUI window will be displayed, so wxpython and OpenGL are required (installed from `requirements-gui.txt`).
 

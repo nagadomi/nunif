@@ -10,6 +10,7 @@ from typing import List
 
 import av
 import torch
+from av.codec.hwaccel import HWAccel
 from tqdm import tqdm
 
 from .color_transform import (
@@ -17,6 +18,7 @@ from .color_transform import (
     configure_video_codec,
     setup_color_transform,
 )
+from .decoder import VideoDecoder
 from .hwaccel import HW_DEVICES, create_hwaccel, get_compatible_hwaccel
 from .metadata import (
     AudioMetadata,
@@ -26,8 +28,10 @@ from .metadata import (
 )
 from .output_config import VideoOutputConfig
 from .utils import (
+    DEFAULT_VAAPI_DEVICE,
     LIBH264,
     get_default_video_codec,
+    is_vaapi_codec,
     pix_fmt_requires_16bit,
 )
 from .video_preprocessor import VideoPreprocessor
@@ -82,6 +86,25 @@ def try_replace(output_path_tmp, output_path):
                 raise
 
 
+def get_default_audio_codec(container_format: str | None) -> str:
+    # utvideo + flac crashes on windows media player
+    # return "flac" if container_format == "avi" else "aac"
+    return "libopus" if container_format == "webm" else "aac"
+
+
+def get_audio_output_rate(acodec: str, input_rate: int) -> int:
+    if acodec in {"opus", "libopus"}:
+        if input_rate < 16000:
+            return 16000
+        if input_rate in {16000, 24000, 48000}:
+            return input_rate
+        return 48000
+    else:
+        if input_rate < 16000:
+            return 16000
+        return input_rate
+
+
 def test_audio_copy(input_path, output_path):
     buff = io.BytesIO()
     buff.name = path.basename(output_path)
@@ -125,7 +148,6 @@ def safe_decode(packet, strict=False):
     return frames
 
 
-
 def apply_color_settings(output_stream: av.video.stream.VideoStream, output_reformatter: OutputTransform) -> None:
     ctx = output_stream.codec_context
     ctx.pix_fmt = output_reformatter.dst_pix_fmt
@@ -151,6 +173,7 @@ def process_video(
     inference_mode: bool = True,
     hwaccel: str | None = None,
     disable_software_fallback: bool = False,
+    vaapi_device: str | None = None,
 ):
     with torch.inference_mode(inference_mode):
         _process_video(
@@ -168,17 +191,52 @@ def process_video(
             device=device,
             hwaccel=hwaccel,
             disable_software_fallback=disable_software_fallback,
+            vaapi_device=vaapi_device,
         )
 
 
-def set_output_size_and_flash(container, stream, frame, unmux_packets):
-    stream.width = frame.width
-    stream.height = frame.height
-    if not stream.codec_context.is_open:
-        stream.codec_context.open(strict=False)
-    for enc_packet in unmux_packets:
-        container.mux(enc_packet)
-    unmux_packets.clear()
+def encode_and_mux_video_frame(
+    container: av.container.OutputContainer,
+    stream: av.video.stream.VideoStream,
+    frame: av.VideoFrame,
+    unmux_packets: List[av.Packet | List[av.Packet]],
+    uninitialized: bool,
+    fallback_pix_fmt: str | None = None,
+) -> bool:
+    """Encode a video frame, initializing the output stream and flushing buffered audio on first frame."""
+    if frame.pts is None:
+        # PyAV's zero-copy hwframe pass-through skips the fallback PTS assignment.
+        frame.pts = stream.codec_context.frame_num
+
+    if uninitialized:
+        stream.width = frame.width
+        stream.height = frame.height
+        if not stream.codec_context.is_open:
+            if frame.format.name == "cuda":
+                stream.pix_fmt = "cuda"
+            elif fallback_pix_fmt is not None and stream.pix_fmt == "cuda":
+                stream.pix_fmt = fallback_pix_fmt
+
+        if frame.format.name == "cuda":
+            # Defer codec open and header write until encode() adopts the first CUDA frame's hw_frames_ctx.
+            enc_packets = stream.encode(frame)
+            for enc_packet in unmux_packets:
+                container.mux(enc_packet)
+            unmux_packets.clear()
+            if enc_packets:
+                container.mux(enc_packets)
+            return False
+
+        if not stream.codec_context.is_open:
+            stream.codec_context.open(strict=False)
+        for enc_packet in unmux_packets:
+            container.mux(enc_packet)
+        unmux_packets.clear()
+
+    enc_packets = stream.encode(frame)
+    if enc_packets:
+        container.mux(enc_packets)
+    return False
 
 
 def _process_video(
@@ -196,6 +254,7 @@ def _process_video(
     device: str | torch.device,
     hwaccel: str | None,
     disable_software_fallback: bool,
+    vaapi_device: str | None = None,
 ):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -209,7 +268,10 @@ def _process_video(
     sw_format = VideoMetadata.from_file(input_path)
     hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
-        device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
+        device=hwaccel,
+        device_id=device.index,
+        disable_software_fallback=disable_software_fallback,
+        vaapi_device=vaapi_device,
     )
     output_path_tmp = make_temporary_file_path(output_path)
     input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
@@ -222,6 +284,7 @@ def _process_video(
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
     # _print_len(video_input_stream)
     audio_input_stream = audio_output_stream = None
     if len(input_container.streams.audio) > 0:
@@ -250,11 +313,20 @@ def _process_video(
     if config.state_updated is not None:
         config.state_updated(config)
 
-    video_output_stream = output_container.add_stream(config.video_codec, output_fps)
+    if is_vaapi_codec(config.video_codec):
+        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device or DEFAULT_VAAPI_DEVICE)
+        video_output_stream = output_container.add_stream(config.video_codec, output_fps, hwaccel=vaapi_hwaccel)
+    else:
+        video_output_stream = output_container.add_stream(config.video_codec, output_fps)
     apply_color_settings(video_output_stream, output_reformatter)
 
     video_output_stream.thread_type = "AUTO"
-    video_output_stream.pix_fmt = config.pix_fmt
+    if is_vaapi_codec(config.video_codec):
+        video_output_stream.pix_fmt = "vaapi"
+    elif output_reformatter.cuda_context is not None:
+        video_output_stream.pix_fmt = "cuda"
+    else:
+        video_output_stream.pix_fmt = config.pix_fmt
 
     video_output_stream.options = config.options
     video_preprocessor = VideoPreprocessor(
@@ -274,24 +346,24 @@ def _process_video(
     if config.output_width is not None and config.output_height is not None:
         video_output_stream.width = config.output_width
         video_output_stream.height = config.output_height
-        uninitialized = False
+        if output_reformatter.cuda_context is None:
+            uninitialized = False
 
-    # utvideo + flac crashes on windows media player
-    # default_acodec = "flac" if config.container_format == "avi" else "aac"
-    default_acodec = "aac"
+    default_acodec = get_default_audio_codec(config.container_format)
     if audio_input_stream is not None:
+        audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
         if audio_input_stream.rate < 16000:
-            audio_output_stream = output_container.add_stream(default_acodec, 16000)
+            audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
             audio_copy = False
         elif start_time is not None:
-            audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
+            audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
             audio_copy = False
         else:
             if test_audio_copy(input_path, output_path):
                 audio_output_stream = output_container.add_stream_from_template(template=audio_input_stream)
                 audio_copy = True
             else:
-                audio_output_stream = output_container.add_stream(default_acodec, audio_input_stream.rate)
+                audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                 audio_copy = False
 
     desc = title if title else input_path
@@ -306,30 +378,29 @@ def _process_video(
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
     streams = [s for s in [video_input_stream, audio_input_stream] if s is not None]
 
-    enable_gc_collect = hwaccel in {"cuda"}
+    enable_gc_collect = hwaccel in {"cuda"} or output_reformatter.cuda_context is not None
     frame_count = 0
-    GC_INTERVAL = 32
+    GC_INTERVAL = 512
     try:
         for packet in input_container.demux(streams):
             if packet.pts is not None:
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
             if packet.stream.type == "video":
-                for frame in safe_decode(packet, strict=disable_software_fallback):
+                for frame in video_decoder.decode(packet):
                     for out_frame in video_preprocessor.update(frame):
                         if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
-                            gc.collect()
+                            gc.collect(0)
                         for new_frame in get_new_frames(frame_callback(out_frame)):
                             reformatted_frame = output_reformatter(new_frame)
-                            if uninitialized:
-                                set_output_size_and_flash(
-                                    output_container, video_output_stream, reformatted_frame, unmux_packets
-                                )
-                                uninitialized = False
-                            # print(video_input_stream.format, new_frame.format, reformatted_frame.format)
-                            enc_packets = video_output_stream.encode(reformatted_frame)
-                            if enc_packets:
-                                output_container.mux(enc_packets)
+                            uninitialized = encode_and_mux_video_frame(
+                                output_container,
+                                video_output_stream,
+                                reformatted_frame,
+                                unmux_packets,
+                                uninitialized,
+                                fallback_pix_fmt=config.pix_fmt,
+                            )
                             pbar.update(1)
             elif packet.stream.type == "audio":
                 assert isinstance(audio_output_stream, av.AudioStream)
@@ -358,34 +429,38 @@ def _process_video(
         for out_frame in video_preprocessor.flush():
             for new_frame in get_new_frames(frame_callback(out_frame)):
                 if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
-                    gc.collect()
+                    gc.collect(0)
 
                 ref_frame = output_reformatter(new_frame)
-                if uninitialized:
-                    set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
-                    uninitialized = False
-
-                enc_packets = video_output_stream.encode(ref_frame)
-                if enc_packets:
-                    output_container.mux(enc_packets)
+                uninitialized = encode_and_mux_video_frame(
+                    output_container,
+                    video_output_stream,
+                    ref_frame,
+                    unmux_packets,
+                    uninitialized,
+                    fallback_pix_fmt=config.pix_fmt,
+                )
                 pbar.update(1)
 
         for new_frame in get_new_frames(frame_callback(None)):
             if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
-                gc.collect()
+                gc.collect(0)
 
             ref_frame = output_reformatter(new_frame)
-            if uninitialized:
-                set_output_size_and_flash(output_container, video_output_stream, ref_frame, unmux_packets)
-                uninitialized = False
-            enc_packets = video_output_stream.encode(ref_frame)
-            if enc_packets:
-                output_container.mux(enc_packets)
+            uninitialized = encode_and_mux_video_frame(
+                output_container,
+                video_output_stream,
+                ref_frame,
+                unmux_packets,
+                uninitialized,
+                fallback_pix_fmt=config.pix_fmt,
+            )
             pbar.update(1)
 
-        enc_packets = video_output_stream.encode(None)
-        if enc_packets:
-            output_container.mux(enc_packets)
+        if not uninitialized:
+            enc_packets = video_output_stream.encode(None)
+            if enc_packets:
+                output_container.mux(enc_packets)
     except KeyboardInterrupt:
         output_reformatter.synchronize()
         pbar.close()
@@ -424,14 +499,14 @@ def generate_video(
     suspend_event=None,
     tqdm_fn=None,
     device="cpu",
+    vaapi_device=None,
 ):
     if isinstance(device, str):
         device = torch.device(device)
 
     output_path_tmp = path.join(path.dirname(output_path), "_tmp_" + path.basename(output_path))
     output_container = av.open(output_path_tmp, "w", options=config.container_options)
-    assert config.output_width is not None and config.output_height is not None
-    output_size = config.output_width, config.output_height
+    unmux_packets = []
 
     if not config.container_format:
         config.container_format = path.splitext(output_path)[-1].lower()[1:]
@@ -449,13 +524,29 @@ def generate_video(
     if config.state_updated is not None:
         config.state_updated(config)
 
-    video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps))
+    if is_vaapi_codec(config.video_codec):
+        vaapi_hwaccel = HWAccel("vaapi", device=vaapi_device or DEFAULT_VAAPI_DEVICE)
+        video_output_stream = output_container.add_stream(
+            config.video_codec, convert_fps_fraction(config.fps), hwaccel=vaapi_hwaccel
+        )
+    else:
+        video_output_stream = output_container.add_stream(config.video_codec, convert_fps_fraction(config.fps))
     apply_color_settings(video_output_stream, output_reformatter)
 
     video_output_stream.thread_type = "AUTO"
-    video_output_stream.pix_fmt = config.pix_fmt
-    video_output_stream.width = output_size[0]
-    video_output_stream.height = output_size[1]
+    if is_vaapi_codec(config.video_codec):
+        video_output_stream.pix_fmt = "vaapi"
+    elif output_reformatter.cuda_context is not None:
+        video_output_stream.pix_fmt = "cuda"
+    else:
+        video_output_stream.pix_fmt = config.pix_fmt
+
+    uninitialized = (
+        config.output_width is None or config.output_height is None or output_reformatter.cuda_context is not None
+    )
+    if config.output_width is not None and config.output_height is not None:
+        video_output_stream.width = config.output_width
+        video_output_stream.height = config.output_height
 
     video_output_stream.options = config.options
 
@@ -464,15 +555,17 @@ def generate_video(
         if len(input_container.streams.audio) > 0:
             # has audio stream
             audio_input_stream = input_container.streams.audio[0]
+            default_acodec = get_default_audio_codec(config.container_format)
+            audio_rate = get_audio_output_rate(default_acodec, audio_input_stream.rate)
             if audio_input_stream.rate < 16000:
-                audio_output_stream = output_container.add_stream("aac", 16000)
+                audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                 audio_copy = False
             else:
                 if test_audio_copy(audio_file, output_path):
                     audio_output_stream = output_container.add_stream_from_template(template=audio_input_stream)
                     audio_copy = True
                 else:
-                    audio_output_stream = output_container.add_stream("aac", audio_input_stream.rate)
+                    audio_output_stream = output_container.add_stream(default_acodec, audio_rate)
                     audio_copy = False
 
             tqdm_fn = tqdm_fn or tqdm
@@ -492,13 +585,19 @@ def generate_video(
                 if packet.dts is not None:
                     if audio_copy:
                         packet.stream = audio_output_stream
-                        output_container.mux(packet)
+                        if uninitialized:
+                            unmux_packets.append(packet)
+                        else:
+                            output_container.mux(packet)
                     else:
                         for frame in safe_decode(packet):
                             frame.pts = None
                             enc_packet = audio_output_stream.encode(frame)
                             if enc_packet:
-                                output_container.mux(enc_packet)
+                                if uninitialized:
+                                    unmux_packets.append(enc_packet)
+                                else:
+                                    output_container.mux(enc_packet)
                 if suspend_event is not None:
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
@@ -506,7 +605,10 @@ def generate_video(
             pbar.close()
             try:
                 for packet in audio_output_stream.encode(None):
-                    output_container.mux(packet)
+                    if uninitialized:
+                        unmux_packets.append(packet)
+                    else:
+                        output_container.mux(packet)
             except ValueError:
                 pass
             input_container.close()
@@ -519,23 +621,34 @@ def generate_video(
     ncols = len(desc) + 60
     tqdm_fn = tqdm_fn or tqdm
     pbar = tqdm_fn(desc=desc, total=total_frames, ncols=ncols)
+    enable_gc_collect = output_reformatter.cuda_context is not None
+    frame_count = 0
+    GC_INTERVAL = 512
     for frame in frame_generator():
         if frame is None:
             break
         for new_frame in get_new_frames(frame):
+            if enable_gc_collect and (frame_count := frame_count + 1) % GC_INTERVAL == 0:
+                gc.collect(0)
             new_frame = output_reformatter(new_frame)
-            enc_packet = video_output_stream.encode(new_frame)
-            if enc_packet:
-                output_container.mux(enc_packet)
+            uninitialized = encode_and_mux_video_frame(
+                output_container,
+                video_output_stream,
+                new_frame,
+                unmux_packets,
+                uninitialized,
+                fallback_pix_fmt=config.pix_fmt,
+            )
             pbar.update(1)
         if suspend_event is not None:
             suspend_event.wait()
         if stop_event is not None and stop_event.is_set():
             break
 
-    packet = video_output_stream.encode(None)
-    if packet:
-        output_container.mux(packet)
+    if not uninitialized:
+        packet = video_output_stream.encode(None)
+        if packet:
+            output_container.mux(packet)
 
     output_reformatter.synchronize()
     pbar.close()
@@ -569,6 +682,7 @@ def hook_frame(
     device="cpu",
     keyframe_only: bool = False,
     min_interval_sec: float = 0.0,
+    vaapi_device: str | None = None,
 ):
     if isinstance(start_time, str):
         start_time = parse_time(start_time)
@@ -582,7 +696,10 @@ def hook_frame(
     sw_format = VideoMetadata.from_file(input_path)
     hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
-        device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
+        device=hwaccel,
+        device_id=device.index,
+        disable_software_fallback=disable_software_fallback,
+        vaapi_device=vaapi_device,
     )
     input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
 
@@ -594,8 +711,9 @@ def hook_frame(
 
     video_input_stream = input_container.streams.video[0]
     video_input_stream.thread_type = "AUTO"
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
     if keyframe_only:
-        video_input_stream.codec_context.skip_frame = "NONKEY"
+        video_decoder.skip_frame = "NONKEY"
 
     config = config_callback(sw_format)
     if keyframe_only:
@@ -642,25 +760,26 @@ def hook_frame(
         total = frames_val if isinstance(frames_val, int) else frames_val[0]
     pbar = tqdm_fn(desc=desc, total=total, ncols=ncols)
 
-    prev_sec = start_time if start_time is not None else 0.0
+    prev_sec = None
     try:
         for i, packet in enumerate(input_container.demux([video_input_stream])):
             if packet.pts is not None:
                 if end_time is not None and packet.stream.type == "video" and end_time < packet.pts * packet.time_base:
                     break
-            for frame in safe_decode(packet, strict=disable_software_fallback):
+            for frame in video_decoder.decode(packet):
                 if keyframe_only:
                     current_sec = float(frame.pts * video_input_stream.time_base)
-                    if current_sec - prev_sec < min_interval_sec:
+                    if prev_sec is not None and current_sec - prev_sec < min_interval_sec:
                         continue
 
                     for out_frame in video_preprocessor.update(frame):
                         consume_generator(frame_callback(out_frame))
 
-                    progress = current_sec - prev_sec
-                    if progress > 1.0:
-                        pbar.update(math.floor(progress))
-                        prev_sec = current_sec
+                    if prev_sec is not None:
+                        progress = current_sec - prev_sec
+                        if progress > 1.0:
+                            pbar.update(math.floor(progress))
+                    prev_sec = current_sec
                 else:
                     for out_frame in video_preprocessor.update(frame):
                         consume_generator(frame_callback(out_frame))
@@ -696,6 +815,7 @@ def sample_frames(
     hwaccel=None,
     device="cpu",
     disable_software_fallback=False,
+    vaapi_device=None,
 ):
     assert offset < 0.5, "offset must be less than 0.5"
     if isinstance(device, str):
@@ -704,7 +824,10 @@ def sample_frames(
     sw_format = VideoMetadata.from_file(input_path)
     hwaccel = get_compatible_hwaccel(hwaccel, sw_pix_fmt=sw_format.format.name, device=device)
     input_hwaccel = create_hwaccel(
-        device=hwaccel, device_id=device.index, disable_software_fallback=disable_software_fallback
+        device=hwaccel,
+        device_id=device.index,
+        disable_software_fallback=disable_software_fallback,
+        vaapi_device=vaapi_device,
     )
     input_container = av.open(input_path, mode="r", hwaccel=input_hwaccel)
 
@@ -712,6 +835,7 @@ def sample_frames(
         raise ValueError("No video stream")
 
     video_input_stream = input_container.streams.video[0]
+    video_decoder = VideoDecoder(video_input_stream, strict=disable_software_fallback)
 
     num_frames, duration = sw_format.guess_frames(return_duration=True)
     if duration <= 0 or num_frames <= 0:
@@ -743,11 +867,11 @@ def sample_frames(
         # Full decoding
         step_sec = duration / num_samples
         if keyframe_only:
-            video_input_stream.codec_context.skip_frame = "NONKEY"
+            video_decoder.skip_frame = "NONKEY"
 
         for packet in input_container.demux([video_input_stream]):
             packet_count += 1
-            for frame in safe_decode(packet, strict=disable_software_fallback):
+            for frame in video_decoder.decode(packet):
                 frame_count += 1
                 if frame.pts is None:
                     continue
@@ -770,7 +894,7 @@ def sample_frames(
         seek_offset = int(duration * offset * av.time_base)
 
         if step_sec > 4 or keyframe_only:
-            video_input_stream.codec_context.skip_frame = "NONKEY"
+            video_decoder.skip_frame = "NONKEY"
             keyframe_only = True
         else:
             keyframe_only = False
@@ -783,7 +907,7 @@ def sample_frames(
                     suspend_event.wait()
                 if stop_event is not None and stop_event.is_set():
                     break
-                for frame in safe_decode(packet, strict=disable_software_fallback):
+                for frame in video_decoder.decode(packet):
                     frame_count += 1
                     if frame.pts is None:
                         continue
@@ -806,6 +930,7 @@ def sample_frames(
             if pos == 0 or pos == prev_seek_pos:
                 pos += av.time_base
             input_container.seek(pos, backward=True, any_frame=False)
+            video_decoder.flush_buffers()
             prev_seek_pos = pos
             sample_count += sample_one()
             if stop_event is not None and stop_event.is_set():

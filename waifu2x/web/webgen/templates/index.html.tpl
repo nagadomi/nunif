@@ -5,12 +5,8 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <link rel="shortcut icon" href="favicon.ico">
     <meta name="viewport" content="initial-scale=1.0,width=device-width">
-    <link href="//cdnjs.cloudflare.com/ajax/libs/normalize/3.0.3/normalize.min.css" rel="stylesheet" type="text/css">
     <link href="style.css" rel="stylesheet" type="text/css">
     <link href="mobile.css" rel="stylesheet" type="text/css" media="screen and (max-width: 768px) and (min-width: 0px)">
-    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/URI.js/1.18.1/URI.min.js"></script>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
     <script src="ui.js"></script>
     <title>waifu2x</title>
@@ -97,6 +93,10 @@
         /
         <a href="index.bg.html">
           Български
+        </a>
+        /
+        <a href="index.id.html">
+          Bahasa Indonesia
         </a>
       </div>
       <p>{{description}}</p>
@@ -231,11 +231,11 @@
         </div>
         <div id="turnstile_container">
         </div>
-        % if button_convert:
+        {% if button_convert %}
           <input id="submit-button" type="submit" class="button" value="{{button_convert}}">
-        % else:
+        {% else %}
           <input id="submit-button" type="submit" class="button">
-        % end
+        {% endif %}
       </form>
       <div id="error_message"></div>
       <div id="result_wrapper" style="display: none">

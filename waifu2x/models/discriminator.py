@@ -1,6 +1,7 @@
 import torch
-from .u3c import U3ConditionalDiscriminator
+
 from .l3v1c import L3V1ConditionalDiscriminator
+from .u3c import U3ConditionalDiscriminator
 
 
 def _test():

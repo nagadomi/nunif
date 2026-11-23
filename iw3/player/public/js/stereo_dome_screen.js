@@ -1,11 +1,12 @@
 import * as THREE from "three";
 import { LIMITS, STEREO_FORMATS, VR_CONFIG, getSettingDefault } from "./constants.js";
-import { StereoBaseScreen, COMMON_FRAGMENT_HEADER, COLOR_CORRECTION_SNIPPET } from "./stereo_base_screen.js";
+import { StereoBaseScreen, COMMON_FRAGMENT_HEADER, CHROMAKEY_SNIPPET, COLOR_CORRECTION_SNIPPET } from "./stereo_base_screen.js";
 
 // --- Dome Specific Shader Snippets ---
 
 const VERTEX_HEADER = `
     varying vec2 vFadeUv;
+    uniform float uFlipTexY;
     uniform vec4 uTiling;
 `;
 
@@ -13,23 +14,28 @@ const VERTEX_UV_PATCH = `
     #include <uv_vertex>
     vFadeUv = uv;
     vMapUv = uv * uTiling.xy + uTiling.zw;
+    if ( uFlipTexY > 0.5 ) {
+        vMapUv.y = 1.0 - vMapUv.y;
+    }
 `;
 
 const FRAGMENT_HEADER = `
     varying vec2 vFadeUv;
 ` + COMMON_FRAGMENT_HEADER;
 
-// Custom map patch for Dome: Blackout the back half and handle clipping
+// Custom map patch for Dome: Blackout or discard the back half and handle clipping
 const DOME_FRAGMENT_MAP_PATCH = `
     #include <map_fragment>
-
+` + CHROMAKEY_SNIPPET + `
     // --- VR180 Clipping Logic ---
-    if (vFadeUv.x > 0.5) {
-        diffuseColor.rgb = vec3(0.0);
-    }
-    
-    if (vFadeUv.y < 0.001 || vFadeUv.y > 0.999) {
-        diffuseColor.rgb = vec3(0.0);
+    if ( uChromaEnabled > 0.5 || uARMode > 0.5 ) {
+        if ( vFadeUv.x > 0.5 || vFadeUv.y < 0.001 || vFadeUv.y > 0.999 ) {
+            discard;
+        }
+    } else {
+        if ( vFadeUv.x > 0.5 || vFadeUv.y < 0.001 || vFadeUv.y > 0.999 ) {
+            diffuseColor.rgb = vec3(0.0);
+        }
     }
 ` + COLOR_CORRECTION_SNIPPET;
 

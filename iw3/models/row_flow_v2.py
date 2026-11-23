@@ -1,7 +1,9 @@
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from collections import OrderedDict
+
 from nunif.models import I2IBaseModel, register_model
 from nunif.modules.replication_pad2d import ReplicationPad2d
 
@@ -12,32 +14,40 @@ class RowFlowV2(I2IBaseModel):
 
     def __init__(self):
         super(RowFlowV2, self).__init__(locals(), scale=1, offset=28, in_channels=8, blend_size=4)
-        self.feature = nn.Sequential(OrderedDict([
-            ("pad0", ReplicationPad2d((1, 1, 0, 0))),
-            ("0", nn.Conv2d(3, 16, kernel_size=(1, 3), stride=1, padding=0)),
-            ("1", nn.ReLU(inplace=True))
-        ]))
+        self.feature = nn.Sequential(
+            OrderedDict(
+                [
+                    ("pad0", ReplicationPad2d((1, 1, 0, 0))),
+                    ("0", nn.Conv2d(3, 16, kernel_size=(1, 3), stride=1, padding=0)),
+                    ("1", nn.ReLU(inplace=True)),
+                ]
+            )
+        )
         self.non_overlap = nn.Conv2d(16, 1, kernel_size=1, stride=1, padding=0)
-        self.overlap_residual = nn.Sequential(OrderedDict([
-            ("pad0", ReplicationPad2d((4, 4, 0, 0))),
-            ("0", nn.Conv2d(16, 16, kernel_size=(1, 9), stride=1, padding=0)),
-            ("1", nn.ReLU(inplace=True)),
-            ("pad1", ReplicationPad2d((4, 4, 0, 0))),
-            ("2", nn.Conv2d(16, 32, kernel_size=(1, 9), stride=1, padding=0)),
-            ("3", nn.ReLU(inplace=True)),
-            ("pad2", ReplicationPad2d((4, 4, 0, 0))),
-            ("4", nn.Conv2d(32, 32, kernel_size=(1, 9), stride=1, padding=0)),
-            ("5", nn.ReLU(inplace=True)),
-            ("pad3", ReplicationPad2d((1, 1, 1, 1))),
-            ("6", nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=0)),
-        ]))
+        self.overlap_residual = nn.Sequential(
+            OrderedDict(
+                [
+                    ("pad0", ReplicationPad2d((4, 4, 0, 0))),
+                    ("0", nn.Conv2d(16, 16, kernel_size=(1, 9), stride=1, padding=0)),
+                    ("1", nn.ReLU(inplace=True)),
+                    ("pad1", ReplicationPad2d((4, 4, 0, 0))),
+                    ("2", nn.Conv2d(16, 32, kernel_size=(1, 9), stride=1, padding=0)),
+                    ("3", nn.ReLU(inplace=True)),
+                    ("pad2", ReplicationPad2d((4, 4, 0, 0))),
+                    ("4", nn.Conv2d(32, 32, kernel_size=(1, 9), stride=1, padding=0)),
+                    ("5", nn.ReLU(inplace=True)),
+                    ("pad3", ReplicationPad2d((1, 1, 1, 1))),
+                    ("6", nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=0)),
+                ]
+            )
+        )
         self.register_buffer("delta_scale", torch.tensor(1.0 / 127.0))
         self.pre_pad = ReplicationPad2d((28,) * 4)
         self.delta_output = False
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d,)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
@@ -61,9 +71,21 @@ class RowFlowV2(I2IBaseModel):
         return z.to(output_dtype)
 
     def _forward_default(self, x):
-        rgb = x[:, 0:3, :, ]
-        grid = x[:, 6:8, :, ]
-        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        rgb = x[
+            :,
+            0:3,
+            :,
+        ]
+        grid = x[
+            :,
+            6:8,
+            :,
+        ]
+        x = x[
+            :,
+            3:6,
+            :,
+        ]  # depth + diverdence feature + convergence
         if self.training:
             delta1, delta2 = self._forward(x)
             z1 = self._warp(rgb, grid, delta1, self.delta_scale)
@@ -75,7 +97,7 @@ class RowFlowV2(I2IBaseModel):
             delta = self._forward(x)[1]
             z = self._warp(rgb, grid, delta, self.delta_scale)
             z = F.pad(z, (-28, -28, -28, -28))
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def _forward_delta_only(self, x):
         assert not self.training
@@ -93,8 +115,10 @@ class RowFlowV2(I2IBaseModel):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     B = 4
     N = 100
@@ -113,7 +137,7 @@ def _bench(name):
         for _ in range(N):
             z = model(x)
     torch.cuda.synchronize()
-    print(1 / ((time.time() - t)/(B * N)), "FPS")
+    print(1 / ((time.time() - t) / (B * N)), "FPS")
 
 
 if __name__ == "__main__":

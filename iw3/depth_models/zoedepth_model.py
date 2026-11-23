@@ -20,6 +20,13 @@ MODEL_FILES = {
     "ZoeD_Any_N": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_metric_depth_indoor.pt"),
     "ZoeD_Any_K": path.join(HUB_MODEL_DIR, "checkpoints", "depth_anything_metric_depth_outdoor.pt"),
 }
+MODEL_URLS = {
+    "ZoeD_N": "https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt",
+    "ZoeD_K": "https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_K.pt",
+    "ZoeD_NK": "https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_NK.pt",
+    "ZoeD_Any_N": "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints_metric_depth/depth_anything_metric_depth_indoor.pt?download=true",
+    "ZoeD_Any_K": "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints_metric_depth/depth_anything_metric_depth_outdoor.pt?download=true",
+}
 DEPTH_ANYTHING_MODELS = {"ZoeD_Any_N": "indoor", "ZoeD_Any_K": "outdoor"}
 
 
@@ -96,6 +103,7 @@ def batch_infer(
     output_device="cpu",
     device=None,
     edge_dilation=0,
+    alpha=None,
     **kwargs,
 ):
 
@@ -129,6 +137,8 @@ def batch_infer(
             out = torch.cat([out, out2], dim=0)
 
     out = out[:, :, pad_h:-pad_h, pad_w:-pad_w]
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, flip_aug=flip_aug, is_metric=True)
     if edge_dilation_is_enabled(edge_dilation):
         # NOTE: dilate_edge() was developed for DepthAnything and it is not inverted depth
         #       so must be calculated in negative space.
@@ -138,13 +148,8 @@ def batch_infer(
         out = -out
 
     if flip_aug:
-        if batch:
-            n = out.shape[0] // 2
-            z = torch.empty((n, *out.shape[1:]), device=out.device)
-            for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 0.5
-        else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 0.5
+        n = out.shape[0] // 2
+        z = (out[:n] + torch.flip(out[n:], dims=[3])) * 0.5
     else:
         z = out
     if not batch:
@@ -240,21 +245,22 @@ class ZoeDepthModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        if not torch.is_tensor(x):
-            x = TF.to_tensor(x).to(self.device)
-        assert torch.is_tensor(x)
-        return batch_infer(
+        x_in, alpha_in, is_batch, orig_batch_size = self._prepare_infer_input(x, alpha=alpha)
+        out = batch_infer(
             self.model,
-            x,
+            x_in,
             flip_aug=tta,
             low_vram=low_vram,
             enable_amp=enable_amp,
-            output_device=x.device,
-            device=x.device,
+            output_device=x_in.device,
+            device=x_in.device,
             edge_dilation=edge_dilation,
+            alpha=alpha_in,
         )
+        return self._restore_infer_output(out, is_batch=is_batch, orig_batch_size=orig_batch_size)
 
     order: int = 10
 
@@ -281,6 +287,10 @@ class ZoeDepthModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     @classmethod
     def is_limit_resolution_supported(cls, model_type: str) -> bool:

@@ -33,6 +33,7 @@ def detect_boundary(
     tqdm_title=None,
     hwaccel=None,
     disable_software_fallback=False,
+    vaapi_device=None,
 ):
     assert window_size % padding_size == 0 and window_size // padding_size >= 3  # pad1 + frames + pad2
 
@@ -97,6 +98,7 @@ def detect_boundary(
         hwaccel=hwaccel,
         disable_software_fallback=disable_software_fallback,
         device=device,
+        vaapi_device=vaapi_device,
     )
     if stop_event is not None and stop_event.is_set():
         return set()

@@ -1,3 +1,5 @@
+from typing import Literal, overload
+
 import torch
 
 from nunif.models.utils import compile_model
@@ -14,6 +16,7 @@ from .inpaint_utils import (
 MASK_MLBW_THRESHOLD = 0.15
 
 
+@overload
 def apply_divergence_mlbw(
     model: torch.nn.Module,
     x: torch.Tensor,
@@ -23,9 +26,40 @@ def apply_divergence_mlbw(
     synthetic_view: str,
     preserve_screen_border: bool = False,
     enable_amp: bool = True,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    return_mask: Literal[True] = True,
+    clear_holes: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]: ...
+
+
+@overload
+def apply_divergence_mlbw(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    depth: torch.Tensor,
+    divergence: float,
+    convergence: float | torch.Tensor,
+    synthetic_view: str,
+    preserve_screen_border: bool = False,
+    enable_amp: bool = True,
+    return_mask: Literal[False] = False,
+    clear_holes: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]: ...
+
+
+def apply_divergence_mlbw(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    depth: torch.Tensor,
+    divergence: float,
+    convergence: float | torch.Tensor,
+    synthetic_view: str,
+    preserve_screen_border: bool = False,
+    enable_amp: bool = True,
+    return_mask: bool = True,
+    clear_holes: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None] | tuple[torch.Tensor, torch.Tensor]:
     if synthetic_view == "both":
-        left_eye, left_mask = apply_divergence_nn_delta_weight(
+        left_res = apply_divergence_nn_delta_weight(
             model,
             x,
             depth,
@@ -35,9 +69,10 @@ def apply_divergence_mlbw(
             shift=-1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
-            return_mask=True,
+            return_mask=return_mask,
+            clear_holes=clear_holes,
         )
-        right_eye, right_mask = apply_divergence_nn_delta_weight(
+        right_res = apply_divergence_nn_delta_weight(
             model,
             x,
             depth,
@@ -47,11 +82,18 @@ def apply_divergence_mlbw(
             shift=1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
-            return_mask=True,
+            return_mask=return_mask,
+            clear_holes=clear_holes,
         )
+        if return_mask:
+            left_eye, left_mask = left_res
+            right_eye, right_mask = right_res
+        else:
+            left_eye, right_eye = left_res, right_res
+            left_mask = right_mask = None
     elif synthetic_view == "right":
         left_eye, left_mask = x, None
-        right_eye, right_mask = apply_divergence_nn_delta_weight(
+        right_res = apply_divergence_nn_delta_weight(
             model,
             x,
             depth,
@@ -61,10 +103,16 @@ def apply_divergence_mlbw(
             shift=1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
-            return_mask=True,
+            return_mask=return_mask,
+            clear_holes=clear_holes,
         )
+        if return_mask:
+            right_eye, right_mask = right_res
+        else:
+            right_eye = right_res
+            right_mask = None
     elif synthetic_view == "left":
-        left_eye, left_mask = apply_divergence_nn_delta_weight(
+        left_res = apply_divergence_nn_delta_weight(
             model,
             x,
             depth,
@@ -74,11 +122,20 @@ def apply_divergence_mlbw(
             shift=-1,
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
-            return_mask=True,
+            return_mask=return_mask,
+            clear_holes=clear_holes,
         )
+        if return_mask:
+            left_eye, left_mask = left_res
+        else:
+            left_eye = left_res
+            left_mask = None
         right_eye, right_mask = x, None
 
-    return left_eye, right_eye, left_mask, right_mask
+    if return_mask:
+        return left_eye, right_eye, left_mask, right_mask
+    else:
+        return left_eye, right_eye
 
 
 class MLBWInpaintImage(BaseImageInpaint):
@@ -108,6 +165,29 @@ class MLBWInpaintImage(BaseImageInpaint):
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
         )
+
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str,
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        ret = apply_divergence_mlbw(
+            self.mask_mlbw,
+            alpha,
+            depth,
+            divergence=divergence,
+            convergence=convergence,
+            synthetic_view=synthetic_view,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp,
+            return_mask=False,
+        )
+        return ret[0], ret[1]
 
     def preprocess_mask(
         self,
@@ -176,6 +256,29 @@ class MLBWInpaintVideo(BaseVideoInpaint):
             preserve_screen_border=preserve_screen_border,
             enable_amp=enable_amp,
         )
+
+    def warp_alpha(
+        self,
+        alpha: torch.Tensor,
+        depth: torch.Tensor,
+        divergence: float,
+        convergence: float | torch.Tensor,
+        synthetic_view: str,
+        preserve_screen_border: bool = False,
+        enable_amp: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        ret = apply_divergence_mlbw(
+            self.mask_mlbw,
+            alpha,
+            depth,
+            divergence=divergence,
+            convergence=convergence,
+            synthetic_view=synthetic_view,
+            preserve_screen_border=preserve_screen_border,
+            enable_amp=enable_amp,
+            return_mask=False,
+        )
+        return ret[0], ret[1]
 
     def preprocess_mask(
         self,

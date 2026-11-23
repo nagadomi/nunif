@@ -1,22 +1,23 @@
 import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
-from nunif.models import Model
-from nunif.modules.pad import get_crop_size, get_fit_pad_size
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
-from nunif.models import register_model
-from nunif.modules.attention import SEBlock
-from nunif.modules.res_block import ResBlockGNLReLU
-from nunif.modules.compile_wrapper import conditional_compile
-from nunif.modules.init import basic_module_init
-from nunif.modules.fourier_unit import FourierUnit
+
 from iw3.dilation import dilate
+from nunif.models import Model, register_model
+from nunif.modules.attention import SEBlock
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.fourier_unit import FourierUnit
+from nunif.modules.init import basic_module_init
+from nunif.modules.pad import get_crop_size, get_fit_pad_size
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive, replication_pad2d_naive
+from nunif.modules.res_block import ResBlockGNLReLU
 
 
 def normalize(x):
-    return x * 2. - 1.
+    return x * 2.0 - 1.0
 
 
 def modcrop(x, n):
@@ -56,12 +57,16 @@ class ImageToCondition(nn.Module):
             nn.AdaptiveAvgPool2d((4, 4)),
         )
         self.aggregate = nn.Linear(embed_dim * 16, embed_dim, bias=True)
-        self.fc = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(embed_dim, embed_dim, bias=True),
-                nn.ReLU(inplace=True),
-                spectral_norm(nn.Linear(embed_dim, out_channels, bias=True)))
-            for out_channels in outputs])
+        self.fc = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(embed_dim, embed_dim, bias=True),
+                    nn.ReLU(inplace=True),
+                    spectral_norm(nn.Linear(embed_dim, out_channels, bias=True)),
+                )
+                for out_channels in outputs
+            ]
+        )
         basic_module_init(self)
 
     @conditional_compile("NUNIF_TRAIN")
@@ -101,7 +106,8 @@ class L3Discriminator(Discriminator):
             ResBlockGNLReLU(256, 512, bias=False),
             SEBlock(512, bias=True),
             ReplicationPad2dNaive((1,) * 4, detach=True),
-            spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0)))
+            spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=0)),
+        )
         basic_module_init(self)
 
     @conditional_compile("NUNIF_TRAIN")
@@ -147,15 +153,18 @@ class L3ConditionalDiscriminator(L3Discriminator):
 class FFCBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.ffc = FourierUnit(in_channels, in_channels,
-                               activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
-                               norm_layer=lambda dim: nn.GroupNorm(32, dim),
-                               residual=False)
+        self.ffc = FourierUnit(
+            in_channels,
+            in_channels,
+            activation_layer=lambda dim: nn.LeakyReLU(0.2, inplace=True),
+            norm_layer=lambda dim: nn.GroupNorm(32, dim),
+            residual=False,
+        )
         self.fusion = nn.Sequential(
             nn.Conv2d(in_channels * 2, in_channels, kernel_size=1, stride=1, padding=0),
             nn.LeakyReLU(0.2, inplace=True),
             ReplicationPad2dNaive((1,) * 4, detach=True),
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=0)
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=0),
         )
 
     def forward(self, x):
@@ -175,13 +184,11 @@ class FFCDiscriminator(Discriminator):
             nn.GroupNorm(32, 64),
             nn.LeakyReLU(0.2, inplace=True),
             FFCBlock(64),
-
             ReplicationPad2dNaive((1,) * 4, detach=True),
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 128),
             nn.LeakyReLU(0.2, inplace=True),
             FFCBlock(128),
-
             ReplicationPad2dNaive((1,) * 4, detach=True),
             nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=0),
             nn.GroupNorm(32, 256),
@@ -226,9 +233,7 @@ class FFCEnsembleDiscriminator(Discriminator):
         self.indexes = list(range(N))
         self.index = 0
 
-        self.ffc = nn.ModuleList([
-            FFCDiscriminator() for i in range(N)
-        ])
+        self.ffc = nn.ModuleList([FFCDiscriminator() for i in range(N)])
 
     def round(self):
         # called from the trainer at every iteration.
@@ -253,9 +258,9 @@ class L3CEnsembleDiscriminator(Discriminator):
         self.indexes = list(range(N))
         self.index = 0
 
-        self.l3c = nn.ModuleList([
-            L3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels) for i in range(N)
-        ])
+        self.l3c = nn.ModuleList(
+            [L3ConditionalDiscriminator(in_channels=in_channels, out_channels=out_channels) for i in range(N)]
+        )
 
     def round(self):
         # called from the trainer at every iteration.
@@ -277,12 +282,14 @@ class L3CFFCEnsembleDiscriminator(Discriminator):
         self.indexes = list(range(N))
         self.index = 0
 
-        self.desc = nn.ModuleList([
-            L3ConditionalDiscriminator(),
-            L3ConditionalDiscriminator(),
-            FFCDiscriminator(),
-            FFCDiscriminator(),
-        ])
+        self.desc = nn.ModuleList(
+            [
+                L3ConditionalDiscriminator(),
+                L3ConditionalDiscriminator(),
+                FFCDiscriminator(),
+                FFCDiscriminator(),
+            ]
+        )
 
     def round(self):
         # called from the trainer at every iteration.
@@ -294,6 +301,7 @@ class L3CFFCEnsembleDiscriminator(Discriminator):
 
 def _test(name):
     from nunif.models import create_model
+
     device = "cuda"
     model = create_model(name).to(device).eval()
     x = torch.zeros((4, 3, 256, 256)).to(device)

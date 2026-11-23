@@ -2,6 +2,8 @@ import contextlib
 
 import torch
 
+IS_ROCM: bool = getattr(torch.version, "hip", None) is not None
+
 
 def mps_is_available():
     return torch.backends.mps.is_available()
@@ -90,6 +92,9 @@ class DummyStream:
     def wait_event(self, event):
         pass
 
+    def record_event(self, event=None):
+        return None
+
     def __enter__(self):
         pass
 
@@ -122,6 +127,16 @@ def create_event(device):
         return torch.xpu.Event()
     else:
         return None
+
+
+def record_stream(tensor, stream):
+    if (
+        stream is not None
+        and not isinstance(stream, DummyStream)
+        and tensor.device.type in {"cuda", "xpu"}
+        and tensor.device == stream.device
+    ):
+        tensor.record_stream(stream)
 
 
 def device_context(device):

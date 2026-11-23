@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..device import IS_ROCM
 from .attention_bias import (
     WindowDistanceScoreBias,
     WindowRelativeScoreBias,
@@ -153,7 +154,10 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, rope=None, dropout_p=0.0, is_
             is_causal=is_causal,
         )
     else:
-        use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
+        if IS_ROCM:
+            use_flash = B * num_heads <= 65535  # avoid 16-bit grid dimension overflow on ROCm
+        else:
+            use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
         with use_flash_attention(use_flash):
             x = F.scaled_dot_product_attention(
                 q,
@@ -477,6 +481,7 @@ class WindowSpatialReductionMHA2d(nn.Module):
         B, N, C, H, W = x.shape
         x = x.reshape(B * N, C, H, W)
         kv = self.kv_proj(self.kv_pad(x)).permute(0, 2, 3, 1).reshape(B * N, -1, self.qkv_dim * self.num_heads * 2)
+        # NOTE: contiguous() is required. Without it, k/v have a non-unit last-dim stride and SDPA becomes much slower.
         k, v = kv.contiguous().split(self.qkv_dim * self.num_heads, dim=-1)
         # q
         x = x.permute(0, 2, 3, 1).reshape(B * N, H * W, C)

@@ -222,7 +222,14 @@ def main(args):
             frames.clear()
             skip_counter = args.skip_interval
 
-        VU.hook_frame(video_file, frame_callback, config_callback=config_callback, hwaccel=args.hwaccel, device=device)
+        VU.hook_frame(
+            video_file,
+            frame_callback,
+            config_callback=config_callback,
+            hwaccel=args.hwaccel,
+            device=device,
+            vaapi_device=args.vaapi_device,
+        )
 
 
 def register(subparsers, default_parser):
@@ -250,6 +257,12 @@ def register(subparsers, default_parser):
     )
     parser.add_argument(
         "--hwaccel", type=str, default=None, choices=VU.HW_DEVICES, help="hardware accelerator for the video decoder"
+    )
+    parser.add_argument(
+        "--vaapi-device",
+        type=str,
+        default=VU.DEFAULT_VAAPI_DEVICE,
+        help="VAAPI render node path for video decoding",
     )
 
     parser.set_defaults(handler=main)

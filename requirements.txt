@@ -7,8 +7,6 @@
 requests
 tqdm
 scipy
-waitress
-bottle==0.12.25
 diskcache
 psutil
 pyyaml
@@ -18,15 +16,17 @@ packaging
 filelock
 
 # iw3
-timm
-av==19.0.1
+timm>=1.0.30
+av==19.0.2
 simpleeval
 
 # iw3-player
 fastapi
 hypercorn
+python-multipart
+jinja2
 pysubs2
-pyopenssl==25.3.0
+cryptography
 
 # depthpro da3
 pillow_heif

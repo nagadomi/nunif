@@ -6,7 +6,7 @@ import { StereoBaseScreen, COMMON_FRAGMENT_HEADER, COMMON_FRAGMENT_MAP_PATCH } f
 
 const VERTEX_HEADER = `
     varying vec2 vFadeUv;
-    uniform float uCurvature, uWidth;
+    uniform float uCurvature, uWidth, uFlipTexY;
     uniform vec4 uTiling;
     #ifndef PI
     #define PI 3.141592653589793
@@ -17,6 +17,9 @@ const VERTEX_UV_PATCH = `
     #include <uv_vertex>
     vFadeUv = uv;
     vMapUv = uv * uTiling.xy + uTiling.zw;
+    if ( uFlipTexY > 0.5 ) {
+        vMapUv.y = 1.0 - vMapUv.y;
+    }
 `;
 
 const VERTEX_BEGIN_PATCH = `

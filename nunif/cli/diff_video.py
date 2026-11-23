@@ -25,6 +25,7 @@ class VideoMetadata(NamedTuple):
 class DiffResult(NamedTuple):
     mean_psnr: float
     min_psnr: float
+    max_psnr: float
     total_frames: int
     identical: bool
     meta1: VideoMetadata
@@ -100,13 +101,17 @@ def compare_videos(
     if finite_psnrs:
         mean_psnr = round(sum(finite_psnrs) / len(finite_psnrs), 3)
         min_psnr = round(min(finite_psnrs), 3)
+        max_p = max(psnr_list)
+        max_psnr = float("inf") if math.isinf(max_p) else round(max_p, 3)
     else:
         mean_psnr = float("inf")
         min_psnr = float("inf")
+        max_psnr = float("inf")
 
     return DiffResult(
         mean_psnr=mean_psnr,
         min_psnr=min_psnr,
+        max_psnr=max_psnr,
         total_frames=len(psnr_list),
         identical=identical,
         meta1=meta1,
@@ -130,7 +135,7 @@ def main() -> None:
     if result.identical:
         print("PSNR: inf (Bit-identical)")
     else:
-        print(f"Mean PSNR: {result.mean_psnr} dB (Min: {result.min_psnr} dB)")
+        print(f"Mean PSNR: {result.mean_psnr} dB (Min: {result.min_psnr} dB, Max: {result.max_psnr} dB)")
 
     if args.check_metadata:
         m1, m2 = result.meta1, result.meta2

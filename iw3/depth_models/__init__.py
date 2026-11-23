@@ -6,7 +6,7 @@ for mod_file in os.listdir(os.path.dirname(__file__)):
     if (
         mod_file not in {"__init__.py", "__main__.py"}
         and not mod_file.startswith(".")
-        and not mod_file.startswith("_")
+        and not mod_file.startswith("__")
         and mod_file.endswith(".py")
     ):
         mod_name = mod_file[:-3]

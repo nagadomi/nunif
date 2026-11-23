@@ -34,7 +34,12 @@ def run_model(
 
     model.load(gpu=gpu)
 
-    depth = model.infer(im, tta=False, enable_amp=True)
+    ret = model.infer(im, tta=False, enable_amp=True)
+    depth: torch.Tensor | None
+    if isinstance(ret, tuple):
+        depth, mask = ret
+    else:
+        depth = ret
     if depth is None:
         depth = model.flush(enable_amp=True)
     if depth is None:

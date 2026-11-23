@@ -30,6 +30,8 @@ from nunif.utils.video import (
     VIDEO_EXTENSIONS as KNOWN_VIDEO_EXTENSIONS,
     has_nvenc,
     has_qsv,
+    has_amf,
+    has_vaapi,
     pyav_init_cuda_primary_context,
 )
 from nunif.utils.filename import sanitize_filename
@@ -329,9 +331,10 @@ class MainFrame(wx.Frame):
         self.cbo_stereo_width.SetToolTip(T("Only used for row_flow_v3 and row_flow_v2"))
 
         self.lbl_depth_model = wx.StaticText(self.grp_stereo, label=T("Depth Model"))
-        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=self.get_depth_models(), name="cbo_depth_model")
+        depth_models = self.get_depth_models()
+        self.cbo_depth_model = wx.ComboBox(self.grp_stereo, choices=depth_models, name="cbo_depth_model")
         self.cbo_depth_model.SetEditable(False)
-        self.cbo_depth_model.SetSelection(3)
+        self.cbo_depth_model.SetSelection(depth_models.index("Any_V3_Mono"))
 
         self.lbl_resolution = wx.StaticText(self.grp_stereo, label=T("Depth") + " " + T("Resolution"))
         self.cbo_resolution = EditableComboBox(self.grp_stereo, choices=["Default", "512"], name="cbo_zoed_resolution")
@@ -510,7 +513,12 @@ class MainFrame(wx.Frame):
         # sbs/vr180, padding
         # max-fps, crf, preset, tune
         self.grp_video = VideoEncodingBox(
-            self.pnl_options, translate_function=T, has_nvenc=has_nvenc(), has_qsv=has_qsv()
+            self.pnl_options,
+            translate_function=T,
+            has_nvenc=has_nvenc(),
+            has_qsv=has_qsv(),
+            has_amf=has_amf(),
+            has_vaapi=has_vaapi(),
         )
 
         # input video filter
@@ -713,7 +721,7 @@ class MainFrame(wx.Frame):
         self.cbo_language.SetEditable(False)
 
         lang_selection = 0
-        for i, lang in enumerate(LOCAL_LIST):
+        for i, lang in enumerate(LOCALE_LIST):
             t = LOCALES.get(lang)
             name = t.get("_NAME", "Undefined")
             self.cbo_language.Append(name, lang)
@@ -1425,11 +1433,18 @@ class MainFrame(wx.Frame):
     def on_exit_worker(self, result):
         try:
             args = result.get()
-            self.depth_model = args.state["depth_model"]
-            self.depth_model_type = args.depth_model
-            self.depth_model_device_id = args.gpu
-            self.depth_model_height = args.resolution
-            self.depth_model_limit_resolution = args.limit_resolution
+            if args.state["depth_model"].loaded():
+                self.depth_model = args.state["depth_model"]
+                self.depth_model_type = args.depth_model
+                self.depth_model_device_id = args.gpu
+                self.depth_model_height = args.resolution
+                self.depth_model_limit_resolution = args.limit_resolution
+            else:
+                self.depth_model = None
+                self.depth_model_type = None
+                self.depth_model_device_id = None
+                self.depth_model_height = None
+                self.depth_model_limit_resolution = None
 
             if not self.stop_event.is_set():
                 self.prg_tqdm.SetValue(self.prg_tqdm.GetRange())
@@ -1476,8 +1491,12 @@ class MainFrame(wx.Frame):
             else:
                 self.prg_tqdm.SetRange(1)
             self.prg_tqdm.SetValue(0)
-            self.fps_tracker.reset(start_pos=0)
-            self.SetStatusText(f"{0}/{value} {desc}")
+            unit = getattr(event, "unit", "FPS")
+            self.fps_tracker.reset(start_pos=0, unit=unit)
+            if unit == "KiB":
+                self.SetStatusText(f"0.0/{value / 1024.0:.1f} MiB {desc}")
+            else:
+                self.SetStatusText(f"{0}/{value} {desc}")
         elif type == 1:
             # update
             if self.prg_tqdm.GetValue() + value <= self.prg_tqdm.GetRange():
@@ -1764,6 +1783,8 @@ class MainFrame(wx.Frame):
                     vf=args.vf,
                     hwaccel=args.hwaccel,
                     disable_software_fallback=args.disable_software_fallback,
+                    # TODO: Add vaapi_device to GUI
+                    vaapi_device=getattr(args, "vaapi_device", None),
                     device=device,
                     batch_size=args.batch_size,
                     stop_event=self.stop_event,
@@ -1838,7 +1859,7 @@ class MainFrame(wx.Frame):
             wx.MessageBox(message, f"{T('Error')}: {e.__class__.__name__}", wx.OK | wx.ICON_ERROR)
 
 
-LOCAL_LIST = sorted(list(LOCALES.keys()))
+LOCALE_LIST = sorted(list(LOCALES.keys()))
 LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 
@@ -1853,7 +1874,7 @@ def main():
     global LOCALE_DICT
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--lang", type=str, choices=LOCAL_LIST, help="translation")
+    parser.add_argument("--lang", type=str, choices=LOCALE_LIST, help="translation")
     args = parser.parse_args()
     if args.lang:
         LOCALE_DICT = LOCALES.get(args.lang, {})

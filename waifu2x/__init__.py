@@ -1,9 +1,6 @@
-import os
-import sys
+from nunif.initializer import init_torch_env
 
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-if "waifu2x.web" in getattr(sys, "orig_argv", []):
-    os.environ["WAIFU2X_WEB"] = "1"
+init_torch_env()
 
 
 from . import models

@@ -56,6 +56,43 @@ MODEL_FILES = {
     "Ultimate_DAV2_S": path.join(HUB_MODEL_DIR, "checkpoints", "ultimate_dav2_vits_INet_quality.safetensors"),
     "Ultimate_DAV2_B": path.join(HUB_MODEL_DIR, "checkpoints", "ultimate_dav2_vitB_INet_quality.safetensors"),
 }
+MODEL_URLS = {
+    "Any_S": (
+        "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/"
+        "checkpoints/depth_anything_vits14.pth?download=true"
+    ),
+    "Any_B": (
+        "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/"
+        "checkpoints/depth_anything_vitb14.pth?download=true"
+    ),
+    "Any_L": (
+        "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/"
+        "checkpoints/depth_anything_vitl14.pth?download=true"
+    ),
+    "Any_V2_S": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/"
+        "depth_anything_v2_vits.pth?download=true"
+    ),
+    "Any_V2_N_S": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Small/resolve/main/"
+        "depth_anything_v2_metric_hypersim_vits.pth?download=true"
+    ),
+    "Any_V2_N_B": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Base/resolve/main/"
+        "depth_anything_v2_metric_hypersim_vitb.pth?download=true"
+    ),
+    "Any_V2_K_S": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Small/resolve/main/"
+        "depth_anything_v2_metric_vkitti_vits.pth?download=true"
+    ),
+    "Any_V2_K_B": (
+        "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Base/resolve/main/"
+        "depth_anything_v2_metric_vkitti_vitb.pth?download=true"
+    ),
+    "Distill_Any_S": (
+        "https://huggingface.co/xingyang1/Distill-Any-Depth/resolve/main/small/model.safetensors?download=true"
+    ),
+}
 AA_SUPPORTED_MODELS = {
     "Any_V2_S",
     "Any_V2_B",
@@ -151,6 +188,7 @@ def batch_infer(
     edge_dilation=2,
     depth_aa=None,
     limit_resolution=False,
+    alpha=None,
     **kwargs,
 ):
     device = device if device is not None else model.device
@@ -179,6 +217,10 @@ def batch_infer(
             x = torch.flip(x_org, dims=[3])
             out2 = _forward(model, x, enable_amp)
             out = torch.cat([out, out2], dim=0)
+
+    if alpha is not None:
+        out = BaseDepthModel.apply_alpha_mask(out, alpha, flip_aug=flip_aug, is_metric=model.metric_depth)
+
     if depth_aa is not None:
         out = depth_aa.infer(out)
 
@@ -193,13 +235,8 @@ def batch_infer(
         out = -out
 
     if flip_aug:
-        if batch:
-            n = out.shape[0] // 2
-            z = torch.empty((n, *out.shape[1:]), device=out.device)
-            for i in range(n):
-                z[i] = (out[i] + torch.flip(out[i + n], dims=[2])) * 0.5
-        else:
-            z = (out[0:1] + torch.flip(out[1:2], dims=[3])) * 0.5
+        n = out.shape[0] // 2
+        z = (out[:n] + torch.flip(out[n:], dims=[3])) * 0.5
     else:
         z = out
     if not batch:
@@ -319,24 +356,25 @@ class DepthAnythingModel(BaseDepthModel):
         enable_amp: bool = True,
         edge_dilation: int | tuple[int, int] = 0,
         depth_aa: bool = False,
+        alpha: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        if not torch.is_tensor(x):
-            x = TF.to_tensor(x).to(self.device)
-        assert torch.is_tensor(x)
-        return batch_infer(
+        x_in, alpha_in, is_batch, orig_batch_size = self._prepare_infer_input(x, alpha=alpha)
+        out = batch_infer(
             self.model,
-            x,
+            x_in,
             flip_aug=tta,
             low_vram=low_vram,
             enable_amp=enable_amp,
-            output_device=x.device,
-            device=x.device,
+            output_device=x_in.device,
+            device=x_in.device,
             edge_dilation=edge_dilation,
             depth_aa=self.depth_aa if depth_aa else None,
             resize_depth=False,
             limit_resolution=self.limit_resolution,
+            alpha=alpha_in,
         )
+        return self._restore_infer_output(out, is_batch=is_batch, orig_batch_size=orig_batch_size)
 
     order: int = 30
 
@@ -367,6 +405,10 @@ class DepthAnythingModel(BaseDepthModel):
     @classmethod
     def get_model_path(cls, model_type):
         return MODEL_FILES[model_type]
+
+    @classmethod
+    def get_model_url(cls, model_type: str) -> str | None:
+        return MODEL_URLS.get(model_type)
 
     def is_metric(self):
         if self.model is not None:
