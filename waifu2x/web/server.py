@@ -43,7 +43,6 @@ from starlette.datastructures import UploadFile
 from nunif.device import mps_is_available, xpu_is_available
 from nunif.initializer import gc_collect
 from nunif.logger import logger, set_log_level
-from nunif.utils.filename import set_image_ext
 from nunif.utils.home_dir import ensure_home_dir
 
 from ..model_dir import MODEL_DIR
@@ -527,6 +526,21 @@ def check_image_pixels(image_data: bytes, max_pixels: float) -> None:
             return
 
 
+MAX_FILENAME_LENGTH = 1024
+WINDOWS_MAX_FILENAME_LENGTH = 254
+
+
+def sanitize_filename(filename: str | None) -> str:
+    if not filename:
+        return str(uuid.uuid4())
+    filename = posixpath.basename(filename.replace("\\", "/"))
+    filename = "".join(ch for ch in filename if ord(ch) >= 32 and ord(ch) != 127)
+    filename = filename[:MAX_FILENAME_LENGTH]
+    if not filename:
+        return str(uuid.uuid4())
+    return filename
+
+
 def fetch_image(form: Any, max_pixels: float = float("inf")):
     upload_file = form.get("file")
     im, meta = None, None
@@ -535,9 +549,7 @@ def fetch_image(form: Any, max_pixels: float = float("inf")):
     if isinstance(upload_file, UploadFile):
         image_data = fetch_uploaded_file(upload_file)
     if image_data:
-        filename = upload_file.filename if isinstance(upload_file, UploadFile) else None
-        if not filename:
-            filename = str(uuid.uuid4())
+        filename = sanitize_filename(upload_file.filename if isinstance(upload_file, UploadFile) else None)
         check_image_pixels(image_data, max_pixels)
         im, meta = IL.decode_image(image_data, filename, color="rgb", keep_alpha=True, exif_transpose=True)
     else:
@@ -545,11 +557,8 @@ def fetch_image(form: Any, max_pixels: float = float("inf")):
         if isinstance(url, str) and (url.startswith("http://") or url.startswith("https://")):
             key = "url_" + url
             image_data = cache.get(key, None)
-            filename = posixpath.basename(urlparse(url).path)
-            if not filename:
-                filename = str(uuid.uuid4())
-            else:
-                filename = uri_decode(filename)
+            raw_filename = posixpath.basename(urlparse(url).path)
+            filename = sanitize_filename(uri_decode(raw_filename) if raw_filename else None)
             if image_data is not None:
                 logger.debug(f"fetch_image: load cache: {url}")
                 check_image_pixels(image_data, max_pixels)
@@ -594,8 +603,9 @@ def parse_request(form: Any):
 
 
 def make_output_filename(style, method, noise, image_format, meta):
-    base = meta["filename"] if meta["filename"] else meta["sha1"] + ".png"
-    base = path.splitext(base)[0]
+    raw_name = meta["filename"] if meta["filename"] else meta["sha1"] + ".png"
+    limit = WINDOWS_MAX_FILENAME_LENGTH if len(raw_name) <= WINDOWS_MAX_FILENAME_LENGTH else MAX_FILENAME_LENGTH
+    base = path.splitext(raw_name)[0]
     if method == "noise":
         mode = f"{style.value}_noise{noise.value}"
     elif method == "noise_scale":
@@ -604,7 +614,9 @@ def make_output_filename(style, method, noise, image_format, meta):
         mode = f"{style.value}_scale"
     elif method == "none":
         mode = "none"
-    return set_image_ext(f"{base}_waifu2x_{mode}.png", image_format)
+    suffix = f"_waifu2x_{mode}.{image_format}"
+    base = base[: limit - len(suffix)]
+    return f"{base}{suffix}"
 
 
 @app.get("/recaptcha_state.json")
