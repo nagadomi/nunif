@@ -1,5 +1,6 @@
 import base64
 import io
+import math
 import struct
 
 import numpy as np
@@ -91,9 +92,10 @@ def _load_image(im, filename, color=None, keep_alpha=False, bg_color=255, exif_t
     if gamma is not None:
         if not isinstance(gamma, float):
             gamma = float(gamma)
-        gamma = int(gamma * 100000)
-        if gamma != 0 and gamma != GAMMA_LCD:
-            meta["gamma"] = gamma
+        if math.isfinite(gamma) and 0 < gamma < 10000:
+            gamma_int = int(gamma * 100000)
+            if gamma_int != 0 and gamma_int != GAMMA_LCD:
+                meta["gamma"] = gamma_int
 
     if color is None:
         if im.mode in {"RGB", "RGBA"}:
