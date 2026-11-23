@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+
 from nunif.models import Model, register_model
 from nunif.modules.res_block import ResBlockBNReLU
 
@@ -20,7 +21,6 @@ class ScaleFactor(Model):
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.MaxPool2d((2, 2)),
-
             ResBlockBNReLU(128, 128),
             nn.MaxPool2d((2, 2)),
             ResBlockBNReLU(128, 128),
@@ -36,7 +36,7 @@ class ScaleFactor(Model):
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
@@ -49,7 +49,7 @@ class ScaleFactor(Model):
 
     @staticmethod
     def preprocess(x):
-        x = x * 2. - 1.
+        x = x * 2.0 - 1.0
         return x
 
     def forward(self, x):

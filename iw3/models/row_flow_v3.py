@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nunif.models import I2IBaseModel, register_model
-from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
-from nunif.modules.attention import WindowMHA2d, WindowScoreBias
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2d
 
+from nunif.models import I2IBaseModel, register_model
+from nunif.modules.attention import WindowMHA2d, WindowScoreBias
+from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
+from nunif.modules.replication_pad2d import ReplicationPad2d, replication_pad2d_naive
 
 OFFSET = 32
 
@@ -19,7 +19,8 @@ class WABlock(nn.Module):
             nn.GELU(),
             ReplicationPad2d((1, 1, 1, 1)),
             nn.Conv2d(in_channels, in_channels, kernel_size=(3, 3), padding=0),
-            nn.LeakyReLU(0.1, inplace=True))
+            nn.LeakyReLU(0.1, inplace=True),
+        )
         self.bias = WindowScoreBias(window_size)
 
     def forward(self, x):
@@ -45,8 +46,7 @@ class RowFlowV3(I2IBaseModel):
             WABlock(C, (3, 3)),
         )
         self.last_layer = nn.Sequential(
-            ReplicationPad2d((1, 1, 1, 1)),
-            nn.Conv2d(C // pack, 1, kernel_size=3, stride=1, padding=0)
+            ReplicationPad2d((1, 1, 1, 1)), nn.Conv2d(C // pack, 1, kernel_size=3, stride=1, padding=0)
         )
         self.register_buffer("delta_scale", torch.tensor(1.0 / 127.0))
         self.delta_output = False
@@ -78,9 +78,21 @@ class RowFlowV3(I2IBaseModel):
         return z.to(output_dtye)
 
     def _forward_default(self, x):
-        rgb = x[:, 0:3, :, ]
-        grid = x[:, 6:8, :, ]
-        x = x[:, 3:6, :, ]  # depth + diverdence feature + convergence
+        rgb = x[
+            :,
+            0:3,
+            :,
+        ]
+        grid = x[
+            :,
+            6:8,
+            :,
+        ]
+        x = x[
+            :,
+            3:6,
+            :,
+        ]  # depth + diverdence feature + convergence
 
         delta = self._forward(x)
         if self.symmetric:
@@ -96,7 +108,7 @@ class RowFlowV3(I2IBaseModel):
         if self.training:
             return z, ((grid[:, 0:1, :, :] / self.delta_scale).detach() + delta)
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
     def _forward_delta_only(self, x):
         assert not self.training
@@ -113,8 +125,10 @@ class RowFlowV3(I2IBaseModel):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     B = 4
     N = 100

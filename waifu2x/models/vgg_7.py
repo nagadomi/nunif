@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+
 from nunif.models import I2IBaseModel, register_model
 
 
@@ -30,12 +31,14 @@ class VGG7(I2IBaseModel):
         if self.training:
             return x
         else:
-            return torch.clamp(x, 0., 1.)
+            return torch.clamp(x, 0.0, 1.0)
 
 
 if __name__ == "__main__":
     import torch
+
     from nunif.models import create_model
+
     device = "cuda:0"
     model = create_model(VGG7.name, in_channels=3, out_channels=3).to(device)
     print(model)

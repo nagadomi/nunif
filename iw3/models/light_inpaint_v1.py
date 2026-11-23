@@ -1,15 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from iw3.dilation import dilate_inner, dilate_outer, mask_closing
 from nunif.models import I2IBaseModel, register_model
-from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
-from nunif.modules.init import basic_module_init, icnr_init
-from nunif.modules.compile_wrapper import conditional_compile
-from nunif.modules.norm import FastLayerNorm
 from nunif.modules.attention import WindowGMLP2d
+from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.gaussian_filter import SeparableGaussianFilter2d
-from iw3.dilation import mask_closing, dilate_inner, dilate_outer
+from nunif.modules.init import basic_module_init, icnr_init
+from nunif.modules.norm import FastLayerNorm
+from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive, replication_pad2d_naive
 
 
 class GLUConvMLP(nn.Module):
@@ -57,7 +58,7 @@ class LightInpaintV1(I2IBaseModel):
         super(LightInpaintV1, self).__init__(locals(), scale=1, offset=16, in_channels=3, blend_size=8)
         self.downscaling_factor = 4
         self.mod = 16
-        pack = self.downscaling_factor ** 2
+        pack = self.downscaling_factor**2
         C = 96
         C2 = C * 2
         self.mask_bias = nn.Parameter(torch.zeros(1, C, 1, 1))
@@ -99,9 +100,14 @@ class LightInpaintV1(I2IBaseModel):
         return x, mask
 
     def infer(self, x, mask, closing=False, inner_dilation=0, outer_dilation=0, base_width=None):
-        x, mask = self.preprocess(x, mask, closing=closing,
-                                  inner_dilation=inner_dilation, outer_dilation=outer_dilation,
-                                  base_width=base_width)
+        x, mask = self.preprocess(
+            x,
+            mask,
+            closing=closing,
+            inner_dilation=inner_dilation,
+            outer_dilation=outer_dilation,
+            base_width=base_width,
+        )
         return self.forward(x, mask, skip_i2i_offset=True)
 
     def _forward(self, x, mask):
@@ -155,8 +161,10 @@ class LightInpaintV1(I2IBaseModel):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 20

@@ -7,13 +7,13 @@ exclude = [
     "env*",
     "venv*",
     "ENV*",
-    "tmp",
-    "data",
-    "models",
-    "font_resource/fonts",
-    "font_resource/font_map.py",
-    "iw3/pretrained_models",
-    "text_resource/aozora/data",
+    "./tmp",
+    "./data",
+    "./models",
+    "./font_resource/fonts",
+    "./font_resource/font_map.py",
+    "./iw3/pretrained_models",
+    "./text_resource/aozora/data",
 ]
 
 [lint]

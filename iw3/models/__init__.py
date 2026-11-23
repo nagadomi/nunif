@@ -1,18 +1,20 @@
-from .row_flow_v2 import RowFlowV2
-from .row_flow_v3 import RowFlowV3
+from .da3mono_disparity import DA3MonoDisparity
+from .depth_aa import DepthAA
 from .light_inpaint_v1 import LightInpaintV1
 from .light_video_inpaint_v1 import LightVideoInpaintV1
-from .depth_aa import DepthAA
 from .mlbw import MLBW
-from .da3mono_disparity import DA3MonoDisparity
-from .sod_v1 import SODV1
 from .monobw import MonoBW
-
+from .row_flow_v2 import RowFlowV2
+from .row_flow_v3 import RowFlowV3
+from .sod_v1 import SODV1
 
 __all__ = [
-    "RowFlowV2", "RowFlowV3", "MLBW",
+    "RowFlowV2",
+    "RowFlowV3",
+    "MLBW",
     "DepthAA",
-    "LightInpaintV1", "LightVideoInpaintV1",
+    "LightInpaintV1",
+    "LightVideoInpaintV1",
     "DA3MonoDisparity",
     "SODV1",
     "MonoBW",

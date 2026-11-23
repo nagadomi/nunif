@@ -303,7 +303,7 @@ class SwinUNet4xV3(I2IBaseModel):
             offset=32,
             in_channels=in_channels,
             blend_size=16,
-            default_batch_size=1 if middle_dim >= 256 else 4
+            default_batch_size=1 if middle_dim >= 256 else 4,
         )
         self.register_tile_size_validator(tile_size_validator)
         self.in_channels = in_channels

@@ -1,12 +1,13 @@
 import inspect
-from collections.abc import Callable
-from torch import nn
-from .model import Model
-from ..logger import logger
-from ..device import create_device
-from .data_parallel import DataParallelWrapper
 import types
+from collections.abc import Callable
 
+from torch import nn
+
+from ..device import create_device
+from ..logger import logger
+from .data_parallel import DataParallelWrapper
+from .model import Model
 
 _models: dict[str, Callable] = {}
 

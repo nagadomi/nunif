@@ -1,20 +1,17 @@
 # l3v1c discriminator
 import random
+
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.parametrizations import spectral_norm
+
 from nunif.models import register_model, register_model_factory
 from nunif.modules.attention import SEBlock
-from nunif.modules.res_block import ResBlockGNLReLU
-from torch.nn.utils.parametrizations import spectral_norm
 from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.init import basic_module_init
-from .disc_utils import (
-    Discriminator,
-    normalize,
-    modcrop,
-    fit_to_size,
-    bench
-)
+from nunif.modules.res_block import ResBlockGNLReLU
+
+from .disc_utils import Discriminator, bench, fit_to_size, modcrop, normalize
 
 
 class ImageToCondition(nn.Module):
@@ -29,12 +26,16 @@ class ImageToCondition(nn.Module):
             nn.AdaptiveAvgPool2d((4, 4)),
         )
         self.aggregate = nn.Linear(embed_dim * 16, embed_dim, bias=True)
-        self.fc = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(embed_dim, embed_dim, bias=True),
-                nn.ReLU(inplace=True),
-                nn.Linear(embed_dim, out_channels, bias=True))
-            for out_channels in outputs])
+        self.fc = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(embed_dim, embed_dim, bias=True),
+                    nn.ReLU(inplace=True),
+                    nn.Linear(embed_dim, out_channels, bias=True),
+                )
+                for out_channels in outputs
+            ]
+        )
         basic_module_init(self)
 
     @conditional_compile("NUNIF_TRAIN")
@@ -65,12 +66,10 @@ class L3Discriminator(Discriminator):
         self.features = nn.Sequential(
             group_norm(64),
             nn.LeakyReLU(negative_slope, inplace=True),
-
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
             group_norm(128),
             nn.LeakyReLU(negative_slope, inplace=True),
             SEBlock(128, bias=True),
-
             nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
         )
         self.classifier = nn.Sequential(
@@ -79,7 +78,8 @@ class L3Discriminator(Discriminator):
             SEBlock(256, bias=True),
             ResBlockGNLReLU(256, 512),
             SEBlock(512, bias=True),
-            spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=1)))
+            spectral_norm(nn.Conv2d(512, out_channels, kernel_size=3, stride=1, padding=1)),
+        )
         basic_module_init(self)
 
     @conditional_compile("NUNIF_DISC_COMPILE")
@@ -97,8 +97,7 @@ class L3ConditionalDiscriminator(L3Discriminator):
     name = "waifu2x.l3_conditional_discriminator"
 
     def __init__(self, in_channels=3, out_channels=1, negative_slope=0.2, scale_factor=4):
-        super().__init__(in_channels=in_channels, out_channels=out_channels,
-                         negative_slope=negative_slope)
+        super().__init__(in_channels=in_channels, out_channels=out_channels, negative_slope=negative_slope)
         self.to_cond = ImageToCondition(32, [64, 256], scale_factor=scale_factor)
 
     @conditional_compile("NUNIF_DISC_COMPILE")
@@ -120,11 +119,9 @@ class V1Discriminator(Discriminator):
         self.features = nn.Sequential(
             group_norm(64),
             nn.LeakyReLU(negative_slope, inplace=True),
-
             nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1),
             group_norm(64),
             nn.LeakyReLU(negative_slope, inplace=True),
-
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
         )
         self.classifier = nn.Sequential(
@@ -150,8 +147,7 @@ class V1ConditionalDiscriminator(V1Discriminator):
     name = "waifu2x.v1_conditional_discriminator"
 
     def __init__(self, in_channels=3, out_channels=1, negative_slope=0.2, scale_factor=4):
-        super().__init__(in_channels=in_channels, out_channels=out_channels,
-                         negative_slope=negative_slope)
+        super().__init__(in_channels=in_channels, out_channels=out_channels, negative_slope=negative_slope)
         self.to_cond = ImageToCondition(32, [64, 128], scale_factor=scale_factor)
 
     @conditional_compile("NUNIF_DISC_COMPILE")
@@ -187,12 +183,12 @@ class L3V1ConditionalDiscriminator(Discriminator):
 
     def __init__(self, in_channels=3, out_channels=1, scale_factor=4):
         super().__init__(locals(), loss_weights=(0.8, 0.2))
-        self.l3 = L3ConditionalDiscriminator(in_channels=in_channels,
-                                             out_channels=out_channels,
-                                             scale_factor=scale_factor)
-        self.v1 = V1ConditionalDiscriminator(in_channels=in_channels,
-                                             out_channels=out_channels,
-                                             scale_factor=scale_factor)
+        self.l3 = L3ConditionalDiscriminator(
+            in_channels=in_channels, out_channels=out_channels, scale_factor=scale_factor
+        )
+        self.v1 = V1ConditionalDiscriminator(
+            in_channels=in_channels, out_channels=out_channels, scale_factor=scale_factor
+        )
 
     def forward(self, x, c=None, scale_factor=None):
         l3 = self.l3(x, c, scale_factor)
@@ -215,18 +211,22 @@ class L3V1EnsembleConditionalDiscriminator(Discriminator):
         self.indexes = [0, 1, 2]
         self.index = 0
 
-        self.l3 = nn.ModuleList([
-            L3ConditionalDiscriminator(in_channels=in_channels,
-                                       out_channels=out_channels,
-                                       scale_factor=scale_factor)
-            for i in range(N)
-        ])
-        self.v1 = nn.ModuleList([
-            V1ConditionalDiscriminator(in_channels=in_channels,
-                                       out_channels=out_channels,
-                                       scale_factor=scale_factor)
-            for i in range(N)
-        ])
+        self.l3 = nn.ModuleList(
+            [
+                L3ConditionalDiscriminator(
+                    in_channels=in_channels, out_channels=out_channels, scale_factor=scale_factor
+                )
+                for i in range(N)
+            ]
+        )
+        self.v1 = nn.ModuleList(
+            [
+                V1ConditionalDiscriminator(
+                    in_channels=in_channels, out_channels=out_channels, scale_factor=scale_factor
+                )
+                for i in range(N)
+            ]
+        )
 
     def round(self):
         # called from the trainer at every iteration.
@@ -240,7 +240,7 @@ class L3V1EnsembleConditionalDiscriminator(Discriminator):
 
 register_model_factory(
     "waifu2x.l3v1_imbalanced_ensemble_conditional_discriminator",
-    lambda **kwargs: L3V1EnsembleConditionalDiscriminator(imbalanced_prob=True)
+    lambda **kwargs: L3V1EnsembleConditionalDiscriminator(imbalanced_prob=True),
 )
 
 

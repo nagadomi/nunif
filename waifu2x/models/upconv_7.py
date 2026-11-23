@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+
 from nunif.models import I2IBaseModel, register_model
 
 
@@ -26,7 +27,7 @@ class UpConv7(I2IBaseModel):
         )
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
@@ -35,12 +36,14 @@ class UpConv7(I2IBaseModel):
         if self.training:
             return z
         else:
-            return torch.clamp(z, 0., 1.)
+            return torch.clamp(z, 0.0, 1.0)
 
 
 if __name__ == "__main__":
     import torch
+
     from nunif.models import create_model
+
     device = "cuda:0"
     model = create_model(UpConv7.name, in_channels=3, out_channels=3).to(device)
     print(model)

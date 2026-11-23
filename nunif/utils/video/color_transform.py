@@ -737,10 +737,13 @@ class OutputTransform:
         if has_alpha:
             return False
 
-        return (
-            x.device.type in {"cuda", "xpu", "mps"}
-            and self.dst_pix_fmt in {"nv12", "p010le", "yuv420p", "yuvj420p", "yuv420p10le"}
-        )
+        return x.device.type in {"cuda", "xpu", "mps"} and self.dst_pix_fmt in {
+            "nv12",
+            "p010le",
+            "yuv420p",
+            "yuvj420p",
+            "yuv420p10le",
+        }
 
     def is_cuda_dlpack_supported(self, x: torch.Tensor) -> bool:
         return (

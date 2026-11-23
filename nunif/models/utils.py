@@ -1,17 +1,19 @@
-import torch
-from datetime import datetime, timezone
 from collections import OrderedDict
+from datetime import datetime, timezone
+
+import torch
 import torch.nn as nn
-from . register import create_model
-from . model import Model
-from .. logger import logger
-from .. device import create_device, autocast
+
+from ..device import autocast, create_device
+from ..logger import logger
+from .model import Model
+from .register import create_model
 
 
 def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
     if isinstance(model, nn.DataParallel):
         model = model.module
-    assert (isinstance(model, Model))
+    assert isinstance(model, Model)
     updated_at = str(updated_at or datetime.now(timezone.utc))
     if train_kwargs is not None:
         if not isinstance(train_kwargs, dict):
@@ -19,8 +21,7 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
             train_kwargs = vars(train_kwargs)
         # Remove data that probably cannot be loaded in other environments
         # The current intended target is a handler
-        remove_keys = [k for k in train_kwargs.keys()
-                       if callable(train_kwargs[k])]
+        remove_keys = [k for k in train_kwargs.keys() if callable(train_kwargs[k])]
         for k in remove_keys:
             train_kwargs.pop(k)
 
@@ -30,13 +31,13 @@ def save_model(model, model_path, updated_at=None, train_kwargs=None, **kwargs):
         "updated_at": updated_at,
         "kwargs": model.get_kwargs(),
         "train_kwargs": train_kwargs,
-        "state_dict": model.state_dict()}
+        "state_dict": model.state_dict(),
+    }
     data.update(kwargs)
     torch.save(data, model_path)
 
 
-def load_model(model_path, model=None, device_ids=None,
-               strict=True, map_location="cpu", weights_only=True):
+def load_model(model_path, model=None, device_ids=None, strict=True, map_location="cpu", weights_only=True):
     if "mps" in str(map_location):
         map_location = "cpu"
     if model_path.startswith("http://") or model_path.startswith("https://"):
@@ -45,7 +46,7 @@ def load_model(model_path, model=None, device_ids=None,
     else:
         data = torch.load(model_path, map_location=map_location, weights_only=weights_only)
 
-    assert ("nunif_model" in data)
+    assert "nunif_model" in data
     if model is None:
         model = create_model(data["name"], device_ids=device_ids, **data["kwargs"])
         model_predefine = False
@@ -146,7 +147,7 @@ def merge_state_dict(a, b, alpha=0.5):
     assert a.keys() == b.keys()
     c = OrderedDict()
     for k in a.keys():
-        c[k] = a[k] * alpha + b[k] * (1. - alpha)
+        c[k] = a[k] * alpha + b[k] * (1.0 - alpha)
     return c
 
 
@@ -155,7 +156,7 @@ def mean_state_dict(dicts):
     a = dicts[0]
     assert all(a.keys() == d.keys() for d in dicts)
     mean = OrderedDict()
-    scale = 1. / len(dicts)
+    scale = 1.0 / len(dicts)
     for k in a.keys():
         for d in dicts:
             if k not in mean:

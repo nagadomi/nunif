@@ -1,15 +1,17 @@
+import copy
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import copy
-from nunif.models import I2IBaseModel, register_model, register_model_factory
-from nunif.modules.norm import LayerNormNoBias
-from nunif.modules.compile_wrapper import conditional_compile
-from nunif.modules.antialiased_bicubic import AntialiasedBicubic
 from torchvision.models.swin_transformer import (
     # use SwinTransformer V1
     SwinTransformerBlock as SwinTransformerBlockV1,
 )
+
+from nunif.models import I2IBaseModel, register_model, register_model_factory
+from nunif.modules.antialiased_bicubic import AntialiasedBicubic
+from nunif.modules.compile_wrapper import conditional_compile
+from nunif.modules.norm import LayerNormNoBias
 
 
 # No LayerNorm
@@ -28,10 +30,10 @@ class SwinTransformerBlocks(nn.Module):
                     num_head,
                     window_size=window_size,
                     shift_size=[0 if i_layer % 2 == 0 else w // 2 for w in window_size],
-                    mlp_ratio=2.,
-                    dropout=0.,
-                    attention_dropout=0.,
-                    stochastic_depth_prob=0.,
+                    mlp_ratio=2.0,
+                    dropout=0.0,
+                    attention_dropout=0.0,
+                    stochastic_depth_prob=0.0,
                     norm_layer=norm_layer,
                 )
             )
@@ -50,7 +52,7 @@ class PatchDown(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.kaiming_normal_(self.conv.weight, mode='fan_out', nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv.weight, mode="fan_out", nonlinearity="relu")
         nn.init.constant_(self.conv.bias, 0)
 
     @conditional_compile(["NUNIF_TRAIN", "WAIFU2X_WEB"])
@@ -91,14 +93,15 @@ class ToImage(nn.Module):
         if scale_factor == 1:
             self.proj = nn.Linear(in_channels, out_channels)
         elif scale_factor in {2, 4}:
-            scale2 = scale_factor ** 2
+            scale2 = scale_factor**2
             self.proj = nn.Linear(in_channels, out_channels * scale2)
         elif scale_factor in {8}:
-            scale2 = scale_factor ** 2
+            scale2 = scale_factor**2
             self.proj = nn.Sequential(
                 nn.Linear(in_channels, out_channels * scale2),
                 nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(out_channels * scale2, out_channels * scale2))
+                nn.Linear(out_channels * scale2, out_channels * scale2),
+            )
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -117,8 +120,9 @@ class ToImage(nn.Module):
 
 
 class SwinUNetBase(nn.Module):
-    def __init__(self, in_channels=3, out_channels=3, base_dim=96, base_layers=2, scale_factor=1,
-                 norm_layer=NO_NORM_LAYER):
+    def __init__(
+        self, in_channels=3, out_channels=3, base_dim=96, base_layers=2, scale_factor=1, norm_layer=NO_NORM_LAYER
+    ):
         super().__init__()
         assert scale_factor in {1, 2, 4, 8}
         assert base_dim % 16 == 0 and base_dim % 6 == 0
@@ -135,41 +139,34 @@ class SwinUNetBase(nn.Module):
             nn.Conv2d(C // 2, C, kernel_size=3, stride=1, padding=0),
             nn.LeakyReLU(0.1, inplace=True),
         )
-        self.swin1 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W,
-                                           norm_layer=norm_layer)
+        self.swin1 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W, norm_layer=norm_layer)
         self.down1 = PatchDown(C, C * 2)
-        self.swin2 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W,
-                                           norm_layer=norm_layer)
+        self.swin2 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W, norm_layer=norm_layer)
         self.down2 = PatchDown(C * 2, C * 2)
-        self.swin3 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L * 3, window_size=W,
-                                           norm_layer=norm_layer)
+        self.swin3 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L * 3, window_size=W, norm_layer=norm_layer)
         if scale_factor in {1, 2}:
             self.proj1 = nn.Identity()
             self.up2 = PatchUp(C * 2, C * 2)
             self.proj2 = nn.Identity()
-            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W,
-                                               norm_layer=norm_layer)
+            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W, norm_layer=norm_layer)
             self.up1 = PatchUp(C * 2, C)
-            self.swin5 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W,
-                                               norm_layer=norm_layer)
+            self.swin5 = SwinTransformerBlocks(C, num_head=H, num_layers=L, window_size=W, norm_layer=norm_layer)
             self.to_image = ToImage(C, out_channels, scale_factor=scale_factor)
         elif scale_factor in {4, 8}:
             self.proj1 = nn.Identity()
             self.up2 = PatchUp(C * 2, C * 2)
             self.proj2 = nn.Linear(C, C * 2)
-            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W,
-                                               norm_layer=norm_layer)
+            self.swin4 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W, norm_layer=norm_layer)
             self.up1 = PatchUp(C * 2, C * 2)
-            self.swin5 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W,
-                                               norm_layer=norm_layer)
+            self.swin5 = SwinTransformerBlocks(C * 2, num_head=H, num_layers=L, window_size=W, norm_layer=norm_layer)
             self.to_image = ToImage(C * 2, out_channels, scale_factor=scale_factor)
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        for m in (list(self.patch.modules()) + [self.proj1, self.proj2]):
+        for m in list(self.patch.modules()) + [self.proj1, self.proj2]:
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
@@ -200,9 +197,7 @@ class SwinUNetBase(nn.Module):
 
 
 def tile_size_validator(size):
-    return (size > 16 and
-            (size - 16) % 12 == 0 and
-            (size - 16) % 16 == 0)
+    return size > 16 and (size - 16) % 12 == 0 and (size - 16) % 16 == 0
 
 
 @register_model
@@ -213,10 +208,8 @@ class SwinUNet(I2IBaseModel):
         super().__init__(locals(), scale=1, offset=8, in_channels=in_channels, blend_size=4)
         self.register_tile_size_validator(tile_size_validator)
         self.unet = SwinUNetBase(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            base_dim=96, base_layers=2,
-            scale_factor=1)
+            in_channels=in_channels, out_channels=out_channels, base_dim=96, base_layers=2, scale_factor=1
+        )
 
     def forward(self, x):
         z = self.unet(x)
@@ -237,9 +230,11 @@ class SwinUNet2x(I2IBaseModel):
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
-            base_dim=base_dim, base_layers=2,
+            base_dim=base_dim,
+            base_layers=2,
             norm_layer=norm_layer,
-            scale_factor=2)
+            scale_factor=2,
+        )
 
     def forward(self, x):
         z = self.unet(x)
@@ -251,10 +246,8 @@ class SwinUNet2x(I2IBaseModel):
 
 def resize_antialias(x, antialias):
     B, C, H, W = x.shape
-    x = F.interpolate(x, size=(H * 2, W * 2), mode="bicubic",
-                      align_corners=False, antialias=antialias)
-    x = F.interpolate(x, size=(H, W), mode="bicubic",
-                      align_corners=False, antialias=antialias)
+    x = F.interpolate(x, size=(H * 2, W * 2), mode="bicubic", align_corners=False, antialias=antialias)
+    x = F.interpolate(x, size=(H, W), mode="bicubic", align_corners=False, antialias=antialias)
     return x
 
 
@@ -262,8 +255,7 @@ def resize_antialias(x, antialias):
 class SwinUNet4x(I2IBaseModel):
     name = "waifu2x.swin_unet_4x"
 
-    def __init__(self, in_channels=3, out_channels=3, pre_antialias=False,
-                 base_dim=96, layer_norm=False):
+    def __init__(self, in_channels=3, out_channels=3, pre_antialias=False, base_dim=96, layer_norm=False):
         super().__init__(locals(), scale=4, offset=32, in_channels=in_channels, blend_size=16)
         self.register_tile_size_validator(tile_size_validator)
         self.out_channels = out_channels
@@ -273,9 +265,11 @@ class SwinUNet4x(I2IBaseModel):
         self.unet = SwinUNetBase(
             in_channels=in_channels,
             out_channels=out_channels,
-            base_dim=base_dim, base_layers=2,
+            base_dim=base_dim,
+            base_layers=2,
             norm_layer=norm_layer,
-            scale_factor=4)
+            scale_factor=4,
+        )
 
     def forward(self, x):
         if self.pre_antialias:
@@ -291,16 +285,26 @@ class SwinUNet4x(I2IBaseModel):
             unet = self.unet
         else:
             unet = copy.deepcopy(self.unet)
-        return SwinUNetDownscaled(in_channels=self.i2i_in_channels, out_channels=self.out_channels,
-                                  downscale_factor=2, unet=unet, pre_antialias=self.pre_antialias)
+        return SwinUNetDownscaled(
+            in_channels=self.i2i_in_channels,
+            out_channels=self.out_channels,
+            downscale_factor=2,
+            unet=unet,
+            pre_antialias=self.pre_antialias,
+        )
 
     def to_1x(self, shared=True):
         if shared:
             unet = self.unet
         else:
             unet = copy.deepcopy(self.unet)
-        return SwinUNetDownscaled(in_channels=self.i2i_in_channels, out_channels=self.out_channels,
-                                  downscale_factor=4, unet=unet, pre_antialias=self.pre_antialias)
+        return SwinUNetDownscaled(
+            in_channels=self.i2i_in_channels,
+            out_channels=self.out_channels,
+            downscale_factor=4,
+            unet=unet,
+            pre_antialias=self.pre_antialias,
+        )
 
 
 @register_model
@@ -311,10 +315,8 @@ class SwinUNet8x(I2IBaseModel):
         super().__init__(locals(), scale=4, offset=64, in_channels=in_channels, blend_size=32)
         self.register_tile_size_validator(tile_size_validator)
         self.unet = SwinUNetBase(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            base_dim=96, base_layers=2,
-            scale_factor=8)
+            in_channels=in_channels, out_channels=out_channels, base_dim=96, base_layers=2, scale_factor=8
+        )
 
     def forward(self, x):
         z = self.unet(x)
@@ -332,7 +334,9 @@ def resize(x, downscale_factor, mode, align_corners, antialias):
         return F.interpolate(
             x,
             size=(x.shape[-2] // downscale_factor, x.shape[-1] // downscale_factor),
-            mode=mode, align_corners=align_corners, antialias=antialias
+            mode=mode,
+            align_corners=align_corners,
+            antialias=antialias,
         )
 
 
@@ -345,17 +349,19 @@ class SwinUNetDownscaled(I2IBaseModel):
         offset = 32 // downscale_factor
         scale = 4 // downscale_factor
         blend_size = 4 * downscale_factor
-        super().__init__(dict(in_channels=in_channels, out_channels=out_channels,
-                              downscale_factor=downscale_factor),
-                         scale=scale, offset=offset, in_channels=in_channels, blend_size=blend_size)
+        super().__init__(
+            dict(in_channels=in_channels, out_channels=out_channels, downscale_factor=downscale_factor),
+            scale=scale,
+            offset=offset,
+            in_channels=in_channels,
+            blend_size=blend_size,
+        )
         self.register_tile_size_validator(tile_size_validator)
 
         if unet is None:
             self.unet = SwinUNetBase(
-                in_channels=in_channels,
-                out_channels=out_channels,
-                base_dim=96, base_layers=2,
-                scale_factor=4)
+                in_channels=in_channels, out_channels=out_channels, base_dim=96, base_layers=2, scale_factor=4
+            )
         else:
             self.unet = unet
         self.mode = "bicubic"
@@ -368,22 +374,26 @@ class SwinUNetDownscaled(I2IBaseModel):
             x = resize_antialias(x, antialias=self.antialias)
         z = self.unet(x)
         if self.training:
-            z = resize(z, downscale_factor=self.downscale_factor,
-                       mode=self.mode, align_corners=False, antialias=self.antialias)
+            z = resize(
+                z, downscale_factor=self.downscale_factor, mode=self.mode, align_corners=False, antialias=self.antialias
+            )
             return z
         else:
-            z = torch.clamp(z, 0., 1.)
-            z = resize(z, downscale_factor=self.downscale_factor,
-                       mode=self.mode, align_corners=False, antialias=self.antialias)
-            z = torch.clamp(z, 0., 1.)
+            z = torch.clamp(z, 0.0, 1.0)
+            z = resize(
+                z, downscale_factor=self.downscale_factor, mode=self.mode, align_corners=False, antialias=self.antialias
+            )
+            z = torch.clamp(z, 0.0, 1.0)
             return z
 
     @staticmethod
     def from_4x(swin_unet_4x, downscale_factor):
-        net = SwinUNetDownscaled(in_channels=swin_unet_4x.unet.in_channels,
-                                 out_channels=swin_unet_4x.unet.out_channels,
-                                 downscale_factor=downscale_factor,
-                                 unet=copy.deepcopy(swin_unet_4x.unet))
+        net = SwinUNetDownscaled(
+            in_channels=swin_unet_4x.unet.in_channels,
+            out_channels=swin_unet_4x.unet.out_channels,
+            downscale_factor=downscale_factor,
+            unet=copy.deepcopy(swin_unet_4x.unet),
+        )
         return net
 
 
@@ -396,12 +406,15 @@ register_model_factory("waifu2x.swin_unet_4xl", swin_unet_4xl)
 
 def _test():
     import io
+
     device = "cuda:0"
-    for model in (SwinUNet(in_channels=3, out_channels=3),
-                  SwinUNet2x(in_channels=3, out_channels=3),
-                  SwinUNet4x(in_channels=3, out_channels=3),
-                  SwinUNetDownscaled(in_channels=3, out_channels=3, downscale_factor=2),
-                  SwinUNetDownscaled(in_channels=3, out_channels=3, downscale_factor=4)):
+    for model in (
+        SwinUNet(in_channels=3, out_channels=3),
+        SwinUNet2x(in_channels=3, out_channels=3),
+        SwinUNet4x(in_channels=3, out_channels=3),
+        SwinUNetDownscaled(in_channels=3, out_channels=3, downscale_factor=2),
+        SwinUNetDownscaled(in_channels=3, out_channels=3, downscale_factor=4),
+    ):
         model = model.to(device)
         # Note: input size must be `(SIZE - 16) % 12 == 0 and (SIZE - 16) % 16 == 0`,
         # e.g. 64,112,160,256,400,640,1024
@@ -415,15 +428,15 @@ def _test():
 
 def _convert_tool_main():
     import argparse
+
     from nunif.models import load_model, save_model
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input", "-i", type=str, required=True,
-                        help="input 4x model")
-    parser.add_argument("--output", "-o", type=str, required=True,
-                        help="output swin_unet_downscaled_model")
-    parser.add_argument("--scale", type=int, choices=[1, 2], required=True,
-                        help="scale factor for output swin_unet_model")
+    parser.add_argument("--input", "-i", type=str, required=True, help="input 4x model")
+    parser.add_argument("--output", "-o", type=str, required=True, help="output swin_unet_downscaled_model")
+    parser.add_argument(
+        "--scale", type=int, choices=[1, 2], required=True, help="scale factor for output swin_unet_model"
+    )
     args = parser.parse_args()
     model_4x, _ = load_model(args.input)
     if args.scale == 2:
@@ -435,9 +448,11 @@ def _convert_tool_main():
 
 
 def _bench(name, compile):
-    import torch
-    from nunif.models import create_model
     import time
+
+    import torch
+
+    from nunif.models import create_model
 
     N = 100
     B = 4

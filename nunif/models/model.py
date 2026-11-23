@@ -1,8 +1,9 @@
+import copy
+from collections.abc import Callable
+from functools import lru_cache
+
 import torch
 import torch.nn as nn
-import copy
-from functools import lru_cache
-from collections.abc import Callable
 
 
 class Model(nn.Module):
@@ -27,8 +28,7 @@ class Model(nn.Module):
         return self.kwargs
 
     def __repr__(self):
-        return (f"name: {self.name}\nkwargs: {self.kwargs}\n" +
-                super(Model, self).__repr__())
+        return f"name: {self.name}\nkwargs: {self.kwargs}\n" + super(Model, self).__repr__()
 
     def to_inference_model(self):
         net = copy.deepcopy(self)
@@ -67,8 +67,17 @@ def _find_valid_tile_size(name, base_tile_size):
 class I2IBaseModel(Model):
     name = "nunif.i2i_base_model"
 
-    def __init__(self, kwargs, scale, offset, in_channels=None, in_size=None, blend_size=None,
-                 default_tile_size=256, default_batch_size=4):
+    def __init__(
+        self,
+        kwargs,
+        scale,
+        offset,
+        in_channels=None,
+        in_size=None,
+        blend_size=None,
+        default_tile_size=256,
+        default_batch_size=4,
+    ):
         super(I2IBaseModel, self).__init__(kwargs)
         self.i2i_scale = scale
         self.i2i_offset = offset
@@ -101,14 +110,10 @@ class I2IBaseModel(Model):
                 (x,),
                 input_names=["x"],
                 output_names=["y"],
-                dynamic_shapes={
-                    "x": {0: batch_size,
-                          2: input_height,
-                          3: input_width}
-                },
+                dynamic_shapes={"x": {0: batch_size, 2: input_height, 3: input_width}},
                 dynamo=True,
                 external_data=False,
-                **kwargs
+                **kwargs,
             )
             onnx_program.save(f)
         else:
@@ -118,10 +123,12 @@ class I2IBaseModel(Model):
                 f,
                 input_names=["x"],
                 output_names=["y"],
-                dynamic_axes={"x": {0: "batch_size", 2: "input_height", 3: "input_width"},
-                              "y": {0: "batch_size", 2: "height", 3: "width"}},
+                dynamic_axes={
+                    "x": {0: "batch_size", 2: "input_height", 3: "input_width"},
+                    "y": {0: "batch_size", 2: "height", 3: "width"},
+                },
                 external_data=False,
-                **kwargs
+                **kwargs,
             )
 
 

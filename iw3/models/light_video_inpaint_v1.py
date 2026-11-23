@@ -1,15 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from iw3.dilation import dilate_inner, dilate_outer, mask_closing
 from nunif.models import I2IBaseModel, register_model
-from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
-from nunif.modules.replication_pad2d import replication_pad2d_naive, ReplicationPad2dNaive
-from nunif.modules.init import basic_module_init, icnr_init
-from nunif.modules.compile_wrapper import conditional_compile
-from nunif.modules.norm import FastLayerNorm
 from nunif.modules.attention import WindowGMLP2d, WindowGMLP3d
+from nunif.modules.compile_wrapper import conditional_compile
 from nunif.modules.gaussian_filter import SeparableGaussianFilter2d
-from iw3.dilation import mask_closing, dilate_inner, dilate_outer
+from nunif.modules.init import basic_module_init, icnr_init
+from nunif.modules.norm import FastLayerNorm
+from nunif.modules.permute import pixel_shuffle, pixel_unshuffle
+from nunif.modules.replication_pad2d import ReplicationPad2dNaive, replication_pad2d_naive
 
 
 def linear_blur(x, n=4):
@@ -80,7 +81,7 @@ def chunked_forward(module, x, chunk):
     assert x.shape[0] % chunk == 0
     ret = []
     for i in range(0, x.shape[0], chunk):
-        ret.append(module(x[i:i + chunk]))
+        ret.append(module(x[i : i + chunk]))
     return torch.cat(ret, dim=0)
 
 
@@ -97,20 +98,22 @@ class LightVideoInpaintV1(I2IBaseModel):
         self.sequence_offset = 0
         self.downscaling_factor = 4
         self.mod = 16
-        pack = self.downscaling_factor ** 2
+        pack = self.downscaling_factor**2
         C = base_dim
         C2 = C * 2
         self.mask_bias = nn.Parameter(torch.zeros(1, C, 1, 1))
         self.patch = nn.Conv2d(3, C, kernel_size=self.downscaling_factor, stride=self.downscaling_factor, padding=0)
         self.enc1 = GMLPBlock(C, mlp_ratio=2, window_size=16, shift=False)
         self.down = nn.Conv2d(C, C2, kernel_size=2, stride=2, padding=0)
-        self.enc2 = nn.ModuleList([
-            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=True),
-            GMLP3DBlock(C2, window_size=(SEQ_LEN, 1, 1), mlp_ratio=2, shift=False),
-            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=False),
-            GMLP3DBlock(C2, window_size=(SEQ_LEN, 1, 1), mlp_ratio=2, shift=False),
-            GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=True),
-        ])
+        self.enc2 = nn.ModuleList(
+            [
+                GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=True),
+                GMLP3DBlock(C2, window_size=(SEQ_LEN, 1, 1), mlp_ratio=2, shift=False),
+                GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=False),
+                GMLP3DBlock(C2, window_size=(SEQ_LEN, 1, 1), mlp_ratio=2, shift=False),
+                GMLPBlock(C2, window_size=(8, 8), mlp_ratio=lv2_mlp_ratio, shift=True),
+            ]
+        )
         self.up = nn.Conv2d(C2, C * 4, kernel_size=1, stride=1, padding=0)
         self.dec1 = GMLPBlock(C, mlp_ratio=2, window_size=16, shift=False)
         self.to_image = nn.Conv2d(C, 3 * pack, kernel_size=1, stride=1, padding=0)
@@ -136,7 +139,7 @@ class LightVideoInpaintV1(I2IBaseModel):
     def infer(self, x, mask, closing=False, inner_dilation=0, outer_dilation=0, base_width=None):
         if x.shape[0] % SEQ_LEN != 0:
             # TODO: refactor
-            pad_b = (SEQ_LEN - x.shape[0] % SEQ_LEN)
+            pad_b = SEQ_LEN - x.shape[0] % SEQ_LEN
             pad_b1 = pad_b // 2
             pad_b2 = pad_b - pad_b1
             x_pad = [x[0:1].detach()] * pad_b1 + [x] + [x[-1:].detach()] * pad_b2
@@ -146,9 +149,14 @@ class LightVideoInpaintV1(I2IBaseModel):
         else:
             pad_b1 = pad_b2 = 0
 
-        x, mask = self.preprocess(x, mask, closing=closing,
-                                  inner_dilation=inner_dilation, outer_dilation=outer_dilation,
-                                  base_width=base_width)
+        x, mask = self.preprocess(
+            x,
+            mask,
+            closing=closing,
+            inner_dilation=inner_dilation,
+            outer_dilation=outer_dilation,
+            base_width=base_width,
+        )
 
         out = self.forward(x, mask, skip_i2i_offset=True, micro_batch_size=2)
         if pad_b1 > 0:
@@ -166,8 +174,8 @@ class LightVideoInpaintV1(I2IBaseModel):
         x1s = []
         x2s = []
         for i in range(0, x.shape[0], micro_batch_size):
-            x0 = F.leaky_relu(self.patch(x[i:i + micro_batch_size]), 0.1, inplace=True)
-            x0 = torch.where(mask[i:i + micro_batch_size], self.mask_bias.to(x0.dtype), x0)
+            x0 = F.leaky_relu(self.patch(x[i : i + micro_batch_size]), 0.1, inplace=True)
+            x0 = torch.where(mask[i : i + micro_batch_size], self.mask_bias.to(x0.dtype), x0)
             x1 = self.enc1(x0)
             x2 = self.down(x1)
             x1s.append(x1)
@@ -184,7 +192,7 @@ class LightVideoInpaintV1(I2IBaseModel):
 
         outs = []
         for i in range(0, x.shape[0], micro_batch_size):
-            x3 = self.up(x2[i:i + micro_batch_size])
+            x3 = self.up(x2[i : i + micro_batch_size])
             x3 = F.pixel_shuffle(x3, 2)
             out = self.dec1(x1s[i // micro_batch_size] + x3)
             out = self.to_image(out)
@@ -215,9 +223,9 @@ class LightVideoInpaintV1(I2IBaseModel):
             mask = F.pad(mask, (-self.i2i_offset,) * 4)
             x = F.pad(x, (-self.i2i_offset,) * 4)
             if self.sequence_offset > 0:
-                src = src[self.sequence_offset:-self.sequence_offset]
-                x = x[self.sequence_offset:-self.sequence_offset]
-                mask = mask[self.sequence_offset:-self.sequence_offset]
+                src = src[self.sequence_offset : -self.sequence_offset]
+                x = x[self.sequence_offset : -self.sequence_offset]
+                mask = mask[self.sequence_offset : -self.sequence_offset]
         mask = mask.expand_as(src)
         src = src * (1 - mask) + x * mask
 
@@ -246,8 +254,10 @@ class LightVideoInpaintV1Large(LightVideoInpaintV1):
 
 
 def _bench(name):
-    from nunif.models import create_model
     import time
+
+    from nunif.models import create_model
+
     device = "cuda:0"
     do_compile = False  # compiled model is about 2x faster but no windows support
     N = 20
