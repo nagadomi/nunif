@@ -451,14 +451,19 @@ def fetch_uploaded_file(upload_file: UploadFile):
 def fetch_url_file(url: str):
     max_body_size = MAX_BODY_SIZE * SIZE_MB
     timeout = command_args.url_timeout
+    deadline = time() + timeout
     current_url = url
     try:
         with new_safe_session() as session:
             for _ in range(MAX_URL_REDIRECTS + 1):
+                remaining = deadline - time()
+                if remaining <= 0:
+                    logger.debug(f"fetch_url_file: error: timeout, {current_url}")
+                    raise HTTPException(status_code=400, detail="URL Error")
                 validate_public_url(current_url)
                 headers = {"Referer": current_url, "User-Agent": "waifu2x/web.py"}
                 with session.get(
-                    current_url, headers=headers, stream=True, timeout=timeout, allow_redirects=False
+                    current_url, headers=headers, stream=True, timeout=remaining, allow_redirects=False
                 ) as res:
                     if res.status_code in {301, 302, 303, 307, 308}:
                         location = res.headers.get("Location")
@@ -472,6 +477,9 @@ def fetch_url_file(url: str):
                     with io.BytesIO() as buff:
                         file_size = 0
                         for chunk in res.iter_content(chunk_size=BUFF_SIZE):
+                            if time() > deadline:
+                                logger.debug(f"fetch_url_file: error: timeout, {current_url}")
+                                raise HTTPException(status_code=400, detail="URL Error")
                             buff.write(chunk)
                             file_size += len(chunk)
                             if file_size > max_body_size:
