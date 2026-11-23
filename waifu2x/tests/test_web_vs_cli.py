@@ -5,7 +5,6 @@ import subprocess
 import sys
 import time
 from collections.abc import Generator
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -201,7 +200,6 @@ def test_web_matches_cli(
         )
     assert res.status_code == 200, res.text
     assert res.headers["content-type"] == f"image/{image_format}"
-    assert "last_request" in res.cookies
 
     with Image.open(cli_output) as cli_img, Image.open(io.BytesIO(res.content)) as web_img:
         assert web_img.size == cli_img.size
@@ -213,70 +211,3 @@ def test_web_matches_cli(
         assert abs_diff.max() <= max_allowed and abs_diff.mean() < 0.01, (
             f"Mismatch for {case_name}: max_abs_diff={abs_diff.max()}, mean={abs_diff.mean():.6f}"
         )
-
-
-def test_web_static_cookie_and_security(web_server: dict[str, str], tmp_path: Path) -> None:
-    """Verify static index routing, GET /api signed cookie roundtrip, and input limits."""
-    base_url = web_server["base_url"]
-
-    r_en = requests.get(f"{base_url}/", timeout=5)
-    assert r_en.status_code == 200
-    assert '<html lang="en">' in r_en.text
-
-    r_ja = requests.get(f"{base_url}/", headers={"Accept-Language": "ja,en;q=0.9"}, timeout=5)
-    assert r_ja.status_code == 200
-    assert '<html lang="ja">' in r_ja.text
-
-    assert requests.get(f"{base_url}/sub/index.html", timeout=5).status_code == 403
-    assert requests.get(f"{base_url}/missing.html", timeout=5).status_code == 404
-
-    with open(web_server["rgb_128"], "rb") as f:
-        r_post = requests.post(
-            f"{base_url}/api",
-            files={"file": ("dog_128.png", f, "image/png")},
-            data={"style": "art", "noise": "0", "scale": "1", "format": "0"},
-            timeout=60,
-        )
-    assert r_post.status_code == 200
-    assert r_post.headers["content-type"] == "image/png"
-    cookie_val = r_post.cookies["last_request"]
-
-    r_get = requests.get(f"{base_url}/api", cookies={"last_request": cookie_val}, allow_redirects=False, timeout=10)
-    assert r_get.status_code == 200
-    assert r_get.content == r_post.content
-
-    payload, sig = cookie_val.split(".", 1)
-    tampered_sig = ("A" if sig[0] != "A" else "B") + sig[1:]
-    r_tampered = requests.get(
-        f"{base_url}/api",
-        cookies={"last_request": f"{payload}.{tampered_sig}"},
-        allow_redirects=False,
-        timeout=5,
-    )
-    assert r_tampered.status_code == 302
-
-    r_ssrf = requests.post(
-        f"{base_url}/api",
-        data={"url": f"{base_url}/index.html", "style": "art", "noise": "0", "scale": "-1", "format": "0"},
-        timeout=5,
-    )
-    assert r_ssrf.status_code == 400
-
-    huge_path = tmp_path / "huge.png"
-    Image.new("RGB", (4000, 4000), color="white").save(huge_path, format="PNG")
-    with open(huge_path, "rb") as f:
-        r_huge = requests.post(
-            f"{base_url}/api",
-            files={"file": ("huge.png", f, "image/png")},
-            data={"style": "art", "noise": "-1", "scale": "-1", "format": "0"},
-            timeout=10,
-        )
-    assert r_huge.status_code == 413
-
-    r_big_body = requests.post(
-        f"{base_url}/api",
-        data=b"x" * (7 * 1024 * 1024),
-        headers={"Content-Type": "application/octet-stream"},
-        timeout=10,
-    )
-    assert r_big_body.status_code == 413

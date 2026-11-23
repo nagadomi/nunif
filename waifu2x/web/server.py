@@ -1,15 +1,12 @@
 import argparse
 import asyncio
-import base64
 import hashlib
-import hmac
 import io
 import ipaddress
 import json
 import math
 import os
 import posixpath
-import secrets
 import socket
 import threading
 import uuid
@@ -63,7 +60,6 @@ RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TMP_DIR = ensure_home_dir("waifu2x", path.join(path.dirname(__file__), "..", "..", "tmp"))
 COMPILE_LOCK = path.join(TMP_DIR, "waifu2x-web-compile.lock")
-COOKIE_SECRET_FILE = path.join(TMP_DIR, "waifu2x-web-cookie.key")
 os.makedirs(TMP_DIR, exist_ok=True)
 
 global_lock: threading.RLock = threading.RLock()
@@ -75,7 +71,6 @@ photo_ctx: Any = None
 cache: Any = None
 cache_gc: Any = None
 IL: Any = None
-cookie_secret: bytes = secrets.token_bytes(32)
 MAX_NOISE_PIXELS: float = 3000 * 3000
 MAX_SCALE_PIXELS: float = 1500 * 1500
 MAX_BODY_SIZE: float = 5
@@ -215,22 +210,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> Plain
     return PlainTextResponse(content="Internal Server Error", status_code=500)
 
 
-def load_or_create_cookie_secret(secret_file: str = COOKIE_SECRET_FILE) -> bytes:
-    lock = filelock.FileLock(secret_file + ".lock")
-    with lock:
-        if path.exists(secret_file):
-            with open(secret_file, "rb") as f:
-                key = f.read().strip()
-                if len(key) >= 16:
-                    return key
-        key = secrets.token_bytes(32)
-        fd = os.open(secret_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as fw:
-            fw.write(key)
-        os.chmod(secret_file, 0o600)
-        return key
-
-
 def setup():
     if torch.cuda.is_available() or mps_is_available() or xpu_is_available():
         default_gpu = 0
@@ -336,12 +315,7 @@ def setup():
         else:
             config["turnstile"] = {"site_key": "", "secret_key": ""}
 
-    if config.has_option("cookie", "secret_key") and config["cookie"]["secret_key"]:
-        loaded_cookie_secret = config["cookie"]["secret_key"].encode("utf-8")
-    else:
-        loaded_cookie_secret = load_or_create_cookie_secret()
-
-    return args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc, loaded_cookie_secret
+    return args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc
 
 
 class UnsafeURLError(requests.exceptions.RequestException):
@@ -732,96 +706,9 @@ def requires_png(meta):
     return False
 
 
-def b64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
-
-
-def b64url_decode(data: str) -> bytes:
-    padding = "=" * (-len(data) % 4)
-    return base64.urlsafe_b64decode((data + padding).encode("ascii"))
-
-
-def encode_last_request(
-    key: str,
-    image_format: str,
-    scale: ScaleOption,
-    output_filename: str,
-    secret: bytes | None = None,
-) -> str:
-    signing_key = cookie_secret if secret is None else secret
-    data = {
-        "key": key,
-        "image_format": image_format,
-        "scale": scale.value,
-        "output_filename": output_filename,
-    }
-    raw = json.dumps(data, separators=(",", ":")).encode("utf-8")
-    payload_b64 = b64url_encode(raw)
-    sig = b64url_encode(hmac.new(signing_key, payload_b64.encode("ascii"), hashlib.sha256).digest())
-    return f"{payload_b64}.{sig}"
-
-
-def decode_last_request(cookie_value: str | None, secret: bytes | None = None) -> dict | None:
-    if not cookie_value or not isinstance(cookie_value, str) or len(cookie_value) > 4096:
-        return None
-    if "." not in cookie_value:
-        return None
-    signing_key = cookie_secret if secret is None else secret
-    try:
-        payload_b64, sig = cookie_value.split(".", 1)
-        expected_sig = b64url_encode(hmac.new(signing_key, payload_b64.encode("ascii"), hashlib.sha256).digest())
-        if not hmac.compare_digest(expected_sig, sig):
-            return None
-        raw = b64url_decode(payload_b64)
-        data = json.loads(raw.decode("utf-8"))
-        if not isinstance(data, dict):
-            return None
-        data["scale"] = ScaleOption(int(data.get("scale", -1)))
-        return data
-    except (ValueError, TypeError, json.JSONDecodeError):
-        return None
-
-
 @app.get("/api")
-def api_get(request: Request) -> Response:
-    last_request = decode_last_request(request.cookies.get("last_request"))
-    if not isinstance(last_request, dict):
-        return RedirectResponse(url="/", status_code=302)
-
-    key = last_request.get("key", None)
-    image_format = last_request.get("image_format", None)
-    scale = last_request.get("scale", None)
-    output_filename = last_request.get("output_filename", None)
-
-    if not (
-        isinstance(key, str)
-        and isinstance(image_format, str)
-        and isinstance(output_filename, str)
-        and key
-        and not key.startswith("url_")
-        and image_format
-        and output_filename
-    ):
-        return RedirectResponse(url="/", status_code=302)
-
-    if image_format not in {"png", "webp"}:
-        return RedirectResponse(url="/", status_code=302)
-
-    image_data = cache.get(key, None)
-    if image_data is None:
-        return RedirectResponse(url="/", status_code=302)
-
-    if scale == ScaleOption.X16:
-        im, meta = IL.decode_image(image_data, keep_alpha=True)
-        im = scale_16x(im, meta)
-        image_data = IL.encode_image(im, format=image_format, meta=meta)
-        im.close()
-
-    return Response(
-        content=image_data,
-        media_type=f"image/{image_format}",
-        headers={"Content-Disposition": f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}"},
-    )
+def api_get() -> Response:
+    return RedirectResponse(url="/", status_code=302)
 
 
 def is_disconnected_sync(request: Request) -> bool:
@@ -833,7 +720,7 @@ def is_disconnected_sync(request: Request) -> bool:
         return False
 
 
-def run_api_sync(request: Request, form: Any) -> tuple[bytes, str, str, str, ScaleOption]:
+def run_api_sync(request: Request, form: Any) -> tuple[bytes, str, str]:
     style, method, scale, noise, image_format = parse_request(form)
 
     if command_args.enable_recaptcha and not verify_recaptcha(request, form):
@@ -934,7 +821,7 @@ def run_api_sync(request: Request, form: Any) -> tuple[bytes, str, str, str, Sca
         image_data = IL.encode_image(im, format=image_format, meta=meta)
         im.close()
 
-    return image_data, image_format, output_filename, key, scale
+    return image_data, image_format, output_filename
 
 
 @app.post("/api")
@@ -943,29 +830,15 @@ async def api(request: Request) -> Response:
     #  'style': 'photo', 'noise': '1', 'scale': '2', 'recap': 'xxxxx'}
     form = await request.form()
     try:
-        image_data, image_format, output_filename, key, scale = await anyio.to_thread.run_sync(
-            run_api_sync, request, form
-        )
+        image_data, image_format, output_filename = await anyio.to_thread.run_sync(run_api_sync, request, form)
     finally:
         await form.close()
 
-    res = Response(
+    return Response(
         content=image_data,
         media_type=f"image/{image_format}",
         headers={"Content-Disposition": f"inline; filename*=utf-8''{uri_encode(output_filename, safe='')}"},
     )
-
-    # Store the last request info to cookie for redisplay on GET request
-    cookie_value = encode_last_request(
-        key=key,
-        image_format=image_format,
-        scale=scale,
-        output_filename=output_filename,
-    )
-    if len(cookie_value) <= 4096:
-        res.set_cookie("last_request", cookie_value, httponly=True, samesite="lax")
-
-    return res
 
 
 def get_lang(accept_language):
@@ -1042,9 +915,9 @@ def main():
 
     faulthandler.enable()
 
-    global global_lock, command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc, cookie_secret
+    global global_lock, command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc
     global_lock = threading.RLock()
-    command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc, cookie_secret = setup()
+    command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc = setup()
 
     global IL
     if command_args.image_lib == "wand":
