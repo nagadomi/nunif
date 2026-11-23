@@ -632,12 +632,12 @@ def get_client_ip(request: Request) -> str:
         is_trusted_proxy = False
 
     if is_trusted_proxy:
-        cf_ip = request.headers.get("cf-connecting-ip")
-        if cf_ip:
-            return cf_ip.strip()
         real_ip = request.headers.get("x-real-ip")
         if real_ip:
             return real_ip.strip()
+        cf_ip = request.headers.get("cf-connecting-ip")
+        if cf_ip:
+            return cf_ip.strip()
         xff = request.headers.get("x-forwarded-for")
         if xff:
             return xff.split(",", 1)[0].strip()
