@@ -249,6 +249,13 @@ def setup():
         help="torch.compile mode",
     )
     parser.add_argument("--warmup", action="store_true", help="warmup at startup")
+    parser.add_argument(
+        "--image-lib",
+        type=str,
+        choices=["pil", "wand"],
+        default=None,
+        help="DEPRECATED: image library option (wand support was removed; only pil is supported)",
+    )
     parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join(TMP_DIR, "waifu2x_cache"), help="cache dir")
@@ -265,6 +272,10 @@ def setup():
     parser.add_argument("--exit", action="store_true", help="run setup() and exit")
 
     args = parser.parse_args()
+    if args.image_lib is not None:
+        if args.image_lib == "wand":
+            parser.error("--image-lib wand is no longer supported; wand support was removed.")
+        logger.warning("--image-lib is deprecated and will be removed in the future (pil is always used).")
     art_ctx = Waifu2x(model_dir=args.art_model_dir, gpus=args.gpu)
     art_scan_ctx = Waifu2x(model_dir=args.art_scan_model_dir, gpus=args.gpu)
     photo_ctx = Waifu2x(model_dir=args.photo_model_dir, gpus=args.gpu)
