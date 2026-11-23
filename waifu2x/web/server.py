@@ -328,7 +328,15 @@ def is_public_ip(ip_str: str) -> bool:
         return False
     if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
         ip_obj = ip_obj.ipv4_mapped
-    return ip_obj.is_global and not ip_obj.is_multicast
+    return (
+        ip_obj.is_global
+        and not ip_obj.is_multicast
+        and not ip_obj.is_reserved
+        and not ip_obj.is_private
+        and not ip_obj.is_loopback
+        and not ip_obj.is_link_local
+        and not ip_obj.is_unspecified
+    )
 
 
 def create_public_connection(
