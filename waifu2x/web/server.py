@@ -43,6 +43,7 @@ from starlette.datastructures import UploadFile
 from nunif.device import mps_is_available, xpu_is_available
 from nunif.initializer import gc_collect
 from nunif.logger import logger, set_log_level
+from nunif.utils import pil_io as IL
 from nunif.utils.home_dir import ensure_home_dir
 
 from ..model_dir import MODEL_DIR
@@ -69,7 +70,6 @@ art_scan_ctx: Any = None
 photo_ctx: Any = None
 cache: Any = None
 cache_gc: Any = None
-IL: Any = None
 MAX_NOISE_PIXELS: float = 3000 * 3000
 MAX_SCALE_PIXELS: float = 1500 * 1500
 MAX_BODY_SIZE: float = 5
@@ -249,9 +249,6 @@ def setup():
         help="torch.compile mode",
     )
     parser.add_argument("--warmup", action="store_true", help="warmup at startup")
-    parser.add_argument(
-        "--image-lib", type=str, choices=["pil", "wand"], default="pil", help="image library to encode/decode images"
-    )
     parser.add_argument("--cache-ttl", type=int, default=30, help="cache TTL(min)")
     parser.add_argument("--cache-size-limit", type=int, default=10, help="cache size limit (GB)")
     parser.add_argument("--cache-dir", type=str, default=path.join(TMP_DIR, "waifu2x_cache"), help="cache dir")
@@ -509,29 +506,17 @@ def fetch_url_file(url: str):
 def check_image_pixels(image_data: bytes, max_pixels: float) -> None:
     if math.isinf(max_pixels):
         return
-    if command_args.image_lib == "wand":
-        from wand.image import Image as WandImage
+    from PIL import Image as PILImage
+    from PIL import UnidentifiedImageError
 
-        try:
-            with WandImage(blob=image_data, ping=True) as probe:
-                if probe.width * probe.height > max_pixels:
-                    raise HTTPException(status_code=413, detail="Request Image Too Large")
-        except HTTPException:
-            raise
-        except Exception:
-            return
-    else:
-        from PIL import Image as PILImage
-        from PIL import UnidentifiedImageError
-
-        try:
-            with PILImage.open(io.BytesIO(image_data)) as probe:
-                if probe.size[0] * probe.size[1] > max_pixels:
-                    raise HTTPException(status_code=413, detail="Request Image Too Large")
-        except PILImage.DecompressionBombError:
-            raise HTTPException(status_code=413, detail="Request Image Too Large")
-        except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
-            return
+    try:
+        with PILImage.open(io.BytesIO(image_data)) as probe:
+            if probe.size[0] * probe.size[1] > max_pixels:
+                raise HTTPException(status_code=413, detail="Request Image Too Large")
+    except PILImage.DecompressionBombError:
+        raise HTTPException(status_code=413, detail="Request Image Too Large")
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
+        return
 
 
 MAX_FILENAME_LENGTH = 1024
@@ -714,11 +699,7 @@ def dump_meta(meta):
 
 def scale_16x(im, meta):
     w, h = int(im.size[0] * (1.6 / 2.0)), int(im.size[1] * (1.6 / 2.0))
-    if meta["engine"] == "wand":
-        im.resize(w, h, "lanczos")
-    elif meta["engine"] == "pil":
-        im = im.resize((w, h), 1)
-    return im
+    return im.resize((w, h), 1)
 
 
 def requires_png(meta):
@@ -947,23 +928,15 @@ def main():
     global_lock = threading.RLock()
     command_args, config, art_ctx, art_scan_ctx, photo_ctx, cache, cache_gc = setup()
 
-    global IL
-    if command_args.image_lib == "wand":
-        # 2x slow than pil_io but it supports 16bit output and various formats
-        from nunif.utils import wand_io as IL
-    else:
-        from nunif.utils import pil_io as IL
-
     global MAX_NOISE_PIXELS, MAX_SCALE_PIXELS, MAX_BODY_SIZE, MAX_REQUEST_BODY_SIZE
     if not command_args.no_size_limit:
         MAX_NOISE_PIXELS = command_args.max_pixels
         MAX_SCALE_PIXELS = (math.sqrt(command_args.max_pixels) / 2) ** 2
         MAX_BODY_SIZE = command_args.max_body_size
         MAX_REQUEST_BODY_SIZE = (command_args.max_body_size + 1) * SIZE_MB
-        if command_args.image_lib == "pil":
-            from PIL import Image as PILImage
+        from PIL import Image as PILImage
 
-            PILImage.MAX_IMAGE_PIXELS = max(1, int(command_args.max_pixels))
+        PILImage.MAX_IMAGE_PIXELS = max(1, int(command_args.max_pixels))
     else:
         MAX_NOISE_PIXELS = float("inf")
         MAX_SCALE_PIXELS = float("inf")
