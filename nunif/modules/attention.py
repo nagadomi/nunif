@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..device import IS_ROCM
 from .attention_bias import (
     WindowDistanceScoreBias,
     WindowRelativeScoreBias,
@@ -37,6 +36,12 @@ except ModuleNotFoundError:
 
     def use_flash_attention(flag):
         return torch.backends.cuda.sdp_kernel(enable_flash=flag, enable_math=True, enable_mem_efficient=flag)
+
+
+# Fused SDPA kernels launch with batch and num_heads as grid dimensions, so each must stay <= 65535.
+# Exceeding it raises "invalid configuration argument" on CUDA, and on ROCm it either fails on the
+# next kernel launch or silently returns wrong output, depending on the version.
+SDPA_MAX_GRID_DIM = 65535
 
 
 class SEBlock(nn.Module):
@@ -91,19 +96,33 @@ def sliced_sdp(q, k, v, num_heads, attn_mask=None, rope=None, dropout_p=0.0, is_
     if rope is not None:
         q, k = rope(q, k)
 
-    if IS_ROCM:
-        use_flash = B * num_heads <= 65535  # avoid 16-bit grid dimension overflow on ROCm
-    else:
-        use_flash = B <= 65535  # avoid CUDA error: invalid configuration argument.
-    with use_flash_attention(use_flash):
+    enable_gqa = num_heads != num_kv_heads
+    if num_heads > SDPA_MAX_GRID_DIM:
+        with use_flash_attention(False):
+            x = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal, enable_gqa=enable_gqa
+            )
+    elif B <= SDPA_MAX_GRID_DIM:
         x = F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=attn_mask,
-            dropout_p=dropout_p,
-            is_causal=is_causal,
-            enable_gqa=num_heads != num_kv_heads,
+            q, k, v, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal, enable_gqa=enable_gqa
+        )
+    else:
+        # attn_mask is either broadcast over the batch (ndim < 4 or shape[0] == 1) or per-batch
+        batch_mask = attn_mask is not None and attn_mask.ndim == 4 and attn_mask.shape[0] != 1
+        x = torch.cat(
+            [
+                F.scaled_dot_product_attention(
+                    q[i : i + SDPA_MAX_GRID_DIM],
+                    k[i : i + SDPA_MAX_GRID_DIM],
+                    v[i : i + SDPA_MAX_GRID_DIM],
+                    attn_mask=attn_mask[i : i + SDPA_MAX_GRID_DIM] if batch_mask else attn_mask,
+                    dropout_p=dropout_p,
+                    is_causal=is_causal,
+                    enable_gqa=enable_gqa,
+                )
+                for i in range(0, B, SDPA_MAX_GRID_DIM)
+            ],
+            dim=0,
         )
     # B, N, (H, C // H)
     return x.permute(0, 2, 1, 3).reshape(B, QN, q_dim * num_heads)
