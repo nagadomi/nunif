@@ -125,21 +125,9 @@ class MLBW(I2IBaseModel):
         return z.to(output_dtye)
 
     def _forward_default_composite(self, x):
-        rgb = x[
-            :,
-            0:3,
-            :,
-        ]
-        grid = x[
-            :,
-            6:8,
-            :,
-        ]
-        x = x[
-            :,
-            3:6,
-            :,
-        ]  # depth + diverdence feature + convergence
+        rgb = x[:, 0:3, :, :]
+        grid = x[:, 6:8, :, :]
+        x = x[:, 3:6, :, :]  # depth + diverdence feature + convergence
         delta, layer_weight, _ = self._forward(x)
         delta = delta.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
@@ -163,21 +151,9 @@ class MLBW(I2IBaseModel):
             return torch.clamp(z, 0.0, 1.0)
 
     def _forward_hole_mask_composite(self, x):
-        rgb = x[
-            :,
-            0:3,
-            :,
-        ]
-        grid = x[
-            :,
-            6:8,
-            :,
-        ]
-        x = x[
-            :,
-            3:6,
-            :,
-        ]  # depth + diverdence feature + convergence
+        rgb = x[:, 0:3, :, :]
+        grid = x[:, 6:8, :, :]
+        x = x[:, 3:6, :, :]  # depth + diverdence feature + convergence
         delta, layer_weight, hole_mask_logits = self._forward(x)
         delta = delta.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)
@@ -203,26 +179,10 @@ class MLBW(I2IBaseModel):
             return torch.clamp(z, 0.0, 1.0), torch.sigmoid(hole_mask_logits)
 
     def _forward_cycle_composite(self, x):
-        rgb = x[
-            :,
-            0:3,
-            :,
-        ]
-        depth = x[
-            :,
-            3:4,
-            :,
-        ]
-        grid = x[
-            :,
-            6:8,
-            :,
-        ]
-        x = x[
-            :,
-            3:6,
-            :,
-        ]  # depth + diverdence feature + convergence
+        rgb = x[:, 0:3, :, :]
+        depth = x[:, 3:4, :, :]
+        grid = x[:, 6:8, :, :]
+        x = x[:, 3:6, :, :]  # depth + diverdence feature + convergence
         delta1, layer_weight1, _ = self._forward(x)
         delta1 = delta1.to(torch.float32)
         delta_scale = torch.tensor(1.0 / (x.shape[-1] // 2 - 1), dtype=x.dtype, device=x.device)

@@ -33,21 +33,9 @@ class RowFlow(I2IBaseModel):
                     nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        rgb = x[
-            :,
-            0:3,
-            :,
-        ]
-        grid = x[
-            :,
-            6:8,
-            :,
-        ]
-        x = x[
-            :,
-            3:6,
-            :,
-        ]  # depth + diverdence feature + convergence
+        rgb = x[:, 0:3, :, :]
+        grid = x[:, 6:8, :, :]
+        x = x[:, 3:6, :, :]  # depth + diverdence feature + convergence
         delta = self.conv(x) * self.delta_scale
         delta = torch.cat([delta, torch.zeros_like(delta)], dim=1)
         grid = grid + delta

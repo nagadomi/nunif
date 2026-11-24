@@ -71,21 +71,9 @@ class RowFlowV2(I2IBaseModel):
         return z.to(output_dtype)
 
     def _forward_default(self, x):
-        rgb = x[
-            :,
-            0:3,
-            :,
-        ]
-        grid = x[
-            :,
-            6:8,
-            :,
-        ]
-        x = x[
-            :,
-            3:6,
-            :,
-        ]  # depth + diverdence feature + convergence
+        rgb = x[:, 0:3, :, :]
+        grid = x[:, 6:8, :, :]
+        x = x[:, 3:6, :, :]  # depth + diverdence feature + convergence
         if self.training:
             delta1, delta2 = self._forward(x)
             z1 = self._warp(rgb, grid, delta1, self.delta_scale)

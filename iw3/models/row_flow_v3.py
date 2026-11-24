@@ -78,21 +78,9 @@ class RowFlowV3(I2IBaseModel):
         return z.to(output_dtye)
 
     def _forward_default(self, x):
-        rgb = x[
-            :,
-            0:3,
-            :,
-        ]
-        grid = x[
-            :,
-            6:8,
-            :,
-        ]
-        x = x[
-            :,
-            3:6,
-            :,
-        ]  # depth + diverdence feature + convergence
+        rgb = x[:, 0:3, :, :]
+        grid = x[:, 6:8, :, :]
+        x = x[:, 3:6, :, :]  # depth + diverdence feature + convergence
 
         delta = self._forward(x)
         if self.symmetric:

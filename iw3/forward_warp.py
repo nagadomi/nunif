@@ -212,18 +212,7 @@ def depth_order_bilinear_forward_warp(
     elif synthetic_view == "right":
         right_eye = warp(B, W, H, c, x_index, -index_shift, src_index, index_order)
         right_eye = unpad(right_eye)
-        right_eye, right_eye_index = (
-            right_eye[
-                :,
-                :-1,
-                :,
-            ],
-            right_eye[
-                :,
-                -1:,
-                :,
-            ],
-        )
+        right_eye, right_eye_index = right_eye[:, :-1, :, :], right_eye[:, -1:, :, :]
         right_eye_index = shift_fill(right_eye_index, 1)
         fix_layered_holes(right_eye, right_eye_index, -1)
         if return_mask:
@@ -241,18 +230,7 @@ def depth_order_bilinear_forward_warp(
     elif synthetic_view == "left":
         left_eye = warp(B, W, H, c, x_index, index_shift, src_index, index_order)
         left_eye = unpad(left_eye)
-        left_eye, left_eye_index = (
-            left_eye[
-                :,
-                :-1,
-                :,
-            ],
-            left_eye[
-                :,
-                -1:,
-                :,
-            ],
-        )
+        left_eye, left_eye_index = left_eye[:, :-1, :, :], left_eye[:, -1:, :, :]
         left_eye_index = shift_fill(left_eye_index, -1)
         fix_layered_holes(left_eye, left_eye_index, 1)
         if return_mask:
