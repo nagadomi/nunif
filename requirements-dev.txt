@@ -26,6 +26,7 @@ types-networkx
 types-protobuf
 types-psutil
 types-python-xlib
+types-pywin32
 types-requests
 types-tabulate
 types-tqdm
