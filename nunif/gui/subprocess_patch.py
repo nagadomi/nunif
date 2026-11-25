@@ -19,4 +19,4 @@ if sys.platform == "win32":
         kwargs["creationflags"] = creationflags | CREATE_NO_WINDOW
         return _original_popen_init(self, *args, **kwargs)
 
-    subprocess.Popen.__init__ = patched_popen_init
+    subprocess.Popen.__init__ = patched_popen_init  # type: ignore[method-assign]

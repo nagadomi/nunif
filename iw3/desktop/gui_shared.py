@@ -24,7 +24,7 @@ def is_draw_cursor_supported(backend: str) -> bool:
 
 
 myEVT_FPS = wx.NewEventType()
-EVT_FPS = wx.PyEventBinder(myEVT_FPS, 0)
+EVT_FPS: "wx.PyEventBinder[FPSEvent]" = wx.PyEventBinder(myEVT_FPS, 0)
 
 
 class FPSEvent(wx.PyCommandEvent):

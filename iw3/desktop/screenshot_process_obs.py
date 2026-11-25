@@ -13,11 +13,16 @@ import threading
 import time
 from collections import deque
 from multiprocessing import shared_memory
-from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from multiprocessing.synchronize import Event as MpEvent
 from multiprocessing.synchronize import Lock as MpLock
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    if sys.platform == "win32":
+        from multiprocessing.connection import PipeConnection as ProcessConnection
+    else:
+        from multiprocessing.connection import Connection as ProcessConnection
 
 import numpy as np
 import torch
@@ -137,7 +142,7 @@ def is_obs_supported() -> bool:
 
 
 def _obs_capture_worker(
-    conn: Connection,
+    conn: "ProcessConnection",
     lib_paths: dict[str, str],
     fps: int,
     draw_cursor_enabled: bool,
@@ -555,7 +560,7 @@ class ScreenshotProcessOBS(threading.Thread):
         self.fps_counter: deque[float] = deque(maxlen=120)
 
         self.process: BaseProcess | None = None
-        self.process_conn: Connection | None = None
+        self.process_conn: "ProcessConnection | None" = None
         self.process_frame_buffer: shared_memory.SharedMemory | None = None
         self.process_stop_event: MpEvent | None = None
         self.process_frame_event: MpEvent | None = None

@@ -12,7 +12,7 @@ from wx.lib.masked.ipaddrctrl import IpAddrCtrl as _IpAddrCtrl
 from wx.lib.masked.timectrl import TimeCtrl as _TimeCtrl
 
 myEVT_TQDM = wx.NewEventType()
-EVT_TQDM = wx.PyEventBinder(myEVT_TQDM, 1)
+EVT_TQDM: "wx.PyEventBinder[TQDMEvent]" = wx.PyEventBinder(myEVT_TQDM, 1)
 
 
 class TQDMEvent(wx.PyCommandEvent):
