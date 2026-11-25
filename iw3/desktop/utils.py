@@ -90,6 +90,30 @@ def init_win32():
         except:  # noqa
             pass
 
+        try:
+            # Opt out of EcoQoS power throttling. Otherwise, while another app (e.g. a full-screen
+            # video player) is in the foreground, Windows moves this process to E-cores on hybrid CPUs
+            # and the launch-bound processing loop becomes ~3x slower.
+            class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
+                _fields_ = [("Version", ctypes.c_ulong), ("ControlMask", ctypes.c_ulong), ("StateMask", ctypes.c_ulong)]
+
+            PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1
+            PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION = 0x4
+            ProcessPowerThrottling = 4
+            state = PROCESS_POWER_THROTTLING_STATE(
+                1, PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION, 0
+            )
+            kernel32 = ctypes.windll.kernel32
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            kernel32.SetProcessInformation(
+                ctypes.c_void_p(kernel32.GetCurrentProcess()),
+                ProcessPowerThrottling,
+                ctypes.byref(state),
+                ctypes.sizeof(state),
+            )
+        except:  # noqa
+            pass
+
         if sys.version_info < (3, 11):
             try:
                 # Change timer/sleep precision for 3.10
