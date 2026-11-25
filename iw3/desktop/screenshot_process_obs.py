@@ -18,16 +18,16 @@ from multiprocessing.synchronize import Event as MpEvent
 from multiprocessing.synchronize import Lock as MpLock
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import torch
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
+
 if TYPE_CHECKING:
     if sys.platform == "win32":
         from multiprocessing.connection import PipeConnection as ProcessConnection
     else:
         from multiprocessing.connection import Connection as ProcessConnection
-
-import numpy as np
-import torch
-from torchvision.transforms import InterpolationMode
-from torchvision.transforms import functional as TF
 
 _obs_support_checked = False
 _obs_unsupported_reason: str | None = None
