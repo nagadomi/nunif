@@ -10,7 +10,6 @@ from .common import (
     TQDMEvent,
     apply_dark_mode,
     extension_list_to_wildcard,
-    init_win32_dpi,
     is_dark_mode,
     load_icon,
     persistent_manager_register,
@@ -54,6 +53,5 @@ __all__ = [
     "apply_dark_mode",
     "is_dark_mode",
     "get_default_locale",
-    "init_win32_dpi",
     "refresh_layouts",
 ]

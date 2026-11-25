@@ -359,17 +359,6 @@ def is_dark_mode():
             return False
 
 
-def init_win32_dpi():
-    if sys.platform == "win32":
-        import ctypes
-
-        try:
-            # Fix mouse position when Display Scaling is not 100%
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
-        except:  # noqa
-            pass
-
-
 def refresh_layouts(window):
     if isinstance(window, wx.StatusBar):
         return

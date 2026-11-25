@@ -50,8 +50,8 @@ from nunif.gui import (
     VideoDecodingBox,
     IOPathPanel,
     get_default_locale,
-    init_win32_dpi,
 )
+from nunif.utils.win32 import enable_win32_dpi_awareness
 from .locales import LOCALES
 from . import models  # noqa
 
@@ -754,5 +754,5 @@ def main():
 
 if __name__ == "__main__":
     pyav_init_cuda_primary_context()
-    init_win32_dpi()
+    enable_win32_dpi_awareness()
     main()

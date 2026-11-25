@@ -486,12 +486,14 @@ def server_main(args, init_wxapp=True):
 
     init_video_hwaccel()
     if enable_stream and getattr(args, "stream_hub", None) is None:
+        from nunif.utils.win32 import disable_win32_power_throttling
+
         from ..desktop.service import DesktopStreamService
-        from ..desktop.utils import get_stream_codec_config, init_win32, resolve_player_stereo_format
+        from ..desktop.utils import get_stream_codec_config, resolve_player_stereo_format
         from ..desktop.video_stream_encoder import validate_stream_video_codec
         from .stream_hub import StreamFrameHub
 
-        init_win32()
+        disable_win32_power_throttling()
         video_codec, available_codecs, _ = get_stream_codec_config(args)
         gpu = getattr(args, "gpu", None)
         gpu_id = gpu[0] if isinstance(gpu, (list, tuple)) and len(gpu) > 0 else None
@@ -542,9 +544,3 @@ def server_main(args, init_wxapp=True):
             args.state["stop_event"].clear()
 
     return args
-
-
-if __name__ == "__main__":
-    parser = create_parser()
-    args = parser.parse_args()
-    server_main(args)

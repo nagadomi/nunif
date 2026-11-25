@@ -24,7 +24,6 @@ from nunif.gui import (
     IpAddrCtrl,
     apply_dark_mode,
     get_default_locale,
-    init_win32_dpi,
     is_dark_mode,
     load_icon,
     persistent_manager_register,
@@ -37,6 +36,7 @@ from nunif.gui import (
     validate_number,
 )
 from nunif.utils.git import get_current_branch
+from nunif.utils.win32 import enable_win32_dpi_awareness
 
 from ..desktop.gui_shared import EVT_FPS, FPSGUI, DesktopStreamGUIMixin
 from .dir_config import EXAMPLE_DIR, TMP_DIR
@@ -700,5 +700,5 @@ LOCALE_DICT = LOCALES.get(get_default_locale(), {})
 
 
 if __name__ == "__main__":
-    init_win32_dpi()
+    enable_win32_dpi_awareness()
     main()
