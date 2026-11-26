@@ -58,7 +58,7 @@ python -m iw3.player --root /path/to/your/media
 - `--bind-addr IP`: IPアドレスを指定（デフォルト: ローカルIPアドレス）
 - `--user USER` / `--password PASS`: 認証用のユーザー名とパスワード
 - `--clear-cache`: 起動時にサムネイルキャッシュを削除
-- `--enable-stream`: PC デスクトップのリアルタイム 3D ストリーミングを有効化（`--screenshot`、`--stream-fps`、`--stream-height` など `iw3-desktop` のオプションも併用できます。詳細は [iw3-desktop のドキュメント](../docs/desktop_ja.md) を参照してください）
+- `--enable-stream`: PC デスクトップのリアルタイム 3D ストリーミングを有効化（`--screenshot`、`--video-codec`、`--stream-fps`、`--stream-height` など `iw3-desktop` のオプションも併用できます。全オプションの一覧は `python -m iw3.player --enable-stream --help` で確認でき、詳細は [iw3-desktop のドキュメント](../docs/desktop_ja.md) を参照してください）
 
 サーバー起動後、ターミナルまたは GUI に表示される `https://[IPアドレス]:1304` に、VR デバイスのブラウザからアクセスしてください。
 

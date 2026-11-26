@@ -7,6 +7,7 @@ import secrets
 import socket
 import sys
 import threading
+from collections.abc import Sequence
 from typing import Any, cast
 
 from hypercorn.asyncio.lifespan import Lifespan
@@ -222,22 +223,45 @@ def _add_player_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     parser.add_argument("--clear-cache", action="store_true", help="Clear thumbnail cache on startup")
     parser.add_argument("--debug", action="store_true", help="Enable debug log window in VR")
     parser.add_argument("--debug-console", action="store_true", help="Enable debug log in browser console only")
-    parser.add_argument("--enable-stream", action="store_true", help="Enable desktop screenshot streaming")
+    parser.add_argument(
+        "--enable-stream",
+        action="store_true",
+        help=(
+            "Enable desktop screenshot streaming "
+            "(unlocks iw3 / iw3.desktop options such as --screenshot, --video-codec, --stream-*; "
+            "run with --enable-stream --help to list all options)"
+        ),
+    )
     return parser
 
 
 class _PlayerArgumentParser(argparse.ArgumentParser):
-    def parse_args(self, args=None, namespace=None):  # type: ignore[override]
+    def _should_enable_stream(
+        self,
+        args: Sequence[str] | None,
+        namespace: argparse.Namespace | None,
+    ) -> bool:
         effective_args = sys.argv[1:] if args is None else list(args)
-        if (
+        return (
             "--enable-stream" in effective_args
             or getattr(namespace, "enable_stream", False)
             or bool(self.get_default("enable_stream"))
-        ):
-            full_parser = create_parser(enable_stream=True)
-            full_parser.set_defaults(**self._defaults)
-            return full_parser.parse_args(args=args, namespace=namespace)
+        )
+
+    def _create_full_parser(self) -> argparse.ArgumentParser:
+        full_parser = create_parser(enable_stream=True)
+        full_parser.set_defaults(**self._defaults)
+        return full_parser
+
+    def parse_args(self, args=None, namespace=None):  # type: ignore[override]
+        if self._should_enable_stream(args, namespace):
+            return self._create_full_parser().parse_args(args=args, namespace=namespace)
         return super().parse_args(args=args, namespace=namespace)
+
+    def parse_known_args(self, args=None, namespace=None):  # type: ignore[override]
+        if self._should_enable_stream(args, namespace):
+            return self._create_full_parser().parse_known_args(args=args, namespace=namespace)
+        return super().parse_known_args(args=args, namespace=namespace)
 
 
 def create_parser(enable_stream: bool = False) -> argparse.ArgumentParser:
@@ -250,7 +274,11 @@ def create_parser(enable_stream: bool = False) -> argparse.ArgumentParser:
         parser.description = "WebXR View Server"
         return _add_player_args(parser)
 
-    parser = _PlayerArgumentParser(description="WebXR View Server")
+    parser = _PlayerArgumentParser(
+        description="WebXR View Server",
+        epilog="Run with --enable-stream --help to show all desktop streaming and 3D conversion options.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--port", type=int, default=1304, help="HTTP listen port")
     parser.add_argument("--bind-addr", type=str, default=get_local_address(), help="HTTP listen address")
     parser.add_argument("--user", type=str, help="HTTP Basic Authentication username")

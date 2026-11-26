@@ -345,6 +345,7 @@ def test_player_create_parser():
     from iw3.player.server import create_parser, set_state_args
 
     parser = create_parser()
+    assert "--enable-stream --help" in parser.format_help()
     args = parser.parse_args([])
     assert args.enable_stream is False
     assert args.port == 1304
@@ -352,16 +353,36 @@ def test_player_create_parser():
     assert "depth_model" not in args.state
 
     custom = parser.parse_args(
-        ["--enable-stream", "--full-sbs", "--stream-fps", "60", "--screenshot", "pil", "--divergence", "2.5"]
+        [
+            "--enable-stream",
+            "--full-sbs",
+            "--stream-fps",
+            "60",
+            "--stream-buffer",
+            "100",
+            "--video-codec",
+            "h264_nvenc",
+            "--screenshot",
+            "pil",
+            "--divergence",
+            "2.5",
+        ]
     )
     assert custom.enable_stream is True
     assert custom.full_sbs is True
     assert custom.stream_fps == 60
+    assert custom.stream_buffer == 100
+    assert custom.video_codec == "h264_nvenc"
     assert custom.screenshot == "pil"
     assert custom.divergence == 2.5
     assert custom.depth_model == "Any_V2_S"
     assert custom.convergence == 1.0
     assert custom.ema_normalize is True
+
+    known_args, unknown = parser.parse_known_args(["--enable-stream", "--video-codec", "libx264", "--unknown-flag"])
+    assert known_args.enable_stream is True
+    assert known_args.video_codec == "libx264"
+    assert unknown == ["--unknown-flag"]
 
 
 def test_stream_hub_clear_frames_stops_clients():

@@ -59,7 +59,7 @@ python -m iw3.player --root /path/to/your/media
 - `--bind-addr IP`: IP address (default: local IP address)
 - `--user USER` / `--password PASS`: Username and password for authentication
 - `--clear-cache`: Clear thumbnail cache on startup
-- `--enable-stream`: Enable real-time PC desktop 3D streaming (`iw3-desktop` options such as `--screenshot`, `--stream-fps`, and `--stream-height` are also available; see [iw3-desktop documentation](../docs/desktop.md))
+- `--enable-stream`: Enable real-time PC desktop 3D streaming (`iw3-desktop` options such as `--screenshot`, `--video-codec`, `--stream-fps`, and `--stream-height` are also available; run `python -m iw3.player --enable-stream --help` to list all options, and see [iw3-desktop documentation](../docs/desktop.md))
 
 Once the server is running, access the URL displayed in the terminal or GUI (e.g., `https://[IP address]:1304`) using the browser on your VR device.
 
