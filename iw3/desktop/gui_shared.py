@@ -98,6 +98,7 @@ class DesktopStreamGUIMixin:
             is_obs_supported,
             is_wayland,
             read_runtime_adjustment_values,
+            read_runtime_stream_buffer,
         )
         from iw3.desktop.video_stream_encoder import (
             get_available_stream_video_codecs,
@@ -127,6 +128,8 @@ class DesktopStreamGUIMixin:
         self._check_compile_support = check_compile_support
         self._gc_collect = gc_collect
         self._read_runtime_adjustment_values = read_runtime_adjustment_values
+        self._read_runtime_stream_buffer = read_runtime_stream_buffer
+        self._is_jpeg_codec = is_jpeg_codec
         self._has_obs = is_obs_supported()
         self._has_kwcapture = is_kwcapture_supported()
         self._desktop_deps_loaded = True
@@ -149,18 +152,30 @@ class DesktopStreamGUIMixin:
         self.cbo_stream_height = EditableComboBox(parent, choices=["2160", "1080", "720"], name="cbo_stream_height")
         self.cbo_stream_height.SetSelection(1)
 
-        self.lbl_stream_quality = wx.StaticText(parent, label=T("Streaming Quality"))
-        self.cbo_stream_quality = EditableComboBox(
-            parent, choices=["100", "95", "90", "85", "80"], name="cbo_stream_quality"
-        )
-        self.cbo_stream_quality.SetSelection(2)
-
         self.lbl_video_codec = wx.StaticText(parent, label=T("Video Codec"))
         self.cbo_video_codec = wx.ComboBox(
             parent, choices=list(self._available_stream_video_codecs), name="cbo_video_codec"
         )
         self.cbo_video_codec.SetEditable(False)
         self.cbo_video_codec.SetSelection(0)
+
+        self.lbl_stream_quality = wx.StaticText(parent, label=T("Streaming Quality"))
+        self.cbo_stream_quality = EditableComboBox(
+            parent, choices=["100", "95", "90", "85", "80"], name="cbo_stream_quality"
+        )
+        self.cbo_stream_quality.SetSelection(2)
+
+        self.lbl_stream_buffer = wx.StaticText(parent, label=T("Stream Buffer (ms)"))
+        self.cbo_stream_buffer = EditableComboBox(
+            parent, choices=["0", "50", "75", "100", "150"], name="cbo_stream_buffer"
+        )
+        self.cbo_stream_buffer.SetSelection(0)
+        buffer_tooltip = T(
+            "Buffers frames for smoother playback at the cost of extra latency. "
+            "Large values may cause PC input or audio to go out of sync. 0 to disable."
+        )
+        self.lbl_stream_buffer.SetToolTip(buffer_tooltip)
+        self.cbo_stream_buffer.SetToolTip(buffer_tooltip)
 
         self.chk_pad_16_9 = wx.CheckBox(parent, label=T("Padding") + " 16:9", name="chk_pad_16_9")
         self.chk_pad_16_9.SetValue(False)
@@ -171,11 +186,13 @@ class DesktopStreamGUIMixin:
         grid.Add(self.cbo_stream_fps, (r + 1, 1), flag=wx.EXPAND)
         grid.Add(self.lbl_stream_height, (r + 2, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.cbo_stream_height, (r + 2, 1), flag=wx.EXPAND)
-        grid.Add(self.lbl_stream_quality, (r + 3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        grid.Add(self.cbo_stream_quality, (r + 3, 1), flag=wx.EXPAND)
-        grid.Add(self.lbl_video_codec, (r + 4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        grid.Add(self.cbo_video_codec, (r + 4, 1), flag=wx.EXPAND)
-        grid.Add(self.chk_pad_16_9, (r + 5, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.lbl_video_codec, (r + 3, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.cbo_video_codec, (r + 3, 1), flag=wx.EXPAND)
+        grid.Add(self.lbl_stream_quality, (r + 4, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.cbo_stream_quality, (r + 4, 1), flag=wx.EXPAND)
+        grid.Add(self.lbl_stream_buffer, (r + 5, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.cbo_stream_buffer, (r + 5, 1), flag=wx.EXPAND)
+        grid.Add(self.chk_pad_16_9, (r + 6, 1), flag=wx.ALIGN_CENTER_VERTICAL)
 
         return [
             self.sep_network2,
@@ -183,10 +200,12 @@ class DesktopStreamGUIMixin:
             self.cbo_stream_fps,
             self.lbl_stream_height,
             self.cbo_stream_height,
-            self.lbl_stream_quality,
-            self.cbo_stream_quality,
             self.lbl_video_codec,
             self.cbo_video_codec,
+            self.lbl_stream_quality,
+            self.cbo_stream_quality,
+            self.lbl_stream_buffer,
+            self.cbo_stream_buffer,
             self.chk_pad_16_9,
         ]
 
@@ -534,6 +553,7 @@ class DesktopStreamGUIMixin:
         self.btn_reload_window_name.Bind(wx.EVT_BUTTON, self.update_window_names)
         self.cbo_device.Bind(wx.EVT_TEXT, self.on_selected_index_changed_cbo_device)
         self.chk_compile.Bind(wx.EVT_CHECKBOX, self.update_compile)
+        self.cbo_video_codec.Bind(wx.EVT_TEXT, self.on_text_changed_cbo_video_codec)
 
     def get_depth_models(self, small_only: bool) -> list[str]:
         depth_models = self._BaseDepthModel.get_available_models(desktop=True, small_only=small_only)
@@ -553,6 +573,7 @@ class DesktopStreamGUIMixin:
             self.cbo_stream_fps,
             self.cbo_stream_height,
             self.cbo_stream_quality,
+            self.cbo_stream_buffer,
         ]
 
     def get_anaglyph_method(self) -> str | None:
@@ -769,6 +790,9 @@ class DesktopStreamGUIMixin:
         if not validate_number(self.cbo_stream_quality.GetValue(), 1, 100, allow_empty=False):
             self.show_validation_error_message(T("Streaming Quality"), 1, 100)
             return False
+        if not validate_number(self.cbo_stream_buffer.GetValue(), 0, 500, is_int=True, allow_empty=False):
+            self.show_validation_error_message(T("Stream Buffer (ms)"), 0, 500)
+            return False
         if validate_port and not validate_number(self.txt_port.GetValue(), 1025, 65535, allow_empty=False):
             self.show_validation_error_message(T("Port"), 1025, 65535)
             return False
@@ -873,8 +897,19 @@ class DesktopStreamGUIMixin:
             "stream_fps": int(self.cbo_stream_fps.GetValue()),
             "stream_height": int(self.cbo_stream_height.GetValue()),
             "stream_quality": int(self.cbo_stream_quality.GetValue()),
+            "stream_buffer": int(self.cbo_stream_buffer.GetValue()),
             "video_codec": self.cbo_video_codec.GetValue() or self._default_stream_video_codec,
         }
+
+    def update_stream_buffer_visibility(self) -> None:
+        show = not self._is_jpeg_codec(self.cbo_video_codec.GetValue())
+        self.lbl_stream_buffer.Show(show)
+        self.cbo_stream_buffer.Show(show)
+        if self.IsShown():
+            refresh_layouts(self)
+
+    def on_text_changed_cbo_video_codec(self, event: wx.Event) -> None:
+        self.update_stream_buffer_visibility()
 
     def ensure_valid_video_codec_selection(self) -> None:
         if self.cbo_video_codec.GetSelection() == wx.NOT_FOUND and self.cbo_video_codec.GetCount() > 0:

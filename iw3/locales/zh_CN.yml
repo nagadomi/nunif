@@ -137,6 +137,8 @@
 "Fit Window": "适应窗口"
 "Streaming Resolution": "流媒体分辨率"
 "Streaming Quality": "流媒体画质"
+"Stream Buffer (ms)": "串流缓冲 (ms)"
+"Buffers frames for smoother playback at the cost of extra latency. Large values may cause PC input or audio to go out of sync. 0 to disable.": "通过增加少量延迟来缓冲视频帧，使播放更流畅。数值过大可能导致 PC 操作或音频不同步。设为 0 则禁用。"
 "Screenshot": "截屏"
 "Shutdown": "关机"
 "Basic Authentication": "基本认证"

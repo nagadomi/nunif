@@ -37,6 +37,14 @@ const STREAM_SETTINGS_DEFS = {
         decimals: 0,
         default: 2,
     },
+    buffer_ms: {
+        label: 'Stream Buffer',
+        min: 0,
+        max: 200,
+        step: 25,
+        decimals: 0,
+        default: 0,
+    },
 };
 
 const STREAM_SETTING_KEYS = Object.keys(STREAM_SETTINGS_DEFS);
@@ -49,8 +57,9 @@ class StreamSettingsMenu {
 
         this.values = {};
         this._lastSentValues = {};
+        const urlOverrideMs = this.uiManager?.stereoPlayer?.playbackController?.urlBufferOverrideMs ?? null;
         for (const key of STREAM_SETTING_KEYS) {
-            const defVal = STREAM_SETTINGS_DEFS[key].default;
+            const defVal = key === 'buffer_ms' && urlOverrideMs !== null ? urlOverrideMs : STREAM_SETTINGS_DEFS[key].default;
             this.values[key] = defVal;
             this._lastSentValues[key] = defVal;
         }
@@ -99,10 +108,19 @@ class StreamSettingsMenu {
 
     _applyServerSettings(data) {
         if (!data || typeof data !== 'object') return;
+        const pc = this.uiManager?.stereoPlayer?.playbackController;
         for (const key of STREAM_SETTING_KEYS) {
+            if (key === 'buffer_ms' && pc?.hasUrlBufferOverride) {
+                this.values.buffer_ms = pc.urlBufferOverrideMs;
+                this._lastSentValues.buffer_ms = pc.urlBufferOverrideMs;
+                continue;
+            }
             if (typeof data[key] === 'number' && !(key in this.pendingUpdates)) {
                 this.values[key] = data[key];
                 this._lastSentValues[key] = data[key];
+                if (key === 'buffer_ms') {
+                    pc?.setStreamBufferMs(data[key]);
+                }
             }
         }
     }
@@ -146,6 +164,11 @@ class StreamSettingsMenu {
         if (this.values[id] !== val) {
             this.values[id] = val;
             this.pendingUpdates[id] = val;
+            if (id === 'buffer_ms') {
+                const pc = this.uiManager?.stereoPlayer?.playbackController;
+                pc?.clearUrlBufferOverride();
+                pc?.setStreamBufferMs(val);
+            }
             this.uiManager.syncUI(false);
         } else if (shouldCommit && this._lastSentValues[id] !== val) {
             this.pendingUpdates[id] = val;
@@ -251,6 +274,11 @@ class StreamSettingsMenu {
             if (!def) continue;
             this.values[key] = def.default;
             this.pendingUpdates[key] = def.default;
+            if (key === 'buffer_ms') {
+                const pc = this.uiManager?.stereoPlayer?.playbackController;
+                pc?.clearUrlBufferOverride();
+                pc?.setStreamBufferMs(def.default);
+            }
         }
         this.uiManager.syncUI(true);
         await this.flushSettings();
@@ -279,7 +307,21 @@ class StreamSettingsMenu {
                 sl._lastMargin = margin;
             }
             if (sl.valueText) {
-                const text = this._formatValue(val, def);
+                let text;
+                if (key === 'buffer_ms') {
+                    const status = this.uiManager?.stereoPlayer?.playbackController?.getStreamBufferStatus?.();
+                    if (status && !status.supported) {
+                        text = 'N/A (MJPEG)';
+                    } else if (val === 0) {
+                        text = '0 ms';
+                    } else if (status && status.isClamped) {
+                        text = `${Math.round(val)} ms (eff ${status.effectiveMs})`;
+                    } else {
+                        text = `${Math.round(val)} ms`;
+                    }
+                } else {
+                    text = this._formatValue(val, def);
+                }
                 if (sl._lastValueText !== text) {
                     sl.valueText.setProperties({ text });
                     sl._lastValueText = text;

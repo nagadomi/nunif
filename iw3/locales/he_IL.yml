@@ -137,6 +137,8 @@
 "Fit Window": "התאם לחלון"
 "Streaming Resolution": "רזולוציית הזרמה"
 "Streaming Quality": "איכות הזרמה"
+"Stream Buffer (ms)": "חציצת הזרמה (ms)"
+"Buffers frames for smoother playback at the cost of extra latency. Large values may cause PC input or audio to go out of sync. 0 to disable.": "אוגר פריימים לניגון חלק יותר על חשבון השהיה נוספת. ערכים גבוהים עלולים לגרום לחוסר סנכרון עם קלט מהמחשב או השמע. 0 לביטול."
 "Screenshot": "צילום מסך"
 "Shutdown": "כיבוי"
 "Basic Authentication": "אימות בסיסי"

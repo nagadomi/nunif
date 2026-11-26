@@ -388,6 +388,7 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
         ensure_default_stereo_format,
         get_runtime_stream_settings,
         read_runtime_adjustment_values,
+        read_runtime_stream_buffer,
         resolve_player_stereo_format,
         update_runtime_stream_settings,
     )
@@ -508,6 +509,7 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
             "convergence": 1.0,
             "foreground_scale": 0.0,
             "edge_dilation": 2,
+            "buffer_ms": 0,
         }
 
         res_post_settings = client.post(
@@ -517,6 +519,7 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
                 "convergence": 0.75,
                 "foreground_scale": -1.5,
                 "edge_dilation": 4,
+                "buffer_ms": 100,
             },
         )
         assert res_post_settings.status_code == 200
@@ -526,9 +529,14 @@ def test_api_player_desktop_stream_lifecycle(tmp_path):
             "convergence": 0.75,
             "foreground_scale": -1.5,
             "edge_dilation": 4,
+            "buffer_ms": 100,
         }
         assert dummy_convergence_model.convergence == 0.75
         assert read_runtime_adjustment_values(cli_args) == (2.5, 0.75, -1.5, 4, "")
+        assert read_runtime_stream_buffer(cli_args) == 100
+        assert client.get("/api/stream/info").json()["buffer_ms"] == 100
+        assert client.post("/api/stream/settings", json={"buffer_ms": 501}).status_code == 422
+        assert client.post("/api/stream/settings", json={"buffer_ms": -1}).status_code == 422
     finally:
         state.close()
         app.state.server_state = prev_state

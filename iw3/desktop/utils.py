@@ -139,6 +139,7 @@ def add_desktop_stream_args(parser: argparse.ArgumentParser, default_port: int =
     parser.add_argument("--stream-fps", type=int, default=30, help="Streaming FPS")
     parser.add_argument("--stream-height", type=int, default=1080, help="Streaming screen resolution")
     parser.add_argument("--stream-quality", type=int, default=90, help="Streaming quality")
+    parser.add_argument("--stream-buffer", type=int, default=0, help="Streaming playback buffer in ms (0 to disable)")
     parser.add_argument("--full-sbs", action="store_true", help="Use Full SBS for Pico4")
     parser.add_argument(
         "--screenshot",
@@ -206,6 +207,7 @@ def set_state_args(args, args_lock=None, stop_event=None, fps_event=None, tqdm_f
 
     IW3U.set_state_args(args, stop_event=stop_event, tqdm_fn=tqdm_fn, depth_model=depth_model)
     args.video_codec = normalize_video_codec(getattr(args, "video_codec", None))
+    args.stream_buffer = max(0, min(500, int(getattr(args, "stream_buffer", 0) or 0)))
     args.state["fps_event"] = fps_event
     args.state["args_lock"] = args_lock if args_lock is not None else threading.Lock()
     args.state.setdefault("initial_mapper", getattr(args, "mapper", None))
@@ -347,6 +349,7 @@ def get_runtime_stream_settings(args: Any) -> dict[str, Any]:
             "convergence": float(args.convergence),
             "foreground_scale": float(args.foreground_scale),
             "edge_dilation": edge_dilation,
+            "buffer_ms": int(getattr(args, "stream_buffer", 0)),
         }
 
     if args_lock is not None:
@@ -387,6 +390,22 @@ def read_runtime_adjustment_values(args: Any, lock: Any = None) -> tuple[float, 
     return _read()
 
 
+def read_runtime_stream_buffer(args: Any, lock: Any = None) -> int | None:
+    if args is None:
+        return None
+    if lock is None:
+        state = getattr(args, "state", None)
+        lock = state.get("args_lock") if isinstance(state, dict) else None
+
+    def _read() -> int:
+        return max(0, min(500, int(getattr(args, "stream_buffer", 0) or 0)))
+
+    if lock is not None:
+        with lock:
+            return _read()
+    return _read()
+
+
 def update_runtime_stream_settings(args: Any, updates: dict[str, Any]) -> dict[str, Any]:
     state = getattr(args, "state", None)
     args_lock = state.get("args_lock") if isinstance(state, dict) else None
@@ -412,6 +431,8 @@ def update_runtime_stream_settings(args: Any, updates: dict[str, Any]) -> dict[s
                 )
         if updates.get("edge_dilation") is not None:
             args.edge_dilation = int(updates["edge_dilation"])
+        if updates.get("buffer_ms") is not None:
+            args.stream_buffer = max(0, min(500, int(updates["buffer_ms"])))
 
     if args_lock is not None:
         with args_lock:

@@ -182,6 +182,19 @@ python -m iw3.desktop --stream-quality 80
 ```
 The default is 90. Specifying a lower value reduces network traffic.
 
+#### Stream Buffer (`--stream-buffer`)
+
+You can specify a playback buffer duration in milliseconds (`0`-`500`) with `--stream-buffer` (or `Stream Buffer (ms)` in the GUI) when streaming with H.264 / HEVC.
+
+```bash
+python -m iw3.desktop --stream-buffer 100
+```
+
+*   The default is `0` (disabled, lowest latency). Increasing the buffer smooths out playback stuttering caused by Wi-Fi jitter at the cost of extra display latency (large values may make PC input or PC audio feel out of sync).
+*   Can also be adjusted live from `Stream Settings` -> `Stream Buffer` (`0`-`200` ms) in the VR player (synced with the PC GUI).
+*   At high FPS (e.g., 60 FPS or higher), the effective buffer duration is automatically limited (e.g., ~100 ms at 60 FPS), and the VR UI displays the effective value.
+*   Not available for MJPEG (`jpeg` / `jpeg-gpu`), `Web Streaming (Legacy)`, or `Local Viewer` (hidden in the GUI).
+
 ### Screenshot Method (Screen Capture)
 
 `--screenshot` selects the screen capture backend.

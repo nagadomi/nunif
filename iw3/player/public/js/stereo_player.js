@@ -584,6 +584,14 @@ class StereoPlayer extends THREE.Group {
             if (tex) {
                 this.activeScreen.updateTexture(tex, aspectRatio, finalFormat);
             }
+            if (
+                info.bufferMsChanged &&
+                typeof info.buffer_ms === 'number' &&
+                !this.playbackController.hasUrlBufferOverride &&
+                !this.uiManager?.streamSettings?._isDragging
+            ) {
+                this.playbackController.setStreamBufferMs(info.buffer_ms);
+            }
             this.uiManager?.streamSettings?.fetchSettings?.();
             this.uiManager.syncUI(true);
         } catch (e) {
