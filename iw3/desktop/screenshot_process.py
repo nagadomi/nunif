@@ -554,14 +554,15 @@ class ScreenshotProcess(threading.Thread):
         self.screen_width = screen_size[0]
         self.screen_height = screen_size[1]
         template = np.zeros((self.screen_height, self.screen_width, 4), dtype=np.uint8)
+        ctx = mp.get_context("spawn")
         self.process_frame_buffer = shared_memory.SharedMemory(create=True, size=template.nbytes)
-        self.process_frame_pos = mp.Array("i", [0, 0], lock=False)
-        self.process_stop_event = mp.Event()
-        self.process_frame_event = mp.Event()
-        self.process_frame_lock = mp.Lock()
-        self.process_closed_event = mp.Event()
-        self.process_error_recv, error_send = mp.Pipe(duplex=False)
-        self.process = mp.Process(
+        self.process_frame_pos = ctx.Array("i", [0, 0], lock=False)
+        self.process_stop_event = ctx.Event()
+        self.process_frame_event = ctx.Event()
+        self.process_frame_lock = ctx.Lock()
+        self.process_closed_event = ctx.Event()
+        self.process_error_recv, error_send = ctx.Pipe(duplex=False)
+        self.process = ctx.Process(
             target=capture_process,
             args=(
                 tuple(template.shape),
