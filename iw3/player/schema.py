@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ItemType(str, Enum):
@@ -25,3 +25,4 @@ class StreamSettingsUpdate(BaseModel):
     convergence: Optional[float] = None
     foreground_scale: Optional[float] = None
     edge_dilation: Optional[int] = None
+    buffer_ms: Optional[int] = Field(default=None, ge=0, le=500)

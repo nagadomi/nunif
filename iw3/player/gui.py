@@ -116,6 +116,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.depth_model_height = None
         self._desktop_ui_initialized = False
         self._last_synced_stream_settings = None
+        self._last_synced_stream_buffer = None
         self.network_stream_widgets: list[wx.Window] = []
         self.processing = False
         self.args = None
@@ -334,6 +335,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         self.update_window_names()
         self.update_compile()
         self.update_wayland_warning()
+        self.update_stream_buffer_visibility()
 
     def update_stream_enable_state(self):
         enabled = self.chk_enable_stream.IsChecked()
@@ -348,6 +350,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             self.update_window_names()
             self.update_divergence_warning()
             self.update_bind_addr_warning()
+            self.update_stream_buffer_visibility()
         elif self._desktop_ui_initialized:
             self.grp_stereo.Hide()
             self.grp_processor.Hide()
@@ -494,23 +497,25 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         if not self._desktop_ui_initialized or args is None or not getattr(args, "enable_stream", False):
             return
         current = self._read_runtime_adjustment_values(args, self.args_lock)
-        if current is None:
-            return
-        prev = self._last_synced_stream_settings
-        if current == prev:
-            return
-        div, conv, fg, edge_x, edge_y = current
-        if prev is None or div != prev[0]:
-            self.cbo_divergence.SetValue(f"{div:.2f}".rstrip("0").rstrip("."))
-        if prev is None or conv != prev[1]:
-            self.cbo_convergence.SetValue(f"{conv:.2f}".rstrip("0").rstrip("."))
-        if prev is None or fg != prev[2]:
-            self.cbo_foreground_scale.SetValue(f"{fg:.2f}".rstrip("0").rstrip("."))
-        if prev is None or edge_x != prev[3]:
-            self.cbo_edge_dilation.SetValue(str(edge_x))
-        if prev is None or edge_y != prev[4]:
-            self.cbo_edge_dilation_y.SetValue(edge_y)
-        self._last_synced_stream_settings = current
+        if current is not None:
+            prev = self._last_synced_stream_settings
+            if current != prev:
+                div, conv, fg, edge_x, edge_y = current
+                if prev is None or div != prev[0]:
+                    self.cbo_divergence.SetValue(f"{div:.2f}".rstrip("0").rstrip("."))
+                if prev is None or conv != prev[1]:
+                    self.cbo_convergence.SetValue(f"{conv:.2f}".rstrip("0").rstrip("."))
+                if prev is None or fg != prev[2]:
+                    self.cbo_foreground_scale.SetValue(f"{fg:.2f}".rstrip("0").rstrip("."))
+                if prev is None or edge_x != prev[3]:
+                    self.cbo_edge_dilation.SetValue(str(edge_x))
+                if prev is None or edge_y != prev[4]:
+                    self.cbo_edge_dilation_y.SetValue(edge_y)
+                self._last_synced_stream_settings = current
+        current_buffer = self._read_runtime_stream_buffer(args, self.args_lock)
+        if current_buffer is not None and current_buffer != self._last_synced_stream_buffer:
+            self.cbo_stream_buffer.SetValue(str(current_buffer))
+            self._last_synced_stream_buffer = current_buffer
 
     def on_fps(self, event):
         estimated_fps, screenshot_fps, streaming_fps, screen_size, url = event.GetValue()
@@ -564,8 +569,10 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
 
         if self._desktop_ui_initialized and getattr(self.args, "enable_stream", False):
             self._last_synced_stream_settings = self._read_runtime_adjustment_values(self.args)
+            self._last_synced_stream_buffer = self._read_runtime_stream_buffer(self.args)
         else:
             self._last_synced_stream_settings = None
+            self._last_synced_stream_buffer = None
 
         self.stop_event.clear()
         self.btn_stop.Enable()
@@ -616,6 +623,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         if final_args is not None:
             self._sync_stream_settings_to_gui(final_args)
         self._last_synced_stream_settings = None
+        self._last_synced_stream_buffer = None
         self.args = None
         self.processing = False
         self.btn_start.Enable()

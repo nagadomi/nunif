@@ -41,4 +41,118 @@ tight.clear();
 assert.ok(c.closed);
 assert.equal(tight.pop(1e9), null);
 
+// 60fps + bufferMs=200: automatically clamps effective buffer to ~100ms without freezing.
+{
+    const pacer60 = new FramePacer(200);
+    const interval = 1000 / 60;
+    const frames = Array.from({ length: 40 }, (_, i) => frame(i * interval));
+    const shownIndices = [];
+    let pushIdx = 0;
+    for (let now = 0; now < 900; now += 1000 / 90) {
+        while (pushIdx < frames.length && pushIdx * interval <= now) {
+            pacer60.push(frames[pushIdx], pushIdx * interval + 5);
+            pushIdx++;
+        }
+        const out = pacer60.pop(now + 5);
+        if (out) {
+            shownIndices.push(frames.indexOf(out));
+        }
+    }
+    assert.ok(shownIndices.length >= 30, `expected smooth playback, got ${shownIndices.length} frames`);
+    assert.equal(shownIndices[shownIndices.length - 1], frames.length - 1);
+    const status = pacer60.getStatus();
+    assert.equal(status.configuredMs, 200);
+    assert.equal(status.isClamped, true);
+    assert.ok(status.effectiveMs >= 95 && status.effectiveMs <= 105, `effectiveMs=${status.effectiveMs}`);
+}
+
+// 240fps + bufferMs=100: clamps effective buffer to ~25ms and keeps advancing.
+{
+    const pacer240 = new FramePacer(100);
+    const interval = 1000 / 240;
+    const frames = Array.from({ length: 80 }, (_, i) => frame(i * interval));
+    const shownIndices = [];
+    let pushIdx = 0;
+    for (let now = 0; now < 450; now += 1000 / 90) {
+        while (pushIdx < frames.length && pushIdx * interval <= now) {
+            pacer240.push(frames[pushIdx], pushIdx * interval + 2);
+            pushIdx++;
+        }
+        const out = pacer240.pop(now + 2);
+        if (out) {
+            shownIndices.push(frames.indexOf(out));
+        }
+    }
+    assert.ok(shownIndices.length >= 20);
+    assert.equal(shownIndices[shownIndices.length - 1], frames.length - 1);
+    const status = pacer240.getStatus();
+    assert.equal(status.isClamped, true);
+    assert.ok(status.effectiveMs >= 20 && status.effectiveMs <= 30, `effectiveMs=${status.effectiveMs}`);
+}
+
+// 60fps + bufferMs=100 with minor capture jitter does not flicker into isClamped=true.
+{
+    const pacerJitter = new FramePacer(100);
+    let ts = 0;
+    const dts = [16.4, 16.9, 16.3, 16.8, 16.5, 16.7, 16.4, 16.9];
+    for (const dt of dts) {
+        ts += dt;
+        pacerJitter.push(frame(ts), ts + 5);
+    }
+    const status = pacerJitter.getStatus();
+    assert.equal(status.effectiveMs, 100);
+    assert.equal(status.isClamped, false);
+}
+
+// Sudden FPS jump (24fps -> 120fps): queue capacity safety valve prevents stall and EMA converges.
+{
+    const pacerJump = new FramePacer(200);
+    let ts = 0;
+    for (let i = 0; i < 6; i++) {
+        pacerJump.push(frame(ts), ts + 5);
+        pacerJump.pop(ts + 5);
+        ts += 41.7;
+    }
+    const shownHighFps = [];
+    for (let i = 0; i < 40; i++) {
+        const fHigh = frame(ts);
+        pacerJump.push(fHigh, ts + 5);
+        const out = pacerJump.pop(ts + 5);
+        if (out) shownHighFps.push(out);
+        ts += 8.33;
+    }
+    assert.ok(shownHighFps.length >= 25, `expected continued output after FPS jump, got ${shownHighFps.length}`);
+    assert.ok(pacerJump.getEffectiveBufferMs() < 80, `expected clamped effective buffer, got ${pacerJump.getEffectiveBufferMs()}`);
+}
+
+// Dynamic setBufferMs() and takeLatestAndClear().
+{
+    const dyn = new FramePacer(0);
+    assert.equal(dyn.getStatus().configuredMs, 0);
+    dyn.setBufferMs(100);
+    assert.equal(dyn.getStatus().configuredMs, 100);
+    dyn.setBufferMs(50);
+    assert.equal(dyn.getStatus().configuredMs, 50);
+    const f1 = frame(10);
+    const f2 = frame(50);
+    dyn.push(f1, 15);
+    dyn.push(f2, 55);
+    const latest = dyn.takeLatestAndClear();
+    assert.equal(latest, f2);
+    assert.ok(f1.closed);
+    assert.ok(!f2.closed);
+    assert.equal(dyn.getStatus().queueLength, 0);
+}
+
+// clear() resets clock offset so server restart (timestamp reset near 0) recovers immediately.
+{
+    const reconnectPacer = new FramePacer(50);
+    reconnectPacer.push(frame(100000), 100010);
+    reconnectPacer.clear();
+    const fresh = frame(10);
+    reconnectPacer.push(fresh, 50000);
+    assert.equal(reconnectPacer.pop(50040), null);
+    assert.equal(reconnectPacer.pop(50060), fresh);
+}
+
 console.log("frame_pacer OK");

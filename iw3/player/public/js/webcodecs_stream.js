@@ -29,13 +29,17 @@ export function getRequestedVideoCodecOverride() {
 }
 
 // `?buffer_ms=80` holds decoded frames and plays them at their capture spacing, trading latency
-// for smooth playback over jittery Wi-Fi. 0 (default) shows the newest frame immediately.
-function getStreamBufferMs() {
+// for smooth playback over jittery Wi-Fi. Returns null when not explicitly specified.
+export function getRequestedBufferMsOverride() {
     if (typeof window === "undefined") {
-        return 0;
+        return null;
     }
-    const value = Number(new URLSearchParams(window.location.search).get("buffer_ms"));
-    return Number.isFinite(value) ? Math.min(Math.max(value, 0), 500) : 0;
+    const raw = new URLSearchParams(window.location.search).get("buffer_ms");
+    if (raw === null || raw.trim() === "") {
+        return null;
+    }
+    const value = Number(raw);
+    return Number.isFinite(value) ? Math.min(Math.max(Math.round(value), 0), 500) : null;
 }
 
 async function isCodecFamilySupported(family, width, height) {
@@ -88,7 +92,8 @@ class WebCodecsStream extends BaseDesktopStream {
         wsPath = "/api/stream/ws",
         infoUrl = "/api/stream/info",
         requestedCodecs = ["hevc", "h264"],
-        debugLogInstance = null
+        debugLogInstance = null,
+        initialBufferMs = null
     ) {
         const texture = new THREE.VideoFrameTexture();
         texture.image = null;
@@ -108,8 +113,12 @@ class WebCodecsStream extends BaseDesktopStream {
         this._decoderHeight = 0;
         this._waitingForKeyframe = true;
         this._pendingFrame = null;
-        const bufferMs = getStreamBufferMs();
-        this._pacer = bufferMs > 0 ? new FramePacer(bufferMs) : null;
+        const overrideMs = getRequestedBufferMsOverride();
+        const resolvedMs = initialBufferMs !== null ? initialBufferMs : (overrideMs ?? 0);
+        const clampedMs = Number.isFinite(Number(resolvedMs))
+            ? Math.min(Math.max(Math.round(Number(resolvedMs)), 0), 500)
+            : 0;
+        this._pacer = clampedMs > 0 ? new FramePacer(clampedMs) : null;
         this._hasDecodedFrame = false;
         this._lastKeyframeRequestMs = 0;
         this._messageQueue = Promise.resolve();
@@ -184,6 +193,45 @@ class WebCodecsStream extends BaseDesktopStream {
         this._decoderWidth = 0;
         this._decoderHeight = 0;
         this._waitingForKeyframe = true;
+        this._pacer?.clear();
+    }
+
+    setBufferMs(bufferMs) {
+        const value = Number(bufferMs);
+        const clamped = Number.isFinite(value) ? Math.min(Math.max(Math.round(value), 0), 500) : 0;
+        if (clamped === 0) {
+            if (this._pacer) {
+                const latest = this._pacer.takeLatestAndClear();
+                if (latest) {
+                    if (this._pendingFrame) {
+                        this._pendingFrame.close();
+                    }
+                    this._pendingFrame = latest;
+                    this.hasNewFrame = true;
+                }
+                this._pacer = null;
+            }
+            return;
+        }
+        if (this._pacer) {
+            this._pacer.setBufferMs(clamped);
+        } else {
+            this._pacer = new FramePacer(clamped);
+        }
+    }
+
+    getBufferStatus() {
+        if (this._pacer) {
+            return { supported: true, ...this._pacer.getStatus() };
+        }
+        return {
+            supported: true,
+            configuredMs: 0,
+            effectiveMs: 0,
+            isClamped: false,
+            queueLength: 0,
+            frameIntervalMs: null,
+        };
     }
 
     async _configureDecoder(msg) {
@@ -461,6 +509,7 @@ class WebCodecsStream extends BaseDesktopStream {
         ws.onopen = () => {
             if (this._ws !== ws || !this.isActive) return;
             this._waitingForKeyframe = true;
+            this._pacer?.clear();
             if (this.isPaused) {
                 this._sendControl({ type: "pause" });
             }

@@ -373,6 +373,12 @@ class StreamFrameHub:
             }
         active = bool(service.is_running()) if service is not None and hasattr(service, "is_running") else True
         info["active"] = active
+        buffer_ms = 0
+        if service is not None and hasattr(service, "get_settings"):
+            settings = service.get_settings()
+            if isinstance(settings, dict):
+                buffer_ms = int(settings.get("buffer_ms", 0))
+        info["buffer_ms"] = buffer_ms
         return info
 
     async def async_stream_generator(self) -> AsyncGenerator[bytes, None]:

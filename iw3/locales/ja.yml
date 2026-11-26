@@ -133,6 +133,8 @@
 "Fit Window": "ウィンドウにフィット"
 "Streaming Resolution": "ストリーミング 解像度"
 "Streaming Quality": "ストリーミング 品質"
+"Stream Buffer (ms)": "配信バッファ (ms)"
+"Buffers frames for smoother playback at the cost of extra latency. Large values may cause PC input or audio to go out of sync. 0 to disable.": "遅延を許容してフレームをバッファし、滑らかに再生します。大きすぎると PC 操作や音声がずれることがあります。0 で無効。"
 "Screenshot": "スクリーンショット"
 "Shutdown": "停止"
 "Basic Authentication": "ベーシック認証"

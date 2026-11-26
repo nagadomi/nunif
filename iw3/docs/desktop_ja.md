@@ -180,6 +180,19 @@ python -m iw3.desktop --stream-quality 80
 ```
 デフォルトは90です。低い値を指定すると、ネットワークトラフィックが削減されます。
 
+#### 配信バッファ（`--stream-buffer`）
+
+`--stream-buffer` オプション（または GUI の `Stream Buffer (ms)`）で、H.264 / HEVC 配信時の再生バッファ時間（`0`〜`500` ms）を指定できます。
+
+```bash
+python -m iw3.desktop --stream-buffer 100
+```
+
+*   デフォルトは `0`（無効・最小遅延）です。値を増やすと Wi-Fi の遅延揺らぎによる引っかかりが軽減されますが、設定値分だけ表示遅延が増えるため、大きな値では PC 操作や音声とのずれが目立つことがあります。
+*   配信中でも VR プレイヤー内の `Stream Settings` → `Stream Buffer`（`0`〜`200` ms）から変更でき、PC GUI とも同期されます。
+*   高 FPS（60 FPS 以上など）では実効バッファ時間が自動的に制限され（例: 60 FPS で約 100 ms）、VR 画面上に実効値が表示されます。
+*   MJPEG（`jpeg` / `jpeg-gpu`）、`Web Streaming (Legacy)`、`Local Viewer` では利用できないため、GUI 上では非表示になります。
+
 ### 画面取得方法
 
 `--screenshot` で画面取得バックエンドを選択します。

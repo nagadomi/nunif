@@ -3,6 +3,7 @@ import { STEREO_FORMATS, PREFETCH_CONFIG } from "./constants.js";
 import { MjpegStream } from "./mjpeg_stream.js";
 import {
     WebCodecsStream,
+    getRequestedBufferMsOverride,
     getRequestedVideoCodecOverride,
     probeSupportedStreamCodecs,
 } from "./webcodecs_stream.js";
@@ -27,6 +28,39 @@ class PlaybackController extends EventTarget {
         this.currentLoadId = 0;
         this.isXRLayersActive = false;
         this.xrBinding = null;
+        this._urlBufferOverride = getRequestedBufferMsOverride();
+    }
+
+    get hasUrlBufferOverride() {
+        return this._urlBufferOverride !== null;
+    }
+
+    get urlBufferOverrideMs() {
+        return this._urlBufferOverride;
+    }
+
+    clearUrlBufferOverride() {
+        this._urlBufferOverride = null;
+    }
+
+    setStreamBufferMs(ms) {
+        if (this.desktopStream && typeof this.desktopStream.setBufferMs === 'function') {
+            this.desktopStream.setBufferMs(ms);
+        }
+    }
+
+    getStreamBufferStatus() {
+        if (this.desktopStream && typeof this.desktopStream.getBufferStatus === 'function') {
+            return this.desktopStream.getBufferStatus();
+        }
+        return {
+            supported: false,
+            configuredMs: 0,
+            effectiveMs: 0,
+            isClamped: false,
+            queueLength: 0,
+            frameIntervalMs: null,
+        };
     }
 
     get streamTexture() {
@@ -184,11 +218,14 @@ class PlaybackController extends EventTarget {
         }
 
         if (requestedCodecs.length > 0) {
+            const initialBufferMs =
+                this._urlBufferOverride !== null ? this._urlBufferOverride : (Number(info.buffer_ms) || 0);
             const wsStream = new WebCodecsStream(
                 info.ws_uri || '/api/stream/ws',
                 '/api/stream/info',
                 requestedCodecs,
-                this.debugLogInstance
+                this.debugLogInstance,
+                initialBufferMs
             );
             this.desktopStream = wsStream;
             this._bindStreamEvents(wsStream, item);

@@ -50,6 +50,7 @@ from .utils import (
     create_parser,
     set_state_args,
     read_runtime_adjustment_values,
+    read_runtime_stream_buffer,
     IW3U,
 )
 
@@ -193,11 +194,6 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         )
         self.cbo_stream_height.SetSelection(1)
 
-        self.lbl_stream_quality = wx.StaticText(self.grp_network, label=T("Streaming Quality"))
-        self.cbo_stream_quality = EditableComboBox(
-            self.grp_network, choices=["100", "95", "90", "85", "80"], name="cbo_stream_quality"
-        )
-        self.cbo_stream_quality.SetSelection(2)
         self.lbl_video_codec = wx.StaticText(self.grp_network, label=T("Video Codec"))
         self.cbo_video_codec = wx.ComboBox(
             self.grp_network,
@@ -206,6 +202,22 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         )
         self.cbo_video_codec.SetEditable(False)
         self.cbo_video_codec.SetSelection(0)
+        self.lbl_stream_quality = wx.StaticText(self.grp_network, label=T("Streaming Quality"))
+        self.cbo_stream_quality = EditableComboBox(
+            self.grp_network, choices=["100", "95", "90", "85", "80"], name="cbo_stream_quality"
+        )
+        self.cbo_stream_quality.SetSelection(2)
+        self.lbl_stream_buffer = wx.StaticText(self.grp_network, label=T("Stream Buffer (ms)"))
+        self.cbo_stream_buffer = EditableComboBox(
+            self.grp_network, choices=["0", "50", "75", "100", "150"], name="cbo_stream_buffer"
+        )
+        self.cbo_stream_buffer.SetSelection(0)
+        buffer_tooltip = T(
+            "Buffers frames for smoother playback at the cost of extra latency. "
+            "Large values may cause PC input or audio to go out of sync. 0 to disable."
+        )
+        self.lbl_stream_buffer.SetToolTip(buffer_tooltip)
+        self.cbo_stream_buffer.SetToolTip(buffer_tooltip)
         self.chk_pad_16_9 = wx.CheckBox(self.grp_network, label=T("Padding") + " 16:9", name="chk_pad_16_9")
         self.chk_pad_16_9.SetValue(False)
         self.chk_fit_window = wx.CheckBox(self.grp_network, label=T("Fit Window"), name="chk_fit_window")
@@ -236,19 +248,21 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
         layout.Add(self.chk_uncap_fps, (5, 1), flag=wx.EXPAND)
         layout.Add(self.lbl_stream_height, (6, 0), flag=wx.ALIGN_CENTER_VERTICAL)
         layout.Add(self.cbo_stream_height, (6, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_stream_quality, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_stream_quality, (7, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_video_codec, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.cbo_video_codec, (8, 1), flag=wx.EXPAND)
-        layout.Add(self.chk_pad_16_9, (9, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.chk_fit_window, (10, 1), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.sep_network1, (11, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
+        layout.Add(self.lbl_video_codec, (7, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_video_codec, (7, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_quality, (8, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_quality, (8, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_stream_buffer, (9, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.cbo_stream_buffer, (9, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_pad_16_9, (10, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.chk_fit_window, (11, 1), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.sep_network1, (12, 0), (0, 3), flag=wx.EXPAND | wx.ALL)
 
-        layout.Add(self.chk_auth, (12, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.lbl_auth_username, (13, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_username, (13, 1), flag=wx.EXPAND)
-        layout.Add(self.lbl_auth_password, (14, 0), flag=wx.ALIGN_CENTER_VERTICAL)
-        layout.Add(self.txt_auth_password, (14, 1), flag=wx.EXPAND)
+        layout.Add(self.chk_auth, (13, 0), (0, 3), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.lbl_auth_username, (14, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_username, (14, 1), flag=wx.EXPAND)
+        layout.Add(self.lbl_auth_password, (15, 0), flag=wx.ALIGN_CENTER_VERTICAL)
+        layout.Add(self.txt_auth_password, (15, 1), flag=wx.EXPAND)
 
         sizer_network = wx.StaticBoxSizer(self.grp_network, wx.VERTICAL)
         sizer_network.Add(layout, 1, wx.ALL | wx.EXPAND, 4)
@@ -692,6 +706,9 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
 
         if final_args is not None:
             self._apply_args_to_adj_controls(final_args)
+            buffer_ms = read_runtime_stream_buffer(final_args, self.args_lock)
+            if buffer_ms is not None:
+                self.cbo_stream_buffer.SetValue(str(buffer_ms))
         self.args = None
         self.processing = False
         self.btn_start.Enable()
@@ -772,6 +789,14 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
     def on_text_changed_cbo_view_mode(self, event):
         self.update_view_mode()
 
+    def update_stream_buffer_visibility(self) -> None:
+        view_mode = self.cbo_view_mode.GetValue()
+        show = view_mode == "Web Streaming" and not self._is_jpeg_codec(self.cbo_video_codec.GetValue())
+        self.lbl_stream_buffer.Show(show)
+        self.cbo_stream_buffer.Show(show)
+        if self.IsShown():
+            refresh_layouts(self)
+
     def update_view_mode(self, *args, **kwargs):
         view_mode = self.cbo_view_mode.GetValue()
         local_viewer = view_mode == "Local Viewer"
@@ -829,8 +854,7 @@ class MainFrame(wx.Frame, DesktopStreamGUIMixin):
             for control in local_viewer_options:
                 control.Hide()
 
-        if self.IsShown():
-            refresh_layouts(self)
+        self.update_stream_buffer_visibility()
 
     def update_finetuning(self):
         # Fine-tuning spin controls

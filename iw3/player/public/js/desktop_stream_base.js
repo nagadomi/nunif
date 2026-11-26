@@ -27,6 +27,7 @@ export class BaseDesktopStream extends EventTarget {
         this.aspectRatio = 16 / 9;
         this.stereoFormat = null;
         this.streamToken = null;
+        this.bufferMs = null;
 
         this._infoWidth = 0;
         this._infoHeight = 0;
@@ -61,8 +62,11 @@ export class BaseDesktopStream extends EventTarget {
         const formatChanged = Boolean(format && this.stereoFormat && format !== this.stereoFormat);
         const tokenChanged = Boolean(token && this.streamToken && token !== this.streamToken);
         const initialMetaLoaded = Boolean((!this.stereoFormat && format) || (!this.streamToken && token));
+        const hasBufferMs = typeof info.buffer_ms === "number" && Number.isFinite(info.buffer_ms);
+        const nextBufferMs = hasBufferMs ? Math.max(0, Math.min(500, Math.round(info.buffer_ms))) : null;
+        const bufferMsChanged = hasBufferMs && this.bufferMs !== null && nextBufferMs !== this.bufferMs;
 
-        this._onStreamInfo(info, notifyChange, { widthChanged, heightChanged, tokenChanged });
+        this._onStreamInfo(info, notifyChange, { widthChanged, heightChanged, tokenChanged, bufferMsChanged });
 
         if (width) {
             this._infoWidth = width;
@@ -81,8 +85,9 @@ export class BaseDesktopStream extends EventTarget {
         }
         if (format) this.stereoFormat = format;
         if (token) this.streamToken = token;
+        if (hasBufferMs) this.bufferMs = nextBufferMs;
 
-        if (notifyChange && (widthChanged || heightChanged || formatChanged || tokenChanged || initialMetaLoaded)) {
+        if (notifyChange && (widthChanged || heightChanged || formatChanged || tokenChanged || initialMetaLoaded || bufferMsChanged)) {
             this.dispatchEvent(
                 new CustomEvent("stream-updated", {
                     detail: {
@@ -91,7 +96,9 @@ export class BaseDesktopStream extends EventTarget {
                         height: this.height,
                         stereo_format: this.stereoFormat,
                         stream_token: this.streamToken,
+                        buffer_ms: this.bufferMs,
                         tokenChanged,
+                        bufferMsChanged,
                     },
                 })
             );
@@ -162,6 +169,19 @@ export class BaseDesktopStream extends EventTarget {
     _onPlayed() {}
 
     _onStop() {}
+
+    setBufferMs(_ms) {}
+
+    getBufferStatus() {
+        return {
+            supported: false,
+            configuredMs: 0,
+            effectiveMs: 0,
+            isClamped: false,
+            queueLength: 0,
+            frameIntervalMs: null,
+        };
+    }
 
     pause() {
         if (!this.isPaused) {
