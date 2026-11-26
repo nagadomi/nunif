@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import threading
 import time
+import traceback
 from typing import TYPE_CHECKING, Any
 
 from .utils import (
@@ -41,6 +42,7 @@ class DesktopStreamService:
         self._worker_thread: threading.Thread | None = None
         self._worker_stop_event: threading.Event | None = None
         self._ready_event: threading.Event | None = None
+        self._is_running: bool = False
         self._error: BaseException | None = None
         self._obs_restore_token: str | None = None
         ensure_default_stereo_format(self.args)
@@ -70,7 +72,12 @@ class DesktopStreamService:
 
     def is_running(self) -> bool:
         with self._op_lock:
-            return self._worker_thread is not None and self._worker_thread.is_alive()
+            return (
+                self._worker_thread is not None
+                and self._worker_thread.is_alive()
+                and self._is_running
+                and self._error is None
+            )
 
     def ensure_running(self, timeout: float = 30.0) -> None:
         self.stream_hub.touch()
@@ -82,6 +89,7 @@ class DesktopStreamService:
                     started_new = False
                 else:
                     self._error = None
+                    self._is_running = False
                     self._worker_stop_event = threading.Event()
                     self._ready_event = threading.Event()
                     ready_event = self._ready_event
@@ -117,6 +125,8 @@ class DesktopStreamService:
             if self._worker_thread is thread:
                 self._worker_thread = None
                 self._worker_stop_event = None
+                self._ready_event = None
+                self._is_running = False
 
     def get_settings(self) -> dict[str, Any]:
         return get_runtime_stream_settings(self.args)
@@ -134,6 +144,7 @@ class DesktopStreamService:
     def _run_worker(self, stop_event: threading.Event, ready_event: threading.Event) -> None:
         pipeline = None
         depth_model = self.args.state["depth_model"]
+        error_message: str | None = None
         try:
             pipeline = init_desktop_pipeline(
                 self.args,
@@ -156,20 +167,33 @@ class DesktopStreamService:
                 available_stream_codecs=available_codecs,
             )
             pipeline.screenshot_thread.start()
-            self.stream_hub.touch()
-            ready_event.set()
+
+            def _mark_ready() -> None:
+                with self._op_lock:
+                    if self._worker_thread is threading.current_thread():
+                        self._is_running = True
+                self.stream_hub.touch()
+                ready_event.set()
+
             run_desktop_processing_loop(
                 self.args,
                 pipeline,
                 self.stream_hub,
                 stop_event=stop_event,
                 idle_check=self._is_idle,
+                on_ready=_mark_ready,
             )
         except BaseException as exc:
             self._error = exc
+            error_message = str(exc) or exc.__class__.__name__
+            if not isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                traceback.print_exc(file=sys.stderr)
         finally:
+            with self._op_lock:
+                if self._worker_thread is threading.current_thread():
+                    self._is_running = False
             ready_event.set()
-            self.stream_hub.clear_frames(stop_clients=True)
+            self.stream_hub.clear_frames(stop_clients=True, error_message=error_message)
             cleanup_desktop_pipeline(pipeline, depth_model)
             fps_event = self.args.state.get("fps_event")
             if fps_event is not None:
@@ -178,3 +202,4 @@ class DesktopStreamService:
                 if self._worker_thread is threading.current_thread():
                     self._worker_thread = None
                     self._worker_stop_event = None
+                    self._ready_event = None

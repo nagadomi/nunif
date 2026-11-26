@@ -686,6 +686,7 @@ def run_desktop_processing_loop(
     frame_sink: Any,
     stop_event: threading.Event | None = None,
     idle_check: Callable[[], bool] | None = None,
+    on_ready: Callable[[], None] | None = None,
 ) -> None:
     count = 0
     last_status_time = 0.0
@@ -705,6 +706,9 @@ def run_desktop_processing_loop(
             frame = screenshot_thread.get_frame()
             if frame is None:
                 break
+            if on_ready is not None:
+                on_ready()
+                on_ready = None
 
             with args.state["args_lock"]:
                 frame_args = copy.copy(args)

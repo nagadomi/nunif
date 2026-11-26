@@ -46,6 +46,20 @@ export class BaseDesktopStream extends EventTarget {
         }
     }
 
+    _triggerError(message) {
+        if (!this.isActive) return;
+        const detailMessage = message || "Desktop stream error";
+        this.debugLogInstance?.log(`[ERROR] Stream error: ${detailMessage}`);
+        const hadPendingFirstFrame = Boolean(this._firstFrameResolve);
+        if (hadPendingFirstFrame) {
+            this._resolveFirstFrame({ cancelled: false, fallback: false, error: detailMessage });
+            this.stop();
+        } else {
+            this.stop();
+            this.dispatchEvent(new CustomEvent("stream-error", { detail: { message: detailMessage } }));
+        }
+    }
+
     _onStreamInfo(info, _notifyChange, _changes) {
         return info;
     }

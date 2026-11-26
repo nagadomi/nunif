@@ -77,6 +77,7 @@ class StreamFrameHub:
         self.last_activity_time: float = time.perf_counter()
         self.service: Any = None
         self._stream_epoch: int = 0
+        self.last_error: str | None = None
 
     def reset_token(self) -> None:
         self.stream_token = f"{random.getrandbits(64):016x}"
@@ -85,7 +86,7 @@ class StreamFrameHub:
         with self.op_lock:
             self.last_activity_time = time.perf_counter()
 
-    def clear_frames(self, stop_clients: bool = False) -> None:
+    def clear_frames(self, stop_clients: bool = False, error_message: str | None = None) -> None:
         with self.lock:
             self.frame_data = None
             self.frame_data_raw = None
@@ -93,12 +94,17 @@ class StreamFrameHub:
         with self.op_lock:
             self.fps_counter.clear()
             self.active_video_codec = None
+            if error_message is not None:
+                self.last_error = error_message
+            elif not stop_clients:
+                self.last_error = None
             if stop_clients:
                 self._stream_epoch += 1
                 subscribers = list(self._ws_subscribers.values())
         if stop_clients:
+            signal = {"type": "error", "message": error_message} if error_message is not None else None
             for sub in subscribers:
-                self._notify_subscriber_close(sub)
+                self._notify_subscriber_close(sub, signal=signal)
 
     def _notify_subscriber_close(self, sub: WsSubscriber, signal: dict[str, Any] | None = None) -> None:
         def _put_close() -> None:
@@ -153,6 +159,7 @@ class StreamFrameHub:
             if available_stream_codecs is not None:
                 self.available_stream_codecs = list(available_stream_codecs)
             self.last_activity_time = time.perf_counter()
+            self.last_error = None
             self.reset_token()
 
     @property
@@ -370,6 +377,7 @@ class StreamFrameHub:
                 "video_codec": self.video_codec,
                 "available_stream_codecs": list(self.available_stream_codecs),
                 "active_video_codec": self.active_video_codec,
+                "error": self.last_error,
             }
         active = bool(service.is_running()) if service is not None and hasattr(service, "is_running") else True
         info["active"] = active

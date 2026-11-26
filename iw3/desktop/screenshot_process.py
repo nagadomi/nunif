@@ -372,85 +372,99 @@ def capture_process(
     crop_left=0,
     crop_right=0,
     crop_bottom=0,
+    closed_event=None,
+    error_conn=None,
 ):
-    frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
-    frame_count = 0
-
-    if backend == "mss":
-        capture = WindowsCaptureMSS(monitor_index=monitor_index, window_name=window_name)
-    elif backend == "windows_capture":
-        try:
-            from windows_capture import WindowsCapture
-        except ImportError:
-            frame_event.set()
-            raise
-
-        if window_name:
-            # ignore
-            monitor_index = None
-        else:
-            # 1 origin
-            monitor_index = monitor_index + 1
-
-        capture = WindowsCapture(
-            cursor_capture=None,
-            draw_border=None,
-            monitor_index=monitor_index,
-            window_name=window_name,
-        )
-
-    @capture.event
-    def on_frame_arrived(frame, capture_control):
-        nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer, frame_pos, window_name, frame_count, crop_top, crop_left, crop_right, crop_bottom  # noqa
-        if not frame_event.is_set():
-            with frame_lock:
-                source_frame = frame.frame_buffer
-                # Apply cropping for window capture
-                if window_name and (crop_top > 0 or crop_left > 0 or crop_right > 0 or crop_bottom > 0):
-                    h, w = source_frame.shape[:2]
-                    top = crop_top
-                    bottom = h - crop_bottom if crop_bottom > 0 else h
-                    left = crop_left
-                    right = w - crop_right if crop_right > 0 else w
-                    source_frame = source_frame[top:bottom, left:right, :]
-
-                if frame_buffer.shape != source_frame.shape:
-                    if window_name is not None:
-                        # NOTE: The size may differ due to resizing, Window effects, etc.
-                        # I wanted to use replication padding,
-                        # but since the edges of the Windows screen are black, it's meaningless
-                        min_h = min(frame_buffer.shape[0], source_frame.shape[0])
-                        min_w = min(frame_buffer.shape[1], source_frame.shape[1])
-                        if frame_count % 30 == 0:
-                            frame_buffer[:] = 0.0
-                        frame_buffer[0:min_h, 0:min_w, :] = source_frame[0:min_h, 0:min_w, :]
-                        frame_count += 1
-                        if frame_count > 0xFFFF:
-                            frame_count = 0
-                    else:
-                        raise RuntimeError(
-                            f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={source_frame.shape}"
-                        )
-                else:
-                    frame_buffer[:] = source_frame
-
-                if hasattr(capture_control, "frame_pos"):
-                    frame_pos[0] = capture_control.frame_pos[0]
-                    frame_pos[1] = capture_control.frame_pos[1]
-
-                frame_event.set()
-
-        if stop_event.is_set():
-            capture_control.stop()
-
-    @capture.event
-    def on_closed():
-        pass
-
     try:
+        frame_buffer = np.ndarray(frame_size, dtype=np.uint8, buffer=frame_shm.buf)
+        frame_count = 0
+
+        if backend == "mss":
+            capture = WindowsCaptureMSS(monitor_index=monitor_index, window_name=window_name)
+        elif backend == "windows_capture":
+            from windows_capture import WindowsCapture
+
+            if window_name:
+                # ignore
+                monitor_index = None
+            else:
+                # 1 origin
+                monitor_index = monitor_index + 1
+
+            capture = WindowsCapture(
+                cursor_capture=None,
+                draw_border=None,
+                monitor_index=monitor_index,
+                window_name=window_name,
+            )
+        else:
+            raise ValueError(f"Unsupported screenshot backend: {backend}")
+
+        @capture.event
+        def on_frame_arrived(frame, capture_control):
+            nonlocal frame_shm, frame_event, frame_lock, stop_event, frame_buffer, frame_pos, window_name, frame_count, crop_top, crop_left, crop_right, crop_bottom  # noqa
+            if not frame_event.is_set():
+                with frame_lock:
+                    source_frame = frame.frame_buffer
+                    # Apply cropping for window capture
+                    if window_name and (crop_top > 0 or crop_left > 0 or crop_right > 0 or crop_bottom > 0):
+                        h, w = source_frame.shape[:2]
+                        top = crop_top
+                        bottom = h - crop_bottom if crop_bottom > 0 else h
+                        left = crop_left
+                        right = w - crop_right if crop_right > 0 else w
+                        source_frame = source_frame[top:bottom, left:right, :]
+
+                    if frame_buffer.shape != source_frame.shape:
+                        if window_name is not None:
+                            # NOTE: The size may differ due to resizing, Window effects, etc.
+                            # I wanted to use replication padding,
+                            # but since the edges of the Windows screen are black, it's meaningless
+                            min_h = min(frame_buffer.shape[0], source_frame.shape[0])
+                            min_w = min(frame_buffer.shape[1], source_frame.shape[1])
+                            if frame_count % 30 == 0:
+                                frame_buffer[:] = 0.0
+                            frame_buffer[0:min_h, 0:min_w, :] = source_frame[0:min_h, 0:min_w, :]
+                            frame_count += 1
+                            if frame_count > 0xFFFF:
+                                frame_count = 0
+                        else:
+                            raise RuntimeError(
+                                f"Screen size missmatch. frame_buffer={frame_buffer.shape}, frame={source_frame.shape}"
+                            )
+                    else:
+                        frame_buffer[:] = source_frame
+
+                    if hasattr(capture_control, "frame_pos"):
+                        frame_pos[0] = capture_control.frame_pos[0]
+                        frame_pos[1] = capture_control.frame_pos[1]
+
+                    frame_event.set()
+
+            if stop_event.is_set():
+                capture_control.stop()
+
+        @capture.event
+        def on_closed():
+            pass
+
         # event loop
         capture.start()
+    except BaseException as exc:
+        if error_conn is not None:
+            try:
+                error_conn.send(f"{type(exc).__name__}: {exc}")
+            except Exception:
+                pass
+        raise
     finally:
+        if error_conn is not None:
+            try:
+                error_conn.close()
+            except Exception:
+                pass
+        if closed_event is not None:
+            closed_event.set()
         frame_event.set()
         time.sleep(0.1)
 
@@ -497,11 +511,37 @@ class ScreenshotProcess(threading.Thread):
         self.fps_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.fps_counter = deque(maxlen=120)
+        self._error: BaseException | None = None
+        self.process = None
+        self.process_frame_buffer = None
+        self.process_stop_event = None
+        self.process_frame_event = None
+        self.process_frame_lock = None
+        self.process_closed_event = None
+        self.process_error_recv = None
 
         if device.type == "cuda":
             self.cuda_stream = torch.cuda.Stream(device=device)
         else:
             self.cuda_stream = None
+
+    def _get_process_error(self) -> str | None:
+        if self.process_error_recv is None:
+            return None
+        try:
+            if self.process_error_recv.poll():
+                return self.process_error_recv.recv()
+        except Exception:
+            pass
+        return None
+
+    def _format_unexpected_exit_error(self) -> str:
+        err = self._get_process_error()
+        if err:
+            return err
+        if self.process is not None and self.process.exitcode is not None:
+            return f"Capture process exited unexpectedly (exitcode={self.process.exitcode})"
+        return "Capture process exited unexpectedly"
 
     def start_process(self):
         if self.window_name:
@@ -519,6 +559,8 @@ class ScreenshotProcess(threading.Thread):
         self.process_stop_event = mp.Event()
         self.process_frame_event = mp.Event()
         self.process_frame_lock = mp.Lock()
+        self.process_closed_event = mp.Event()
+        self.process_error_recv, error_send = mp.Pipe(duplex=False)
         self.process = mp.Process(
             target=capture_process,
             args=(
@@ -535,20 +577,37 @@ class ScreenshotProcess(threading.Thread):
                 self.crop_left,
                 self.crop_right,
                 self.crop_bottom,
+                self.process_closed_event,
+                error_send,
             ),
         )
-        self.process.start()
+        try:
+            self.process.start()
+        finally:
+            error_send.close()
 
     def run(self):
-        self.start_process()
         frame_buffer = None
         try:
+            self.start_process()
             while True:
                 tick = time.perf_counter()
+                if self.process_closed_event.is_set():
+                    if self.stop_event.is_set():
+                        break
+                    raise RuntimeError(self._format_unexpected_exit_error())
+
                 self.process_frame_event.clear()
                 while not self.process_frame_event.wait(1):
-                    if not self.process.is_alive():
-                        raise RuntimeError("thread is already dead")
+                    if self.stop_event.is_set():
+                        return
+                    if self.process_closed_event.is_set() or not self.process.is_alive():
+                        raise RuntimeError(self._format_unexpected_exit_error())
+
+                if self.process_closed_event.is_set():
+                    if self.stop_event.is_set():
+                        break
+                    raise RuntimeError(self._format_unexpected_exit_error())
 
                 with self.process_frame_lock:
                     frame = np.ndarray(
@@ -601,26 +660,44 @@ class ScreenshotProcess(threading.Thread):
 
                 if self.stop_event.is_set():
                     break
+        except BaseException as exc:
+            self._error = exc
         finally:
-            self.process_stop_event.set()
+            if self.process_stop_event is not None:
+                self.process_stop_event.set()
             self.stop_event.set()
-            self.process.join(timeout=4)
-            if self.process.is_alive():
-                self.process.terminate()
-                self.process.join()
-            self.process = None
-            self.process_frame_buffer.close()
-            self.process_frame_buffer.unlink()
-            self.process_frame_buffer = None
+            self.frame_set_event.set()
+            if self.process is not None:
+                self.process.join(timeout=4)
+                if self.process.is_alive():
+                    self.process.terminate()
+                    self.process.join()
+                self.process = None
+            if self.process_frame_buffer is not None:
+                self.process_frame_buffer.close()
+                self.process_frame_buffer.unlink()
+                self.process_frame_buffer = None
+            if self.process_error_recv is not None:
+                self.process_error_recv.close()
+                self.process_error_recv = None
 
     def get_frame(self):
         while not self.frame_set_event.wait(1):
+            if self._error is not None:
+                raise RuntimeError(str(self._error)) from self._error
             if self.stop_event.is_set():
                 raise RuntimeError("thread is already dead")
         with self.frame_lock:
+            if self._error is not None:
+                raise RuntimeError(str(self._error)) from self._error
+            if self.frame is None:
+                if self.stop_event.is_set():
+                    raise RuntimeError("thread is already dead")
+                return None
             if self.cuda_stream is not None:
                 torch.cuda.current_stream().wait_stream(self.cuda_stream)
             frame = self.frame
+            self.frame = None
             self.frame_set_event.clear()
 
         return frame

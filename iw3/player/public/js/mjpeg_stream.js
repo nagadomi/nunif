@@ -58,6 +58,9 @@ class MjpegStream extends BaseDesktopStream {
     }
 
     start(initialInfo = null) {
+        if (initialInfo?.error && initialInfo?.active === false) {
+            return Promise.resolve({ cancelled: false, error: initialInfo.error });
+        }
         if (initialInfo) {
             this._applyStreamInfo(initialInfo, false);
         }
@@ -76,6 +79,10 @@ class MjpegStream extends BaseDesktopStream {
     _onStreamInfo(info, _notifyChange, { widthChanged, heightChanged, tokenChanged }) {
         if (info.stream_uri) {
             this.streamUrl = info.stream_uri;
+        }
+        if (info.error && info.active === false) {
+            this._triggerError(info.error);
+            return;
         }
         if (widthChanged || heightChanged || tokenChanged) {
             this._needsTextureDispose = true;
@@ -132,6 +139,17 @@ class MjpegStream extends BaseDesktopStream {
                 });
                 if (response.status === 401) {
                     this.dispatchEvent(new CustomEvent("auth-required"));
+                }
+                if (response.status >= 500) {
+                    let detail = `HTTP ${response.status}`;
+                    try {
+                        const errData = await response.json();
+                        if (errData?.detail) detail = errData.detail;
+                    } catch {
+                        // ignore non-json error body
+                    }
+                    this._triggerError(detail);
+                    return;
                 }
                 if (!response.ok || !response.body) {
                     throw new Error(`HTTP ${response.status}`);

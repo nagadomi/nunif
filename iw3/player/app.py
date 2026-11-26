@@ -375,7 +375,8 @@ async def serve_desktop_stream_ws(websocket: WebSocket):
                 break
             if isinstance(item, dict):
                 await websocket.send_json(item)
-                await websocket.close(code=1000)
+                close_code = 1011 if item.get("type") == "error" else 1000
+                await websocket.close(code=close_code)
                 break
 
             packet = item

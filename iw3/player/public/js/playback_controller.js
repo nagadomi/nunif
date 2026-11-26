@@ -159,6 +159,13 @@ class PlaybackController extends EventTarget {
                 this.dispatchEvent(new CustomEvent('stream-auth-required'));
             }
         });
+        stream.addEventListener('stream-error', (e) => {
+            if (this.desktopStream === stream) {
+                this.desktopStream = null;
+                this.dispatchEvent(new CustomEvent('video-destroyed'));
+                this.dispatchEvent(new CustomEvent('stream-error', { detail: e.detail }));
+            }
+        });
         stream.addEventListener('fallback-mjpeg', async () => {
             if (this.desktopStream !== stream) return;
             const loadId = this.currentLoadId;
@@ -171,6 +178,12 @@ class PlaybackController extends EventTarget {
                 if (this.desktopStream === fallbackStream && this.currentLoadId !== loadId) {
                     this.destroyStream();
                 }
+                return;
+            }
+            if (res?.error) {
+                this.desktopStream = null;
+                this.dispatchEvent(new CustomEvent('video-destroyed'));
+                this.dispatchEvent(new CustomEvent('stream-error', { detail: { message: res.error } }));
                 return;
             }
             fallbackStream.texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
@@ -236,6 +249,11 @@ class PlaybackController extends EventTarget {
                 }
                 return { success: false, cancelled: true };
             }
+            if (startResult?.error) {
+                this.desktopStream = null;
+                this.dispatchEvent(new CustomEvent('video-destroyed'));
+                return { success: false, cancelled: false, error: startResult.error };
+            }
             if (!startResult?.cancelled && !startResult?.fallback) {
                 wsStream.texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
                 const detail = {
@@ -266,6 +284,11 @@ class PlaybackController extends EventTarget {
                 this.destroyStream();
             }
             return { success: false, cancelled: true };
+        }
+        if (startResult?.error) {
+            this.desktopStream = null;
+            this.dispatchEvent(new CustomEvent('video-destroyed'));
+            return { success: false, cancelled: false, error: startResult.error };
         }
 
         mjpegStream.texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();

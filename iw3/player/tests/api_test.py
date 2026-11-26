@@ -907,3 +907,242 @@ def test_websocket_stream_auth_and_frames(test_setup, monkeypatch):
         app.state.server_state.stream_hub = None
         app.state.server_state.auth_user = None
         app.state.server_state.auth_password = None
+
+
+def test_desktop_stream_service_startup_error_propagates(monkeypatch, capsys, tmp_path):
+    import threading
+
+    from iw3.desktop import service as desktop_service_mod
+    from iw3.desktop.service import DesktopStreamService
+    from iw3.player.server import create_parser, set_state_args
+
+    class FailingScreenshotThread:
+        def start(self):
+            pass
+
+        def get_frame(self):
+            raise RuntimeError("capture failed on startup")
+
+        def get_fps(self):
+            return 0.0
+
+        def stop(self):
+            pass
+
+    class DummyDepthModel:
+        def get_name(self):
+            return "Any_V2_S"
+
+        def loaded(self):
+            return True
+
+        def clear_compiled_model(self):
+            pass
+
+        def reset(self):
+            pass
+
+    parser = create_parser()
+    cli_args = parser.parse_args(["--enable-stream", "--screenshot", "pil", "--video-codec", "jpeg"])
+    set_state_args(cli_args, depth_model=DummyDepthModel())
+
+    def fake_init_pipeline(*_args, **_kwargs):
+        return SimpleNamespace(
+            device="cpu",
+            depth_model=cli_args.state["depth_model"],
+            side_model=None,
+            screenshot_thread=FailingScreenshotThread(),
+            screen_size=(64, 64),
+            frame_width=64,
+            frame_height=64,
+            output_frame_width=64,
+            output_frame_height=64,
+            empty_app=None,
+        )
+
+    monkeypatch.setattr(desktop_service_mod, "init_desktop_pipeline", fake_init_pipeline)
+
+    secret_file = tmp_path / "secret.txt"
+    secret_file.write_bytes(b"16bytessecretkey")
+    hub = StreamFrameHub(frame_width=64, frame_height=64, fps=30, video_codec="jpeg", available_stream_codecs=[])
+    service = DesktopStreamService(args=cli_args, stream_hub=hub, idle_timeout=10.0, init_wxapp=False)
+    state = ServerState(
+        SimpleNamespace(
+            mode="player",
+            root=str(tmp_path),
+            cache_dir=str(tmp_path / "cache"),
+            enable_file_library=True,
+            stream_hub=hub,
+            desktop_service=service,
+            secret_key_file=str(secret_file),
+        )
+    )
+    prev_state = getattr(app.state, "server_state", None)
+    prev_lib = getattr(app.state, "media_library", None)
+    app.state.server_state = state
+    app.state.media_library = None
+    try:
+        client = TestClient(app)
+        res_start = client.post("/api/stream/start")
+        assert res_start.status_code == 500
+        assert "capture failed on startup" in res_start.json()["detail"]
+        assert service.is_running() is False
+
+        res_info = client.get("/api/stream/info")
+        assert res_info.status_code == 200
+        info = res_info.json()
+        assert info["active"] is False
+        assert info["error"] == "capture failed on startup"
+
+        captured = capsys.readouterr()
+        assert "capture failed on startup" in captured.err
+        assert threading.current_thread().is_alive()
+    finally:
+        state.close()
+        app.state.server_state = prev_state
+        app.state.media_library = prev_lib
+
+
+def test_desktop_stream_service_runtime_error_notifies_ws_and_info(monkeypatch, capsys, tmp_path):
+    import threading
+
+    import torch
+
+    from iw3.desktop import service as desktop_service_mod
+    from iw3.desktop import utils as desktop_utils
+    from iw3.desktop import video_stream_encoder as VSE
+    from iw3.desktop.service import DesktopStreamService
+    from iw3.player.server import create_parser, set_state_args
+
+    monkeypatch.setattr(VSE.av.codec, "codecs_available", {"libx264"})
+
+    trigger_fail = threading.Event()
+
+    class MidStreamFailScreenshotThread:
+        def start(self):
+            pass
+
+        def get_frame(self):
+            if trigger_fail.is_set():
+                raise RuntimeError("window closed mid-stream")
+            time.sleep(0.01)
+            return torch.zeros((3, 64, 64), dtype=torch.float32)
+
+        def get_fps(self):
+            return 30.0
+
+        def stop(self):
+            pass
+
+    class DummyDepthModel:
+        def get_name(self):
+            return "Any_V2_S"
+
+        def loaded(self):
+            return True
+
+        def clear_compiled_model(self):
+            pass
+
+        def reset(self):
+            pass
+
+    parser = create_parser()
+    cli_args = parser.parse_args(["--enable-stream", "--screenshot", "pil", "--video-codec", "libx264"])
+    set_state_args(cli_args, depth_model=DummyDepthModel())
+
+    def fake_init_pipeline(*_args, **_kwargs):
+        return SimpleNamespace(
+            device=torch.device("cpu"),
+            depth_model=cli_args.state["depth_model"],
+            side_model=None,
+            screenshot_thread=MidStreamFailScreenshotThread(),
+            screen_size=(64, 64),
+            frame_width=64,
+            frame_height=64,
+            output_frame_width=64,
+            output_frame_height=64,
+            empty_app=None,
+        )
+
+    monkeypatch.setattr(desktop_service_mod, "init_desktop_pipeline", fake_init_pipeline)
+    monkeypatch.setattr(desktop_utils.IW3U, "process_image", lambda frame, *_a, **_kw: frame)
+    monkeypatch.setattr(desktop_utils, "push_stream_frame", lambda *_a, **_kw: None)
+
+    secret_file = tmp_path / "secret.txt"
+    secret_file.write_bytes(b"16bytessecretkey")
+    hub = StreamFrameHub(
+        frame_width=64,
+        frame_height=64,
+        fps=30,
+        video_codec="libx264",
+        available_stream_codecs=["h264"],
+    )
+    service = DesktopStreamService(args=cli_args, stream_hub=hub, idle_timeout=10.0, init_wxapp=False)
+    state = ServerState(
+        SimpleNamespace(
+            mode="player",
+            root=str(tmp_path),
+            cache_dir=str(tmp_path / "cache"),
+            enable_file_library=True,
+            stream_hub=hub,
+            desktop_service=service,
+            secret_key_file=str(secret_file),
+        )
+    )
+    prev_state = getattr(app.state, "server_state", None)
+    prev_lib = getattr(app.state, "media_library", None)
+    app.state.server_state = state
+    app.state.media_library = None
+    try:
+        client = TestClient(app)
+        res_start = client.post("/api/stream/start")
+        assert res_start.status_code == 200
+        assert res_start.json()["active"] is True
+        assert res_start.json()["error"] is None
+
+        with client.websocket_connect("/api/stream/ws?codecs=h264") as ws:
+            deadline = time.perf_counter() + 2.0
+            while not hub.has_ws_subscribers() and time.perf_counter() < deadline:
+                time.sleep(0.01)
+            trigger_fail.set()
+            msg = ws.receive_json()
+            assert msg == {"type": "error", "message": "window closed mid-stream"}
+
+        assert service.is_running() is False
+        res_info = client.get("/api/stream/info")
+        assert res_info.status_code == 200
+        info = res_info.json()
+        assert info["active"] is False
+        assert info["error"] == "window closed mid-stream"
+
+        captured = capsys.readouterr()
+        assert "window closed mid-stream" in captured.err
+    finally:
+        state.close()
+        app.state.server_state = prev_state
+        app.state.media_library = prev_lib
+
+
+def test_screenshot_process_does_not_emit_black_frame_on_child_crash(monkeypatch):
+    import torch
+
+    from iw3.desktop import screenshot_process as sp_mod
+
+    monkeypatch.setattr(sp_mod, "get_screen_size", lambda _idx: (64, 64))
+    proc_thread = sp_mod.ScreenshotProcess(
+        fps=30,
+        frame_width=64,
+        frame_height=64,
+        monitor_index=0,
+        window_name=None,
+        device=torch.device("cpu"),
+        backend="unsupported_test_backend",
+        draw_cursor_enabled=False,
+    )
+    proc_thread.start()
+    try:
+        with pytest.raises(RuntimeError, match="Unsupported screenshot backend: unsupported_test_backend"):
+            proc_thread.get_frame()
+    finally:
+        proc_thread.stop()

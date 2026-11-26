@@ -129,6 +129,9 @@ class WebCodecsStream extends BaseDesktopStream {
     }
 
     start(initialInfo = null) {
+        if (initialInfo?.error && initialInfo?.active === false) {
+            return Promise.resolve({ cancelled: false, fallback: false, error: initialInfo.error });
+        }
         if (initialInfo) {
             this._applyStreamInfo(initialInfo, false);
         }
@@ -156,6 +159,9 @@ class WebCodecsStream extends BaseDesktopStream {
     _onStreamInfo(info) {
         if (info.ws_uri) {
             this.wsPath = info.ws_uri;
+        }
+        if (info.error && info.active === false) {
+            this._triggerError(info.error);
         }
     }
 
@@ -418,11 +424,13 @@ class WebCodecsStream extends BaseDesktopStream {
                 this._triggerFallback(msg.reason || "server_fallback");
                 return;
             }
+            if (msg.type === "error") {
+                this._triggerError(msg.message || "Desktop stream error");
+                return;
+            }
             if (this._ws !== ws) return;
             if (msg.type === "config") {
                 await this._configureDecoder(msg);
-            } else if (msg.type === "error") {
-                this.debugLogInstance?.log(`[WARN] Stream WS error: ${msg.message || "unknown"}`);
             }
             return;
         }
@@ -531,15 +539,17 @@ class WebCodecsStream extends BaseDesktopStream {
         };
 
         ws.onclose = () => {
-            if (this._ws !== ws) return;
-            this._ws = null;
-            this._waitingForKeyframe = true;
-            if (!this.isActive) return;
-            if (!this._hasDecodedFrame || this._firstFrameResolve) {
-                this._triggerFallback("ws_closed_before_first_frame");
-                return;
-            }
-            this._scheduleReconnect();
+            this._messageQueue = this._messageQueue.then(() => {
+                if (this._ws !== ws) return;
+                this._ws = null;
+                this._waitingForKeyframe = true;
+                if (!this.isActive) return;
+                if (!this._hasDecodedFrame || this._firstFrameResolve) {
+                    this._triggerFallback("ws_closed_before_first_frame");
+                    return;
+                }
+                this._scheduleReconnect();
+            });
         };
     }
 

@@ -61,6 +61,9 @@ class StereoPlayer extends THREE.Group {
                 window.location.reload();
             }
         });
+        this.playbackController.addEventListener('stream-error', (e) => {
+            this.onStreamError(e.detail?.message);
+        });
 
         // Screen & Subtitle
         this.uiManager = new UIManager(scene, camera, renderer, debugLogInstance, this);
@@ -513,6 +516,9 @@ class StereoPlayer extends THREE.Group {
                 this.streamItem = null;
                 this.streamFormatOverride = null;
                 this.activeScreen.clearScreen();
+                if (result.error) {
+                    this.uiManager.showNotification(`Stream unavailable: ${result.error}`, 5000);
+                }
             }
             this.uiManager.syncUI(true);
             return false;
@@ -551,6 +557,19 @@ class StereoPlayer extends THREE.Group {
         if (this.uiManager?.activeSubMenu === this.uiManager?.streamSettings) {
             this.uiManager.switchSubMenu(null);
         }
+        this.uiManager.syncUI(true);
+    }
+
+    onStreamError(message) {
+        const text = message ? `Desktop stream error: ${message}` : 'Desktop stream error';
+        this.debugLogInstance?.log(`[ERROR] ${text}`);
+        this.streamItem = null;
+        this.streamFormatOverride = null;
+        this.activeScreen.clearScreen();
+        if (this.uiManager?.activeSubMenu === this.uiManager?.streamSettings) {
+            this.uiManager.switchSubMenu(null);
+        }
+        this.uiManager.showNotification(text, 5000);
         this.uiManager.syncUI(true);
     }
 
