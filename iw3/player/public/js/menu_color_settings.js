@@ -1,3 +1,4 @@
+import { UI_CONFIG } from './constants.js';
 import { UIUtils } from './ui_common.js';
 
 const COLOR_SLIDER_KEYS = [
@@ -8,7 +9,9 @@ const COLOR_SLIDER_KEYS = [
 class ColorSettingsMenu {
     constructor(uiManager, defaultFont) {
         this.uiManager = uiManager;
-        this.container = UIUtils.createSubMenuContainer(defaultFont);
+        this.container = UIUtils.createSubMenuContainer(defaultFont, {
+            positionTop: UI_CONFIG.menuPositionTop.color
+        });
 
         this.headerBtns = UIUtils.setupWindowHeader(this.container, "Color Settings", () => this.reset(), this.uiManager);
 

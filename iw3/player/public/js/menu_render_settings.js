@@ -5,7 +5,10 @@ import { UIUtils } from './ui_common.js';
 class RenderSettingsMenu {
     constructor(uiManager, defaultFont) {
         this.uiManager = uiManager;
-        this.container = UIUtils.createSubMenuContainer(defaultFont, { gap: 12 });
+        this.container = UIUtils.createSubMenuContainer(defaultFont, {
+            gap: 12,
+            positionTop: UI_CONFIG.menuPositionTop.render
+        });
 
         this.headerBtns = UIUtils.setupWindowHeader(this.container, "Render Settings", () => this.reset(), this.uiManager);
 

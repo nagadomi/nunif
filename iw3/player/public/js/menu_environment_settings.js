@@ -1,4 +1,5 @@
 import { Container } from '@pmndrs/uikit';
+import { UI_CONFIG } from './constants.js';
 import { UIUtils } from './ui_common.js';
 
 const CHROMA_COLOR_PRESETS = ['Green', 'Blue'];
@@ -12,7 +13,9 @@ const CHROMA_SLIDER_KEYS = [
 class EnvironmentSettingsMenu {
     constructor(uiManager, defaultFont) {
         this.uiManager = uiManager;
-        this.container = UIUtils.createSubMenuContainer(defaultFont);
+        this.container = UIUtils.createSubMenuContainer(defaultFont, {
+            positionTop: UI_CONFIG.menuPositionTop.environment
+        });
 
         this.headerBtns = UIUtils.setupWindowHeader(this.container, "Env Settings", () => this.reset(), this.uiManager);
         this.sliders = {};

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COLORS } from './constants.js';
+import { COLORS, UI_CONFIG } from './constants.js';
 import { UIUtils } from './ui_common.js';
 
 const THROTTLE_MS = 100;
@@ -52,7 +52,9 @@ const STREAM_SETTING_KEYS = Object.keys(STREAM_SETTINGS_DEFS);
 class StreamSettingsMenu {
     constructor(uiManager, defaultFont) {
         this.uiManager = uiManager;
-        this.container = UIUtils.createSubMenuContainer(defaultFont);
+        this.container = UIUtils.createSubMenuContainer(defaultFont, {
+            positionTop: UI_CONFIG.menuPositionTop.stream
+        });
         this.headerBtns = UIUtils.setupWindowHeader(this.container, 'Stream Settings', () => this.reset(), this.uiManager);
 
         this.values = {};

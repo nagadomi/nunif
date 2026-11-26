@@ -12,7 +12,9 @@ const SCREEN_SLIDER_KEYS = [
 class ScreenSettingsMenu {
     constructor(uiManager, defaultFont) {
         this.uiManager = uiManager;
-        this.container = UIUtils.createSubMenuContainer(defaultFont);
+        this.container = UIUtils.createSubMenuContainer(defaultFont, {
+            positionTop: UI_CONFIG.menuPositionTop.screen
+        });
         this.headerBtns = UIUtils.setupWindowHeader(this.container, "Screen Settings", () => this.reset(), this.uiManager);
 
         // Stereo Format Selection

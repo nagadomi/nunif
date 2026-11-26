@@ -325,9 +325,9 @@ export const UIUtils = {
             gap: 0,
             width: 400,
             display: 'none',
-            position: 'absolute',
+            positionType: 'absolute',
             marginLeft: UI_CONFIG.menuMarginLeft,
-            marginTop: UI_CONFIG.menuMarginTop,
+            positionTop: UI_CONFIG.menuPositionTop.default,
             fontFamily: defaultFont,
             ...extraProps
         });

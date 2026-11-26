@@ -1,3 +1,4 @@
+import { UI_CONFIG } from './constants.js';
 import { UIUtils } from './ui_common.js';
 
 const SUBTITLE_SLIDER_KEYS = ['subtitle_font_size', 'subtitle_z', 'subtitle_y', 'subtitle_eye_sep'];
@@ -7,7 +8,8 @@ class SubtitleSettingsMenu {
         this.uiManager = uiManager;
         this.container = UIUtils.createSubMenuContainer(defaultFont, {
             borderRadius: 24,
-            gap: 16
+            gap: 16,
+            positionTop: UI_CONFIG.menuPositionTop.subtitle
         });
 
         this.setupUI();

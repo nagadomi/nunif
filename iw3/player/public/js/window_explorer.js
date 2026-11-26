@@ -18,9 +18,9 @@ class ExplorerWindow {
             width: 800,
             height: 800,
             display: 'none',
-            position: 'absolute',
-            marginLeft: -0,
-            marginTop: UI_CONFIG.menuMarginTop - 60,
+            positionType: 'absolute',
+            marginLeft: 0,
+            positionTop: UI_CONFIG.menuPositionTop.explorer,
             depthWrite: false,
             ...FONT_CONFIG,
             fontFamily: defaultFont

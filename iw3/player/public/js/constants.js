@@ -127,8 +127,17 @@ export const UI_CONFIG = {
     translationSensitivity: 3.33,
     eyeSeparationSensitivity: 0.125,
     eyeSeparationSensitivityMin: 0.01875,
-    menuMarginTop: -1280,
-    menuMarginLeft: 450
+    menuMarginLeft: 450,
+    menuPositionTop: {
+        default: -430,
+        stream: 70,
+        screen: -430,
+        color: -20,
+        environment: -440,
+        render: -70,
+        subtitle: -110,
+        explorer: -330
+    }
 };
 
 export const STEREO_FORMATS = {
