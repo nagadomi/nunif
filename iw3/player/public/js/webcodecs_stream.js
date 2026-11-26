@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { BaseDesktopStream } from "./desktop_stream_base.js";
+import { FramePacer } from "./frame_pacer.js";
 
 const HEADER_BYTE_LENGTH = 16;
 const FLAG_KEYFRAME = 1;
@@ -25,6 +26,16 @@ export function getRequestedVideoCodecOverride() {
         return value;
     }
     return null;
+}
+
+// `?buffer_ms=80` holds decoded frames and plays them at their capture spacing, trading latency
+// for smooth playback over jittery Wi-Fi. 0 (default) shows the newest frame immediately.
+function getStreamBufferMs() {
+    if (typeof window === "undefined") {
+        return 0;
+    }
+    const value = Number(new URLSearchParams(window.location.search).get("buffer_ms"));
+    return Number.isFinite(value) ? Math.min(Math.max(value, 0), 500) : 0;
 }
 
 async function isCodecFamilySupported(family, width, height) {
@@ -97,6 +108,8 @@ class WebCodecsStream extends BaseDesktopStream {
         this._decoderHeight = 0;
         this._waitingForKeyframe = true;
         this._pendingFrame = null;
+        const bufferMs = getStreamBufferMs();
+        this._pacer = bufferMs > 0 ? new FramePacer(bufferMs) : null;
         this._hasDecodedFrame = false;
         this._lastKeyframeRequestMs = 0;
         this._messageQueue = Promise.resolve();
@@ -300,6 +313,8 @@ class WebCodecsStream extends BaseDesktopStream {
             }
             this.texture.setFrame(frame);
             this.hasNewFrame = true;
+        } else if (this._pacer) {
+            this._pacer.push(frame, performance.now());
         } else {
             if (this._pendingFrame) {
                 this._pendingFrame.close();
@@ -490,6 +505,13 @@ class WebCodecsStream extends BaseDesktopStream {
     }
 
     consumeNewFrame() {
+        if (this._pacer && !this.hasNewFrame) {
+            const due = this._pacer.pop(performance.now());
+            if (due) {
+                this._pendingFrame = due;
+                this.hasNewFrame = true;
+            }
+        }
         if (!this.hasNewFrame) {
             return false;
         }
@@ -512,6 +534,7 @@ class WebCodecsStream extends BaseDesktopStream {
     }
 
     _onPaused() {
+        this._pacer?.clear();
         if (this._pendingFrame) {
             this._pendingFrame.close();
             this._pendingFrame = null;
@@ -538,6 +561,7 @@ class WebCodecsStream extends BaseDesktopStream {
             }
         }
         this._closeDecoder();
+        this._pacer?.clear();
         if (this._pendingFrame) {
             this._pendingFrame.close();
             this._pendingFrame = null;
